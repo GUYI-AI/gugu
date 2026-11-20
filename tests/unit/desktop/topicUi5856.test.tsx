@@ -2,7 +2,7 @@
 //
 // @@@5856 话题(topic)展示层的判据 —— product spec。
 // 覆盖两条承重线:
-//   1. 「可见 / 参与 / 通知是三件事」在锚点卡上真的看得出来(is_participant=false ⇒ 「只看得见」);
+//   1. 「可见 / 参与 / 通知是三件事」在锚点卡上真的看得出来(is_participant=false ⇒ 「仅可查看」);
 //      判据能判假 —— 同一份数据把 is_participant 翻成 true,那条断言必须反过来。
 //   2. useTopicsOfChat 的竞态守卫:切线之后,上一条线的慢响应 ❌ 不许落进新线的状态。
 import { askReveal } from '../../../apps/desktop/src/hooks/useSourceMessageReveal'
@@ -71,21 +71,21 @@ beforeEach(() => {
 afterEach(() => { harness.cleanup(); attachmentQueryClient.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('TopicAnchorCard 把「可见 / 参与 / 通知」的第三件显形', () => {
-  it('非参与者的话题挂出「只看得见」，参与者的不挂', async () => {
+  it('非参与者的话题挂出「仅可查看」，参与者的不挂', async () => {
     await harness.render(
       createNode(TopicAnchorCard, { topics: [topic({ is_participant: false })], isMine: false, sourceContent: null, onOpen: vi.fn() }),
     )
     const observer = harness.container.querySelector('[data-testid="topic-anchor-observer"]')
     // 判据能判假:同一份数据只翻 is_participant,下面那次渲染必须拿不到这枚标。
     expect(observer).not.toBeNull()
-    expect(observer?.textContent).toBe('只看得见')
+    expect(observer?.textContent).toBe('仅可查看')
     expect(harness.container.querySelector('[data-testid="topic-anchor-row"]')?.getAttribute('data-topic-participant')).toBe('false')
 
     await harness.render(
       createNode(TopicAnchorCard, { topics: [topic({ is_participant: true })], isMine: false, sourceContent: null, onOpen: vi.fn() }),
     )
     expect(harness.container.querySelector('[data-testid="topic-anchor-observer"]')).toBeNull()
-    expect(harness.container.textContent).not.toContain('只看得见')
+    expect(harness.container.textContent).not.toContain('仅可查看')
     expect(harness.container.querySelector('[data-testid="topic-anchor-row"]')?.getAttribute('data-topic-participant')).toBe('true')
   })
 
@@ -148,7 +148,7 @@ describe('锚点是那条消息的附件,所以跟它的气泡同一侧', () => 
     expect(harness.container.querySelector('[data-testid="topic-anchor-card"]')?.getAttribute('data-topic-anchor-side')).toBe('theirs')
   })
 
-  it('那一行说清「谁开的 · 什么时候有动静」;都没有就明说还没有人说话,❌ 不留一行空的', async () => {
+  it('那一行说清「谁开的 · 什么时候有动静」;都没有就明说暂无消息,❌ 不留一行空的', async () => {
     await harness.render(
       createNode(TopicAnchorCard, {
         topics: [topic({ creator_user_id: 'u1', last_message_at: '2026-09-18T12:00:00.000Z' })],
@@ -169,7 +169,7 @@ describe('锚点是那条消息的附件,所以跟它的气泡同一侧', () => 
         onOpen: vi.fn(),
       }),
     )
-    expect(harness.container.querySelector('[data-testid="topic-anchor-meta"]')?.textContent).toBe('还没有人说话')
+    expect(harness.container.querySelector('[data-testid="topic-anchor-meta"]')?.textContent).toBe('暂无消息')
   })
 
   // @@@5856 owner 2026-09-19 对着实机:「你不感觉这个像是个文字重复吗?这一段文字,是你故意的」。

@@ -78,29 +78,29 @@ export function arrivalHint(route: DeliveryRouteKind, mode: DeliveryMode | null 
   // #7199 咕咕自己交给这条会话去做的一件事(助理开通后的初始化):与通知相反,它**是**要做的事 —— 照做;
   // 没有人可回,结果按任务里写的去处发(与下面 #7221 的「到点」同一种回程)。
   if (route === 'system' && mode === 'task') {
-    return "A task 咕咕 itself hands you, not a person's message: do what it says. What you print here reaches no one — send results with message_send to where the task says."
+    return "A task Gugu itself hands you, not a person's message: do what it says. What you print here reaches no one — send results with message_send to where the task says."
   }
   // #6593 咕咕自己发给这条会话的通知:不挂聊天,也就没有回程工具可写 —— 与下面 #6562 的通知同一句开头。
-  if (route === 'system') return 'A 咕咕 system notice, not a request; there is no one to reply to.'
+  if (route === 'system') return 'A Gugu system notice, not a request; there is no one to reply to.'
   // #7221 自己排的交代到点了:要做,但没有发信人可回 —— 结果按交代里写的去处发(多半是 message_send 回那条聊天)。
   if (route === 'scheduled') {
-    return 'Your own schedule, due now and brought back by 咕咕: do what it says. What you print here reaches no one — send results with message_send to where the task says.'
+    return 'Your own schedule, due now and brought back by Gugu: do what it says. What you print here reaches no one — send results with message_send to where the task says.'
   }
   // #6387 App 送来的不是「别人发给你的消息」:这台电脑上的一个 App 替这个人说的(人点的、后台页的钟、它的工具),
   // App 没有收件箱,所以回程就是当面打印。这句要对任何会话形态为真。
   // 集体记忆对账第 12 条:原先还有「附带」一档(mode 'context'),两个产出方(extension-agents / extension-send)早就只传
   // 一种语义,F16 定了没有 mode:'context' ⇒ 那一档和它的类型、投递卡上那一支一起删了。
-  if (route === 'extension') return "Sent through 咕咕 by an App on this computer, on the person's behalf; the person reads what you print here."
+  if (route === 'extension') return "Sent through Gugu by an App on this computer, on the person's behalf; the person reads what you print here."
   // App 的事:回程是它自己的工具,只有它知道怎么调。
-  if (route === 'app') return appArrival ?? 'Sent to you through 咕咕 by an App; what you print here does not reach it.'
+  if (route === 'app') return appArrival ?? 'Sent to you through Gugu by an App; what you print here does not reach it.'
   // #6562 系统通知没有发信人可回:它告诉你一件事(比如有人给你的消息点了 reaction),不是请你做什么。
   // 与扩展「附带」那一档同一种写法:只陈述「不是请求」这件事实,不写义务;回程工具照写,要发言时不必再找路。
   if (mode === 'notice') {
-    return `A 咕咕 system notice, not a request; anything you do post about it goes through ${RETURN_TOOL_BY_ROUTE[route]} — what you print here does not reach the chat.`
+    return `A Gugu system notice, not a request; anything you do post about it goes through ${RETURN_TOOL_BY_ROUTE[route]} — what you print here does not reach the chat.`
   }
   // 主人在和你的私聊里发的:怎么回由平台提示词 <gugu_transport> 定(普通 agent 在会话里回,助理用工具说话),信封只陈述这件事实。
   if (route === 'chat' && ownDm) return 'Sent by your owner in your private chat with you; answer it the way <gugu_transport> says for that chat.'
-  const hint = `Sent to you through 咕咕; what you print here does not reach the sender — reply with ${RETURN_TOOL_BY_ROUTE[route]}.`
+  const hint = `Sent to you through Gugu; what you print here does not reach the sender — reply with ${RETURN_TOOL_BY_ROUTE[route]}.`
   return route === 'chat' && chatKind === 'dm' ? `${hint} After replying through message_send, finish this turn without repeating the answer or adding a separate task summary here.` : hint
 }
 
@@ -760,8 +760,8 @@ export interface ChatEnvelopeInfo {
 /**
  * 咕咕身份 adapter（chat / roster 寻址的 session-direct）：发信方是一个 `identity.users` 行。
  *
- * @@@gugu-id-envelope - the envelope shows the sender by 咕咕号 when one is assigned; a sender without
- * a 咕咕号 (本机 agent 常态, #4255) is shown by display name with the typed id as the anchor instead.
+ * @@@gugu-id-envelope - the envelope shows the sender by gugu number (`gugu:N`) when one is assigned; a sender without
+ * one (本机 agent 常态, #4255) is shown by display name with the typed id as the anchor instead.
  *
  * @@@arrival-fact (#3684) - turn-origin is a per-turn FACT, and this adapter sits on the producer side,
  * i.e. before localSessionDelivery flattens everything into opaque envelope bytes. A turn a person typed
@@ -800,8 +800,8 @@ export function buildAgentDeliveryEnvelope(
   const chatAnchor = chatInfo.publicId != null ? String(chatInfo.publicId) : chatId ?? 'absent'
   return renderDeliveryEnvelope({
     route: isSessionDirect ? 'session-direct' : 'chat',
-    // @@@envelope-names (#952 回港 #4282) - lead with the human name; keep 咕咕号/群号 as copy-paste CLI anchors.
-    from: systemSender ? '咕咕系统' : identityShown(guguIds, input.senderUserId!),
+    // @@@envelope-names (#952 回港 #4282) - lead with the human name; keep gugu:N / 群号 as copy-paste CLI anchors.
+    from: systemSender ? 'Gugu' : identityShown(guguIds, input.senderUserId!),
     // A system event has no addressable identity.users row. Never fabricate user:null.
     fromId: systemSender ? 'system:gugu' : encodeTypedId('user', input.senderUserId!),
     ...(!systemSender && guguIds.get(input.senderUserId!)?.isAgent !== undefined
@@ -913,12 +913,12 @@ export function buildExtensionEnvelope(input: {
 
 /**
  * 咕咕系统 adapter（#6593）：咕咕自己要告诉这条会话的一件事。发信方就是咕咕，与聊天里的系统消息同一个
- * 名字与锚（`咕咕系统` / `system:gugu`）；它不来自任何聊天，所以没有 chat 那几格。
+ * 名字与锚（`Gugu` / `system:gugu`）；它不来自任何聊天，所以没有 chat 那几格。
  */
 export function buildSystemNoticeEnvelope(input: { messageId: string; content: string; at: string }): string {
   return renderDeliveryEnvelope({
     route: 'system',
-    from: '咕咕系统',
+    from: 'Gugu',
     fromId: 'system:gugu',
     messageId: encodeTypedId('msg', input.messageId),
     at: input.at,
@@ -934,7 +934,7 @@ export function buildSystemNoticeEnvelope(input: { messageId: string; content: s
 export function buildSystemTaskEnvelope(input: { messageId: string; content: string; context?: string; at: string }): string {
   return renderDeliveryEnvelope({
     route: 'system',
-    from: '咕咕系统',
+    from: 'Gugu',
     fromId: 'system:gugu',
     messageId: encodeTypedId('msg', input.messageId),
     at: input.at,
@@ -952,7 +952,7 @@ export function buildSystemTaskEnvelope(input: { messageId: string; content: str
 export function buildScheduledEnvelope(input: { messageId: string; content: string; title: string; context: string; at: string }): string {
   return renderDeliveryEnvelope({
     route: 'scheduled',
-    from: '咕咕系统',
+    from: 'Gugu',
     fromId: 'system:gugu',
     schedule: input.title,
     messageId: encodeTypedId('msg', input.messageId),
@@ -979,7 +979,7 @@ export function buildAppEnvelope(input: {
 }): string {
   return renderDeliveryEnvelope({
     route: 'app',
-    from: input.fromId ? input.from : '咕咕系统',
+    from: input.fromId ? input.from : 'Gugu',
     fromId: input.fromId ?? 'system:gugu',
     viaApp: input.source,
     ref: input.ref,
@@ -997,13 +997,13 @@ export function isAppRoute(route: string | null | undefined): boolean {
   return Boolean(route) && !NOT_APP_ROUTES.has(route!)
 }
 
-// @@@envelope-names (#952/#4255) - the single renderer for how a user is SHOWN: "Name (咕咕号 N)",
-// "Name (user:<id>)", or bare "咕咕号 N". Anchor 用 typed id 时不冒充「咕咕号」;返回 null 表示
+// @@@envelope-names (#952/#4255) - the single renderer for how a user is SHOWN: "Name (gugu:N)",
+// "Name (user:<id>)", or bare "gugu:N" —— 锚就是 agent 能原样传给工具的 typed address,不随界面语言变。返回 null 表示
 // 「可展示内容只剩 typed id 本身」—— 那个事实信封已在 from_id 一格里携带(#3802 一格一个事实)。
 export function identityShown(guguIds: Map<string, GuguIdentity>, userId: string): string | null {
   const identity = guguIds.get(userId)
   const name = identity?.displayName ?? null
-  const anchor = identity?.guguNumber != null ? `咕咕号 ${identity.guguNumber}` : encodeTypedId('user', userId)
+  const anchor = identity?.guguNumber != null ? `gugu:${identity.guguNumber}` : encodeTypedId('user', userId)
   if (name) return `${name} (${anchor})`
   return identity?.guguNumber != null ? anchor : null
 }
@@ -1016,9 +1016,10 @@ function replyPreview(content: string): string {
 }
 
 // @@@deliver-timestamp - format the current time in a human-readable, timezone-aware
-// format that gives the agent temporal context. e.g. "2026-06-14 13:15 北京时间 (UTC+8)".
+// format that gives the agent temporal context. e.g. "2026-06-14 13:15 UTC+8".
+// 时区只写偏移量:信封是事实载体,❌ 写某种语言的地名(旧版的「北京时间」让模型以为这个群说中文)。
 // ⚠️ 日期与时刻必须取**同一套**时区分量:旧版拿 UTC 日历日(`toISOString`)配本地时刻、再挂本地时区标签,
-// 每天都有一段时间两者不同日 —— UTC+8 的 26 号 01:30 会被写成「2026-08-25 01:30 北京时间」。
+// 每天都有一段时间两者不同日 —— UTC+8 的 26 号 01:30 会被写成「2026-08-25 01:30 UTC+8」。
 // 信封是事实载体,一格自相矛盾的时间比没有这一格更糟。(#4280 评审③)
 export function formatDeliveryTimestamp(iso: string): string {
   const now = new Date(iso)
@@ -1026,8 +1027,7 @@ export function formatDeliveryTimestamp(iso: string): string {
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
   const hhmm = now.toTimeString().slice(0, 5)
   const tzOffset = -now.getTimezoneOffset() / 60
-  const tzLabel = tzOffset === 8 ? '北京时间' : `UTC${tzOffset >= 0 ? '+' : ''}${tzOffset}`
-  return `${date} ${hhmm} ${tzLabel}`
+  return `${date} ${hhmm} UTC${tzOffset >= 0 ? '+' : ''}${tzOffset}`
 }
 
 export function escapeXmlText(value: string): string {

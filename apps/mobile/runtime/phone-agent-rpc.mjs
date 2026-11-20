@@ -140,10 +140,10 @@ export async function startPhoneAgentRpc({ cloud, ownerId, deviceId, invoke, pro
             }
             if (request.type === 'taskhost.call') {
               const body = request.payload
-              if (!body || typeof body.channel !== 'string' || !Array.isArray(body.args)) return { error: { code: 'invalid_payload', message: 'channel 和 args 是必填的' } }
+              if (!body || typeof body.channel !== 'string' || !Array.isArray(body.args)) return { error: { code: 'invalid_payload', message: 'channel and args are required' } }
               try { return { result: { value: await invoke(body.channel, body.args, request.request_id) } } } catch (error) { return { error: { code: error.code ?? 'session_action_failed', message: error.message, admission: sessionInputAdmission(error) } } }
             }
-            return { error: { code: 'unknown_method', message: `手机宿主尚不支持 ${request.type}` } }
+            return { error: { code: 'unknown_method', message: `The phone host does not support ${request.type} yet` } }
           })()
           peer.requests.set(request.request_id, result)
           // Durability for creating sessions and admitting messages is owned by invoke's journal.

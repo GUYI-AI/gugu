@@ -43,5 +43,5 @@ function strictArgs(def, args) {
       ? `不认识的参数 ${issue.keys.join('、')};合法参数:${Object.keys(def.schema.shape).join('、')}`
       : `${issue.path.join('.') || '(root)'}: ${issue.message}`)
     .join('; ')
-  throw new Error(`Input validation error: 参数不合法 —— ${detail}`)
+  throw new Error(`Input validation error: ${detail}`)
 }

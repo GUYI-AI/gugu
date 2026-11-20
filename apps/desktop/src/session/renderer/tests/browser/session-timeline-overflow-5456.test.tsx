@@ -6,12 +6,15 @@
  * 而聊天栏只有 ~860px:框内只画得下中间 71 条,会话的头尾**点不到**。
  * 第一版按「行距压细」改(一行 3.3px),owner 看完:「要不弄个上限吧,现在太密了」——
  * 于是行高钉死 12px,格数以轨道站得下的为上限,一格代表多轮。
+ * owner 2026-11-20 又撞见三千轮的会话:按列高封顶时轨是一整列从顶栏排到输入框的梳子 ——
+ * 格数另加固定上限 MAX_TICKS(32)。
  *
  * 疏密与框内框外都是布局属性:格数的算术在 node 里判得了、**画出来什么样判不了**
  * (justify-center、绝对定位的 inset-y-0、flex 的兜底挤压都只有真引擎说得清)。
  */
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MAX_TICKS } from '@renderer/features/sessions/view/session-timeline-geometry';
 import { SessionTimelineRail } from '@renderer/features/sessions/view/session-timeline-rail';
 import type { TimelineTurn } from '@renderer/features/sessions/view/session-timeline-turns';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -85,10 +88,11 @@ const spread = (ticks: HTMLElement[]) => {
 };
 
 describe('minimap 长会话几何 (#4874)', () => {
-  it('260 轮:格子数封在轨道站得下的 71 个以内,整条轨都在这一列里面', async () => {
+  it('260 轮:格子数封在 MAX_TICKS 以内,整条轨都在这一列里面', async () => {
     const ticks = await render(260);
-    expect(ticks.length).toBeLessThanOrEqual(Math.floor(COLUMN_HEIGHT / 12));
-    expect(ticks).toHaveLength(65);
+    expect(ticks.length).toBeLessThanOrEqual(MAX_TICKS);
+    // 一格 9 轮(⌈260/32⌉),260 轮画成 29 格。
+    expect(ticks).toHaveLength(29);
     const box = column.getBoundingClientRect();
     const { top, bottom } = spread(ticks);
     // 旧行为:3120px 的轨居中放进 860px 的框,上下各溢出 1130px。
@@ -99,8 +103,8 @@ describe('minimap 长会话几何 (#4874)', () => {
     // 3px 上下,正是 owner 说「太密了」的那一版)。
     expect(ticks[0].getBoundingClientRect().height).toBeCloseTo(12, 1);
     // 每一轮都归属某一格:区间首尾相接,第一格从第 1 轮起,末一格到第 260 轮止。
-    expect(ticks[0].dataset.tickSpan).toBe('1-4');
-    expect(ticks[ticks.length - 1].dataset.tickSpan).toBe('257-260');
+    expect(ticks[0].dataset.tickSpan).toBe('1-9');
+    expect(ticks[ticks.length - 1].dataset.tickSpan).toBe('253-260');
   });
 
   it('放得下就不压:20 轮还是 12px 一行、还是居中', async () => {
@@ -117,9 +121,10 @@ describe('minimap 长会话几何 (#4874)', () => {
     const ticks = await render(2000);
     const box = column.getBoundingClientRect();
     const { top, bottom } = spread(ticks);
-    expect(ticks.length).toBeLessThanOrEqual(Math.floor(COLUMN_HEIGHT / 12));
-    expect(bottom - top).toBeLessThanOrEqual(COLUMN_HEIGHT);
-    expect(top).toBeGreaterThanOrEqual(box.top - 0.5);
+    expect(ticks).toHaveLength(MAX_TICKS);
+    // owner 2026-11-20:长会话的轨不再是一整列从顶栏排到输入框的梳子 —— 封在 384px,居中。
+    expect(bottom - top).toBeCloseTo(MAX_TICKS * 12, 1);
+    expect(top - box.top).toBeCloseTo(box.bottom - bottom, 1);
     expect(ticks[0].getBoundingClientRect().height).toBeCloseTo(12, 1);
     const pill = ticks[0].querySelector<HTMLElement>('[data-slot="tick"]');
     expect(pill!.getBoundingClientRect().height).toBeCloseTo(2, 1);
@@ -132,7 +137,7 @@ describe('minimap 长会话几何 (#4874)', () => {
     // 当前那一轮只能属于一格 —— 一格代表多轮之后这条最容易画重。
     expect(current).toHaveLength(1);
     // render() 里把最后一轮(第 260 轮)当作在读的那一轮。
-    expect(current[0].dataset.tickSpan).toBe('257-260');
+    expect(current[0].dataset.tickSpan).toBe('253-260');
     const currentPill = current[0].querySelector<HTMLElement>('[data-slot="tick"]')!;
     const otherPill = long[0].querySelector<HTMLElement>('[data-slot="tick"]')!;
     expect(getComputedStyle(currentPill).backgroundColor).not.toBe(

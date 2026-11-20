@@ -56,8 +56,8 @@ export function SessionTimelineRail({
   const navRef = railRef ?? ownRef;
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   // 轨高只有量出来才知道 —— 它跟着窗口、侧栏、工作区面板一起变,而一格代表几轮全看它。
-  // ⚠️ 用 layout effect 先量一次:量到之后才知道格数,放到 useEffect 里就会先按「一轮一格」
-  // 画一帧,长会话那一帧是真的溢出。依赖写 `hasTurns` —— 轨是从 0 轮长出来的,`[]` 会让
+  // ⚠️ 用 layout effect 先量一次:量到之后才知道格数,放到 useEffect 里就会先按 `MAX_TICKS`
+  // 画一帧,矮的窗口那一帧是真的溢出。依赖写 `hasTurns` —— 轨是从 0 轮长出来的,`[]` 会让
   // observer 永远挂不上后来才出现的那个 nav。
   const [railHeight, setRailHeight] = useState(0);
   const hasTurns = turns.length > 0;

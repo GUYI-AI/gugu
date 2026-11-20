@@ -68,6 +68,13 @@ describe('选着的机器用不了,说什么(#137)', () => {
   it('叫醒没成 / 要先登录 / 登录没了 / 版本太旧是报错档:要人知道、可能要人去做点什么', () => {
     expect(spec({ connection: 'wake-failed', wakeFailure: '积分已用完，无法唤醒 Mac 1。' })).toMatchObject({ title: '积分已用完，无法唤醒 Mac 1。', tier: 'error', waiting: false });
     expect(spec({ connection: 'sign-in' })?.tier).toBe('error');
+    // 真要用这台(新建框选了它)才说要登录,「登录」就在这条提示上;别的状况没有这一段。
+    const signIn = vi.fn();
+    const needs = spec({ connection: 'sign-in', signIn });
+    expect(needs).toMatchObject({ title: '「Mac 1」需要 SSH 登录，草稿已保存。', action: { label: '登录' } });
+    needs?.action?.onClick();
+    expect(signIn).toHaveBeenCalledTimes(1);
+    expect(spec({ connection: 'offline', signIn })?.action).toBeUndefined();
     expect(spec({ connection: 'offline', signInExpiredAt: '2026-10-22T00:00:00Z' })).toMatchObject({ title: 'Mac 1 上的登录已失效，请在 设置 → 设备 中重新登录。', tier: 'error' });
     expect(spec({ connection: 'outdated' })?.tier).toBe('error');
     expect(spec({ connection: 'update-failed' })?.tier).toBe('error');

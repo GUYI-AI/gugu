@@ -5,7 +5,6 @@ import { timelineRailAdmits, timelineRailMessages, timelineRailPreviewText, type
 import { shownSender, type SelfIdentity, type TranscriptTurn } from '@gugu/session-chat-ui';
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import type { StoredOutlineTurn } from '@shared/core/sessions/session-outline';
-import { translateSessionMessage } from '../../../localization/locale-store';
 
 /**
  * Who a delivered turn came from. The rail paints these ticks differently from
@@ -45,7 +44,7 @@ export type TimelineOutlineTurn = StoredOutlineTurn;
 
 function senderOf(facts: DeliveryReadFacts, self: SelfIdentity | null): TimelineSender {
   // #5048 the signed-in user's own delivered turn is named from the local profile, like the card.
-  const name = shownSender(facts.from, facts.fromId, self, translateSessionMessage);
+  const name = shownSender(facts.from, facts.fromId, self);
   if (!name) return { kind: 'gugu' };
   if (facts.route === 'session-direct') return { kind: 'session', name };
   if (isAppRoute(facts.route)) return { kind: 'extension', name };

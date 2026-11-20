@@ -3,8 +3,8 @@
 
 export const enUSRemoteHostMessages = {
   // ── 侧栏:机器名旁那颗点 ─────────────────────────────────────────────────
-  'remoteHost.status.signInRequired': 'Sign in to {device} over SSH',
-  'remoteHost.condition.signInRequired': 'Sign in to {device} over SSH first.',
+  'remoteHost.status.signInRequired': '{device} needs SSH sign-in',
+  'remoteHost.condition.signInRequired': '{device} needs SSH sign-in.',
   'remoteHost.signIn': 'Sign in',
   'machinePicker.needsSignIn': 'Needs sign-in',
   'machinePicker.updating': 'Updating…',
@@ -92,7 +92,7 @@ export const enUSRemoteHostMessages = {
   'remoteFailure.folderUnavailable': "Could not open the folder on {device}. Check that it exists, or pick another.",
   'remoteFailure.attachmentMissing': "An attachment did not reach {device}. Re-add it and send again.",
   'remoteFailure.machineUnreachable': "{device} did not respond. Check that it is online and retry.",
-  'remoteFailure.machineSignInRequired': 'Sign in to {device} over SSH first.',
+  'remoteFailure.machineSignInRequired': '{device} needs SSH sign-in.',
   'remoteFailure.machineOutdated': 'Gugu on {device} is too old. Update Gugu there.',
   'remoteFailure.startFailed': 'Could not start the task on {device}. Try again.',
   // ── 会话打开了、但 agent 没起来:转录末尾那一行(一行放得下;动作是句子里的一段字)─────
@@ -179,8 +179,8 @@ export const enUSRemoteHostMessages = {
 export type RemoteHostMessageKey = keyof typeof enUSRemoteHostMessages;
 
 export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
-  'remoteHost.status.signInRequired': '请先通过 SSH 登录 {device}',
-  'remoteHost.condition.signInRequired': '请先通过 SSH 登录「{device}」。',
+  'remoteHost.status.signInRequired': '{device} 需要 SSH 登录',
+  'remoteHost.condition.signInRequired': '「{device}」需要 SSH 登录。',
   'remoteHost.signIn': '登录',
   'machinePicker.needsSignIn': '需要登录',
   'machinePicker.updating': '正在更新…',
@@ -263,7 +263,7 @@ export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
   'remoteFailure.folderUnavailable': '无法打开「{device}」上的文件夹。请确认其存在，或选择其他文件夹。',
   'remoteFailure.attachmentMissing': '有附件未能传到「{device}」，请重新添加后发送。',
   'remoteFailure.machineUnreachable': '「{device}」无响应，请确认其在线后重试。',
-  'remoteFailure.machineSignInRequired': '请先通过 SSH 登录「{device}」。',
+  'remoteFailure.machineSignInRequired': '「{device}」需要 SSH 登录。',
   'remoteFailure.machineOutdated': '「{device}」上的咕咕版本过旧，请更新该设备上的咕咕。',
   'remoteFailure.startFailed': '在「{device}」上启动会话失败，请重试。',
   // ── 会话打开了、但 agent 没起来:转录末尾那一行(一行放得下;动作是句子里的一段字)─────

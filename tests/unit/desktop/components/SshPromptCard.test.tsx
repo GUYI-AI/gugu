@@ -39,15 +39,15 @@ describe('SshPromptCard「下次免密」', () => {
     })
   }
 
-  it('登录密码且能装钥匙时才有那个勾,默认不勾;不勾提交 = 只给密码', async () => {
+  it('登录密码且能装钥匙时才有那个勾,默认勾上(登录一次,以后不再问);勾着提交 = 带 installKey', async () => {
     const onAnswer = vi.fn()
     const harness = createReactHarness()
     await harness.render(<SshPromptCard prompt={{ ...password, offerKeyInstall: true }} onAnswer={onAnswer} />)
     expect(box()).not.toBeNull()
-    expect(box()!.checked).toBe(false)
+    expect(box()!.checked).toBe(true)
     expect(document.body.textContent).toContain('下次免密')
     await submit('pw')
-    expect(onAnswer).toHaveBeenCalledWith('pw', { installKey: false })
+    expect(onAnswer).toHaveBeenCalledWith('pw', { installKey: true })
     await harness.render(<SshPromptCard prompt={password} onAnswer={onAnswer} />)
     expect(box()).toBeNull()
     await harness.render(
@@ -57,7 +57,7 @@ describe('SshPromptCard「下次免密」', () => {
     harness.cleanup()
   })
 
-  it('勾上再提交 = 带 installKey;密码不对再问一遍(新 id)时勾还在', async () => {
+  it('取消勾选再提交 = 只给密码;密码不对再问一遍(新 id)时还是人上次选的样子', async () => {
     const onAnswer = vi.fn()
     const harness = createReactHarness()
     await harness.render(<SshPromptCard prompt={{ ...password, offerKeyInstall: true }} onAnswer={onAnswer} variant="floating" cancellable />)
@@ -65,13 +65,13 @@ describe('SshPromptCard「下次免密」', () => {
       box()!.click()
     })
     await submit('wrong')
-    expect(onAnswer).toHaveBeenLastCalledWith('wrong', { installKey: true })
+    expect(onAnswer).toHaveBeenLastCalledWith('wrong', { installKey: false })
     await harness.render(
       <SshPromptCard prompt={{ ...password, id: 'p2', retry: true, offerKeyInstall: true }} onAnswer={onAnswer} variant="floating" cancellable />,
     )
-    expect(box()!.checked).toBe(true)
+    expect(box()!.checked).toBe(false)
     await submit('right')
-    expect(onAnswer).toHaveBeenLastCalledWith('right', { installKey: true })
+    expect(onAnswer).toHaveBeenLastCalledWith('right', { installKey: false })
     harness.cleanup()
   })
 })

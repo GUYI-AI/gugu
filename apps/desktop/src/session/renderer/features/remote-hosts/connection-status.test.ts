@@ -46,7 +46,7 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
     expect(machineUnavailableReason('updating', 'd22', session)).toBe('d22 上的咕咕正在更新，稍后会自动重新连接。草稿已保留。');
     expect(machineUnavailableReason('update-failed', 'd22', session)).toBe('d22 上的咕咕更新未完成，请在「设置 → 设备」中重试。草稿已保留。');
     expect(machineUnavailableReason('outdated', 'd22', session)).toBe('d22 上的咕咕需要更新，请在 设置 → 设备 中更新。草稿已保留。');
-    expect(machineUnavailableReason('sign-in', 'd22', session)).toBe('请先通过 SSH 登录 d22。草稿已保留。');
+    expect(machineUnavailableReason('sign-in', 'd22', session)).toBe('「d22」需要 SSH 登录，草稿已保存。');
     expect(machineUnavailableReason('offline', 'd22', session)).toBe('d22 离线。草稿已保留，设备上线后可发送，或选择其他设备。');
   });
 
@@ -133,9 +133,9 @@ describe('machineNoticeLabel(#6264 那台机器连得上,但有件事会让操�
   it('#6264 远程 SSH 要先登录:侧栏、聊天末尾那一行同一个说法,❌ 说「重连中」', () => {
     expect(hostConnectionState({ online: false, loading: false, unreachable: true, sshLink: 'signInRequired' })).toBe('sign-in');
     expect(hostConnectionState({ online: true, loading: false, unreachable: false, sshLink: 'unreachable' })).toBe('reconnecting');
-    expect(hostStatusLabel('sign-in', 'Linux 1', null, NOW, zh)).toBe('请先通过 SSH 登录 Linux 1');
+    expect(hostStatusLabel('sign-in', 'Linux 1', null, NOW, zh)).toBe('Linux 1 需要 SSH 登录');
     expect(
       chatLinkRow({ device: 'Linux 1', online: false, lastSeenAt: null, phase: { kind: 'waiting', attempt: 1, retryAt: NOW }, errorCode: null, now: NOW, translate: zh, signInRequired: true }),
-    ).toEqual({ label: '请先通过 SSH 登录「Linux 1」。', action: { label: '登录', kind: 'sign-in' } });
+    ).toEqual({ label: '「Linux 1」需要 SSH 登录。', action: { label: '登录', kind: 'sign-in' } });
   });
 });

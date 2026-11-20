@@ -50,7 +50,7 @@ export function SshPromptCard(props: {
   // 换了一个问题(新 id)= 一张新卡片:输入、显示/隐藏、「已提交」都从头来。
   // 调用处有的没给 key(卸载页),所以在这里按 id 重挂,❌ 指望每个调用处都记得。
   // 「以后不用再输密码」那个勾例外:密码输错、再问一遍时它还是人上次勾的样子(Tabby 的 Remember 也跟着同一个框走)。
-  const [installKey, setInstallKey] = useState(false)
+  const [installKey, setInstallKey] = useState(true)
   return <SshPromptBody key={props.prompt.id} {...props} installKey={installKey} onInstallKeyChange={setInstallKey} />
 }
 

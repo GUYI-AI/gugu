@@ -431,6 +431,54 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     expect(m.state.scroll.get().kind).toBe('anchor');
   });
 
+  // Under load idle time is scarce: the idle prefetch that measures rows above the rendered window can run after the
+  // reader's scroll and before the frame that reads it. Those sizes changed rows the reader is looking past, so the
+  // frame must still draw the reader's row where it was (CI: msg-109 moved 464px on frame 0). Idle work is held until
+  // the reader has scrolled, then all of it runs before the next frame.
+  it('does not move a reader who scrolled up when idle measurements land before the next frame', async () => {
+    const held = new Map<number, IdleRequestCallback>();
+    let nextId = 0;
+    const realRequest = window.requestIdleCallback;
+    const realCancel = window.cancelIdleCallback;
+    window.requestIdleCallback = (callback) => { held.set(++nextId, callback); return nextId; };
+    window.cancelIdleCallback = (id) => { held.delete(id); };
+    try {
+      const { scrollEl, view } = await mountTranscript(120);
+      view.scrollToBottom();
+      await settled(scrollEl);
+      expect(held.size, 'no idle prefetch is waiting, so this injects nothing').toBeGreaterThan(0);
+      const bottomTop = scrollEl.scrollTop;
+
+      scrollEl.scrollTop = Math.max(0, bottomTop - 900);
+      expect(scrollEl.scrollTop, `scroll driver did not move the container (stayed at ${bottomTop}px)`).toBeLessThan(bottomTop - 100);
+      const seen = readerRow(scrollEl);
+      expect(seen, 'no rendered row under the scrolled-up viewport before the next frame').not.toBeNull();
+
+      const deadline: IdleDeadline = { didTimeout: false, timeRemaining: () => 50 };
+      for (let slices = 0; held.size > 0; slices++) {
+        expect(slices, 'idle prefetch keeps rescheduling itself').toBeLessThan(100);
+        const [id, callback] = held.entries().next().value!;
+        held.delete(id);
+        callback(deadline);
+      }
+
+      let worst = { frame: -1, deviation: 0 };
+      for (let frame = 0; frame < 30; frame++) {
+        await nextFrame();
+        const offset = rowOffset(scrollEl, seen!.itemId);
+        const deviation = offset === null ? Infinity : Math.abs(offset - seen!.offset);
+        if (deviation > worst.deviation) worst = { frame, deviation };
+      }
+      expect(
+        worst.deviation,
+        `the reader's row ${seen!.itemId} moved ${worst.deviation}px on frame ${worst.frame} after scrolling up`
+      ).toBeLessThanOrEqual(1);
+    } finally {
+      window.requestIdleCallback = realRequest;
+      window.cancelIdleCallback = realCancel;
+    }
+  });
+
   // #6401:视口之上的行长高,读者看着的那一行**任意一帧**都不动(±1px)—— 包括手指还在拖(落定窗口开着)的时候。
   it('keeps the reader\'s row still on every frame while a row above grows mid-drag', async () => {
     const { scrollEl, view, state } = await mountTranscript(120, { turns: growingRowHistory() });

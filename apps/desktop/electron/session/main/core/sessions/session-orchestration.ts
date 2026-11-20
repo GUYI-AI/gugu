@@ -110,7 +110,7 @@ import {
   type SessionTransport,
 } from '../agents/session-discovery';
 import { getPlugin, listPlugins, toAgentProviderId } from '../agents/plugin-registry';
-import { resolveSessionParent, setSessionParent } from './session-family';
+import { familyOf, resolveSessionParent, setSessionParent } from './session-family';
 import { attachAgentToSession, type InternalSessionRelations } from './attach-agent-to-session';
 import { archiveSession } from './archiveSession';
 import { recordSessionOutput } from './session-outputs';
@@ -541,7 +541,7 @@ async function stopUnattachedTmuxSession(target: SessionRow): Promise<void> {
 function withActivitySource(text: string, sourceLink?: string): string {
   if (!sourceLink) return text;
   if (!parseConversationLink(sourceLink)?.messageId) throw new Error('source_link requires a message reference');
-  return `来源：[原始需求](${sourceLink})\n\n${text}`;
+  return `Source: [original request](${sourceLink})\n\n${text}`;
 }
 
 async function rememberActivitySource(sessionId: string, link: string): Promise<void> {
@@ -2249,6 +2249,11 @@ async function runTargetAction(
     // spec session-graph:agent 收起会话只有归档,走人在会话页点的同一个 `archiveSession`(范围 =
     // 确认框里那个「连同子会话」勾选),人能在会话历史里恢复。归档不删 task 也不删工作目录,所以没有
     // 「工作目录不许一个 task 都不剩」那道闸。❌ 给 agent 删除:删除永久、撤不回来,只归人(owner 2026-09-28)。
+    // with_children is that box; with live children under the target it has no default (archiving only the parent leaves them running without it).
+    if (action.with_children === undefined) {
+      const { members } = await familyOf(target.id);
+      if (members.length > 0) throw new Error(`session has ${members.length} child session(s): pass with_children=true to archive them with it, or with_children=false to archive only this one and leave them running, no longer listed under it`);
+    }
     signal?.throwIfAborted();
     const withChildren = action.with_children === true;
     const { archived, unreached } = await archiveSession(target.projectId, target.id, { withChildren, removeSocialIdentity: action.remove_social_identity });

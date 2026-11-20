@@ -15,18 +15,22 @@ import type { ModelSource, SourceSpans } from './model-source';
  */
 export function recordModelSource(sessionId: string, source: ModelSource, at: number = Date.now()): void {
   try {
-    const last = db
-      .select({ source: sessionModelSources.source })
-      .from(sessionModelSources)
-      .where(eq(sessionModelSources.sessionId, sessionId))
-      .orderBy(desc(sessionModelSources.startedAt))
-      .limit(1)
-      .get();
-    if (last?.source === source) return;
+    if (lastModelSource(sessionId) === source) return;
     db.insert(sessionModelSources).values({ sessionId, source, startedAt: at }).run();
   } catch (error) {
     log.warn('usage: failed to record a session model source', { sessionId, source, error: String(error) });
   }
+}
+
+/**
+ * The billing route this session last started on, as the start resolved it (a composer choice or the agent's own
+ * default alike). A model switch compares against this, since it is what the provider session was created under.
+ * `undefined` = the session has not started since this ledger exists.
+ */
+export function lastModelSource(sessionId: string): ModelSource | undefined {
+  return db.select({ source: sessionModelSources.source }).from(sessionModelSources)
+    .where(eq(sessionModelSources.sessionId, sessionId)).orderBy(desc(sessionModelSources.startedAt)).limit(1)
+    .get()?.source as ModelSource | undefined;
 }
 
 const PLATFORM_MODEL_KEY_PREFIX = 'sessionpage-platform-model:';

@@ -517,7 +517,7 @@ export class RemoteHostsStore {
     return requested;
   }
 
-  /** 远程 SSH 的机器要先登录:经窗口顶上那张卡片问一次。老宿主没有 = false。 */
+  /** 远程 SSH 的机器要先登录(选择器里选它、新建框提示条上的「登录」):提问浮在窗口顶上那张卡片里。老宿主没有 = false。 */
   signIn(deviceId: string): Promise<boolean> {
     return this.bridge?.signInSsh?.(deviceId) ?? Promise.resolve(false);
   }

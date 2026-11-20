@@ -2781,7 +2781,12 @@ describe('session_archive', () => {
     seedChild('child-a');
     seedChild('grandchild', 'child-a');
 
-    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a' })).resolves.toEqual({
+    // With a child under it the scope has no default: the agent says it, as the person ticks or leaves the box.
+    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a' })).rejects.toThrow(
+      'session has 1 child session(s): pass with_children=true to archive them with it, or with_children=false'
+    );
+    expect(archivedAt('child-a')).toBeNull();
+    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a', with_children: false })).resolves.toEqual({
       session_id: 'child-a',
       archived: true,
       with_children: false,

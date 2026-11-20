@@ -335,7 +335,6 @@ const fallbackMessages = {
   'transcript.commandDone': 'background command finished',
   'transcript.commandFailed': 'background command failed',
   'transcript.commandStopped': 'background command stopped',
-  'transcript.selfGuguNumber': "Gugu ID {number}",
   'transcript.password.account': "Account",
   'transcript.password.password': "Password",
   'transcript.password.accountPlaceholder': "Email or username",

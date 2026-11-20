@@ -8,7 +8,7 @@
  * ⚠️ 12px 是**定死的行高,不是上限**:轨道能站下多少格由它的高度决定(`railCapacity`),
  * 轮数超过就一格代表多轮(`turnsPerTick`),❌ 不是把行距压细。压细那条路试过 ——
  * 260 轮时一行 3.3px,owner 2026-09-10:「要不弄个上限吧,现在太密了」。所以任何长度的
- * 会话画出来都是同一种疏密,轨道也永远落在框内。
+ * 会话画出来都是同一种疏密,轨道也永远落在框内;格数另有固定上限 `MAX_TICKS`。
  */
 
 /** Marker row height and the resting pill length. */
@@ -25,12 +25,19 @@ export const READING_LINE = 24;
 export const SYNTHETIC_ROW_SUFFIXES = ['day', 'process', 'outcome'];
 
 /**
- * 这条轨道站得下多少格 —— 就是它的高度除以行高。0 = 还没量到(首帧之前),
- * 调用方按「一轮一格」处理。
+ * 轨道最多画几格,不管这一列有多高。只按高度封顶时,长会话的轨永远是一整列 12px 的梳子
+ * (owner 2026-11-20 截图:三千轮的会话从顶栏排到输入框,「有点崩坏了」);一格那时已经代表
+ * 十来条输入,再多画格子也分不出什么。32 格 = 384px,短会话(≤32 条输入)不受影响。
+ */
+export const MAX_TICKS = 32;
+
+/**
+ * 这条轨道站得下多少格 —— 它的高度除以行高,再封在 `MAX_TICKS` 以内。还没量到高度
+ * (首帧之前)就按 `MAX_TICKS` 算:那一帧也不会为长会话挂出上千个格子。
  */
 export function railCapacity(railHeight: number): number {
-  if (!Number.isFinite(railHeight) || railHeight <= 0) return 0;
-  return Math.max(1, Math.floor(railHeight / ITEM_SIZE));
+  if (!Number.isFinite(railHeight) || railHeight <= 0) return MAX_TICKS;
+  return Math.max(1, Math.min(MAX_TICKS, Math.floor(railHeight / ITEM_SIZE)));
 }
 
 /**

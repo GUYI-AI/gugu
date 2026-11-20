@@ -72,11 +72,11 @@ export function conversationSenderName(item: ChatMessage, ctx: MeasureCtx): stri
   const sender = item.guguDelivery?.segments[0]?.facts;
   if (!sender) return self?.displayName ?? t('transcript.deliveryUnknownSender');
   if (isSelfAddress(sender.fromId, self) && self?.displayName?.trim()) return self.displayName.trim();
-  return shownSender(sender.from, sender.fromId, self, t) ?? t('transcript.deliveryUnknownSender');
+  return shownSender(sender.from, sender.fromId, self) ?? t('transcript.deliveryUnknownSender');
 }
 function replySenderLabel(quote: NonNullable<ChatMessage['conversationReply']>, ctx: MeasureCtx) {
   const self = ctx.selfIdentity ?? null, t = rowTranslator(ctx);
-  const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self, t);
+  const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self);
   return [quote.chatId ? ctx.chatName?.(quote.chatId) : null,
     quote.self ? ctx.commands?.conversationAgentName?.() ?? null : sender]
     .filter((part): part is string => Boolean(part?.trim())).join(t('metadata.separator'));

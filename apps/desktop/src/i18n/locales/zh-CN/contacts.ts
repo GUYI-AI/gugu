@@ -2,12 +2,12 @@ export default {
   "groupJoinRequests": {
     "title": "入群申请",
     "wantsToJoin": "申请加入「{{group}}」",
-    "agentRequestedBy": "{{owner}} 申请把这个 Agent 拉进「{{group}}」",
+    "agentRequestedBy": "{{owner}} 申请将该 Agent 加入「{{group}}」",
     "reject": "拒绝",
     "statusAccepted": "已同意",
     "statusRejected": "已拒绝",
-    "failed": "未能处理这条申请，请刷新后重试。",
-    "loadFailed": "入群申请没有加载出来。"
+    "failed": "无法处理该申请，请刷新后重试。",
+    "loadFailed": "无法加载入群申请。"
   },
   "groupInvitations": {
     "title": "群邀请",
@@ -20,7 +20,7 @@ export default {
     "humanJoins": "接受后，你将加入这个群聊。",
     "accept": "接受邀请",
     "reject": "拒绝",
-    "failed": "未能处理邀请，请刷新后重试。",
+    "failed": "无法处理该邀请，请刷新后重试。",
     "full": "群人数已满，请联系群主增加人数上限。"
 },
   "agentName": {
@@ -65,7 +65,7 @@ export default {
   },
   "confirmations": {
     "archiveAgent": "归档 Agent「{{name}}」的任务？保留对话历史、文件和配置。",
-    "archiveAgentNoTask": "这个 Agent 已没有任务；此次只将它移出群和联系人。",
+    "archiveAgentNoTask": "该 Agent 已无任务，此操作仅将其移出群聊和联系人。",
     "deleteAgent": "归档会话",
     "deleteContact": "删除联系人「{{name}}」？删除后将解除好友关系。",
     "dissolveGroup": "解散后所有成员将退出，确认解散群聊？",
@@ -147,7 +147,7 @@ export default {
     "guguNumberUnassigned": "咕咕号未分配",
     "guguNumberValue": "咕咕号 {{number}}",
     "noResults": "未找到用户",
-    "notePlaceholder": "附言：说明理由 / 打个招呼（选填）",
+    "notePlaceholder": "附言：说明申请理由（选填）",
     "requestTitle": "发送好友申请",
     "requestToJoin": "申请加入",
     "searchPlaceholder": "搜索用户 / 咕咕号 / 邮箱",
@@ -184,7 +184,7 @@ export default {
     "typeLabel": "群类型"
   },
   "groupInvite": {
-    "approvalHint": "该群需管理员审批，提交后等待通过即可入群。",
+    "approvalHint": "该群需管理员审批，审批通过后入群。",
     "confirmTitle": "加入群聊确认",
     "creator": "创建者 {{name}}",
     "groupNumber": "群号 {{number}}",
@@ -228,7 +228,7 @@ export default {
     "clearSearch": "清除联系人搜索",
     "dialogLabel": "邀请使用 Agent",
     "empty": "暂无可邀请的联系人",
-    "failedFor": "没能邀请 {{names}}。",
+    "failedFor": "无法邀请 {{names}}。",
     "invitationNote": "{{owner}} 把 {{agent}} 分享给你。",
     "invite": "邀请",
     "noResults": "未找到联系人",
@@ -243,18 +243,18 @@ export default {
     "title": "邀请使用 {{name}}"
   },
   "joinGroup": {
-    "alreadyMember": "你已经在这个群里了",
+    "alreadyMember": "你已是该群成员",
     "joined": "已加入",
     "looking": "查找中…",
     "lookupFailed": "查找群失败，请稍后重试",
-    "notFound": "没有找到群号 {{id}}",
+    "notFound": "未找到群号 {{id}}",
     "pending": "审核中",
     "request": "申请加入",
     "refusedInviteOnly": "该群仅限被邀请加入",
-    "refusedNotFound": "这个群号不存在了",
-    "refusedSelfServeClosed": "群主未开放自助加入，请让群成员邀请你",
+    "refusedNotFound": "该群号已不存在",
+    "refusedSelfServeClosed": "群主未开放自助加入，请联系群成员邀请你",
     "requestFailedFallback": "申请失败，请重试",
-    "requested": "已发送加群申请，等群主通过",
+    "requested": "已发送加群申请，等待群主审核",
     "searchPlaceholder": "输入群号",
     "summary_one": "群号 {{number}}，{{count}} 名成员",
     "summary_other": "群号 {{number}}，{{count}} 名成员",
@@ -309,11 +309,11 @@ export default {
     "memberCount_other": "{{count}} 名成员",
     "newRequests": "新的请求",
     "noAgents": "暂无 Agent",
-    "noAgentsYet": "还没有 Agent",
+    "noAgentsYet": "暂无 Agent",
     "noContacts": "暂无联系人",
-    "noContactsYet": "还没有联系人",
+    "noContactsYet": "暂无联系人",
     "noGroups": "暂无群组",
-    "noGroupsYet": "还没有群组",
+    "noGroupsYet": "暂无群组",
     "searchContacts": "搜索联系人",
     "selectContact": "选择一个联系人查看资料",
     "selectMode": "多选",
@@ -342,7 +342,7 @@ export default {
     "groupRole": "群角色",
     "inviteToAgent": "邀请使用 Agent",
     "lastAction": "最近动作",
-    "listenModeDescription": "倾听模式",
+    "listenModeDescription": "收听模式",
     "listenModes": {
       "passive": "被动",
       "proactive": "主动"
@@ -363,7 +363,7 @@ export default {
     "publicValue": "公开，可被申请加入群",
     "removed": "已移除",
     "removeFromGroup": "移出群聊",
-    "agentLeaveGroup": "让它退出群聊",
+    "agentLeaveGroup": "使 Agent 退出群聊",
     "roles": {
       "admin": "管理员",
       "member": "成员",
@@ -378,7 +378,7 @@ export default {
     "shareUnavailable": "咕咕号未分配，暂无法分享",
     "source": "来源",
     "unconfigured": "未配置",
-    "findMessages": "查找 TA 的消息",
+    "findMessages": "查找该成员的消息",
     "viewProfile": "查看 {{name}} 的资料",
     "whisper": "悄悄话"
   },

@@ -7,7 +7,7 @@ import { act } from 'react'
 import { ToastContext } from '@/components/toastContext'
 import type { SshUpgradeEvent } from '@/lib/sshLink'
 
-const state = vi.hoisted(() => ({ devices: [] as Device[], ssh: false, calls: [] as unknown[][], busyAgents: 0 as number | undefined, refused: false, restartError: false, onUpgrade: null as ((event: SshUpgradeEvent) => void) | null }))
+const state = vi.hoisted(() => ({ devices: [] as Device[], ssh: false, calls: [] as unknown[][], busyAgents: 0 as number | undefined, refused: false, restartError: false, onUpgrade: null as ((event: SshUpgradeEvent) => void) | null, problem: 'waitingIdle', onPrompt: null as ((event: { deviceId: string; prompt: unknown }) => void) | null }))
 vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: async (...args: unknown[]) => {
   state.calls.push(args)
   if (state.restartError && args[1] !== 'server.versionMatch.activity') throw new Error('Restart connection closed')
@@ -17,10 +17,13 @@ vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: st
 vi.mock('@/lib/sshLinkChannel', () => ({
   isSshMachine: () => state.ssh,
   subscribeSshLinkProblems: (listener: (value: Map<string, string>) => void) => {
-    listener(new Map(state.ssh ? [['remote', 'waitingIdle']] : []))
+    listener(new Map(state.ssh ? [['remote', state.problem]] : []))
     return () => {}
   },
-  subscribeSshSignInPrompts: () => () => {},
+  subscribeSshSignInPrompts: (listener: (event: { deviceId: string; prompt: unknown }) => void) => {
+    state.onPrompt = listener
+    return () => { state.onPrompt = null }
+  },
   subscribeSshUpgradeEvents: (listener: (event: SshUpgradeEvent) => void) => {
     state.onUpgrade = listener
     return () => { state.onUpgrade = null }
@@ -31,7 +34,7 @@ import { SshLinkSignIn } from '@/components/SshLinkSignIn'
 import { requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { state.ssh = false; state.devices = []; state.calls = []; state.busyAgents = 0; state.refused = false; state.restartError = false; harness = createReactHarness() })
+beforeEach(() => { state.problem = 'waitingIdle'; state.ssh = false; state.devices = []; state.calls = []; state.busyAgents = 0; state.refused = false; state.restartError = false; harness = createReactHarness() })
 afterEach(() => harness.cleanup())
 const target = '0.3.1-beta.990003.1'
 function server(scope: 'account' | 'supervisor' | undefined, capability: boolean): Device {
@@ -161,4 +164,17 @@ it('keeps the SSH upgrader as the confirmation route for an SSH waiting prompt',
   await confirmRestart()
   expect(requestSshServerUpgrade).toHaveBeenCalledWith('remote', { force: true, now: true })
   expect(state.calls).toEqual([['remote', 'server.versionMatch.activity', {}, { timeoutMs: 15000 }]])
+})
+
+it('a background link that needs sign-in shows nothing; a sign-in started elsewhere still asks here', async () => {
+  state.ssh = true
+  state.problem = 'signInRequired'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  await harness.render(<SshLinkSignIn />)
+  expect(document.querySelector('[data-testid=ssh-link-sign-in]')).toBeNull()
+  await act(async () => {
+    state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'p1', kind: 'password', message: 'alice@box password:', subject: 'alice@box' } })
+  })
+  expect(document.querySelector('[data-testid=ssh-link-sign-in] input[type=password]')).not.toBeNull()
+  expect(document.body.textContent).toContain('Remote')
 })

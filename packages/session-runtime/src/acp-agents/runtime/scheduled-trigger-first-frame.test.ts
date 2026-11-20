@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeAcpHarness, makeStartInput } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 
-const SCHEDULED = '<gugu_delivery route="scheduled" from="咕咕系统" from_id="system:gugu" schedule="daily check">run it</gugu_delivery>';
+const SCHEDULED = '<gugu_delivery route="scheduled" from="Gugu" from_id="system:gugu" schedule="daily check">run it</gugu_delivery>';
 
 describe('the injected delivery path publishes the trigger with the turn\'s first frame', () => {
   it('a scheduled delivery admitted through promptDetached: the first published active turn already carries trigger schedule, before any model output', async () => {
