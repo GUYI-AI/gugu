@@ -22,6 +22,9 @@ vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ us
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
 vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [] }))
 vi.mock('../../../../apps/desktop/src/lib/chatFolders', () => ({ listMyGroupFolders: async () => [] }))
+// The provider starts the account's group-folder store; this test is about devices, so the store does nothing here (its
+// singleton must not read the cloud, nor carry a read another test file left in flight).
+vi.mock('../../../../apps/desktop/src/session/renderer/features/folders/group-folders-store', () => ({ groupFoldersStore: { start: () => () => {}, clear: () => {} } }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: () => () => undefined }),
 }))
