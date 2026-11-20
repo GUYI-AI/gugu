@@ -1,4 +1,3 @@
-import { setImmediate } from 'node:timers/promises';
 import type { NormalizedEvent, NormalizedToolStatus } from '../../acp/reducer/normalized-event';
 import type { WindowCacheContext } from '../window-cache/types';
 import type { EntityContent } from '../../acp/models/entity-content';
@@ -61,7 +60,8 @@ export function readSlices(): () => Promise<void> {
   let since = performance.now();
   return async () => {
     if (performance.now() - since < READ_SLICE_MS) return;
-    await setImmediate();
+    // session-core also runs in the renderer: a timer, not node's setImmediate.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     since = performance.now();
   };
 }
