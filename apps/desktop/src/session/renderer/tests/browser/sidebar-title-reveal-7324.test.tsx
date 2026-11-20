@@ -178,10 +178,14 @@ it('resets a replaced title and exposes its complete text without motion for red
   row = await mount(`${LONG_TITLE}（重新命名）`);
   await userEvent.hover(row);
   expect(viewport().title).toBe(`${LONG_TITLE}（重新命名）`);
-  // The reveal is two CSS animations (revealTitle on the track, revealEnd on the viewport); none may run.
-  // ❌ Not "no Animation objects": under reduced motion index.css turns every style change into a 0.01ms
-  // transition (here `scrollbar-color` on hover) that only ends on the next frame — a race the assertion
-  // lost 9/10 on a slow frame clock (mac1 over SSH) and won on CI's 60fps.
-  expect([viewport(), track()].flatMap((el) => el.getAnimations()).filter((a) => a instanceof CSSAnimation)).toHaveLength(0);
+  // The reveal is two CSS animations (revealTitle on the track, revealEnd on the viewport); nothing may run, not even
+  // a transition: under reduced motion a style change (here `scrollbar-color` on hover) lands at once.
+  expect([viewport(), track()].flatMap((el) => el.getAnimations())).toHaveLength(0);
   expect(x()).toBe(0);
+  // A position a script writes is the one drawn in this frame, not one frame later at the end of a transition.
+  const box = document.body.appendChild(document.createElement('div'));
+  getComputedStyle(box).paddingLeft;
+  box.style.paddingLeft = '7px';
+  expect(getComputedStyle(box).paddingLeft).toBe('7px');
+  box.remove();
 });

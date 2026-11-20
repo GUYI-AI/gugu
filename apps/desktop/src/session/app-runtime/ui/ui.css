@@ -426,7 +426,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(*), :where(*)::before, :where(*)::after { transition-duration: 0.01ms; animation-duration: 0.01ms; animation-iteration-count: 1; }
+  :where(*), :where(*)::before, :where(*)::after { transition: none; animation-duration: 0.01ms; animation-iteration-count: 1; }
 }
 
 } /* @layer gugu */

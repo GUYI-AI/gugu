@@ -98,7 +98,7 @@ globalStyle('*', {
     '(prefers-reduced-motion: reduce)': {
       animationDuration: '0.01ms !important',
       animationIterationCount: '1 !important',
-      transitionDuration: '0.01ms !important',
+      transition: 'none !important',
       // ⚠️ 宿主那段还带一条 `scroll-behavior: auto !important`,这里**没有**,不是漏:
       // vanilla-extract 的 scrollBehavior 类型是关键字联合(不是 string),写不进 `!important`;
       // 而本包源码里 `scroll-behavior: smooth` 的实测命中是 **0** ⇒ 没有需要被压过的声明,

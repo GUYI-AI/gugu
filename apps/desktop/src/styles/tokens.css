@@ -1805,13 +1805,13 @@ body.barcode-scanner-active #root {
 .gg-reveal-host:hover .gg-reveal,
 .gg-reveal:focus-within { opacity: 1; }
 
-/* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1——
-   只压时长的话 infinite 动画(spinner/pulse/shimmer)会变成每圈 0.01ms 的高频闪烁,比不降级更糟。 */
+/* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1(只压时长,infinite 动画会每圈 0.01ms 地闪)。
+   过渡整个关掉 ❌ 压成 0.01ms:transition-property 默认 all,每次样式改动都起一段过渡,脚本写的位置要晚一帧才画上。 */
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition: none !important;
     scroll-behavior: auto !important;
   }
 }
