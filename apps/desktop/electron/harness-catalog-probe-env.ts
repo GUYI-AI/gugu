@@ -68,6 +68,7 @@ import {
 import { platformEnvelopeKind } from './platform-envelope'
 import { claudeAcpAdapterEnv } from './sessionpage/sessionpage-platform-hooks'
 import { codexPlatformInjection } from './sessionpage/sessionpage-platform-model'
+import { codexPlatformProviderConfigArgs, type NativeHistoryProvider } from '@gugu/session-plugins/agents/codex-history'
 import { applySessionMaterialization } from './session-materialization'
 
 /** 立即拒连的回环地址 —— 端口 1 上不会有任何东西在听。这是中转**根**;各方言自己的形状由协议表决定。 */
@@ -186,4 +187,20 @@ export async function buildProbePlatformCredentials(
   }
 
   throw probeCredentialsFault(pluginId, `the Chat UI injection (${contract.dialect}) does not reach the adapter`)
+}
+
+/** A history proof resumes without a prompt; use the existing refusing probe endpoint, never a lease. */
+export async function buildNativeHistoryProbeCredentials(): Promise<NativeHistoryProvider> {
+  const contract = findInjectionContract('codex', 'cui')
+  if (!contract?.wired) throw probeCredentialsFault('codex', 'no wired Chat UI injection contract')
+  const capability = buildAcpModelCapability({
+    dialect: contract.dialect, engineId: 'codex', model: PROBE_MODEL_ID, env: {},
+    platformAccess: { relayUrl: PROBE_RELAY_ROOT, token: PROBE_RELAY_TOKEN, contextWindow: null },
+  })
+  const block = codexPlatformProviderBlock(capability?.platformProvider)
+  if (!block || !capability?.platformProvider) throw probeCredentialsFault('codex', 'no platform provider for history proof')
+  return {
+    args: codexPlatformProviderConfigArgs({ providerId: CODEX_PLATFORM_PROVIDER_ID, providerName: block.name, baseUrl: block.base_url }),
+    env: { [block.env_key]: capability.platformProvider.apiKey },
+  }
 }

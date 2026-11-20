@@ -282,6 +282,7 @@ export {
   setProbePlatformEnvResolver,
   type ProbePlatformEnvResolver,
 } from '@main/core/agents/harness-model-catalog'
+export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native-history'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。

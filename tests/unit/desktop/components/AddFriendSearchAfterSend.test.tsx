@@ -30,7 +30,7 @@ describe('AddFriendSearch after a request is sent', () => {
     await submit(input)
     await waitForCondition(() => harness.container.querySelector('.gg-row') !== null, 'no result row')
     expect(harness.container.querySelector('.gg-row')?.textContent).toContain('Codex 5')
-    expect(harness.container.querySelector('.gg-row')?.textContent).not.toContain('正在起名…')
+    expect(harness.container.querySelector('.gg-row')?.textContent).not.toContain('正在生成名称…')
   })
   it('clears the query and results, then hands back to the host', async () => {
     const sendRequest = vi.fn(async () => {})

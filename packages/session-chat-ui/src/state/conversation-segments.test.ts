@@ -265,16 +265,25 @@ describe('replay conversation segment boundaries', () => {
     expect(head.conversationProcess).toMatchObject({ startedAt: 1000, endedAt: 3500, steps: 0, empty: true });
   });
 
-  it.each(['running', 'error'] as const)('keeps a %s send in the steps without a second reply bubble or segment', status => {
+  it.each(['running', 'error'] as const)('keeps a %s send as a disclosed MCP row without a second reply bubble or segment', status => {
     const record = turn([message('ready', 'assistant', 2000), { kind: 'mcp-tool-call', id: 'pending', seq: 1,
       toolCallId: 'pending', title: 'message_send', server: 'plugin_gugu-product_gugu', tool: 'message_send',
       status, rawInput: JSON.stringify({ chat_id: 'elsewhere', text: 'unconfirmed' }), at: 3000 }]);
     const rows = flattenTier([record], context(true), segmenters);
     expect(rows.some(row => row.kind === 'agent-send')).toBe(false);
     expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'head')).toHaveLength(1);
-    expect(rows.find(row => row.itemId === 't:run:pending')?.data).toMatchObject({ kind: 'tool-run', stepCount: 1, label: 'Called 1 MCP tool' });
-    expect(rows.some(row => row.kind === 'mcp-tool-call')).toBe(false);
+    expect(rows.find(row => row.itemId === 'pending')?.data).toMatchObject({ kind: 'mcp-tool-call', status, server: 'plugin_gugu-product_gugu', tool: 'message_send' });
+    expect(rows.some(row => row.kind === 'tool-run')).toBe(false);
     expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'body').map(row => row.itemId)).toEqual(['ready']);
+  });
+
+  it('keeps adjacent MCP identities visible without splitting the reply into extra segments', () => {
+    const calls: ChatItem[] = ['first', 'second'].map((id, seq) => ({ kind: 'mcp-tool-call', id, seq,
+      toolCallId: id, title: `mcp__fixture__${id}`, server: 'fixture', tool: id, status: 'done', rawInput: '{}', outputText: id }));
+    const rows = flattenTier([turn([message('u', 'user'), ...calls, message('answer', 'assistant')])], context(false, ['t:process']), segmenters);
+    expect(rows.filter(row => row.kind === 'mcp-tool-call').map(row => row.itemId)).toEqual(['first', 'second']);
+    expect(rows.some(row => row.kind === 'tool-run')).toBe(false);
+    expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'head')).toHaveLength(1);
   });
 });
 

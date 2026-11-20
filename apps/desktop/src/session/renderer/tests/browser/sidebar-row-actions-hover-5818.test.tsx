@@ -317,10 +317,10 @@ it('keeps the copyable addressing name raw while the sidebar row shows the namin
     mount()
     await mounted()
     const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
-    expect(row.textContent).toMatch(/正在起名…|Naming the agent…/)
+    expect(row.textContent).toMatch(/正在生成名称…|Generating name…/)
     const card = await openCard(row)
     const copy = card.querySelector<HTMLElement>('[data-identity-row="sessionName"]')!
-    expect(copy.textContent).toMatch(/正在起名…|Naming the agent…/)
+    expect(copy.textContent).toMatch(/正在生成名称…|Generating name…/)
     await userEvent.click(copy)
     expect(pairOf(clipboard.mock.calls[0][0])).toEqual(['session', 'Codex 5'])
   } finally { clock.mockRestore() }

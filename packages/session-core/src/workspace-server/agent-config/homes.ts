@@ -23,6 +23,7 @@ export const agentHomeScanSchema = z.object({
   importedAt: z.string().nullable(), needsImport: z.boolean(), sourceUpdated: z.boolean(),
   migration: z.boolean(),
   migrationPreparation: z.object({ phase: z.enum(['preparing', 'copying', 'history']), startedAt: z.number(), attempt: z.number() }).optional(),
+  nativeHistory: z.object({ removed: z.number(), pending: z.number(), retained: z.number(), unowned: z.number() }).optional(),
   historyImport: historyImportSchema.optional(),
   migrationSpace: z.object({ requiredBytes: z.number(), availableBytes: z.number(), shortfallBytes: z.number() }).optional(),
   upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin']).optional(),

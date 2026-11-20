@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, readdir } from 'node:fs/promises';
+import { copyFile, lstat, mkdtemp, open, realpath, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createZstdDecompress } from 'node:zlib';
 import Database from 'better-sqlite3';
@@ -83,23 +84,55 @@ export async function indexCodexRollouts(root: string): Promise<Map<string, stri
   return index;
 }
 
+/** A closed WAL database may need sidecars even for a read-only connection.
+ * Read that case in a disposable directory, never create sidecars in the source.
+ * A live WAL remains SQLite's authority; never ignore it with immutable=1. */
+async function readTaskIndex(path: string): Promise<IndexedTask[]> {
+  const before = await lstat(path);
+  if (!before.isFile() || before.isSymbolicLink()) throw new Error('Invalid source index');
+  const hasWal = async () => {
+    try { await lstat(`${path}-wal`); return true; }
+    catch (error) { if (missing(error)) return false; throw error; }
+  };
+  const input = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  const header = Buffer.alloc(20);
+  try { await input.read(header, 0, header.length, 0); } finally { await input.close(); }
+  let temporary: string | undefined;
+  let database: Database.Database | undefined;
+  try {
+    let readable = path;
+    if (header[18] === 2 && header[19] === 2 && !await hasWal()) {
+      temporary = await mkdtemp(join(tmpdir(), 'codex-task-index-'));
+      readable = join(temporary, 'state_5.sqlite');
+      await copyFile(path, readable);
+      const after = await lstat(path);
+      if (!after.isFile() || after.isSymbolicLink() || before.ino !== after.ino || before.dev !== after.dev
+        || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || await hasWal()) {
+        throw new Error('Source index changed during snapshot');
+      }
+    }
+    database = new Database(readable, { readonly: true, fileMustExist: true });
+    database.pragma('query_only = ON');
+    return database.prepare("SELECT id, title, cwd, rollout_path, updated_at FROM threads WHERE thread_source = 'user' AND archived = 0 ORDER BY updated_at DESC, id").all() as IndexedTask[];
+  } finally {
+    database?.close();
+    if (temporary) await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 /** Child-only, read-only SQLite metadata scan. No source backfill or private-table mutation. */
 export async function scanCodexTasks(sourceRoot: string): Promise<CodexTaskScan> {
   const result: CodexTaskScan = { status: 'ready', indexed: 0, missing: 0, invalid: 0, blocked: [], rows: [] };
   let root: string;
   try { root = await realpath(sourceRoot); }
   catch (error) { if (missing(error)) return { ...result, status: 'unavailable', reason: 'missing-index' }; throw error; }
-  let database: Database.Database | undefined;
   let rows: IndexedTask[];
   try {
     const path = join(root, 'state_5.sqlite');
-    if ((await lstat(path)).isSymbolicLink()) throw new Error('Linked source index');
-    database = new Database(path, { readonly: true, fileMustExist: true });
-    database.pragma('query_only = ON');
-    rows = database.prepare("SELECT id, title, cwd, rollout_path, updated_at FROM threads WHERE thread_source = 'user' AND archived = 0 ORDER BY updated_at DESC, id").all() as IndexedTask[];
+    rows = await readTaskIndex(path);
   } catch (error) {
     return { ...result, status: 'unavailable', reason: missing(error) ? 'missing-index' : 'unsupported-index' };
-  } finally { database?.close(); }
+  }
   result.indexed = rows.length;
   let index: Promise<Map<string, string[]>> | undefined;
   const snapshots = new Map<string, Promise<{ file: Awaited<ReturnType<typeof transcript>>; meta: Awaited<ReturnType<typeof sessionMeta>> }>>();

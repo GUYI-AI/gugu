@@ -82,7 +82,7 @@ it('retries the original operation and blocks Back after installation begins', a
 it('shows a read failure rather than claiming there are no servers', async () => {
   f.list.mockRejectedValue(new Error('Network failure'))
   await render()
-  expect(harness.container.textContent).toContain('服务器列表没能读到')
+  expect(harness.container.textContent).toContain('无法读取服务器列表')
   expect(query('assistant-server-empty')).toBeNull()
   expect(f.setup).not.toHaveBeenCalled()
 })

@@ -39,7 +39,7 @@ describe('member picker', () => {
     })
     await typeInto(search(), 'codex5')
     expect(q('[data-contact-option="new-agent"]')?.textContent).toContain('Codex 5')
-    expect(q('[data-contact-option="new-agent"]')?.textContent).not.toContain('正在起名…')
+    expect(q('[data-contact-option="new-agent"]')?.textContent).not.toContain('正在生成名称…')
     await key(search(), 'Enter')
     expect(chips()).toEqual(['Codex 5'])
   })

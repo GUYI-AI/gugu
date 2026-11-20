@@ -47,7 +47,7 @@ it('routes server and local choices to their own setup paths', async () => {
   await render()
   expect(query('assistant-setup-home-server')?.textContent).toContain('Linux')
   expect(query('assistant-setup-home-server')?.textContent).not.toContain('Mac')
-  expect(query('assistant-setup-home-computer')?.textContent).toContain('电脑开着时才在线，适合先试试')
+  expect(query('assistant-setup-home-computer')?.textContent).toContain('仅在电脑开机时在线，适合试用')
   await click('assistant-setup-choose-server')
   await click('assistant-setup-install-here')
   expect(callbacks.onServer).toHaveBeenCalledOnce()

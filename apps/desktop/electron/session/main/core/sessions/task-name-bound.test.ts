@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@main/db/client', () => ({ db: {} }));
 
-const { createAgent, updateAgent, writeAgentName } = await import('@gugu/core/local/state/agents');
-const { boundTaskName, hasPendingTaskNames, loadTaskNames, setTaskNameOwner } = await import('./task-name');
+const { archiveAgents, createAgent, restoreArchivedAgents, updateAgent, writeAgentName } = await import('@gugu/core/local/state/agents');
+const { boundTaskName, hasPendingTaskNames, loadTaskNames, setTaskNameOwner, taskName } = await import('./task-name');
 
 let env: NodeJS.ProcessEnv;
 beforeEach(async () => {
@@ -56,10 +56,13 @@ describe('bound task names are a projection of the whole roster', () => {
     expect(boundTaskName('s1')?.name).toBe('Bob name');
   });
 
-  it('an archived identity no longer names its session', async () => {
+  it('an archived task keeps its identity\'s name through archive and restore', async () => {
     await bind('alice', 's1', 'Codex 1');
     await setTaskNameOwner('alice', env);
-    await updateAgent({ guguUserId: 'alice-s1' }, { status: 'archived' }, env);
-    expect(boundTaskName('s1')).toBeUndefined();
+    await archiveAgents((agent) => agent.gugu_user_id === 'alice-s1', env);
+    expect(boundTaskName('s1')?.name).toBe('Codex 1');
+    expect(taskName({ id: 's1', config: {} })).toBe('Codex 1');
+    await restoreArchivedAgents((agent) => agent.gugu_user_id === 'alice-s1', env);
+    expect(boundTaskName('s1')?.name).toBe('Codex 1');
   });
 });

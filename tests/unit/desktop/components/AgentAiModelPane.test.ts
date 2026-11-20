@@ -130,7 +130,7 @@ describe('AgentAiModelPane', () => {
     await clickElement(retry)
     await waitForCondition(() => setAgentModelSelection.mock.calls.length === 2, 'retry')
     expect(setAgentModelSelection.mock.calls[1]).toEqual(setAgentModelSelection.mock.calls[0])
-    await waitForCondition(() => harness.container.textContent?.includes('当前会话已当场切换') === true, 'applied')
+    await waitForCondition(() => harness.container.textContent?.includes('当前会话已立即切换') === true, 'applied')
     expect(harness.container.querySelector('button')).toBeNull()
   })
 
@@ -171,7 +171,7 @@ describe('AgentAiModelPane', () => {
     })
     // 设备说当场切了 ⇒ 面板说「已生效」,而且是热切那句;❌ 不是一句泛泛的「已保存」。
     await waitForCondition(
-      () => harness.container.textContent?.includes('当前会话已当场切换') === true,
+      () => harness.container.textContent?.includes('当前会话已立即切换') === true,
       'hot-switch outcome did not render',
     )
   })
@@ -204,26 +204,26 @@ describe('AgentAiModelPane', () => {
 
     it('preserved ⇒ says the history was restored', async () => {
       const text = await reopenWith({ applied: 'reload', nativeSession: 'preserved' })
-      expect(text).toContain('会话已重开并续上历史')
+      expect(text).toContain('会话已重新打开，历史记录已恢复')
     })
 
     it('replaced ⇒ says a new agent session started and Gugu’s history is kept, not “history restored”', async () => {
       const text = await reopenWith({ applied: 'reload', nativeSession: 'replaced' })
-      expect(text).toContain('Agent 另起了一条自己的新会话')
-      expect(text).not.toContain('续上历史')
+      expect(text).toContain('Agent 已开始新会话')
+      expect(text).not.toContain('历史记录已恢复')
     })
 
     it('route-switched ⇒ says only that the billing route switched, claims neither', async () => {
       const text = await reopenWith({ applied: 'reload', nativeSession: 'route-switched' })
       expect(text).toContain('已生效：已切换计费路线。')
-      expect(text).not.toContain('续上历史')
+      expect(text).not.toContain('历史记录已恢复')
       expect(text).not.toContain('新会话')
     })
 
     it('an older device that omits nativeSession ⇒ neutral copy, claims neither', async () => {
       const text = await reopenWith({ applied: 'reload' })
       expect(text).toContain('已生效：会话已重开。')
-      expect(text).not.toContain('续上历史')
+      expect(text).not.toContain('历史记录已恢复')
       expect(text).not.toContain('新会话')
     })
   })
@@ -251,7 +251,7 @@ describe('AgentAiModelPane', () => {
     })
     await harness.render(createNode(AgentAiModelPane, { agent }))
     await waitForCondition(
-      () => harness.container.textContent?.includes('等运行这个 Agent 的设备上线后生效') === true,
+      () => harness.container.textContent?.includes('将在该 Agent 的运行设备上线后生效') === true,
       'pending explanation did not render',
     )
     expect((harness.container.querySelector('select') as HTMLSelectElement).value)
@@ -278,7 +278,7 @@ describe('AgentAiModelPane', () => {
   it('keeps an agent without a bound device read-only and says why', async () => {
     await harness.render(createNode(AgentAiModelPane, { agent: { ...agent, device_id: null } }))
     await waitForCondition(
-      () => harness.container.textContent?.includes('没有绑定运行设备') === true,
+      () => harness.container.textContent?.includes('未绑定运行设备') === true,
       'no-device explanation did not render',
     )
     expect((harness.container.querySelector('select') as HTMLSelectElement).disabled).toBe(true)
@@ -352,7 +352,7 @@ describe('AgentAiModelPane', () => {
 
     expect((harness.container.querySelector('select') as HTMLSelectElement).value).toBe('platform:glm-5.3')
     const note = harness.container.querySelector('[data-testid="agent-model-members-only"]')
-    expect(note?.textContent).toContain('GLM 5.3 要开会员才能用')
+    expect(note?.textContent).toContain('GLM 5.3 需要开通会员')
     expect(note?.querySelector('a')?.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/')
   })
 

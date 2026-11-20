@@ -88,6 +88,31 @@ it('publishes complete native skill trees, preserves links/modes/assets, and lea
   expect((await importCodexSkills({ home: f.home, selection: selection(before.items) })).items[0]!.status).toBe('exists');
 });
 
+it.runIf(process.platform === 'darwin')('preserves differing dangling resource link modes independently of the destination umask', async () => {
+  const f = await fixture();
+  const source = await f.skill(f.codex, 'link-modes');
+  const modes = { restricted: 0o700, ordinary: 0o755 };
+  for (const [name, mode] of Object.entries(modes)) {
+    const path = join(source, name);
+    await fs.symlink('missing-resource', path);
+    await fs.lchmod(path, mode);
+  }
+  const before = await scanCodexSkills({ home: f.home });
+  expect(before.items[0]!.status).toBe('ready');
+  const result = await importCodexSkills({ home: f.home, selection: selection(before.items) });
+  expect(result.items[0]!.status).toBe('imported');
+  for (const [name, mode] of Object.entries(modes)) {
+    const path = join(result.items[0]!.target, name);
+    expect((await fs.lstat(path)).mode & 0o777).toBe(mode);
+    expect(await fs.readlink(path)).toBe('missing-resource');
+    await expect(fs.stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await fs.lstat(join(source, name))).mode & 0o777).toBe(mode);
+  }
+  expect((await scanCodexSkills({ home: f.home })).items[0]).toMatchObject({
+    status: 'exists', fingerprint: before.items[0]!.fingerprint,
+  });
+});
+
 it('preserves large skill bodies and streams large top-level resources through the migration primitive', async () => {
   const f = await fixture();
   const source = await f.skill(f.codex, 'large');

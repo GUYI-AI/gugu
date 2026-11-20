@@ -73,7 +73,7 @@ describe('task cards follow the current agent identity', () => {
   it.each(['zh-CN', 'en-US'] as const)('shows a bounded naming placeholder for a newly created identity (%s)', async (locale) => {
     setLocalePreference(locale)
     await renderTask()
-    const placeholder = locale === 'zh-CN' ? '正在起名…' : 'Naming the agent…'
+    const placeholder = locale === 'zh-CN' ? '正在生成名称…' : 'Generating name…'
     expect(content().textContent).toContain(placeholder)
     expect(content().textContent).not.toContain('Codex 1')
     await act(async () => { await vi.advanceTimersByTimeAsync(59_999) })
@@ -91,7 +91,7 @@ describe('task cards follow the current agent identity', () => {
     }) }, () => {}))
     expect(content()).toBe(card)
     expect(content().textContent).toContain('研究助手')
-    expect(content().textContent).not.toContain('正在起名…')
+    expect(content().textContent).not.toContain('正在生成名称…')
     await act(async () => publishIdentityDirectory({ [CARD.agentUserId]: displayIdentity(CARD.agentUserId, {
       type: 'agent', display_name: '改过的名字', owner_user_id: 'user-1',
     }) }, () => {}))
@@ -102,10 +102,10 @@ describe('task cards follow the current agent identity', () => {
 
   it('uses identity age independently of the card message age', async () => {
     await renderTask(CARD, '2026-11-02T07:00:00.000Z')
-    expect(content().textContent).toContain('正在起名…')
+    expect(content().textContent).toContain('正在生成名称…')
     await renderTask(CARD, at, false, '2026-11-02T07:59:00.000Z')
     expect(content().textContent).toContain('Codex 1')
-    expect(content().textContent).not.toContain('正在起名…')
+    expect(content().textContent).not.toContain('正在生成名称…')
   })
 
   it('keeps explicit names and missing identities raw, and recognizes legacy engine defaults', async () => {
@@ -113,15 +113,15 @@ describe('task cards follow the current agent identity', () => {
     expect(content().textContent).toContain('Named at spawn')
     await renderTask(CARD, at, false, null)
     expect(content().textContent).toContain('Codex 1')
-    expect(content().textContent).not.toContain('正在起名…')
+    expect(content().textContent).not.toContain('正在生成名称…')
     const { agentType: _legacy, ...legacy } = CARD
     await renderTask(legacy)
-    expect(content().textContent).toContain('正在起名…')
+    expect(content().textContent).toContain('正在生成名称…')
   })
 
   it('shows the placeholder on the first frame when identity creation is slightly ahead of the client clock', async () => {
     await renderTask(CARD, at, false, '2026-11-02T08:00:00.150Z')
-    expect(content().textContent).toContain('正在起名…')
+    expect(content().textContent).toContain('正在生成名称…')
     expect(content().textContent).not.toContain('Codex 1')
   })
 
@@ -132,7 +132,7 @@ describe('task cards follow the current agent identity', () => {
       msg: message({ is_mine: false, sender_user_id: CARD.agentUserId, content: 'Hello' }), memberProfile, isGroup: true,
       onReaction: vi.fn(), onQuote: vi.fn(), onForward: vi.fn(), onDelete: vi.fn(),
     }))
-    expect(harness.container.querySelector('.msg-sender-name')?.textContent).toBe('正在起名…')
+    expect(harness.container.querySelector('.msg-sender-name')?.textContent).toBe('正在生成名称…')
     expect(memberProfile.displayName).toBe('Codex 1')
   })
 })

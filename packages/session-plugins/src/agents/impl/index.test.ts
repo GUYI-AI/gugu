@@ -646,7 +646,7 @@ describe('pluginRegistry', () => {
   });
 
   it('materializes every declared native unit through its contract channel', () => {
-    // antigravity 终端腿的 MCP 条目指向随 app 发的 stdio 中继;宿主在 spawn 前登记它的入口(`registerGuguMcpStdioRelayEntry`)。
+    // antigravity 终端腿的 MCP 条目指向随 app 发的 stdio 中继;宿主在 spawn 前登记它的入口(local-session)。
     vi.stubEnv(GUGU_MCP_STDIO_RELAY_ENTRY_ENV, '/app/dist-electron/runtime/gugu-mcp-stdio-relay.mjs');
     const checks: {
       label: string;

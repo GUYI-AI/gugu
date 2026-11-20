@@ -39,7 +39,7 @@ function InnerColumn() {
   return (
     <motion.div
       data-region="inner-sidebar"
-      className="relative isolate flex h-full shrink-0 flex-col border-r border-border bg-background"
+      className="relative isolate flex h-full shrink-0 flex-col bg-background-tertiary"
       style={{ width }}
     >
       <span>群里的智能体与话题</span>

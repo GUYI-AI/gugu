@@ -88,7 +88,7 @@ it('returns to both home choices after a target disconnects before any target RP
   f.disconnectBeforeRpc = true
   await selectServer()
   expect(pendingServerAssistant('owner')).toMatchObject({ installationStarted: false, preparationStarted: false })
-  expect(query('assistant-server-error')?.textContent).toContain('服务器离线')
+  expect(query('assistant-server-error')?.textContent).toContain('服务器已离线')
   await click(back())
   expect(pendingServerAssistant('owner')).toBeNull()
   await click(query('assistant-setup-install-here'))

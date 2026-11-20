@@ -119,7 +119,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
-import { buildProbePlatformCredentials } from './harness-catalog-probe-env'
+import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
@@ -4575,6 +4575,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
+    emdashBridge.setNativeHistoryProviderResolver(buildNativeHistoryProbeCredentials)
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)
@@ -4968,15 +4969,14 @@ app.whenReady().then(async () => {
           const sender = await senderBinding(context, auth.userId)
           if (!sender.guguAgentUserId || !auth.accessToken) throw new Error('Session file handoff requires an Agent identity')
           const caller = await remoteCaller(auth, context)
-          const remotePeers = new Map<string, Array<Record<string, unknown>>>()
           const recipients: string[] = []
           for (const target of targets) {
             let agentId: string | null = target.agentId ?? null
             if (agentId) { recipients.push(agentId); continue }
             if (!target.deviceId) agentId = await guguAgentUserIdForSession(target.sessionId, process.env)
             else {
-              if (!remotePeers.has(target.deviceId)) remotePeers.set(target.deviceId, await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers' }, signal) as Array<Record<string, unknown>>)
-              const peer = remotePeers.get(target.deviceId)!.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
+              const peers = await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers', session_id: target.sessionId }, signal) as Array<Record<string, unknown>>
+              const peer = peers.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
               const identity = peer?.identity as { users?: { id?: string } } | undefined
               agentId = typeof peer?.agentUserId === 'string' ? peer.agentUserId : typeof peer?.agent_user_id === 'string' ? peer.agent_user_id.replace(/^user:/, '') : identity?.users?.id ?? null
             }
@@ -5202,7 +5202,7 @@ app.whenReady().then(async () => {
       if (!auth?.accessToken || !auth.userId) throw new CrossMachineError('host_not_signed_in', 'that machine is not signed in to 咕咕')
       const signal = new AbortController().signal
       return crossMachine().answer(name, caller, action, {
-        peers: () => localSessionPeers(emdash, auth),
+        peers: (sessionId) => localSessionPeers(emdash, auth, sessionId),
         // app_install { device } from another machine: installed here the way a card's package is — fetched and checked
         // here (L4 10-02); the same dispatcher as this machine's app_*. D-31: that machine asks the person, as its agent's
         // approval — `consent` says hand back the ask, or install the bytes they agreed to.

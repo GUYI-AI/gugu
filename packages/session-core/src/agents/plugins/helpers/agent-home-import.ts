@@ -423,7 +423,7 @@ export async function readAgentHomeMarker(home: ResolvedAgentHome, filename = AG
 export function readAgentHomePending(home: ResolvedAgentHome): Promise<AgentHomeMarker | null> {
   return readAgentHomeMarker(home, AGENT_HOME_PENDING);
 }
-async function writeMarker(home: ResolvedAgentHome, marker: AgentHomeMarker, filename = AGENT_HOME_MARKER): Promise<void> {
+async function writeMarker(home: ResolvedAgentHome, marker: unknown, filename = AGENT_HOME_MARKER): Promise<void> {
   const destination = join(home.shadowHome, filename), temporary = `${destination}.${randomUUID()}`;
   await disk.writeFile(temporary, `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   try { await disk.rename(temporary, destination); }
@@ -594,9 +594,13 @@ export async function snapshotAgentHomeDirectory(
       options.signal?.throwIfAborted();
       await makeDirectory(resourceHome, join(options.destination, directory.path));
     }
-    for (const item of collected.items) if (item.linkTarget === undefined) {
+    for (const item of collected.items) {
       options.signal?.throwIfAborted();
-      await disk.chmod(join(options.destination, item.target), item.mode);
+      const target = join(options.destination, item.target);
+      if (item.linkTarget === undefined) await disk.chmod(target, item.mode);
+      // macOS applies the process umask when creating links, and their mode is part of the
+      // snapshot fingerprint. Change only this new private link, never its resource target.
+      else if (process.platform === 'darwin') await disk.lchmod(target, item.mode);
     }
     for (const directory of [...directories].reverse()) {
       options.signal?.throwIfAborted();
@@ -945,4 +949,15 @@ export async function updateAgentHomeSource(
     if (!current || hash(current) !== hash(before)) throw new Error('Source changed; retry migration');
     await disk.rename(temporary, target);
   } finally { await disk.rm(temporary, { force: true }); }
+}
+
+/** Separate atomic record for native history relocation; no import-marker fields are inferred. */
+export async function readAgentHomeRecord(home: ResolvedAgentHome, filename: string): Promise<unknown> {
+  if (basename(filename) !== filename) throw new Error('Invalid managed home record name');
+  const bytes = await snapshot(home.shadowHome, join(home.shadowHome, filename));
+  return bytes ? JSON.parse(bytes.toString('utf8')) as unknown : null;
+}
+export async function writeAgentHomeRecord(home: ResolvedAgentHome, filename: string, record: unknown): Promise<void> {
+  if (basename(filename) !== filename) throw new Error('Invalid managed home record name');
+  await writeMarker(home, record, filename);
 }

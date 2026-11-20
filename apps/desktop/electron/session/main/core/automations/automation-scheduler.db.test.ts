@@ -8,6 +8,11 @@ import { insertRun, setAutomationEnabled, skipQueuedCronRuns, softDeleteAutomati
 import { setSessionAdmissionPreparation } from '../sessions/session-admission-preparation';
 import { markRunDone } from './run-transitions';
 import type { AutomationRunExecutor } from './runtime';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { archiveAgents, createAgent, updateAgent } from '@gugu/core/local/state/agents';
+import { loadTaskNames } from '../sessions/task-name';
 
 // Stop client.ts from opening the real Electron DB at import time.
 // All domain code (repo, run-transitions) will read this getter and get the fixture DB.
@@ -605,6 +610,31 @@ describe('assistant panel changes before schedule execution', () => {
     await new AutomationScheduler(makeCallbacks(),executor).drainQueue();
     expect(executor).not.toHaveBeenCalled();
     expect(getRunRow(fixture,run.id)?.status).toBe('skipped');
+  });
+
+  it('starts when a schedule belongs to an archived task, named by its archived identity', async () => {
+    const env = { GUGU_HOME: await mkdtemp(join(tmpdir(), 'scheduler-archived-task-')) };
+    try {
+      // A bound task carries no pending-bind name: its one name is the roster identity's, here archived with the task.
+      await createAgent({ name: 'Archived helper', agent_type: 'claude-code', path: '/w', prompt: '', gugu_user_id: 'agent-archived' }, env);
+      await updateAgent({ guguUserId: 'agent-archived' }, {
+        cache: { emdash_session_id: 'archived-session', sessionpage_owner_user_id: 'owner-1' },
+      }, env);
+      await archiveAgents((agent) => agent.gugu_user_id === 'agent-archived', env);
+      await loadTaskNames(env);
+      vi.setSystemTime(Date.UTC(2026, 4, 15, 12, 0, 0));
+      seedProject(fixture);
+      fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, archived_at) VALUES ('archived-session', 'project-1', '2026-05-01T00:00:00.000Z')`).run();
+      assistantSchedule('archived-task-schedule', 'archived-session');
+      setSessionAdmissionPreparation(async (_sessionId, text) => ({ text, assistantPanel: true, accepted: async () => {} }));
+
+      await new AutomationScheduler(makeCallbacks(), doneExecutor).reload();
+
+      expect(countRunsByStatus(fixture, 'scheduled', 'archived-task-schedule')).toBe(1);
+    } finally {
+      await rm(env.GUGU_HOME, { recursive: true, force: true });
+      await loadTaskNames(env);
+    }
   });
 
   it('keeps a temporarily blocked reminder queued, runs unrelated work and retries after recovery', async () => {

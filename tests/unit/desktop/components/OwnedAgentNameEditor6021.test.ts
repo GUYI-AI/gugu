@@ -39,8 +39,8 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove() })
 describe('owner agent name editor #6021', () => {
   it('edits the real name even while its display label is the naming placeholder', () => {
-    render({ children: '正在起名…' })
-    expect(container.textContent).toContain('正在起名…')
+    render({ children: '正在生成名称…' })
+    expect(container.textContent).toContain('正在生成名称…')
     click('重命名')
     expect(input().value).toBe('Codex 8')
   })

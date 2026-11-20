@@ -225,7 +225,7 @@ describe('Markdown local file links in chat', () => {
     expect(followLink(`gugu-file://${itemId}`)).toBe(true)
     await vi.waitFor(() => expect(notice).toHaveBeenCalledOnce())
     const title = notice.mock.calls[0]![0].title
-    expect(title).toBe('暂时打不开这个文件，请稍后重试')
+    expect(title).toBe('无法打开该文件，请稍后重试')
     expect(title).toBe(i18n.t('assistant:links.fileOpenFailed'))
     expect(title).not.toBe(i18n.t('assistant:links.fileMissing'))
     expect(title).not.toBe(i18n.t('assistant:links.unavailable'))
