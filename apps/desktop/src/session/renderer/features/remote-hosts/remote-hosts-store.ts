@@ -330,6 +330,11 @@ export class RemoteHostsStore {
     return [...this.hosts.values()].some((state) => !state.synced && !state.device.projects);
   }
 
+  /** 那台机器自己的项目清单这一端读到过了(连上读的,不是账号上记着的那份)。 */
+  hasReadList(deviceId: string): boolean {
+    return this.hosts.get(deviceId)?.synced === true;
+  }
+
   /** 这个项目在哪台别的机器上;本机项目 = null。 */
   machineOfProject(projectId: string): RemoteHostDevice | null {
     const deviceId = machineRegistry.machineOf(projectId);
