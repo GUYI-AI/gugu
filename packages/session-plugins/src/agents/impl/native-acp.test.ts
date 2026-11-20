@@ -10,6 +10,8 @@ const spawnCtx = {
 const nativeAcpProviders: Array<{
   id: string;
   cli?: string;
+  /** The host-built env this provider requires at spawn (e.g. its managed config root). */
+  spawnEnv?: Record<string, string>;
   args: string[];
   command?: string;
   env?: Record<string, string>;
@@ -19,9 +21,13 @@ const nativeAcpProviders: Array<{
     args: ['--acp'],
     env: { AUGMENT_DISABLE_AUTO_UPDATE: '1' },
   },
-  // #6335:托管装好的 `agy_acp_server` 就是 ctx.cli,不带参数。回环免代理由子进程环境的出口
-  // (composeAgentSpawnEnv → withLoopbackNoProxy)统一并上,不在这一家里补。
-  { id: 'antigravity', args: [] },
+  // New chats run `agy acp` on the managed config root. Loopback stays out of the proxy at the child
+  // environment's exit (composeAgentSpawnEnv -> withLoopbackNoProxy), not in this provider.
+  {
+    id: 'antigravity',
+    spawnEnv: { GEMINI_HOME: '/managed/.gemini' },
+    args: ['acp', '--stdio', '--gemini-dir', '/managed/.gemini'],
+  },
   { id: 'cline', args: ['--acp'] },
   { id: 'copilot', args: ['--acp'] },
   { id: 'cursor', args: ['acp'] },
@@ -72,7 +78,7 @@ describe('native ACP provider behaviors', () => {
   it.each(nativeAcpProviders)('$id starts the documented native ACP command', (entry) => {
     const provider = pluginRegistry.get(entry.id)!;
     const cli = entry.cli ?? spawnCtx.cli;
-    const spawn = provider.behavior.acp!.buildSpawn({ ...spawnCtx, cli });
+    const spawn = provider.behavior.acp!.buildSpawn({ ...spawnCtx, cli, env: entry.spawnEnv ?? spawnCtx.env });
 
     expect(spawn.command).toBe(entry.command ?? cli);
     expect(spawn.args).toEqual(entry.args);

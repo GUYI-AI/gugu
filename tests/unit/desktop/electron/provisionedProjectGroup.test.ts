@@ -11,9 +11,15 @@ describe('resolveProvisionedProjectGroup', () => {
     expect(resolveProvisionedProjectGroup(job, { groupChatId: '', priorGroupState: 'pending_approval' }))
       .toEqual({ kind: 'pending-approval', groupChatId: '' })
   })
-  it('服务端另建了群(归档 / foreign)⇒ 改指新群', () => {
+  it('服务端另建了 foreign 群 ⇒ 改指新群', () => {
     expect(resolveProvisionedProjectGroup(job, { groupChatId: 'g-new', priorGroupState: 'foreign' }))
       .toEqual({ kind: 'remapped', groupChatId: 'g-new' })
+  })
+  it('keeps an archived mapping even if an older server returns a replacement group', () => {
+    expect(resolveProvisionedProjectGroup(job, { groupChatId: 'legacy-replacement', priorGroupState: 'archived' }))
+      .toEqual({ kind: 'not-joined', groupChatId: '' })
+    expect(resolveProvisionedProjectGroup(job, { groupChatId: '', priorGroupState: 'join_failed:group_archived' }))
+      .toEqual({ kind: 'not-joined', groupChatId: '' })
   })
   it('正对照:就在映射的群里 ⇒ 不变', () => {
     expect(resolveProvisionedProjectGroup(job, { groupChatId: 'g-mapped', priorGroupState: 'active' }))

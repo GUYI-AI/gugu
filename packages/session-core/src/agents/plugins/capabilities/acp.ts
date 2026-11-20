@@ -142,6 +142,12 @@ export type AcpSpawnContext = {
   env: Record<string, string>;
   /** Absolute path to the resolved host CLI binary (mirrors prompt's CommandContext.cli). */
   cli: string;
+  /** Selected once at session open (`IAcpBehavior.sessionProgram`). Null/absent means the default ACP program. */
+  sessionProgram?: string | null;
+  /** Other programs resolved by the host, preserving the user's selected installations. */
+  programs?: Readonly<Record<string, string>>;
+  /** Login only: null selects the primary program; a string selects a declared companion. */
+  authProgram?: string | null;
   /** Main-process-issued platform credentials. Present only on the private ACP worker path. */
   platform?: AcpPlatformInjection;
   /**
@@ -304,6 +310,7 @@ export interface AcpCommandDiscoveryContext {
 
 /** `IAcpBehavior.prepareSession` 的入参 —— env 与启动这一家时同一份。 */
 export interface AcpSessionPrepareContext {
+  sessionProgram?: string | null;
   cwd: string;
   env: Readonly<Record<string, string>>;
   homeDir: string;
@@ -311,6 +318,7 @@ export interface AcpSessionPrepareContext {
 
 /** `IAcpBehavior.onTurnEnded` 的入参。 */
 export interface AcpTurnEndContext {
+  sessionProgram?: string | null;
   /** 这一家的会话 id。 */
   providerSessionId: string;
   cwd: string;
@@ -322,6 +330,7 @@ export interface AcpTurnEndContext {
 
 /** `IAcpBehavior.forkSessionInStorage` 的入参 —— env 与启动这一家时同一份,存档位置要跟着它挪。 */
 export interface AcpStorageForkContext {
+  sessionProgram?: string | null;
   sourceProviderSessionId: string;
   cwd: string;
   env: Readonly<Record<string, string>>;
@@ -329,6 +338,19 @@ export interface AcpStorageForkContext {
 }
 
 export interface IAcpBehavior {
+  /**
+   * Called once when a stored conversation opens: names the host-resolved program (`AgentRunContext.programs`) that
+   * owns its native store; undefined = the default ACP program. A conversation absent from every store throws
+   * `MissingProviderSessionError`, so the runtime's provider-session-missing recovery applies.
+   */
+  sessionProgram?(ctx: { env: Readonly<Record<string, string>>; providerSessionId: string }): string | undefined;
+  /**
+   * Reuse vendor metadata from a real new/load/fork response. Called before that request is sent; the returned
+   * observer receives its response. Facts that depend on who is signed in (the account's plan) are bound to the
+   * credentials as they were when the request left, so a response that arrives after the account changed is not
+   * filed under the new one. Failure must not prevent the conversation opening.
+   */
+  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'sessionProgram'>): Promise<(response: unknown) => Promise<void>>;
   explainError?(cause: SerializedError): string | undefined;
   /** Provider-owned record/replay contract; the runtime does not infer it from the provider id. */
   historyRecovery?: {
@@ -491,6 +513,12 @@ export interface IAcpBehavior {
    * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
    */
   catalogModelsInConfigUpdate?: boolean;
+
+  /**
+   * Only the model config option contains ids selectable through set_config_option. The legacy models list may
+   * encode a separate thinking level in each id (agy acp 1.5.10), whose read-back normalizes to the family id.
+   */
+  catalogModelSource?: 'config-options';
 
   /**
    * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks

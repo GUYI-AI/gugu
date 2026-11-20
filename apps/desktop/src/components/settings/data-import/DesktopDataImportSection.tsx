@@ -4,6 +4,8 @@ import { replica, useReplica } from '@/lib/replica'
 import { readAgentHomeUpgradeResults } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { AgentHomeMigrationResultList } from './AgentHomeMigrationResultList'
 import { DataImportSection } from './DataImportSection'
+import { AgentConfigImport } from './AgentConfigImport'
+import { firstInstallImportHomes } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { QwenConfigImport } from './QwenConfigImport'
 import { useExternalImportProviders } from './use-external-import-providers'
 
@@ -17,7 +19,7 @@ export function DesktopDataImportSection({ onClose }: { onClose: () => void }) {
   const { providers, historyDialog } = useExternalImportProviders()
   return (
     <>
-      <DataImportSection onClose={onClose} extraProviders={providers} localDetails={<><QwenConfigImport /><AgentHomeMigrationResults /></>} />
+      <DataImportSection onClose={onClose} extraProviders={providers} localDetails={<><QwenConfigImport /><FirstInstallConfigImports /><AgentHomeMigrationResults /></>} />
       {historyDialog}
     </>
   )
@@ -38,4 +40,13 @@ export function AgentHomeMigrationResults() {
   if (reading.state === 'error') return <p role="status" className="gg-import-meta">{t('agentHome.migrationReadFailed')}</p>
   if (reading.state !== 'value') return null
   return <AgentHomeMigrationResultList homes={reading.value} />
+}
+
+function FirstInstallConfigImports() {
+  const { t } = useTranslation('main')
+  const reading = useReplica(firstInstallImportHomes, [])
+  if (reading.state === 'error') return <p role="status" className="gg-import-meta">{t('agentHome.migrationReadFailed')}</p>
+  if (reading.state !== 'value') return null
+  return reading.value.filter(({ providerId }) => providerId !== 'qwen').map(({ providerId }) =>
+    <AgentConfigImport key={providerId} providerId={providerId} />)
 }

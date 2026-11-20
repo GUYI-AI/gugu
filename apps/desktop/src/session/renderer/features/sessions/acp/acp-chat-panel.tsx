@@ -198,7 +198,7 @@ import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
-import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
+import { useLastTurnSignIn } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
@@ -216,7 +216,6 @@ import {
 import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
 import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
 import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
-import { offerSessionSend } from '../session-send';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -746,8 +745,6 @@ const ComposerForStore = observer(function ComposerForStore({
     agentCreationToolsByEngine,
     localSessionMentionProvider,
   ]);
-  // A selection's Send (`SelectionSend`) sends through this composer: typed words' path, this composer's @.
-  useEffect(() => offerSessionSend(store.sessionId, { send: text => store.submitPrompt(text), mentionProvider }), [store, mentionProvider]);
 
   const { data: agents } = useAgents();
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
@@ -1775,17 +1772,17 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    * 两个条件缺一不可 —— 重新登录成功(或别处一次会话成功)撤掉标记的那一刻,这一行自己消失,
    * 而那一轮的失败行照旧留在历史里说「登录已失效」(那是当时的事实)。
    */
-  const lastTurnSignIn = useLastTurnSignInRequired(store?.chatState.transcript);
+  const lastTurnSignIn = useLastTurnSignIn(store?.chatState.transcript);
   // #6264 会话在别的机器上:登录读数与重新登录都在那台机器上(与资源库「账号」一行同一条路)。
   const { auth: harnessAuth } = useAgentAuthStatus(providerId, undefined, { probe: false, machine });
-  const signInExpired = lastTurnSignIn && isAuthExpired(harnessAuth);
+  const signInExpired = !!lastTurnSignIn && isAuthExpired(harnessAuth);
   // 同一个信号(这一轮因凭据不能用而失败),而这家在这台电脑上压根没登录过(MiMo 没 key 时):说「还没登录」。
-  const signInMissing = lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
+  const signInMissing = !!lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
   // Expired credentials go directly to the existing login flow, scoped to this session's machine.
   const signInAgain = useCallback((anchor?: HTMLElement) => {
-    if (signInExpired && agent) connections.signIn(agent, machine);
+    if ((signInExpired || lastTurnSignIn === 'revoked') && agent) connections.signIn(agent, machine);
     else openAgentAccount(anchor);
-  }, [signInExpired, agent, machine, connections.signIn, openAgentAccount]);
+  }, [signInExpired, lastTurnSignIn, agent, machine, connections.signIn, openAgentAccount]);
 
   // #4900 登录 ❌ 不自动发起。owner 2026-09-04:「我不登录也行啊」——自动弹登录终端会
   // 连带跑起厂商的 `<cli> login`,浏览器随即弹出授权页,这就是「强登」本身。
@@ -1870,14 +1867,14 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         signInExpired || signInMissing
           ? {
               code: 'auth-required',
-              label: translate(signInExpired ? 'chat.signInExpiredLead' : 'chat.signInMissingLead', {
+              label: translate(lastTurnSignIn === 'revoked' ? 'chat.signInRevokedLead' : signInExpired ? 'chat.signInExpiredLead' : 'chat.signInMissingLead', {
                 agent: agent?.name ?? providerId ?? '',
               }),
               detail: signInExpired ? 'sign-in-expired' : 'sign-in-missing',
               ...(cliAuthMethod
                 ? {
                     actions: [{
-                      label: translate(signInExpired ? 'chat.signInAgain' : 'transcript.condition.signIn'),
+                      label: translate(signInExpired || lastTurnSignIn === 'revoked' ? 'chat.signInAgain' : 'transcript.condition.signIn'),
                       run: signInAgain,
                     }],
                   }
@@ -1936,10 +1933,12 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 两颗都不能少(#4900):「去登录」与「我登好了」是两个动作,后者 ❌ 不能用「重试」顶替。
           return {
             code: 'auth-required',
+            ...(error.signInReason === 'revoked' ? { label: translate('chat.signInRevokedLead', { agent: agent?.name ?? providerId ?? '' }) } : {}),
             detail: error.message,
             actions: [
               ...(cliAuthMethod
-                ? [{ label: translate('transcript.condition.signIn'), run: openAgentAccount }]
+                ? [{ label: translate(error.signInReason === 'revoked' ? 'chat.signInAgain' : 'transcript.condition.signIn'),
+                    run: error.signInReason === 'revoked' && agent ? () => connections.signIn(agent, machine) : openAgentAccount }]
                 : []),
               { label: translate('chat.signInDone'), run: () => store.retry() },
             ],
@@ -2021,7 +2020,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。

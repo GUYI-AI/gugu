@@ -11,7 +11,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 
 const rpc = vi.hoisted(() => ({ visible: vi.fn() }));
-vi.mock('@/session/renderer/lib/ipc', () => ({ rpc: {}, rpcOn: () => ({ sessionTimeline: { sessionVisible: rpc.visible } }) }));
+vi.mock('@/session/renderer/lib/ipc', () => ({ rpc: {}, events: { on: () => () => undefined }, rpcOn: () => ({ sessionTimeline: { sessionVisible: rpc.visible } }) }));
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }));
 
 let cleanup: (() => void) | undefined;

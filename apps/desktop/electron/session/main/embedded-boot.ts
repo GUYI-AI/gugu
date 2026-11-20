@@ -137,6 +137,7 @@ import {
 import { claimInterruptedDeferredMessages, installDeferredMessageDelivery } from '@main/core/sessions/session-deferred-messages'
 import { hydrateSession } from '@main/core/sessions/hydrateSession'
 import { recordLiveModelSwitch } from '@main/core/sessions/live-model-switch'
+import { armSwitchedModelMemory } from '@main/core/sessions/switched-model-memory'
 import { readSessionOptions, SessionOptionsError } from '@main/core/session-timeline/live-options'
 import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } from '@shared/platform-model-id'
 import { searchService } from '@main/core/search/search-service'
@@ -280,6 +281,7 @@ export {
   setProbePlatformEnvResolver,
   type ProbePlatformEnvResolver,
 } from '@main/core/agents/harness-model-catalog'
+export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native-history'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。
@@ -555,8 +557,14 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
   await initializeDatabase()
-  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  const { migrateCustomModelConnections, dropRemovedConnectionKeys } = await import('./core/agents/custom-models')
   migrateCustomModelConnections()
+  // #3428:先前删掉的连接只打了「已删除」,key 还留在加密存储里。幂等,失败不拦启动。
+  try {
+    await dropRemovedConnectionKeys()
+  } catch (e: unknown) {
+    log.warn('failed to drop the keys of removed connections', e)
+  }
   await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {
@@ -1171,7 +1179,14 @@ export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'route-s
  * 没有 provider 会话 id 的会话(从没起来过)没有历史可续、也没有进程可停:带着新模型 / 档位来的,只把选择落进记录
  * 并答 `not-started`,由调用方走正常首启(#7092:会员模型首启被拒,换个模型再起);其余(MCP 开关、手动重开)直接拒。
  */
-export async function reloadEmdashSession(input: {
+export async function reloadEmdashSession(input: Parameters<typeof reloadEmdashSessionNow>[0]): ReturnType<typeof reloadEmdashSessionNow> {
+  const reloaded = await reloadEmdashSessionNow(input)
+  // #3293 A model switched to by a reload: its first successful reply makes it the new-session memory's last-used one.
+  if (typeof input.model === 'string' && input.model.trim()) armSwitchedModelMemory(input.sessionId)
+  return reloaded
+}
+
+async function reloadEmdashSessionNow(input: {
   sessionId: string
   /** 为什么重载(换模型 / 改 MCP 开关 …)。进日志,也是 UI 上那句「正在重连」的由来。 */
   reason: string

@@ -13,7 +13,7 @@ function Meter({ window, compact = false }: { window: SubscriptionUsageWindow; c
   const remaining = remainingUsagePercent(window)!
   const label = windowLabel(window, translate)
   const value = translate('subscriptions.remainingPercent', { percent: formatPercent(remaining) })
-  return <div className={compact ? 'gg-model-quota-window' : 'gg-model-quota-detail'}>
+  return <div className={compact ? 'gg-model-quota-window' : 'gg-model-quota-detail'} data-window-minutes={compact ? window.windowMinutes : undefined}>
     <span className="gg-model-quota-label">{label}</span>
     <MeterPrimitive.Root className="gg-model-quota-track" value={remaining} min={0} max={100} aria-label={label} aria-valuetext={value}>
       <MeterPrimitive.Indicator render={<span />} />

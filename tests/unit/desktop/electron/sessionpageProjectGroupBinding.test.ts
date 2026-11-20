@@ -319,14 +319,14 @@ describe('建群(建项目即建群,gugu-dev#181)', () => {
     })
   })
 
-  it('对照里的群已归档 ⇒ 另起一个,对照改指它', async () => {
+  it('对照里的群已收起 ⇒ 保留原映射,等待用户显式恢复', async () => {
     const { rememberProjectGroupId, readProjectGroupId } = await import(MAPPING)
     seedGroup('chat-archived', { status: 'archived' })
     await rememberProjectGroupId('proj-a', 'chat-archived', OWNER, env)
     const result = await (await makeHost()).ensureGroup(subjectA)
-    const chatId = (result as { data: { chatId: string } }).data.chatId
-    expect(chatId).not.toBe('chat-archived')
-    expect(await readProjectGroupId('proj-a', OWNER, env)).toBe(chatId)
+    expect(result).toMatchObject({ success: false, error: { type: 'group-unavailable', chatId: 'chat-archived' } })
+    expect(await readProjectGroupId('proj-a', OWNER, env)).toBe('chat-archived')
+    expect(rpcCalls.some(call => call.name === 'create_gugu_group')).toBe(false)
   })
 
   it('云电脑上的项目不建群:拒绝,对照不动', async () => {

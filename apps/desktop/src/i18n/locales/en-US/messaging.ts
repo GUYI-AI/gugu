@@ -1,7 +1,6 @@
 export default {
   "humanDm": { "notFriends": "This person is not your friend yet.", "addFriend": "Add friend" },
-  "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
-  "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
+  "fileCite": { "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
   "agent": {
     "identity": {
       "phone": "Phone Agent",
@@ -279,9 +278,6 @@ export default {
     "unpinFromSidebar": "Unpin from sidebar",
     "hiddenRefreshFailed": "Removed from list, but the list could not refresh. Please retry.",
     "agentDeleted": "Agent deleted",
-    "retryAgentDelete": "Retry deleting Agent",
-    "hiddenAgentDeleteFailed": "Conversation history deleted, but could not delete the Agent",
-    "alsoRemoveAgent": "Also delete this Agent",
     "hideAgentDescription": "This conversation will leave your list and return when a new message arrives.",
     "removeFromList": "Remove from list",
     "hideFailed": "Could not remove this conversation from the list",
@@ -744,13 +740,12 @@ export default {
     }
   },
   "header": {
-    "openApp": "Open an App",
-    "groupApps": "Apps",
+    "apps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
     "searchHistory": "Search chat history",
     "groupInfoAndSettings": "Group info and settings",
-    "noGroupApps": "No Apps available on this device.",
+    "noApps": "No Apps available on this device.",
     "announcement": "Group announcement",
     "groupInfo": "Group info",
     "chatInfo": "Conversation info",

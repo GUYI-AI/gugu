@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // gugu-dev#181 ⑨ 问题卡在群里:问我的,选项能点(点了 = 引用卡回一句选项名)、一行状态读会话结算 ——
-// 待你回答 / 已回答：X(选项变灰)/ 这次提问已结束;不是问我的(同事),只有问题和灰着的选项,不去读谁的会话。
+// 待你回答 / 已回答：X(选项变灰)/ 该提问已结束;不是问我的(同事),只有问题和灰着的选项,不去读谁的会话。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { QuestionCard } from '../../../../packages/core/src/shared/ui/taskCardModels'
@@ -65,7 +65,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
   it('withdrawn: the question has closed', async () => {
     settlement = { itemId: 'agent-question:q1', state: 'cancelled', optionId: null }
     await render()
-    expect(harness.container.textContent).toContain('这次提问已结束')
+    expect(harness.container.textContent).toContain('该提问已结束')
   })
 
   it('a colleague sees the question and its choices, greyed, and nobody\'s session is read', async () => {
@@ -132,7 +132,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
       { question: '补充要求？', multiSelect: false, options: [] },
     ]
     await render({ ...CARD, options: [], questions })
-    for (const text of ['选哪种？', '覆盖哪里？', '补充要求？', '展示方式', '留在当前聊天里回答', '选一项', '可多选']) expect(harness.container.textContent).toContain(text)
+    for (const text of ['选哪种？', '覆盖哪里？', '补充要求？', '展示方式', '留在当前聊天里回答', '单选', '可多选']) expect(harness.container.textContent).toContain(text)
     expect(harness.container.textContent).toContain(who === 'owner-1' ? '需要你确认' : '需要 Alice 确认')
     expect(harness.container.textContent).toContain('待 Alice 回答')
     expect(harness.container.querySelectorAll('.agent-question-card__option:last-child')).toHaveLength(3)
@@ -164,9 +164,9 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
   it('renders a confirmed discussion receipt without answers, unreadable warnings or controls', async () => {
     settlement = { itemId: 'agent-question:q1', kind: 'question', state: 'resolved', optionId: 'discuss', questions: fullQuestions }
     await render({ ...CARD, questions: fullQuestions })
-    expect(harness.container.textContent).toContain('先聊聊')
+    expect(harness.container.textContent).toContain('先讨论')
     expect(harness.container.textContent).toContain('2 个问题')
-    expect(harness.container.textContent).not.toContain('回答详情暂时无法读取')
+    expect(harness.container.textContent).not.toContain('无法读取回答详情')
     expect(harness.container.querySelector('button, textarea, .agent-question-card__answers')).toBeNull()
   })
 
@@ -187,7 +187,7 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
   it.each(['withdrawn', 'discuss'] as const)('shows the public %s state without answer controls or a host connection', async state => {
     viewer = 'colleague-1'
     await render({ ...CARD, questions: fullQuestions, settled: { state, at: 'now' } })
-    expect(harness.container.textContent).toContain(state === 'discuss' ? '先聊聊' : '这次提问已结束')
+    expect(harness.container.textContent).toContain(state === 'discuss' ? '先讨论' : '该提问已结束')
     if (state === 'discuss') expect(harness.container.textContent).toContain('2 个问题')
     expect(harness.container.querySelector('button, input, textarea')).toBeNull()
     expect(harness.container.textContent).not.toContain('待 Alice 回答')

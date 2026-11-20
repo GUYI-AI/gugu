@@ -30,6 +30,20 @@ export function nativeConfigured(details: ConnectionDetails | undefined): boolea
   return !!details.plan && CONFIGURED_PAYERS.has(details.plan.payer)
 }
 
+/**
+ * 「订阅」里列不列 CLI 自己的那一份。Codex 的「订阅」是 ChatGPT 登录:`auth.json` 里是 API key(`auth_mode: apikey`)、
+ * 或环境里导出了 `OPENAI_API_KEY` 的,是 API 连接,归「API」组,❌ 在这里再冒一条「已登录」;只有 ChatGPT 登录
+ * (含登录已过期)才列。其余家照 `nativeConfigured`。
+ */
+export function nativeListed(agentId: string, details: ConnectionDetails | undefined): boolean {
+  if (!details || !nativeConfigured(details)) return false
+  if (agentId !== 'codex') return true
+  const { status, plan } = details
+  if (status.kind === 'authenticated') return status.credentialKind !== 'api-key'
+  if (status.kind === 'unauthenticated' && status.reason === 'expired') return true
+  return plan?.payer === 'subscription'
+}
+
 /** 只能登它 CLI 自己那一份的家(没有连接可管)真登上时,那一份就是它唯一的连接。 */
 const CLI_CONFIGURATION: HarnessConnection = { id: 'native', kind: 'native', name: '', current: true }
 
@@ -53,7 +67,7 @@ export function useListedConnections(
   const offered = form !== null || cliSignIn
   const connections = useSubscriptionConnections(machine, agent)
   const native = useConnectionDetails(machine, agent.id, offered ? 'native' : undefined)
-  const configured = nativeConfigured(native.data)
+  const configured = nativeListed(agent.id, native.data)
   const nativeRead = native.isSuccess || native.isError
   const listed: HarnessConnection[] | undefined = !offered
     ? []

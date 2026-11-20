@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { releasePhoneEditorContainingBlocks } from './phone-editor-viewport';
 
 /** Layout changes keep the mounted ProseMirror view, DOM selection and IME session intact. */
@@ -8,6 +8,8 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
   const [attachmentRow, setAttachmentRow] = useState(false);
   const [hasText, setHasText] = useState(false);
   const expandedRef = useRef(false);
+  const endComposition = useRef<(() => void) | null>(null);
+  const onDocumentClear = useCallback(() => endComposition.current?.(), []);
 
   useLayoutEffect(() => {
     if (!mobile) {
@@ -33,6 +35,9 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
     };
     const start = () => { composing = true; };
     const end = () => { composing = false; queueMicrotask(measure); };
+    // Losing focus or explicitly clearing the document ends the layout freeze even
+    // if the IME never delivers compositionend to this editor.
+    endComposition.current = end;
     measure();
     const observer = new ResizeObserver(measure);
     const content = new MutationObserver(measure);
@@ -41,11 +46,14 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
     editor.addEventListener('input', measure);
     editor.addEventListener('compositionstart', start);
     editor.addEventListener('compositionend', end);
+    editor.addEventListener('blur', end);
     return () => {
+      endComposition.current = null;
       observer.disconnect(); content.disconnect();
       editor.removeEventListener('input', measure);
       editor.removeEventListener('compositionstart', start);
       editor.removeEventListener('compositionend', end);
+      editor.removeEventListener('blur', end);
     };
   // The expanded editor changes its text insets when it first gets content.
   }, [mobile, root, hasText]);
@@ -90,5 +98,5 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
     expandedRef.current = true;
     setExpanded(true);
   };
-  return { expanded: mobile && expanded, multiline: mobile && multiline, attachmentRow: mobile && attachmentRow, hasText: mobile && hasText, toggle, collapse };
+  return { expanded: mobile && expanded, multiline: mobile && multiline, attachmentRow: mobile && attachmentRow, hasText: mobile && hasText, toggle, collapse, onDocumentClear };
 }

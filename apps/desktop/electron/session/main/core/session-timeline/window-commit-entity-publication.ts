@@ -5,9 +5,8 @@ import type { WindowBudget, WindowIoCounters } from '@gugu/session-core/session-
 import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
 import { advanceCommitContainerIndex } from './window-commit-container-index';
 import { advanceCommitEntityFields, commitEntityIndex, commitEntityPublicationId, commitEntityPublicationKey, createCommitEntityState,
-  type CommitEntityPosition, type CommitEntityPublication } from './window-commit-entity';
+  type CommitEntityFacts, type CommitEntityPosition, type CommitEntityPublication } from './window-commit-entity';
 import { openCommitBodySlot, advanceCommitBodySlot, readCommitBodySlot } from './window-commit-slot';
-import { readWindowCommitProjection } from './window-commit-projection';
 import { assertWindowCommitSource } from './window-commit-source';
 import { publishCommitHeader } from './window-commit-header';
 
@@ -30,20 +29,19 @@ export async function publishCommitEntity(input: { directory: string; receipts: 
     try { return await read(budget); }
     finally { try { input.observed?.(budget.counters); } catch (error) { try { input.report?.(error); } catch { /* diagnostics only */ } } }
   }
-  const root = await step(budget => readWindowCommitProjection({ directory, receipts, receipt, buildId: rootBuildId }, budget, signal));
   const rebuild = () => ({ kind: 'rebuild' as const, anchor: { sourceId: receipt.sourceId, ...position.range } });
-  if (root.kind !== 'projection' || root.root.turnId !== position.turnId) return rebuild();
   for (;;) {
     const result = await step(budget => advanceCommitContainerIndex({ directory, binding: receipt.binding, source: receipt.source, index }, budget, signal));
     if (result.kind === 'rebuild') return rebuild(); if (result.kind === 'complete') break;
     await setImmediate(undefined, { signal });
   }
-  let state = createCommitEntityState(position);
+  let state = createCommitEntityState(position), facts: CommitEntityFacts | undefined;
   for (;;) {
     const result = await step(budget => advanceCommitEntityFields(position, state, budget, signal));
     if (result.kind !== 'progress' && result.kind !== 'complete') return rebuild();
     state = result.state;
     if (result.kind === 'complete') {
+      facts = result.facts;
       for (const field of result.facts.slots) {
         const slot = openCommitBodySlot(directory, receipts, receipt, result.facts, field.field, id);
         let first = await step(budget => readCommitBodySlot(slot, 0, budget, signal));
@@ -74,5 +72,5 @@ export async function publishCommitEntity(input: { directory: string; receipts: 
     }
   });
   await assertWindowCommitSource(directory, receipt.binding, receipt.source); committed(); signal?.throwIfAborted();
-  return { kind: 'published' as const, entityId: id };
+  return { kind: 'published' as const, entityId: id, facts: facts! };
 }

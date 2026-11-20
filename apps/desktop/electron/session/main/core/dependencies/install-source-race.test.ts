@@ -1,90 +1,147 @@
-import { describe, expect, it } from 'vitest';
-import { probeInstallSources, rankInstallSources } from './install-source-race';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PlatformBuildMissingError, type MiseDistribution } from './mise-distribution';
+import { sampleInstallArchive, selectInstallSources } from './install-source-race';
+import { installProxyRoute, UnmeasurableInstallTransport } from './install-source-transport';
 
-type Verdict = { version: string | null; platformBuild: 'ok' | 'missing' | 'unknown' };
+const target = { kind: 'mise' as const, package: '@vendor/agent', binary: 'agent', backend: { kind: 'platform-archive' as const, executables: {} } };
+const source = { kind: 'automatic' as const, registries: ['official', 'npmmirror', 'huawei'], fallbackRegistry: 'official' };
+const env = { HTTPS_PROXY: 'http://127.0.0.1:7897', HTTP_PROXY: 'http://127.0.0.1:7897', NO_PROXY: 'localhost,.internal.test' };
+const release = (registry: string, version = '1.2.3'): MiseDistribution => ({ kind: 'platform-archive', tool: 'http:gugu-agent', version,
+  installVersion: version + '-' + registry, executable: 'bin/agent', config: 'recipe-' + registry, sampleUrl: 'https://' + registry + '.test/archive?private=redacted' });
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/**
- * 三个假源:一个慢、一个坏、一个好。判据是 spec 里那条:「三个源里一个慢、一个坏,
- * 必须选中剩下那个。」
- *
- * 用**真定时器**跑真并发,不是喂一组事先编好的 elapsedMs —— 要判的正是「计时这件事有没有
- * 真的发生」,喂数字的话 `probeInstallSources` 里就算一个字都不量,用例照样绿。
- */
-function machine(timings: Record<string, { ms: number; verdict: Verdict }>) {
-  const calls: string[] = [];
-  return {
-    calls,
-    probe: async (registry: string): Promise<Verdict> => {
-      calls.push(registry);
-      const entry = timings[registry]!;
-      await sleep(entry.ms);
-      return entry.verdict;
-    },
-  };
+function delay(ms: number, signal?: AbortSignal | null) {
+  return new Promise<void>((resolve, reject) => {
+    const done = () => { signal?.removeEventListener('abort', abort); resolve(); };
+    const timer = setTimeout(done, ms);
+    const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(signal?.reason); };
+    if (signal?.aborted) abort(); else signal?.addEventListener('abort', abort, { once: true });
+  });
 }
 
-const healthy: Verdict = { version: '2.0.0', platformBuild: 'ok' };
-/** 源答不出版本 —— 超时、5xx、DNS 挂了,`fetchLatestVersion` 都把它们折成 null。 */
-const silent: Verdict = { version: null, platformBuild: 'unknown' };
+function fixtures(metadata: Record<string, number> = {}, body: Record<string, number> = {}) {
+  vi.useFakeTimers();
+  const routes: Array<string | null> = [];
+  const transport = vi.fn((actualEnv) => ({ fetch: vi.fn(async (url: string, init?: RequestInit) => {
+    routes.push(installProxyRoute(actualEnv, url));
+    const id = new URL(url).hostname.split('.')[0];
+    await delay(body[id] ?? 100, init?.signal);
+    return new Response(new Uint8Array(524288), { status: 206, headers: { 'content-range': 'bytes 524288-1048575/1048576' } });
+  }) }));
+  const resolve = vi.fn(async (_target, registry = 'official', signal?: AbortSignal) => {
+    await delay(metadata[registry] ?? 1, signal);
+    return release(registry);
+  });
+  return { dependencies: { transport, resolve, now: () => Date.now() }, routes, resolve, transport };
+}
 
-describe('安装前给各下载源计时,谁先正确答出来用谁', () => {
-  it('一个慢、一个坏 ⇒ 选中剩下那个健康的', async () => {
-    const m = machine({
-      slow: { ms: 90, verdict: healthy },
-      broken: { ms: 1, verdict: silent },
-      quick: { ms: 5, verdict: healthy },
-    });
-    const probes = await probeInstallSources(['slow', 'broken', 'quick'], m.probe);
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-    // 并发,不是挨个探:挨个探的话慢的那个会把后面每个源的读数都推迟,量出来的先后反映的
-    // 是排队顺序而不是源的快慢。三条都已经发出去 = 它们同时在跑。
-    expect(m.calls).toEqual(['slow', 'broken', 'quick']);
-    expect(rankInstallSources(probes)).toEqual(['quick', 'slow', 'broken']);
+describe('operation-owned install source selection', () => {
+  it('first install has no settings query/cache prerequisite; metadata-fast official loses to body-fast mirror through the same proxy', async () => {
+    const f = fixtures({ official: 1, npmmirror: 200, huawei: 20 }, { official: 1500, npmmirror: 100, huawei: 600 });
+    const pending = selectInstallSources({ target, source, env }, f.dependencies);
+    await vi.advanceTimersByTimeAsync(2000);
+    const selection = await pending;
+    expect(selection.attempts.map((c) => c.registry)).toEqual(['npmmirror', 'huawei', 'official']);
+    expect(selection.attempts[0].distribution).toMatchObject({ installVersion: '1.2.3-npmmirror', config: 'recipe-npmmirror' });
+    expect(selection.report.sources.find((s) => s.registry === 'npmmirror')!.elapsedMs).toBe(100);
+    expect(f.transport).toHaveBeenCalledWith(env);
+    expect(f.routes).toEqual([env.HTTPS_PROXY + '/', env.HTTPS_PROXY + '/', env.HTTPS_PROXY + '/']);
+    expect(JSON.stringify(selection.report)).not.toMatch(/private|archive|7897/);
   });
 
-  it('阳控:把快慢对调,选中的也跟着换 —— 排序读的是计时,不是声明顺序', async () => {
-    // 没有这一条,上面那条绿也可能只是因为「按声明顺序 + 答不出的放最后」。
-    const m = machine({
-      slow: { ms: 5, verdict: healthy },
-      broken: { ms: 1, verdict: silent },
-      quick: { ms: 90, verdict: healthy },
-    });
-    const probes = await probeInstallSources(['slow', 'broken', 'quick'], m.probe);
-    expect(rankInstallSources(probes)).toEqual(['slow', 'quick', 'broken']);
+  it('has no absolute speed threshold; ranks two valid slow partial samples relatively', async () => {
+    const f = fixtures();
+    f.transport.mockImplementation(() => ({ fetch: vi.fn(async (_url, init) => {
+      let timer: ReturnType<typeof setTimeout>;
+      const id = new URL(_url).hostname.split('.')[0];
+      const stream = new ReadableStream<Uint8Array>({ start(controller) {
+        controller.enqueue(new Uint8Array(id === 'official' ? 65536 : 131072));
+        init?.signal?.addEventListener('abort', () => controller.error(init.signal!.reason), { once: true });
+        timer = setTimeout(() => controller.close(), 10_000);
+      }, cancel() { clearTimeout(timer); } });
+      return new Response(stream, { status: 206, headers: { 'content-range': 'bytes 524288-1048575/1048576' } });
+    }) }));
+    const pending = selectInstallSources({ target, source: { ...source, registries: ['official', 'npmmirror'] }, env }, f.dependencies);
+    await vi.advanceTimersByTimeAsync(2100);
+    expect((await pending).attempts[0].registry).toBe('npmmirror');
   });
 
-  it('答不出版本的源排在后面,但仍然可以当重试候选', async () => {
-    // 「问不到版本」不等于「装不了」—— 可能只是那一刻被限流了。❌ 不把它整个划掉。
-    const m = machine({
-      broken: { ms: 1, verdict: silent },
-      quick: { ms: 5, verdict: healthy },
-    });
-    const probes = await probeInstallSources(['broken', 'quick'], m.probe);
-    expect(rankInstallSources(probes)).toEqual(['quick', 'broken']);
+  it('five-second metadata timeout aborts all probes and falls back in default order', async () => {
+    const f = fixtures({ official: 20_000, npmmirror: 20_000, huawei: 20_000 });
+    const pending = selectInstallSources({ target, source, env }, f.dependencies);
+    await vi.advanceTimersByTimeAsync(5000);
+    const result = await pending;
+    expect(result.report.reason).toBe('no-throughput-sample-use-default-order');
+    expect(result.attempts.map((c) => c.registry)).toEqual(source.registries);
+    expect(f.resolve.mock.calls.every((args) => args[2]!.aborted)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('确定缺本机平台包的源一次都不能用 —— 哪怕它最快', async () => {
-    // 从它装会「成功」,然后留下一个没有二进制的启动器(product spec)。
-    const m = machine({
-      fastButEmpty: { ms: 1, verdict: { version: '2.0.0', platformBuild: 'missing' } },
-      quick: { ms: 40, verdict: healthy },
-    });
-    const probes = await probeInstallSources(['fastButEmpty', 'quick'], m.probe);
-    expect(rankInstallSources(probes)).toEqual(['quick']);
+  it('caller cancellation closes probes and propagates cancellation instead of installing a fallback', async () => {
+    const f = fixtures({ official: 20_000, npmmirror: 20_000, huawei: 20_000 });
+    const controller = new AbortController();
+    const pending = selectInstallSources({ target, source, env, signal: controller.signal }, f.dependencies);
+    const assertion = expect(pending).rejects.toThrow('stop');
+    controller.abort(new Error('stop'));
+    await assertion;
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('一个能用的都不剩时退回声明顺序,❌ 不返回空数组把安装堵死', async () => {
-    const m = machine({
-      a: { ms: 1, verdict: { version: '2.0.0', platformBuild: 'missing' } },
-      b: { ms: 2, verdict: { version: '2.0.0', platformBuild: 'missing' } },
+  it.each([false, true])('definite missing is excluded including all-missing=%s; unknown remains eligible', async (allMissing) => {
+    const f = fixtures();
+    f.resolve.mockImplementation(async (_target, registry) => {
+      if (allMissing || registry === 'official') throw new PlatformBuildMissingError('not published');
+      throw new Error('network unknown');
     });
-    const probes = await probeInstallSources(['a', 'b'], m.probe);
-    expect(rankInstallSources(probes)).toEqual(['a', 'b']);
+    const result = await selectInstallSources({ target, source, env }, f.dependencies);
+    expect(result.attempts.map((c) => c.registry)).toEqual(allMissing ? [] : ['npmmirror', 'huawei']);
   });
 
-  it('一个源都没有时答一个空数组(调用方据此走 descriptor 的推荐源)', () => {
-    expect(rankInstallSources([])).toEqual([]);
+  it('an update excludes a faster mirror that would downgrade the installed runtime', async () => {
+    const f = fixtures();
+    f.resolve.mockImplementation(async (_target, registry) => release(registry, registry === 'npmmirror' ? '1.0.0' : '1.2.3'));
+    const pending = selectInstallSources({ target, source, env, minimumVersion: '1.1.0' }, f.dependencies);
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await pending).attempts.map((c) => c.registry)).toEqual(['official', 'huawei']);
+  });
+
+  it.each(['explicit', 'single', 'acp-registry', 'vendor-manifest'])('%s does not compete unrelated sources', async (kind) => {
+    const f = fixtures();
+    const input = { target, source, env };
+    if (kind === 'explicit') input.source = { kind: 'explicit', registry: 'huawei' } as never;
+    if (kind === 'single') input.source = { ...source, registries: ['official'] };
+    if (kind === 'acp-registry' || kind === 'vendor-manifest') input.target = { ...target, backend: { kind } } as never;
+    const result = await selectInstallSources(input, f.dependencies);
+    expect(result.attempts).toHaveLength(1);
+    expect(f.resolve).not.toHaveBeenCalled();
+    expect(f.transport).not.toHaveBeenCalled();
+  });
+
+  it('unsupported proxy routing never measures direct as a substitute', async () => {
+    const f = fixtures();
+    f.resolve.mockRejectedValue(new UnmeasurableInstallTransport('unsupported-no-proxy'));
+    const result = await selectInstallSources({ target, source, env: { ...env, ALL_PROXY: 'socks5://127.0.0.1:9999' } }, f.dependencies);
+    expect(result.report.sources.every((s) => s.status === 'unmeasurable')).toBe(true);
+    expect(result.report.reason).toBe('no-throughput-sample-use-default-order');
+  });
+});
+
+describe('bounded archive sampling', () => {
+  it.each([200, 416])('status %s cancels the body without reading a full archive', async (status) => {
+    const cancel = vi.fn();
+    const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new ReadableStream({ cancel }), { status }));
+    await expect(sampleInstallArchive('https://artifact.test', fetcher, new AbortController().signal)).rejects.toThrow('unmeasurable-range');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ headers: { Range: 'bytes=-524288', 'Accept-Encoding': 'identity' } });
+  });
+  it('rejects incorrect Content-Range and insufficient early EOF', async () => {
+    const fetcher = async () => new Response(new Uint8Array(1), { status: 206, headers: { 'content-range': 'bytes 524288-1048575/1048576' } });
+    await expect(sampleInstallArchive('https://artifact.test', fetcher, new AbortController().signal)).rejects.toThrow('insufficient-sample');
+    await expect(sampleInstallArchive('https://artifact.test', async () => new Response('', { status: 206, headers: { 'content-range': 'bytes 0-9/10' } }), new AbortController().signal)).rejects.toThrow();
+  });
+  it('a complete small archive is a valid bounded sample', async () => {
+    const result = await sampleInstallArchive('https://artifact.test', async () => new Response(new Uint8Array(100), { status: 206, headers: { 'content-range': 'bytes 0-99/100' } }), new AbortController().signal);
+    expect(result.bytes).toBe(100);
   });
 });

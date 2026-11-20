@@ -1,36 +1,38 @@
 import { describe, expect, it } from 'vitest'
-import { CONVERSATION_MENU_EXCLUDES, chatsInReadScope, conversationMenu, hasUnreadInRows, ownedAgentDmCanDelete, type ConversationMenuEntry, type ConversationRowAction, type ConversationRowMenuState } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
+import { CONVERSATION_MENU_EXCLUDES, chatsInReadScope, conversationMenu, hasUnreadInRows, personalConversationMenu, type ConversationMenuEntry, type ConversationRowAction, type ConversationRowMenuState } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
 import { SHORT_MENU, menuLayout } from '../../../../apps/desktop/src/session/shared/menu-table'
 
-const ALL: ConversationRowAction[] = ['open-chat', 'set-alias', 'mark-read', 'mark-unread', 'pin', 'notifications', 'mark-all-read', 'mark-topics-read', 'leave-group', 'remove-contact', 'remove-project']
+const ALL: ConversationRowAction[] = ['open-chat', 'set-alias', 'mark-read', 'mark-unread', 'pin', 'notifications', 'mark-topics-read', 'leave-group', 'remove-contact', 'remove-project']
 const handledBy = (entry: ConversationMenuEntry) => new Set(ALL.filter((id) => CONVERSATION_MENU_EXCLUDES[entry][id] === undefined))
-const conversationRowMenu = (state: ConversationRowMenuState, entry: ConversationMenuEntry = 'chat-row') => conversationMenu(entry, state, handledBy(entry))
+const conversationRowMenu = (state: ConversationRowMenuState, entry: ConversationMenuEntry = 'contacts-group') => conversationMenu(entry, state, handledBy(entry))
 const ids = (items: readonly { id: string }[]) => items.map((item) => item.id)
 
 describe('conversation row actions', () => {
-  it('limits deleting my agent\'s DM to archived or removed identities', () => {
-    expect(ownedAgentDmCanDelete({ session_archived_at: null, removed_at: null })).toBe(false)
-    expect(ownedAgentDmCanDelete({})).toBe(false)
-    expect(ownedAgentDmCanDelete({ session_archived_at: '2026-11-06T10:00:00Z' })).toBe(true)
-    expect(ownedAgentDmCanDelete({ removed_at: '2026-11-06T10:00:00Z' })).toBe(true)
+  // owner 11-20: an Agent's DM has no clear history; my active Agent's has its archive (the session table's label).
+  it('a chat-list row: a person or group clears history, an Agent does not, my active Agent archives', () => {
+    const row = (state: Partial<Parameters<typeof personalConversationMenu>[0]>) => ids(personalConversationMenu({ canDelete: true, hasUnread: true, ...state }))
+    expect(row({})).toEqual(['pin', 'mark-read', 'notifications', 'hide-chat', 'delete-chat'])
+    expect(row({ agent: true })).toEqual(['pin', 'mark-read', 'notifications', 'hide-chat'])
+    expect(row({ agent: true, canArchive: true })).toEqual(['pin', 'mark-read', 'notifications', 'hide-chat', 'archive'])
+    expect(personalConversationMenu({ canDelete: true, hasUnread: false, agent: true, canArchive: true }).find((item) => item.id === 'archive')?.label).toEqual({ ns: 'session', key: 'task.archiveTaskTitle' })
   })
 
   // Rule 4 of @@@menu-order: rare, irreversible and felt by every member — on the settings page, in no menu.
   it('never offers dissolving a group or deleting a topic, whoever opens the menu', () => {
     for (const kind of ['group', 'topic', 'dm'] as const) {
-      for (const entry of ['chat-row', 'contacts', 'contacts-group', 'topic-popup'] as const) {
+      for (const entry of ['contacts', 'contacts-group', 'topic-popup'] as const) {
         expect(ids(conversationRowMenu({ kind, hasUnread: false, canLeave: kind === 'group' }, entry)).filter((id) => /delete|dissolve/.test(id))).toEqual([])
       }
     }
   })
 
   it('orders a group row by frequency: read state, pin, notifications, then 更多 with leaving last', () => {
-    expect(ids(conversationRowMenu({ kind: 'group', canLeave: true, hasUnread: true, hasAnyUnread: true }))).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read', 'leave-group'])
-    expect(ids(conversationRowMenu({ kind: 'group', canLeave: false, hasUnread: false }))).toEqual(['mark-unread', 'pin', 'notifications', 'mark-all-read'])
+    expect(ids(conversationRowMenu({ kind: 'group', canLeave: true, hasUnread: true }))).toEqual(['mark-read', 'pin', 'notifications', 'leave-group'])
+    expect(ids(conversationRowMenu({ kind: 'group', canLeave: false, hasUnread: false }))).toEqual(['mark-unread', 'pin', 'notifications'])
   })
 
   it('puts the same scoped read action first, followed only by the row type’s own actions', () => {
-    const chat = conversationRowMenu({ kind: 'group', hasUnread: true, hasAnyUnread: true })
+    const chat = conversationRowMenu({ kind: 'group', hasUnread: true })
     const project = conversationRowMenu({ kind: 'project', hasUnread: true }, 'project-row')
     expect(chat[0]).toEqual(project[0])
     expect(ids(project)).toEqual(['mark-read', 'remove-project'])
@@ -44,7 +46,6 @@ describe('conversation row actions', () => {
   })
 
   it('a friend\'s alias is in 更多, and removing the friend is in contacts only, last', () => {
-    expect(ids(conversationRowMenu({ kind: 'dm', friend: true, hasUnread: false }))).toEqual(['mark-unread', 'pin', 'notifications', 'set-alias', 'mark-all-read'])
     expect(ids(conversationRowMenu({ kind: 'dm', friend: true, hasUnread: false }, 'contacts'))).toEqual(['open-chat', 'mark-unread', 'pin', 'notifications', 'set-alias', 'remove-contact'])
   })
 
@@ -53,9 +54,8 @@ describe('conversation row actions', () => {
     expect(() => conversationMenu('contacts', { kind: 'dm', hasUnread: false }, new Set(['open-chat']))).toThrow(/'mark-unread'/)
   })
 
-  it('keeps scoped availability independent from unread conversations elsewhere', () => {
-    const menu = conversationRowMenu({ kind: 'group', hasUnread: false, hasAnyUnread: true, pinned: true, notificationsMuted: true })
-    expect(menu.find((item) => item.id === 'mark-all-read')?.disabled).toBe(false)
+  it('names pin and notifications by their current state', () => {
+    const menu = conversationRowMenu({ kind: 'group', hasUnread: false, pinned: true, notificationsMuted: true })
     expect(menu.find((item) => item.id === 'pin')?.label.key).toBe('chatList.unpin')
     expect(menu.find((item) => item.id === 'notifications')?.label.key).toBe('chatList.enableNotifications')
   })

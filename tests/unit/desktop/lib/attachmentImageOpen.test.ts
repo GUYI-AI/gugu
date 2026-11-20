@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { queryClient as attachmentQueryClient } from '@/lib/replica'
-import { openAttachmentImage, openAttachmentImages } from '@/lib/attachmentBytes'
-import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
+import { openAttachmentImage, openAttachmentImages, workingCopyImageItem, registerAttachmentImage } from '@/lib/attachmentBytes'
+import { galleryAround, registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
@@ -78,4 +78,53 @@ it('does not hold the viewer back for a thumbnail that is slow to come', async (
   io.resolve.mockReturnValue(new Promise(() => {}))
   await openAttachmentImages([{ itemId: 'a', version: 1, name: 'a.png', contentType: 'image/png' }], 0, undefined, { x: 0, y: 0, width: 10, height: 10 })
   expect(request.items[0]).toMatchObject({ url: '', thumbRect: { width: 10 } })
+})
+
+it('retries a failed original read and shares the successful retry', async () => {
+  io.original.mockRejectedValueOnce(new Error('host disconnected'))
+  openAttachmentImage(source, 'photo.png')
+  const item = request.items[0]
+  await expect(item.full!()).rejects.toThrow('host disconnected')
+  const retry = item.full!()
+  expect(item.full!()).toBe(retry)
+  await expect(retry).resolves.toBe('blob:full')
+  expect(io.original).toHaveBeenCalledTimes(2)
+  item.release!()
+  item.release!()
+  expect(io.revoke).toHaveBeenCalledTimes(1)
+  await expect(item.full!()).rejects.toThrow('released')
+})
+
+it('retries working-copy image reads instead of remembering a failed promise', async () => {
+  const read = vi.fn().mockRejectedValueOnce(new Error('disconnected')).mockResolvedValue(new Blob(['original']))
+  const item = workingCopyImageItem('plot.png', read)
+  await expect(item.preview!()).rejects.toThrow('disconnected')
+  const retry = item.preview!()
+  expect(item.preview!()).toBe(retry)
+  await expect(retry).resolves.toBe('blob:full')
+  item.release!()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(io.revoke).toHaveBeenCalledOnce()
+})
+
+it('refuses a new image read after release while safely settling reads already in flight', async () => {
+  const read = vi.fn(async () => new Blob(['original']))
+  const item = workingCopyImageItem('plot.png', read)
+  item.release!()
+  await expect(item.preview!()).rejects.toThrow('released')
+  expect(read).not.toHaveBeenCalled()
+})
+
+it('lets a mounted image bubble retry its original through the shared viewer registration', async () => {
+  const thumb = document.createElement('img')
+  thumb.setAttribute('data-image-viewer-src', 'blob:thumb')
+  const unregisterImage = registerAttachmentImage(thumb, source, { name: 'photo.png' })
+  const item = galleryAround(thumb).items[0]
+  io.original.mockRejectedValueOnce(new Error('offline'))
+  try {
+    await expect(item.full!()).rejects.toThrow('offline')
+    await expect(item.full!()).resolves.toBe('blob:full')
+  } finally { unregisterImage() }
+  expect(io.revoke).toHaveBeenCalledWith('blob:full')
+  expect(galleryAround(thumb).items[0].full).toBeUndefined()
 })

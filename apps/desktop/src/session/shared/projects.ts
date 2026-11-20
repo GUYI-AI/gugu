@@ -35,6 +35,14 @@ export type LocalProject = {
 
 export type Project = LocalProject;
 
+/** A confirmed missing local folder, retaining its project and group identities. */
+export type UnavailableProject = Pick<LocalProject, 'id' | 'name' | 'path'> & { chatId: string | null };
+
+export type ProjectRecoveryError = {
+  type: 'not-found' | 'invalid-directory' | 'inspect-failed' | 'path-conflict' | 'close-failed';
+  message: string;
+};
+
 /** The project row that owns a path in the database's global path index. */
 export type ProjectPathConflict = {
   id: string;

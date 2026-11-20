@@ -142,9 +142,8 @@ export function startStartupMotion(options: StartupMotionOptions = {}): StartupM
     }
     window.addEventListener('message', onMessage)
     state.cleanup.push(() => window.removeEventListener('message', onMessage))
-    const tellWindow = () => frame.contentWindow?.postMessage({ type: 'gugu-startup-window', attemptId: state.attemptId, visible: isAnimationWindowVisible() }, '*')
-    state.cleanup.push(subscribeAnimationWindowVisibility(tellWindow))
-    frame.addEventListener('load', tellWindow)
+    state.cleanup.push(subscribeAnimationWindowVisibility(() => tellFrame(state)))
+    frame.addEventListener('load', () => tellFrame(state))
     state.host.append(frame)
   }
   return { frame: state.frame, frameReady: state.readyPromise, reveal: () => {
@@ -211,8 +210,12 @@ function positionInBrand(state: StartupState): void {
   // Startup uses the small centered wordmark. Once real content owns the frame,
   // preserve the approved full-column login artwork without a new document.
   if (state.frame) Object.assign(state.frame.style, { width: `${rect.width}px`, height: `${rect.height}px`, transform: 'none' })
-  state.frame?.contentWindow?.postMessage({ type: 'gugu-startup-palette', attemptId: state.attemptId, ...palette }, '*')
+  tellFrame(state)
   finishHeldBrand(state)
+}
+/** The frame's one message about its surroundings, also re-sent on its load: one posted before its document listens is lost. */
+function tellFrame(state: StartupState): void {
+  state.frame?.contentWindow?.postMessage({ type: 'gugu-startup-window', attemptId: state.attemptId, visible: isAnimationWindowVisible(), foregroundRgb: state.contentReady && state.brand ? paletteFor(state.brand).foregroundRgb : undefined }, '*')
 }
 function finishHeldBrand(state: StartupState): void {
   if (!state.contentReady || !state.brand?.isConnected || !state.ready || !state.held) return

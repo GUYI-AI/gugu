@@ -69,8 +69,7 @@ export const InstallSection = observer(function InstallSection({
   const host = useLibraryHost();
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
   /**
-   * 各下载源的「最新版本」。这一趟请求**本来就要发**(高级那一项要把版本列出来),
-   * 主进程顺手给它们计时 —— 装的时候按「谁先正确答出来」选源(#6157 的自动选源)。
+   * 只展示各源版本和平台可用性。选源属于实际安装，不依赖设置页是否打开过。
    */
   const sourceVersionsQuery = useInstallSourceVersions(agentId, hasRegistryOptions);
 

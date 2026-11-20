@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, MessageSquare, Users } from '@/lib/icons';
+import { MessageSquare, Users } from '@/lib/icons';
 import { AppFileMark } from '@renderer/features/extensions/app-file-mark';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
@@ -18,7 +18,8 @@ import type { ResolvedTab, TabBarItemProps, TabContentProps, TabEntry, TabResour
 import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-registry';
 import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
-import { groupPageSlot, isFolderItem, panelItemKey, type PanelItem } from './chat-panel-item';
+import { groupPageSlot, isFolderItem, panelItemKey, WORKSPACE_APP_KIND, type PanelItem } from './chat-panel-item';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
@@ -112,7 +113,7 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
 }
 
 const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
-  if (isFolderItem(item)) return <Folder size={14} />;
+  if (isFolderItem(item)) return <TabKindMark kind={WORKSPACE_APP_KIND} />;
   const extensionId = item.kind && !showsFile(item) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   const app = extensionId ? installedExtensionsStore.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
   return app ? <RailAppIcon app={app} className="size-4" /> : <AppFileMark kind={item.kind} fileName={item.fileName ?? item.title} context="chat" size={14} />;

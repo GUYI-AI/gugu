@@ -101,6 +101,7 @@ async function pasteClipboardImageOrText(args: {
   sendInput: TerminalInputHelpers['sendInput'];
   focus: TerminalInputHelpers['focus'];
   fallbackText?: string;
+  pasteText: TerminalInputHelpers['pasteText'];
   preferText?: boolean;
   // Re-checked right before injecting an image; the image branch resolves
   // asynchronously, so a competing paste path may have injected in the meantime.
@@ -110,7 +111,7 @@ async function pasteClipboardImageOrText(args: {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        args.sendInput(text);
+        args.pasteText(text);
         return false;
       }
     } catch {
@@ -130,13 +131,13 @@ async function pasteClipboardImageOrText(args: {
   }
 
   if (args.fallbackText !== undefined) {
-    if (args.fallbackText) args.sendInput(args.fallbackText);
+    if (args.fallbackText) args.pasteText(args.fallbackText);
     return false;
   }
 
   try {
     const text = await navigator.clipboard.readText();
-    if (text) args.sendInput(text);
+    if (text) args.pasteText(text);
   } catch (error) {
     log.error({ error }, 'terminal paste failed'); toast({ title: i18n.t('shell.titlebar.items.paste', { ns: 'main' }), description: messageForUser(error), tier: 'error' });
   }
@@ -184,12 +185,12 @@ const PtyPaneInner = forwardRef<{ focus: () => void }, Props>(
     );
 
     const handleSystemPaste = useCallback<PasteFromClipboardHandler>(
-      ({ focus, sendInput }) => {
+      ({ focus, sendInput, pasteText }) => {
         if (!localPaths) {
           void (async () => {
             const text = await navigator.clipboard.readText().catch(() => '');
             if (text) {
-              sendInput(text);
+              pasteText(text);
               return;
             }
             // 远端终端:剪贴板里是一张图(截图)⇒ 传到那台机器,写那边的路径。
@@ -207,6 +208,7 @@ const PtyPaneInner = forwardRef<{ focus: () => void }, Props>(
             ptySessionId,
             focus,
             sendInput,
+            pasteText,
             preferText: true,
             shouldInjectImage: () => !isNearDuplicatePaste(lastDomImagePasteAtRef.current),
           });
@@ -218,7 +220,7 @@ const PtyPaneInner = forwardRef<{ focus: () => void }, Props>(
       [ptySessionId, localPaths, remoteFiles, injectRemoteFiles]
     );
 
-    const { focus, sendInput } = usePty(
+    const { focus, sendInput, pasteText } = usePty(
       {
         ptySessionId,
         pty,
@@ -293,6 +295,7 @@ const PtyPaneInner = forwardRef<{ focus: () => void }, Props>(
                 ptySessionId,
                 focus,
                 sendInput,
+                pasteText,
                 fallbackText,
               });
             } catch (error) {
@@ -313,10 +316,11 @@ const PtyPaneInner = forwardRef<{ focus: () => void }, Props>(
           ptySessionId,
           focus,
           sendInput,
+          pasteText,
           fallbackText,
         });
       },
-      [focus, injectImageFiles, sendInput, ptySessionId, localPaths, remoteFiles, injectRemoteFiles]
+      [focus, injectImageFiles, sendInput, pasteText, ptySessionId, localPaths, remoteFiles, injectRemoteFiles]
     );
 
     const handleDrop: React.DragEventHandler<HTMLDivElement> = (event) => {

@@ -129,6 +129,11 @@ export type RemoteHostsBridge = {
    */
   openSessionHost?(deviceId: string): SessionHostPipeOpener;
   listDevices(): readonly RemoteHostDevice[];
+  /**
+   * #3433 名下机器的列表读过一次了(设备表读完,或有上次的快照)。没读到之前 `listDevices()` 是空的,而空 ≠ 名下没有别的机器。
+   * 老宿主没有这一格:缺席 = 读过。
+   */
+  devicesRead?(): boolean;
   /** 名下机器变了(上线/离线/改名/新登录一台)时回调;返回退订。 */
   subscribeDevices(listener: () => void): () => void;
   /**
