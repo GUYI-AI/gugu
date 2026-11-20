@@ -501,7 +501,10 @@ describe('agent-centered conversation bubbles', () => {
       // 整行和「发到」都常亮(MBP 验收 10-28:之前整行被原气泡的 hover 规则藏了,「发到」跟着看不见)。
       expect(getComputedStyle(actions).opacity).toBe('1');
       expect(getComputedStyle(note).opacity).toBe('1');
-      expect(getComputedStyle(actions.querySelector('button')!).opacity).toBe('0');
+      // Hidden means at rest: a fade still running on the control (CI caught one at 0.16 and 0.17) ends before it is read.
+      const copy = actions.querySelector('button')!;
+      await Promise.all(copy.getAnimations().map(animation => animation.finished));
+      expect(getComputedStyle(copy).opacity).toBe('0');
       expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
     } finally { view.dispose(); }
   });

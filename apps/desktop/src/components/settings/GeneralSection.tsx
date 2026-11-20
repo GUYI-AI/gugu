@@ -23,6 +23,7 @@ import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { HelpImproveSettingGroup } from '../HelpImprove'
 import { AndroidChatBatteryGuidance } from './AndroidChatBatteryGuidance'
+import { translateSessionMessage } from '@renderer/localization/locale-store'
 
 const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LOCALES]
 const THEME_OPTIONS = ['light', 'dark', 'system'] as const
@@ -84,6 +85,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
   const mobile = useMobileShell()
   const { preference, setPreference } = useLocale()
   const devicePreferences = useDevicePreferences()
+  const confirmSendLabel = translateSessionMessage('settings.confirmBeforeCancelAndSend')
   // product spec:手机上「通用 → 通知」同时如实显示系统权限;读不到真值的宿主上恒为空、不渲染。
   const {
     states: systemNotificationStates,
@@ -142,6 +144,14 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
           )}
         />
       </SettingsGroup>
+
+      {platform.kind === 'capacitor' && <SettingsGroup>
+        <SettingsRow title={confirmSendLabel} control={<Toggle
+          ariaLabel={confirmSendLabel}
+          checked={devicePreferences.confirmBeforeCancelAndSend}
+          onChange={confirmBeforeCancelAndSend => writeDevicePreferences({ confirmBeforeCancelAndSend })}
+        />} />
+      </SettingsGroup>}
 
       {showThemePacks && <SessionSettingsSection section="theme-packs" />}
 
