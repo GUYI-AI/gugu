@@ -26,6 +26,10 @@ export interface PromptQueueStore {
 export type AcpRuntimeProcessHost = Omit<AcpProcessHost, 'resolveSpawnContext'>;
 
 export interface AcpRuntimeDeps {
+  messagePreview?: {
+    project: (turn: TranscriptTurn, historyFloor: string | null) => import('@gugu/session-core/session-record/message-preview').MessagePreviewProjection | null;
+    onChange: (event: { sessionId: string }) => void;
+  };
   conversationPreview?: {
     project: (turn: TranscriptTurn) => import('@gugu/session-core/session-record/personal-conversation').PersonalConversationPreview | null;
     onChange: (event: { sessionId: string; preview: import('@gugu/session-core/session-record/personal-conversation').PersonalConversationPreview | null }) => void;

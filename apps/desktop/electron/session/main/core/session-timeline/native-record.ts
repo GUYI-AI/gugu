@@ -3,12 +3,14 @@ import type { SessionTimelineResult } from './service';
 import type { SessionTimeline } from '@gugu/session-core/session-record/contract';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
+import type { MessagePreviewProjection } from '@gugu/session-core/session-record/message-preview';
 
 export function createNativeRecordReader(deps: {
   readSession(id: string): { runtime: string | null } | null | undefined;
   activeTurn(id: string): TranscriptTurn | null | undefined;
+  activePreview(id: string, historyFloor: string | null): Promise<{ turnId: string; projection: MessagePreviewProjection } | null>;
   withTimeline<T>(id: string, read: (timeline: SessionTimeline) => T | Promise<T>): Promise<SessionTimelineResult<T>>;
-  withArchive<T>(id: string, read: () => T | Promise<T>): Promise<SessionTimelineResult<T>>;
+  withArchive<T>(id: string, read: (historyFloor: string | null) => T | Promise<T>): Promise<SessionTimelineResult<T>>;
 }) {
 /** ACP phone views share the desktop's committed archive, including provider-generated identities. */
 async function nativeRecord(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded'; revisionsFrom?: number }): Promise<SessionTimelineResult<import('@gugu/session-core/session-record/contract').NativeSessionRecord>> {
@@ -17,7 +19,7 @@ async function nativeRecord(input: { conversationId: string; before?: number; af
   return deps.withTimeline(input.conversationId, () => readArchive(input));
 }
 
-async function readArchive(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded'; revisionsFrom?: number }) {
+async function readArchive(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded'; revisionsFrom?: number }, includeActive = true) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const epoch = ownerNotificationEpoch(input.conversationId);
       const store = await import('../sessions/session-turn-store'), { getStoredHistory } = store;
@@ -37,7 +39,7 @@ async function readArchive(input: { conversationId: string; before?: number; aft
       const latestStoredSeq = latest.turns.at(-1)?.seq ?? -1;
       const hasNewer = latestStoredSeq > (turns.at(-1)?.seq ?? input.after ?? -1);
       const { trimTurnsForTransport } = await import('@gugu/session-core/session-record');
-      const active = deps.activeTurn(input.conversationId);
+      const active = includeActive ? deps.activeTurn(input.conversationId) : null;
       if (ownerNotificationEpoch(input.conversationId) !== epoch) continue;
       // Pages carry raw commits. The live turn is independent of how far the archive page has caught up.
       return { ...page, turns, originTurnIds: selected.map(one => one.origin), ...(page.turnRevisions ? { turnRevisions: selected.map(one => one.revision!) } : {}), ...(revisions ? { revisions } : {}),
@@ -51,7 +53,16 @@ async function readArchive(input: { conversationId: string; before?: number; aft
 async function preview(input: { conversationId: string; limit?: number }) {
   const row = deps.readSession(input.conversationId);
   if (!row || row.runtime !== 'acp') return { ok: false as const, error: { code: 'unsupported_runtime', message: '这条会话没有原生对话记录' } };
-  return deps.withArchive(input.conversationId, () => readArchive({ ...input, tail: true }));
+  return deps.withArchive(input.conversationId, async floor => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const epoch = ownerNotificationEpoch(input.conversationId);
+      const record = await readArchive({ ...input, tail: true }, false);
+      const active = await deps.activePreview(input.conversationId, floor);
+      if (ownerNotificationEpoch(input.conversationId) !== epoch) continue;
+      return { ...record, activePreview: active && !record.originTurnIds.includes(active.turnId) ? active.projection : null };
+    }
+    throw Object.assign(new Error('会话历史正在变化，请稍后重新读取'), { code: 'history_epoch_unstable' });
+  });
 }
 
 async function nativeToolImage(input: { conversationId: string; itemId: string; index: number }): Promise<SessionTimelineResult<import('@gugu/session-core/acp/client').ToolImageLookup>> {
