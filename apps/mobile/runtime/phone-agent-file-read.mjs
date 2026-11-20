@@ -9,12 +9,12 @@ const textExtension = /\.(?:txt|md|csv|tsv|json|jsonl|log|ya?ml|xml|ics|toml|ini
 
 /** Folder attachments expose their registered children, never an arbitrary filesystem listing. */
 export function phoneArtifactListTool({ agent, job, store, authorize }) {
-  return { name: 'phone_file_list', label: '查看任务附件', description: '列出当前手机任务已经上传、下载或读取并登记的附件。文件夹附件用 folder_path 指定工具给出的私有目录，返回其中已登记文件的 file_path，随后用 phone_file_read 读取文本；不会扫描任意手机目录。按 next_offset 翻页。',
+  return { name: 'phone_file_list', label: 'List task attachments', description: 'List attachments this phone task has uploaded, downloaded or read and registered. For a folder attachment, pass the private directory a tool returned as folder_path to get the file_path of its registered files, then read text with phone_file_read; arbitrary phone directories are never scanned. Page with next_offset.',
     parameters: { type: 'object', properties: { folder_path: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 500 } } },
     execute: async (_callId, args) => {
       const offset = args.offset ?? 0
       const limit = args.limit ?? 100
-      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 500 || args.folder_path !== undefined && (typeof args.folder_path !== 'string' || !args.folder_path)) throw fail('invalid_args', '附件目录或分页参数无效')
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 500 || args.folder_path !== undefined && (typeof args.folder_path !== 'string' || !args.folder_path)) throw fail('invalid_args', 'Invalid attachment folder or paging arguments')
       const prefix = args.folder_path?.replace(/\/+$/, '')
       const all = Object.values(store.state.artifacts ?? {}).filter((entry) => entry.ownerId === store.state.ownerId && entry.agentUserId === agent.agentUserId && entry.sessionId === agent.sessionId && (!prefix || entry.file_path.startsWith(`${prefix}/`))).sort((a, b) => a.file_path.localeCompare(b.file_path))
       const shown = all.slice(offset, offset + limit)
@@ -34,26 +34,26 @@ export function phoneArtifactListTool({ agent, job, store, authorize }) {
 /** Bounded UTF-8 pages from an already registered artifact. Full-file hash/size checks and
  * permission checks surround reading; no arbitrary file path or binary parser is exposed. */
 export function phoneTextFileTool({ agent, job, store, authorize }) {
-  return { name: 'phone_file_read', label: '读取任务文本附件', description: '读取本任务上传、聊天附件下载或手机工具已登记的 UTF-8 文本文件。file_path 必须用登记后的完整私有路径；不能读任意手机文件。offset 是 Unicode 字符偏移，limit 每次最多32768字符，按 next_offset 继续直到 eof。当前不解析 PDF、Office、图片、视频或音频；这些二进制文件可原样发送，不要声称读过内容。',
+  return { name: 'phone_file_read', label: 'Read task text attachment', description: 'Read a UTF-8 text file uploaded in this task, downloaded from a chat attachment, or registered by a phone tool. file_path must be the full registered private path; arbitrary phone files cannot be read. offset is a Unicode character offset, limit is at most 32768 characters per call; continue with next_offset until eof. PDF, Office, images, video and audio are not parsed; such binary files can be sent as they are, but do not claim to have read their content.',
     parameters: { type: 'object', required: ['file_path'], properties: { file_path: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 32768 } } },
     execute: async (_callId, args, signal) => {
       const offset = args.offset ?? 0
       const limit = args.limit ?? 8192
-      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 32768) throw fail('invalid_args', '文本读取位置或每页字符数无效')
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 32768) throw fail('invalid_args', 'Invalid text read offset or characters per page')
       const file = Object.values(store.state.artifacts ?? {}).find((entry) => entry.file_path === args.file_path && entry.ownerId === store.state.ownerId && entry.agentUserId === agent.agentUserId && entry.sessionId === agent.sessionId)
-      if (!file) throw fail('not_granted', '只能读取当前手机任务已登记的附件，请先上传文件或下载聊天附件')
-      if (!textTypes.test(file.mime_type ?? '') && !textExtension.test(extname(file.name ?? file.file_path))) throw fail('unsupported', '当前手机工具只读取 UTF-8 文本，不解析这个二进制文件')
+      if (!file) throw fail('not_granted', 'Only attachments registered by this phone task can be read; upload the file or download the chat attachment first')
+      if (!textTypes.test(file.mime_type ?? '') && !textExtension.test(extname(file.name ?? file.file_path))) throw fail('unsupported', 'This phone tool reads only UTF-8 text and does not parse this binary file')
       const groups = [...new Set([...(job.usedGroups ?? []), ...(file.groups ?? [])])]
       await authorize(groups, file)
-      if (await realpath(file.file_path) !== file.file_path) throw fail('file_changed', '登记文件路径已改变，未读取')
+      if (await realpath(file.file_path) !== file.file_path) throw fail('file_changed', 'The registered file path changed; not read')
       const before = await stat(file.file_path)
-      if (!before.isFile() || before.size !== file.size) throw fail('file_changed', '登记文件大小已改变，未读取')
+      if (!before.isFile() || before.size !== file.size) throw fail('file_changed', 'The registered file size changed; not read')
       const hash = createHash('sha256')
       const decoder = new TextDecoder('utf-8', { fatal: true })
       let total = 0
       let selected = ''
       const take = (text) => {
-        if (text.includes('\0')) throw fail('unsupported', '这个文件含二进制内容，当前手机工具不解析')
+        if (text.includes('\0')) throw fail('unsupported', 'This file contains binary content, which this phone tool does not parse')
         const characters = Array.from(text)
         const from = Math.max(0, offset - total)
         const until = Math.min(characters.length, offset + limit - total)
@@ -63,8 +63,8 @@ export function phoneTextFileTool({ agent, job, store, authorize }) {
       try {
         for await (const chunk of createReadStream(file.file_path, { ...(signal ? { signal } : {}) })) { signal?.throwIfAborted(); hash.update(chunk); take(decoder.decode(chunk, { stream: true })) }
         take(decoder.decode())
-      } catch (error) { if (error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') throw fail('unsupported', '这个文件不是 UTF-8 文本，当前手机工具不解析'); throw error }
-      if (hash.digest('hex') !== file.sha256 || (await stat(file.file_path)).size !== file.size || await realpath(file.file_path) !== file.file_path) throw fail('file_changed', '登记文件内容已改变，未交付文本')
+      } catch (error) { if (error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') throw fail('unsupported', 'This file is not UTF-8 text, which this phone tool does not parse'); throw error }
+      if (hash.digest('hex') !== file.sha256 || (await stat(file.file_path)).size !== file.size || await realpath(file.file_path) !== file.file_path) throw fail('file_changed', 'The registered file content changed; text not delivered')
       await authorize(groups, file)
       job.usedGroups = groups
       job.permissionRequirements = [...new Map([...(job.permissionRequirements ?? []), ...(file.permissionRequirements ?? [])].map((proof) => [JSON.stringify(proof), proof])).values()]

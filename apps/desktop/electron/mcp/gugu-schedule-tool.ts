@@ -20,7 +20,7 @@ const SESSION_ID_DESCRIPTION = 'session:<id> of the session that set it; omit fo
 export const SCHEDULE_TOOL_DEFS: readonly SessionpageToolDef[] = [
   {
     name: 'schedule_create',
-    description: 'Persist a prompt for this session: once (at) or recurring (cron), surviving process/device shutdown. Use this instead of harness timers or sleep loops. Shown in 已安排; verify next_run_at.',
+    description: 'Persist a prompt for this session: once (at) or recurring (cron), surviving process/device shutdown. Use this instead of harness timers or sleep loops. Shown in the Scheduled list; verify next_run_at.',
     schema: z.object({
       prompt: z.string().min(1).describe('A standalone instruction to your future self, saying where the result goes.'),
       at: z.string().min(1).describe('ISO 8601; at or cron, not both.').optional(),

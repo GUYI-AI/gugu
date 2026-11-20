@@ -19,7 +19,7 @@ import { until, untilStable } from '../../../../tests/support/awaitCondition';
 const dispose: Array<() => void> = [];
 afterEach(() => { dispose.splice(0).forEach(fn => fn()); delete document.documentElement.dataset.theme; });
 const capturePhase = import.meta.env.VITE_ALIGNMENT_CAPTURE_PHASE;
-const scheduled = `<gugu_delivery route="scheduled" from="咕咕系统" from_id="system:gugu" schedule="三图 + 合并账 每小时整点更新 + 任务对账" msg="msg:scheduled"><![CDATA[整点更新看板、对任务账（总主管的职责）。每小时出一次，别漏任务。
+const scheduled = `<gugu_delivery route="scheduled" from="Gugu" from_id="system:gugu" schedule="三图 + 合并账 每小时整点更新 + 任务对账" msg="msg:scheduled"><![CDATA[整点更新看板、对任务账（总主管的职责）。每小时出一次，别漏任务。
 
 1. 先对账：把这一小时里收到的每条主管回报逐条对应到现有任务。
 2. 更新看板：核对负责人、进度、下一步和截止时间。]]></gugu_delivery>`;

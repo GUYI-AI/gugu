@@ -95,7 +95,7 @@ export async function receivePhoneArtifact({ first, args, read, agent, job, sign
   const id = randomUUID()
   const complete = await receivePhoneDeviceFile({ first: asResult(first, id), args, root: join(root, 'artifacts', store.state.ownerId, uuid(agent.sessionId)), signal, read: async (next) => asResult(await read(next), id) })
   if (!complete.ok) throw Object.assign(new Error(complete.message), { code: complete.code })
-  if (!complete.data?.file_path) throw new Error('手机没有返回完整文件')
+  if (!complete.data?.file_path) throw new Error('The phone did not return a complete file')
   const { pictures: _pictures, ...metadata } = complete.data
   const data = await registerArtifact({ store, agent, file: { ...metadata, permissionRequirements: structuredClone(job?.permissionRequirements ?? []) }, groups: [group] })
   if (job) { job.usedGroups = [...new Set([...(job.usedGroups ?? []), group])]; await store.save() }
@@ -105,14 +105,14 @@ export async function receivePhoneArtifact({ first, args, read, agent, job, sign
 }
 
 export async function authorizedPhoneArtifact({ agent, job, store, authorize }, path) {
-    if (typeof path !== 'string') throw new Error('file_path 必须使用手机工具或 message_download_file 返回的路径')
+    if (typeof path !== 'string') throw new Error('file_path must be a path returned by a phone tool or message_download_file')
     const file = Object.values(store.state.artifacts ?? {}).find((entry) => entry.file_path === path && entry.ownerId === store.state.ownerId && entry.agentUserId === agent.agentUserId)
-    if (!file) throw new Error('只能发送你这位手机 Agent 已读取并登记的完整文件，请先用手机媒体读取工具或 message_download_file')
-    if (await realpath(path) !== path) throw new Error('登记文件路径发生变化，未发送')
+    if (!file) throw new Error('You can only send complete files this phone Agent has read and registered; use a phone media read tool or message_download_file first')
+    if (await realpath(path) !== path) throw new Error('The registered file path changed; not sent')
     const before = await stat(path)
-    if (!before.isFile() || before.size !== file.size) throw new Error('登记文件已变化，未发送')
+    if (!before.isFile() || before.size !== file.size) throw new Error('The registered file changed; not sent')
     const bytes = await readFile(path)
-    if (bytes.length !== before.size || createHash('sha256').update(bytes).digest('hex') !== file.sha256) throw new Error('登记文件内容已变化，未发送')
+    if (bytes.length !== before.size || createHash('sha256').update(bytes).digest('hex') !== file.sha256) throw new Error('The registered file content changed; not sent')
     await authorize([...new Set([...(job.usedGroups ?? []), ...file.groups])], file)
     return { file, bytes }
 }
@@ -126,7 +126,7 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
     phoneTextFileTool({ agent, job, store, authorize }),
     phoneTextWriteTool({ agent, job, store, authorize, registerArtifact }),
     {
-      name: 'message_send_file', label: '发送手机文件', description: '以你自己的 Agent 身份，把手机媒体读取或 message_download_file 返回的完整私有文件作为咕咕附件发送。只传 file_path，不传文件内容或base64；发送前重新检查权限、群规、成员和文件hash。',
+      name: 'message_send_file', label: 'Send phone file', description: 'Send, as your own Agent identity, a complete private file returned by a phone media read or message_download_file as a Gugu attachment. Pass only file_path, never file content or base64; permissions, group rules, membership and the file hash are rechecked before sending.',
       parameters: { type: 'object', required: ['chat_id', 'file_path'], properties: { chat_id: { type: 'string' }, file_path: { type: 'string' }, file_name: { type: 'string' }, mime_type: { type: 'string' }, caption: { type: 'string' }, to_user_ids: { type: 'array', items: { type: 'string' } }, reply_to_message_id: { type: 'string' } } },
       execute: async (_callId, args) => {
         const id = await access.chatId(args.chat_id)
@@ -155,7 +155,7 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
         await authorize(groups, file); await access.beforeWrite(id, recipients)
         endpoint = await cloud.attachmentEndpoint()
         const message = await commitAttachment(endpoint, { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes, message_id: messageId, chat_id: id, sender_user_id: agent.agentUserId, file_name: name, content_type: contentType, to_user_ids: recipients, reply_to_message_id: args.reply_to_message_id ? uuid(args.reply_to_message_id.replace(/^msg:/, ''), 'reply source') : null, thread_root_id: job.route?.chatId === id ? job.route.threadRootId ?? null : null, is_thread_root: false, is_whisper: false, caption: args.caption })
-        if (message.id !== messageId) throw new Error('文件发送回执与请求不一致，请先查看消息历史再重试')
+        if (message.id !== messageId) throw new Error('The file send receipt does not match the request; check message history before retrying')
         entry.status = 'committed'; entry.sentAt = new Date().toISOString()
         job.sent = [...new Set([...(job.sent ?? []), messageId])]
         await store.save(); emit({ type: 'file_sent', sessionId: agent.sessionId, agentUserId: agent.agentUserId, messageId, chatId: id })
@@ -169,28 +169,28 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
       },
     },
     {
-      name: 'message_download_file', label: '读取聊天附件', description: '把一个文件存到这台手机的 App 私有目录，回 file_path 和 sha256；字节不进文字上下文。',
+      name: 'message_download_file', label: 'Read chat attachment', description: 'Save one file to the private App directory on this phone; returns file_path and sha256. The bytes do not enter the text context.',
       parameters: { type: 'object', properties: { source_message_id: { type: 'string' }, source_attachment_id: { type: 'string' }, file: { type: 'string', description: 'gugu-file://<item_id>?v=<n>' } } },
       execute: async (_callId, args, signal) => {
         if ([args.source_message_id, args.source_attachment_id, args.file].filter(Boolean).length !== 1) throw new Error('Provide exactly one of source_message_id, source_attachment_id, file')
         let ref, name
         if (args.source_message_id) {
           const id = uuid(String(args.source_message_id).replace(/^msg:/, ''), 'source_message_id')
-          if (await cloud.rpc('chat', 'can_read_message', { p_message_id: id, p_user_id: agent.agentUserId }) !== true) throw new Error('这条附件消息对你不可见')
+          if (await cloud.rpc('chat', 'can_read_message', { p_message_id: id, p_user_id: agent.agentUserId }) !== true) throw new Error('This attachment message is not visible to you')
           const { data: message, error } = await cloud.chat.from('messages').select('id,chat_id,content,content_type,file_item_id,file_version,file_blob_id').eq('id', id).single()
           if (error) throw new Error(error.message)
           const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-          if (!attachment) throw new Error('这条消息没有附件')
+          if (!attachment) throw new Error('This message has no attachment')
           ref = { message_id: id }; name = attachment.fileName
         } else if (args.source_attachment_id) {
           ref = { attachment_id: uuid(args.source_attachment_id) }
         } else {
           const link = parseGroupFileLink(String(args.file).trim())
-          if (!link) throw new Error(`file 要写成 gugu-file://<item_id>?v=<n>，不是 ${JSON.stringify(args.file)}`)
+          if (!link) throw new Error(`file must be written as gugu-file://<item_id>?v=<n>, not ${JSON.stringify(args.file)}`)
           ref = { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }
         }
         const full = await files(ref, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
-        if (full.status !== 'ready') throw new Error('这个文件已删除或不可见')
+        if (full.status !== 'ready') throw new Error('This file is deleted or not visible')
         const file = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), name)
         return result(await registerArtifact({ store, agent, groups: [], file: { file_path: file.file_path, name: file.file_name, size: file.size_bytes, sha256: file.sha256, mime_type: file.content_type } }))
       },

@@ -15,7 +15,7 @@ describe('system notice envelope', () => {
 
   it('comes from 咕咕 itself, carries no chat, and names no return tool', () => {
     const envelope = buildSystemNoticeEnvelope(base)
-    expect(envelope).toMatch(/^<gugu_delivery route="system" from="咕咕系统" from_id="system:gugu" msg="msg:00000000-0000-4000-8000-000000006593"/)
+    expect(envelope).toMatch(/^<gugu_delivery route="system" from="Gugu" from_id="system:gugu" msg="msg:00000000-0000-4000-8000-000000006593"/)
     expect(envelope).toContain('<![CDATA[Your owner renamed you.]]>')
     expect(envelope).toContain('not a request; there is no one to reply to')
     expect(envelope).not.toMatch(/ chat="| chat_kind="|session_message|message_send/)

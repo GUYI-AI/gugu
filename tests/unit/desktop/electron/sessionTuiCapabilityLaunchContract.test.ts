@@ -252,11 +252,11 @@ describe('task-TUI capability launch contract', () => {
 describe('harness tool naming comes only from capabilities.mcp.toolNames (#6192)', () => {
   it("renders this harness's tool naming from its MCP capability declaration", () => {
     expect(guguSessionSurfaceBlock('acp', 'qwen', true)).toContain(
-      'Your harness lists each 咕咕 tool as `mcp__gugu__<tool>` (e.g. `mcp__gugu__message_send`)',
+      'Your harness lists each Gugu tool as `mcp__gugu__<tool>` (e.g. `mcp__gugu__message_send`)',
     );
     expect(guguSessionSurfaceBlock('tui', 'copilot', true)).toContain('`gugu-message_send`');
     expect(guguSessionSurfaceBlock('tui', 'pi', true)).toContain(
-      'Your harness lists each 咕咕 tool as `mcp__gugu__<tool>` (e.g. `mcp__gugu__message_send`)',
+      'Your harness lists each Gugu tool as `mcp__gugu__<tool>` (e.g. `mcp__gugu__message_send`)',
     );
     // 按腿声明的家(#6335 Antigravity:两条腿两个程序):终端腿 `agy` 经 call_mcp_tool 以 (server, 裸名) 调;
     // 聊天面板腿没量过 ⇒ 只给通用提示，❌ 借终端腿的答案。
@@ -289,13 +289,13 @@ describe('harness tool naming comes only from capabilities.mcp.toolNames (#6192)
   it('Codex chat panel: gugu tools in the mcp__gugu namespace under bare names; the terminal leg keeps its measured form', () => {
     const chat = guguSessionSurfaceBlock('acp', 'codex', true);
     expect(chat).toContain(
-      'Your harness exposes 咕咕 tools under `mcp__gugu`.',
+      'Your harness exposes Gugu tools under `mcp__gugu`.',
     );
     expect(chat).not.toContain('mcp__gugu__');
     // 聊天面板的 app-server 形态读的是同一条腿
     expect(guguSessionSurfaceBlock('app-server', 'codex', true)).toContain('tools under `mcp__gugu`');
     expect(guguSessionSurfaceBlock('tui', 'codex', true)).toContain(
-      'Your harness lists each 咕咕 tool as `mcp__gugu__<tool>` (e.g. `mcp__gugu__message_send`)',
+      'Your harness lists each Gugu tool as `mcp__gugu__<tool>` (e.g. `mcp__gugu__message_send`)',
     );
   });
 

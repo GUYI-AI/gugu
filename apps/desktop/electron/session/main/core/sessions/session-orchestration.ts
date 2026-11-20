@@ -541,7 +541,7 @@ async function stopUnattachedTmuxSession(target: SessionRow): Promise<void> {
 function withActivitySource(text: string, sourceLink?: string): string {
   if (!sourceLink) return text;
   if (!parseConversationLink(sourceLink)?.messageId) throw new Error('source_link requires a message reference');
-  return `来源：[原始需求](${sourceLink})\n\n${text}`;
+  return `Source: [original request](${sourceLink})\n\n${text}`;
 }
 
 async function rememberActivitySource(sessionId: string, link: string): Promise<void> {
