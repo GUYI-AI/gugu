@@ -4,13 +4,13 @@ import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
-import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { registerAttachmentImage, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
 import { attachmentState } from '../../lib/attachmentState'
 import { useReplica } from '../../lib/replica'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { useAuth } from '../../store/auth'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
-import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
+import { openImageFromThumb } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
 import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
@@ -95,15 +95,8 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   // 查看器:先拿缩略图打开,翻到这一张再取原图(同一份缓存);卸载时收回 object URL。
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    let full: Promise<string> | null = null
-    const unregister = registerFullImage(img.current, () => (full ??= attachmentBytes(meta.source, 'full').then((bytes) => {
-      if (bytes.status !== 'ready') throw new Error('attachment is gone')
-      return URL.createObjectURL(bytes.blob)
-    })), meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined, { name: meta.fileName, contentType: meta.mimeType }, chatId ? { chatId, messageId } : undefined, size)
-    return () => {
-      unregister()
-      void full?.then((url) => URL.revokeObjectURL(url), () => undefined)
-    }
+    return registerAttachmentImage(img.current, meta.source, { name: meta.fileName, contentType: meta.mimeType },
+      chatId ? { chatId, messageId } : undefined, size?.width && size.height ? { width: size.width, height: size.height } : undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId, size?.width, size?.height])
 

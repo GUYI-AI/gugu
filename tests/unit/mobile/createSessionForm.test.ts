@@ -14,7 +14,7 @@ import {
   selectHarness,
   selectedModelName,
   submittedCreationSelection,
-} from '@/mobile/agent-watch/create-session-form'
+} from '@/components/session-watch/create-session-form'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 
 const options: SessionpageSessionCreateOptions = {

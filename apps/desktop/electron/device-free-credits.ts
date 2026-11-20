@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { atomicWriteText } from '@gugu/core'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 
 export type DeviceClaimStatus = 'granted' | 'already_claimed' | 'device_full' | 'not_confirmed'
 type ClaimStore = Record<string, DeviceClaimStatus>
@@ -44,6 +45,7 @@ export async function claimDeviceFreeCredits(
   deps: DeviceClaimDeps,
   auth: { userId: string; accessToken: string },
 ): Promise<DeviceClaimStatus | null> {
+  if (teamAccountTokenHint(auth.accessToken) !== 'personal') return null
   try {
     const store = await readStore(deps.storePath)
     const known = store[auth.userId]

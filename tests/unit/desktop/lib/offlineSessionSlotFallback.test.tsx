@@ -21,7 +21,7 @@ vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: sc
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('@/components/chat/ChatSummariesHost', () => ({ ChatSummariesHost: () => null }))
 vi.mock('@/components/chat/NativeConversationReadHost', () => ({ NativeConversationReadHost: () => null }))
-vi.mock('@/mobile/agent-watch/SessionTimelinePage', () => ({ SessionTimelinePage: () => <output data-shared-native-timeline="">Native timeline</output> }))
+vi.mock('@/components/session-watch/SessionTimelinePage', () => ({ SessionTimelinePage: () => <output data-shared-native-timeline="">Native timeline</output> }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: () => 'Waiting for host' }))
 

@@ -162,6 +162,16 @@ function fakePlatform() {
       disconnect(credential[1]!);
       return new Response(null, { status: 204 });
     }
+    // Browser authorization: the attempt's `expiresAt` is on the platform's clock; the person approves at once.
+    const oauth = /^\/integrations\/([^/]+)\/oauth\/(start|status)$/.exec(path);
+    if (oauth?.[2] === 'start' && method === 'POST') {
+      return Response.json({ attemptId: 'attempt-1', authorizationUrl: 'https://auth.test/authorize', expiresAt: clock.now + 5 * 60_000 });
+    }
+    if (oauth?.[2] === 'status' && method === 'GET') {
+      saved.set(oauth[1]!, { apiKey: GOOD, rejected: false, updatedAt: new Date(clock.now).toISOString() });
+      return Response.json({ state: 'connected' });
+    }
+    if (oauth?.[2] === 'status' && method === 'DELETE') return new Response(null, { status: 204 });
     const mcp = /^\/integrations\/([^/]+)\/mcp$/.exec(path);
     if (mcp) {
       const stored = saved.get(mcp[1]!);
@@ -485,6 +495,18 @@ describe('credentials the platform keeps (#921)', () => {
     };
 
     expect(await d.service.connect('amap', { apiKey: GOOD })).toEqual({ success: true });
+    expect(await d.service.check('amap')).toEqual({ connected: true });
+  });
+
+  it('browser authorization waits for the person on the platform’s clock, however far this device’s clock is off', async () => {
+    const platform = fakePlatform();
+    // The attempt lives 5 minutes on the platform's clock, which is weeks behind this machine's wall clock here.
+    platform.clock.now = Date.now() - 18 * 24 * 60 * 60_000;
+    const d = await device(platform, 'D');
+    const opened: string[] = [];
+    await d.service.authorizeOAuth('amap', new AbortController().signal, async (url) => { opened.push(url); });
+    expect(opened).toEqual(['https://auth.test/authorize']);
+    expect(platform.requests.some((request) => request.method === 'GET' && request.path === '/integrations/amap/oauth/status')).toBe(true);
     expect(await d.service.check('amap')).toEqual({ connected: true });
   });
 

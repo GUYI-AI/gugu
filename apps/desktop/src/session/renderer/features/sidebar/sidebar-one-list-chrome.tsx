@@ -12,7 +12,7 @@ import { requestShellChatAction, useProductTourOnScreen, useSidebarNotifications
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { sidebarRailTextOpacity, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { sidebarRailTextOpacity, useLeftRailLayout, useSidebarProgressFollow, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
@@ -27,8 +27,8 @@ import { SidebarSpace } from './sidebar-space';
  * GUYI-AI/gugu#2548 the head and the top of the sidebar as one list.
  * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint, the bell's slot, the
  * search button) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (SIDEBAR_RAIL_PX wide,
- * every avatar where it was): what has text fades, as do the bell, search, 已安排 and 会话历史. The collapse button and
- * the 「+」 sit on the avatars' axis.
+ * every avatar where it was): what has text fades, as do search, 已安排 and 会话历史. The collapse button, the bell (its rail
+ * row, SidebarRailBell) and the 「+」 sit on the avatars' axis, in that order.
  */
 
 /** The 「+」 menu, in order. Each runs the action of the same name that exists today. */
@@ -131,6 +131,28 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 }
 
 /**
+ * The bell's place on the rail: a row between 「»」 and the 「+」, on the avatars' axis (20 + 32 / 2 = 36). The row opens with
+ * the collapse (40px tall at the rail, 0 expanded) so the avatars move down with the progress, ❌ jump; the bell itself is
+ * the head's (the same slot, the same count) and changes place only where the edge lands on the rail, fading in there as the
+ * rows' counts do. Opening it on the rail expands the sidebar into the same list (LeftSidebar).
+ */
+function followRailBellRow(row: HTMLElement, progress: number) {
+  row.style.height = `${40 * (1 - progress)}px`;
+}
+
+export function SidebarRailBell() {
+  const railLayout = useLeftRailLayout();
+  const rowRef = useSidebarProgressFollow<HTMLDivElement>(followRailBellRow);
+  return (
+    <div ref={rowRef} className="flex shrink-0 items-start pl-5" data-sidebar-rail-bell="" inert={!railLayout}>
+      <div className="animate-in fade-in duration-150">
+        <NotificationSlot part="toggle" tone="strong" active={railLayout} />
+      </div>
+    </div>
+  );
+}
+
+/**
  * C9, the two-step intro (sidebar-intro). Where it is (`step`) is stored in the app settings (`interface.sidebarIntro`, the
  * store the switch itself lives in) and read from there, written only over a read (the main side parses the whole
  * `interface` group on update); coming up (`up`) is this run's. The first-run hint system holds one line and one button
@@ -182,9 +204,9 @@ function importableTools(locale: string): string {
  * The head is the window's drag band between the collapse button and the bell, search, 已安排 and 会话历史 at the right.
  * The collapse button (chevrons only; its tooltip says what it does and the shortcut, as
  * the old header toggle's did) is first, centred on the avatars' axis (20 + 32 / 2 = 36), and never moves: collapsed it is
- * 「»」 in the same place. Everything after it hides with the names on the rail (proposal v1, extra 1), so the rail keeps only
- * 「»」 and the 「+」 under it. There is no foot: the list runs to the window's bottom edge. Over the head, once: C9
- * (useSidebarIntro), drawn below the row so it never covers the buttons it explains.
+ * 「»」 in the same place. Everything after it hides with the names on the rail (proposal v1, extra 1); the bell moves to its
+ * rail row under 「»」 (SidebarRailBell), so the rail keeps 「»」, the bell and the 「+」. There is no foot: the list runs to
+ * the window's bottom edge. Over the head, once: C9 (useSidebarIntro), drawn below the row so it never covers the buttons it explains.
  *
  * `innerShownFor`: what the inner sidebar is drawn for (innerSidebarShownFor: a chat, or the sample), null when none.
  */
@@ -203,6 +225,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   const historyLabel = translate('sidebar.sessionHistory');
   const historyShown = isCurrentView(currentView, 'session-history');
   const railed = !isLeftOpen;
+  const railLayout = useLeftRailLayout();
   const intro = useSidebarIntro(innerShownFor, isLeftOpen);
   // What the rail hides along with the names: faded with them (followNames), and inert there (out of the pointer's way and
   // the tab order).
@@ -251,7 +274,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
         </IconButton>
       </Hint>
       <div ref={controlsRef} className="flex shrink-0 items-center gap-1" inert={railed}>
-        <NotificationSlot part="toggle" tone="strong" />
+        <NotificationSlot part="toggle" tone="strong" active={!railLayout} />
         <SidebarSearchTrigger />
         <Hint label={scheduledLabel} side="bottom">
           <IconButton

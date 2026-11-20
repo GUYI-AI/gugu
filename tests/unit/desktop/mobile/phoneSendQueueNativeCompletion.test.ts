@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { SessionInput } from '@/lib/sessionInputOutbox'
-import { startPhoneSendQueueObserver } from '@/mobile/agent-watch/phone-send-queue-observer'
+import { startPhoneSendQueueObserver } from '@/components/session-watch/phone-send-queue-observer'
 import { createSessionTimeline } from '../../../../packages/session-core/src/session-record/timeline'
 import { createPiJsonlSource } from '../../../../packages/session-core/src/session-record/sources/pi-jsonl'
 

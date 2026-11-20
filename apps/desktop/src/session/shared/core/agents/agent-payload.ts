@@ -134,7 +134,7 @@ export type AgentCapabilities = {
   };
   auth: AgentAuthDescriptor;
   modelProtocols?: readonly import('@gugu/session-core/models/custom-model').ModelProtocol[];
-  customModel?: { modelOptional: true };
+  customModel?: { modelOptional?: true; convertFrom?: readonly import('@gugu/session-core/models/custom-model').ModelProtocol[] };
   hostDependency: AgentHostDependencyInfo;
   models: AgentModelsCapability;
   effort: AgentEffortCapability;

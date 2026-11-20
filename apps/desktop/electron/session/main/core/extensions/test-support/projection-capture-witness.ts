@@ -2,7 +2,7 @@ type Rgb = readonly [number, number, number];
 export interface CaptureWitness { data: string; attempts: number; firstRgb: Rgb; rgb: Rgb }
 
 /** Observe the source PNG independently before the media decoder sees it. The
- * caller supplies its existing bounded wait and publishes exactly result.data. */
+ * caller supplies its existing observation wait and publishes exactly result.data. */
 export async function captureColorWitness(ports: {
   capture(): Promise<string>;
   rgb(data: string): Promise<Rgb>;

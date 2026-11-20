@@ -19,6 +19,8 @@ export { archiveSession } from '../session/main/core/sessions/archiveSession'
 export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'
 // Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
 export { listSessions as listLocalSessions } from '../session/main/core/session-timeline/service'
+// session_message's reply_to_message_id written short is matched against the deliveries the caller was given.
+export { receivedMessageIds } from '../session/main/core/sessions/session-orchestration'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
 // #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
 export { projectionRemoteEvent } from '../session/main/core/extensions/projection-remote-viewer'
@@ -158,6 +160,7 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
+  setNativeHistoryProviderResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,

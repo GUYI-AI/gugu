@@ -133,6 +133,28 @@ function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
 }
 
 describe('BrowserWebContentsRegistry', () => {
+  it('takes annotation evidence only from the owning conversation while keeping chat pages outside agent sessions', () => {
+    const registry = new BrowserWebContentsRegistry();
+    const chat = { kind: 'chat' as const, chatId: 'same-id' };
+    const task = { kind: 'session' as const, sessionId: 'same-id' };
+    registry.registerSession({ browserId: 'chat-page', partition: PROFILE_PARTITION, conversation: chat });
+    registry.registerSession({ browserId: 'task-page', partition: PROFILE_PARTITION, conversation: task });
+    const chatPage = fakeWebContents();
+    const taskPage = fakeWebContents();
+    adopt(registry, 'chat-page', chatPage);
+    adopt(registry, 'task-page', taskPage);
+    expect(registry.browserForConversation('chat-page', chat)).toBe(chatPage);
+    expect(registry.browserForConversation('task-page', task)).toBe(taskPage);
+    expect(registry.browserForConversation('chat-page', task)).toBeUndefined();
+    expect(registry.browserForConversation('task-page', chat)).toBeUndefined();
+    expect(registry.browserForConversation('chat-page', { kind: 'chat', chatId: 'other' })).toBeUndefined();
+    expect(registry.browsersOfSession('same-id').map(page => page.browserId)).toEqual(['task-page']);
+    expect(registry.browsersOfSession('')).toEqual([]);
+    registry.registerSession({ browserId: 'chat-page', partition: PROFILE_PARTITION, conversation: { kind: 'chat', chatId: 'moved' } });
+    expect(registry.browserForConversation('chat-page', chat)).toBeUndefined();
+    registry.unregisterSession('task-page');
+    expect(registry.browserForConversation('task-page', task)).toBeUndefined();
+  });
   beforeEach(() => {
     sessionsByPartition.clear();
     vi.mocked(events.emit).mockClear();

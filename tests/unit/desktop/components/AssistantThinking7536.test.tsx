@@ -5,7 +5,7 @@ import { createReactHarness, clickElement } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 import { AssistantTyping } from '../../../../apps/desktop/src/components/assistant/AssistantTyping'
 import { assistantReplyActivity } from '../../../../apps/desktop/src/components/assistant/assistantReplyActivity'
-import { emptyAgentWatchTimeline, applySnapshot, applyBatch } from '../../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { emptyAgentWatchTimeline, applySnapshot, applyBatch } from '../../../../apps/desktop/src/components/session-watch/agent-watch-store'
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })

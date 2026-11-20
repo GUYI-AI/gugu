@@ -1,6 +1,8 @@
+import { androidPushConfirmed, suppressAndroidLocalPushNotification } from '../mobile/android-push/androidPushState'
 import { nativeAndroidAccountClosure } from './androidAccountClosure'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
+import { conversationNotificationsAvailable, showConversationNotification, subscribeConversationNotificationTaps } from './capacitorChatNotifications'
 import { registerPlugin, type PermissionState } from '@capacitor/core'
 import { nativeTextSelection } from './nativeTextSelection'
 import { BackgroundMode } from '@anuradev/capacitor-background-mode'
@@ -204,7 +206,7 @@ export const capacitorPlatform: AppPlatform = {
     subscribe: (listener, onError) => subscribeNativeOpenedLinks('auth', listener, onError),
   },
   watchOpenedLinks: watchNativeOpenedLinks,
-  capabilities: { ...base.capabilities, clipboard: true, barcodeScan: true, notifications: true, backgroundWatch: true, appUpdates: true, shareToApps: true, externalFileOpen: true, mobileApps: true, phoneDevice: true, get phoneAgentHost() { return nativePhoneAgentHostAvailable('android') } },
+  capabilities: { ...base.capabilities, clipboard: true, barcodeScan: true, notifications: true, backgroundWatch: true, appUpdates: true, shareToApps: true, externalFileOpen: true, mobileApps: true, phoneDevice: true, get conversationNotifications() { return conversationNotificationsAvailable() }, get phoneAgentHost() { return nativePhoneAgentHostAvailable('android') } },
   async writeClipboardText(value) {
     await Clipboard.write({ string: value })
   },
@@ -245,7 +247,9 @@ export const capacitorPlatform: AppPlatform = {
       },
       () => undefined,
     )
+    const stopConversationTaps = subscribeConversationNotificationTaps(listener)
     return () => {
+      stopConversationTaps()
       if (!active) return
       active = false
       if (handle) void handle.remove().catch(() => undefined)
@@ -270,12 +274,19 @@ export const capacitorPlatform: AppPlatform = {
     }
   },
   async showNotification(payload) {
+    if (androidPushConfirmed() && suppressAndroidLocalPushNotification(true, (await App.getState()).isActive, payload.chatId, payload.kind)) {
+      return { success: false, displayed: false, error: 'APP_NOT_ACTIVE' }
+    }
     // 没权限就回「没弹」,形状同桌面 notifications:show 被系统拒时(electron/main.ts showAppNotification),
     // sendTestNotification 据此给出下一步。❌ 在这里顺手弹授权框 —— 什么时候问由 behavior 定,不由发通知的时机定。
     if (await checkSystemPermission('notifications') !== 'granted') {
       return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
     }
     const quietChannelId = await ensureNotificationChannels()
+    // #3416 A chat message that says who spoke is drawn by the native conversation presenter.
+    if (payload.presentation && conversationNotificationsAvailable()) {
+      return showConversationNotification(payload, payload.presentation, payload.silent ? quietChannelId : ALERT_CHANNEL_ID)
+    }
     return schedulePhoneNotification(payload, {
       channelId: payload.silent ? quietChannelId : ALERT_CHANNEL_ID,
       foreground: true,

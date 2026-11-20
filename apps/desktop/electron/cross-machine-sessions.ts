@@ -12,6 +12,7 @@ import { isAgentHostDevice } from '@gugu/core/cloud/devices'
 import { cloudComputerPresence, type CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { DeviceRpcResponse } from '@gugu/core/cloud/deviceRpcProtocol'
 import { encodeTypedId } from '@gugu/core/shared/typedId.mjs'
+import { isIdPrefix, matchIdPrefix } from '@gugu/core/shared/idPrefix'
 import { INSTALL_CONSENT_HUMAN_WINDOW_MS } from '@shared/extensions/host-actions'
 import {
   type AgentSessionAction,
@@ -35,12 +36,10 @@ import type { OtherMachines } from './session/main/core/sessions/session-family'
 import { DeviceRpcChannelError, DeviceRpcTimeoutError, type DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
 import type { UnifiedRecipientResult, UnifiedSessionMessageDeps } from './unified-session-message'
 
-/** 跨机器这一格的失败,带机器可读的码(与 session_message 逐收件人结果里的 `error.code` 同一套)。 */
-const FULL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-/** The shortest id prefix a session or Agent ID is looked up by (owner 2026-11-15: 8 characters are enough). */
-const MIN_ID_PREFIX = 8
 /** One session a prefix may name: its id, its agent (null: no identity) and title, for the candidates list. */
 type AddressRow = { sessionId: string; agentUserId: string | null; title?: string }
+
+/** 跨机器这一格的失败,带机器可读的码(与 session_message 逐收件人结果里的 `error.code` 同一套)。 */
 
 export class CrossMachineError extends Error {
   constructor(readonly code: string, message: string) {
@@ -121,7 +120,8 @@ export type CrossMachineDeps = {
 
 /** 对端答 `agentSession.*` 时用到的宿主能力。 */
 export type AgentSessionHost = {
-  peers(): Promise<unknown>
+  /** One session's row when the caller names it (`session_id`), else this machine's whole roster. */
+  peers(sessionId?: string): Promise<unknown>
   /** 其余动作交给会话页编排(`runRemoteSessionAction`)。 */
   run(caller: RemoteSessionCaller, action: Action): Promise<unknown>
   /** 另一台机器上的 App 发来的消息:与本机 App 发消息同一个函数,信封写那个 App。 */
@@ -361,9 +361,8 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
     local: () => Promise<AddressRow[]>,
     signal?: AbortSignal,
   ): Promise<{ sessions: Map<string, string>; agents: Map<string, string> }> => {
-    const prefix = (id: string) => id.length >= MIN_ID_PREFIX && !FULL_ID.test(id)
-    const sessionIds = [...new Set(wanted.sessionIds.filter(prefix))]
-    const agentIds = [...new Set(wanted.agentIds.filter(prefix))]
+    const sessionIds = [...new Set(wanted.sessionIds.filter(isIdPrefix))]
+    const agentIds = [...new Set(wanted.agentIds.filter(isIdPrefix))]
     const resolved = { sessions: new Map<string, string>(), agents: new Map<string, string>() }
     if (!sessionIds.length && !agentIds.length) return resolved
     const rows: Array<AddressRow & { where: string }> = (await local()).map((row) => ({ ...row, where: 'this machine' }))
@@ -380,22 +379,11 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
       if (signal?.aborted) throw error
     }
     signal?.throwIfAborted()
-    const pick = (kind: 'session' | 'aid', id: string, keyOf: (row: AddressRow) => string | null) => {
-      const address = `${kind}:${id}`
-      const wantedKey = id.toLowerCase()
-      const exact = rows.find((row) => keyOf(row)?.toLowerCase() === wantedKey)
-      if (exact) return keyOf(exact)!
-      const matches = [...new Map(rows.flatMap((row) => {
-        const key = keyOf(row)
-        return key && key.toLowerCase().startsWith(wantedKey) ? [[key, row] as const] : []
-      })).values()]
-      if (matches.length === 1) return keyOf(matches[0])!
-      if (matches.length > 1) {
-        const shown = matches.slice(0, 10).map((row) => `${kind}:${keyOf(row)} ("${row.title ?? ''}", ${row.where})`).join(', ')
-        throw new Error(`${address} matches ${matches.length} sessions: ${shown}${matches.length > 10 ? ', …' : ''}. Pass a longer prefix or the full id; nothing was sent`)
-      }
-      throw new Error(notFoundMessage([address], unreached.map((machine) => machine.detail)))
-    }
+    const pick = (kind: 'session' | 'aid', id: string, keyOf: (row: AddressRow) => string | null) => matchIdPrefix({
+      kind, id, rows, keyOf, noun: 'sessions', tail: '; nothing was sent',
+      describe: (row) => `"${row.title ?? ''}", ${row.where}`,
+      notFound: (address) => notFoundMessage([address], unreached.map((machine) => machine.detail)),
+    })
     for (const id of sessionIds) resolved.sessions.set(id, pick('session', id, (row) => row.sessionId))
     for (const id of agentIds) resolved.agents.set(id, pick('aid', id, (row) => row.agentUserId))
     return resolved
@@ -598,7 +586,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
       const { caller, action } = parsed as { caller: RemoteSessionCaller; action: AgentSessionAction }
       // 谁在哪台机器上发来的就记下:它派到这里的 child 回话时不必再挨台去问。
       known.set(caller.sessionId, caller.deviceId)
-      if (action.action === 'peers') return await host.peers()
+      if (action.action === 'peers') return await host.peers(typeof action.session_id === 'string' ? action.session_id : undefined)
       return await host.run(caller, action)
     } catch (error) {
       if (error instanceof CrossMachineError) throw error

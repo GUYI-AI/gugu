@@ -24,7 +24,7 @@ vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChanne
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return ui.platformKind }, writeClipboardText: ui.writeClipboardText } }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ui.rpc,
   onMachineEvent: (_device: string, _event: unknown, listener: (data: unknown) => void) => {
     ui.listeners.push(listener)
@@ -161,7 +161,7 @@ describe('市场的连接器目录', () => {
     expect(q('phone-market-connector-qq-mail')!.textContent).toContain('需要重新授权')
     data.data.statusError = new Error('service unreachable')
     await render(PhoneConnectorsPage, { ...page.props, marketMode: 'installed' })
-    expect(q('phone-market-connector-qq-mail')!.textContent).toContain('检查没通过')
+    expect(q('phone-market-connector-qq-mail')!.textContent).toContain('检查未通过')
   })
 })
 
@@ -198,7 +198,7 @@ describe('详情页', () => {
     expect(q('assistant-connector-detail')).not.toBeNull()
     expect(q('assistant-connector-disconnect')).toBeNull()
     expect(q('assistant-connector-detail')!.textContent).not.toContain('未连接')
-    expect(q('assistant-connector-detail')!.textContent).toContain('在哪能用')
+    expect(q('assistant-connector-detail')!.textContent).toContain('可用位置')
     await clickElement(q('assistant-connector-connect')!)
     expect(page.go).toHaveBeenCalledWith('connector:qq-mail:connect')
   })

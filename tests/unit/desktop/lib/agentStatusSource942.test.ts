@@ -15,7 +15,7 @@ import {
 } from '@/lib/agentPresenceStore'
 import { observedAgentPresence } from '@/lib/agentPresenceMobx'
 import { taskPresentation } from '@/lib/taskAgentStatus'
-import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
+import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { sidebarStateGroup } from '@/session/renderer/features/sidebar/session-groups'
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation'
 

@@ -1,6 +1,13 @@
 import { expect, it } from 'vitest';
-import { browserAnnotationScript, isBrowserAnnotationQuery } from './browser-annotation';
+import { annotationConversationKey, isAnnotationConversation, browserAnnotationScript, isBrowserAnnotationQuery } from './browser-annotation';
 import { readTaskPageControl } from './browser-task-page';
+
+it('requires a real typed conversation and namespaces chats independently of tasks', () => {
+  for (const value of [null, {}, { kind: 'chat', chatId: '' }, { kind: 'session', sessionId: ' ' }, { kind: 'chat', sessionId: 'task' }]) {
+    expect(isAnnotationConversation(value)).toBe(false);
+  }
+  expect(annotationConversationKey({ kind: 'chat', chatId: 'same' })).not.toBe(annotationConversationKey({ kind: 'session', sessionId: 'same' }));
+});
 
 it('rejects non-finite, out-of-frame and executable page selection payloads at the device boundary', () => {
   for (const query of [null, { x: NaN, y: 0, width: 0, height: 0 }, { x: 0, y: 0, width: Infinity, height: 0 },

@@ -749,6 +749,7 @@ describe('Codex app-server Windows transport (#2808)', () => {
     const failure = session.start(dir, { env: { ...process.env, GUGU_PLATFORM_MODELS: PLATFORM_FACTS } })
     await expect(failure).rejects.toThrow(/codex debug models --bundled/)
     await expect(failure).rejects.toThrow('unrecognized subcommand')
+    await expect(failure).rejects.not.toThrow(/请升级/)
   })
 
   it('waits for process-group terminal so delayed Codex stderr is complete', async () => {

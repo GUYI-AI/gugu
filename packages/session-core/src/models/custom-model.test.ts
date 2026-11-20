@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
+import { customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
 import { providerPresets } from './provider-presets';
 
 const connectionId = '481825a8-60b9-4c83-8d1b-f104e3db0269';
@@ -53,6 +53,29 @@ describe('custom model protocol matching', () => {
     expect(matchCustomModel({ connection, nativeProtocol: 'anthropic-messages' }).reason).toBe('missing-key');
     expect(matchCustomModel({ connection: { ...connection, keySaved: true }, nativeProtocol: 'anthropic-messages', hasModel: false }).reason).toBe('no-model');
     expect(matchCustomModel({ connection: { ...connection, keySaved: true }, nativeProtocol: 'anthropic-messages', hasModel: false, allowDefaultModel: true }).reason).toBeUndefined();
+  });
+  it('offers a protocol the harness can convert only when no direct endpoint matches', () => {
+    const chat = { protocol: 'openai-chat-completions' as const, baseUrl: 'https://chat.test/v1' };
+    const anthropic = { protocol: 'anthropic-messages' as const, baseUrl: 'https://a.test' };
+    const convertible = { nativeProtocol: 'anthropic-messages' as const, convertFrom: ['openai-chat-completions' as const] };
+    expect(matchCustomModel({ ...convertible, connection: { endpoints: [chat], keySaved: true } })).toEqual({ endpoint: chat, converted: true });
+    expect(matchCustomModel({ ...convertible, connection: { endpoints: [chat, anthropic], keySaved: true } })).toEqual({ endpoint: anthropic });
+    expect(matchCustomModel({ nativeProtocol: 'anthropic-messages', connection: { endpoints: [chat], keySaved: true } }).reason).toBe('protocol');
+    expect(matchCustomModel({ ...convertible, connection: { endpoints: [{ ...chat, protocol: 'gemini-generate-content' as const }], keySaved: true } }).reason).toBe('protocol');
+    expect(matchCustomModel({ ...convertible, connection: { endpoints: [chat], keySaved: false } }).reason).toBe('missing-key');
+  });
+  it.each([
+    ['https://open.bigmodel.cn/api/anthropic', 'anthropic-messages'],
+    ['https://relay.test/v1/messages', 'anthropic-messages'],
+    ['https://api.openai.com/v1/responses', 'openai-responses'],
+    ['https://api.siliconflow.cn/v1/chat/completions', 'openai-chat-completions'],
+    ['https://generativelanguage.googleapis.com/v1beta/openai/', 'openai-chat-completions'],
+    ['https://generativelanguage.googleapis.com/v1beta', 'gemini-generate-content'],
+    ['https://api.siliconflow.cn/v1', undefined],
+    ['https://relay.test', undefined],
+    ['not a url', undefined],
+  ])('recognizes the protocol an address names: %s', (address, protocol) => {
+    expect(detectModelProtocol(address)).toBe(protocol);
   });
 });
 

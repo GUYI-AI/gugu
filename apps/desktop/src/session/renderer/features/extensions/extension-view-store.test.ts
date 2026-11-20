@@ -36,6 +36,22 @@ describe('each App navigation context owns its resident pages', () => {
     expect(store.claims.get(key('page.main', { ...target, tabId: 'b' }))?.token).toBe(second);
   });
 
+  it('a page whose document did not load is built afresh by its next claim; a loaded one is kept as it is', () => {
+    const target = { sessionId: 's', tabId: 'a' };
+    const page = key('broken.main', target);
+    store.release('broken.main', bind(take('broken.main', target)));
+    take('broken.main', target);
+    expect(store.builds.get(page)).toBeUndefined(); // control: a loaded page is reused, not rebuilt
+    store.pageFailed(page);
+    take('broken.main', target);
+    expect(store.builds.get(page)).toBe(1);
+    take('broken.main', target);
+    expect(store.builds.get(page)).toBe(1); // rebuilt once; the fresh page is not failed
+    store.reload(page); // the tab's 重新加载
+    expect(store.builds.get(page)).toBe(2);
+    expect(store.claims.get(page)).toBeDefined();
+  });
+
   it('a stale release cannot take the newer claim of the same context', () => {
     const target = { sessionId: 's', tabId: 'a' };
     const old = take('claims.main', target);

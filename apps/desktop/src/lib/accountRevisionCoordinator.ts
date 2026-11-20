@@ -173,6 +173,18 @@ export function readMessageCreatedRevision(
   return { chatId: key.chatId, messageId: key.entityId, message: raw as RawMessageRow }
 }
 
+/** An additive chat_changed fact refreshes an existing body without announcing another arrival. */
+export function readMessageRefreshRevision(payload: unknown): { chatId: string; messageId: string; message: RawMessageRow | null } | null {
+  const key = readRevisionResourceKey(payload, 'chat_changed')
+  const raw = payload as { message_id?: unknown; message?: unknown }
+  if (raw.message_id === undefined) return null
+  if (typeof raw.message_id !== 'string' || !raw.message_id) throw new Error('chat_changed revision has malformed message_id')
+  if (raw.message === undefined || raw.message === null) return { chatId: key.chatId, messageId: raw.message_id, message: null }
+  if (typeof raw.message !== 'object' || Array.isArray(raw.message) || (raw.message as RawMessageRow).id !== raw.message_id
+    || (raw.message as RawMessageRow).chat_id !== key.chatId) throw new Error('chat_changed revision has malformed message')
+  return { chatId: key.chatId, messageId: raw.message_id, message: raw.message as RawMessageRow }
+}
+
 export type AccountRevisionCoordinator = {
   start(): void
   stop(): void
@@ -273,6 +285,20 @@ export function createAccountRevisionCoordinator(
         const key = readRevisionResourceKey(operation.payload, event)
         if (!key.entityId) throw new Error('message_deleted revision requires entity_id')
         recordMessageDeletion(transaction, accountId, key.chatId, key.entityId, operation.revision)
+      }
+      if (messages && event === 'chat_changed') {
+        const refresh = readMessageRefreshRevision(operation.payload)
+        if (refresh) {
+          const raw = refresh.message as (RawMessageRow & { deleted_at?: unknown; deleted_for_user_ids?: unknown }) | null
+          if (!raw || raw.deleted_at || (Array.isArray(raw.deleted_for_user_ids) && raw.deleted_for_user_ids.includes(accountId))) {
+            recordMessageDeletion(transaction, accountId, refresh.chatId, refresh.messageId, operation.revision)
+          } else {
+            const message = messageItemFromRow(raw, accountId)
+            if (!message || !Number.isSafeInteger(message.seq) || message.seq < 1) throw new Error('Refreshed message body is malformed')
+            // This updates the phone repository too. It is an existing body, never a notification arrival.
+            ingestAccountMessage(repository, transaction, message, operation.revision)
+          }
+        }
       }
       transaction.putView(operationKey(operation.revision), messages && event === 'message_created'
         ? { ...operation, notify: live, messageCommitted } : operation)

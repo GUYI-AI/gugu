@@ -1,9 +1,11 @@
+import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
+import { ChatComposer, MessageProvider, type PromptEditorRef } from '@gugu/session-ui/react/components'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { LocalizationProvider } from '@/i18n'
-import { until } from '../../../../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import '@/i18n/registerMessagingCatalog'
 import '@/styles/tokens.css'
@@ -14,14 +16,14 @@ let root: Root | null = null
 let host: HTMLDivElement | null = null
 afterEach(() => { root?.unmount(); host?.remove(); document.documentElement.removeAttribute('data-theme'); root = null; host = null })
 
-async function mount(width = 390) {
+async function mount(width = 390, isGroupChat = false) {
   await page.viewport(width, 844)
   host = document.body.appendChild(document.createElement('div'))
   host.setAttribute('data-phone-shell', '')
   host.style.cssText = `position:fixed;bottom:0;left:0;width:${width}px;padding:8px;box-sizing:border-box`
   const send = vi.fn(async () => {})
   root = createRoot(host)
-  root.render(<LocalizationProvider><ChatMessageComposer onSend={send} /></LocalizationProvider>)
+  root.render(<LocalizationProvider><ChatMessageComposer onSend={send} isGroupChat={isGroupChat} /></LocalizationProvider>)
   await until('phone editor mounted', () => !!host?.querySelector('[contenteditable]'))
   return { editor: host.querySelector<HTMLElement>('[contenteditable]')!, send }
 }
@@ -130,6 +132,69 @@ it('sending from the expanded editor collapses it and dismisses keyboard focus',
   expect(host!.querySelector('[data-phone-expanded]')).toBeNull()
   expect(editor.textContent).toBe('')
   expect(document.activeElement).toBe(document.body)
+})
+
+it('sending a long group draft without compositionend restores the empty capsule', async () => {
+  const { editor, send } = await mount(390, true)
+  const composer = host!.querySelector<HTMLElement>('[data-phone-capsule]')!
+  const input = composer.querySelector<HTMLElement>('[data-slot="composer-input"]')!
+  const emptyHeight = input.getBoundingClientRect().height
+  const draft = '第一行\n第二行\n第三行\n第四行'
+  await page.getByTestId('chat-composer').fill(draft)
+  await until('the long draft has an expand button', () => !!composer.querySelector('[data-phone-editor-toggle]'))
+  expect(input.getBoundingClientRect().height).toBeGreaterThan(emptyHeight)
+  expect(document.activeElement).toBe(editor)
+  const ended = vi.fn()
+  editor.addEventListener('compositionend', ended, { once: true })
+  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+
+  await page.getByRole('button', { name: translateSessionMessage('composer.sendMessage') }).click()
+  await until('send cleared the editor and dismissed focus', () =>
+    send.mock.calls.length === 1 && editor.textContent === '' && document.activeElement !== editor)
+  await expect.element(page.getByText(editor.dataset.placeholder!, { exact: true })).toBeVisible()
+  await untilStable('settled capsule height after send', () => input.getBoundingClientRect().height)
+
+  expect(send).toHaveBeenCalledWith(draft, expect.anything())
+  expect(ended).not.toHaveBeenCalled()
+  expect(input.getBoundingClientRect().height).toBe(emptyHeight)
+  expect(composer.querySelector('[data-phone-editor-toggle]')).toBeNull()
+  expect(composer.querySelector('[contenteditable]')).toBe(editor)
+})
+
+it.each(['blur', 'clear'] as const)('%s releases a paused layout without compositionend', async (end) => {
+  await page.viewport(390, 844)
+  host = document.body.appendChild(document.createElement('div'))
+  host.dataset.phoneShell = ''
+  host.style.width = '370px'
+  const api = createRef<PromptEditorRef>()
+  root = createRoot(host)
+  root.render(<MessageProvider locale="zh-CN" translate={translateSessionMessage}>
+    <ChatComposer mobile editorApiRef={api} onSubmit={() => {}} />
+  </MessageProvider>)
+  await until('phone composer mounted', () => !!api.current && !!host!.querySelector('[contenteditable]'))
+  const composer = host.querySelector<HTMLElement>('[data-phone-capsule]')!
+  const editor = composer.querySelector<HTMLElement>('[contenteditable]')!
+  const input = composer.querySelector<HTMLElement>('[data-slot="composer-input"]')!
+  const emptyHeight = input.getBoundingClientRect().height
+
+  await page.getByTestId('prompt-editor').fill('第一行\n第二行\n第三行')
+  await until('long draft is laid out', () => composer.hasAttribute('data-phone-attachment-row'))
+  const longHeight = input.getBoundingClientRect().height
+  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  api.current!.setText('中文')
+  await untilStable('layout while composing', () => input.getBoundingClientRect().height)
+  expect(input.getBoundingClientRect().height).toBe(longHeight)
+  expect(document.activeElement).toBe(editor)
+
+  if (end === 'blur') editor.blur()
+  else api.current!.setText('')
+  await untilStable('layout after releasing composition', () => input.getBoundingClientRect().height)
+
+  expect(input.getBoundingClientRect().height).toBe(emptyHeight)
+  expect(composer.querySelector('[data-phone-editor-toggle]')).toBeNull()
+  expect(composer.querySelector('[contenteditable]')).toBe(editor)
+  expect(editor.textContent).toBe(end === 'blur' ? '中文' : '')
+  if (end === 'clear') expect(document.activeElement).toBe(editor)
 })
 
 it('leaving the phone layout closes expanded editing without replacing the editor', async () => {

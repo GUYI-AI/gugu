@@ -19,13 +19,13 @@ import { openMediaProcess } from '../../../../../../native/projection-media/node
 import { ProjectionSignals } from '../../../../../../native/projection-media/node/signaling.mjs';
 import { withFixtureCleanup } from '../../test-support/fixture-failure';
 import { captureColorWitness } from './projection-capture-witness';
+import { untilObserved } from './fixture-wait';
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Pipeline fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
-const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Diagnostic-only: bounded phase names and monotonic offsets, never payloads or identities.
-const diagnosticPhases = new Set<string>(["answer-applied", "answer-received", "browser-closed", "browser-spawn-called", "browser-spawned", "cleanup-entered", "first-wait-complete", "first-wait-entered", "frame-encoded", "http-module", "http-offer", "http-viewer", "input-driver-applied", "input-driver-entered", "input-result-received", "paint-one-received", "pixels-decoded", "viewer-answer-accepted", "viewer-answer-start", "viewer-channel-ready", "viewer-closed", "viewer-closed-error", "viewer-error", "viewer-frame-matched", "viewer-generation-received", "viewer-input-result", "viewer-script-started", "viewer-video-frame", "wait-timeout", "source-capture-wait", "source-capture-witnessed"]);
+const diagnosticPhases = new Set<string>(["answer-applied", "answer-received", "browser-closed", "browser-spawn-called", "browser-spawned", "cleanup-entered", "first-wait-complete", "first-wait-entered", "frame-encoded", "http-module", "http-offer", "http-viewer", "input-driver-applied", "input-driver-entered", "input-result-received", "paint-one-received", "pixels-decoded", "viewer-answer-accepted", "viewer-answer-start", "viewer-channel-ready", "viewer-closed", "viewer-closed-error", "viewer-error", "viewer-frame-matched", "viewer-generation-received", "viewer-input-result", "viewer-script-started", "viewer-video-frame", "source-capture-wait", "source-capture-witnessed"]);
 const diagnosticSeen = new Set<string>();
 const diagnosticStart = performance.now();
 function mark(phase: string, rendererElapsedMs?: number): void {
@@ -129,11 +129,17 @@ void app.whenReady().then(async () => {
   let server: ReturnType<typeof createServer> | undefined, browser: ReturnType<typeof spawn> | undefined;
   let browserExit = Promise.resolve(), exited = false;
   let phase = 'setup';
+  let expectedViewerClose = false;
+  const requests: Record<string, number> = {};
+  const observations = () => ({ phase, requests, paints: paints.map(frame => frame.sequence),
+    outcomes: outcomes.length, expectedViewerClose, decoded: decoded.length, encoded: [...encoded.keys()], inputCalls, viewerGeneration: Boolean(viewerGeneration) });
   await withFixtureCleanup(() => phase, async () => {
     const opened = await signals.receive(context, { type: 'open', requestId: 'fixture-open', sourceId: publisher.id }) as { id: string; offer: { type: 'offer'; sdp: string } };
     assert.ok(opened?.offer);
     server = createServer(async (request, response) => {
       try {
+        const route = request.url ?? '';
+        if (['/', '/fixture-phase', '/viewer.mjs', '/offer', '/answer', '/paint', '/result', '/error', '/viewer-closed'].includes(route)) requests[route] = (requests[route] ?? 0) + 1;
         if (request.url === '/viewer.mjs') { mark('http-module'); response.setHeader('Content-Type', 'text/javascript'); response.end(fs.readFileSync(path.join(process.cwd(), 'apps/desktop/native/projection-media/web/viewer.mjs'))); return; }
         if (request.url === '/offer') { mark('http-offer'); response.end(JSON.stringify(opened.offer)); return; }
         if (request.method !== 'POST') { if (request.url === '/') mark('http-viewer'); response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); return; }
@@ -150,9 +156,10 @@ void app.whenReady().then(async () => {
         } else if (request.url === '/paint') {
           paints.push(JSON.parse(data)); if (paints.at(-1)?.sequence === 1) mark('paint-one-received');
         } else if (request.url === '/result') { outcomes.push(JSON.parse(data)); mark('input-result-received'); }
+        else if (request.url === '/viewer-closed' && !expectedViewerClose) throw new Error('Viewer closed before test revocation: ' + data);
         else if (request.url === '/error') throw new Error(data);
         response.end('{}');
-      } catch (error) { fault = error; response.statusCode = 400; response.end(String(error)); }
+      } catch (error) { fault ??= error; response.statusCode = 400; response.end(String(error)); }
     });
     const listening = server;
     await new Promise<void>(resolve => listening.listen(0, '127.0.0.1', resolve));
@@ -165,24 +172,9 @@ void app.whenReady().then(async () => {
     browser.stderr?.on('data', data => { stderr = (stderr + data).slice(-4096); });
     const chromium = browser;
     browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { mark('browser-closed'); exited = true; resolve(); }); });
-    const until = async (condition: () => boolean | Promise<boolean>) => {
-      let active = true, timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          (async () => {
-            while (active) {
-              if (fault) throw fault;
-              if (exited) throw new Error('Chromium exited: ' + stderr);
-              if (await condition()) return;
-              if (active) await pause(20);
-            }
-          })(),
-          new Promise<never>((_, reject) => { timer = setTimeout(() => {
-            mark('wait-timeout'); reject(new Error('Pipeline timed out: ' + stderr));
-          }, 12000); }),
-        ]);
-      } finally { active = false; if (timer !== undefined) clearTimeout(timer); }
-    };
+    const until = (condition: () => boolean | Promise<boolean>) => untilObserved(condition, {
+      phase, fault: () => fault, exited: () => exited ? stderr : undefined, arrived: observations,
+    });
     phase = 'first-paint'; mark('first-wait-entered');
     await until(() => paints.some(paint => paint.sequence === 1) && outcomes.length > 0);
     mark('first-wait-complete');
@@ -214,6 +206,7 @@ void app.whenReady().then(async () => {
         width: 128, height: 96, fps: 10, bitrate: 500000, signal: new AbortController().signal }));
     phase = 'device-projection';
     const device = await probeDeviceProjection(id);
+    expectedViewerClose = true;
     service.setPermissionGranted(id, 'agents:tools', false);
     await assert.rejects(publisher.publish({ width: 128, height: 96, mime: 'image/png', data: 'YQ==' }), /revoked/);
     revokeExtensionProgramAccess(id);
@@ -255,6 +248,10 @@ const trace=phase=>{if(phaseSeen.has(phase))return;phaseSeen.add(phase);
  void fetch('/paint',{method:'POST',body:JSON.stringify({...frame,rgb:[p[0],p[1],p[2]]})});
  if(!sent){sent=true;send(JSON.stringify({type:'input',generation,frame:frame.sequence,sequence:1,input:{kind:'text',text:'整链中文🙂'}}))}}
  });trace('viewer-channel-ready');
- void viewer.closed.then(()=>trace('viewer-closed'),()=>trace('viewer-closed-error'));
+  // Keep asynchronous media failures observable after the handshake promise resolves.
+ await viewer.closed.then(
+  ()=>{trace('viewer-closed');return fetch('/viewer-closed',{method:'POST',body:'closed'})},
+  error=>{trace('viewer-closed-error');return fetch('/viewer-closed',{method:'POST',body:String(error)})}
+ );
 })().catch(error=>{trace('viewer-error');return fetch('/error',{method:'POST',body:String(error)})});
 </script>`;

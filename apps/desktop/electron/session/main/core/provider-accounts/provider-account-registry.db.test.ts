@@ -17,6 +17,32 @@ describe('ProviderAccountRegistry', () => {
     return fixture.registry.upsertAccount({ providerId, accountId, secret });
   }
 
+  it('atomically commits native reference, duplicate aliases and the default, with idempotent journal replay', async () => {
+    await fixture.registry.upsertAccount({ providerId: 'harness:codex', accountId: 'native', meta: { harnessConnection: { kind: 'native' } } });
+    await fixture.registry.upsertAccount({ providerId: 'harness:codex', accountId: 'old', meta: { displayName: 'Keep label', harnessConnection: { kind: 'account' } } });
+    await fixture.registry.setDefaultAccount('harness:codex', 'old');
+    const commit = { operationId: 'fixture-operation', root: '/synthetic/native', identity: '["chatgpt","person","workspace"]',
+      expected: await fixture.registry.listAccounts('harness:codex'), aliases: ['old'], retained: [], defaultId: 'native' };
+    await fixture.registry.commitCodexNativeReference(commit);
+    await fixture.registry.commitCodexNativeReference(commit);
+    const rows = await fixture.registry.listAccounts('harness:codex');
+    expect(rows).toHaveLength(2);
+    expect(rows.filter(row => row.isDefault).map(row => row.accountId)).toEqual(['native']);
+    expect(rows.find(row => row.accountId === 'old')?.meta).toMatchObject({ displayName: 'Keep label', harnessConnection: { migratedTo: 'native', removed: true } });
+    expect(rows.find(row => row.accountId === 'native')?.meta?.harnessConnection?.nativeOAuth).toEqual({ root: commit.root, identity: commit.identity, operationId: commit.operationId });
+    expect(fixture.secretStore.secrets.size).toBe(0);
+  });
+
+  it('does not partially publish a native reference when a connection changed after preparation', async () => {
+    await fixture.registry.upsertAccount({ providerId: 'harness:codex', accountId: 'native', meta: { harnessConnection: { kind: 'native' } } });
+    const expected = await fixture.registry.listAccounts('harness:codex');
+    await fixture.registry.renameAccount('harness:codex', 'native', 'New label');
+    await expect(fixture.registry.commitCodexNativeReference({ operationId: 'stale', root: '/synthetic/native', identity: 'fixture',
+      expected, aliases: [], retained: [{ id: 'independent', name: 'Independent' }], defaultId: 'independent' })).rejects.toThrow('changed during credential migration');
+    expect(await fixture.registry.listAccounts('harness:codex')).toHaveLength(1);
+    expect((await fixture.registry.getAccount('harness:codex', 'native'))?.meta?.harnessConnection?.nativeOAuth).toBeUndefined();
+  });
+
   it('notifies only after durable account mutations and removes an unsubscribed observer', async () => {
     const snapshots: Promise<unknown>[] = [];
     const listener = vi.fn(() => { snapshots.push(fixture.registry.listAccounts('mail')); });

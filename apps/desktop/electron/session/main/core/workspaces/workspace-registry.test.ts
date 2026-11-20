@@ -7,11 +7,9 @@ function makeWorkspace(id: string): {
   workspace: Workspace;
   dispose: ReturnType<typeof vi.fn>;
   fileTreeDispose: ReturnType<typeof vi.fn>;
-  gitDispose: ReturnType<typeof vi.fn>;
 } {
   const dispose = vi.fn(async () => {});
   const fileTreeDispose = vi.fn();
-  const gitDispose = vi.fn();
 
   return {
     workspace: {
@@ -20,19 +18,16 @@ function makeWorkspace(id: string): {
       configPath: `/tmp/${id}/.emdash.json`,
       fileSystem: {} as Workspace['fileSystem'],
       fileTree: { dispose: fileTreeDispose } as unknown as Workspace['fileTree'],
-      gitWorktree: { dispose: gitDispose } as unknown as Workspace['gitWorktree'],
+      git: async () => undefined,
       settings: {} as Workspace['settings'],
       lifecycleService: {
         dispose,
       } as unknown as Workspace['lifecycleService'],
-      gitRepository: {} as Workspace['gitRepository'],
-      gitRepositoryFetchService: {} as Workspace['gitRepositoryFetchService'],
       watchDirectory: vi.fn() as unknown as Workspace['watchDirectory'],
       nudge: vi.fn(async () => false),
     },
     dispose,
     fileTreeDispose,
-    gitDispose,
   };
 }
 
@@ -91,7 +86,7 @@ describe('WorkspaceRegistry', () => {
 
   it('disposes workspace resources when ref count reaches zero', async () => {
     const registry = new WorkspaceRegistry();
-    const { workspace, dispose, fileTreeDispose, gitDispose } = makeWorkspace('branch:main');
+    const { workspace, dispose, fileTreeDispose } = makeWorkspace('branch:main');
     const factory = vi.fn(async () => ({ workspace }));
 
     await registry.acquire('branch:main', 'test-project', factory);
@@ -100,12 +95,10 @@ describe('WorkspaceRegistry', () => {
     await registry.teardown('branch:main');
     expect(dispose).not.toHaveBeenCalled();
     expect(fileTreeDispose).not.toHaveBeenCalled();
-    expect(gitDispose).not.toHaveBeenCalled();
     expect(registry.refCount('branch:main')).toBe(1);
 
     await registry.teardown('branch:main');
     expect(fileTreeDispose).toHaveBeenCalledTimes(1);
-    expect(gitDispose).toHaveBeenCalledTimes(1);
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(registry.get('branch:main')).toBeUndefined();
     expect(registry.refCount('branch:main')).toBe(0);
@@ -127,10 +120,8 @@ describe('WorkspaceRegistry', () => {
     await registry.teardownAll();
 
     expect(first.fileTreeDispose).toHaveBeenCalledTimes(1);
-    expect(first.gitDispose).toHaveBeenCalledTimes(1);
     expect(first.dispose).toHaveBeenCalledTimes(1);
     expect(second.fileTreeDispose).toHaveBeenCalledTimes(1);
-    expect(second.gitDispose).toHaveBeenCalledTimes(1);
     expect(second.dispose).toHaveBeenCalledTimes(1);
     expect(registry.refCount('branch:main')).toBe(0);
     expect(registry.refCount('root:')).toBe(0);
@@ -195,7 +186,7 @@ describe('WorkspaceRegistry', () => {
 
   it('calls onDestroy before git.dispose and lifecycleService.dispose', async () => {
     const registry = new WorkspaceRegistry();
-    const { workspace, dispose, fileTreeDispose, gitDispose } = makeWorkspace('branch:main');
+    const { workspace, dispose, fileTreeDispose } = makeWorkspace('branch:main');
     const order: string[] = [];
 
     dispose.mockImplementation(() => {
@@ -204,9 +195,6 @@ describe('WorkspaceRegistry', () => {
     });
     fileTreeDispose.mockImplementation(() => {
       order.push('fileTreeDispose');
-    });
-    gitDispose.mockImplementation(() => {
-      order.push('gitDispose');
     });
 
     const onDestroy = vi.fn(() => {
@@ -218,7 +206,7 @@ describe('WorkspaceRegistry', () => {
     await registry.acquire('branch:main', 'test-project', factory);
     await registry.teardown('branch:main');
 
-    expect(order).toEqual(['onDestroy', 'fileTreeDispose', 'gitDispose', 'lifecycleDispose']);
+    expect(order).toEqual(['onDestroy', 'fileTreeDispose', 'lifecycleDispose']);
   });
 
   it('calls onDestroy for each entry in teardownAll', async () => {
@@ -311,7 +299,7 @@ describe('WorkspaceRegistry', () => {
 
   it('releases leases for a project without running teardown hooks', async () => {
     const registry = new WorkspaceRegistry();
-    const { workspace, dispose, fileTreeDispose, gitDispose } = makeWorkspace('branch:main');
+    const { workspace, dispose, fileTreeDispose } = makeWorkspace('branch:main');
     const onDestroy = vi.fn(async () => {});
     const onDetach = vi.fn(async () => {});
 
@@ -324,7 +312,6 @@ describe('WorkspaceRegistry', () => {
     await registry.releaseLeasesForProject('test-project');
 
     expect(fileTreeDispose).toHaveBeenCalledTimes(1);
-    expect(gitDispose).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(onDestroy).not.toHaveBeenCalled();
     expect(onDetach).not.toHaveBeenCalled();
@@ -333,7 +320,6 @@ describe('WorkspaceRegistry', () => {
     await registry.teardownAllForProject('test-project');
 
     expect(fileTreeDispose).toHaveBeenCalledTimes(1);
-    expect(gitDispose).toHaveBeenCalledTimes(1);
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(onDestroy).toHaveBeenCalledTimes(1);
     expect(onDetach).not.toHaveBeenCalled();

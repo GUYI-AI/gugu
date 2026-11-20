@@ -11,7 +11,7 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { spawn } from '@gugu/core/local/childProcess'
 import fs from 'node:fs'
-import readline from 'node:readline'
+import { createJsonlReader } from '@gugu/core/local/jsonl.mjs'
 
 /** 原生助手回的错:code 与设备动作的错误码同名(os_permission / invalid_args / not_found / needs_confirmation / execution_failed)。 */
 export class NativeCallError extends Error {
@@ -55,7 +55,7 @@ export function createMacHelperClient(options: { binary: string | null; missingM
     child = proc
     const pending = new Map<number, Pending>()
     pendingOf.set(proc, pending)
-    const lines = readline.createInterface({ input: proc.stdout })
+    const lines = createJsonlReader({ input: proc.stdout })
     lines.on('line', (line) => {
       let msg: { id?: unknown; ok?: unknown; result?: unknown; error?: { code?: unknown; message?: unknown; details?: unknown } }
       try {

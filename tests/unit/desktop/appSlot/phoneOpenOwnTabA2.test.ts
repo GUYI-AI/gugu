@@ -28,7 +28,7 @@ vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDe
 // A plain open is handed to the window as a link (`openChatFile`, the desktop's own path): what it is handed is read here.
 const linked = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/host-action-handlers', () => ({ applyExtensionHostAction: linked }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
 // Where the file is and whether this page may read it are `openTarget`'s, unchanged by A2 (its own tests): here it
 // answers the chat's sales.xlsx; who opens it is the host's real answer over the Apps on this phone.
 vi.mock('../../../../apps/desktop/src/session/shared/extensions/app-files-core', async (importOriginal) => {

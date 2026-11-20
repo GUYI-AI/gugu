@@ -67,7 +67,7 @@ async function writeAuthAt(root: string, text: string): Promise<void> {
 
 const vault = (id: string) => join(state.home, 'harness-connections', 'codex', id === 'native' ? 'managed-native' : id, '.codex');
 
-it('restores Codex terminal B once, then retries managed A from its existing vault', async () => {
+it('references the terminal account and keeps the former native vault as an independent account without writing the terminal', async () => {
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
   const stateDir = join(state.home, 'harness-connections', 'codex');
   const terminalRoot = process.env.CODEX_HOME!;
@@ -76,42 +76,35 @@ it('restores Codex terminal B once, then retries managed A from its existing vau
   await writeAuthAt(terminalRoot, chatgptAuth('work', 'latest'));
   await writeAuthAt(formerNative, chatgptAuth('terminal'));
   await writeAuthAt(vault(work.id), chatgptAuth('work'));
-  await writeFile(join(stateDir, 'live-account.json'), JSON.stringify({ connectionId: work.id, identity: 'chatgpt:work|ws' }));
-  await mkdir(state.codexRoot, { recursive: true });
-  const config = join(state.codexRoot, 'config.toml');
-  await writeFile(config, 'cli_auth_credentials_store = "keyring"\n');
-
-  await expect(migrateOwnedHarnessAccounts('codex', process.env)).rejects.toThrow('keyring');
-  expect(await readFile(join(terminalRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal'));
-  expect(await readFile(join(vault(work.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'latest'));
-  await expect(stat(join(formerNative, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
-  await expect(stat(join(vault('native'), 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
-
-  await writeAuthAt(terminalRoot, chatgptAuth('terminal', 'renewed'));
-  await rm(config);
+  const before = await readFile(join(terminalRoot, 'auth.json'));
   await migrateOwnedHarnessAccounts('codex', process.env);
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'latest'));
-  await expect(assertHarnessConnectionSelectable('codex', 'native')).rejects.toThrow('no saved sign-in');
-  await writeAuthAt(state.codexRoot, chatgptAuth('work', 'rotated-in-gugu'));
-  expect(await readFile(join(terminalRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal', 'renewed'));
+  await migrateOwnedHarnessAccounts('codex', process.env);
+  const connections = await listHarnessConnections('codex');
+  expect(connections).toHaveLength(2);
+  expect(connections.find(row => row.current)?.id).toBe('native');
+  const independent = connections.find(row => row.id !== 'native')!;
+  expect(await readFile(join(vault(independent.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal'));
+  expect(await readFile(join(terminalRoot, 'auth.json'))).toEqual(before);
+  await expect(readFile(join(vault(work.id), 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect((await state.fixture!.registry.getAccount('harness:codex', work.id))?.meta?.harnessConnection?.migratedTo).toBe('native');
 });
 
-it('carries the Codex sign-in into an existing installation exactly once and isolates later refreshes', async () => {
+it('migrates copied OAuth into one native reference and removes both managed copies idempotently', async () => {
   const terminal = process.env.CODEX_HOME!;
   const terminalAuth = join(terminal, 'auth.json');
   const managedAuth = join(state.codexRoot, 'auth.json');
-  const former = chatgptAuth('person', 'old');
+  const former = chatgptAuth('person', 'source');
+  const copied = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
   await writeAuthAt(terminal, former);
-  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'copied' });
-  expect(await readFile(terminalAuth, 'utf8')).toBe(former);
-  expect(await readFile(managedAuth, 'utf8')).toBe(former);
-
-  await writeAuthAt(terminal, chatgptAuth('person', 'terminal-refresh'));
-  expect(await readFile(managedAuth, 'utf8')).toBe(former);
-  await writeAuthAt(state.codexRoot, chatgptAuth('person', 'managed-refresh'));
+  await writeAuthAt(state.codexRoot, chatgptAuth('person', 'old-copy'));
+  await writeAuthAt(vault(copied.id), chatgptAuth('person', 'other-copy'));
+  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'reference' });
+  await expect(readFile(managedAuth)).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(join(vault(copied.id), 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   await migrateOwnedHarnessAccounts('codex', process.env, true);
-  expect(await readFile(managedAuth, 'utf8')).toBe(chatgptAuth('person', 'managed-refresh'));
-  expect(await readFile(terminalAuth, 'utf8')).toBe(chatgptAuth('person', 'terminal-refresh'));
+  expect(await listHarnessConnections('codex')).toHaveLength(1);
+  expect(await readFile(terminalAuth, 'utf8')).toBe(former);
 });
 
 it('asks for Codex sign-in when the existing account uses a keyring, without reading it', async () => {

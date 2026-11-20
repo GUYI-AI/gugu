@@ -5,6 +5,7 @@
  * 只管收发规矩,不碰 node / electron:动作本身怎么做、授权存在哪,由 `provider` 给(桌面 = 主进程,手机 = 原生层)。
  * 合同见 shared/deviceActions.ts 与 #7199 的协议评论。
  */
+import { serverNow } from '../shared/serverClock'
 import {
   DEVICE_ACTION_PROGRESS_EVENT,
   DEVICE_ACTION_PROGRESS_INTERVAL_MS,
@@ -260,7 +261,8 @@ export function createDeviceActionHost(options: DeviceActionHostOptions): Device
         }
         return { result }
       }
-      if (now() > Date.parse(call.deadline_at)) {
+      // The caller stamped `deadline_at` on the server's clock (`@@@server-clock`), so two devices' clocks never meet.
+      if (serverNow() > Date.parse(call.deadline_at)) {
         return refuse({ ok: false, code: 'expired', message: '这次调用到这台设备时已经过了最晚开始时刻,没有执行' })
       }
       const permit = await Promise.resolve(provider.permit(call.action))

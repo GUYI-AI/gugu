@@ -95,7 +95,7 @@ export const acpSessionLifecycleProcedures = {
 
 export const acpApiContract = defineContract({
   revertSession: fallible({
-    input: z.object({ sessionId: z.string().min(1), anchor: z.string().min(1) }),
+    input: z.object({ sessionId: z.string().min(1), anchor: z.string().min(1), restoreFiles: z.boolean().optional() }),
     data: z.object({ providerSessionId: z.string().min(1) }),
     error: acpSendPromptErrorSchema,
   }),

@@ -47,6 +47,8 @@ export interface ComposerAttachment {
   previewText?: string;
   /** `previewText` 只是文件的前一段。对话框据此挂一行说明。 */
   previewTruncated?: boolean;
+  /** The host already holds the file and can open its preview. */
+  hasLocalPreview?: boolean;
   /**
    * chip 的三态(照 assistant-ui `ComposerAttachment.state`,#5269):`uploading` 转圈 + 底边进度条、
    * `done` 显 × / ✓、`error` 把 meta 变红。缺省按 `done` 算 —— 既有调用点都是上传完才入列。
@@ -115,6 +117,11 @@ export interface ComposerModelOption {
    * 把它做成分组会把「谁的」这条更要紧的界线切碎。
    */
   providerLabel?: string;
+  /**
+   * Small grey tag after the name in the desktop list and the trigger: which vendor a person's own address belongs to (its registrable
+   * domain without the public suffix, e.g. `deepseek`). Gugu's own models have none.
+   */
+  tag?: string;
   /**
    * 这一条**看得见但选不了**,以及为什么。
    *
@@ -193,6 +200,8 @@ export interface ComposerModelItem {
   modelFeatures?: ComposerModelOption['modelFeatures'];
   groupLabel?: string;
   providerLabel?: string;
+  /** 见 `ComposerModelOption` 上同名字段。 */
+  tag?: string;
   /** 见 `ComposerModelOption` 上同名字段。 */
   disabled?: boolean;
   disabledReason?: string;

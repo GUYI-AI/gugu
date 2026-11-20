@@ -1,3 +1,5 @@
+import type { AnnotationConversation } from '@shared/browser-annotation';
+import { useAuth } from '@/store/auth';
 import { MessageSquare, Pencil, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState } from 'react';
@@ -37,10 +39,11 @@ function AnnotationThumbnail({ screenshot, rect, viewport }: BrowserAnnotationSe
   return <canvas ref={canvas} width={96} height={72} aria-hidden="true" className="h-9 w-12 shrink-0 rounded border border-border bg-muted" />;
 }
 
-export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSend, enabled, onRemove }: {
-  sessionId: string; onSend: () => void; enabled: boolean; onRemove?: (id: string) => void;
+export const AnnotationTray = observer(function AnnotationTray({ conversation, onSend, enabled, onRemove }: {
+  conversation: AnnotationConversation; onSend: () => void; enabled: boolean; onRemove?: (id: string) => void;
 }) {
-  const draft = sessionAnnotations.forSession(sessionId);
+  const { user } = useAuth();
+  const draft = sessionAnnotations.forConversation(conversation, user?.id);
   const { translate } = useSessionMessages();
   const [editing, setEditing] = useState<string | null>(null);
   useEffect(() => enabled ? draft.bindSend(onSend) : undefined, [draft, onSend, enabled]);
@@ -57,11 +60,8 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
             {draft.items.map(item => {
               const place = item.kind === 'browser' ? item.filePath ?? item.url : item.path;
               const position = item.kind === 'browser' ? item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')
-                : item.kind === 'file' ? item.startLine === item.endLine
-                  ? translate('annotations.line', { line: item.startLine })
-                  : translate('annotations.lines', { first: item.startLine, last: item.endLine })
-                  : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
-                    item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');
+                : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
+                  item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');
               return (
               <div key={item.id} className="flex flex-col gap-2 border-b border-border px-3 py-3 last:border-b-0">
                 <div className="flex min-w-0 items-start gap-2 text-xs text-foreground-muted">

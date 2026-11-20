@@ -1,4 +1,7 @@
+import { createTeamPaymentCheckout } from './team-payment-checkout'
+import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
+import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
@@ -115,7 +118,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
-import { buildProbePlatformCredentials } from './harness-catalog-probe-env'
+import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
@@ -124,6 +127,8 @@ import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } fro
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
+import { isTeamInvitationLink } from '../shared/team-invitation-link'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { OpenedLinkMailbox } from './opened-link-mailbox'
 import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
@@ -147,7 +152,7 @@ import { createUpdateState, type VersionedUpdateState } from '../shared/update-s
 import { createBuiltRendererRootResolver } from './rendererRoot'
 import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
 import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
-import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity, watchHostResumeGap } from './server/account-resume-wiring'
+import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
 import { runDueScheduledTasksForOwner } from './scheduled-tasks-runner'
 import { handOffLegacyWechat } from './wechat/handoff'
@@ -226,6 +231,7 @@ import {
   type AgentRosterRemovalReason,
 } from '@gugu/core/local/agent/deviceCommandRuntime'
 import {
+  agentsWithInbox,
   discloseInboxRowsFailed,
   DisclosedFailure,
   kickAgentInboxPull,
@@ -256,6 +262,8 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
+import { createQuestionCardSync } from './sessionpage/question-card-sync'
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, onAgentQuestionRecordsChanged, rememberPublicQuestionCard } from './session/main/core/sessions/agent-question-store'
 import {
   emdashAgentRegistry,
   type LocalSessionPeer,
@@ -375,6 +383,7 @@ import {
 import { sessionPlatformModel } from './session/main/core/sessions/platform-model-selection'
 import { providerSessionIdForSession } from './session/main/core/sessions/provider-session-id'
 import { SESSIONPAGE_SESSION_RELOAD_CHANNEL } from '../src/session/shared/core/agents/session-reload'
+import { codexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../src/session/shared/core/agents/platform-model'
 import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import {
@@ -441,6 +450,7 @@ import {
   createDesktopGuguMcpHost,
   setSessionExtensionCatalog,
   type AcpMcpServer,
+  type BuildSocialBridgeDeps,
   type DesktopGuguMcpHost,
 } from './acp-engine-utils'
 import { GUGU_PLATFORM_BLOCK, buildSessionpageProjectContextBlock } from './product-platform-prompt'
@@ -570,7 +580,6 @@ import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
 import { menuOpenSettingsChannel } from '@shared/events/appEvents'
 import { pinDesktopPointerMedia } from './linux-pointer-media'
-import { enableOverlayScrollbars } from './windows-overlay-scrollbars'
 import {
   NOTIFICATION_BUS_NAME,
   PROBE_TIMEOUT_MS,
@@ -713,9 +722,6 @@ if (process.env.GUGU_FAKE_MICROPHONE_FILE?.trim() && !app.isPackaged) {
 // pointer:none,Tailwind 的整块 hover 样式随之失效(置顶 / 归档等 hover 浮出按钮全灭)。command-line
 // 开关必须在 app ready 前追加,所以与上面的 CDP 端口放在一起。细节与真机读数见 linux-pointer-media.ts。
 pinDesktopPointerMedia(app.commandLine)
-// @@@win-overlay-scrollbar Windows 上让 Chromium 画悬浮滚动条(会话页树的 scrollbar-width: thin 默认是常驻带箭头的 10px 经典条)。
-// 同样必须在 app ready 前追加;`enable-features` 只在这一处写,细节见 windows-overlay-scrollbars.ts。
-enableOverlayScrollbars(app.commandLine)
 forwardWindowSeen()
 // @@@devtools-lock — 必须在任何窗口创建之前注册 'web-contents-created',否则主窗口漏在守卫外面。
 installDevtoolsLock((url) => {
@@ -853,6 +859,22 @@ function desktopAuthProvider(): RuntimeAuthProvider {
 }
 bindElectronSupabaseAuth(async (forceRefresh) =>
   (await desktopAuthProvider().getAuth({ forceRefresh }))?.accessToken ?? null)
+const questionCardSync = createQuestionCardSync({
+  auth: () => desktopAuthProvider().getAuth(), records: allAgentQuestionRecords,
+  publish: async (auth,messageId,result) => {
+    const { data,error } = await makeChatClient(auth.accessToken).rpc('settle_agent_question_card', {
+      p_message_id: messageId,p_state: result.state,p_answers: 'answers' in result ? result.answers : null,
+    });
+    if (error) throw new Error(`Question card update failed: ${error.message}`);
+    return data;
+  },
+  committed: record => markPublicQuestionCardSynced(record.sessionId,record.item.itemId),
+  failed: error => createLogger('question-card/sync').warn({ error: String(error) },'Question card result is waiting to synchronize'),
+})
+onAgentQuestionRecordsChanged(() => { void questionCardSync.wake() })
+onElectronCloudAnswer(questionCardSync.cloudAnswered)
+void app.whenReady().then(() => questionCardSync.wake())
+app.once('will-quit', questionCardSync.stop)
 let primaryGuguMcpHost: DesktopGuguMcpHost | null = null
 
 function hasPersistedMcpGrants(name: string): boolean {
@@ -2458,6 +2480,21 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
 })
+const teamPaymentCheckout = createTeamPaymentCheckout({
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  open: input => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
+    return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
+  },
+  report: error => createLogger('team/payment').warn({ error: String(error) }, 'Team payment browser failed'),
+})
+ipcMain.handle('team-payment:open', (event, input: unknown) => {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
+    return { ok: false, error: { code: 'forbidden' } }
+  return teamPaymentCheckout.request(input)
+})
+app.on('before-quit', () => teamPaymentCheckout.close())
 ipcMain.handle('app:get-version', () => app.getVersion())
 ipcMain.handle('auth:oauth-redirect', () => `${GUGU_LINK_SCHEME}://auth/callback`)
 ipcMain.handle('opened-links:take', (event) => {
@@ -2511,6 +2548,25 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
 })
+/**
+ * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same
+ * file resolver and publisher, uploads and session actions, so no surface loses a tool another has.
+ */
+function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction']): BuildSocialBridgeDeps {
+  return {
+    host,
+    resolveFile: desktopFiles.resolve,
+    publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+    attachments: attachmentUploads,
+    grantKey: sessionpageSurfaceKey(sessionId),
+    nativeSessionId: sessionId,
+    runHostAction: runAction,
+    runSessionAction: runAction,
+    // @@@2374 No auth: writing files and installing Apps call no cloud API for the person. Without the bridge this leg
+    // is not wired, so gugu_session's app_* actions fail when called rather than look usable.
+    ...(emdashBridge ? { runExtensionAction: extensionActionsFor(sessionId) } : {}),
+  }
+}
 registerNativeFileIpc(ipcMain, nativeFiles, error => createLogger('files').warn({ error: String(error) }, 'Native file operation failed'))
 app.on('will-quit', () => { attachmentUploads.dispose(); void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
 
@@ -2663,7 +2719,8 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    const startupReason = codexStartupKind(error)
+    return { ok: false, error: error instanceof Error ? error.message : String(error), ...(startupReason ? { startupReason } : {}) }
   }
 })
 
@@ -2694,6 +2751,7 @@ const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
 })
 
 function onHumanAuthSessionChanged(): void {
+  void questionCardSync.wake()
   externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
@@ -2814,7 +2872,10 @@ registerErrorSummaryReporting({
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
   set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
-  revoke: () => projectionDeviceRuntime.invalidate(),
+  revoke: () => {
+    projectionDeviceRuntime.invalidate()
+    teamPaymentCheckout.identityChanged(pushedHumanAuth && typeof pushedHumanAuth === 'object' ? pushedHumanAuth : null)
+  },
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,
@@ -3568,7 +3629,7 @@ let guguLinksReady = false
 function handleGuguLink(url: string): void {
   if (!url.startsWith(`${GUGU_LINK_SCHEME}://`)) return
   openedLinks.push(url)
-  if (isOAuthCallback(url)) {
+  if (isOAuthCallback(url) || isTeamInvitationLink(url)) {
     focusMainWindow()
     return
   }
@@ -3606,7 +3667,7 @@ function flushPendingGuguLinks(): void {
   guguLinksReady = true
   // Windows / Linux 冷启动:链接是这一次启动的参数。
   const coldStart = process.argv.find((arg) => arg.startsWith(`${GUGU_LINK_SCHEME}://`))
-  if (coldStart && !isOAuthCallback(coldStart)) pendingGuguLinks.push(coldStart)
+  if (coldStart && !isOAuthCallback(coldStart) && !isTeamInvitationLink(coldStart)) pendingGuguLinks.push(coldStart)
   for (const url of pendingGuguLinks.splice(0)) handleGuguLink(url)
 }
 
@@ -3791,8 +3852,8 @@ function crossMachine(): CrossMachineSessions {
     lookupAgents: async ({ userIds, numbers }) => {
       const auth = await requireAuth()
       const query = (column: 'id' | 'gugu_number', values: Array<string | number>) => makeIdentityClient(auth.accessToken)
-        .from('active_users').select('id, device_id, gugu_number')
-        .eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
+        .from('users').select('id, device_id, gugu_number')
+        .is('removed_at', null).eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
       const results = await Promise.all([userIds.length ? query('id', userIds) : null, numbers.length ? query('gugu_number', numbers) : null])
       return results.flatMap((result) => {
         if (result?.error) throw new Error(`agent identity lookup failed: ${result.error.message}`)
@@ -3847,11 +3908,14 @@ function crossMachine(): CrossMachineSessions {
 async function cloudComputerClient() {
   const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(), override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
   if (!baseUrl) return null
+  const account = await desktopAuthProvider().getAuth()
+  if (account && teamAccountTokenHint(account.accessToken) !== 'personal') return null
   return createCloudComputerClient({
     baseUrl,
     accessToken: async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken) throw new Error('this machine is not signed in to 咕咕')
+      if (teamAccountTokenHint(auth.accessToken) !== 'personal') throw new Error('Cloud computer spending requires a separate personal account')
       return auth.accessToken
     },
     anonKey: getSupabaseAnonKey(),
@@ -3917,6 +3981,11 @@ if (inheritedOwnerTimeZone) applyOwnerTimeZoneContext(inheritedOwnerTimeZone)
 
 const resumeAccountMessaging = createAccountResumeHandler({
   kickInbox: kickInboxForAgent,
+  agentsWithInbox: async (agentUserIds) => {
+    const auth = await authProvider?.getAuth()
+    if (!auth?.accessToken) throw new Error('host-resume: the roster inbox cannot be read while signed out')
+    return agentsWithInbox(agentUserIds, auth.accessToken)
+  },
   reconnect: resumeElectronSupabaseRealtime,
   reconcile: async () => { await reconcileSessionpagePlatformOnResume?.() },
   notifyCommands: () => deviceRuntimeHost?.notifyCommandsChanged(),
@@ -4165,7 +4234,7 @@ async function applyAgentModelSelectionOnDevice(input: {
   agentUserId: string
   engineId: string | null
   selection: AgentModelSelection
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const localAgent = await findLocalAgentByUserId(input.agentUserId, process.env)
   if (!localAgent) throw new Error('这个 Agent 不在当前设备上运行')
   const engineId = catalogEngineIdForAgent(localAgent, engineIdForAgentType) ?? input.engineId
@@ -4518,6 +4587,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
+    emdashBridge.setNativeHistoryProviderResolver(buildNativeHistoryProbeCredentials)
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)
@@ -4604,6 +4674,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
         return null
       })
       releaseCustomModelForwarders()
+      releaseConversionRouters()
       await releasePlatformModelsAtExit(live)
     }, reportShutdownPhase),
   ])
@@ -4910,15 +4981,14 @@ app.whenReady().then(async () => {
           const sender = await senderBinding(context, auth.userId)
           if (!sender.guguAgentUserId || !auth.accessToken) throw new Error('Session file handoff requires an Agent identity')
           const caller = await remoteCaller(auth, context)
-          const remotePeers = new Map<string, Array<Record<string, unknown>>>()
           const recipients: string[] = []
           for (const target of targets) {
             let agentId: string | null = target.agentId ?? null
             if (agentId) { recipients.push(agentId); continue }
             if (!target.deviceId) agentId = await guguAgentUserIdForSession(target.sessionId, process.env)
             else {
-              if (!remotePeers.has(target.deviceId)) remotePeers.set(target.deviceId, await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers' }, signal) as Array<Record<string, unknown>>)
-              const peer = remotePeers.get(target.deviceId)!.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
+              const peers = await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers', session_id: target.sessionId }, signal) as Array<Record<string, unknown>>
+              const peer = peers.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
               const identity = peer?.identity as { users?: { id?: string } } | undefined
               agentId = typeof peer?.agentUserId === 'string' ? peer.agentUserId : typeof peer?.agent_user_id === 'string' ? peer.agent_user_id.replace(/^user:/, '') : identity?.users?.id ?? null
             }
@@ -4991,6 +5061,7 @@ app.whenReady().then(async () => {
           return byNumber
         },
         resolvePrefixes: (input) => resolvePrefixes(input, signal),
+        receivedMessageIds: (prefix) => emdash.receivedMessageIds(context.sessionId, prefix),
         localSessionIds: (sessionIds) => emdash.localSessionIds(sessionIds),
         remote: crossMachine().messageDeps(() => remoteCaller(auth, context), signal),
       })
@@ -5034,7 +5105,8 @@ app.whenReady().then(async () => {
       // gugu-dev#181 ⑨ 问自群里的那一句,问题卡也进那个群(question-card.ts)。
       if (record.action === 'ask_user') {
         const asked = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions })
+        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions,
+          onPosting: (questionId,card) => rememberPublicQuestionCard(context.sessionId,questionId,card) })
       }
       // #7199 第二步:列我的设备与它们的动作 / 调某台设备的某个动作(`device` 是目标,❌ 当成「在那台机器上做」转发)。
       if (record.action === 'device_actions') {
@@ -5142,7 +5214,7 @@ app.whenReady().then(async () => {
       if (!auth?.accessToken || !auth.userId) throw new CrossMachineError('host_not_signed_in', 'that machine is not signed in to 咕咕')
       const signal = new AbortController().signal
       return crossMachine().answer(name, caller, action, {
-        peers: () => localSessionPeers(emdash, auth),
+        peers: (sessionId) => localSessionPeers(emdash, auth, sessionId),
         // app_install { device } from another machine: installed here the way a card's package is — fetched and checked
         // here (L4 10-02); the same dispatcher as this machine's app_*. D-31: that machine asks the person, as its agent's
         // approval — `consent` says hand back the ask, or install the bytes they agreed to.
@@ -5689,21 +5761,8 @@ app.whenReady().then(async () => {
                 forkSource.agentUserId,
               ),
             },
-            socialBridgeDeps: {
-              host: primaryGuguMcpHost,
-              resolveFile: desktopFiles.resolve,
-              publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
-              attachments: attachmentUploads,
-              // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
-              grantKey: sessionpageSurfaceKey(info.sessionId),
-              nativeSessionId: info.sessionId,
-              runHostAction: runAction,
-              runSessionAction: runAction,
-              forkOf: forkSource.forkOf,
-              ...(emdashBridge
-                ? { runExtensionAction: extensionActionsFor(info.sessionId) }
-                : {}),
-            },
+            // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
+            socialBridgeDeps: { ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction), forkOf: forkSource.forkOf },
           })
           const forkCapabilities = loadSessionAcpCapabilities(info.providerId, forkBundle, {
             cwd: info.cwd,
@@ -5964,25 +6023,13 @@ app.whenReady().then(async () => {
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
           model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
-            host: primaryGuguMcpHost,
-            resolveFile: desktopFiles.resolve,
-            publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
-            attachments: attachmentUploads,
-            grantKey: sessionpageSurfaceKey(info.sessionId),
-            nativeSessionId: info.sessionId,
+            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction),
+            ownerReadsSession: true,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, assistantHomeKind(process.env), provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
             } } : {}),
             ...(readAssistantResources ? { readAssistantResources } : {}),
-            runHostAction: runAction,
-            runSessionAction: runAction,
-            // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
-            // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
-            // ❌ 不给一个看起来能用却调不通的动作。
-            ...(emdashBridge
-              ? { runExtensionAction: extensionActionsFor(info.sessionId) }
-              : {}),
           },
         })
         injectMark('session-bundle-built')
@@ -6127,20 +6174,7 @@ app.whenReady().then(async () => {
       },
       socialBridge(info, host) {
         const sessionContext = ptySessionCallerContext(info)
-        const runAction = (action: unknown, auth: RuntimeAuth, signal: AbortSignal) =>
-          runLocalSessionAction(auth, sessionContext, action, signal)
-        return {
-          host,
-          attachments: attachmentUploads,
-          grantKey: sessionpageSurfaceKey(info.sessionId),
-          nativeSessionId: info.sessionId,
-          runHostAction: runAction,
-          runSessionAction: runAction,
-          // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
-          // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
-          // ❌ 不给一个看起来能用却调不通的动作。
-          ...(emdashBridge ? { runExtensionAction: extensionActionsFor(info.sessionId) } : {}),
-        }
+        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal))
       },
       platformRecovery: () => sessionpagePlatformRecovery,
       recordFailedSessionDirectMessage(params, message, error) {
@@ -6503,8 +6537,6 @@ app.whenReady().then(async () => {
             (server) => createLogger('server').info({ socket: server.socketPath }, '账号进程套接字已开(设备连接 link 与 open-url 走它)'),
             (err: unknown) => createLogger('server').error({ err }, '账号进程套接字开不出来 —— 设备连接(link)与 open-url 不可用'),
           )
-          const stopResumeGapWatch = watchHostResumeGap(resumeAccountMessaging)
-          app.once('will-quit', stopResumeGapWatch)
           // 远程隧道:别的电脑经中转连到这里的终端 / 浏览器 / 端口(不挡启动,失败原因留给 tunnel.open 答)。
           ensureServerTunnelEndpoint()
         }

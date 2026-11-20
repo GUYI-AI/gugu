@@ -35,7 +35,7 @@ vi.mock('@/mobile/local-agent/phoneTimelineClient', () => ({ phoneTimelineClient
   subscribeSession: async () => {}, unsubscribeSession: async () => { fixture.unsubscribe() },
 } }))
 vi.mock('@/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: async (device: string, _channel: string, [request]: unknown[]) => { fixture.sent(device, request); return { accepted: true } } }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSnapshot: vi.fn(), onMachineEvent: vi.fn(), fetchPhoneSessions: (device: string) => fixture.directoryFetch(device) }))
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ fetchSnapshot: vi.fn(), onMachineEvent: vi.fn(), fetchPhoneSessions: (device: string) => fixture.directoryFetch(device) }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn() {} }) }))
 import { SessionInputOutboxHost } from '@/hooks/useSessionInputOutbox'
 import { enqueueSessionInput, state } from '@/lib/sessionInputOutboxBridge'

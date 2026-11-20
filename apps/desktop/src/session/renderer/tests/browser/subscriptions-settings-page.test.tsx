@@ -92,6 +92,9 @@ const control = vi.hoisted(() => ({
   held: 0,
   created: null as Record<string, unknown> | null,
   removed: [] as string[],
+  renamed: [] as { providerId: string; connectionId: string; name: string }[],
+  origin: undefined as 'environment' | 'config-file' | undefined,
+  forcedUsage: [] as string[],
   selected: '',
   connections: [] as HarnessConnection[],
   codex: false,
@@ -142,7 +145,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     listConnections: async ({ providerId }: { providerId?: string } = {}) => control.connectionsError
       ? { success: false, error: { message: 'Connections offline' } }
       : { success: true, data: [...connectionsOf(providerId)] },
-    refreshAuthStatus: async () => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test' } }),
+    refreshAuthStatus: async () => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test', ...(control.origin ? { credentialSource: control.origin } : {}) } }),
     createConnection: async (input: Record<string, unknown>) => {
       control.created = input;
       const connection: HarnessConnection = input.kind === 'account'
@@ -151,6 +154,13 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
           ...(Array.isArray(input.models) ? { models: input.models as string[] } : {}), current: false };
       connectionsOf(input.providerId as string).push(connection);
       return { success: true, data: connection };
+    },
+    renameConnection: async (input: { providerId: string; connectionId: string; name: string }) => {
+      control.renamed.push(input);
+      const list = connectionsOf(input.providerId);
+      const target = list.find(connection => connection.id === input.connectionId)!;
+      target.name = input.name;
+      return { success: true, data: { ...target } };
     },
     // 宿主读这个地址的模型清单(#2507 第 6 轮)。
     listConnectionModels: async () => ({ success: true, data: { kind: 'listed', models: ['qwen3-coder-plus', 'qwen3-max'] } }),
@@ -179,7 +189,9 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       if (control.hold) await control.hold;
       return { success: true, data: control.signedOut ? { payer: 'not-signed-in' } : { payer: 'subscription', plan: 'Claude Max 20x' } };
     },
-    readSubscriptionUsage: async ({ connectionId }: { connectionId?: string }) => ({
+    readSubscriptionUsage: async ({ connectionId, force }: { connectionId?: string; force?: boolean }) => {
+      if (force && connectionId) control.forcedUsage.push(connectionId);
+      return {
       success: true,
       data: {
         kind: 'windows',
@@ -190,7 +202,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
           { windowMinutes: 10_080, group: 'Fable', usedPercent: 92 },
         ],
       },
-    }),
+    }; },
   }),
 }));
 
@@ -222,6 +234,9 @@ beforeEach(() => {
   control.held = 0;
   control.created = null;
   control.removed = [];
+  control.renamed = [];
+  control.forcedUsage = [];
+  control.origin = undefined;
   control.selected = '';
   control.codex = false;
   control.agentHomes = [];
@@ -293,12 +308,19 @@ it.each(['claude', 'codex'])('an expired current %s account offers "Sign in agai
   expect(thrown).toEqual([]);
 });
 
-it('a signed-in account and the native CLI configuration get no sign-in button on the row', async () => {
+// #3394: an auth file can still read as signed in after revocation, so re-login must stay reachable.
+it('a signed-in account offers re-login on the row for that same connection', async () => {
   control.connections = [{ id: 'account', kind: 'account', name: 'Saved account', current: true }];
   root.render(<ConnectionDetailsFixture />);
-  await until('the harness connection action is ready', () => !!host.querySelector('[data-testid="subscription-switch-claude"]'));
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  expect(host.querySelector('[data-testid="subscription-sign-in-claude"]')).toBeNull();
+  await until('the signed-in identity is read', () => host.querySelector('[data-testid="connection-status-claude"]')?.textContent?.includes('me@example.test') === true);
+  await until('the signed-in row offers re-login', () => host.querySelector('[data-testid="subscription-sign-in-claude"]')?.textContent === 'Sign in again');
+  await userEvent.click(page.getByTestId('subscription-sign-in-claude'));
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'claude', connectionId: 'account' });
+  expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
+  expect(thrown).toEqual([]);
 });
 
 it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in menu', async provider => {
@@ -311,7 +333,8 @@ it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in 
   await until('the connection list opens', () => !!layer.querySelector('[data-testid="connection-expired-account"]'));
   expect(host.querySelector('.subscription-connection-form')).toBeNull();
   await userEvent.click(page.getByRole('button', { name: 'Options for Saved account', exact: true }));
-  const signIn = page.getByRole('menuitem', { name: 'Sign in', exact: true });
+  // #3394: an expired saved account says "Sign in again", rather than first-time "Sign in".
+  const signIn = page.getByRole('menuitem', { name: 'Sign in again', exact: true });
   await expect.element(signIn).toBeVisible();
   await untilStable('the saved account sign-in menu settles', () => {
     const { x, y, width, height } = signIn.element().getBoundingClientRect();
@@ -321,6 +344,8 @@ it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in 
   expect(modalStore.activeModalId).toBe('agentSignInModal');
   expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'expired-account' });
   expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
   expect(thrown).toEqual([]);
 });
 
@@ -677,23 +702,27 @@ it('the switch menu shows how much each account has left without switching to it
 it.each([
   { provider: 'claude', kind: 'native' as const }, { provider: 'codex', kind: 'native' as const },
   { provider: 'claude', kind: 'account' as const }, { provider: 'codex', kind: 'account' as const },
-])('an authenticated $provider $kind connection has no login or reauthorization action', async ({ provider, kind }) => {
+])('an authenticated $provider $kind connection can re-login without creating or selecting an account', async ({ provider, kind }) => {
   control.codex = true;
   control.connections = [{ id: 'existing', kind, name: 'Existing account', current: true }];
   root.render(<ConnectionDetailsFixture />);
   await openSwitch(provider);
   await until('the account has been read', () => layer.querySelector('[data-testid="connection-existing"]')?.textContent?.includes('me@example.test') === true);
   const existing = layer.querySelector('[data-testid="connection-existing"]')!;
-  if (kind === 'native') {
-    // 「现有 CLI 配置」是 CLI 自己那一份:没有「⋯」。
-    expect(existing.querySelector('[aria-haspopup="menu"]')).toBeNull();
-  } else {
-    // 账号连接的「⋯」里只有「移除」(#2507:正在用的也能删,落回原生),没有登录 / 重新授权。
-    await userEvent.click(page.getByRole('button', { name: 'Options for Existing account', exact: true }));
-    await until('its options open', () => layer.querySelectorAll('[role="menuitem"]').length > 0);
-    expect([...layer.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(['Remove']);
-  }
-  expect(host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`)).toBeNull();
+  // #3394: both kinds keep re-login visible while authenticated; native still cannot be removed.
+  expect(host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`)?.textContent).toBe('Sign in again');
+  const options = existing.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+  expect(options).not.toBeNull();
+  await userEvent.click(options!);
+  await until('its options open', () => layer.querySelectorAll('[role="menuitem"]').length > 0);
+  expect([...layer.querySelectorAll('[role="menuitem"]')].map(item => item.textContent))
+    .toEqual(kind === 'native' ? ['Sign in again'] : ['Sign in again', 'Remove']);
+  await userEvent.click(page.getByRole('menuitem', { name: 'Sign in again', exact: true }));
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'existing' });
+  expect(control.created).toBeNull();
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
   expect(addButton(provider)).not.toBeNull();
   expect(thrown).toEqual([]);
 });
@@ -760,12 +789,12 @@ it.each([
 
 
 
-it.each(['claude', 'codex'])('the model page puts an expired %s account directly into the existing login flow', async provider => {
-  const capture = provider === 'claude' && import.meta.env.VITE_DESIGN5_CAPTURE === '1';
+it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { provider, expired: false }]))('the model page keeps $provider sign-in reachable with expired=$expired', async ({ provider, expired }) => {
+  const capture = expired && provider === 'claude' && import.meta.env.VITE_DESIGN5_CAPTURE === '1';
   if (capture) setLocalePreference('zh-CN');
   control.codex = true;
-  control.signedOut = true;
-  control.expired = true;
+  control.signedOut = expired;
+  control.expired = expired;
   control.connectionsByProvider[provider] = [{ id: 'expired-model-account', kind: 'account', name: capture ? 'Claude Max' : 'Saved plan', current: true }];
   if (capture) {
     await page.viewport(1200, 900);
@@ -781,7 +810,9 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
   </>);
   await until('the expired account is on the model list', () => !!host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`));
   const row = host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`)!;
-  expect(row.textContent).toContain(capture ? '登录已失效' : 'Sign-in expired');
+  if (expired) expect(row.textContent).toContain(capture ? '登录已失效' : 'Sign-in expired');
+  else expect(row.textContent).not.toContain('Sign-in expired');
+  expect(row.querySelector('[data-testid="model-sign-in-expired-model-account"]')?.textContent).toContain(capture ? '重新登录' : 'Sign in again');
   if (capture) await page.screenshot({ element: host, path: '__screenshots__/design5-models/expired-subscription-fixture.png' });
   await userEvent.click(page.getByTestId('model-sign-in-expired-model-account'));
   expect(modalStore.activeModalId).toBe('agentSignInModal');
@@ -790,31 +821,126 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
   expect(thrown).toEqual([]);
 });
 
+function ModelsFixture() {
+  return <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>;
+}
 
-it.each([
-  ['claude', 'Claude subscription'],
-  ['codex', 'ChatGPT subscription'],
-] as const)('an expired native %s connection creates a separate account for sign-in', async (provider, label) => {
+it('keeps Coding Plan accounts on one line with aligned quota, state and delete columns', async () => {
+  await setLocalePreference('zh-CN');
+  await page.viewport(1280, 1000);
+  document.documentElement.dataset.theme = 'light';
   control.codex = true;
-  control.signedOut = true;
-  control.expired = true;
+  control.connectionsByProvider.codex = [
+    { id: 'layout-codex-a', kind: 'account', name: 'fjj', current: false },
+    { id: 'layout-codex-b', kind: 'account', name: 'Codex 2', current: true },
+  ];
+  control.connectionsByProvider.claude = [
+    { id: 'layout-claude-a', kind: 'account', name: 'yyh', current: true },
+    { id: 'native', kind: 'native', name: '现有 CLI 配置', current: false },
+  ];
+  control.usageByConnection = {
+    'layout-codex-a': [{ windowMinutes: 300, usedPercent: 59 }, { windowMinutes: 10_080, usedPercent: 94 }],
+    'layout-codex-b': [{ windowMinutes: 300, usedPercent: 8 }, { windowMinutes: 10_080, usedPercent: 12 }],
+    'layout-claude-a': [{ windowMinutes: 300, usedPercent: 0 }, { windowMinutes: 10_080, usedPercent: 23 }],
+    native: [{ windowMinutes: 10_080, usedPercent: 5 }],
+  };
+  host.style.cssText = 'width:640px;background:var(--model-settings-page)';
+  try {
+    root.render(<>
+      <p>组件测试夹具，非真实订阅账号</p>
+      <div className="gg-pane gg-settings-detail"><div className="gg-settings-page gg-model-page"><ModelsFixture /></div></div>
+    </>);
+    await until('all four account rows have their available quota readings', () => host.querySelectorAll('[data-subscription-model] [role="meter"]').length === 7);
+    const rows = [...host.querySelectorAll<HTMLElement>('[data-subscription-model]')];
+    expect(rows).toHaveLength(4);
+    const columns = rows.map(row => {
+      const windows = [...row.querySelectorAll<HTMLElement>('.gg-model-quota-window')];
+      const state = row.querySelector<HTMLElement>('[data-testid^="model-current-"], [data-testid^="model-switch-"]')!;
+      const remove = row.querySelector<HTMLElement>('.gg-model-subscription-remove')!;
+      const centre = (element: Element) => { const box = element.getBoundingClientRect(); return box.y + box.height / 2; };
+      for (const window of windows) expect(Math.abs(centre(window) - centre(state))).toBeLessThan(1);
+      const range = document.createRange(); range.selectNodeContents(state);
+      const textLines = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
+      expect(new Set(textLines.map(rect => Math.round(rect.y))).size).toBe(1);
+      expect(getComputedStyle(state).whiteSpace).toBe('nowrap');
+      expect(row.scrollWidth).toBeLessThanOrEqual(Math.ceil(row.clientWidth));
+      return { state: state.getBoundingClientRect().x, remove: remove.getBoundingClientRect().x,
+        weekly: row.querySelector('[data-window-minutes="10080"]')!.getBoundingClientRect().x };
+    });
+    for (const column of columns) for (const key of ['state', 'remove', 'weekly'] as const) {
+      expect(Math.abs(column[key] - columns[0][key])).toBeLessThan(1);
+    }
+    expect(host.querySelector('[data-testid="model-current-layout-codex-b"]')?.textContent).toBe('使用中');
+    expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe('切换');
+    expect(host.querySelector('[data-testid="model-remove-native"]')).toBeNull();
+    await page.screenshot({ element: host, path: '../../../../../../../test-results/coding-plan-single-row-zh.png' });
+  } finally {
+    delete document.documentElement.dataset.theme;
+  }
+});
+
+it.each(['claude', 'codex'])('Models keeps exactly one current $provider subscription and switches through the existing action', async provider => {
+  await setLocalePreference('zh-CN');
+  control.codex = true;
+  control.connectionsByProvider[provider] = [
+    { id: 'first-plan', kind: 'account', name: 'First plan', current: true },
+    { id: 'second-plan', kind: 'account', name: 'Second plan', current: false },
+  ];
+  root.render(<ModelsFixture />);
+  await until('the provider has one current account and one switch action', () => !!host.querySelector('[data-testid="model-switch-second-plan"]'));
+  expect(host.querySelector('[data-testid="model-current-first-plan"]')?.textContent).toBe('使用中');
+  await userEvent.click(page.getByTestId('model-switch-second-plan'));
+  await until('the original select operation commits the other account', () => control.selected === 'second-plan');
+  await until('the switched account becomes the only current account', () => !!host.querySelector('[data-testid="model-current-second-plan"]'));
+  expect(host.querySelector('[data-testid="model-current-first-plan"]')).toBeNull();
+});
+it('Models offers Close and switch above the provider rows when working sessions refuse a switch', async () => {
+  control.codex = true;
+  control.connectionsByProvider.codex = [
+    { id: 'first-plan', kind: 'account', name: 'First plan', current: true },
+    { id: 'second-plan', kind: 'account', name: 'Second plan', current: false },
+  ];
+  control.rejectSelect = true;
+  control.selectBusy = { providerId: 'codex', count: 2 };
+  root.render(<ModelsFixture />);
+  await until('the second model account can be selected', () => !!host.querySelector('[data-testid="model-switch-second-plan"]'));
+  await userEvent.click(page.getByTestId('model-switch-second-plan'));
+  await until('the existing close and switch action is shown', () => !!host.querySelector('[data-testid="subscription-close-and-switch"]'));
+  expect(host.querySelector('[data-testid="model-current-first-plan"]')).not.toBeNull();
+  await userEvent.click(page.getByTestId('subscription-close-and-switch'));
+  await until('the original account switch retries with busy sessions explicitly stopped', () => control.stopBusySessions.length === 2);
+  expect(control.stopBusySessions).toEqual([false, true]);
+});
+it('Models shows no switch or current label for a provider with one subscription', async () => {
+  control.connectionsByProvider.claude = [{ id: 'only-plan', kind: 'account', name: 'Only plan', current: true }];
+  root.render(<ModelsFixture />);
+  await until('the single subscription row is read', () => !!host.querySelector('[data-subscription-model="claude:only-plan"]'));
+  expect(host.querySelector('[data-testid="model-current-only-plan"]')).toBeNull();
+  expect(host.querySelector('[data-testid="model-switch-only-plan"]')).toBeNull();
+});
+
+
+it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { provider, expired: false }]))('native $provider keeps a visible state and login entry with expired=$expired', async ({ provider, expired }) => {
+  control.codex = true;
+  control.signedOut = expired;
+  control.expired = expired;
   control.connectionsByProvider[provider] = [{ id: 'native', kind: 'native', name: '', current: true }];
   root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
 
   const row = () => host.querySelector(`[data-subscription-model="${provider}:native"]`);
-  await until('the native row displays its expiry', () => row()?.textContent?.includes('Sign-in expired') === true);
-  expect(row()?.querySelector('[data-testid="model-sign-in-native"]')).toBeNull();
-
-  await userEvent.click(page.getByTestId(`model-add-account-${provider}`));
-  const dialog = page.getByTestId('custom-model-dialog');
-  await expect.element(dialog.getByTestId('custom-model-provider')).toHaveTextContent(label);
+  await until('the native row displays its actual state', () => row()?.textContent?.includes(expired ? 'Sign-in expired' : 'Signed in') === true);
+  // Both providers have a native connection: scope the click to this provider, never pick the first match.
+  await until('both native providers have their login entry', () => host.querySelectorAll('[data-testid="model-sign-in-native"]').length === 2);
+  expect(row()!.querySelectorAll('[data-testid="model-sign-in-native"]')).toHaveLength(1);
+  const signIn = row()!.querySelector<HTMLButtonElement>('[data-testid="model-sign-in-native"]');
+  expect(signIn?.textContent).toBe('Sign in again');
+  expect(row()!.querySelector('[data-testid="model-remove-native"]')).toBeNull();
+  await userEvent.click(signIn!);
+  await until('the same native connection signs in', () => modalStore.activeModalId === 'agentSignInModal');
   expect(control.created).toBeNull();
-  expect(modalStore.activeModalId).not.toBe('agentSignInModal');
-
-  await userEvent.click(dialog.getByRole('button', { name: 'Sign in', exact: true }));
-  await until('the separate account signs in', () => modalStore.activeModalId === 'agentSignInModal');
-  expect(control.created).toMatchObject({ providerId: provider, kind: 'account' });
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'account-1' });
+  expect(control.removed).toEqual([]);
+  expect(control.selected).toBe('');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'native' });
   expect(thrown).toEqual([]);
 });
 
@@ -830,4 +956,57 @@ it('shows a localized connection-read failure and retries the same real reading'
   await userEvent.click(retry);
   await until('retry reads the existing connection', () => !!card()?.querySelector('[data-subscription-model="claude:native"]'));
   expect(thrown).toEqual([]);
+});
+
+it('groups subscription rows by their real provider and keeps row icons and subtitles out', async () => {
+  control.codex = true;
+  root.render(<ModelsFixture />);
+  await until('both provider groups are read', () => host.querySelectorAll('[data-coding-provider]').length === 2);
+  expect([...host.querySelectorAll('[data-coding-provider]')].map(group => group.getAttribute('data-coding-provider')))
+    .toEqual(['chatgpt-subscription', 'claude-subscription']);
+  expect(host.querySelectorAll('[data-subscription-model] .gg-settings-row-leading')).toHaveLength(0);
+  expect(host.querySelectorAll('[data-subscription-model] .gg-settings-row-description')).toHaveLength(0);
+  expect(host.querySelectorAll('[data-testid="coding-plan-add"]')).toHaveLength(1);
+});
+it('renames a saved subscription with Enter and cancels a later edit with Escape', async () => {
+  await setLocalePreference('zh-CN');
+  control.connectionsByProvider.claude = [{ id: 'saved-name', kind: 'account', name: 'Before', current: true }];
+  root.render(<ModelsFixture />);
+  await until('the saved subscription has its editable name', () => !!host.querySelector('[data-subscription-model="claude:saved-name"] .gg-model-name'));
+  await userEvent.click(page.getByRole('button', { name: '重命名 Before', exact: true }));
+  await userEvent.fill(page.getByRole('textbox', { name: '重命名', exact: true }), 'After');
+  await userEvent.keyboard('{Enter}');
+  await until('the existing device mutation is reflected by the list', () => host.querySelector('[data-subscription-model="claude:saved-name"] .gg-model-name')?.textContent === 'After');
+  expect(control.renamed).toEqual([{ providerId: 'claude', connectionId: 'saved-name', name: 'After' }]);
+  expect(control.selected).toBe('');
+  await userEvent.click(page.getByRole('button', { name: '重命名 After', exact: true }));
+  await userEvent.fill(page.getByRole('textbox', { name: '重命名', exact: true }), 'Discarded');
+  await userEvent.keyboard('{Escape}');
+  expect(host.querySelector('[data-subscription-model="claude:saved-name"] .gg-model-name')?.textContent).toBe('After');
+  expect(control.renamed).toHaveLength(1);
+});
+it('refreshes usage for every saved subscription without selecting an account', async () => {
+  control.connectionsByProvider.claude = [
+    { id: 'first-refresh', kind: 'account', name: 'First', current: true },
+    { id: 'second-refresh', kind: 'account', name: 'Second', current: false },
+  ];
+  root.render(<ModelsFixture />);
+  await until('the group is ready', () => !!host.querySelector('[data-subscription-model="claude:second-refresh"]'));
+  await userEvent.click(page.getByTestId('coding-plan-refresh'));
+  await until('both explicitly bound quota readings finish', () => control.forcedUsage.length === 2);
+  expect(control.forcedUsage.sort()).toEqual(['first-refresh', 'second-refresh']);
+  expect(control.selected).toBe('');
+});
+it.each([
+  ['environment'], ['config-file'], [undefined],
+] as const)('keeps the active native connection without a redundant origin label: %s', async (origin) => {
+  await setLocalePreference('zh-CN');
+  control.origin = origin;
+  root.render(<ModelsFixture />);
+  await until('the native configuration is listed', () => !!host.querySelector('[data-subscription-model="claude:native"]'));
+  const row = host.querySelector('[data-subscription-model="claude:native"]')!;
+  expect(row.textContent).toContain('现有 CLI 配置');
+  expect(row.textContent).toContain('使用中');
+  expect(row.textContent).not.toContain('环境变量');
+  expect(row.textContent).not.toContain('配置文件');
 });

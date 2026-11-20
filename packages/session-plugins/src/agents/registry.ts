@@ -560,7 +560,7 @@ export {
 export { claudeReviewSettings } from './impl/claude/auto-review';
 export { claudeAcpPlatformSessionMeta, claudeSessionFlagSettings, type ClaudeAcpPlatformSessionMeta } from './impl/claude/platform-model';
 export { materializePiModelConfig } from './impl/pi/session-bundle';
-// 宿主登记中继入口用的变量名 —— 只此一份,❌ 在 worker-manifest 里另写一个字面量。
+// 宿主登记中继入口用的变量名 —— 只此一份,❌ 在宿主(local-session)里另写一个字面量。
 export { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from './impl/antigravity/session-bundle';
 export { effortOptionsFromReasoningVariants } from './helpers/opencode-family-model-config';
 // opencode 家 TUI 腿(serve/attach)的会话名判读:宿主的 serve transport 读 SSE 时用。

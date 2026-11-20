@@ -1,6 +1,5 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
-import { useState } from 'react'
 import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { observer } from 'mobx-react-lite'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -16,20 +15,17 @@ import { returnToScreen } from '../session/renderer/app/screen-layout-actions'
 import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
+import { SidebarUsage } from './usage/SidebarUsage'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { HelpCircle, MoreHorizontal, Settings } from '@/lib/icons'
+import { MoreHorizontal, Settings } from '@/lib/icons'
 import { SidebarAppDock } from './sidebar/SidebarAppDock'
-import { UI_EVENTS } from '../lib/uiEvents'
-import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest } from '../lib/productTour'
-import { useAuth } from '../store/auth'
-import '../components/productTour/catalog'
 import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../lib/assistantEntry'
 import { useChatStore } from '../store/chatContext'
 import { readPanelToggle } from '../lib/panelToggles'
 import { useSidebarChatView } from '../lib/sidebarChatsBridge'
 import { cn } from '@/lib/cn'
-import { DropdownMenu, Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
-import { OpenableAppRows } from './chat/OpenAppMenuItems'
+import { Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
+import { OpenableAppRows } from './chat/OpenableAppRows'
 import { useRowContextMenu } from '../hooks/useRowContextMenu'
 import { followLink } from '../lib/guguLinks'
 import { Hint } from './ui/Tooltip'
@@ -153,33 +149,6 @@ function RailItem({
         {running && <i className="gg-sidebar-running" aria-hidden="true" />}
       </button>
     </Hint>
-  )
-}
-
-// ─── Help & tour ──────────────────────────────────────────────────────────────
-// 导览唯一的入口:从第 n 步继续(中途退出 / 跳过的,带一个点)、从头开始。真实短片就绪前不展示短片入口。
-// 导览只有桌面端有。
-function HelpOnRail() {
-  const { t } = useTranslation('productTour')
-  const { user } = useAuth()
-  const tour = useProductTourState(user?.id ?? null)
-  const resume = resumableStep(tour.data)
-  const [open, setOpen] = useState(false)
-  const request = (detail: ProductTourRequest) => {
-    window.dispatchEvent(new CustomEvent(UI_EVENTS.reopenProductTour, { detail }))
-  }
-  return (
-    <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
-      <DropdownMenu.Trigger render={<RailItem icon={<HelpCircle size={22} />} active={open} menuOpen={open} title={t('help.label')} rail="help" badge={resume ? 1 : 0} />} />
-      <DropdownMenu.Content className="min-w-[200px]" aria-label={t('help.label')}>
-        {resume && (
-          <DropdownMenuItem onClick={() => request({ mode: 'resume', step: resume })}>
-            {t('help.resume', { current: TOUR_STEPS.indexOf(resume) + 1, total: TOUR_STEPS.length })}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onClick={() => request({ mode: 'restart' })}>{t('help.restart')}</DropdownMenuItem>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
   )
 }
 
@@ -389,7 +358,7 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
 
       <div className="gg-sidebar-bottom">
         <UpdateBanner placement="rail" />
-        {platform.kind === 'electron' && <HelpOnRail />}
+        {platform.kind === 'electron' && <SidebarUsage />}
         {/* 设置在栏底,一点就开(product spec「入口」;owner 10-15 推翻 #7046 里「设置收进头像菜单」那一半)。
             摆法照 VS Code 活动栏栏底的「管理」齿轮;owner 10-16 移除了本人账户按钮。⌘,、应用菜单「设置…」、
             命令面板开的是同一个弹窗,弹窗开着(不管从哪开的)这枚就亮着。 */}

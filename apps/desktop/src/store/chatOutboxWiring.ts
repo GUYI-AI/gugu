@@ -1,3 +1,4 @@
+import { isDmFriendshipRequired, messageForUser } from '../lib/userFacingError'
 import { openTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { AttachmentsError, commitAttachment, forwardAttachment, shareAttachment, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
@@ -245,7 +246,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
         const chat = io.chats().find((item) => item.id === record.chatId)
         const name = chat && chatDisplayName(chat, chat.peer_user_id ? io.identity(chat.peer_user_id)?.display_name : null)
         const chatName = name || i18n.t('outbox.chatById', { ns: 'messaging', id: record.chatId })
-        failureFor(record).begin().failed({ title: i18n.t('outbox.offscreenFailure', { ns: 'messaging', chatName }), tier: 'error' })
+        failureFor(record).begin().failed({ title: i18n.t('outbox.offscreenFailure', { ns: 'messaging', chatName }), tier: 'error',
+          ...(isDmFriendshipRequired(record.lastError) ? { description: messageForUser(record.lastError) } : {}) })
       }
     }
   }

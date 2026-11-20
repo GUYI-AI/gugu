@@ -47,6 +47,17 @@ describe('transcript listing and uuid reading', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('counts LF records rather than Unicode separators inside history strings', async () => {
+    const file = path.join(dir, SESSION_A + '.jsonl');
+    await writeFile(file, [
+      JSON.stringify({ type: 'metadata', text: ('before\u2028after\u2029').repeat(60) }),
+      JSON.stringify({ type: 'user', uuid: 'native-root' }),
+      JSON.stringify({ type: 'assistant', uuid: 'later' }),
+    ].join('\r\n'));
+    expect(await readTranscriptHead(file)).toEqual({ rootUuid: 'native-root', forkedFromProviderSessionId: null });
+    expect(await readTranscriptUuids(file, 2)).toEqual(new Set(['native-root']));
+  });
+
   it('lists only uuid-named jsonl files and reads their message uuids', async () => {
     const lines = [
       JSON.stringify({ type: 'user', uuid: 'u1' }),

@@ -91,7 +91,7 @@ it.each([
   expect(mock.current).toBe(original);
   expect(mock.current.find(option => option.id === 'mode')).toMatchObject({ currentValue: 'auto' });
 });
-// Shape emitted by the pinned @gugu-acp/claude-agent-acp 1.6.2 v2 renderer.
+// Shape emitted by the @gugu-acp/claude-agent-acp 1.6.2 v2 renderer.
 // These are protocol fixtures, not evidence of a paid Claude request.
 const nativeDenial = (reason?: string) => ({ sessionUpdate: 'tool_call_update', toolCallId: 'call', status: 'failed',
   content: [{ type: 'content', content: { type: 'text', text: `Permission denied: ${reason ?? 'Action blocked by policy'}` } }],

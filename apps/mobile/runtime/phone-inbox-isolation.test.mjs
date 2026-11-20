@@ -26,6 +26,13 @@ function fakeCloud() {
   const identity = {
     rpc: async (name, args) => {
       calls.push([name, args])
+      if (name === 'register_gugu_device') {
+        const row = { ...structuredClone(args.p_device), user_id: ownerId, status: 'online', last_seen_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+        const existing = devices.find((device) => device.device_id === row.device_id)
+        if (existing) Object.assign(existing, row)
+        else devices.push(structuredClone(row))
+        return { data: { device_id: row.device_id, created: !existing }, error: null }
+      }
       if (name === 'fetch_fair_pending_device_commands') return { data: commands.filter((command) => command.status === 'pending'), error: null }
       if (name === 'recheck_device_command_execution') return { data: true, error: null }
       if (name === 'recover_orphaned_device_commands') return { data: 0, error: null }

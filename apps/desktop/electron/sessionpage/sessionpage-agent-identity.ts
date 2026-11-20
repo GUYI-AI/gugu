@@ -31,8 +31,10 @@ export async function loadSessionpageCanonicalAgentIdentities(
   const client = makeIdentityClient(auth.accessToken)
   const rows = await fetchInChunks(ids, async (chunk) => {
     const { data, error } = await client
-      .from('active_users')
+      // identity.users, not the live directory: an archived session keeps its identity and still resolves to it.
+      .from('users')
       .select('id,gugu_number,display_name,session_archived_at')
+      .is('removed_at', null)
       .eq('type', 'agent')
       .eq('owner_user_id', auth.userId)
       .in('id', chunk)

@@ -14,6 +14,7 @@ import { AppHostLayerFrame } from './app-host-layer';
 import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { reloadAppPage } from '@renderer/features/extensions/app-page-unsaved';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
 import type { MarketplaceTab } from '@renderer/features/settings/components/ExtensionsSettingsCard';
@@ -26,7 +27,7 @@ import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
 import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
-import { AgentAppDetailPage } from './agent-app-detail-page';
+import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -35,7 +36,6 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
   const currentViewId = appState.navigation.currentViewId;
-  const { translate } = useSessionMessages();
   const { agentDetail, agentDetailFrom, detail, installedSection: requestedInstalled, installedDeviceId: requestedDevice } = params;
   const marketHost = detail?.deviceId ? deviceDetailHost(detail.deviceId) : LOCAL_LIBRARY_HOST;
   const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
@@ -65,7 +65,7 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
 
   return (
     <>
-      <div hidden={!!agentDetail} className={agentDetail ? undefined : 'contents'}>
+      <div className="contents">
         <PageLayout wide>
           <PageContent className="max-w-none px-0">
             <LibraryHostProvider value={marketHost} key={marketHost.key}>
@@ -90,18 +90,16 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
         onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
         onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
-        <PageLayout key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`}>
-          <PageContent className="max-w-none">
-            <AgentDetailHost target={agentDetail}>
-              <AgentAppDetailPage
-                agentId={agentDetail.agentId}
-                backLabel={translate(agentDetailFrom === 'apps' ? 'extensions.tabMarket' : 'common.back')}
-                onBack={closeAgentDetail}
-                onCreate={() => navigate('new-session', { agentId: agentDetail.agentId, deviceId: agentDetail.deviceId })}
-              />
-            </AgentDetailHost>
-          </PageContent>
-        </PageLayout>
+        <AgentDetailHost key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`} target={agentDetail}>
+          <AgentAppDetailDialog
+            agentId={agentDetail.agentId}
+            onClose={closeAgentDetail}
+            onCreate={() => {
+              setParams({ agentDetail: undefined, agentDetailFrom: undefined });
+              navigate('new-session', { agentId: agentDetail.agentId, deviceId: agentDetail.deviceId });
+            }}
+          />
+        </AgentDetailHost>
       )}
     </>
   );
@@ -258,7 +256,7 @@ const AppMainPanel = observer(function AppMainPanel() {
         <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate(assistantNotHere ? 'extensions.assistantPreparing' : 'extensions.turnOnInSettings')}</p>
       ) : (
         <>
-          {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
+          {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" onReload={() => void reloadAppPage(null, 'dock')} /> : null}
           {/* #1925 Its main page placed beside its bound conversation: the conversation's frame, while the host may draw it. */}
           {/* #1925 (44, 46) Elsewhere its page stands alone; a host page over it (a task, the assistant's own pages) in its place. */}
           {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} windowHandle={assistantPage} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}

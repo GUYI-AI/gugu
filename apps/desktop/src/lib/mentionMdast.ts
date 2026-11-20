@@ -12,6 +12,7 @@
 
 import { markdownMentionReferences, parseMarkdown } from '@gugu/session-shared/markdown/dialect'
 import { findMentionSpans } from '@gugu/core/shared/mentionToken.mjs'
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 
 export type MdNode = {
   type: string
@@ -87,18 +88,12 @@ export function findInjectableMentionSpans(content: string, names: readonly stri
   return spans
 }
 
-// markdown link 文本里逐字回显 @token:只转义在**链接文本**里有语义的字符(`\ [ ] ` * _ ~ <`),昵称含它们才不会破坏
-// 链接结构、也不会被当 emphasis/code/autolink 二次解释。其余标点(@ . - / : # ! 等)在链接文本里是字面量,不转义(内容更干净)。
-export function escapeMentionText(token: string): string {
-  return token.replace(/[\\[\]`*_~<]/g, '\\$&')
-}
-
 /** References reveal names, never a task's contents or an implicit sharing link. */
 export function displayAgentReferences(content: string, addressed?: (id: string, label: string) => string): string {
   let rendered = content
   for (const ref of markdownMentionReferences(content).reverse()) {
     if (!ref.target.startsWith('aid:')) continue
-    const name = addressed?.(ref.target.slice(4), ref.label) ?? escapeMentionText(`@${ref.label}`)
+    const name = addressed?.(ref.target.slice(4), ref.label) ?? markdownLiteral(`@${ref.label}`)
     rendered = rendered.slice(0, ref.start) + name + rendered.slice(ref.end)
   }
   return rendered
@@ -114,7 +109,7 @@ export function injectBackedMentions(content: string, names: readonly string[], 
   for (let i = spans.length - 1; i >= 0; i--) {
     const s = spans[i]
     const token = out.slice(s.start, s.end)
-    out = out.slice(0, s.start) + `[${escapeMentionText(token)}](${marker})` + out.slice(s.end)
+    out = out.slice(0, s.start) + `[${markdownLiteral(token)}](${marker})` + out.slice(s.end)
   }
   return out
 }

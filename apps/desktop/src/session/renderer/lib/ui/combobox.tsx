@@ -174,19 +174,22 @@ function ComboboxItem({
   );
 }
 
-function ComboboxGroup({ className, ...props }: ComboboxPrimitive.Group.Props) {
+/** A titled group; the title is a prop because Combobox.GroupLabel throws outside a Combobox.Group. */
+function ComboboxGroup({
+  className,
+  label,
+  children,
+  ...props
+}: ComboboxPrimitive.Group.Props & { label?: React.ReactNode }) {
   return (
-    <ComboboxPrimitive.Group data-slot="combobox-group" className={cn(className)} {...props} />
-  );
-}
-
-function ComboboxLabel({ className, ...props }: ComboboxPrimitive.GroupLabel.Props) {
-  return (
-    <ComboboxPrimitive.GroupLabel
-      data-slot="combobox-label"
-      className={cn('px-2 py-1.5 text-xs text-foreground-muted', className)}
-      {...props}
-    />
+    <ComboboxPrimitive.Group data-slot="combobox-group" className={cn(className)} {...props}>
+      {label ? (
+        <ComboboxPrimitive.GroupLabel data-slot="combobox-label" className="px-2 py-1.5 text-xs text-foreground-muted">
+          {label}
+        </ComboboxPrimitive.GroupLabel>
+      ) : null}
+      {children}
+    </ComboboxPrimitive.Group>
   );
 }
 
@@ -285,7 +288,6 @@ export {
   ComboboxList,
   ComboboxItem,
   ComboboxGroup,
-  ComboboxLabel,
   ComboboxCollection,
   ComboboxEmpty,
   ComboboxSeparator,

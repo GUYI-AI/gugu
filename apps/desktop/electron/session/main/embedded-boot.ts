@@ -138,6 +138,7 @@ import {
 import { claimInterruptedDeferredMessages, installDeferredMessageDelivery } from '@main/core/sessions/session-deferred-messages'
 import { hydrateSession } from '@main/core/sessions/hydrateSession'
 import { recordLiveModelSwitch } from '@main/core/sessions/live-model-switch'
+import { armSwitchedModelMemory } from '@main/core/sessions/switched-model-memory'
 import { readSessionOptions, SessionOptionsError } from '@main/core/session-timeline/live-options'
 import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } from '@shared/platform-model-id'
 import { searchService } from '@main/core/search/search-service'
@@ -154,6 +155,7 @@ import { persistedWorkspacePath, resolveSession, resolveWorkspace } from '@main/
 import { RETIRED_REMOTE_WORKSPACE_MESSAGE } from '@main/core/workspaces/resolve-workspace-kind'
 import { archiveSession } from '@main/core/sessions/archiveSession'
 import { getSessions } from '@main/core/sessions/getSessions'
+import { recordedSessionModelOption } from '@main/core/sessions/utils'
 import { sessionArchivalInventory, sessionArchivalState } from '@main/core/sessions/session-archival'
 export { sessionArchivalState as emdashSessionArchivalState, sessionMessageRefused as emdashSessionMessageRefused } from '@main/core/sessions/session-archival'
 import { mcpLibraryService, planLibraryMcpDelivery } from '@main/core/mcp-library/service'
@@ -186,7 +188,7 @@ import { UNATTENDED_SESSION_PERMISSION_MODE } from '@main/core/sessions/unattend
 import { getPlugin, listPlugins, toAgentProviderId } from '@main/core/agents/plugin-registry'
 import { recordChildHarnessDefault } from '@main/core/sessions/child-harness-default'
 import { providerConsumesStartupPrompt } from '@gugu/session-core/agents/plugins'
-import { pluginRegistry, type AgentProviderId } from '@gugu/session-plugins/agents'
+import { pluginRegistry, resolveSessionpageCredentialLifecycle, type AgentProviderId } from '@gugu/session-plugins/agents'
 import {
   localSessionIds,
   assertOutboundProjectIds,
@@ -280,6 +282,7 @@ export {
   setProbePlatformEnvResolver,
   type ProbePlatformEnvResolver,
 } from '@main/core/agents/harness-model-catalog'
+export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native-history'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。
@@ -650,17 +653,17 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     // (别的活宿主占着这份数据目录时,它那几段区间还开着是对的)。
     sessionBootTasks.runSync('run-interval-sweep', '', closeInterruptedRunIntervals)
     // 收残只收引擎随上一个进程没了的会话;在 tmux 里活下来的照旧在跑。tmux 只问这一次,所有会话按同一份列表判。
-    // 没有 tmux 服务器 = 空列表(listTmuxSessionNames 自己这样答);问不出来(没装 tmux、tmux 坏了)= 一个都没活下来,
-    // 照旧全收 —— 响亮记一条,❌ 为此让开机失败。
+    // 没有服务器由下层明确返回空集;读取失败不授权把未知的存活状态写成已停止。
     const tmuxSessionNames = await listTmuxSessionNames(new LocalExecutionContext()).catch((error: unknown) => {
-      log.error('[session-host] 开机收残问不出 tmux 会话列表,按一个都没活下来收', { error: String(error) })
-      return new Set<string>()
+      log.error('[session-host] 无法读取 tmux 会话清单，保留原会话状态', { error: String(error) })
+      return null
     })
     ptyRecordResume = ptyRecordResumeSet()
-    // 上一次是怎么退出的(更新 / 重启 / 没正常退出):被打断的那几条会话据此说清原因。读一次就删。
-    lastExit = takeLastExit(dataDir)
-    updateInterrupted = await sessionBootTasks.run('status-sweep', '', () => agentStatusWriter.settleAfterRestart(tmuxSessionNames, lastExit.reason)) ?? []
-    presenceReconciliation = reconcileSurvivorsWithPresence(tmuxSessionNames)
+    if (tmuxSessionNames !== null) {
+      lastExit = takeLastExit(dataDir)
+      updateInterrupted = await sessionBootTasks.run('status-sweep', '', () => agentStatusWriter.settleAfterRestart(tmuxSessionNames, lastExit.reason)) ?? []
+      presenceReconciliation = reconcileSurvivorsWithPresence(tmuxSessionNames)
+    }
     // 上一个进程投到一半就没了的消息：现在认领为「结果未知」终态（不能重投，只能如实说）。
     // 必须在任何人看见会话之前做完 —— 正常在途不经过这里，所以新建会话不会闪这条提示。
     sessionBootTasks.runSync('dispatch-sweep', '', claimInterruptedDispatches)
@@ -1142,9 +1145,11 @@ export function acpStartInputFor(
  * 重载后 harness 自己那条原生会话的去向,读的是重载**实际**拿回来的 session id,❌ 按意图推断。
  * `preserved` = 同一条原生会话接回来了(harness 自己的历史在);`replaced` = 按插件的
  * `sourceChangeSession=replace` 起了一条新的原生会话(咕咕这边的对话记录仍在,harness 自己的上下文从零开始)。
+ * `route-switched` = 按 `sourceChangeSession=fork` 换了计费路:新的原生会话带着这段对话过去,带过去多少由会话里那一行说
+ * (压缩摘要可能带不过去),所以这里只说「换了计费路」,❌ 说成「接着原来的」(ACP 腿由 LifeView 报)。
  * `not-started` = 这条会话从没起来过(#7092):只把新选择落进了记录,没停也没起 —— 调用方按正常首启起它。
  */
-export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'not-started'
+export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'route-switched' | 'not-started'
 
 /**
  * 重载一条活着的 ACP 会话 —— **换掉会话级注入,但保住这条会话的历史**。
@@ -1171,7 +1176,14 @@ export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'not-sta
  * 没有 provider 会话 id 的会话(从没起来过)没有历史可续、也没有进程可停:带着新模型 / 档位来的,只把选择落进记录
  * 并答 `not-started`,由调用方走正常首启(#7092:会员模型首启被拒,换个模型再起);其余(MCP 开关、手动重开)直接拒。
  */
-export async function reloadEmdashSession(input: {
+export async function reloadEmdashSession(input: Parameters<typeof reloadEmdashSessionNow>[0]): ReturnType<typeof reloadEmdashSessionNow> {
+  const reloaded = await reloadEmdashSessionNow(input)
+  // #3293 A model switched to by a reload: its first successful reply makes it the new-session memory's last-used one.
+  if (typeof input.model === 'string' && input.model.trim()) armSwitchedModelMemory(input.sessionId)
+  return reloaded
+}
+
+async function reloadEmdashSessionNow(input: {
   sessionId: string
   /** 为什么重载(换模型 / 改 MCP 开关 …)。进日志,也是 UI 上那句「正在重连」的由来。 */
   reason: string
@@ -1267,8 +1279,10 @@ export async function reloadEmdashSession(input: {
   const workspace = await resolveWorkspace(session.projectId, mounted.workspaceId)
   if (!workspace) throw new Error(`session ${sessionId} workspace is not mounted`)
   const reloadSurface = session.runtime === 'acp' ? 'acp' : 'tui'
-  const sourceChangeSession = getPlugin(session.providerId).capabilities.sessionBundle
-    .credentialLifecycle?.[reloadSurface]?.sourceChangeSession ?? 'preserve'
+  // The leg's declaration as the registry resolves it: a terminal leg carried by a native surface (Codex's TUI rides
+  // its app-server) answers with that surface's declaration.
+  const sourceChangeSession = resolveSessionpageCredentialLifecycle(session.providerId, reloadSurface)
+    ?.sourceChangeSession ?? 'preserve'
 
   // Both session-page legs use this host-owned stop/start boundary. PTY has no ACP store to
   // reattach, so the renderer reconnects its existing terminal resource after this returns.
@@ -1294,6 +1308,7 @@ export async function reloadEmdashSession(input: {
     const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
     const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
     const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
+    const forkProviderSession = sourceChanged && sourceChangeSession === 'fork'
     let platformWritten = false
     if (input.resetModel) {
       // 与 ACP 腿同一个决定:两半一起清。
@@ -1334,6 +1349,19 @@ export async function reloadEmdashSession(input: {
         platformWritten = true
       }
     }
+    if (forkProviderSession) {
+      // 与 ACP 腿同一格待办:原生会话 id 不动,这次起在新路上把它分叉出来(同一个 agent)。起不来时下面的回滚
+      // 把记录整份写回重开前那一份(没有这一格),与模型选择、计费路一起回到旧路 —— 旧路上续接原线程仍然成立。
+      const rows = await db.select({ config: sessions.config })
+        .from(sessions).where(eq(sessions.id, sessionId))
+      const current = rows[0]?.config
+      if (!current || typeof current !== 'object') {
+        throw new Error(`session ${sessionId} has no config to record its fork in (${reason})`)
+      }
+      await db.update(sessions)
+        .set({ config: { ...current, forkOnStartProviderSessionId: providerSessionId } })
+        .where(eq(sessions.id, sessionId))
+    }
     const sessionMount = resolveSession(session.projectId, sessionId)
     if (!sessionMount) throw new Error(`session ${sessionId} session runtime is not mounted`)
     try {
@@ -1346,7 +1374,8 @@ export async function reloadEmdashSession(input: {
         true,
       )
       const resumed = (await getSessions()).find((candidate) => candidate.id === sessionId)
-      if (!resumed || (!replaceProviderSession && resumed.providerSessionId !== providerSessionId)) {
+      // 分叉换掉 id 是本意(新 id 带着全部上下文);换掉 / 分叉之外,id 变了就是续错了。
+      if (!resumed || (!replaceProviderSession && !forkProviderSession && resumed.providerSessionId !== providerSessionId)) {
         if (resumed?.providerSessionId && resumed.providerSessionId !== providerSessionId) {
           await setProviderSessionId(sessionId, providerSessionId)
         }
@@ -1361,7 +1390,7 @@ export async function reloadEmdashSession(input: {
         const { pendingRestart: _pendingRestart, providerSessionState: _providerSessionState, ...cleanConfig } = currentConfig
         await db.update(sessions).set({ config: cleanConfig }).where(eq(sessions.id, sessionId))
       }
-      return { nativeSession: resumed.providerSessionId === providerSessionId ? 'preserved' : 'replaced' }
+      return { nativeSession: forkProviderSession ? 'route-switched' : resumed.providerSessionId === providerSessionId ? 'preserved' : 'replaced' }
     } catch (error) {
       if (configBeforePatch) {
         const message = error instanceof Error ? error.message : String(error)
@@ -1558,6 +1587,15 @@ export async function reloadEmdashSession(input: {
     if (currentConfig) {
       const { providerSessionState: _cleared, ...configWithoutProviderState } = currentConfig
       if (input.resetModel || (nextModel && input.modelSource === 'platform')) delete configWithoutProviderState.model
+      // `fork`:原生会话 id 不动,只记下「下一次起要把它分叉到新路上」。起不来也留着 —— 重试仍得分叉。
+      // 起不来时的 `restoreConfig` 写回的是重开前那一份(没有这一格),与把模型选择写回原样同一个回滚。
+      if (sourceChangeSession === 'fork' && providerSessionIdBeforeReload) {
+        if (configWithoutProviderState.type !== 'acp') {
+          const message = `has no ACP record to fork its provider session from (${reason})`
+          throw new Error(`session ${sessionId} ${message}` + await restoreConfig(message))
+        }
+        configWithoutProviderState.forkOnStartProviderSessionId = providerSessionIdBeforeReload
+      }
       await db.update(sessions)
         .set({ config: configWithoutProviderState })
         .where(eq(sessions.id, sessionId))
@@ -1565,8 +1603,8 @@ export async function reloadEmdashSession(input: {
       // (#5869):这一格渲染进程手里也留着一份,而全仓只有 `set-session-id.ts` 那两个写口会把
       // 改动广播出去。跟着 config 一起裸写的话,记录里已经没有可续的会话,渲染端却还以为有 ——
       // 两边都不报错,只是下一次它会拿一个作废的 id 去续。
-      // `preserve` 那一支本来就是把原值写回去,等于没改,所以只有「换掉」这一支要动。
-      if (sourceChangeSession !== 'preserve' && providerSessionIdBeforeReload) {
+      // `preserve` 与 `fork` 都留着原值,所以只有「换掉」这一支要动。
+      if (sourceChangeSession === 'replace' && providerSessionIdBeforeReload) {
         await clearProviderSessionId(sessionId, providerSessionIdBeforeReload)
       }
     }
@@ -1581,20 +1619,23 @@ export async function reloadEmdashSession(input: {
       + await restoreConfig(message),
     )
   }
-  if (input.resetModel && fresh.model) {
+  const recordedModel = recordedSessionModelOption(fresh)
+  if (input.resetModel && recordedModel) {
     // #5276 清模型:写了删键却读回来还有 = 记录层没生效。响亮停,❌ 带着旧模型重开。
-    const message = `did not drop its model (${reason}): record still says ${String(fresh.model)}`
+    const message = `did not drop its model (${reason}): record still says ${recordedModel}`
     throw new Error(
       `session ${sessionId} ${message}`
       + await restoreConfig(message),
     )
   }
   const modelRecordMatches = input.modelSource === 'platform'
-    ? !fresh.model
-    : fresh.model === nextModel
+    ? !recordedModel
+    : recordedModel === nextModel
   if (nextModel && !modelRecordMatches) {
     // 写进去了却读不回来 = 记录层没生效。响亮停,❌ 不带着旧模型重开。
-    const message = `did not take the new model (${reason}): asked ${nextModel} via ${input.modelSource}, record still says ${String(fresh.model)}`
+    // getSessions splits a custom option into model + customModel; compare the complete choice,
+    // not its native model ID, or every successful custom switch is rolled back before start.
+    const message = `did not take the new model (${reason}): asked ${nextModel} via ${input.modelSource}, record still says ${String(recordedModel)}`
     throw new Error(
       `session ${sessionId} ${message}`
       + await restoreConfig(message),
@@ -1728,7 +1769,7 @@ export async function applyEmdashSessionModelSelection(input: {
     | { source: 'platform'; modelId: string; protocol: string }
   /** 这条会话此刻跑在哪条计费路上 —— 由宿主按活会话持有的平台记录判，❌ 这里不猜。 */
   runningOn: 'platform' | 'own'
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const { sessionId, selection } = input
   const reason = 'model-switch'
   if (selection.source === 'default') {
@@ -1769,7 +1810,7 @@ export async function applyEmdashSessionModelSelection(input: {
 function reloadOutcome(reloaded: { warning?: string; nativeSession: ReloadNativeSession }): {
   applied: 'reload' | 'next-session'
   warning?: string
-  nativeSession?: 'preserved' | 'replaced'
+  nativeSession?: 'preserved' | 'replaced' | 'route-switched'
 } {
   const warning = reloaded.warning ? { warning: reloaded.warning } : {}
   if (reloaded.nativeSession === 'not-started') return { applied: 'next-session', ...warning }

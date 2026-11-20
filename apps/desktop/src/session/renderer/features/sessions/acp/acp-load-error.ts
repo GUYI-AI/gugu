@@ -1,9 +1,11 @@
+import { codexStartupKind, isCodexProviderStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { AcpStartError } from '@renderer/lib/acp/acp-live-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
+import { isCodexRefreshTokenRevoked } from '@gugu/session-core/acp/client';
 
 export type AcpLoadError =
   | { kind: 'agent_home_import'; message: string }
-  | { kind: 'auth_required'; message: string }
+  | { kind: 'auth_required'; message: string; signInReason?: 'revoked' }
   | { kind: 'adapter_lost'; message: string }
   | { kind: 'history_unavailable'; message: string }
   | { kind: 'provider_session_missing'; message: string }
@@ -35,7 +37,7 @@ export type AcpLoadError =
    * 线一通就自己再开一次(acp-chat-store `_watchMachineLink`)。只认别的机器上的会话:本机会话没有这条线。
    */
   | { kind: 'connection_lost'; message: string; deviceId: string }
-  | { kind: 'generic'; message: string };
+  | { kind: 'generic'; message: string; startupReason?: CodexStartupKind };
 
 /**
  * 这些失败重试也没用：装不上的 harness 要用户先装。retry() 与 remount 之类的通用重试调用方
@@ -103,10 +105,16 @@ export function toLoadError(error: unknown, machine: string | null = null): AcpL
     return { kind: 'connection_lost', message, deviceId: machine };
   }
   if (error instanceof AcpStartError && error.errorType === 'auth_required') {
-    return { kind: 'auth_required', message };
+    const cause = error.runtimeError.cause;
+    return { kind: 'auth_required', message,
+      ...(cause && isCodexRefreshTokenRevoked(cause) ? { signInReason: 'revoked' as const } : {}) };
   }
   if (error instanceof AcpStartError && error.errorType === 'provider_session_missing') {
     return { kind: 'provider_session_missing', message };
+  }
+  const providerReason = codexStartupKind(error);
+  if (isCodexProviderStartupKind(providerReason)) {
+    return { kind: 'generic', message, startupReason: providerReason };
   }
   if (error instanceof AcpStartError && error.errorType === 'set_config_failed') {
     return { kind: 'model_unavailable', message };
@@ -152,5 +160,5 @@ export function toLoadError(error: unknown, machine: string | null = null): AcpL
   ) {
     return { kind: 'harness_not_installed', message };
   }
-  return { kind: 'generic', message };
+  return { kind: 'generic', message, ...(codexStartupKind(error) ? { startupReason: codexStartupKind(error)! } : {}) };
 }

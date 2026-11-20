@@ -88,6 +88,21 @@ beforeEach(() => {
 
 })
 describe('ACP 模型目录探测', () => {
+  it('keeps a provider\'s model and thinking pickers separate when legacy model ids encode both', async () => {
+    const entry = await fakeAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, {
+    sessionId: 'native-cli',
+    configOptions: [{ id: 'model', category: 'model', type: 'select', currentValue: 'claude-sonnet-5-5', options: [{ value: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }] }],
+    models: { availableModels: [{ modelId: 'claude-sonnet-5-5-high', name: 'Claude Sonnet 5.5 (High)' }] },
+  });
+}
+`);
+    setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, modelSource: 'config-options' as const }));
+    const state = await probeHarnessModelCatalog('antigravity', 'acp');
+    expect(state).toMatchObject({ kind: 'ready', models: [{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }] });
+  });
   it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {
     await useAgent(`
 const options = model => [
@@ -591,6 +606,15 @@ function handle(msg) {
   it('插件在、但压根不说 ACP → unsupported（❌ 不是 not-installed）', async () => {
     setAcpSpawnResolver(async () => null)
     expect((await probeHarnessModelCatalog('amp', 'acp')).kind).toBe('unsupported')
+  })
+  it('preserves the native Codex reason code across the catalog RPC response', async () => {
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return fail(msg.id, { code: -32603, message: 'native exited', data: { codexStartupKind: 'exited' } });
+}
+`)
+    expect(await probeHarnessModelCatalog('codex', 'acp')).toMatchObject({ kind: 'unavailable', startupReason: 'exited' })
   })
   it('非认证类的 RPC 失败 → unavailable，带原因', async () => {
     await useAgent(`
@@ -1429,5 +1453,75 @@ function handle(msg) {
     const state = await probeHarnessModelCatalog('antigravity', 'acp')
     expect(state.kind).toBe('auth-required')
     expect((await methods(seen)).map((call) => call.method)).not.toContain('authenticate')
+  })
+})
+
+
+describe('Codex catalog preparation facts', () => {
+  beforeEach(() => {
+    __resetHarnessModelCatalogCache()
+    setCatalogStore(null)
+    setSpawnIdentityResolver(async () => null)
+  })
+  afterEach(async () => {
+    await __drainProbesForTest()
+    __resetHarnessModelCatalogCache()
+  })
+
+  it.each(['ready', 'exit'] as const)('shares native preparation without new probes and clears it on %s', async (outcome) => {
+    const dir = await mkdtemp(join(tmpdir(), 'gugu-catalog-progress-'))
+    const release = join(dir, 'release')
+    const progress = { phase: 'history', startedAt: 123_000, attempt: 2 }
+    // The progress frame crosses chunks; Unicode separators in a diagnostic are not JSONL boundaries.
+    const line = '[gugu-codex-preparing] ' + JSON.stringify(progress) + '\r\n'
+    const entry = await fakeAgent(`
+import { existsSync } from 'node:fs';
+function handle(msg) {
+  if (msg.method === 'initialize') {
+    process.stderr.write('unrelated \u2028 \u2029 diagnostic\\n');
+    process.stderr.write(${JSON.stringify(line.slice(0, 15))});
+    setImmediate(() => process.stderr.write(${JSON.stringify(line.slice(15))}));
+    const timer = setInterval(() => {
+      if (!existsSync(${JSON.stringify(release)})) return;
+      clearInterval(timer);
+      if (${JSON.stringify(outcome)} === 'exit') return process.exit(7);
+      process.stderr.write('[gugu-codex-preparing] null\\n');
+      reply(msg.id, { protocolVersion: 1 });
+    }, 10);
+  }
+  if (msg.method === 'session/new') reply(msg.id, {
+    sessionId: 'prepared', configOptions: [{
+      id: 'model', category: 'model', type: 'select', currentValue: 'native',
+      options: [{ value: 'native', name: 'Native' }]
+    }]
+  });
+}
+`)
+    let spawns = 0
+    setAcpSpawnResolver(async () => {
+      spawns++
+      return { command: process.execPath, args: [entry], env: {} }
+    })
+    const options = { leg: 'acp' as const, harnessVersion: 'progress-fixture' }
+    try {
+      await lookupHarnessModelCatalog('codex', options)
+      const pending = await awaitFact('native catalog preparation reaches the lookup', async () => {
+        const lookup = await lookupHarnessModelCatalog('codex', options)
+        return lookup.preparation ? lookup : undefined
+      })
+      expect(pending).toEqual({ state: { kind: 'unknown' }, refreshing: true, preparation: progress })
+      const [reader1, reader2] = await Promise.all([
+        lookupHarnessModelCatalog('codex', options), lookupHarnessModelCatalog('codex', options),
+      ])
+      expect(reader1.preparation).toEqual(progress)
+      expect(reader2.preparation).toEqual(progress)
+      expect(spawns).toBe(1)
+    } finally { await writeFile(release, 'release') }
+    await __drainProbesForTest()
+    const final = await lookupHarnessModelCatalog('codex', options)
+    expect(final.refreshing).toBe(false)
+    expect(final.preparation).toBeUndefined()
+    expect(final.state.kind).toBe(outcome === 'ready' ? 'ready' : 'unavailable')
+    expect(spawns).toBe(1)
   })
 })

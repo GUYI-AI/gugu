@@ -1,17 +1,23 @@
 import { observer } from 'mobx-react-lite'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { INSTALL_CONSENT_HUMAN_WINDOW_MS } from '@/session/shared/extensions/host-actions'
 import type { DispatchPicked } from '@/session/shared/extensions/app-dispatch-core'
 import { RESOURCE_TEMPLATES, type ResourceTemplate } from '@/session/shared/resource-actions'
 import { Button } from '../ui/Button'
+import { cn } from '@/lib/cn'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
+import { rankMentionCandidates } from '@/lib/mentionRanking'
+import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
 import { sendableConversations, sendablePickRows } from './forwardMessageUtils'
 import { useAuth } from '../../store/auth'
+import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 import { ChatPickSheet, type ChatPickRow, type ChatPickSection } from './ChatPickSheet'
+import { NoteEditor } from './NoteEditor'
+import { useGroupMentionProvider } from './useGroupMentionProvider'
 import { DispatchMachine } from './DispatchMachine'
 import { takeDispatchAsks, type DispatchAsked } from './dispatchAsk'
 
@@ -27,7 +33,8 @@ const NEW_AGENT = 'new:agent'
  */
 export const DispatchSheet = observer(function DispatchSheet() {
   const { t } = useTranslation('messaging')
-  const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
+  const { chats, identitiesById, activeChatId, messages } = useChatStore('chats', 'identitiesById', 'activeChatId', 'messages')
+  const projectMembers = useProjectGroupMembers()
   const owned = useOwnedAgents()
   const { user } = useAuth()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -38,6 +45,21 @@ export const DispatchSheet = observer(function DispatchSheet() {
   const [visible, setVisible] = useState(false)
   const [spawnDevice, setSpawnDevice] = useState<string | null>(null)
   const open = useRef<DispatchAsked | null>(null)
+  // What goes is written in the composer's own editor (NoteEditor): it starts with the App's words, theirs to change.
+  // The editor comes up after the sheet does (and its handle again once TipTap is ready): it is started once per ask, when it can take the words.
+  const editor = useRef<PromptEditorRef | null>(null)
+  const started = useRef<DispatchAsked | null>(null)
+  const start = useCallback(() => {
+    const ask = open.current
+    if (!ask || ask.pick || started.current === ask || !editor.current) return
+    editor.current.setText(ask.text)
+    if (!ask.text || !editor.current.isEmpty()) started.current = ask
+  }, [])
+  const editorRef = useCallback((handle: PromptEditorRef | null) => { editor.current = handle; start() }, [start])
+  useEffect(start, [asked, start])
+  const roster = useMemo(() => (asked?.chat?.members ?? []).map((member) => ({ id: member.id, name: member.name, type: member.kind })), [asked])
+  const { mentionProvider, renderMentionIcon } = useGroupMentionProvider({ chatId: asked?.chat?.id, isGroupChat: roster.length > 0, groupMembers: roster,
+    currentUserId: user?.id ?? null, messages, enabled: !asked?.pick })
 
   // Answered once: by the person, by running out, or by the next ask taking the sheet.
   const finish = useCallback((picked: DispatchPicked) => {
@@ -64,11 +86,12 @@ export const DispatchSheet = observer(function DispatchSheet() {
 
   if (!asked) return null
   const needle = query.trim().toLocaleLowerCase()
-  const found = (name: string) => !needle || name.toLocaleLowerCase().includes(needle)
   const offers = new Set(asked.offers)
-  const members = (asked.chat?.members ?? []).filter((member) => found(member.name))
-  const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => members
-    .filter((member) => member.kind === kind)
+  // Ranked as the chat's @ is: history counts only when the sheet is over that chat (or its topic).
+  const here = chats.some((chat) => chat.id === activeChatId && (chat.id === asked.chat?.id || chat.source_chat_id === asked.chat?.id))
+  const rank = <T extends { id: string; name: string; type: 'human' | 'agent' }>(rows: T[]) => rankMentionCandidates(rows, query, { chatId: here ? activeChatId : asked.chat?.id, currentUserId: user?.id, messages: here ? messages : [],
+    participantIds: chats.find((chat) => chat.id === asked.chat?.id)?.member_user_ids, projectMemberIds: projectMembers.get(asked.chat?.id ?? ''), now: Date.now() })
+  const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => rank((asked.chat?.members ?? []).filter((member) => member.kind === kind).map((member) => ({ ...member, type: member.kind })))
     .map((member) => ({
       id: `member:${member.id}`,
       name: member.name,
@@ -76,9 +99,9 @@ export const DispatchSheet = observer(function DispatchSheet() {
     }))
   // The person's own agents: the one preselected first; a draft only into one whose session is here (its composer).
   const local = asked.local ? new Set(asked.local) : null
-  const agentRows = !offers.has('my-agent') ? [] : owned
-    .map((agent) => ({ ...agent, id: `user:${agent.id.replace(/^user:/, '')}` }))
-    .filter((agent) => found(agent.display_name) && (!asked.draft || !local || local.has(agent.id)))
+  const agentRows = !offers.has('my-agent') ? [] : rank(owned
+    .map((agent) => ({ ...agent, id: `user:${agent.id.replace(/^user:/, '')}`, name: agent.display_name, type: 'agent' as const }))
+    .filter((agent) => !asked.draft || !local || local.has(agent.id)))
     .sort((a, b) => Number(b.id === asked.preselect) - Number(a.id === asked.preselect))
     .map((agent): ChatPickRow => ({
       id: `agent:${agent.id}`,
@@ -88,7 +111,7 @@ export const DispatchSheet = observer(function DispatchSheet() {
   const nameOf = (chat: (typeof chats)[number]) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name)
   const chatRows = !offers.has('chat') ? [] : sendablePickRows(sendableConversations(chats, { ownerId: user?.id, query, displayName: nameOf, identitiesById }),
     nameOf, identitiesById, { expanded, searching: needle !== '', idOf: (id) => `chat:${id}` })
-  const newRows: ChatPickRow[] = offers.has('new-agent') && found(t('dispatchPick.newAgent'))
+  const newRows: ChatPickRow[] = offers.has('new-agent') && (!needle || t('dispatchPick.newAgent').toLocaleLowerCase().includes(needle))
     ? [{ id: NEW_AGENT, name: t('dispatchPick.newAgent'), avatar: { name: '+', seed: NEW_AGENT, isAgent: true } }]
     : []
   const sections: ChatPickSection[] = [
@@ -99,6 +122,7 @@ export const DispatchSheet = observer(function DispatchSheet() {
     { id: 'chats', title: t('composePick.chats'), rows: chatRows },
   ]
   const [picked] = selected
+  const listHidden = !asked.pick && !!picked && !query.trim()
   const toMember = picked?.startsWith('member:') === true
   const said = text.trim()
   const pickedTarget = (): NonNullable<DispatchPicked>['to'] | null => {
@@ -118,18 +142,14 @@ export const DispatchSheet = observer(function DispatchSheet() {
       <p className="m-0 mt-1 text-[var(--text-secondary)]">{pick.body}</p>
     </div>
   ) : (
-    <div className="flex flex-col gap-[var(--spacing-xs)]" data-testid="dispatch-preview">
-      <textarea
-        className="min-h-[64px] w-full resize-y rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 text-[length:var(--font-body)] text-[var(--text-primary)]"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        placeholder={t('dispatchPick.textPlaceholder')}
-        aria-label={t('dispatchPick.text')}
-        data-testid="dispatch-text"
-      />
+    <div className={cn('flex flex-col gap-[var(--spacing-xs)] border-t border-[var(--border-subtle)] !px-5 !py-3', listHidden ? 'min-h-0 flex-1' : 'shrink-0')} data-testid="dispatch-preview">
+      <div className={cn('max-h-[60vh] min-h-[96px] overflow-y-auto rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1', listHidden && 'flex-1')} data-testid="dispatch-text">
+        <NoteEditor editorRef={editorRef} onChange={setText} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
+          placeholder={t('dispatchPick.textPlaceholder')} inputTestId="dispatch-text-input" />
+      </div>
       {asked.resource && <div className="flex flex-wrap gap-1" data-testid="dispatch-templates">
         {(RESOURCE_TEMPLATES[asked.resource.kind] as readonly ResourceTemplate[]).filter(template => template.requires?.every(fact => asked.resource?.facts?.includes(fact)) ?? true).map(template => (
-          <Button key={template.id} size="sm" variant="ghost" onClick={() => setText(current => appendToDraft(current, t(template.textKey)))}>{t(template.labelKey)}</Button>
+          <Button key={template.id} size="sm" variant="ghost" onClick={() => editor.current?.setText(appendToDraft(editor.current.getText(), t(template.textKey)))}>{t(template.labelKey)}</Button>
         ))}
       </div>}
       {asked.pills.map((pill, index) => (
@@ -151,7 +171,10 @@ export const DispatchSheet = observer(function DispatchSheet() {
       testId="dispatch-sheet"
       rows={[]}
       sections={sections}
-      above={preview}
+      above={pick ? preview : undefined}
+      // Hand to: whom it goes to on top, what goes below in the composer's editor; once picked, the rows give it their room.
+      below={pick ? undefined : preview}
+      listHidden={listHidden}
       selected={selected}
       // One at a time: another row replaces the pick, the picked row (or its chip's ×) takes it back.
       onToggle={(id) => setSelected((current) => (current.has(id) ? new Set() : new Set([id])))}

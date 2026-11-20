@@ -14,7 +14,7 @@ export function createHostResumeHandler(deps: {
   let lastObserved = -Infinity
   return (source: string): void => {
     const at = now()
-    // The controller and the first post-suspend timer can observe the same wake.
+    // One wake announced twice in a row (a retried controller call) is one wake.
     if (at - lastObserved >= 0 && at - lastObserved < 1_000) return
     lastObserved = at
     deps.observed(source)
@@ -31,19 +31,6 @@ export function createHostResumeHandler(deps: {
       }
     }
   }
-}
-
-/** Fallback for hosts without a native power event or controller notification. */
-export function watchHostResumeGap(resume: (source: string) => void, now = Date.now): () => void {
-  let previous = now()
-  const timer = setInterval(() => {
-    const current = now()
-    const gap = current - previous
-    previous = current
-    if (gap >= 10_000) resume('wall-clock-gap')
-  }, 1_000)
-  timer.unref?.()
-  return () => clearInterval(timer)
 }
 
 /** OS power events attest whole-device sleep; foreground and wall-clock gaps do not. */

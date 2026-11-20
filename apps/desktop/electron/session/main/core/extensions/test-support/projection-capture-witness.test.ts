@@ -12,8 +12,8 @@ describe('source PNG paint witness', () => {
     expect(capture).toHaveBeenCalledTimes(2);
     expect(rgb.mock.calls.map(call => call[0])).toEqual(['blue-png', 'red-png']);
   });
-  it('fails rather than publishing a permanently stale PNG and preserves the bounded wait failure', async () => {
-    const timeout = new Error('existing fixture deadline');
+  it('fails rather than publishing a permanently stale PNG and preserves the wait failure', async () => {
+    const timeout = new Error('existing fixture wait failure');
     const work = captureColorWitness({ capture: async () => 'blue-png', rgb: async () => blue, expected: red,
       until: async condition => { expect(await condition()).toBe(false); throw timeout; } });
     await expect(work).rejects.toMatchObject({ cause: timeout });
