@@ -820,7 +820,7 @@ export default {
       "outcomeFailed": "导入失败，请重试",
 
       "tasks": "任务",
-      "projects": "空间（项目）",
+      "projects": "空间",
       "memories": "记忆",
       "skills": "技能",
       "connectors": "连接器",

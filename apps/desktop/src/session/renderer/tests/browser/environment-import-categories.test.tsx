@@ -63,7 +63,7 @@ it('renders all five real category rows and queues only the selected category or
   await harness.render(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />)
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
   expect(rows.map(row => row.querySelector('.gg-import-row-label')?.textContent)).toEqual([
-    '全部（15）', '任务 (1)', '空间（项目） (2)', '记忆 (3)', '技能 (4)', '连接器 (5)',
+    '全部（15）', '任务 (1)', '空间 (2)', '记忆 (3)', '技能 (4)', '连接器 (5)',
   ])
   await clickElement(rows[4]!.querySelector('button')!)
   expect(state.enqueue).toHaveBeenCalledTimes(1)
