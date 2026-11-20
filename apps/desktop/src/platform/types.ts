@@ -14,6 +14,8 @@ interface PlatformCapabilities {
   badge: boolean
   clipboard: boolean
   notifications: boolean
+  /** #3416 The OS shows a chat notification as a conversation (the other person's or the group's face, each message's author). */
+  conversationNotifications?: boolean
   rendererCommandBridge: boolean
   localHumanAuthSession: boolean
   barcodeScan: boolean
@@ -89,6 +91,24 @@ export interface FeedbackLogTail {
 
 export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_full' | 'not_confirmed' | null
 
+/**
+ * #3416 Who a chat notification is about, for hosts whose OS draws a conversation (`capabilities.conversationNotifications`).
+ * Faces are drawn bitmaps as `data:` URLs; `null` = the picture could not be drawn (the host shows its unavailable
+ * state, never another identity's face). Names and faces are resolved on this device from the identity directory and
+ * are never part of what a push provider is sent.
+ */
+export type ChatNotificationPresentation = {
+  accountId: string
+  messageId: string
+  /** The message's own time, epoch ms. */
+  sentAt: number
+  conversation: { id: string; kind: 'dm' | 'group'; name: string; avatar: string | null }
+  /** The message's real author; `id` is null for a deleted account, `name` empty when the identity is not known. */
+  author: { id: string | null; name: string; avatar: string | null }
+  /** Refresh of a notification already showing for this message (faces drawn late): same message, no new alert. */
+  update?: true
+}
+
 export interface AppPlatform {
   accountClosure: AccountClosureNative
   kind: 'electron' | 'capacitor' | 'web'
@@ -163,7 +183,7 @@ export interface AppPlatform {
   // @@@scan (#537-A) - native camera QR/barcode scan; resolves the decoded raw string a user would
   // otherwise paste, or null if cancelled. Only the capacitor adapter implements it (capability gate).
   scanQrCode: () => Promise<string | null>
-  showNotification: (payload: { title: string; body?: string; chatId?: string | null; silent?: boolean; kind?: 'chat_message' | 'task_attention' }) => Promise<unknown>
+  showNotification: (payload: { title: string; body?: string; chatId?: string | null; silent?: boolean; kind?: 'chat_message' | 'task_attention'; presentation?: ChatNotificationPresentation }) => Promise<unknown>
   androidNotificationSettings?: {
     read(silent: boolean): Promise<{ enabled: boolean; importance?: number }>
     open(silent: boolean, appWide: boolean): Promise<void>
