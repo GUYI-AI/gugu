@@ -9,7 +9,7 @@ registerLocaleNamespace('mobileTaskFlow', {
     createTask: '创建智能体',
     sendToGroup: '发到',
     previousGroup: '上次的群聊',
-    modelCatalogFailed: '读不到这台设备的模型，请在「工作」里重试。',
+    modelCatalogFailed: '无法读取此设备的模型，请在「工作」中重试。',
     groupCreationPendingElsewhere: '这台手机还有一项创建尚未确认，请回到原入口继续。',
     readyToConnect: '可连接',
     connecting: '正在连接',
@@ -22,7 +22,7 @@ registerLocaleNamespace('mobileTaskFlow', {
     machine: '机器',
     noProject: '不选项目',
     noMachine: '没有可用的机器',
-    noFolderHere: '这台机器上还没有这个项目的文件夹',
+    noFolderHere: '此机器上暂无该项目的文件夹',
   },
   'en-US': {
     phoneAgent: 'Phone Agent',
@@ -45,6 +45,6 @@ registerLocaleNamespace('mobileTaskFlow', {
     machine: 'Machine',
     noProject: 'No project',
     noMachine: 'No machine available',
-    noFolderHere: 'This project has no folder on this machine yet',
+    noFolderHere: 'This project has no folder on this machine',
   },
 })

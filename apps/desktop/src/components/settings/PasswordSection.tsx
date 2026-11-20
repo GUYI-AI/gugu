@@ -50,7 +50,7 @@ const control = (input: ReactNode, ...end: ReactNode[]) => <div className="flex 
 /** Locked: an Agent sees the name only and 咕咕 fills the value. Unlocked: Agents with access may read it. */
 const secretMark = (label: string, secret: boolean, change: (value: boolean) => void) =>
   <IconButton key="secret" size="sm" aria-label={`${label}${secret ? '保密' : '不保密'}`} aria-pressed={secret} onClick={() => change(!secret)}
-    title={secret ? '保密：智能体看不到值，只能由咕咕代填。点一下改为不保密' : '不保密：授权过的智能体能读到。点一下改为保密'}>{secret ? <Lock /> : <LockOpen />}</IconButton>
+    title={secret ? '保密：智能体无法读取该值，仅由咕咕代填。点击改为不保密' : '不保密：已授权的智能体可读取该值。点击改为保密'}>{secret ? <Lock /> : <LockOpen />}</IconButton>
 
 export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLElement | null } = {}) {
   const [snapshot, setSnapshot] = useState<PasswordSnapshot>()
@@ -126,7 +126,7 @@ function PasswordContent({ snapshot, busy, error, run, invoke, clearError, actio
         control={<span className="flex items-center gap-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{!!value.grants.length && `${value.grants.length} 个智能体`}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
         onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
       {!!snapshot?.items.length && !listed?.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有匹配的密码</span>} />}
-      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
+      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">暂无已保存的密码</span>} />}
     </SettingsGroup>
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
     {offer}
@@ -252,7 +252,7 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
         control={value(field.value ?? secrets?.fields.find(entry => entry.id === field.id)?.value, field.secret)} />)}
     </SettingsGroup>
     <SettingsGroup presentation="navigation">
-      <SettingsRow title="已授权的智能体" description="其他智能体每次用都要你允许"
+      <SettingsRow title="已授权的智能体" description="其他智能体每次使用均需你允许"
         control={<span className="flex items-center gap-1 text-[var(--text-secondary)]">{authorized ? `${authorized} 个` : '无'}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
         onClick={() => go({ kind: 'grants', id: item.reference.id })} />
     </SettingsGroup>
@@ -302,13 +302,13 @@ function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { it
   return <SettingsPage data-testid="password-grants">
     <SearchField aria-label="搜索智能体" placeholder="搜索智能体或项目" value={query} onChange={event => setQuery(event.target.value)} />
     <SettingsGroup note="不在名单里的智能体，每次使用都要你在私聊里允许。">
-      {granted.map(grant => <SettingsRow key={grant.subject} title={label(grant.subject)?.name ?? '已不在的智能体'} description={describe(grant.subject)} control={levels(grant.subject, grant.level)} />)}
-      {!item.grants.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有授权</span>} />}
+      {granted.map(grant => <SettingsRow key={grant.subject} title={label(grant.subject)?.name ?? '已移除的智能体'} description={describe(grant.subject)} control={levels(grant.subject, grant.level)} />)}
+      {!item.grants.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">暂无授权</span>} />}
       <SettingsRow title={<Button variant="ghost" size="sm" onClick={() => setAdding(value => !value)}><Plus size={14} aria-hidden="true" />授权智能体</Button>} />
     </SettingsGroup>
     {adding && <SettingsGroup title="选择智能体或项目">
       {available.map(value => <SettingsRow key={value.subject} title={value.name} description={value.kind === 'project' ? '项目里的所有任务' : value.project} control={levels(value.subject)} />)}
-      {!available.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有可选的</span>} />}
+      {!available.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">暂无可选项</span>} />}
     </SettingsGroup>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
   </SettingsPage>

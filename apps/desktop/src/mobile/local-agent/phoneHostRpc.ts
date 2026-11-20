@@ -18,7 +18,7 @@ function localCall(ownerId: string, deviceId: string, id: string, channel: strin
       settled = true
       signal?.removeEventListener('abort', abort)
       reject(Object.assign(new Error(channel === 'sessionTimeline.sessionCreate'
-        ? '手机还没有确认这次创建，请用原来的内容继续同一次创建。'
+        ? '手机尚未确认此次创建，请使用原内容继续同一次创建。'
         : '手机尚未返回操作结果，请重试。'), { code: 'host_call_timeout', requestId: id, deviceId }))
     }, timeoutMs)
     const finish = (error: unknown, result?: unknown) => {

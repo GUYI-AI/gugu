@@ -1258,7 +1258,7 @@ async function newSessionMemory(): Promise<NewSessionMemory> {
  */
 // Read by the person the App is working for, not an agent: what to do next, in the product's words and their language.
 const NO_AGENT_INSTALLED: Record<string, string> = {
-  'zh-CN': '这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。',
+  'zh-CN': '这台电脑上尚未安装 agent。请先在「新建任务」中安装，然后重试。',
   'en-US': 'No agent is installed on this computer yet. Install one from New task, then try again.',
 };
 

@@ -203,7 +203,7 @@ function prepare(): Promise<Identity> {
 
 function downloadOffered(silent: boolean): Promise<void> {
   const target = offered
-  if (!target) return Promise.reject(new Error('没有可下载的更新 —— 先检查更新'))
+  if (!target) return Promise.reject(new Error('暂无可下载的更新，请先检查更新。'))
   downloading ??= (async () => {
     emit(downloadingStatus(target.version))
     try {

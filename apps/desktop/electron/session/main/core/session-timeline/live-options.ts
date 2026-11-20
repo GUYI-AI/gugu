@@ -105,7 +105,7 @@ async function readConfig(sessionId: string): Promise<SessionConfigState> {
   const client = await peekAcpRuntimeClient();
   if (!client) {
     // fail loud：区别于「有运行时、但这条会话什么都不可改」（那种回三个 null）。
-    throw new SessionOptionsError('session_not_live', '这台机器上没有活着的 ACP 会话，改不了选项');
+    throw new SessionOptionsError('session_not_live', '这台机器上没有运行中的 ACP 会话，无法修改选项');
   }
 
   // 先看这条会话此刻的 lifecycle。`sessions.list` 里**有记录 ≠ 还活着** —— 已经结束的会话
@@ -153,7 +153,7 @@ const defaultIo: SessionOptionsIo = {
   apply: async (input) => {
     const client = await peekAcpRuntimeClient();
     if (!client) {
-      throw new SessionOptionsError('session_not_live', '这台机器上没有活着的 ACP 会话，改不了选项');
+      throw new SessionOptionsError('session_not_live', '这台机器上没有运行中的 ACP 会话，无法修改选项');
     }
     return input.dimension === 'mode'
       ? client.setModeOption({ sessionId: input.conversationId, value: input.value })

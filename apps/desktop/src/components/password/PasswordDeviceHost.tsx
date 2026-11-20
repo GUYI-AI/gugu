@@ -37,11 +37,11 @@ export function PasswordDeviceHost() {
   return <>
     {request && <Sheet onClose={() => putAside(request.deviceId)} desktopWidth="380px" mobileFitContent ariaLabel="新设备请求使用密码" testId="password-device-prompt" zIndex="var(--z-settings-modal)">
       <div className="flex flex-col gap-3 px-5 pb-5 pt-6" data-stage={request.stage}>
-        <h2 className="text-[length:var(--font-title)] font-semibold text-[var(--fg)] [overflow-wrap:anywhere]">允许「{name(request)}」用你的密码吗？</h2>
+        <h2 className="text-[length:var(--font-title)] font-semibold text-[var(--fg)] [overflow-wrap:anywhere]">允许「{name(request)}」使用你的密码？</h2>
         {request.stage === 'mismatch'
-          ? <p className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">这台设备没通过核对，不能允许。</p>
+          ? <p className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">该设备未通过核对，无法允许。</p>
           : <>
-            <p className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">它刚登录了你的账号。它的屏幕上也显示这串数字，一致再点允许。</p>
+            <p className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">该设备刚登录了你的账号。请确认其屏幕上的数字与此一致，再点击「允许」。</p>
             <div className="flex justify-center rounded-[var(--radius-control)] bg-[var(--muted)] py-3" data-testid="password-device-code">
               {request.code ? <Code value={request.code} /> : <span className="font-mono text-[length:var(--font-title)] tracking-[0.2em] text-[var(--muted-fg)]" aria-label="验证码生成中">··· ···</span>}
             </div>
@@ -58,17 +58,17 @@ export function PasswordDeviceHost() {
     {joining && !cardClosed && createPortal(<div role="status" data-testid="password-join-card"
       className="fixed right-4 top-12 z-[var(--z-banner)] flex w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 rounded-[var(--radius-surface)] bg-[var(--menu-bg)] p-4 text-[var(--menu-fg)] shadow-[var(--shadow-lift)]">
       <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1 text-[length:var(--font-body)] font-semibold">{joining.state === 'refused' ? '另一台设备拒绝了这台电脑用你的密码' : '在另一台设备上允许这台电脑用你的密码'}</div>
+        <div className="min-w-0 flex-1 text-[length:var(--font-body)] font-semibold">{joining.state === 'refused' ? '另一台设备已拒绝此电脑使用你的密码' : '请在另一台设备上允许此电脑使用你的密码'}</div>
         <IconButton size="sm" aria-label="关闭" onClick={() => setCardClosed(true)}><X size={14} /></IconButton>
       </div>
       {joining.state === 'refused'
-        ? <><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">点错了的话，可以重新申请。</div>
+        ? <><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">如为误操作，可重新申请。</div>
           {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
           <Button size="sm" className="self-start" disabled={busy} data-testid="password-join-again" onClick={() => { void run({ type: 'sync-ask-again' }) }}>重新申请</Button></>
         : joining.state === 'joining' && joining.code
-          ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">两边数字一致，就在那台设备上点允许。</div></>
-          : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">打开你另一台设备上的咕咕，那里会弹出提示。</div>}
-      {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>另一台设备都不在了？用恢复码</Button>}
+          ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">两台设备上的数字一致时，请在该设备上点击「允许」。</div></>
+          : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">请打开另一台设备上的咕咕，并按提示操作。</div>}
+      {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>无法使用其他设备？使用恢复码</Button>}
     </div>, document.body)}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}
       onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setRecovering(false); setNewCode(reply.recoveryCode) } }} />}

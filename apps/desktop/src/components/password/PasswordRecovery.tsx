@@ -17,10 +17,10 @@ export function RecoveryOffer({ snapshot }: { snapshot?: PasswordSnapshot }) {
     {asking && !shown && <Sheet onClose={() => { void run({ type: 'sync-recovery-skip' }) }} desktopWidth="400px" mobileFitContent ariaLabel="生成恢复码" testId="password-recovery-offer" zIndex="var(--z-settings-modal)">
       <div className="flex flex-col gap-3 p-[18px]">
         <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">生成恢复码？</div>
-        <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">所有设备都丢了时，在新设备上登录并输入它，就能找回这些密码。以后也可以在 设置 → 账户 里生成。</div>
+        <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">所有设备丢失时，可在新设备上登录并输入恢复码，找回这些密码。也可稍后在「设置 → 账户」中生成。</div>
         {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
         <div className="flex justify-end gap-2">
-          <Button size="sm" disabled={busy} onClick={() => { void run({ type: 'sync-recovery-skip' }) }}>以后再说</Button>
+          <Button size="sm" disabled={busy} onClick={() => { void run({ type: 'sync-recovery-skip' }) }}>稍后</Button>
           <Button size="sm" variant="primary" disabled={busy} onClick={() => { void run({ type: 'sync-recovery-create' }).then(reply => { if (reply?.recoveryCode) setShown(reply.recoveryCode) }) }}>生成</Button>
         </div>
       </div>
@@ -41,16 +41,16 @@ export function PasswordRecoveryGroup() {
   const set = sync.recovery === 'set'
   return <>
     <SettingsGroup title="密码恢复码" footer={error ? <SettingsNote tone="danger" role="alert">{error}</SettingsNote> : undefined}>
-      <SettingsRow title="恢复码" description={set ? '所有设备都丢了时，在新设备上登录并输入它，就能找回密码。' : '未设置。所有设备都丢了时，就找不回密码。'}
+      <SettingsRow title="恢复码" description={set ? '所有设备丢失时，可在新设备上登录并输入恢复码以找回密码。' : '未设置。所有设备丢失时将无法找回密码。'}
         control={set
           ? <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking('regenerate')}>重新生成</Button>
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking('drop')}>移除</Button></div>
           : <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void create(false) }}>生成</Button>} />
     </SettingsGroup>
     {asking === 'regenerate' && <Confirm title="重新生成恢复码？" action="重新生成" busy={busy} testId="password-recovery-regenerate"
-      body="旧的恢复码会立刻失效，手上那份要换成新的。" onClose={() => setAsking(undefined)} onConfirm={() => { void create(true) }} />}
+      body="旧恢复码将立即失效，请改为保存新的恢复码。" onClose={() => setAsking(undefined)} onConfirm={() => { void create(true) }} />}
     {asking === 'drop' && <Confirm title="移除恢复码？" action="移除" busy={busy} testId="password-recovery-remove"
-      body="移除后，所有设备都丢了就找不回密码。" onClose={() => setAsking(undefined)}
+      body="移除后，所有设备丢失时将无法找回密码。" onClose={() => setAsking(undefined)}
       onConfirm={() => { void run({ type: 'sync-recovery-remove' }).then(() => setAsking(undefined)) }} />}
     {shown && <RecoveryCodeSheet code={shown.code} fresh={shown.fresh} onClose={() => setShown(undefined)} />}
   </>

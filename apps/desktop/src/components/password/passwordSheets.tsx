@@ -30,10 +30,10 @@ export function RecoveryCodeSheet({ code, fresh, onClose }: { code: string; fres
       <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{fresh ? '新的恢复码' : '恢复码'}</div>
       <div className="select-text rounded-[var(--radius-control)] bg-[var(--muted)] px-4 py-3 text-center font-mono text-[length:var(--font-title)] font-semibold tracking-[0.08em] text-[var(--fg)]">{code}</div>
       <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">
-        抄在纸上或打印出来，放在只有你拿得到的地方。所有设备都丢了时，在新设备上登录并输入它，就能找回密码。{fresh ? '之前的恢复码已经失效。' : ''}
+        请抄写或打印恢复码，并存放在只有你能取得的地方。所有设备丢失时，可在新设备上登录并输入恢复码以找回密码。{fresh ? '之前的恢复码已失效。' : ''}
       </div>
       <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">
-        别存进邮箱或网盘：有人同时拿到它和你的邮箱，就能读到你所有密码。关掉后不能再查看。
+        请勿存入邮箱或网盘：同时取得恢复码和你邮箱的人可读取你的所有密码。关闭后将无法再次查看。
       </div>
       <div className="flex justify-end gap-2">
         <Button size="sm" onClick={() => { void platform.writeClipboardText(code).then(() => setCopied(true), () => {}) }}>{copied ? '已复制' : '复制'}</Button>
@@ -50,7 +50,7 @@ export function RecoverSheet({ busy, error, onSubmit, onClose, mode = 'recover' 
   return <Sheet onClose={onClose} desktopWidth={unlocking ? '380px' : '440px'} mobileFitContent ariaLabel={title} testId="password-recover" zIndex="var(--z-settings-modal)">
     <form className={`flex flex-col gap-3 ${unlocking ? 'px-6 py-[22px]' : 'p-[18px]'}`} onSubmit={event => { event.preventDefault(); void onSubmit(code) }}>
       <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{title}</div>
-      {!unlocking && <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">恢复后这台设备就能用你的密码。这个恢复码随即失效，会给你一个新的。</div>}
+      {!unlocking && <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">恢复后，此设备可使用你的密码。当前恢复码随即失效，并生成新的恢复码。</div>}
       <Field.Root><Field.Input required aria-label="恢复码" autoComplete="off" spellCheck={false} className="font-mono" value={code}
         placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" onChange={event => setCode(event.target.value)} /></Field.Root>
       {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}

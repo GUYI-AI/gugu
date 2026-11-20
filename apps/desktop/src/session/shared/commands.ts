@@ -61,7 +61,7 @@ export const COMMANDS = defineCommands({
   'app.sessionHistory': {
     label: 'Task history',
     labelKey: 'sidebar.sessionHistory',
-    description: '咕咕会话与本机 Claude Code / Codex 会话同处一表:打开、恢复已归档的、导入还没导入的',
+    description: '在同一列表中查看咕咕会话与本机 Claude Code / Codex 会话：打开、恢复已归档的会话，或导入尚未导入的会话',
     iconKey: 'history',
     category: 'Navigation',
   },

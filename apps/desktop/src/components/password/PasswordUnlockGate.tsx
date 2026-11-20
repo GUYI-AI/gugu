@@ -29,8 +29,8 @@ function UnlockEntry({ sync, busy, error, run, clearError, onRecovered }: {
   return <SettingsPage data-testid="password-unlock-settings">
     <section className="password-unlock-entry" aria-labelledby="password-unlock-title">
       <span className="password-unlock-icon" aria-hidden="true"><Lock size={22} /></span>
-      <h2 id="password-unlock-title" className="password-unlock-title">这台电脑还没解锁密码</h2>
-      {!blocked && <p className="password-unlock-instruction">在另一台设备的咕咕上点「允许」，核对是这串数字</p>}
+      <h2 id="password-unlock-title" className="password-unlock-title">此电脑尚未解锁密码</h2>
+      {!blocked && <p className="password-unlock-instruction">请在另一台设备的咕咕上核对以下数字，并点击「允许」。</p>}
       {sync.state === 'refused'
         ? <Button disabled={busy} className="password-unlock-code-action" onClick={() => { void run({ type: 'sync-ask-again' }) }}>重新申请</Button>
         : !blocked && <div className="password-unlock-code" data-testid="password-unlock-code">

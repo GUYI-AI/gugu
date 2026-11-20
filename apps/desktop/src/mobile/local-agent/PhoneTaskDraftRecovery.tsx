@@ -67,7 +67,7 @@ export function PhoneTaskDraftRecovery({ deviceId, sessionId, composer, sending 
     <div className="gg-aw-action-error" data-testid="phone-task-draft-recovery">
       {error ? <p role="alert">{error}</p> : (
         <>
-          <p role="status">上次发送尚未确认，先重试原消息。已有的新输入会保留。</p>
+          <p role="status">上次发送尚未确认，请先重试原消息。已输入的新内容会保留。</p>
           <details>
             <summary>查看原消息</summary>
             <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words" data-testid="phone-task-recovered-text">{pending!.text}</div>

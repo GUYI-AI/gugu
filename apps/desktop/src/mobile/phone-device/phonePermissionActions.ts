@@ -33,7 +33,7 @@ export async function connectPhoneActionGroup(
   os: PhoneOsState | null,
   options: { enableDevice?: boolean } = {},
 ): Promise<void> {
-  if (!os) throw new Error('还没有读到系统权限，请刷新后再试。')
+  if (!os) throw new Error('尚未读取到系统权限，请刷新后重试。')
   if (options.enableDevice) connectPhoneActionGroupChoice(ownerId, group)
   else setPhoneActionGroup(ownerId, group, true)
   const missing = missingRequirements(group, os)

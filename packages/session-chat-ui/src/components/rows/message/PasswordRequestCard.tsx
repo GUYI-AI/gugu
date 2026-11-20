@@ -19,7 +19,7 @@ const fills = (request: PasswordRequestView): Fill[] => request.kind === 'save' 
 function notes(request: PasswordRequestView): [string, boolean][] {
   if (request.kind === 'save') return request.maskedAccount ? [[`账号 ${request.maskedAccount}`, false]] : []
   return [...(request.elsewhere ? [[`「${request.credential ?? '这条密码'}」不是为这个网站保存的`, true] as [string, boolean]] : []),
-    ...(request.exposed?.length ? [[`${request.exposed.join('、')} 填进的不是密码框，网页能再显示它`, true] as [string, boolean]] : [])]
+    ...(request.exposed?.length ? [[`${request.exposed.join('、')} 填入的不是密码框，网页可再次显示`, true] as [string, boolean]] : [])]
 }
 /** A save request is a form in the chat (assistant-ui 「Elicitation form」): a label over each input, the inputs filled. */
 const DESC = 20, LABEL = 17, LABEL_GAP = 4, INPUT = 28, INPUT_GAP = 10, CHECK = 20, ADD = 20
@@ -108,11 +108,11 @@ function CardField(props: { value: string; placeholder: string; secret: boolean;
           <button type="button" class={passwordIconButton} aria-label={shown() ? '隐藏' : '显示'} aria-pressed={shown()} onClick={() => setShown(value => !value)}><IconEye off={shown()} /></button>
         </Show>
         <Show when={props.lockable}>
-          <button type="button" class={passwordIconButton} aria-label={props.secret ? '保密：智能体只能代填，看不到。点一下改成不保密' : '不保密：智能体能看到。点一下改成保密'} aria-pressed={props.secret}
+          <button type="button" class={passwordIconButton} aria-label={props.secret ? '保密：智能体只能代填，无法查看。点击改为不保密' : '不保密：智能体可以查看。点击改为保密'} aria-pressed={props.secret}
             title={props.secret ? '保密' : '不保密'} onClick={() => { setShown(false); props.onSecret?.(!props.secret) }}><IconLock open={!props.secret} /></button>
         </Show>
         <Show when={props.onRemove}>
-          <button type="button" class={passwordIconButton} aria-label="删掉这一项" onClick={() => props.onRemove?.()}><IconClose /></button>
+          <button type="button" class={passwordIconButton} aria-label="删除此项" onClick={() => props.onRemove?.()}><IconClose /></button>
         </Show>
       </span>
     </Show>
@@ -150,13 +150,13 @@ const extrasFilled = (requestId: string) => extrasOf(requestId).filter(extra => 
 function outcomeText(result: string, keep: PasswordFillOutcome['keep'], storing: boolean): string {
   switch (result) {
     case 'approved': case 'running': return '正在填入…'
-    case 'filled': return keep === 'waiting' ? `已填入，登录成功后${storing ? '存到咕咕' : '生效'}` : keep === 'kept' ? (storing ? '已填入，已存到咕咕' : '已填入，以后不再问')
-      : keep === 'dropped' ? `已填入；没登录上，${storing ? '没有存' : '下次还会问'}` : '已填入'
+    case 'filled': return keep === 'waiting' ? `已填入，登录成功后${storing ? '存到咕咕' : '生效'}` : keep === 'kept' ? (storing ? '已填入，已存到咕咕' : '已填入，以后不再询问')
+      : keep === 'dropped' ? `已填入；登录未成功，${storing ? '未保存' : '下次仍会询问'}` : '已填入'
     case 'saved': return '已保存'
     case 'invalidated': return '请求已失效，请重新发起'
     case 'rejected': return '已拒绝'
     case 'expired': return '已过期，需要时让 Agent 重新发起'
-    case 'unavailable': case 'uncertain': return '没填成，网页可能已经变了'
+    case 'unavailable': case 'uncertain': return '填入失败，网页可能已更改'
     default: return '这条请求已结束'
   }
 }
@@ -257,7 +257,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
           <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(request)}</span>
         </div>
       </div>
-      <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>存进保险箱后，保密的值智能体只能代填，看不到。</p>
+      <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>存入保险箱后，保密的值智能体只能代填，无法查看。</p>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${INPUT_GAP}px`, 'flex-shrink': 0 }}>
         {inputs.map(entry => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
           <span style={label}>{entry.name}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}> 保密</span></Show></span>
@@ -293,7 +293,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
   const agent = () => view().agentName || '这个智能体'
   /** Already in the vault: the same row, ticked and fixed, saying where it is. */
   const stored = () => item()?.name || (use?.credential) || site
-  const tip = () => storing ? `加密保存在咕咕，开了同步的设备也能用。之后${agent()}要用，还会先问你。` : `已经存在咕咕里（${stored()}）。要删掉，去 设置 → 密码。`
+  const tip = () => storing ? `加密保存在咕咕，已开启同步的设备也可使用。之后${agent()}使用时仍会先询问你。` : `已保存在咕咕（${stored()}）。如需删除，请前往 设置 → 密码。`
   /** The row can be changed only for values not saved yet, and only where keeping them is offered. */
   const choosable = () => storing && !!use?.remember && !!current() && !busy()
   /** 「始终允许」 is offered where a standing allowance may be given (not into an input that shows the secret). */

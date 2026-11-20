@@ -4175,7 +4175,7 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
 ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unknown, remoteCard?: unknown) => {
   const auth = await authProvider?.getAuth()
   if (!auth?.accessToken || !auth.userId) {
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // #6264 会话在别的机器上:名片由那台机器答过了(绑定记在那台机器上),这里只负责画;null = 那台机器说它还没有身份。
@@ -4187,7 +4187,7 @@ ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unkn
   )
   if (!card) {
     // 点了必须有反应:说明为什么不能分享,而不是一个点下去毫无动静的入口(实机反馈「点击没反应」)。
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // 分享浮层里要摆会话 id(#6093),而名片本身是「会话 → agent」的答案,不带问题那一半 —— 这里补上。
@@ -4247,13 +4247,13 @@ async function applyAgentModelSelectionOnDevice(input: {
   } catch (error) {
     // 交接窗口里的结构歧义（两个认领者）：默认已落下，活会话这一步说不清该动哪条 —— 响亮报，❌ 不猜。
     throw new Error(
-      `模型默认已更新，但此刻分不出该 Agent 的活会话（${error instanceof Error ? error.message : String(error)}）；`
-      + '请稍后再试一次。',
+      `模型默认已更新，但暂时无法确定该 Agent 的当前会话（${error instanceof Error ? error.message : String(error)}）；`
+      + '请稍后重试。',
     )
   }
   if (!sessionId) return { applied: 'next-session' }
   const emdash = loadEmdashBridge()
-  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，活会话没能切换')
+  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，当前会话未能切换')
   const outcome = await emdash.applyEmdashSessionModelSelection({
     sessionId,
     selection: input.selection,

@@ -61,25 +61,25 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
     report('group-enabled', true, group)
   }
   const status = ({ group, requirement }: PhonePermissionRow) => {
-    if (read === 'failed') return '查不到'
+    if (read === 'failed') return '无法读取'
     if (read !== 'ready' || !os) return '…'
-    if ((group === 'health' && os.health.old_app) || (['sms', 'recordings', 'photos'].includes(group) && !os.data?.supported)) return '查不到'
+    if ((group === 'health' && os.health.old_app) || (['sms', 'recordings', 'photos'].includes(group) && !os.data?.supported)) return '无法读取'
     if (unsupported(group, os) || !requirementGranted(requirement, os)) return '未开启'
     if (group === 'location' && !os.special.location_enabled) return '未开启'
     return settings.enabled && settings.groups[group] ? '已开启' : '未开启'
   }
-  const feedback = [error, read === 'failed' || system.failed ? '未读到部分权限状态，点对应项可重新读取。' : null].filter(Boolean).join('；')
+  const feedback = [error, read === 'failed' || system.failed ? '部分权限状态读取失败，点击对应项可重新读取。' : null].filter(Boolean).join('；')
   const trailing = (text: string) => <><span className="gg-settings-row-value">{text}</span><ChevronRight className="size-4" aria-hidden="true" /></>
   return <div className="gg-phone-capabilities" data-testid="phone-permissions-list"><SettingsGroup title="咕咕" presentation="navigation">
     {systemRows.map(({ permission }) => {
       const state = system.states[permission]
-      const text = state === 'granted' ? '已开启' : state === 'unreadable' || system.failed ? '查不到' : state ? '未开启' : '…'
+      const text = state === 'granted' ? '已开启' : state === 'unreadable' || system.failed ? '无法读取' : state ? '未开启' : '…'
       return <SettingsRow key={`system:${permission}`} title={SYSTEM_NAMES[permission]} description={SYSTEM_PURPOSES[permission]} data-testid={`phone-device-system-${permission}`} aria-disabled={busy !== null}
         control={trailing(text)} onClick={() => void act(`system:${permission}`, async () => {
-          if (!(await changeSystemPermission(permission, state ?? 'unreadable'))) throw new Error('没能打开系统权限设置，请在系统设置中找到咕咕。')
+          if (!(await changeSystemPermission(permission, state ?? 'unreadable'))) throw new Error('无法打开系统权限设置，请在系统设置中找到咕咕。')
         })} />
     })}
-    </SettingsGroup><SettingsGroup title="这台手机上的任务 Agent 能用" presentation="navigation">
+    </SettingsGroup><SettingsGroup title="此手机上的任务 Agent 可用" presentation="navigation">
     {PHONE_PERMISSION_ROWS.map(row => <SettingsRow key={row.id} title={row.title} description={row.purpose} data-testid={`phone-device-group-${row.id}`}
       aria-label={`${row.title}，${status(row)}`} aria-disabled={busy !== null || (!!os && unsupported(row.group, os))} control={trailing(status(row))}
       onClick={() => {

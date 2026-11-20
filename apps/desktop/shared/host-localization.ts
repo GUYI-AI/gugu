@@ -31,7 +31,7 @@ const HOST_CATALOG = {
     notifications: {
       closeToTray: {
         title: '咕咕 仍在后台运行',
-        body: '点咕咕图标或重新打开应用即可恢复；要退出，在图标菜单里选「退出咕咕」。',
+        body: '点击咕咕图标或重新打开应用以恢复窗口；如需退出，请在图标菜单中选择「退出咕咕」。',
       },
       authExpired: {
         title: '咕咕登录已失效，请在该设备重新登录',
@@ -60,22 +60,22 @@ const HOST_CATALOG = {
      * 一句英文,而且讲的是它作者关心的事(2026-09-16 在模拟器通知栏里实际看到)。
      */
     backgroundWatch: {
-      text: '有人需要你回话时，第一时间提醒你',
+      text: '有人需要你回复时及时通知你',
     },
     /** @@@5301 会话页 agent 的系统通知正文。这条链在 session/main/core/agent-hooks/notification.ts,
         与上面 notifications 那条(聊天/托盘)彼此独立,但文案同样要跟宿主语言走。 */
     sessionAgentNotifications: {
       needsApproval: '智能体需要你批准',
-      needsAnswer: '智能体在等你回答',
+      needsAnswer: '智能体正在等待你回答',
     },
     /** #6387 点了一条 gugu://ext 链接却没打开时,告诉人为什么。{name} = 扩展名(没装时是它的 id)。 */
     extensionLinks: {
-      title: '打不开这个链接',
-      notInstalled: '这个链接要打开 App「{name}」,但它没有安装。',
-      disabled: '这个链接要打开「{name}」,但它已停用。可以在左栏「App」里启用。',
-      noSuchTab: '「{name}」里没有这个链接指向的页面,链接可能来自另一个版本。',
-      noSession: '这个链接要在一个任务里打开「{name}」,但那个任务不在这台电脑上。',
-      openFailed: '「{name}」没能打开:{detail}',
+      title: '无法打开链接',
+      notInstalled: '此链接需要打开 App「{name}」,但该 App 未安装。',
+      disabled: '此链接需要打开「{name}」,但它已停用。请在左栏「App」中启用。',
+      noSuchTab: '「{name}」中没有此链接指向的页面,链接可能来自其他版本。',
+      noSession: '此链接需要在任务中打开「{name}」,但该任务不在这台电脑上。',
+      openFailed: '无法打开「{name}」:{detail}',
     },
     /**
      * @@@touchid-passkey 内置浏览器的 Touch ID 通行密钥(electron/macWebAuthn.ts)。touchIdReason 由 macOS 拼进系统指纹框:
@@ -111,13 +111,13 @@ const HOST_CATALOG = {
        * 句首带「咕咕」:这一行夹在 agent 自己的报错里,得让人认得出是谁说的。
        */
       credentialUnavailable: {
-        signedOut: '咕咕:登录已失效,在咕咕里重新登录后再发一次',
-        modelUnavailable: '咕咕:这个模型现在用不了,换一个模型再发一次',
-        membership: '咕咕:你用的咕咕模型要开会员才能用。换个模型,或开通会员后再发一次',
-        unreachable: '咕咕:连不上咕咕服务,稍后再发一次',
-        serviceUnavailable: '咕咕:咕咕这边出错了,稍后再发一次',
-        teamMonthlyCap: '你本月的团队积分用完了，只影响你，其他人照常用。找管理员调高上限。',
-        teamCredits: '团队积分用完了，所有成员暂时无法使用 AI。找管理员充值。',
+        signedOut: '咕咕:登录已失效。请在咕咕中重新登录后重新发送',
+        modelUnavailable: '咕咕:该模型当前不可用。请切换模型后重新发送',
+        membership: '咕咕:当前使用的咕咕模型需要开通会员。请切换模型或开通会员后重新发送',
+        unreachable: '咕咕:无法连接咕咕服务。请稍后重新发送',
+        serviceUnavailable: '咕咕:咕咕服务出错。请稍后重新发送',
+        teamMonthlyCap: '你本月的团队积分额度已用完，仅暂停你的 AI 使用，其他成员不受影响。请联系管理员调高上限。',
+        teamCredits: '团队积分已用完，所有成员暂时无法使用 AI。请联系管理员充值。',
       },
     },
   },
@@ -161,19 +161,19 @@ const HOST_CATALOG = {
     },
     /** 见 zh-CN 那条的说明:插件不给正文就会填一句英文默认句,所以这一行必须自己写。 */
     backgroundWatch: {
-      text: 'You will hear the moment someone needs your reply',
+      text: 'Notifies you when someone needs your reply',
     },
     sessionAgentNotifications: {
       needsApproval: 'Your agent needs your approval',
       needsAnswer: 'Your agent is waiting for your answer',
     },
     extensionLinks: {
-      title: "Couldn't open the link",
+      title: 'Could not open the link',
       notInstalled: 'This link opens the App "{name}", which is not installed.',
       disabled: 'This link opens {name}, which is turned off. Turn it on in Apps, in the left rail.',
-      noSuchTab: "{name} has no page this link points to — it may come from another version.",
+      noSuchTab: '{name} has no page this link points to. The link may come from another version.',
       noSession: 'This link opens {name} in a task that is not on this computer.',
-      openFailed: "{name} couldn't open: {detail}",
+      openFailed: 'Could not open {name}: {detail}',
     },
     webAuthn: {
       // macOS renders `"咕咕" is trying to <this>`, so a lowercase fragment.
@@ -201,11 +201,11 @@ const HOST_CATALOG = {
     sessionPlatform: {
       credentialUnavailable: {
         signedOut: 'Gugu: you are signed out. Sign in again in Gugu, then resend',
-        modelUnavailable: 'Gugu: this model is unavailable now. Switch to another model, then resend',
+        modelUnavailable: 'Gugu: this model is currently unavailable. Switch to another model, then resend',
         membership: 'Gugu: the Gugu model you are using needs a membership. Switch models, or get a membership, then resend',
-        unreachable: 'Gugu: cannot reach the Gugu service. Resend in a moment',
-        serviceUnavailable: "Gugu: something went wrong on Gugu's side. Resend in a moment",
-        teamMonthlyCap: 'You have used your monthly team credit limit. Only your AI use is paused. Ask an administrator to raise your limit.',
+        unreachable: 'Gugu: cannot reach the Gugu service. Resend later',
+        serviceUnavailable: 'Gugu: the Gugu service returned an error. Resend later',
+        teamMonthlyCap: 'You have used your monthly team credit limit. Only your AI use is paused; other members are not affected. Ask an administrator to raise your limit.',
         teamCredits: 'Team credits have run out. AI use is paused for everyone. Ask an administrator to top up.',
       },
     },

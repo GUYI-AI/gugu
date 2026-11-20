@@ -105,7 +105,7 @@ export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { dev
           <SettingsNote>只用于这个手机任务。手机 Agent 按需要读取已启用的说明，手机权限仍以授权设置为准。</SettingsNote>
           {loading ? <SettingsNote role="status">正在读取 Skill…</SettingsNote> : loaded ? (
             <>
-              {(busy || loaded.busy) && <SettingsNote role="status">任务正在处理或等待确认，结束后重新读取即可配置。</SettingsNote>}
+              {(busy || loaded.busy) && <SettingsNote role="status">任务正在处理或等待确认，结束后请重新读取以配置。</SettingsNote>}
               {!loaded.editable && <SettingsNote>请在这台手机上配置任务 Skill。</SettingsNote>}
               {selected ? <PhoneSkillFields skill={selected} limits={loaded.limits} disabled={disabled} onChange={update} /> : (
                 <>
@@ -114,7 +114,7 @@ export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { dev
                     <Button size="sm" variant="ghost" disabled={disabled || draft.length >= loaded.limits.maxSkills} onClick={() => fileInput.current?.click()} data-testid="phone-skill-import"><ArrowUpToLine className="size-4" />{importing ? '正在导入' : '导入 SKILL.md'}</Button>
                     <input ref={fileInput} type="file" hidden accept=".md,.markdown,text/markdown,text/plain" aria-label="导入 Skill 文件" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importFile(file) }} />
                   </div>
-                  {draft.length === 0 ? <PaneEmptyState icon={<BookOpen />} caption="还没有配置 Skill" hint="添加一份操作说明，让手机 Agent 按你的方式处理手机任务。" /> : (
+                  {draft.length === 0 ? <PaneEmptyState icon={<BookOpen />} caption="暂无 Skill" hint="添加操作说明，供手机 Agent 处理手机任务时使用。" /> : (
                     <div className="gg-phone-skills-list">
                       {draft.map((skill) => <div className="gg-phone-skill-row" key={skill.id}>
                         <Button variant="ghost" size="option" className="gg-list-row gg-row" data-mobile="" onClick={() => setEditId(skill.id)} data-testid={`phone-skill-edit-${skill.id}`}>
@@ -134,7 +134,7 @@ export function PhoneSkillsManager({ deviceId, sessionId, busy, onClose }: { dev
         <div className="gg-phone-skills-footer">
           {discard ? (
             <>
-              <SettingsNote>还没有保存修改。</SettingsNote>
+              <SettingsNote>修改尚未保存。</SettingsNote>
               <div className="gg-phone-skills-actions"><Button variant="ghost" onClick={() => setDiscard(null)}>继续编辑</Button><Button onClick={() => { if (discard === 'reload') { setDraft(loaded?.skills ?? []); setEditId(null); setDiscard(null); setAttempt((n) => n + 1) } else onClose() }} data-testid="phone-skills-discard">{discard === 'reload' ? '放弃修改并重新读取' : '放弃修改并返回'}</Button></div>
             </>
           ) : (
