@@ -6,7 +6,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@renderer/lib/ui/dropdown-menu';
@@ -52,9 +51,7 @@ export const ComposerFolderPicker = observer(function ComposerFolderPicker({
         <ChevronDown className="size-3 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" className="min-w-72 p-1">
-        {/* 分组标题只能在 Group 里(Base UI):少了这一层,点开菜单整页崩(#7341 实机撞过)。 */}
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{translate('projects.folders.pickerTitle')}</DropdownMenuLabel>
+        <DropdownMenuGroup label={translate('projects.folders.pickerTitle')}>
           {state.folders.map((folder) => (
             <DropdownMenuItem key={folder.workspaceId} onClick={() => state.choose(folder.workspaceId)} title={folder.path}>
               <Folder className="size-3.5" />
