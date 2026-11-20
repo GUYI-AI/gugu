@@ -546,9 +546,8 @@ describe('NewSessionPage', () => {
     expect(container.textContent).not.toContain('Open project');
     expect(container.textContent).not.toContain('Create repository');
     expect(container.textContent).toContain('不使用群');
-    expect(container.textContent).toContain('新建群');
-    expect(container.textContent).toContain('新建群（同时新建一个文件夹）');
-    expect(container.textContent).toContain('使用现有文件夹');
+    // One way to create a group (the chat list's create entry); the picker only picks.
+    expect(container.textContent).not.toContain('新建群');
   });
 
   // #7341 项目首页点中的文件夹 = 新会话从哪开工:它的 workspaceId 必须交到建会话那一步,缺省才落回项目根目录。
@@ -707,16 +706,6 @@ describe('NewSessionPage', () => {
     expect(composerDrafts.get(groupDraftKey('chat-project-1'))).toBe('项目原来的草稿');
     expect(composerDrafts.get(NEW_SESSION_DRAFT_KEY)).toBe('全局草稿');
     composerDrafts.discard(groupDraftKey('chat-project-1'));
-  });
-
-  it('本机的「新建空白项目」照旧建在本机', async () => {
-    await act(async () => {
-      root.render(localized(React.createElement(ComposerProjectPicker, { selectedId: undefined, onSelect: vi.fn() })));
-    });
-    await act(async () =>
-      (container.querySelector('[data-testid="project-create-blank"]') as HTMLButtonElement).click()
-    );
-    expect(mocks.showAddProjectModal).toHaveBeenCalledWith(expect.objectContaining({ machine: null }));
   });
 
   it('shows the read error with a retry above the last list when the group folders cannot be read', async () => {
