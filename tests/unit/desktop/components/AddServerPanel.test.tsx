@@ -365,7 +365,7 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
     harness.cleanup()
   })
 
-  it('答密码时勾了「以后不用再输密码」:回答带上 installKey', async () => {
+  it('答密码时「以后不用再输密码」默认勾着:回答带上 installKey', async () => {
     const { invoke, emit } = installApi()
     const harness = createReactHarness()
     await harness.render(withDevices([device('mine', '本机')])(panel()))
@@ -374,7 +374,7 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
     await click(buttonNamed('连接'))
     emit(state({ prompt: { id: 'p1', kind: 'password', message: "alice@box's password:", subject: 'alice@box', offerKeyInstall: true } }))
     await act(async () => undefined)
-    await click(document.querySelector('[data-testid="ssh-prompt-install-key"]'))
+    expect((document.querySelector('[data-testid="ssh-prompt-install-key"]') as HTMLInputElement | null)?.checked).toBe(true)
     await type(document.querySelector('[data-testid="add-server-secret"]') as HTMLInputElement, 'pw')
     await click(buttonNamed('继续'))
     expect(invoke).toHaveBeenCalledWith(SERVER_SSH_INSTALL_CHANNELS.answer, { runId: 'run-1', promptId: 'p1', value: 'pw', installKey: true })
