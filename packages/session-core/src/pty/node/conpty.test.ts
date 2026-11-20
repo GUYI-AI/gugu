@@ -52,7 +52,8 @@ describe('installed node-pty still needs the release (#6629)', () => {
 
   it('the worker lives at _agent._conoutSocketWorker and exit is emitted when the output socket closes', () => {
     expect(terminal).toMatch(/_this\._agent = new windowsPtyAgent_1\.WindowsPtyAgent\(/);
-    expect(agent).toMatch(/this\._conoutSocketWorker = new windowsConoutConnection_1\.ConoutConnection\(/);
+    expect(agent).toMatch(/this\._conoutSocketWorker = options\.conoutConnectionFactory\(/);
+    expect(agent).toMatch(/conoutConnectionFactory: function \([^)]*\) \{ return new windowsConoutConnection_1\.ConoutConnection\(/);
     expect(bodyOf(terminal, "_this._socket.on('close'")).toContain("_this.emit('exit'");
     expect(bodyOf(conout, 'ConoutConnection.prototype._destroySocket')).toContain('this._worker.terminate()');
   });

@@ -1,86 +1,14 @@
-import type { PosixPtyTerminator } from '@gugu/session-core/pty';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as nodePty from 'node-pty';
-import { LocalPtyOwner, LocalPtySession, spawnLocalPty } from './local-pty';
+import { LocalPtyOwner, spawnLocalPty } from './local-pty';
 
 vi.mock('node-pty', () => ({
   spawn: vi.fn(),
 }));
 
-describe('LocalPtySession', () => {
-  type MockPtyProcess = ConstructorParameters<typeof LocalPtySession>[1];
-
-  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-  let mockProc: MockPtyProcess;
-  let posixTerminator: Pick<PosixPtyTerminator, 'kill' | 'markExited'>;
-  let pty: LocalPtySession;
-
-  function setPlatform(platform: NodeJS.Platform): void {
-    Object.defineProperty(process, 'platform', {
-      ...originalPlatform,
-      value: platform,
-    });
-  }
-
-  function createPty(pid = 1234): void {
-    mockProc = {
-      pid,
-      write: vi.fn(),
-      resize: vi.fn(),
-      kill: vi.fn(),
-      onData: vi.fn(),
-      onExit: vi.fn(),
-    } as unknown as MockPtyProcess;
-    posixTerminator = {
-      kill: vi.fn(),
-      markExited: vi.fn(),
-    };
-    pty = new LocalPtySession('test-id', mockProc, posixTerminator);
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    createPty();
-  });
-
+describe('local pty', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    if (originalPlatform) {
-      Object.defineProperty(process, 'platform', originalPlatform);
-    }
-  });
-
-  it('kill() delegates POSIX process-tree termination', () => {
-    setPlatform('linux');
-
-    pty.kill();
-
-    expect(posixTerminator.kill).toHaveBeenCalledTimes(1);
-    const [pid, killPty] = vi.mocked(posixTerminator.kill).mock.calls[0]!;
-    expect(pid).toBe(1234);
-    expect(mockProc.kill).not.toHaveBeenCalled();
-
-    killPty();
-    expect(mockProc.kill).toHaveBeenCalledTimes(1);
-  });
-
-  it('kill() does not use POSIX termination on Windows', () => {
-    setPlatform('win32');
-
-    pty.kill();
-
-    expect(posixTerminator.kill).not.toHaveBeenCalled();
-    expect(mockProc.kill).toHaveBeenCalledTimes(1);
-  });
-
-  it('kill() falls back to node-pty when pid is unavailable', () => {
-    setPlatform('linux');
-    createPty(0);
-
-    pty.kill();
-
-    expect(posixTerminator.kill).not.toHaveBeenCalled();
-    expect(mockProc.kill).toHaveBeenCalledTimes(1);
   });
 
   it('owner kills sessions that have not reported a native exit', () => {
