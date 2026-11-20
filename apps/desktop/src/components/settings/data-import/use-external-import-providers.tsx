@@ -37,6 +37,7 @@ function externalProvider(
     iconId,
     localOnly: true,
     historyOnly: true,
+    ...(id === 'chatgpt' ? { sourceId: 'codex', sourceLabel: 'ChatGPT' } : {}),
     async scan(deviceId) {
       const ipc = localIpc(deviceId)
       if (!ipc) return null

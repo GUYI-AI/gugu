@@ -177,3 +177,51 @@ it('asks for a JSON file before selection and keeps the file icon and read-only 
   expect(heading.textContent).toContain('2');
   expect(heading.textContent).toContain('只读历史记录');
 });
+
+function groupedExport(): ImportProvider {
+  return { ...providers[0]!, id: 'chatgpt', label: 'ChatGPT JSON export',
+    sourceId: 'codex', sourceLabel: 'ChatGPT', historyOnly: true, pickSource: vi.fn().mockResolvedValue(undefined) };
+}
+
+it('offers export-file selection inside one ChatGPT card without blocking native import', async () => {
+  const history = groupedExport();
+  state.counts[history.id] = 'needs-source';
+  await harness.render(withQueries(<LocalImportSources providers={[...providers, history]} ownerId="fixture" jobs={[]} />));
+  expect(harness.container.querySelectorAll('.gg-import-card-trigger')).toHaveLength(1);
+  const rows = [...harness.container.querySelectorAll('.gg-import-row')];
+  expect(rows[0]!.textContent).toContain('全部（15）');
+  expect(rows[6]!.textContent).toContain('聊天记录导出文件（只读）');
+  await clickElement(rows[6]!.querySelector('button')!);
+  expect(history.pickSource).toHaveBeenCalledWith(null);
+  expect(state.refresh).toHaveBeenCalledWith('chatgpt', null);
+  expect(state.enqueue).not.toHaveBeenCalled();
+  await clickElement(rows[0]!.querySelector('button')!);
+  expect(state.enqueue.mock.calls.map(call => call[1].provider.id)).toEqual(providers.map(provider => provider.id));
+});
+
+it('imports a selected export separately or together with native categories', async () => {
+  const history = groupedExport();
+  state.counts[history.id] = 2;
+  await harness.render(withQueries(<LocalImportSources providers={[...providers, history]} ownerId="fixture" jobs={[]} />));
+  const rows = [...harness.container.querySelectorAll('.gg-import-row')];
+  expect(rows[0]!.textContent).toContain('全部（17）');
+  await clickElement(rows[6]!.querySelector('button')!);
+  expect(state.enqueue.mock.calls[0]![1].provider.id).toBe('chatgpt');
+  state.enqueue.mockClear();
+  await clickElement(rows[0]!.querySelector('button')!);
+  expect(state.enqueue.mock.calls.map(call => call[1].provider.id)).toEqual([...providers.map(provider => provider.id), 'chatgpt']);
+});
+
+it('keeps export progress and cancellation on its own row', async () => {
+  const history = groupedExport();
+  state.counts[history.id] = 2;
+  const job: ImportJob = { id: 'export-running', ownerId: 'fixture', provider: history,
+    devices: [{ deviceId: null, deviceName: 'This computer', count: 2 }], state: 'running', done: 1, total: 2 };
+  await harness.render(withQueries(<LocalImportSources providers={[...providers, history]} ownerId="fixture" jobs={[job]} />));
+  const rows = [...harness.container.querySelectorAll('.gg-import-row')];
+  expect(rows[6]!.textContent).toContain('1/2');
+  await clickElement(rows[6]!.querySelector('button')!);
+  expect(state.cancel).toHaveBeenCalledWith('export-running');
+  await clickElement(rows[1]!.querySelector('button')!);
+  expect(state.enqueue.mock.calls[0]![1].provider.id).toBe('codex');
+});

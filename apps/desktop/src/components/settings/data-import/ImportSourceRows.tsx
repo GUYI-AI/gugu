@@ -165,13 +165,24 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
         const choosingFile = rows.some(({ reading }) => reading?.state === 'value' && reading.value?.needsSource)
         const settled = rows.every(({ reading }) => reading?.state === 'error'
           || (reading?.state === 'value' && (reading.value === null || reading.value.needsSource || sourceCount(reading) !== undefined)))
-        const ready = rows.every(({ reading }) => sourceCount(reading) !== undefined)
-        const total = ready ? rows.reduce((sum, { reading }) => sum + sourceCount(reading)!, 0) : undefined
+        // An optional export file must not block the application's native imports.
+        const countedRows = rows.filter(({ provider, reading }) => !(provider.pickSource && reading?.state === 'value' && reading.value?.needsSource))
+        const ready = countedRows.every(({ reading }) => sourceCount(reading) !== undefined)
+        const total = ready ? countedRows.reduce((sum, { reading }) => sum + sourceCount(reading)!, 0) : undefined
         const active = jobs.some(job => isActiveImport(job) && group.providers.some(provider => provider.id === job.provider.id))
         const first = group.providers[0]!
+        const categoryRows = first.historyOnly ? [] : ENVIRONMENT_IMPORT_CATEGORIES.map(category => ({
+          id: category, label: t(categoryLabelKey(category)),
+          source: rows.find(({ provider }) => !provider.historyOnly && (provider.category ?? 'tasks') === category),
+        }))
+        const historyRows = rows.filter(({ provider }) => provider.historyOnly).map(source => ({
+          id: source.provider.id,
+          label: t(source.provider.pickSource ? 'settings.dataImport.exportFileHistory' : 'settings.dataImport.sessions'),
+          source,
+        }))
         return (
           <ImportCard key={group.id} name={group.label}
-            description={choosingFile ? t('settings.dataImport.pickSource') : !settled ? t('settings.dataImport.reading')
+            description={choosingFile && first.historyOnly ? t('settings.dataImport.pickSource') : !settled ? t('settings.dataImport.reading')
               : failed ? t('settings.dataImport.sourceIncomplete') : total === undefined ? t('settings.dataImport.categoryUnavailable') : t(first.historyOnly ? 'settings.dataImport.readOnlyHistory' : 'settings.dataImport.environmentAvailable', { count: total })}
             icon={<ImportSourceIcon provider={first} />} open={open === group.id}
             onToggle={() => setOpen(open === group.id ? null : group.id)}>
@@ -182,12 +193,11 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
                   if (count) enqueueImport(ownerId, { devices: [{ deviceId: null, deviceName: t('settings.dataImport.thisComputer'), count }], provider }, t)
                 })}>{t('settings.dataImport.importAll')}</Button>
             </ImportRow>
-            {(first.historyOnly ? ['tasks'] as const : ENVIRONMENT_IMPORT_CATEGORIES).map(category => {
-              const source = rows.find(({ provider }) => (provider.category ?? 'tasks') === category)
+            {[...categoryRows, ...historyRows].map(({ id, label, source }) => {
               const job = source ? findJob(jobs, source.provider.id, null) : undefined
               const count = sourceCount(source?.reading)
               return (
-                <ImportRow key={category} label={<>{t(first.historyOnly ? 'settings.dataImport.sessions' : categoryLabelKey(category))} {count === undefined ? '' : `(${count})`}</>} job={job}>
+                <ImportRow key={id} label={<>{label} {count === undefined ? '' : `(${count})`}</>} job={job}>
                   {source ? source.reading?.state === 'error' ? (
                     <Button variant="secondary" size="sm" title={t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
                       {t('settings.dataImport.refresh')}

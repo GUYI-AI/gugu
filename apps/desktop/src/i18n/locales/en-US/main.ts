@@ -831,6 +831,7 @@ export default {
     },
     "dataImport": {
       "chatgptExport": "ChatGPT JSON export",
+      "exportFileHistory": "Conversation export file (read-only)",
       "sourceIncomplete": "Some sources could not be read",
       "readOnlyHistory": "{{count}} read-only history entries",
 

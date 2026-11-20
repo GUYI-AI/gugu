@@ -813,6 +813,7 @@ export default {
     },
     "dataImport": {
       "chatgptExport": "ChatGPT 聊天记录导出文件",
+      "exportFileHistory": "聊天记录导出文件（只读）",
       "sourceIncomplete": "部分来源暂不可读取",
       "readOnlyHistory": "{{count}} 条只读历史记录",
 
