@@ -14,6 +14,7 @@
 //
 // 与桌面的一处不同是有意的:**走流量时不静默下载**,先提示「发现新版本」由用户点了再下 ——
 // 几十 MB、一天可能几版,替用户花流量不是「不打扰」。走 Wi-Fi 时与桌面一样静默下好再提示。
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { registerPlugin } from '@capacitor/core'
 import semver from 'semver'
 import {
@@ -203,7 +204,7 @@ function prepare(): Promise<Identity> {
 
 function downloadOffered(silent: boolean): Promise<void> {
   const target = offered
-  if (!target) return Promise.reject(new Error('没有可下载的更新 —— 先检查更新'))
+  if (!target) return Promise.reject(new Error(mobileWorkspaceText('appUpdate.noDownload')))
   downloading ??= (async () => {
     emit(downloadingStatus(target.version))
     try {
@@ -272,7 +273,7 @@ export function downloadUpdate(): Promise<void> {
 }
 
 export async function installUpdate(): Promise<void> {
-  if (!staged) throw new Error('没有下好的更新可以安装')
+  if (!staged) throw new Error(mobileWorkspaceText('appUpdate.noStaged'))
   // 系统安装器接手:装上时本进程被系统换掉;用户在系统那一步点了取消,这里会 reject,
   // 按钮据此恢复可按(UpdateBanner 的 installUpdate().catch)。
   const pkg = staged

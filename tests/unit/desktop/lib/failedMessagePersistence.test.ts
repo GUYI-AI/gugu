@@ -44,13 +44,14 @@ describe('sender-device resend position persistence', () => {
     repository.close()
   })
 
-  it('recovers an older failed outbox entry without replacing its original creation position', async () => {
+  it('slots an outbox entry saved without a position after what the conversation shows when it is resent', async () => {
     const repository = await openImRepository('sender', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
     const record = outbox()
     await repository.transaction(tx => { tx.putMessage(row('before', 10, 1)); tx.putOutbox(record); tx.putMessage(row('later', 11, 3)) })
     await putOutboxRecord(repository, { ...record, state: 'pending' })
     await ackOutboxRecord(repository, record.clientMessageId, row('failed', 12, 4))
-    expect(imSelectors.messagesForChat('chat')(repository.snapshot()).map(row => row.id)).toEqual(['before', 'failed', 'later'])
+    // No clock comparison: a record without a slot gets one from the rows on screen, like a new send.
+    expect(imSelectors.messagesForChat('chat')(repository.snapshot()).map(row => row.id)).toEqual(['before', 'later', 'failed'])
     repository.close()
   })
 })

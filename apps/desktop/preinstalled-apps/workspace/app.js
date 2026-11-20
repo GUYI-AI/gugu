@@ -1,4 +1,3 @@
-import { requestAt } from './annotation-selection.js'
 import { codeQuote } from './code-quote.js'
 import { markdownLiteral } from './markdown-literal.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
@@ -157,11 +156,8 @@ const STRINGS = {
     jsonInvalid: '不是合法的 JSON：{e}',
     jsonNotObject: 'JSON 文件的最外层必须是对象 {…}',
     jsonRemote: '别人刚改了这个文件。应用时只写你改过的键。',
-    copy: '复制',
     copied: '已复制',
     cite: '引用',
-    send: '发送',
-    annotate: '批注',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -406,11 +402,8 @@ const STRINGS = {
     jsonInvalid: 'Not valid JSON: {e}',
     jsonNotObject: 'A JSON file must hold an object {…} at the top',
     jsonRemote: 'Someone just changed this file. Applying writes only the keys you changed.',
-    copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
-    send: 'Send',
-    annotate: 'Annotate',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -824,9 +817,6 @@ function renderChrome() {
   $('empty-draft-label').textContent = t.emptyDraft
   $('json-apply').textContent = t.apply
   $('json-discard').textContent = t.discard
-  $('copy-sel').textContent = t.copy
-  $('cite-sel').textContent = t.cite
-  $('send-sel').textContent = annotationEntry() ? t.annotate : t.send
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -3266,42 +3256,53 @@ async function mountPlain(current) {
 }
 
 // The selected text — in the editor (the source, each range of a multiple selection) or the preview — kept as it
-// changes, with the lines it was written on and where it ends on screen: a small bar beside it offers Copy and Cite.
-// On a phone the sandboxed page gets no native copy menu (WebView 133, L1), so Copy hands the text to the host
-// (gugu.clipboard.writeText). Read at click time from here, because pressing a button may already have collapsed it.
+// changes, with the lines it was written on and where it is on screen. What can be done with it is the host's: the page
+// shows it (`gugu.files.showSelection`, API 60) and the runtime draws the host's selection menu here — Copy, Cite, Send, as
+// the file's table says — again as the page scrolls, in the same frame. The page keeps only its editor's own tools: the
+// marks a selection in the source can be wrapped in, in a small bar above it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
+let selectionStart = null
 let picksInPreview = false
 
-let annotationStart = null
-const annotationEntry = () => !touchPane?.matches && gugu.apiVersion >= 58 && gugu.files.annotateSelection &&
-  state.current?.entry.workspace === state.ctx?.workspace?.id && state.ctx?.workspace && state.current?.entry
-
 function showSelection(picks, end, inPreview = false, start = end) {
-  annotationStart = picks.length ? start : null
   state.picks = picks
   selectionEnd = picks.length ? end : null
+  selectionStart = picks.length ? start : null
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
-  // Send goes into this page's conversation, on a host that has it: a session's own working copy (API 54), or the chat
-  // whose folder the file is in, its members to @ (55).
-  const entry = state.current?.entry, annotation = annotationEntry()
-  $('send-sel').textContent = annotation ? state.t.annotate : state.t.send
-  $('send-sel').hidden = annotation ? !picks.some(pick => pick.lines && pick.text) : !(gugu.files.sendSelection && entry && (inCopy(entry) ? state.ctx?.workspace
-    : !state.ctx?.workspace && entry.chat === state.ctx?.chat?.id && gugu.apiVersion >= 55))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
-  requestAnimationFrame(placeSelectionBar)
+  requestAnimationFrame(placeSelection)
 }
 
-function placeSelectionBar() {
+function placeSelection() {
+  const at = selectionEnd?.(), from = selectionStart?.()
+  const shown = at && from && (at.top || at.bottom) ? { at, from } : null // a pane that is not shown has no place on screen
+  showToHost(shown)
   const bar = $('sel-bar')
-  const at = selectionEnd?.()
-  bar.hidden = !at || (!at.top && !at.bottom) // a pane that is not shown has no place on screen
+  bar.hidden = !shown || picksInPreview || !state.current?.view || state.current.view.state.readOnly
   if (bar.hidden) return
+  // Above the selection: the host's menu opens under it.
   const gap = 6
-  const below = at.bottom + gap + bar.offsetHeight <= window.innerHeight
-  bar.style.top = `${below ? at.bottom + gap : Math.max(gap, at.top - gap - bar.offsetHeight)}px`
-  bar.style.left = `${Math.max(gap, Math.min(at.left, window.innerWidth - bar.offsetWidth - gap))}px`
+  const above = at.top - gap - bar.offsetHeight >= gap
+  bar.style.top = `${above ? from.top - gap - bar.offsetHeight : at.bottom + gap}px`
+  bar.style.left = `${Math.max(gap, Math.min(from.left, window.innerWidth - bar.offsetWidth - gap))}px`
+}
+
+// The selection as the host's menu takes it: the file, the words (a code file's as its lines are), the source lines of
+// each range and their box.
+function showToHost(shown) {
+  if (!gugu.files.showSelection) return
+  const current = state.current
+  const picked = shown && current ? state.picks.filter((pick) => pick.lines && pick.text) : []
+  gugu.files.showSelection(picked.length ? {
+    file: current.entry,
+    text: picked.map((pick) => pick.text).join('\n'),
+    // Each range its place, as a pill's link writes lines; the host names them (「第 3–4 行」).
+    places: picked.slice(0, 8).map(({ lines: [first, last] }) => ({ at: { lines: first === last ? `${first}` : `${first}-${last}` } })),
+    ...(current.file.type === 'text' ? {} : { code: true }),
+    rect: { x: shown.from.left, y: shown.from.top, width: Math.max(0, (shown.at.right ?? shown.at.left) - shown.from.left), height: Math.max(0, shown.at.bottom - shown.from.top) },
+  } : null)
 }
 
 function selectionWatch(cm) {
@@ -3332,7 +3333,7 @@ document.addEventListener('selectionchange', () => {
     showSelection([], null)
   }
 })
-document.addEventListener('scroll', placeSelectionBar, true)
+document.addEventListener('scroll', placeSelection, true)
 
 // A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes),
 // named by them; the file's name before them is gugu's. A preview block without lines names none: it points at the file.
@@ -3358,39 +3359,13 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   }
 }
 
-// Send (a task's working copy, API 54; a chat's folder, 55): the same words and pills, in the host's box beside the selection,
-// with a few words of the person's own; the host sends them into this page's conversation and tells the page only whether they went.
-// Called inside the click, as the host requires.
-async function send(current = state.current, picks = state.picks) {
-  const annotated = annotationEntry()
-  if (annotated) {
-    const selected = picks.filter(pick => pick.lines && pick.text), at = annotationStart?.()
-    if (!selected.length || !at) return
-    try {
-      const selection = { startLine: Math.min(...selected.map(pick => pick.lines[0])), endLine: Math.max(...selected.map(pick => pick.lines[1])),
-        text: selected.map(pick => pick.text).join('\n') }
-      if (await gugu.files.annotateSelection(annotated, requestAt(at, { selection }))) dropSelection()
-    } catch (error) { showBanner(failureText(error), 'error') }
-    return
-  }
-  const cited = citeOf(current, picks)
-  const at = selectionEnd?.()
-  if (!cited || !at) return
-  try {
-    const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
-    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') dropSelection()
-  } catch (error) {
-    showBanner(failureText(error), 'error')
-  }
-}
-
-// Cited or sent, the words are on their way: the selection and its bar go, as after a copy into somewhere else.
+// Cited, the words are on their way: the selection goes, as after a copy into somewhere else.
 function dropSelection() {
   document.getSelection()?.removeAllRanges()
   showSelection([], null)
 }
 
-// What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
+// What a cite carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
 // fenced so indentation and marks stay) and a pill per place.
 function citeOf(current, picks, whole = false) {
   if (!current || (!whole && !picks.length)) return null
@@ -3548,21 +3523,6 @@ function showPlace() {
   // Said until the next press on the file, as the mark stays (the file's status coming in does not take it away).
   if (found?.moved) showBanner(fmt(state.t.placeMoved, { lines: fmt(at[0] === at[1] ? state.t.line : state.t.lines, { first: at[0], last: at[1] }) }), 'info', true)
   else if (!found) gone()
-}
-
-async function copySelection() {
-  const text = state.picks.map((pick) => pick.text).join('\n')
-  if (!text) return
-  const button = $('copy-sel')
-  try {
-    await gugu.clipboard.writeText(text)
-    button.textContent = state.t.copied
-  } catch (error) {
-    showBanner(failureText(error), 'error')
-  }
-  setTimeout(() => {
-    button.textContent = state.t.copy
-  }, 1200)
 }
 
 // ─── the source's marks and the reading page's blocks (owner 10-30, folder-docs) ───────────────────────────────────
@@ -4643,13 +4603,7 @@ function start() {
   for (const mode of ['edit', 'split', 'preview']) $(`mode-${mode}`).onclick = () => setMode(mode)
   $('json-apply').onclick = () => state.current?.jsonApply?.()
   $('json-discard').onclick = () => state.current?.jsonDiscard?.()
-  // Keep the editor's focus and selection when the button is pressed; copy inside the click (a user gesture).
-  $('copy-sel').addEventListener('pointerdown', (event) => event.preventDefault())
-  $('copy-sel').onclick = () => copySelection()
-  $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
-  $('cite-sel').onclick = () => cite()
-  $('send-sel').addEventListener('pointerdown', (event) => event.preventDefault())
-  $('send-sel').onclick = () => send()
+  // Keep the editor's focus and selection when a mark's button is pressed.
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)

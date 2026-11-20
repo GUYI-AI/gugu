@@ -49,7 +49,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
 import { spawnOwnedChild, type OwnedChild } from '@gugu/session-core/exec';
-import { defaultEngineTreeOps, signalEngineTree } from '@gugu/session-core/acp/node';
+import { AcpProbeRpcClient, defaultEngineTreeOps, signalEngineTree } from '@gugu/session-core/acp/node';
 import { errorDetail } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
@@ -236,6 +236,7 @@ export type AcpSpawnSpec = {
   sessionMeta?: Record<string, unknown>;
   /** See `catalogModelsInConfigUpdate` on the plugin's ACP behavior. */
   modelsInConfigUpdate?: boolean;
+  modelSource?: 'config-options';
   /** 插件的 `acp.authenticateWhenAdvertised`:agent 报了这个方法就先认证、再开探针那条会话(与真会话同一条)。 */
   authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
   /** `acp.catalogNeedsSignIn`: the account row's sign-in reading; `null` = cannot read. */
@@ -908,7 +909,7 @@ async function probeOnce(
         const state = await Promise.race([
           rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised,
             // Own route only: a placeholder or connection pass runs on credentials that are not this account.
-            probeCredentials ? undefined : spec.readSignIn, spec.reviewPermission),
+            probeCredentials ? undefined : spec.readSignIn, spec.modelSource, spec.reviewPermission),
           processFailed,
           watchdog.stalled,
         ]);
@@ -1014,18 +1015,13 @@ function describe(state: HarnessCatalogState): string {
  * ❌ 不复用 session-runtime 那套连接池：那是给有生命周期的会话用的（客户端回调、权限往返、
  * 复用与保活）。探针没有会话，借它的生命周期语义只会把两件事绑死。
  */
-class AcpProbeClient {
-  private buffer = '';
-  private nextId = 1;
-  private readonly pending = new Map<
-    number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
-
-  constructor(private readonly child: ChildProcessWithoutNullStreams) {
-    child.stdout.on('data', (chunk: Buffer) => this.onData(chunk.toString()));
-    // stderr 只排空:adapter 的日志不该把管道堵死,也不该混进协议流。
-    child.stderr.resume();
+class AcpProbeClient extends AcpProbeRpcClient {
+  constructor(child: ChildProcessWithoutNullStreams) {
+    super(child, payload => new AcpRpcError(payload), (method, params) => {
+      if (method !== 'session/update') return;
+      const update = (params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[] } } | undefined)?.update;
+      if (update?.sessionUpdate === 'config_option_update') this.onConfigUpdate(update.configOptions ?? []);
+    });
   }
 
   private updatedConfigOptions: RawConfigOption[] = [];
@@ -1044,47 +1040,6 @@ class AcpProbeClient {
     return this.updatedConfigOptions;
   }
 
-  private onData(text: string): void {
-    this.buffer += text;
-    let index: number;
-    while ((index = this.buffer.indexOf('\n')) >= 0) {
-      const line = this.buffer.slice(0, index).trim();
-      this.buffer = this.buffer.slice(index + 1);
-      if (!line) continue;
-      let msg: Record<string, unknown>;
-      try {
-        msg = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue; // 非协议行（adapter 偶尔往 stdout 打日志）
-      }
-      const id = msg.id;
-      if (typeof id === 'number' && this.pending.has(id)) {
-        const waiter = this.pending.get(id);
-        this.pending.delete(id);
-        if (msg.error) waiter?.reject(new AcpRpcError(msg.error));
-        else waiter?.resolve(msg.result);
-      } else if (msg.method === 'session/update') {
-        const update = (msg.params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[] } } | undefined)?.update;
-        if (update?.sessionUpdate === 'config_option_update') this.onConfigUpdate(update.configOptions ?? []);
-      } else if (typeof msg.method === 'string' && id !== undefined) {
-        // adapter 反过来问我们（权限、读写文件）。探针一律拒：它不该产生任何副作用。
-        this.send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'probe: unsupported' } });
-      }
-    }
-  }
-
-  private send(payload: unknown): void {
-    this.child.stdin.write(`${JSON.stringify(payload)}\n`);
-  }
-
-  private request(method: string, params: unknown): Promise<unknown> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.send({ jsonrpc: '2.0', id, method, params });
-    });
-  }
-
   async readCatalog(
     cwd: string,
     sessionMeta?: Record<string, unknown>,
@@ -1092,6 +1047,7 @@ class AcpProbeClient {
     modelsInConfigUpdate?: boolean,
     authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
     readSignIn?: AcpSpawnSpec['readSignIn'],
+    modelSource?: AcpSpawnSpec['modelSource'],
     reviewPermission?: AcpSpawnSpec['reviewPermission'],
   ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
@@ -1236,7 +1192,9 @@ class AcpProbeClient {
     const modelOption = options.find((o) => o.category === 'model');
     const configModels = toChoices(modelOption);
     const reportedModels = toAvailableModels(response?.models?.availableModels);
-    const models = [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
+    const models = modelSource === 'config-options' && configModels.length > 0
+      ? configModels
+      : [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
     // Signed out ⇒ auth-required with `initialize`'s login methods. Unknown keeps the list; expired is `withAuthExpiry`'s.
     const signIn = await readSignIn?.();
     if (signIn?.kind === 'unauthenticated' && signIn.reason !== 'expired') return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };

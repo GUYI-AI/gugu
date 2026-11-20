@@ -254,7 +254,6 @@ vi.mock('@renderer/lib/ui/dropdown-menu', () => ({
   DropdownMenuCheckboxItem: ({ children, checked, disabled, onCheckedChange }: { children: React.ReactNode; checked: boolean; disabled?: boolean; onCheckedChange: (checked: boolean) => void }) => React.createElement('button', { role: 'menuitemcheckbox', 'aria-checked': checked, disabled, onClick: () => onCheckedChange(!checked) }, children),
   DropdownMenu: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuSeparator: () => null,
-  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuItem: ({
     children,
@@ -461,7 +460,7 @@ describe('NewSessionPage', () => {
     expect(card?.textContent).toContain('project-1');
     expect(container.querySelector('h1.gg-type-page-title')).toBeNull();
     // 这里没有宿主通道:读不到文件夹就照实说读不到,❌ 拿根目录冒充、❌ 整页崩掉。
-    expect(card?.textContent).toContain('读不到这个项目的文件夹');
+    expect(card?.textContent).toContain('无法读取此项目的文件夹');
     expect(mocks.createSessionStateOptions).toEqual({
       requireGeneratedName: true,
       runInProjectDir: true
@@ -648,9 +647,9 @@ describe('NewSessionPage', () => {
     const picker = container.querySelector('[data-testid="composer-device-picker"]');
     expect(picker).not.toBeNull();
     expect(picker?.getAttribute('data-size')).toBe('compact');
-    // 默认这台电脑:电脑图标 + 名字「这台电脑」(托盘里各处同一个叫法)。
+    // 默认这台电脑:电脑图标 + 名字「本机」(托盘里各处同一个叫法)。
     expect(picker?.getAttribute('data-selected-id')).toBe('local');
-    expect(picker?.textContent).toContain('这台电脑');
+    expect(picker?.textContent).toContain('本机');
     expect(picker?.querySelector('[data-kind="computer"]')).not.toBeNull();
   });
 
@@ -821,7 +820,7 @@ describe('NewSessionPage', () => {
   });
 
   // 项目与机器解耦:账号上一个文件夹都没有的项目也列出来(identity.list_my_projects)。每个项目都有 ›:有文件夹的列「设备 · 路径」,
-  // 没有能用文件夹的给「在某台设备上选文件夹」;绑在这一端没加载的设备上的,列成灰的「暂不可用」,而不是当成没有文件夹。
+  // 没有能用文件夹的给「在某台设备上选择文件夹」;绑在这一端没加载的设备上的,列成灰的「暂不可用」,而不是当成没有文件夹。
   it('lists an account project that has no folder on any machine, with a way to give it one', async () => {
     const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
     (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = ([
@@ -836,14 +835,14 @@ describe('NewSessionPage', () => {
       // Archived ones are not listed; every listed project has a ›.
       expect(rows.map((item) => item.getAttribute('data-chat-id'))).toEqual(['chat-project-1', 'chat-empty', 'chat-bound']);
       // No binding anywhere says so; a folder only on a device that is not loaded here is not "no folder".
-      expect(rows[1]?.textContent).toContain('还没有文件夹');
-      expect(rows[2]?.textContent).not.toContain('还没有文件夹');
+      expect(rows[1]?.textContent).toContain('暂无文件夹');
+      expect(rows[2]?.textContent).not.toContain('暂无文件夹');
       const unavailable = container.querySelector('[role="menuitem"][data-device-id="d"][disabled]');
       expect(unavailable?.textContent).toContain('暂不可用');
       // Neither has a usable folder, so each offers to pick one on a machine ("pick a folder", not just a machine name).
       const pickOn = Array.from(container.querySelectorAll('[data-testid="project-pick-folder-on"]'));
       expect(pickOn.length).toBeGreaterThanOrEqual(2);
-      expect(pickOn[0]?.textContent).toContain('选文件夹');
+      expect(pickOn[0]?.textContent).toContain('选择文件夹');
     } finally {
       (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [];
     }
@@ -884,7 +883,7 @@ describe('NewSessionPage', () => {
     ];
     await renderProjectHome();
     expect(container.querySelector('[data-testid="composer-device-picker"]')?.getAttribute('data-selected-id')).toBe('local');
-    expect(container.querySelector('[data-testid="composer-device-picker"]')?.textContent).toContain('这台电脑');
+    expect(container.querySelector('[data-testid="composer-device-picker"]')?.textContent).toContain('本机');
     // 项目预选这一个;这一页就是它的,没有「未选择项目」。
     expect(container.textContent).not.toContain('未选择项目');
     expect(mocks.createSessionCallbackProjectId).toBe('project-1');
@@ -949,7 +948,7 @@ describe('NewSessionPage', () => {
       expect(listed.map((item) => [item.getAttribute('data-chat-id'), item.textContent?.trim()])).toEqual([
         ['chat-project-1', 'project-1'],
         ['chat-project-offline', 'project-offline'],
-        ['chat-empty', 'paper还没有文件夹'],
+        ['chat-empty', 'paper暂无文件夹'],
       ]);
       expect(listed.map((item) => item.getAttribute('data-testid'))).toEqual(['project-picker-item', 'project-picker-item', 'project-picker-item']);
       // Picking a folder in › selects the project (the folder's device and path are what the row says).

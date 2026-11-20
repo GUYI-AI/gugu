@@ -9,20 +9,24 @@ const row = (id: string, seq: number): MessageItem => ({ id, chat_id: 'chat', se
   is_mine: true, delivered: seq > 0, delivery_status: null, local_send_state: seq < 1 ? 'failed' : null })
 
 describe('failed messages in bounded history windows', () => {
-  it('normalizes a legacy pending row once and preserves its cached identity on later updates', () => {
+  it('puts an unsent row the outbox has not positioned yet last, whatever its local clock says', () => {
     const cache = new ChatWindowCache()
-    const pending = row('failed', -1)
-    cache.set('chat', [row('before', 10), pending])
-    const positioned = cache.get('chat')!.find(row => row.id === pending.id)!
-    expect(positioned).toEqual({ ...pending, local_timeline: { afterSeq: 10, createdAt: pending.created_at } })
-    cache.set('chat', [...cache.get('chat')!, row('later', 11)])
-    expect(cache.get('chat')?.find(row => row.id === pending.id)).toBe(positioned)
-    expect(cache.get('chat')?.map(row => row.id)).toEqual(['before', 'failed', 'later'])
+    // The sender's clock runs 30 s behind the server, so the bubble's local time is older than the agent reply on screen.
+    const pending = { ...row('mine', -1), local_send_state: 'sending' as const, created_at: '2026-11-15T23:59:30Z' }
+    cache.set('chat', [row('before', 10), { ...row('agent', 11), sender_user_id: 'agent' }, pending])
+    expect(cache.get('chat')?.map(row => row.id)).toEqual(['before', 'agent', 'mine'])
+    expect(cache.get('chat')?.find(row => row.id === 'mine')).toBe(pending)
+    // The outbox's send-time slot then holds the row in place when later messages arrive.
+    const positioned = { ...pending, local_timeline: { afterSeq: 11, createdAt: pending.created_at } }
+    cache.set('chat', [positioned, row('later', 12)])
+    expect(cache.get('chat')?.map(row => row.id)).toEqual(['before', 'agent', 'mine', 'later'])
+    expect(cache.get('chat')?.find(row => row.id === 'mine')?.local_timeline).toEqual(positioned.local_timeline)
   })
 
   it('does not move failed rows to the end when resetting or updating a window', () => {
     const window = new ChatHistoryWindow()
-    const rows = [row('before', 10), row('failed', -1), row('later', 11)]
+    const failed = { ...row('failed', -1), local_timeline: { afterSeq: 10, createdAt: '2026-11-16T00:00:00Z' } }
+    const rows = [row('before', 10), failed, row('later', 11)]
     window.reset('chat', rows)
     expect(window.getSnapshot().messages.map(row => row.id)).toEqual(['before', 'failed', 'later'])
     window.update(previous => [...previous, row('newest', 12)])

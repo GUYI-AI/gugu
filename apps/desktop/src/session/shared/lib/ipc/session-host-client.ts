@@ -319,7 +319,7 @@ export function createSessionHostClient(open: SessionHostPipeOpener, options: Se
     abandonOpening = null
     setState(switching ? 'switching' : 'closed')
     // 原因进日志,用户文案只留下一步(user-copy-leak 棘轮)。
-    warn(switching ? '会话页宿主换线,当场开新窗口' : '会话页宿主连接关闭', { reason })
+    warn(switching ? 'session page host switched channel; opening a new window now' : 'session page host connection closed', { reason })
     // 旧窗口上在途的问随它一起没了(窗口不能跨频道搬,宿主那头按频道记窗口):照旧当场失败,由各自的调用方重来。
     failAll(failureText('hostConnectionLost'))
     if (!switching) {
@@ -377,7 +377,7 @@ export function createSessionHostClient(open: SessionHostPipeOpener, options: Se
       if (frozen > frozenMs) sendHeartbeat()
       return false
     }
-    warn('会话页宿主连接静默过久,主动断开重连', { staleMs, frozenForMs: frozen, silentForMs: lastTickAt - lastSeenAt })
+    warn('session page host connection silent too long; reconnecting', { staleMs, frozenForMs: frozen, silentForMs: lastTickAt - lastSeenAt })
     reopen('stale')
     return true
   }
@@ -472,7 +472,7 @@ export function createSessionHostClient(open: SessionHostPipeOpener, options: Se
           if (gen === generation) {
             generation += 1
             opening = null
-            warn('会话页宿主开线被放弃,当场重开', { code })
+            warn('session page host open abandoned; reopening now', { code })
           }
           return connect()
         }
@@ -490,7 +490,7 @@ export function createSessionHostClient(open: SessionHostPipeOpener, options: Se
           // 开线器说那台机器此刻够不着(离线):这就是离线,❌ 记成「连不上」、❌ 退避空转 —— 停在 closed,
           // 它回来时由调用方 reconnectNow;有人要用它时再 connect 一次(当场又说够不着,不出网)。
           if (code !== 'unreachable') {
-            warn('会话页宿主连不上', { error: String(error) })
+            warn('cannot reach the session page host', { error: String(error) })
             options.onOpenFailed?.(error)
             // A protocol mismatch needs an upgraded endpoint; retrying the same versions cannot repair it.
             if (code !== 'client_outdated' && code !== 'server_outdated') scheduleRetry()

@@ -9,12 +9,12 @@ export function registerPlugin(plugin) {
     if (method === 'then' || typeof method !== 'string') return undefined
     return async (args = {}) => {
       const context = calls.getStore()
-      if (!context) throw new Error('手机原生调用缺少所属任务')
+      if (!context) throw new Error('Phone native call has no owning task')
       const { nativeCall, signal, recordPermissionRequirements, recordNativeFailure, ...metadata } = context
       let result
       try {
         result = await nativeCall('phone.native', { plugin, method, args }, signal, metadata)
-        if (!result?.ok) throw Object.assign(new Error(result?.message ?? '手机工具执行失败'), { code: result?.code ?? 'failed' })
+        if (!result?.ok) throw Object.assign(new Error(result?.message ?? 'Phone tool failed'), { code: result?.code ?? 'failed' })
       } catch (error) { recordNativeFailure?.(error); throw error }
       if (result.permissionRequirements) await recordPermissionRequirements?.(result.permissionRequirements)
       return result.data

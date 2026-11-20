@@ -182,9 +182,13 @@ describe('an App program as a caller of its App (F16)', () => {
       expect(files.readHandleCount()).toBe(0);
       await readBoth();
       expect(files.readHandleCount()).toBe(2);
+      // A page that is merely gone is not a refusal: its reads wait out the idle timer for the next page of the same reader.
+      vi.useFakeTimers();
       relay.pageGone(program.pageId);
+      expect(files.readHandleCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
       expect(files.readHandleCount()).toBe(0);
-    } finally { relay.pageGone(program.pageId); await program.close(); }
+    } finally { vi.useRealTimers(); relay.pageGone(program.pageId); await program.close(); }
   });
 
   it('a person\'s stamped page call keeps person membership for files, chats and messages', async () => {
@@ -641,7 +645,7 @@ describe('an App program as a caller of its App (F16)', () => {
     granted.add('chat:relay');
     expect(await call(child, 8, 'dispatch', args)).toMatchObject({ ok: true, value: { to: args.to, id: 'm-1' } });
     // A program's call is the person's: no page, no chat drawn, nobody working a page.
-    expect(dispatchForApp).toHaveBeenCalledWith('board', args, { chat: null, session: null }, expect.objectContaining({ pick: expect.any(Function) }));
+    expect(dispatchForApp).toHaveBeenCalledWith('board', args, { chat: null, session: null, folders: [] }, expect.objectContaining({ pick: expect.any(Function) }));
     granted.add('agents:control');
     expect(await call(child, 9, 'dispatch', { to: { agent: MEMBER }, text: 'run it' })).toMatchObject({ ok: true, value: { to: { agent: MEMBER } } });
     expect(await call(child, 10, 'dispatch', { text: 'whom?' })).toMatchObject({ ok: false, code: 'denied', message: expect.stringContaining('gesture') });

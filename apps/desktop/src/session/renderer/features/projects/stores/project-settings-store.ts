@@ -6,9 +6,6 @@ import { Resource } from '@renderer/lib/stores/resource';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import {
   isProjectConfigPath,
-  type MigrateProjectConfigRequest,
-  type MigrateProjectConfigResult,
-  type ProjectConfigMigration,
   type ProjectSettings,
   type ProjectSettingsOverrideState,
   type ProjectSettingsPage,
@@ -65,14 +62,6 @@ export class ProjectSettingsStore {
     return this.pageData.data?.overrideState ?? null;
   }
 
-  get configMigrations(): ProjectConfigMigration[] | null {
-    return this.pageData.data?.configMigrations ?? null;
-  }
-
-  get shouldPromptConfigMigration(): boolean {
-    return this.pageData.data?.shouldPromptConfigMigration ?? false;
-  }
-
   async load(): Promise<ProjectSettingsPage | null> {
     await this.pageData.load();
     return this.pageData.data;
@@ -96,16 +85,6 @@ export class ProjectSettingsStore {
     const result = await rpc.projects.shareProjectSettingsToConfig(this.projectId, request);
     if (result.success) {
       this.pageData.setValue(result.data);
-    }
-    return result;
-  }
-
-  async migrateProjectConfig(
-    request: MigrateProjectConfigRequest
-  ): Promise<Result<MigrateProjectConfigResult, UpdateProjectSettingsError>> {
-    const result = await rpc.projects.migrateProjectConfig(this.projectId, request);
-    if (result.success) {
-      this.pageData.setValue(result.data.page);
     }
     return result;
   }

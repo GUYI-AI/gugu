@@ -2,21 +2,30 @@
  * How a search query matches a text — one rule for every search an agent or a person makes: catalog_list's tools,
  * app_search's Apps, and the Apps page's search box (owner 10-19 「要认真做了」, ❌ a second copy anywhere).
  *
- * The query is split into words (letters and digits); a word found whole in the text scores 1. Chinese is written without
- * spaces, so 「一起玩海龟汤」 is one word and is never in a text whole (10-19: catalog_list found 0 rows for it). A Chinese
- * word not found whole scores its longest piece of two or more characters that is in the text, over its length: below the
- * 1 of a whole word, so 「海龟汤」 (3/6) still comes before a row that shares only 「一起」 (2/6). Other words match whole or
- * not at all.
+ * The query is split into words (letters and digits); a word found where a word of the text starts scores 1 — the whole
+ * word, or the head of one a person is still typing (「screen」 for 「screenshot」, 「game」 for 「games」). A piece inside
+ * a word scores nothing: 「tac」 inside 「contact」 is not a match (#889 — by it the market's one App was offered to an
+ * agent looking for something else). Chinese is written without spaces, so 「一起玩海龟汤」 is one word and is never in a
+ * text whole (10-19: catalog_list found 0 rows for it). A Chinese word not found whole scores its longest piece of two or
+ * more characters that is in the text, over its length: below the 1 of a whole word, so 「海龟汤」 (3/6) still comes
+ * before a row that shares only 「一起」 (2/6).
  */
 const HAN = /\p{Script=Han}/u
+/** A letter or digit — the characters a word is made of; anything else (a Han character too) ends the word before it. */
+const WORD_CHAR = /[\p{L}\p{N}]/u
 
 export function queryWords(query: string | undefined): string[] {
   return (query ?? '').toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
 }
 
 function wordScore(word: string, haystack: string): number {
+  if (!HAN.test(word)) {
+    for (let at = haystack.indexOf(word); at !== -1; at = haystack.indexOf(word, at + 1)) {
+      if (at === 0 || !WORD_CHAR.test(haystack[at - 1]!) || HAN.test(haystack[at - 1]!)) return 1
+    }
+    return 0
+  }
   if (haystack.includes(word)) return 1
-  if (!HAN.test(word)) return 0
   const chars = [...word]
   for (let length = chars.length - 1; length >= 2; length -= 1) {
     for (let start = 0; start + length <= chars.length; start += 1) {

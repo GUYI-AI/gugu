@@ -1,4 +1,4 @@
-import { Folder, Globe } from '@/lib/icons';
+import { Globe } from '@/lib/icons';
 import { openApp } from '@/components/appSlot/useOpenApp';
 import { OpenSuperseded, openLinkTarget } from '@/lib/guguLinks';
 import { notify } from '@/lib/notices';
@@ -30,7 +30,7 @@ import { fitBrowserPageToPane } from './browser-page-fit';
 import { browserSessionStore } from './browser-session-store';
 import { popupClaims } from './browser-popup-claims';
 import { installedExtensionsStore } from '../extensions/installed-extensions-store';
-import { ExtensionMark } from '../extensions/extension-mark';
+import { ExtensionMark, TabKindMark } from '../extensions/extension-mark';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem, WORKSPACE_APP_KIND } from '../chats/chat-tabs/chat-panel-item';
 import { openFileInSessionEditor } from '../sessions/stores/open-file-in-file-editor';
@@ -135,7 +135,7 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   const { translate } = useSessionMessages();
   const openFolder = () => openPanelItem(chatId, folderItem(), { from: tabId });
   const startPageActions: WorkspacePanelAction[] = [
-    { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
+    { id: 'files', label: translate('workspace.files'), icon: <TabKindMark kind={WORKSPACE_APP_KIND} />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
     ...installedExtensionsStore.openableApps.map((app): WorkspacePanelAction => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
@@ -214,6 +214,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   // 底下的原生网页就露出来(深色外观下 about:blank 是黑的)。真去别的地址时 currentUrl 先变,起始页照常让开。
   const showStartPage = session?.currentUrl === 'about:blank';
   const loadError = session && !session.isLoading ? session.loadError : undefined;
+  /** 起始页盖住整块网页区:它是咕咕自己的界面,这时网页区跟主题走;撤开、露出网页时才固定浅色。 */
+  const startPageCovers = showStartPage && !loadError;
   const loadErrorUrl = loadError ? (loadError.url ?? session?.currentUrl ?? '') : '';
   const loadErrorPresentation = useMemo<BrowserLoadErrorPresentation | undefined>(
     () => (loadError ? describeBrowserLoadError(loadError, loadErrorUrl, translate) : undefined),
@@ -498,8 +500,10 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
           focusUrlRef.current = focus;
         }}
       />
-      {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。 */}
-      <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+      {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。
+          起始页盖着的时候例外(见 startPageCovers)。起始页得和网页占位同层:占位只盯这一层的增删(browser-page-surface)。 */}
+      <div data-theme={startPageCovers ? undefined : 'light'}
+        className={`relative min-h-0 flex-1 bg-background text-foreground ${startPageCovers ? '' : 'emlight'}`}>
         {annotations.overlay}
         {pageMount && isRegistered ? (
           // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
@@ -531,7 +535,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
         ) : null}
         {/* 起始页盖在空白网页上面,❌ 代替它:网页得一直在,会话的 agent 才有页面可操作(#7191)。
             agent / 人一打开地址,起始页就自己让开。 */}
-        {showStartPage && !loadError ? (
+        {startPageCovers ? (
           <div className="absolute inset-0 bg-background">
             {workspaceStart
               ? <BrowserWorkspaceStartContent config={workspaceStart} actions={startPageActions ?? []} onOpenUrl={navigateTo} onFocusUrl={() => focusUrlRef.current()} />

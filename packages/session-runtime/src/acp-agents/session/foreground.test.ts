@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AcpAgentApi } from '@gugu/session-core/agents/plugins';
+import { guguBridgeRevert, type AcpAgentApi } from '@gugu/session-core/agents/plugins';
 import type { NormalizedEvent, SessionPromptReceipt } from '@gugu/session-core/acp';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { SessionCell } from './cell';
@@ -13,7 +13,7 @@ function nativeCell() {
   });
   const cell = new SessionCell({ sessionId: 'c', projectId: 'p', providerId: 'fixture', acpSessionId: 's',
     agent: { prompt, cancel: vi.fn(async () => {}) } as unknown as AcpAgentApi,
-    resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger });
+    resolveAttachment: async () => ({ data: '', mimeType: 'image/png' }), logger: noopLogger, revert: guguBridgeRevert });
   cell.applySessionReady();
   const state = (state: 'running' | 'idle', extra: object = {}) => cell.push({ kind: 'agent_state', source: 'agent', state, ...extra } as NormalizedEvent);
   const echo = (id = 'native', text = 'body') => cell.push({ kind: 'message', role: 'user', messageId: id, text, contentMode: 'replace' });

@@ -19,7 +19,7 @@ describe('decodeIdentityAddress', () => {
   })
 
   it('rejects a bare uuid and a bare number by name, pointing at both forms', () => {
-    expect(() => decodeIdentityAddress(uuid, 'to[1]')).toThrow(/to\[1\].*aid:<Agent ID> or gugu:<咕咕号>.*bare value/)
+    expect(() => decodeIdentityAddress(uuid, 'to[1]')).toThrow(/to\[1\].*aid:<Agent ID> or gugu:<number>.*bare value/)
     expect(() => decodeIdentityAddress('8', 'to')).toThrow(/bare value "8"/)
   })
 

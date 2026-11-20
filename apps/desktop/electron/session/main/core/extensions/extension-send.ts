@@ -6,8 +6,9 @@ import { AppSendError, chatSelectionPills, dispatchFromApp, type DispatchHere } 
 import { createAppMessages } from '@shared/extensions/app-messages-core';
 import { createAppCloud, type CloudChannel } from '@shared/extensions/app-cloud-core';
 import { subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol';
-import { fileCiteDraft } from '@gugu/session-shared/markdown';
-import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
+import { pillCite } from '@gugu/session-shared/markdown';
+import { selectionConversationOf } from '@shared/extensions/file-selection';
+import type { ExtensionChatFolder } from '@shared/extensions/bridge-protocol';
 import { log } from '@main/lib/logger';
 import { supabase } from '../../../../supabase';
 import { subscribeAuthenticatedElectronRealtimeChannel, type ElectronManagedRealtimeChannel } from '../../../../realtime-channel';
@@ -35,7 +36,7 @@ async function account(): Promise<{ token: string; userId: string }> {
   return { token, userId };
 }
 
-/** API 55 Send from a chat's folder: its pills, read as the person (`chatSelectionPills`, the phone's too). */
+/** A chat folder's file as its pill, read as the person (`chatSelectionPills`, the phone's too): how a selection names it. */
 export const chatSelectionPillsForApp = (chatId: string, refs: unknown) => chatSelectionPills({ account }, chatId, refs);
 
 /** `gugu.messages`: a chat's messages, read with the same account (the shared answer, `app-messages-core.ts`, the phone's too). */
@@ -89,27 +90,40 @@ export interface DesktopDispatchEffects {
  * theirs, told here or on its computer. A draft goes into an agent's composer here: words only (pills go into a chat's).
  */
 /**
- * A draft citing a session's working-copy files goes into that session's composer as @file mentions, as the host's own
- * file preview quotes (`workspaceFileQuote`): a pill of a chat's file has no such file to point at.
+ * A draft citing files on a computer (a working copy's, a project or group folder's) goes where a selection's Cite goes:
+ * into the page's conversation (`selectionConversationOf`: its session, else its chat), each file named by where it is
+ * (`fileReferenceOf`), as the host's selection menu cites. A chat folder's files go the chat way (`dispatchFromApp`).
  */
-async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ session: { id: string; projectId: string }; text: string } | null> {
+async function draftOfComputerRefs(args: Record<string, unknown>, page: { session: string | null; chat: string | null; folders: readonly ExtensionChatFolder[] }):
+  Promise<{ session: { id: string; projectId: string }; text: string } | { chat: AppComposeDetail } | null> {
   if (args.draft !== true || !Array.isArray(args.refs) || args.refs.length === 0) return null;
-  const refs = args.refs as { file?: { workspace?: unknown; id?: unknown; name?: unknown }; label?: unknown }[];
-  const workspace = refs[0]?.file?.workspace;
-  if (typeof workspace !== 'string' || refs.some(({ file }) => file?.workspace !== workspace || typeof file.id !== 'string')) return null;
-  const id = workspaceSession({ workspace });
-  if (!id) throw new AppSendError('invalid', 'A draft citing a project folder\'s file has no session to go to');
+  const refs = args.refs as { file?: { workspace?: unknown; id?: unknown }; label?: unknown; at?: { lines?: unknown } }[];
+  if (!refs.some(({ file }) => typeof file?.workspace === 'string')) return null;
+  if (refs.some(({ file }) => typeof file?.workspace !== 'string' || typeof file.id !== 'string')) {
+    throw new AppSendError('invalid', 'One draft cites files of one kind: a computer\'s, or a chat folder\'s');
+  }
+  const conversation = selectionConversationOf(page);
+  if (!conversation) throw new AppSendError('invalid', 'This page has no conversation to cite its files into');
+  const { fileReferenceOf } = await import('./file-selection-reference');
+  const pills = await Promise.all(refs.map(async ({ file, label }) => {
+    const reference = await fileReferenceOf({ workspace: file!.workspace as string, id: file!.id as string }, undefined, { chat: page.chat, folders: page.folders });
+    if (!reference) throw new AppSendError('not-found', `Where ${String(file!.id)} is cannot be named from this computer`);
+    return { label: typeof label === 'string' && label ? `${reference.name} (${label})` : reference.name, target: reference.target };
+  }));
+  const words = typeof args.text === 'string' ? args.text : '';
+  if (conversation.kind === 'chat') return { chat: { chatId: conversation.chatId, text: words, refs: pills.map(({ label, target }) => ({ label, link: target })) } };
+  const id = conversation.sessionId;
   const { agentSessionContext } = await import('./extension-agent-context');
   const { sessionMachine } = await import('./app-programs-elsewhere');
   const projectId = (await agentSessionContext(id).catch(() => null))?.projectId ?? (await sessionMachine(id).catch(() => null))?.projectId;
-  if (!projectId) throw new AppSendError('not-found', 'The session of this file is in no project here');
-  return { session: { id, projectId }, text: `${fileCiteDraft(typeof args.text === 'string' ? args.text : '', refs as { file: { id: string }; label?: unknown }[])}\n` };
+  if (!projectId) throw new AppSendError('not-found', 'The session of this page is in no project here');
+  return { session: { id, projectId }, text: `${pillCite(words, pills).draft}\n` };
 }
 
 export async function dispatchForApp(
   extensionId: string,
   args: Record<string, unknown>,
-  page: Omit<DispatchHere, 'preselect' | 'local'> & { session: string | null },
+  page: Omit<DispatchHere, 'preselect' | 'local'> & { session: string | null; folders: readonly ExtensionChatFolder[] },
   effects: DesktopDispatchEffects,
 ): Promise<{ to: unknown; id?: string; deferred?: true } | { cancelled: true }> {
   // #1927 `{ binding }`: the one conversation the person chose for this App, found and checked by the host — the answer
@@ -119,7 +133,11 @@ export async function dispatchForApp(
     const { draftIntoBoundConversation } = await import('./app-unread-bindings');
     return draftIntoBoundConversation(extensionId, args, effects.draftInChat);
   }
-  const quoted = await draftOfWorkingCopyRefs(args);
+  const quoted = await draftOfComputerRefs(args, { session: page.session, chat: page.chat?.id ?? null, folders: page.folders });
+  if (quoted && 'chat' in quoted) {
+    await effects.draftInChat(quoted.chat);
+    return { to: { chat: quoted.chat.chatId } };
+  }
   if (quoted) {
     await effects.draftInSession(quoted.session, quoted.text);
     return { to: { session: quoted.session.id } };
@@ -129,7 +147,7 @@ export async function dispatchForApp(
   // This computer's agents → their sessions: a draft's only composers, and for the sheet the page's own agent, ticked first.
   const agentsHere = () => visibleAgentsForExtension({ scope: 'all', extensionId });
   const sheet = args.to === undefined || args.to === null ? await agentsHere() : null;
-  const { session, ...rest } = page;
+  const { session, folders: _folders, ...rest } = page;
   const here: DispatchHere = {
     ...rest,
     preselect: (sheet && session && [...sheet].find(([, conversation]) => conversation === session)?.[0]) || null,

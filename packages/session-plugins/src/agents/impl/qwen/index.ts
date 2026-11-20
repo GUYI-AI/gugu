@@ -21,6 +21,7 @@ import { buildQwenHookConfig } from './hooks';
 import { QWEN_PERMISSION_MODES } from './permission-modes';
 import { icon } from './icon';
 import { qwenSubscription } from './subscription';
+import { qwenRevert } from './revert';
 
 const sessionBundle = qwenSessionBundleDescriptor satisfies SessionBundleDescriptor;
 const qwenMcp = qwenScopedMcpAdapter();
@@ -181,9 +182,12 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeQwenSessionBundle,
   },
   subscription: qwenSubscription,
-  acp: createNativeAcpBehavior(() => ({
-    args: ['--acp', '--experimental-skills'],
-  })),
+  acp: {
+    ...createNativeAcpBehavior(() => ({
+      args: ['--acp', '--experimental-skills'],
+    })),
+    revert: qwenRevert,
+  },
   prompt: {
     buildCommand: (ctx) =>
       buildStandardCommand(ctx, {

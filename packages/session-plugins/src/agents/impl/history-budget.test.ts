@@ -1,8 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile, truncate } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, expect, it } from 'vitest';
-import { resolveAgentHome, planAgentHomeHistory, importAgentHome, readAgentHomeMarker, readAgentHomePending, AGENT_HISTORY_LIMIT } from '@gugu/session-core/agents/plugins/helpers';
+import { promises as disk } from 'node:fs';
+import { afterEach, expect, it, vi } from 'vitest';
+import { appendAgentHomeHistory, resolveAgentHome, planAgentHomeHistory, importAgentHome, readAgentHomeMarker, readAgentHomePending, AGENT_HISTORY_LIMIT } from '@gugu/session-core/agents/plugins/helpers';
 import { codexSessionBundleDescriptor } from './codex/session-bundle';
 import { claudeSessionBundleDescriptor } from './claude/session-bundle';
 
@@ -125,3 +126,89 @@ it('leaves an already migrated managed history untouched', async () => {
   expect(prepared).toBe(false);
   expect((await readFile(join(home.configRoot, `sessions/${older}.jsonl`))).length).toBe(600);
 })
+
+
+it('plans an explicit native-session selection without importing archived, unselected or non-session history', async () => {
+  const { home, add } = await fixture('codex');
+  const userHome = { ...home, upgradeHistory: ['sessions'] };
+  const selected = `sessions/rollout-${older}.jsonl`;
+  await add(`sessions/rollout-${newest}.jsonl`, 500, 300);
+  await add(selected, 600, 200);
+  await add(`archived_sessions/rollout-${oldest}.jsonl`, 100, 100);
+  await add('sessions/not-a-native-session.txt', 10, 400);
+  const plan = await planAgentHomeHistory(userHome, 1000, { sessionIds: new Set([older]), includeShared: false });
+  expect(plan).toMatchObject({ sessions: 1, bytes: 600, sessionBytes: 600, skipped: [], issues: [] });
+  expect(plan.paths).toEqual([selected]);
+  expect((await stat(join(home.userConfigRoot, selected))).size).toBe(600);
+});
+
+it('does not copy an orphaned session auxiliary file in an explicit manual task import', async () => {
+  const { home, add } = await fixture('claude');
+  await add(`todos/${older}-agent-x.json`, 30, 200);
+  await add('projects/project/memory/MEMORY.md', 40, 100);
+  const plan = await planAgentHomeHistory(home, 1000, { sessionIds: new Set([older]), includeShared: false });
+  expect(plan).toMatchObject({ sessions: 0, bytes: 0, paths: [], skipped: [], issues: [] });
+});
+
+it('appends a manual selection after an automatic marker while preserving a newer managed continuation', async () => {
+  const { home, add } = await fixture('codex');
+  const first = `sessions/${newest}.jsonl`, second = `sessions/${older}.jsonl`;
+  await add(first, 10, 100);
+  await importAgentHome(home, { groups: new Set(), historyPaths: [first] });
+  const marker = await readAgentHomeMarker(home);
+  await writeFile(join(home.configRoot, first), 'managed continuation');
+  await add(second, 20, 200);
+  const result = await appendAgentHomeHistory(home, [first, second], {
+    signal: new AbortController().signal,
+    validate: async root => {
+      expect(await readFile(join(root, first), 'utf8')).toBe('x'.repeat(10));
+      await expect(stat(join(home.configRoot, second))).rejects.toMatchObject({ code: 'ENOENT' });
+    },
+  });
+  expect(result).toEqual({ added: [second], preserved: [first] });
+  expect(await readFile(join(home.configRoot, first), 'utf8')).toBe('managed continuation');
+  expect(await readFile(join(home.configRoot, second), 'utf8')).toBe('x'.repeat(20));
+  expect(await readAgentHomeMarker(home)).toEqual(marker);
+});
+
+it('publishes nothing when staged validation fails or a selected original disappears', async () => {
+  const { home, add } = await fixture('codex');
+  const path = `sessions/${newest}.jsonl`;
+  await add(path, 20, 100);
+  await expect(appendAgentHomeHistory(home, [path], { signal: new AbortController().signal,
+    validate: async () => { throw new Error('wrong native ID'); } })).rejects.toThrow('wrong native ID');
+  await expect(stat(join(home.configRoot, path))).rejects.toMatchObject({ code: 'ENOENT' });
+  await rm(join(home.userConfigRoot, path));
+  await expect(appendAgentHomeHistory(home, [path], { signal: new AbortController().signal, validate: async () => {} })).rejects.toThrow();
+  await expect(stat(join(home.configRoot, path))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('cancels before publication without modifying the source', async () => {
+  const { home, add } = await fixture('codex');
+  const path = `sessions/${newest}.jsonl`;
+  await add(path, 20, 100);
+  const controller = new AbortController();
+  await expect(appendAgentHomeHistory(home, [path], { signal: controller.signal,
+    validate: async () => { controller.abort(new Error('cancelled')); } })).rejects.toThrow('cancelled');
+  expect(await readFile(join(home.userConfigRoot, path), 'utf8')).toBe('x'.repeat(20));
+  await expect(stat(join(home.configRoot, path))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('removes the entire staged batch if the disk fills during its second file', async () => {
+  const { home, add } = await fixture('codex');
+  const first = `sessions/${newest}.jsonl`, second = `sessions/${older}.jsonl`;
+  await add(first, 20, 100); await add(second, 30, 200);
+  const realOpen = disk.open.bind(disk);
+  const spy = vi.spyOn(disk, 'open').mockImplementation(async (path, flags, mode) => {
+    if (String(path).includes('.gugu-history-') && String(path).endsWith(second) && flags === 'wx') {
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    }
+    return realOpen(path, flags, mode);
+  });
+  try {
+    await expect(appendAgentHomeHistory(home, [first, second], { signal: new AbortController().signal,
+      validate: async () => {} })).rejects.toMatchObject({ code: 'ENOSPC' });
+    for (const path of [first, second]) await expect(stat(join(home.configRoot, path))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(home.userConfigRoot, first), 'utf8')).toBe('x'.repeat(20));
+  } finally { spy.mockRestore(); }
+});

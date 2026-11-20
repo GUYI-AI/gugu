@@ -75,11 +75,11 @@ export function conversationSenderName(item: ChatMessage, ctx: MeasureCtx): stri
   return shownSender(sender.from, sender.fromId, self) ?? t('transcript.deliveryUnknownSender');
 }
 function replySenderLabel(quote: NonNullable<ChatMessage['conversationReply']>, ctx: MeasureCtx) {
-  const self = ctx.selfIdentity ?? null;
+  const self = ctx.selfIdentity ?? null, t = rowTranslator(ctx);
   const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self);
   return [quote.chatId ? ctx.chatName?.(quote.chatId) : null,
     quote.self ? ctx.commands?.conversationAgentName?.() ?? null : sender]
-    .filter((part): part is string => Boolean(part?.trim())).join(rowTranslator(ctx)('metadata.separator'));
+    .filter((part): part is string => Boolean(part?.trim())).join(t('metadata.separator'));
 }
 function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));

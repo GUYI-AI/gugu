@@ -29,6 +29,8 @@ export type ProviderAccountUpsert = {
   secret?: string;
   /** Replaces the stored meta when provided; omitted meta keeps the existing value. */
   meta?: ProviderAccountMetaInput;
+  /** A new row is the provider's default when none is yet. `false` keeps a row out of that (a removal record is not a connection). */
+  electDefault?: boolean;
   /**
    * Secret key override for accounts whose secret already lives at a released
    * key (e.g. GitHub's `github-account-token:<id>`). Ignored when the account
@@ -164,7 +166,7 @@ export class ProviderAccountRegistry {
         providerId: input.providerId,
         accountId: input.accountId,
         credentialRef,
-        isDefault: !hasDefault,
+        isDefault: input.electDefault === false ? false : !hasDefault,
         meta: meta ?? null,
         createdAt: now,
         updatedAt: now,
@@ -187,6 +189,45 @@ export class ProviderAccountRegistry {
       .where(eq(providerAccounts.providerId, providerId))
       .orderBy(asc(providerAccounts.createdAt), asc(sql`rowid`));
     return rows.map(toProviderAccount);
+  }
+
+  /** Commit native Codex reference, aliases and default together; a prepared file operation can replay this. */
+  async commitCodexNativeReference(input: {
+    operationId: string; root: string; identity: string;
+    expected: { accountId: string; updatedAt: number; isDefault: boolean }[];
+    aliases: string[]; retained: { id: string; name: string }[]; defaultId: string;
+  }): Promise<void> {
+    const providerId = 'harness:codex';
+    this.db.transaction(tx => {
+      const current = tx.select().from(providerAccounts).where(eq(providerAccounts.providerId, providerId)).all();
+      if (current.find(row => row.accountId === 'native')?.meta?.harnessConnection?.nativeOAuth?.operationId === input.operationId) return;
+      if (current.length !== input.expected.length || input.expected.some(expected => !current.some(row =>
+        row.accountId === expected.accountId && row.updatedAt === expected.updatedAt && row.isDefault === expected.isDefault))) {
+        throw new Error('Codex connections changed during credential migration; retry after the current operation');
+      }
+      const now = Date.now();
+      for (const item of input.retained) {
+        if (current.some(row => row.accountId === item.id)) continue;
+        tx.insert(providerAccounts).values({ id: randomUUID(), providerId, accountId: item.id,
+          credentialRef: defaultCredentialRef(providerId, item.id), isDefault: false, createdAt: now, updatedAt: now,
+          meta: { version: '1', displayName: item.name, harnessConnection: { kind: 'account' } } }).run();
+      }
+      for (const row of current) {
+        if (row.accountId !== 'native' && !input.aliases.includes(row.accountId)) continue;
+        const native = row.accountId === 'native';
+        const meta: ProviderAccountMeta = { ...row.meta, version: '1', harnessConnection: {
+          ...row.meta?.harnessConnection, kind: native ? 'native' : 'account',
+          ...(native ? { nativeOAuth: { root: input.root, identity: input.identity, operationId: input.operationId } }
+            : { migratedTo: 'native', removed: true }),
+        } };
+        tx.update(providerAccounts).set({ meta, updatedAt: nextProviderAccountUpdate(row.updatedAt, now) })
+          .where(eq(providerAccounts.id, row.id)).run();
+      }
+      tx.update(providerAccounts).set({ isDefault: false }).where(eq(providerAccounts.providerId, providerId)).run();
+      tx.update(providerAccounts).set({ isDefault: true })
+        .where(and(eq(providerAccounts.providerId, providerId), eq(providerAccounts.accountId, input.defaultId))).run();
+    });
+    this.changed();
   }
 
   /**
@@ -305,6 +346,26 @@ export class ProviderAccountRegistry {
     try { await this.secretStore.deleteSecret(removed.credentialRef); }
     finally { this.changed(); }
     return toProviderAccount(removed);
+  }
+
+  /**
+   * Take a connection away but keep its row as a removal record (sessions bound to it, and discovery, still read the row).
+   * The only place a soft removal is written: the record never keeps the connection's secret. The secret goes first, so a
+   * failure here leaves a connection that is still listed (and can be removed again) rather than a removed one holding a key.
+   */
+  async retireAccount(providerId: string, accountId: string, meta: ProviderAccountMetaInput): Promise<ProviderAccount> {
+    const existing = await this.findRow(providerId, accountId);
+    if (!existing) throw new Error('Account no longer exists');
+    await this.secretStore.deleteSecret(existing.credentialRef);
+    return (await this.upsertAccount({ providerId, accountId, meta })).account;
+  }
+
+  /** Removal records written before they dropped the secret still hold it; drop it. A plain delete by key, no decryption. */
+  async dropRetiredSecrets(): Promise<number> {
+    const rows = this.db.select().from(providerAccounts).all()
+      .filter((row) => row.meta?.customModel?.removed || row.meta?.harnessConnection?.removed);
+    for (const row of rows) await this.secretStore.deleteSecret(row.credentialRef);
+    return rows.length;
   }
 
   /** Remove every account (and secret) for a provider. */

@@ -90,7 +90,7 @@ async function mount(theme: 'light' | 'dark') {
   root = createRoot(host); render(theme)
   await until('real empty creation input and attachment control', () => !!host?.querySelector('[contenteditable]') && !!host?.querySelector('[data-phone-attachment]'))
   expect(host!.textContent).toContain('创建智能体')
-  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('随心输入')
+  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('输入任务内容')
   expect(host!.textContent).not.toContain('agentWatch.')
 }
 async function choose(file: File) {
@@ -257,7 +257,7 @@ it('keeps a missing skill method distinct from empty skills and retries the same
   await until('host compatibility error is visible', () => document.querySelector('[data-testid="agent-watch-create-skills-error"]')?.getAttribute('data-failure') === 'method-unavailable')
   expect(fixture.skills).toHaveBeenCalledExactlyOnceWith('attachment-device', { harness: 'codex' })
   await expect.element(page.getByRole('alert')).toHaveTextContent('Test device')
-  await expect.element(page.getByRole('alert')).toHaveTextContent('检查那台设备的咕咕版本后重试')
+  await expect.element(page.getByRole('alert')).toHaveTextContent('检查该设备的咕咕版本后重试')
   expect(document.body.textContent).not.toContain('没有可用的技能')
   await page.screenshot({ path: '__screenshots__/owner-phone-regression/C-create-unsupported-host.png' })
   fixture.skills.mockResolvedValueOnce({ ok: true, value: { skills: [

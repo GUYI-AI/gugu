@@ -466,7 +466,8 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([[WEBAPP_SECTION, 55, 'cached', 'gugu']]);
     expect(getComputedStyle(boxOf(0)).maxHeight).toBe('320px');
     expect(getComputedStyle(boxOf(0)).overflowY).toBe('auto');
-    expect(getComputedStyle(boxOf(0)).getPropertyValue('scrollbar-width')).toBe('thin');
+    // 全应用那一套滚动条(styles/tokens.css):元素上不写 scrollbar-width,否则那一套就失效。
+    expect(getComputedStyle(boxOf(0)).getPropertyValue('scrollbar-width')).toBe('auto');
     expect(boxOf(0).scrollHeight).toBeGreaterThan(boxOf(0).clientHeight);
     const toggle = sectionAt(0).getByTestId('session-history-section-show-less');
     await expect.element(toggle).toHaveTextContent('收起');
@@ -750,7 +751,7 @@ describe('会话历史(按目录分节)核心合同', () => {
       'gugu:zebra', 'dev-d22/gugu:remote-w', 'gugu:alpha',
     ]);
     await expect.element(sections[0].getByText('3 个会话', { exact: true })).toBeVisible();
-    expect(sections[0].getByTestId('session-history-row-machine').all().map((el) => el.element().textContent)).toEqual(['这台电脑', 'd22', '这台电脑']);
+    expect(sections[0].getByTestId('session-history-row-machine').all().map((el) => el.element().textContent)).toEqual(['本机', 'd22', '本机']);
     // 每台问得到的都问了;离线的 off ❌ 去问(只会挂满超时)。
     expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ sessionsPerDirectory: 5, source: 'gugu' }));
     expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-tunnel', expect.anything());

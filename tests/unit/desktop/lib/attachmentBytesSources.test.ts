@@ -28,6 +28,11 @@ beforeEach(() => {
 })
 
 describe('sources the file resolver reads', () => {
+  it('keeps an authorized original readable when the optional local copy cannot be stored', async () => {
+    io.put.mockRejectedValueOnce(new DOMException('quota', 'QuotaExceededError'))
+    await expect(attachmentBytes(item, 'full')).resolves.toMatchObject({ status: 'ready', link: revision })
+    expect(io.put).toHaveBeenCalledTimes(1)
+  })
   it.each([[item, { item_id: 'file', version: 2 }], [message, { message_id: 'msg' }], [attachment, { attachment_id: 'att' }]] as const)('%j resolves by its own reference', async (source, ref) => {
     expect(attachmentFileRef(source)).toEqual(ref)
 
@@ -54,6 +59,7 @@ describe('sources the file resolver reads', () => {
     const keys = [url, item, message, attachment, session, gone].map(sourceKeyOf)
     expect(new Set(keys).size).toBe(keys.length)
     expect(sourceKeyOf({ ...session, sha256: 'c'.repeat(64) })).not.toBe(sourceKeyOf(session))
+    expect(sourceKeyOf({ ...session, path: '/home/a/another.png' })).not.toBe(sourceKeyOf(session))
   })
 })
 

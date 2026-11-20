@@ -478,7 +478,7 @@ export class AgentPluginHost {
     }
     return ok({
       cli: cli.data,
-      exec: (command, args, opts) => this.deps.exec.exec(command, args, { ...opts, env }),
+      exec: (command, args, opts) => this.deps.exec.exec(command, args, { ...opts, env: { ...env, ...opts?.env } }),
       fs: runContext.credentialHome
         ? this.deps.agentHome!.createFs(runContext.credentialHome)
         : await this.fsFor(providerId),
@@ -527,6 +527,8 @@ export class AgentPluginHost {
     const env = composeAgentSpawnEnv(runContext, {
       providerEnv: await this.deps.resolveProviderEnv?.(providerId),
     });
+    // Login changes the CLI's own authority; conversations keep the managed history root.
+    Object.assign(env, runContext.loginConfigRootEnv);
 
     if (programAuth.data === null) {
       if (methodId !== 'cli-login') {
@@ -693,6 +695,8 @@ export class AgentPluginHost {
        * 设置里选的那份拷贝,❌ 缺席时退回它 —— 那正是「终端跑 A、Chat UI 跑 B」的由来。
        */
       runContext: AgentRunContext;
+      sessionProgram?: string | null;
+      authProgram?: string | null;
       platform?: AcpPlatformInjection;
       capabilitySpawnEnv?: Readonly<Record<string, string>>;
       capabilitySpawnArgs?: readonly string[];
@@ -702,7 +706,14 @@ export class AgentPluginHost {
   ): Promise<Result<AgentHostAcpSpawn, AgentHostError>> {
     const provider = this.resolveAcp(providerId);
     if (!provider) return err({ type: 'capability-unsupported', providerId, capability: 'acp' });
-    const hostCli = this.hostCli(providerId, ctx.runContext);
+    const program = ctx.sessionProgram ?? null;
+    const selectedPath = program ? ctx.runContext.programs?.[program] : undefined;
+    const launchContext: typeof ctx.runContext = program ? {
+      ...ctx.runContext,
+      cli: selectedPath ? { kind: 'resolved', path: selectedPath }
+        : { kind: 'unresolved', message: `Required native-store program '${program}' is not installed` },
+    } : ctx.runContext;
+    const hostCli = this.hostCli(providerId, launchContext);
     if (!hostCli.success) return err(hostCli.error);
     const plugin = this.registry.get(providerId);
     if (!plugin) return err({ type: 'unknown-provider', providerId });
@@ -726,6 +737,9 @@ export class AgentPluginHost {
     }
     const spawn = provider.behavior.buildSpawn({
       cwd: ctx.cwd,
+      sessionProgram: program,
+      authProgram: ctx.authProgram,
+      programs: ctx.runContext.programs,
       env: composeAgentSpawnEnv(ctx.runContext),
       cli,
       platform: ctx.platform,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expiredProviderIds, isAuthExpired, lastTurnSignInRequired, withAuthExpiry } from './harness-auth-expiry';
+import { expiredProviderIds, isAuthExpired, lastTurnSignInRequired, lastTurnSignInReason, withAuthExpiry } from './harness-auth-expiry';
 
 const expired = { status: { kind: 'unauthenticated' as const, reason: 'expired' as const }, login: null };
 const signedOut = { status: { kind: 'unauthenticated' as const }, login: null };
@@ -7,6 +7,14 @@ const signedIn = { status: { kind: 'authenticated' as const }, login: null };
 const efforts = [{ id: 'high', name: 'High' }];
 
 describe('#6264 登录已失效在界面上的读法', () => {
+  it('reads the latest revoked sign-in reason while remaining compatible with older outcomes', () => {
+    const failed = { outcome: { kind: 'error' as const, signInRequired: true, signInReason: 'revoked' as const } };
+    expect(lastTurnSignInReason([failed])).toBe('revoked');
+    expect(lastTurnSignInReason([{ outcome: { kind: 'error', signInRequired: true } }])).toBe('required');
+    expect(lastTurnSignInReason([failed, { outcome: { kind: 'done' } }])).toBeNull();
+    expect(lastTurnSignInReason([{ outcome: { kind: 'error', signInReason: 'revoked' } }])).toBeNull();
+    expect(lastTurnSignInReason([])).toBeNull();
+  });
   it('只有 reason=expired 才算', () => {
     expect(isAuthExpired(expired)).toBe(true);
     expect(isAuthExpired(signedOut)).toBe(false);

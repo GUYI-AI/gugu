@@ -63,7 +63,7 @@ describe('Antigravity 用量', () => {
 
   it('订阅时经启动器问 agy -p /usage,30 秒必停', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: AGY_USAGE, stderr: '' });
-    const ctx = { cli: '/bin/agy', env: { GEMINI_HOME: '/h/.gemini' }, exec, fs: {} } as unknown as AgentAuthContext;
+    const ctx = { cli: '/bin/agy', env: { GEMINI_HOME: '/h/.gemini' }, exec, fs: { read: vi.fn().mockResolvedValue(null) }, fsFollowsConfigRoot: true } as unknown as AgentAuthContext;
     const reading = await readAntigravityUsage(ctx, { payer: 'subscription', plan: 'Google AI Pro' });
     expect(reading.kind).toBe('windows');
     expect(exec).toHaveBeenCalledWith(

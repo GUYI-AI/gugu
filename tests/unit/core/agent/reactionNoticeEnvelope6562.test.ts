@@ -35,7 +35,7 @@ function envelope(senderUserId: string | null, content: string, contentType = 's
 describe('#6562 reaction notice envelope', () => {
   it('marks a senderless system message as a notice, not a request, and names the reaction from the catalog', () => {
     const text = envelope(null, NOTICE)
-    expect(text).toContain('from="咕咕系统" from_id="system:gugu"')
+    expect(text).toContain('from="Gugu" from_id="system:gugu"')
     expect(text).toContain(' mode="notice"')
     expect(text).toContain('<message_context><![CDATA[👍 = 赞 (Like)]]></message_context>')
     expect(text).toContain(`<arrival>${arrivalHint('chat', 'notice')}</arrival>`)

@@ -3,9 +3,13 @@ import { useState, type CSSProperties } from 'react';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-/** The anchored editor used for a new selection or an existing numbered annotation. */
-export function AnnotationEditor({ number, initialValue = '', busy = false, onSave, onCancel, onRemove }: {
-  number: number;
+/**
+ * The anchored editor used for a new selection or an existing numbered annotation — and, unnumbered, for a file selection's
+ * Send (`words`: its placeholder and submit label), whose line goes out with the selection.
+ */
+export function AnnotationEditor({ number, words, initialValue = '', busy = false, onSave, onCancel, onRemove }: {
+  number?: number;
+  words?: { placeholder: string; submit: string };
   initialValue?: string;
   busy?: boolean;
   onSave: (text: string) => void;
@@ -25,16 +29,16 @@ export function AnnotationEditor({ number, initialValue = '', busy = false, onSa
         if (event.key === 'Escape') { event.stopPropagation(); onCancel(); }
       }}
       onSubmit={event => { event.preventDefault(); if (!busy) onSave(text.trim()); }}>
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[var(--live-light)] text-xs font-medium text-[var(--color-white)]">{number}</span>
+      {number === undefined ? null : <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[var(--live-light)] text-xs font-medium text-[var(--color-white)]">{number}</span>}
       <input autoFocus type="text" value={text} onChange={event => setText(event.target.value)}
-        placeholder={translate('annotations.placeholder')} aria-label={translate('annotations.comment')}
+        placeholder={words?.placeholder ?? translate('annotations.placeholder')} aria-label={words?.placeholder ?? translate('annotations.comment')}
         className="min-w-0 flex-1 bg-transparent px-1 text-sm text-foreground outline-none" />
       {onRemove && <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}
         aria-label={translate('annotations.delete')} title={translate('annotations.delete')} onClick={onRemove}><Trash2 className="size-3.5" /></Button>}
       <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}
         aria-label={translate('annotations.cancel')} title={translate('annotations.cancel')} onClick={onCancel}><X className="size-3.5" /></Button>
       <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full !border-transparent !bg-foreground !text-background" disabled={busy}
-        aria-label={translate('annotations.save')} title={translate('annotations.save')}><Check className="size-3.5" /></Button>
+        aria-label={words?.submit ?? translate('annotations.save')} title={words?.submit ?? translate('annotations.save')}><Check className="size-3.5" /></Button>
     </form>
   );
 }

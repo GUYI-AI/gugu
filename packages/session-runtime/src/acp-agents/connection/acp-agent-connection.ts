@@ -441,6 +441,9 @@ function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
        */
       _meta: {
         'gugu.mcp-input-preview': true,
+        // claude-agent-acp puts revert points on prompts (`_meta.guguRevert`) and turns on its file checkpoints only when
+        // this is set. Other agents ignore it.
+        'gugu.revert': true,
         'terminal-auth': true,
       },
     },

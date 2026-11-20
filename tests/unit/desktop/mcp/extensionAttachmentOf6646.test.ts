@@ -46,7 +46,7 @@ describe('app_install from a chat message (#6646)', () => {
   })
 
   test('says a member list it could not read is a failed read, not that the agent is outside the chat', async () => {
-    await expect(extensionAttachmentOf(context, 'm1', injected([]))).rejects.toThrow(`读不到 chat(${CHAT})的成员名单`)
+    await expect(extensionAttachmentOf(context, 'm1', injected([]))).rejects.toThrow(`Could not read the member list of chat ${CHAT}.`)
   })
 
   test('refuses a message it cannot read, and one whose attachment is not an extension package', async () => {

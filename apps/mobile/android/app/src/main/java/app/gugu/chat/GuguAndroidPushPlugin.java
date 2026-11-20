@@ -77,7 +77,7 @@ public final class GuguAndroidPushPlugin extends Plugin {
     }
     @PluginMethod public void revoke(PluginCall call) {
         try {
-            binding(call);
+            String revokedOwner = binding(call).getString("ownerId");
             ++epoch; owner = null;
             NotificationManager manager = getContext().getSystemService(NotificationManager.class);
             if (manager != null && Build.VERSION.SDK_INT >= 23) {
@@ -86,6 +86,8 @@ public final class GuguAndroidPushPlugin extends Plugin {
                     if (tag != null && tag.matches("[0-9a-f-]{36}")) manager.cancel(tag, notification.getId());
                 }
             }
+            // #3416 Conversation notifications and shortcuts are this account's too, whatever the push provider.
+            GuguChatNotificationsPlugin.clear(getContext(), revokedOwner);
             BaseMixPushProvider selected = provider != null ? provider : available();
             if (selected == null) { call.resolve(); return; }
             selected.revoke(getContext()).whenComplete((unused, error) -> {

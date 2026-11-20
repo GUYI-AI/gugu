@@ -1,4 +1,6 @@
-import { access } from 'node:fs/promises';
+import { prepareManagedCodexHistory as prepareCodexHistoryAtHome } from './managed-codex-history';
+import { access, readdir } from 'node:fs/promises';
+import { startNativeCodexHistoryRelocation, nativeCodexHistoryCounts, nativeCodexHistoryPreparation } from './codex-native-history';
 import { homedir } from 'node:os';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
@@ -34,6 +36,7 @@ function hasOldTasks(providerId: string): boolean {
 
 const upgradeState = new KV<{ providers: string[]; inventory: Record<string, boolean> }>('agent-home-upgrade');
 let upgradeProfile: boolean | undefined;
+let firstInstallProfile = false;
 let upgradeStartedAt = 0;
 let upgradePlan: Promise<ReadonlySet<string>> | undefined;
 let inventoryComplete = false;
@@ -51,15 +54,8 @@ function historyPlan(home: NonNullable<ReturnType<typeof homeFor>>) {
 }
 async function prepareManagedCodexHistory(home: NonNullable<ReturnType<typeof homeFor>>) {
   migrationPreparation.set(home.providerId, { phase: 'history', startedAt: Date.now(), attempt: 1 });
-  const [{ prepareCodexHistory }, { resolveLocalAgentCli }, { resolveLocalAgentSpawnEnv }] = await Promise.all([
-    import('@gugu/session-plugins/agents/codex-history'),
-    import('@main/core/acp/transport/local-acp-process-host'),
-    import('./agent-run-context'),
-  ]);
-  const [cli, env] = await Promise.all([resolveLocalAgentCli('codex', 'primary'), resolveLocalAgentSpawnEnv('codex', 'version-probe')]);
-  await prepareCodexHistory({ cli, env: { ...env, CODEX_HOME: home.configRoot } }, {
-    signal: migrationAbort.signal,
-    onProgress: (progress) => { if (progress) migrationPreparation.set(home.providerId, { phase: 'history', startedAt: progress.startedAt, attempt: progress.attempt }); },
+  await prepareCodexHistoryAtHome(home, migrationAbort.signal, (progress) => {
+    if (progress) migrationPreparation.set(home.providerId, { phase: 'history', startedAt: progress.startedAt, attempt: progress.attempt });
   });
   migrationAbort.signal.throwIfAborted();
 }
@@ -99,6 +95,9 @@ async function planUpgrade(priorProfile: boolean): Promise<ReadonlySet<string>> 
     else if (!existingProfile || observed && status === 'missing') changed[id] = false;
   }
   if (Object.keys(changed).length) await upgradeState.setOrThrow('inventory', { ...inventory, ...changed });
+  // priorProfile is stable on restart. An all-false first inventory is not an
+  // upgrade, while old tasks discovered in this plan still prove an old profile.
+  firstInstallProfile = !priorProfile && !previous && !Object.values({ ...inventory, ...changed }).some(Boolean);
   inventoryComplete = unknown.every(({ metadata: { id } }) => Object.hasOwn(changed, id));
   return new Set(Object.entries({ ...inventory, ...changed }).filter(([, installed]) => installed).map(([id]) => id));
 }
@@ -116,6 +115,7 @@ export function initializeAgentHomeUpgrade(priorProfile: boolean): void {
   upgradeProfile = priorProfile;
   upgradeStartedAt = Date.now();
   setAgentHomeUpgradePreparation(prepareAutomaticImport);
+  startNativeCodexHistoryRelocation(homeFor('codex'), migrationAbort.signal);
   void upgradeProviders()?.then((ids) => Promise.allSettled([...ids].map(prepareAutomaticImport))).catch((error: unknown) => {
     log.error('Could not plan the managed configuration upgrade');
     reportAgentHomeMigrationFailure(error, 'inventory');
@@ -158,15 +158,29 @@ export function defaultAgentHomeGroups(groups: readonly { id: AgentHomeGroupId }
   return groups.filter((group) => group.id !== 'hooks').map((group) => group.id);
 }
 
-export async function scanAgentHomes(providerIds?: readonly string[], upgradedOnly = false): Promise<AgentHomeScan[]> {
+export async function scanAgentHomes(providerIds?: readonly string[], upgradedOnly = false, firstInstallOnly = false): Promise<AgentHomeScan[]> {
   const rows: AgentHomeScan[] = [];
-  if (!providerIds && !upgradedOnly) await ensureAgentDependenciesProbed(localDependencyManager);
+  if (firstInstallOnly) {
+    await upgradeProviders();
+    if (!firstInstallProfile) return rows;
+  }
+  if (!providerIds && !upgradedOnly && !firstInstallOnly) await ensureAgentDependenciesProbed(localDependencyManager);
   for (const plugin of pluginRegistry.getAll()) {
     const providerId = plugin.metadata.id;
     if (providerIds && !providerIds.includes(providerId)) continue;
-    if (!providerIds && !upgradedOnly && localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
+    if (!providerIds && !upgradedOnly && !firstInstallOnly && localDependencyManager.get(providerId as DependencyId)?.status !== 'available') continue;
     const home = homeFor(providerId);
     if (!home) continue;
+    if (firstInstallOnly) {
+      if (await readAgentHomeMarker(home)) continue;
+      // Detection is read-only and does not require the original CLI to remain
+      // installed. An absent or empty native directory is not an import offer.
+      const entries = await readdir(home.userConfigRoot).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      });
+      if (!entries.some((name) => name !== '.DS_Store')) continue;
+    }
     // Reads observe migration state without starting or waiting for the copy/index job.
     const planned = upgradedOnly && upgradeProfile !== undefined ? (await upgradeProviders())?.has(providerId) : false;
     const preparation = migrationPreparation.get(providerId) ?? (planned && !automaticAttempts.has(providerId)
@@ -184,12 +198,19 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
         migrationSpace, groups: home.importGroups.map(({ id }) => ({ id, count: 0 })), issues: [], mcpSecrets: [], projectMcpCount: 0 });
       continue;
     }
+    const nativeHistory = providerId === 'codex' ? await nativeCodexHistoryCounts(home) : undefined;
+    const nativePreparation = providerId === 'codex' ? nativeCodexHistoryPreparation(home) : undefined;
     if (upgradedOnly) {
       // A provider with a failed or invalid import record cannot hide the other results.
       const marker = await readAgentHomeMarker(home).catch(() => null);
-      if (marker?.migratedFrom !== 'shared') continue;
+      if (marker?.migratedFrom !== 'shared' && !nativeHistory && !nativePreparation) continue;
     }
     const scan = await scanAgentHome(home);
+    // The former copied-OAuth reminder is obsolete once the same account is a native reference.
+    if (providerId === 'codex' && scan.marker?.upgradeSignIn) {
+      const result = await migrateOwnedHarnessAccounts('codex', { ...process.env, ...loginShellEnv() });
+      if (result.upgradeSignIn === 'reference') scan.marker.upgradeSignIn = 'reference';
+    }
     const migration = !scan.marker && !!(await upgradeProviders())?.has(providerId);
     const sourceReadable = await access(home.userConfigRoot).then(() => true, () => scan.groups.some((group) => group.count > 0));
     rows.push({
@@ -197,6 +218,8 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
       importedAt: scan.marker?.importedAt ?? null, needsImport: !scan.marker,
       sourceUpdated: scan.sourceUpdated,
       migration,
+      ...(nativeHistory ? { nativeHistory } : {}),
+      ...(nativePreparation ? { migrationPreparation: nativePreparation } : {}),
       ...(scan.marker?.migratedFrom === 'shared' ? {
         upgraded: true, upgradeSignIn: scan.marker.upgradeSignIn, terminalNeedsSignIn: scan.marker.terminalNeedsSignIn,
         oldSessionsSkipped: scan.marker.oldSessionsSkipped, upgradeIssues: scan.marker.upgradeIssues, historyImport: scan.marker.historyImport,
@@ -274,6 +297,7 @@ async function importHarnessHomeOnce(home: NonNullable<ReturnType<typeof homeFor
     providerId, sourceRoot: home.userConfigRoot, configRoot: home.configRoot, groups: result.marker.groups,
     files: Object.keys(result.marker.files).length, skipped: result.issues.length,
   });
+  if (providerId === 'codex') startNativeCodexHistoryRelocation(home, migrationAbort.signal);
   const issues = [...result.issues, ...cleanupIssues.filter((issue) =>
     !result.issues.some((item) => item.path === issue.path && item.reason === issue.reason))];
   return { issues, ...notice, oldSessionsSkipped: oldSessionsSkipped(result.issues), historyImport: result.marker.historyImport };

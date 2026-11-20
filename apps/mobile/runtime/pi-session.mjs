@@ -31,18 +31,18 @@ export async function runTurn(command, { emit, nativeCall, extraTools = [], syst
     const cwd = command.contextEpoch ? join(process.env.GUGU_AGENT_HOME, command.sessionId, command.contextEpoch) : join(process.env.GUGU_AGENT_HOME, command.sessionId)
     await mkdir(cwd, { recursive: true })
     const legacyTools = [{
-      name: 'phone_calendar_list', label: '读取这台手机的日历',
-      description: '读取这台 Android 手机日历。查某天给 date（YYYY-MM-DD），查时间段给 start/end（ISO 8601）。不填日期则查从今天起7天。日期由手机按本地时区解释，不要计算时间戳。必须实际调用工具后再回答日程。工具拒绝授权时明确说明，不能猜测。',
-      parameters: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD，当天' }, start: { type: 'string', description: 'ISO 8601，时间范围起点' }, end: { type: 'string', description: 'ISO 8601，时间范围终点' }, limit: { type: 'integer', minimum: 1, maximum: 500 } } },
+      name: 'phone_calendar_list', label: 'Read this phone\'s calendar',
+      description: 'Read this Android phone\'s calendar. For one day pass date (YYYY-MM-DD); for a range pass start/end (ISO 8601). Without dates it reads 7 days from today. The phone reads dates in its local time zone; do not compute timestamps. Call the tool before answering about the schedule. If the tool refuses for lack of permission, say so plainly; never guess.',
+      parameters: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD, a single day' }, start: { type: 'string', description: 'ISO 8601, start of the range' }, end: { type: 'string', description: 'ISO 8601, end of the range' }, limit: { type: 'integer', minimum: 1, maximum: 500 } } },
       execute: async (_id, args, signal) => {
         const result = await nativeCall('calendar.events.list', args, signal, context)
         if (result.ok) result.data.events = result.data.events.map(phoneCalendarEventView)
         return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result }
       },
     }, ...[
-      { name: 'phone_contacts_list', label: '查询手机通讯录', native: 'contacts.list', description: '只读查询本手机通讯录。可按 query 搜索名字、电话或邮箱；不填则按名字列出。只有咕咕通讯录授权与系统读取权限都开启时才执行。授权失败如实说明，不猜测联系人。',
+      { name: 'phone_contacts_list', label: 'Search phone contacts', native: 'contacts.list', description: 'Read-only search of this phone\'s contacts. query matches names, phone numbers or emails; without it contacts are listed by name. Runs only when both the Gugu contacts grant and the system read permission are on. If permission fails, say so plainly; never guess contacts.',
         parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 500 } } } },
-      { name: 'phone_notifications_list', label: '读取手机通知', native: 'notifications.list', description: '只读查询手机通知栏及咕咕已获授权期间收到的近期通知。app 可按 App 名或包名筛选。只有用户开启通知组并授予系统通知使用权时才执行。',
+      { name: 'phone_notifications_list', label: 'Read phone notifications', native: 'notifications.list', description: 'Read-only view of the phone\'s notification shade and recent notifications received while Gugu had permission. app filters by App name or package name. Runs only when the person has turned on the notifications group and granted system notification access.',
         parameters: { type: 'object', properties: { app: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 200 } } } },
     ].map(({ native, ...definition }) => ({ ...definition, execute: async (_id, args, signal) => {
       const result = await nativeCall(native, args, signal, context)
@@ -52,7 +52,7 @@ export async function runTurn(command, { emit, nativeCall, extraTools = [], syst
     if (new Set(tools.map((tool) => tool.name)).size !== tools.length) throw new Error('手机工具名称重复')
     const settingsManager = SettingsManager.inMemory({ defaultProvider: 'gugu', defaultModel: modelConfig.model, defaultThinkingLevel: 'off' })
     const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: cwd, settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-      systemPromptOverride: () => `你是运行在咕咕 Android App 内的 Pi 任务 Agent。用中文简短回答。当前手机时间 ${new Date().toISOString()}，时区 ${Intl.DateTimeFormat().resolvedOptions().timeZone}。只有列出的受控工具，没有 shell。手机数据必须实际调用工具后才可陈述；授权失败要如实说明。\n${systemPrompt || command.systemPrompt || ''}` })
+      systemPromptOverride: () => `You are a Pi task agent running inside the Gugu Android App. Answer briefly, in the language of the person you are answering. Current phone time ${new Date().toISOString()}, time zone ${Intl.DateTimeFormat().resolvedOptions().timeZone}. You have only the controlled tools listed, no shell. State phone data only after actually calling a tool; if permission fails, say so plainly.\n${systemPrompt || command.systemPrompt || ''}` })
     await resourceLoader.reload()
     turn.controller.signal.throwIfAborted()
     const modelRuntime = await ModelRuntime.create({ modelsPath: null, authPath: join(cwd, 'auth.json'), refreshOnCreate: false })
@@ -78,7 +78,7 @@ export async function runTurn(command, { emit, nativeCall, extraTools = [], syst
     await turn.session.prompt(command.prompt)
     const last = turn.session.messages.at(-1)
     if (turn.controller.signal.aborted || last?.stopReason === 'aborted') return { status: 'cancelled', text: '' }
-    if (last?.role === 'assistant' && last.stopReason === 'error') return { status: 'failed', text: '', error: last.errorMessage || '模型请求失败' }
+    if (last?.role === 'assistant' && last.stopReason === 'error') return { status: 'failed', text: '', error: last.errorMessage || 'Model request failed' }
     return { status: 'done', text: turn.session.getLastAssistantText() ?? '' }
   } catch (error) {
     if (turn.controller.signal.aborted) return { status: 'cancelled', text: '' }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@shared/core/sessions/sessions';
-import { projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
+import { projectCreatedChannel, projectDeletedChannel, projectRootRestoredChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import type { LocalProject } from '@shared/projects';
 // 这个模块被 vi.mock 掉了,导进来拿到的就是那份替身 —— 挂载末尾补跑的 revalidate 打在它上面。
@@ -13,12 +13,8 @@ import { isWorkspaceProject } from '@renderer/features/sessions/session-home-pro
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
-  cloneRepository: vi.fn(),
-  createGithubRepository: vi.fn(),
   createProject: vi.fn(),
-  deleteGithubRepository: vi.fn(),
   deleteProject: vi.fn(),
-  initializeRepository: vi.fn(),
   inspectProjectPath: vi.fn(),
   getProjects: vi.fn(),
   attachProjectFolder: vi.fn(),
@@ -38,14 +34,6 @@ vi.mock('@renderer/lib/ipc', () => {
   rpc: {
     sessions: {
       getUnarchivedSession: mocks.getUnarchivedSession,
-    },
-    github: {
-      createRepository: mocks.createGithubRepository,
-      deleteRepository: mocks.deleteGithubRepository,
-    },
-    projectSetup: {
-      cloneRepository: mocks.cloneRepository,
-      initializeRepository: mocks.initializeRepository,
     },
     projects: {
       createProject: mocks.createProject,
@@ -263,15 +251,6 @@ describe('ProjectManagerStore project creation', () => {
     mocks.getUnarchivedSession.mockResolvedValue([]);
     mocks.createProject.mockResolvedValue(okProject(localProject()));
     mocks.openProject.mockReturnValue(new Promise(() => {}));
-    mocks.cloneRepository.mockReturnValue(new Promise(() => {}));
-    mocks.createGithubRepository.mockResolvedValue({
-      success: true,
-      repoUrl: 'https://github.com/acme/project.git',
-      cloneUrl: 'https://github.com/acme/project.git',
-      nameWithOwner: 'acme/project',
-    });
-    mocks.deleteGithubRepository.mockResolvedValue({ success: true });
-    mocks.initializeRepository.mockResolvedValue({ success: true });
     mocks.updateProjectSettings.mockResolvedValue({
       success: true,
       data: { githubAccountId: 'github.com:42' },
@@ -362,6 +341,30 @@ describe('ProjectManagerStore project creation', () => {
     expect(store.projects.get(project.id)?.name).toBe(project.name);
     expect(mount).toHaveBeenCalledWith(project.id);
     expect(mocks.createProject).not.toHaveBeenCalled();
+  });
+
+  it.each(['/project', '/restored-folder'])('reopens the retained project provider after root recovery at %s', (path) => {
+    const store = new ProjectManagerStore();
+    const project = localProject({ repositoryWorkspaceId: 'retained-root' });
+    const known = createUnmountedProject(project, 'idle');
+    const dispose = vi.fn();
+    known.state = 'mounted';
+    known.mountedProject = { dispose } as never;
+    store.projects.set(project.id, known);
+    const mount = vi.spyOn(store, 'mountProject').mockResolvedValue(undefined);
+    const handler = mocks.eventOn.mock.calls.find(([channel]) => channel === projectRootRestoredChannel)?.[1];
+    if (!handler) throw new Error('Expected root-restored subscription');
+    const restored = localProject({ ...project, path: path as CanonicalPath });
+
+    handler({ project: restored });
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(store.projects.size).toBe(1);
+    expect(store.projects.get(project.id)?.data).toEqual(restored);
+    expect(store.projects.get(project.id)?.mountedProject).toBeNull();
+    expect(mount).toHaveBeenCalledWith(project.id);
+    expect(mocks.createProject).not.toHaveBeenCalled();
+    store.dispose();
   });
 
   it('hands a session created in a project that is not mounted yet to its task manager once it mounts', async () => {
@@ -551,87 +554,6 @@ describe('ProjectManagerStore project creation', () => {
     expect(store.pendingCreationIds.has('optimistic-project')).toBe(false);
   });
 
-  it('does not let a project registered at the clone parent path short-circuit creation', async () => {
-    const parentProject = localProject({ id: 'parent-project', path: '/parent' as CanonicalPath });
-    mocks.inspectProjectPath.mockImplementation(async ({ path }: { path: string }) => ({
-      isDirectory: true,
-      isGitRepo: true,
-      existingProject: path === '/parent' ? parentProject : undefined,
-    }));
-    const store = new ProjectManagerStore();
-
-    const result = await store.startProjectCreation(
-      { type: 'local' },
-      {
-        mode: 'clone',
-        name: 'child-project',
-        path: '/parent',
-        repositoryUrl: 'https://github.com/acme/child-project.git',
-      },
-      { id: 'optimistic-project' }
-    );
-
-    if (result.kind === 'creating') void result.completion;
-    expect(result.kind).toBe('creating');
-    expect(store.projects.has('optimistic-project')).toBe(true);
-  });
-
-  it('does not let a project registered at the new-project parent path short-circuit creation', async () => {
-    const parentProject = localProject({ id: 'parent-project', path: '/parent' as CanonicalPath });
-    mocks.inspectProjectPath.mockImplementation(async ({ path }: { path: string }) => ({
-      isDirectory: true,
-      isGitRepo: true,
-      existingProject: path === '/parent' ? parentProject : undefined,
-    }));
-    const store = new ProjectManagerStore();
-
-    const result = await store.startProjectCreation(
-      { type: 'local' },
-      {
-        mode: 'new',
-        name: 'child-project',
-        path: '/parent',
-        repositoryName: 'child-project',
-        repositoryOwner: 'acme',
-        repositoryVisibility: 'private',
-      },
-      { id: 'optimistic-project' }
-    );
-
-    if (result.kind === 'creating') void result.completion;
-    expect(result.kind).toBe('creating');
-    expect(store.projects.has('optimistic-project')).toBe(true);
-  });
-
-  it('persists the selected GitHub account after registering a new project', async () => {
-    mocks.cloneRepository.mockResolvedValueOnce({ success: true });
-    mocks.createProject.mockResolvedValueOnce(
-      okProject(localProject({ id: 'optimistic-project' }))
-    );
-    const store = new ProjectManagerStore();
-
-    const result = await store.startProjectCreation(
-      { type: 'local' },
-      {
-        mode: 'new',
-        name: 'Project',
-        path: '/parent',
-        repositoryName: 'project',
-        repositoryOwner: 'acme',
-        repositoryVisibility: 'private',
-        githubAccountId: 'github.com:42',
-      },
-      { id: 'optimistic-project' }
-    );
-
-    if (result.kind === 'creating') await result.completion;
-
-    expect(mocks.patchProjectSettings).toHaveBeenCalledWith('optimistic-project', {
-      githubAccountId: 'github.com:42',
-    });
-    expect(mocks.updateProjectSettings).not.toHaveBeenCalled();
-  });
-
   it('removes its event subscriptions once on dispose', () => {
     const disposeProjectCreatedEvent = vi.fn();
     const disposeSessionCreatedEvent = vi.fn();
@@ -781,72 +703,6 @@ describe('ProjectManagerStore project creation', () => {
     });
     expect(mocks.updateProjectSettings).not.toHaveBeenCalled();
   });
-
-  it('deletes a newly created GitHub repository with the selected account if clone fails', async () => {
-    mocks.cloneRepository.mockResolvedValueOnce({ success: false, error: 'Clone failed' });
-    const store = new ProjectManagerStore();
-
-    const result = await store.startProjectCreation(
-      { type: 'local' },
-      {
-        mode: 'new',
-        name: 'Project',
-        path: '/parent',
-        repositoryName: 'project',
-        repositoryOwner: 'acme',
-        repositoryVisibility: 'private',
-        githubAccountId: 'github.com:42',
-      },
-      { id: 'optimistic-project' }
-    );
-
-    expect(result.kind).toBe('creating');
-    if (result.kind === 'creating') {
-      await expect(result.completion).resolves.toEqual({
-        success: false,
-        error: { type: 'clone-failed', message: 'Clone failed' },
-      });
-    }
-
-    expect(mocks.deleteGithubRepository).toHaveBeenCalledWith({
-      owner: 'acme',
-      name: 'project',
-      accountId: 'github.com:42',
-    });
-    expect(mocks.createProject).not.toHaveBeenCalled();
-  });
-
-  it('does not attempt GitHub repository rollback when repository creation fails', async () => {
-    mocks.createGithubRepository.mockResolvedValueOnce({
-      success: false,
-      error: 'Repository creation failed',
-    });
-    const store = new ProjectManagerStore();
-
-    const result = await store.startProjectCreation(
-      { type: 'local' },
-      {
-        mode: 'new',
-        name: 'Project',
-        path: '/parent',
-        repositoryName: 'project',
-        repositoryOwner: 'acme',
-        repositoryVisibility: 'private',
-        githubAccountId: 'github.com:42',
-      },
-      { id: 'optimistic-project' }
-    );
-
-    expect(result.kind).toBe('creating');
-    if (result.kind === 'creating') {
-      await expect(result.completion).resolves.toEqual({
-        success: false,
-        error: { type: 'repository-create-failed', message: 'Repository creation failed' },
-      });
-    }
-
-    expect(mocks.deleteGithubRepository).not.toHaveBeenCalled();
-  });
 });
 
 describe('remote project classification on reconnect', () => {
@@ -883,6 +739,26 @@ describe('remote project classification on reconnect', () => {
       expect(isWorkspaceProject(known)).toBe(false);
       expect(known.mountedProject).toBe(taskState);
     } finally {
+      store.dispose();
+      machineRegistry.forgetMachine(deviceId);
+    }
+  });
+
+  it('does not re-point a task at a project this desktop has no entry for (the other machine\'s hidden task workspace is in no account copy)', async () => {
+    const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const deviceId = 'other-config-device';
+    const home = '00000000-0000-4000-8000-000000000001';
+    const ordinary = localProject({ id: 'other-config-project' });
+    const store = new ProjectManagerStore();
+    const saved = appState.navigation.viewParamsStore;
+    appState.navigation.viewParamsStore = { session: { projectId: home, sessionId: 'local-task' } };
+    try {
+      // that machine's session list names the same task under its hidden task workspace, which its project list does not carry
+      store.syncMachineProjects(deviceId, [ordinary], [{ conversationId: 'local-task', projectId: `${home}~${deviceId}` }]);
+      expect(appState.navigation.updateViewParams).not.toHaveBeenCalled();
+    } finally {
+      appState.navigation.viewParamsStore = saved;
+      vi.mocked(appState.navigation.updateViewParams).mockReset();
       store.dispose();
       machineRegistry.forgetMachine(deviceId);
     }

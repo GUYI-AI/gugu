@@ -28,6 +28,9 @@ export const projectVisibilityChangedChannel = defineEvent<{
   project: Project | null;
 }>('project:visibility-changed');
 
+/** A user reconnected the retained root; even the same path needs a fresh provider after recovery. */
+export const projectRootRestoredChannel = defineEvent<{ project: Project }>('project:root-restored');
+
 /**
  * #7341 第二步 这台机器上某个本地项目绑的项目群变了(并进来 / 撤销 / 第一个会话建了群 / 项目没了忘掉):
  * 收到后重读 `projects.listProjectGroupBindings()`。

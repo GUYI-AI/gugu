@@ -170,8 +170,8 @@ export type DeviceSessionDigestEntry = {
   agentUserId?: string | null
 }
 
-/** 摘要由宿主提供（会话在它手里）。缺省 = 这台机器不报摘要，列写 `[]`。 */
-export type DeviceSessionDigestSource = () => DeviceSessionDigestEntry[]
+/** 摘要由宿主提供（会话在它手里）：最近动过的至多 `limit` 条，新的在前。缺省 = 这台机器不报摘要，列写 `[]`。 */
+export type DeviceSessionDigestSource = (limit: number) => DeviceSessionDigestEntry[]
 /** #7199 这台设备能被调用的动作清单(`capabilities.actions`);缺省 = 不登记(老设备 / 不支持)。 */
 export type DeviceActionsSource = () => DeviceActionsCapability | null
 
@@ -731,7 +731,7 @@ async function resolveDeviceCapabilities(
 function resolveSessionDigest(source: DeviceSessionDigestSource | undefined): DeviceSessionDigestEntry[] {
   if (!source) return []
   try {
-    return source().slice(0, DEVICE_SESSION_DIGEST_LIMIT)
+    return source(DEVICE_SESSION_DIGEST_LIMIT)
   } catch {
     return []
   }

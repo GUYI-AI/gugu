@@ -17,7 +17,7 @@ const places: EnablePlace[] = [
   { id: HERE_ALL, kind: 'here', enabled: true },
   { id: 'g1', kind: 'group', name: 'G1', enabled: false },
 ]
-const NOBODY = /还没有选|None chosen yet|appEnable\.empty/
+const NOBODY = /尚未选择|None selected|appEnable\.empty/
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {

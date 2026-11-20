@@ -72,6 +72,7 @@ export const devicePreferencesSchema = z.object({
   chatMessages: z.boolean(),
   chatSound: z.boolean(),
   meetingReminder: z.boolean(),
+  confirmBeforeCancelAndSend: z.boolean().default(true),
 }) satisfies z.ZodType<DevicePreferences>;
 
 /**
@@ -262,6 +263,12 @@ const dataImportSettingsSchema = z.object({
   owners: z.record(z.string(), z.object({
     automatic: z.boolean(),
     sources: z.array(z.string()),
+    categories: z.array(z.enum(['tasks', 'projects', 'memories', 'skills', 'connectors'])).optional(),
+    categoryAttempts: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+    categoryResults: z.array(z.object({ providerId: z.string(), finishedAt: z.number(), items: z.array(z.object({
+      id: z.string(), title: z.string(), category: z.enum(['tasks', 'projects', 'memories', 'skills', 'connectors']),
+      status: z.enum(['imported', 'existing', 'conflict', 'skipped', 'failed']).optional(), reason: z.string().optional(),
+    })).max(10000) })).max(50).optional(),
   })),
 });
 

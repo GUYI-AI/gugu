@@ -63,7 +63,7 @@ export async function runOpenUrl(
   const account = (deps.account ?? readServerAccount)()
   const accountError = accountRequestError(account, parsed.account)
   if (accountError || !account) {
-    fallback('咕咕:没能转到你的电脑上打开,请手动打开这个地址 / Gugu could not open this on your computer; open it yourself:')
+    fallback('咕咕:无法转到你的电脑上打开,请手动打开此地址 / Gugu could not open this on your computer. Open it manually:')
     return ATTACH_EXIT.notSignedIn
   }
   const outcome = await (deps.call ?? callAccountProcess)(account, {
@@ -71,7 +71,7 @@ export async function runOpenUrl(
     payload: { target: parsed.target, cwd: (deps.cwd ?? process.cwd)(), ptyId: env.GUGU_PTY_ID ?? '' },
   })
   if ('code' in outcome) {
-    fallback('咕咕:没能转到你的电脑上打开,请手动打开这个地址 / Gugu could not open this on your computer; open it yourself:')
+    fallback('咕咕:无法转到你的电脑上打开,请手动打开此地址 / Gugu could not open this on your computer. Open it manually:')
     return 1
   }
   let reply: { result?: { outcome?: string }; error?: { code?: string; message?: string } } = {}
@@ -82,11 +82,11 @@ export async function runOpenUrl(
   }
   if (reply.result?.outcome === 'opened') return 0
   if (reply.result?.outcome === 'queued') {
-    fallback('咕咕:此刻没有人在看这台机器,下次在咕咕里打开这条会话时会自动打开 / Nobody is viewing this machine in Gugu right now; it will open next time:')
+    fallback('咕咕:当前没有人在咕咕中查看这台机器,下次在咕咕中打开该会话时会自动打开 / Nobody is viewing this machine in Gugu. It will open the next time this session is opened in Gugu:')
     return 0
   }
   fallback(
-    `咕咕:没能在你的电脑上打开 / Gugu could not open this on your computer${reply.error?.message ? ` (${reply.error.message})` : ''}:`,
+    `咕咕:无法在你的电脑上打开 / Gugu could not open this on your computer${reply.error?.message ? ` (${reply.error.message})` : ''}:`,
   )
   return 1
 }

@@ -160,6 +160,7 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
+  setNativeHistoryProviderResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
@@ -181,7 +182,6 @@ export {
   // 随心跳上云的会话状态摘要:机器离线后手机只剩它可读。同上,经桥拿。
   sessionpageSessionDigest,
   // server 换版看的忙闲(activity.json)。同上,经桥拿。
-  sessionpageBusyForVersionSwitch,
   sessionpageVersionSwitchActivity,
   sessionpageBootFailures,
   onSessionpageAuthorizationActivityChange,

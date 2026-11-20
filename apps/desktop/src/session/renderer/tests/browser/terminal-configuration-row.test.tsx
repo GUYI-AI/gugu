@@ -30,7 +30,7 @@ it.each([false, true])('summarizes terminal configuration without a path, second
   expect(host.querySelector('.gg-settings-row-title')?.textContent).toBe('终端配置')
   const text = host.querySelector('.gg-settings-row-description')?.textContent ?? ''
   expect(text).toContain('导入')
-  expect(text.includes('，终端里后来又改过')).toBe(changed)
+  expect(text.includes('，之后在终端中有修改')).toBe(changed)
   expect(text).not.toContain('/private/')
   expect(text).not.toContain('●')
   expect(text).not.toMatch(/\d{2}:\d{2}:\d{2}/)

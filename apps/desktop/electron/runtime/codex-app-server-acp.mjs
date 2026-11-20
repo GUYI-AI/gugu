@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
+import { initializeNativeCodexSession, nativeCodexSessionArgs } from '../../../../packages/core/src/local/codex-native-auth.mjs'
 import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
@@ -42,6 +43,8 @@ let app = null
 let appReader = null
 let appNextId = 1
 let appReady = false
+let nativeAuthRefresh = null
+let nativeAuthSession = null
 let sessionId = null
 let appServerThreadConfig = null
 let activeCycle = null
@@ -891,6 +894,7 @@ async function startAppAttempt(servers) {
     '--stdio',
     ...inheritedArgs,
     ...appModelCatalog.args,
+    ...nativeCodexSessionArgs(childEnv),
   ], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: childEnv,
@@ -924,6 +928,10 @@ async function startAppAttempt(servers) {
     throw tagCodexStartupFailure(error, error.code === -32601 ? 'protocol' : undefined)
   }
   appNotify('initialized', {})
+  nativeAuthSession = await initializeNativeCodexSession(process.env, appRequest, {
+    platform: Boolean(process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY),
+    setRefresh: handler => { nativeAuthRefresh = handler },
+  })
   // #6387 Installed Apps' skills: the materializer's skill root, registered before any thread so codex lists them as its
   // own. A codex that cannot is below the supported floor (0.136.0) — said loudly, not worked around.
   const skillRoots = process.env.GUGU_CODEX_SKILL_ROOTS?.trim()
@@ -1180,7 +1188,7 @@ function replayItem(item, fallbackId, revertAnchor, steering) {
     // live 从不回声用户消息(客户端自己就有);重放时客户端手里是空的,这条只能由适配器补。
     // 复用 textPrompt:多段文本的连接方式必须和发送侧一致,否则重放出来的话和当初发出去的不一样。
     const text = joinPromptText(item?.content)
-    const meta = steering ? { guguSteering: true } : revertAnchor ? { guguRevertAnchor: revertAnchor } : null
+    const meta = steering ? { guguSteering: true } : revertAnchor ? { guguRevert: { before: revertAnchor } } : null
     if (text) sessionUpdate({ sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text }], ...(meta ? { _meta: meta } : {}) })
     return
   }
@@ -1675,7 +1683,9 @@ function turnOutcome(turn) {
   const _meta = historyCanRevert ? { guguRevert: { before: String(turn.id) } } : undefined
   if (status === 'interrupted') return { stopReason: 'cancelled', ...(_meta ? { _meta } : {}) }
   if (status === 'completed' && !failure) return { stopReason: 'end_turn', ...(_meta ? { _meta } : {}) }
-  return { stopReason: 'error', error: { code: -32603,
+  // A failed turn is the one a person most needs to step back from: a refused turn stays in the context and
+  // every later turn is refused with it. Its receipt carries the revert point like any other.
+  return { stopReason: 'error', ...(_meta ? { _meta } : {}), error: { code: -32603,
     message: status === 'failed' ? String(turn?.error?.message ?? 'local Codex turn failed')
       : failure ? `local Codex turn had a failed Gugu tool call: ${failure.tool} (${failure.itemId}): ${failure.details}`
       : `unexpected local Codex turn status: ${status}`,
@@ -1855,7 +1865,7 @@ function approvalDecisionName(decision) {
     case 'acceptForSession':
       return 'Allow for this session'
     case 'acceptWithExecpolicyAmendment':
-      return "Allow and don't ask again for matching commands"
+      return 'Allow and do not ask again for matching commands'
     case 'applyNetworkPolicyAmendment':
       return decision?.applyNetworkPolicyAmendment?.network_policy_amendment?.action === 'deny'
         ? 'Block this host in the future'
@@ -2209,6 +2219,13 @@ async function answerUserInput(message) {
 
 function handleAppRequest(message) {
   const method = String(message.method ?? '')
+  if (method === 'account/chatgptAuthTokens/refresh' && nativeAuthRefresh) {
+    void nativeAuthRefresh(message.params ?? {}).then(
+      result => appWrite({ id: message.id, result }),
+      error => appWrite({ id: message.id, error: { code: -32000, message: error instanceof Error ? error.message : 'Codex native sign-in unavailable; run codex login' } }),
+    )
+    return
+  }
   if (method === 'mcpServer/elicitation/request') {
     void answerMcpElicitation(message)
     return
@@ -2274,6 +2291,8 @@ async function handleAcpRequest(message) {
       throw new Error('Invalid conversation revert target')
     }
     if (!historyCanRevert) throw new Error('Conversation revert requires persisted paginated Codex history')
+    // `thread/revert` "does not revert local file changes": its points never offer files, so a restore is a client bug.
+    if (params.restoreFiles) throw new Error('Codex cannot restore files on revert')
     if (revertingHistory || activeCycle || runningCommands.size) {
       throw new Error('Wait for current work to finish before reverting')
     }
@@ -2566,7 +2585,11 @@ async function handleAcpRequest(message) {
     if (revertingHistory) throw new Error('Conversation revert is in progress')
     if (!sessionId) throw new Error('no local Codex session')
     const input = promptInputItems(params.prompt)
+    // Register before the first await: a `session/cancel` that lands while native auth is being confirmed
+    // (an HTTP round trip) must find this request, or the cancel is lost and the prompt still starts a turn.
     const insertion = expectPromptInsertion(id, params.prompt)
+    await nativeAuthSession?.ensure()
+    throwIfInsertionCancelled(insertion)
     if (joinPromptText(params.prompt).trim() === '/compact') {
       if (activeCycle || compactInsertion) throw new Error('local Codex cannot compact while foreground work is active')
       compactInsertion = insertion
