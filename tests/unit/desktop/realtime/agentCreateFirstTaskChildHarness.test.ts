@@ -46,7 +46,7 @@ test('first_task 排进启动队列:咕咕系统交的任务、带私聊与主�
   await handleAgentCreateDeviceCommand({ ...payload, first_task: TASK }, options)
   const input = startAgentSession.mock.calls.at(-1)![0] as { initialText?: string; initialPrompt?: string; initialMessageId?: string }
   const prompt = input.initialPrompt!
-  expect(prompt).toMatch(/^<gugu_delivery route="system" from="咕咕系统" from_id="system:gugu" msg="msg:/)
+  expect(prompt).toMatch(/^<gugu_delivery route="system" from="Gugu" from_id="system:gugu" msg="msg:/)
   expect(prompt).toContain('mode="task"')
   expect(prompt).toContain(TASK)
   expect(prompt).toContain('chat_id chat-7199')
@@ -85,8 +85,8 @@ test('系统通知与系统任务是两件事:同一个发信方,arrival 一个�
   expect(arrivalHint('system', 'task')).toContain('do what it says')
   expect(arrivalHint('system', 'task')).toContain('message_send')
   // 通知那一档原样不动。
-  expect(arrivalHint('system', null)).toBe('A 咕咕 system notice, not a request; there is no one to reply to.')
-  expect(arrivalHint('system', 'notice')).toBe('A 咕咕 system notice, not a request; there is no one to reply to.')
+  expect(arrivalHint('system', null)).toBe('A Gugu system notice, not a request; there is no one to reply to.')
+  expect(arrivalHint('system', 'notice')).toBe('A Gugu system notice, not a request; there is no one to reply to.')
   // 读方认得:同一个 reader 读出发信方、mode、现场事实和正文。
   const read = readDeliveryEnvelope(buildSystemTaskEnvelope({ ...base, context: 'the chat is chat-1' }))
   expect(read?.segments[0]?.facts).toMatchObject({

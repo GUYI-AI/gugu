@@ -368,11 +368,11 @@ describe('agent-centered conversation bubbles', () => {
   });
 
   it('shows only the nickname for the owner of an incoming group delivery', async () => {
-    const view = await mount({ kind: 'message', id: 'own-delivery', role: 'user', text: '<gugu_delivery route="chat" from="刘威 (咕咕号 111179)" from_id="user:owner" msg="msg:hello"><![CDATA[你好]]></gugu_delivery>' });
+    const view = await mount({ kind: 'message', id: 'own-delivery', role: 'user', text: '<gugu_delivery route="chat" from="刘威 (gugu:111179)" from_id="user:owner" msg="msg:hello"><![CDATA[你好]]></gugu_delivery>' });
     try {
       expect(view.host.querySelector('span[title]')?.textContent).toBe('刘威');
       expect(view.host.textContent).not.toContain('111179');
-      expect(view.host.textContent).not.toContain('咕咕号');
+      expect(view.host.textContent).not.toContain('gugu:');
     } finally { view.dispose(); }
   });
 

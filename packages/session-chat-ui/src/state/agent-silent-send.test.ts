@@ -93,7 +93,7 @@ describe('settled silence between confirmed Agent sends', () => {
   it('preserves a real scheduled input followed by silence as a visible boundary', () => {
     const scheduled: TranscriptTurn = { ...quiet('scheduled'), trigger: { kind: 'schedule' }, items: [
       { kind: 'message', id: 'scheduled-input', seq: 0, role: 'user', text:
-        '<gugu_delivery route="scheduled" from="咕咕系统" from_id="system:gugu" schedule="Check report" msg="msg:scheduled"><![CDATA[Check the report]]></gugu_delivery>' }, ...quiet('scheduled').items,
+        '<gugu_delivery route="scheduled" from="Gugu" from_id="system:gugu" schedule="Check report" msg="msg:scheduled"><![CDATA[Check the report]]></gugu_delivery>' }, ...quiet('scheduled').items,
     ] };
     const rows = flattenTier([sent('first'), scheduled, sent('last')], ctx, segmenters);
     expect(rows.find(row => row.itemId === 'scheduled-input')?.activityFold).toBeUndefined();

@@ -127,7 +127,7 @@ describe('listen_mode through the unchanged group tool', () => {
     const h = await connect({ forkOf: 'source' })
     const result = await h.call({ chat_id: GROUP, listen_mode: 'passive' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('运行时分叉')
+    expect(text(result)).toContain('is a runtime fork of')
     expect(h.writes).toEqual([])
   })
 
