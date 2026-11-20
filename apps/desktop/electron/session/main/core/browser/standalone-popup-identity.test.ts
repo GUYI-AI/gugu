@@ -68,6 +68,8 @@ describe('a window a page opened is taken by the tab Gugu opened for it, not by 
     expect(f.connection.created).toEqual(['T1', 'T2']); // The person's tab got a page of its own.
     const windowsTab = await f.open('windows-tab', 'about:blank', 'POPUP');
     expect(windowsTab.targetId).toBe('POPUP');
+    expect(windowsTab.adoptedWindow).toBe(true); // It is a window another page opened; the person's tab is not.
+    expect(personsTab.adoptedWindow).toBe(false);
     expect(f.connection.created).toEqual(['T1', 'T2']); // Taking the window created nothing.
     expect(f.connection.closedTargets).toEqual([]);
   });

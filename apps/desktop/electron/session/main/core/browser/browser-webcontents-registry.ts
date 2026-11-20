@@ -31,8 +31,9 @@ import {
 } from '@shared/events/browserEvents';
 import { COMMANDS, type CommandId } from '@shared/commands';
 import { getElectronTabNavigationDirection, resolveDefaultHotkey,  } from '@shared/shortcuts';
-import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
+import { userAgentForBrowserUrl } from './browser-user-agent';
 import { isSupportedBrowserNavigationUrl } from './browser-navigation';
+import { decideWindowOpen, isExternalHttpUrl } from './browser-window-open';
 
 type RegisteredBrowserSession = {
   browserId: string;
@@ -300,16 +301,14 @@ export class BrowserWebContentsRegistry {
   ): void {
     webContents.setWindowOpenHandler((details) => {
       if (webContents.isDestroyed()) { return { action: 'deny' }; }
-      if (!isSupportedBrowserNavigationUrl(details.url)) {
-        return { action: 'deny' };
-      }
-      if (details.disposition === 'new-window' && isAllowedAuthPopupUrl(details.url)) {
+      const decision = decideWindowOpen({ url: details.url, disposition: details.disposition });
+      if (decision === 'window') {
         // window.open popups (OAuth sign-in flows) need a real child window in
         // the same partition so window.opener/postMessage keep working.
         return { action: 'allow', overrideBrowserWindowOptions: BROWSER_POPUP_WINDOW_OPTIONS };
       }
       const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
-      if (sourceBrowserId && isExternalHttpUrl(details.url)) {
+      if (sourceBrowserId && decision === 'tab') {
         events.emit(browserOpenInNewTabChannel, { sourceBrowserId, url: details.url });
       }
       return { action: 'deny' };
@@ -459,13 +458,9 @@ function hardenBrowserPopupWindow(window: BrowserWindow): void {
   const webContents = window.webContents;
 
   webContents.setWindowOpenHandler(({ url, disposition }) => {
-    if (!isSupportedBrowserNavigationUrl(url)) {
-      return { action: 'deny' };
-    }
-    if (disposition === 'new-window' && isAllowedAuthPopupUrl(url)) {
-      return { action: 'allow', overrideBrowserWindowOptions: BROWSER_POPUP_WINDOW_OPTIONS };
-    }
-    return { action: 'deny' };
+    return decideWindowOpen({ url, disposition, fromPopup: true }) === 'window'
+      ? { action: 'allow', overrideBrowserWindowOptions: BROWSER_POPUP_WINDOW_OPTIONS }
+      : { action: 'deny' };
   });
 
   webContents.on('did-create-window', (child) => {
@@ -508,26 +503,6 @@ export function isSamePreviewNavigation(currentUrl: string, targetUrl: string): 
       target.hostname !== '' &&
       target.hostname === current.hostname
     );
-  } catch {
-    return false;
-  }
-}
-
-function isExternalHttpUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function isAllowedAuthPopupUrl(url: string): boolean {
-  if (isGoogleAuthUrl(url)) return true;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.toLowerCase() !== 'github.com') return false;
-    return parsed.pathname === '/login' || parsed.pathname === '/login/oauth/authorize';
   } catch {
     return false;
   }

@@ -53,6 +53,10 @@ export interface TaskPageContents {
    * for it). Such a page waits a few seconds to be adopted by the tab opened for it, which names it by that id (`pageFor`), or is closed.
    */
   reportNewWindows?(): void;
+  /** Closes a window Chrome created for this page that no Gugu tab will show (see `reportNewWindows`). */
+  closeWindow?(popup: string): void;
+  /** This page is a window another page opened, shown in a tab: it was adopted, not loaded by Gugu. */
+  readonly adoptedWindow?: boolean;
   /** Chrome hands file choosers over: 'file-chooser' (multiple, backendNodeId) is reported, `setFileInputFiles` fills the input. */
   interceptFileChoosers?(): Promise<void>;
   setFileInputFiles?(backendNodeId: number, files: string[]): Promise<void>;
@@ -168,7 +172,9 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
   private agentIntercept = false;
   private windowsReported = false;
   /** `Page.windowOpen` events whose Chrome page has not been announced yet, oldest first. */
-  private readonly openings: { url: string; timer: ReturnType<typeof setTimeout> }[] = [];
+  private readonly openings: { url: string; features?: string[]; timer: ReturnType<typeof setTimeout> }[] = [];
+  /** Set when a tab adopted this page as the window another page opened for it. */
+  adoptedWindow = false;
   /** Gugu is closing this page itself, so Chrome closing it is not the page's doing. */
   private closing = false;
   private favicons: string[] = [];
@@ -198,11 +204,12 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
 
   private readonly onEvent = (message: CdpMessage) => {
     if (message.method === 'Target.targetCreated') {
-      const info = message.params?.targetInfo as { targetId?: string; type?: string; openerId?: string; url?: string } | undefined;
+      const info = message.params?.targetInfo as { targetId?: string; type?: string; openerId?: string; url?: string; canAccessOpener?: boolean } | undefined;
       if (this.windowsReported && info?.type === 'page' && info.openerId === this.targetId && info.targetId) {
         const opening = this.openings.shift();
         if (opening) clearTimeout(opening.timer);
-        this.emit('window-open', { url: windowAddress(opening?.url ?? info.url), popup: info.targetId });
+        // `opener`: the window can reach the page that opened it (not noopener); a link's target=_blank cannot.
+        this.emit('window-open', { url: windowAddress(opening?.url ?? info.url), popup: info.targetId, ...(opening?.features && { features: opening.features }), opener: info.canAccessOpener !== false });
       }
       return;
     }
@@ -313,11 +320,12 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
       case 'Page.windowOpen': {
         if (!this.windowsReported) break;
         const url = String(params.url ?? '');
+        const features = Array.isArray(params.windowFeatures) ? params.windowFeatures.map(String) : undefined;
         // Chrome blocks a window nobody clicked for and creates no page: only the address is left.
-        if (params.userGesture === false) { this.emit('window-open', { url: windowAddress(url) }); break; }
-        const opening = { url, timer: setTimeout(() => {
+        if (params.userGesture === false) { this.emit('window-open', { url: windowAddress(url), ...(features && { features }) }); break; }
+        const opening = { url, features, timer: setTimeout(() => {
           this.openings.splice(this.openings.indexOf(opening), 1);
-          this.emit('window-open', { url: windowAddress(url) });
+          this.emit('window-open', { url: windowAddress(url), ...(features && { features }) });
         }, WINDOW_PAGE_WAIT_MS) };
         opening.timer.unref?.();
         this.openings.push(opening);
@@ -352,6 +360,11 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
   }
 
   reportNewWindows(): void { this.windowsReported = true; }
+
+  /** Closes a window Chrome created for this page that no tab will show. Already gone is fine. */
+  closeWindow(popup: string): void {
+    void this.connection.send('Target.closeTarget', { targetId: popup }).catch(() => {});
+  }
 
   /** Gugu is about to close this page: Chrome reporting it closed is no news. */
   expectClose(): void { this.closing = true; }
@@ -663,6 +676,7 @@ export function createServerTaskBrowser(options: {
     try {
       await target.watch();
       await target.adopted();
+      target.adoptedWindow = true;
       return target;
     } catch {
       target.destroy();

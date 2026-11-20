@@ -31,7 +31,7 @@ async function fixture(replies: Record<string, (params: Record<string, unknown>,
 }
 
 describe('a standalone page: windows it opens', () => {
-  const windowOpen = (url: string, userGesture = true) => ({ url, windowName: '_blank', userGesture });
+  const windowOpen = (url: string, userGesture = true, windowFeatures?: string[]) => ({ url, windowName: '_blank', userGesture, ...(windowFeatures && { windowFeatures }) });
   const created = (targetId: string, extra: Record<string, unknown> = {}) => ({ targetInfo: { targetId, type: 'page', openerId: TARGET, url: '', ...extra } });
 
   it('reports the address of a window the page opens together with the Chrome page it opened, and leaves that page open to be adopted', async () => {
@@ -41,7 +41,7 @@ describe('a standalone page: windows it opens', () => {
     f.target.on('window-open', (open: unknown) => opened.push(open));
     f.event('Page.windowOpen', windowOpen('http://site.test/next'), WATCH);
     f.event('Target.targetCreated', created('P1'));
-    expect(opened).toEqual([{ url: 'http://site.test/next', popup: 'P1' }]);
+    expect(opened).toEqual([{ url: 'http://site.test/next', popup: 'P1', opener: true }]);
     expect(f.sentMethods('Target.closeTarget')).toEqual([]);
   });
 
@@ -54,7 +54,7 @@ describe('a standalone page: windows it opens', () => {
     f.event('Page.windowOpen', windowOpen('http://b.test/'), WATCH);
     f.event('Target.targetCreated', created('P1'));
     f.event('Target.targetCreated', created('P2'));
-    expect(opened).toEqual([{ url: 'http://a.test/', popup: 'P1' }, { url: 'http://b.test/', popup: 'P2' }]);
+    expect(opened).toEqual([{ url: 'http://a.test/', popup: 'P1', opener: true }, { url: 'http://b.test/', popup: 'P2', opener: true }]);
   });
 
   it('calls a window that opens empty about:blank, as the page may point it somewhere later', async () => {
@@ -64,7 +64,43 @@ describe('a standalone page: windows it opens', () => {
     f.target.on('window-open', (open: unknown) => opened.push(open));
     f.event('Page.windowOpen', windowOpen(''), WATCH);
     f.event('Target.targetCreated', created('P1'));
-    expect(opened).toEqual([{ url: 'about:blank', popup: 'P1' }]);
+    expect(opened).toEqual([{ url: 'about:blank', popup: 'P1', opener: true }]);
+  });
+
+  it('reports how the page asked for the window and whether the window can reach the page that opened it', async () => {
+    const f = await fixture();
+    f.target.reportNewWindows();
+    const opened: unknown[] = [];
+    f.target.on('window-open', (open: unknown) => opened.push(open));
+    f.event('Page.windowOpen', windowOpen('http://a.test/', true, ['width=480', 'height=640', 'resizable']), WATCH);
+    f.event('Target.targetCreated', created('P1', { canAccessOpener: true }));
+    f.event('Page.windowOpen', windowOpen('http://b.test/', true, ['menubar', 'toolbar', 'status', 'scrollbars', 'resizable', 'noopener']), WATCH);
+    f.event('Target.targetCreated', created('P2', { canAccessOpener: false }));
+    expect(opened).toEqual([
+      { url: 'http://a.test/', popup: 'P1', features: ['width=480', 'height=640', 'resizable'], opener: true },
+      { url: 'http://b.test/', popup: 'P2', features: ['menubar', 'toolbar', 'status', 'scrollbars', 'resizable', 'noopener'], opener: false },
+    ]);
+  });
+
+  it('reports a blocked window with how the page asked for it as well', async () => {
+    const f = await fixture();
+    f.target.reportNewWindows();
+    const opened: unknown[] = [];
+    f.target.on('window-open', (open: unknown) => opened.push(open));
+    f.event('Page.windowOpen', windowOpen('http://ads.test/', false, ['resizable']), WATCH);
+    expect(opened).toEqual([{ url: 'http://ads.test/', features: ['resizable'] }]);
+  });
+
+  it('closes a window Chrome created when Gugu has no tab to show it in, at once rather than after the wait', async () => {
+    const f = await fixture();
+    f.target.closeWindow('P1');
+    expect(f.sentMethods('Target.closeTarget').map(call => call.params)).toEqual([{ targetId: 'P1' }]);
+  });
+
+  it('does not mind that a window it was told to close is already gone', async () => {
+    const f = await fixture({ 'Target.closeTarget': () => { throw new Error('No target with given id found'); } });
+    expect(() => f.target.closeWindow('P1')).not.toThrow();
+    await f.settle();
   });
 
   it('reports at once, by address only, a window Chrome blocked because no one clicked: no page exists to adopt', async () => {
