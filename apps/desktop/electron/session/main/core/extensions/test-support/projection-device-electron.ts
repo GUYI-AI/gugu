@@ -12,6 +12,7 @@ import { extensionProjections as bridge } from '../extension-projection-bridge';
 import type { BridgeCaller } from '../extension-bridge';
 import { projectionSources, type ProjectionHost } from '../../../../../../src/session/app-runtime/projection-source';
 import { untilObserved } from './fixture-wait';
+import { solidFrame } from './projection-solid-frame';
 
 /** Real installed grant/factory/helper/browser. RPC bytes use the real requester/responder over an isolated in-memory pipe, not the cloud. */
 export async function probeDeviceProjection(appId: string) {
@@ -25,7 +26,6 @@ export async function probeDeviceProjection(appId: string) {
   const asker = { id: 'isolated-device-fixture', onDetached(fn: () => void) { detached.add(fn); return () => { detached.delete(fn); }; } };
   const source = new BrowserWindow({ show: false, frame: false, useContentSize: true, width: 128, height: 96,
     webPreferences: { backgroundThrottling: false } });
-  const firstPaint = new Promise<void>(resolve => source.once('ready-to-show', () => resolve()));
   const viewer = new BrowserWindow({ show: false });
   let hear: Parameters<NonNullable<ProjectionHost['onProjectionSource']>>[0] = () => {};
   const program = { kind: 'program', extensionId: appId, pageId: -94, callingSession: 'fixture-task', binding: null,
@@ -46,9 +46,8 @@ export async function probeDeviceProjection(appId: string) {
   let server: ReturnType<typeof createServer> | undefined;
   try {
     await source.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<body style="margin:0;background:rgb(26,96,190)"><textarea style="width:60px;height:20px"></textarea><script>document.querySelector("textarea").focus()</script>'));
-    await firstPaint;
-    const capture = async () => publisher!.publish({ width: 128, height: 96, mime: 'image/png',
-      data: (await source.webContents.capturePage()).toPNG().toString('base64') });
+    let shown = [26, 96, 190];
+    const capture = async () => publisher!.publish({ width: 128, height: 96, mime: 'image/png', data: solidFrame(shown) });
     publisher = await runtime.create({
       input: async (input, { signal }) => { signal.throwIfAborted(); assert.equal(input.kind, 'text');
         if (input.kind === 'text') { inputCalls++; await source.webContents.insertText(input.text); } },
@@ -98,7 +97,7 @@ export async function probeDeviceProjection(appId: string) {
     await until(() => paints.length >= 1 && results.length >= 1);
     assert.deepEqual(results[0], { type: 'input-result', generation: (results[0] as { generation: string }).generation, sequence: 1, status: 'applied' });
     assert.equal(inputCalls, 1); assert.equal(await source.webContents.executeJavaScript('document.querySelector("textarea").value'), '设备中文🙂');
-    await source.webContents.executeJavaScript('document.body.style.background="rgb(190,40,26)";new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    shown = [190, 40, 26];
     await capture(); await until(() => paints.some(frame => frame.sequence === 2));
     for (const [index, wanted] of [[26, 96, 190], [190, 40, 26]].entries()) {
       const actual = paints.find(frame => frame.sequence === index + 1)!;
