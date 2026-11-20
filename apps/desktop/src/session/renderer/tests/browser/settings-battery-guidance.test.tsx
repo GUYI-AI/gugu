@@ -82,6 +82,28 @@ it('waits for explicitly enabling notifications when they were disabled', async 
   await expect.element(guidance()).toBeVisible()
 })
 
+it('preserves an existing shown marker on upgrade and after disabling and re-enabling notifications', async () => {
+  localStorage.setItem(marker, 'shown')
+  await openSettings()
+  await expect.element(guidance()).not.toBeInTheDocument()
+  const toggle = page.getByRole('switch', { name: 'Enable chat message notifications', exact: true })
+  await toggle.click()
+  await toggle.click()
+  await expect.element(guidance()).not.toBeInTheDocument()
+  expect(native.battery).not.toHaveBeenCalled()
+  expect(localStorage.getItem(marker)).toBe('shown')
+})
+
+it('does not repeat guidance after showing it and disabling and re-enabling notifications', async () => {
+  await openSettings()
+  await expect.element(guidance()).toBeVisible()
+  const toggle = page.getByRole('switch', { name: 'Enable chat message notifications', exact: true })
+  await toggle.click()
+  await toggle.click()
+  await expect.element(guidance()).not.toBeInTheDocument()
+  expect(native.battery).toHaveBeenCalledTimes(1)
+})
+
 it.each(['granted', 'blocked', 'unreadable'] as const)('does not consume the marker for battery state %s', async state => {
   native.battery.mockResolvedValue(state)
   await openSettings()

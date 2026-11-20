@@ -14,8 +14,7 @@ import { useReplica } from '../../lib/replica'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
-import { readDevicePreferences, useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
-import { nativePhoneActions } from '../../mobile/phone-device/nativePhoneActions'
+import { useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
 import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { SettingsChoice } from './SettingsChoice'
@@ -23,6 +22,7 @@ import { Unknown } from '../ui/Unknown'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { HelpImproveSettingGroup } from '../HelpImprove'
+import { AndroidChatBatteryGuidance } from './AndroidChatBatteryGuidance'
 
 const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LOCALES]
 const THEME_OPTIONS = ['light', 'dark', 'system'] as const
@@ -72,7 +72,6 @@ const MOBILE_NOTIFICATION_HINT_KEYS: Record<keyof typeof NOTIFICATION_HINT_KEYS,
   unsupported: 'settings.general.notificationsTestFailed',
 }
 const NOTIFICATION_PERMISSION: readonly SystemPermission[] = ['notifications']
-const CHAT_BATTERY_GUIDANCE_KEY = 'gugu.android.chat-notifications.battery-guidance-v1'
 
 /**
  * 通用:语言 + 主题 + 通知 (+ 托盘角标)。通知是这一页的一个分组,不是顶层导航项。
@@ -82,7 +81,6 @@ const CHAT_BATTERY_GUIDANCE_KEY = 'gugu.android.chat-notifications.battery-guida
 export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPermissions: () => void; showThemePacks?: boolean }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
-  const [batteryGuidance, setBatteryGuidance] = useState<{ onePlus: boolean; restricted: boolean } | null>(null)
   const mobile = useMobileShell()
   const { preference, setPreference } = useLocale()
   const devicePreferences = useDevicePreferences()
@@ -106,26 +104,6 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
   const notificationBlocked = systemNotificationStates.notifications === 'prompt'
     || systemNotificationStates.notifications === 'blocked'
   const notificationHint = notificationTest?.kind
-
-  useEffect(() => {
-    if (!devicePreferences.chatMessages) {
-      setBatteryGuidance(null)
-      return
-    }
-    if (!platform.systemPermissions.includes('batteryOptimization')) return
-    let cancelled = false
-    void (async () => {
-      if (localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
-      if (await platform.checkSystemPermission('batteryOptimization') !== 'prompt') return
-      if (cancelled) return
-      const device = await nativePhoneActions.deviceInfo().catch(() => null)
-      if (cancelled || !readDevicePreferences().chatMessages || localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
-      localStorage.setItem(CHAT_BATTERY_GUIDANCE_KEY, 'shown')
-      const onePlus = [device?.brand, device?.manufacturer].some(name => name?.toLowerCase() === 'oneplus')
-      setBatteryGuidance({ onePlus, restricted: true })
-    })().catch(() => undefined)
-    return () => { cancelled = true }
-  }, [devicePreferences.chatMessages])
 
   return (
     <SettingsPage>
@@ -211,26 +189,8 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
             )}
           />
         ))}
-        {batteryGuidance && <SettingsRow
-          stack
-          description={<>
-            {batteryGuidance.restricted && <span>{t('settings.general.notificationsAndroidBattery')}</span>}
-            {batteryGuidance.onePlus && <>
-              {batteryGuidance.restricted && <br />}
-              {t('settings.general.notificationsAndroidOnePlus')}
-            </>}
-          </>}
-          control={<div className="flex flex-wrap gap-2">
-            {batteryGuidance.restricted && <Button variant="secondary" size="sm" onClick={() => {
-              void platform.requestSystemPermission('batteryOptimization').then(state => {
-                if (state === 'granted') setBatteryGuidance(current => current?.onePlus ? { onePlus: true, restricted: false } : null)
-              }).catch(() => undefined)
-            }}>{t('settings.general.notificationsAndroidBatteryAllow')}</Button>}
-            {batteryGuidance.onePlus && <Button variant="secondary" size="sm" onClick={() => {
-              void nativePhoneActions.openSettings({ target: 'app' }).catch(() => undefined)
-            }}>{t('settings.general.notificationsAndroidAppInfo')}</Button>}
-          </div>}
-        />}
+        {devicePreferences.chatMessages && platform.systemPermissions.includes('batteryOptimization')
+          ? <AndroidChatBatteryGuidance /> : null}
         {/* @@@5301 自验出口。开关只表达「用户想不想收」,能不能真的弹出来由系统权限说了算。
             Electron 读不到 macOS 的通知授权状态,所以给一个能自己动手验的出口:点一下,看横幅出不出来 ——
             出来了 = 整条链通;没出来 = 卡在系统设置那一层,而不是这几个开关。 */}
