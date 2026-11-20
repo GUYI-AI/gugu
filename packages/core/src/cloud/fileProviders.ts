@@ -358,7 +358,7 @@ export function cloudFileProviders(deps: {
       const video = revision.content_type.startsWith('video/')
       if (!video && !revision.content_type.startsWith('image/')) throw new Error('File has no media preview')
       if (revision.source === 'managed-object') {
-        const key = revision.sha256 === null ? null : `https://attachments.gugu.invalid/preview/${cacheKey(await backend(context), context.actor, fileRefKey(context.ref), revision.sha256)}`
+        const key = revision.sha256 === null ? null : `https://attachments.gugu.invalid/preview/${cacheKey(await backend(context), context.actor, revision.sha256)}`
         const hit = key ? await deps.imageCache?.match(key) : null
         if (!video && hit) return hit.blob()
         const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
@@ -394,7 +394,8 @@ export function cloudFileProviders(deps: {
           }, () => objectTransport(context), session, context.signal)
           if (key) await deps.imageCache?.put(key, new Response(blob)); return blob
         }
-        // The signer owns thumbnail eligibility; formats without one are safe image sources as original blobs.
+        // The signer owns thumbnail eligibility; formats without one are safe image sources as original blobs, read with this signature.
+        context.admitted = signed
         return snapshotBlob(await full(), revision.content_type)
       }
       if (video) return snapshotBlob(await full(), revision.content_type)

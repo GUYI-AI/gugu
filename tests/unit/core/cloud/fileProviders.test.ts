@@ -182,6 +182,12 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(a.calls.map(call => call.route)).toEqual(['file-download'])
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect([...images.keys()][0]).not.toContain('lease=')
+    // The same bytes reached through another reference (the message that carried them) are the same cached picture.
+    const viaMessage = await createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })({ message_id: 'carrier' }, context.actor, { purpose: 'preview', metadata })
+    if (viaMessage.status !== 'ready') throw Error('ready expected')
+    expect(await (await viaMessage.content() as Blob).text()).toBe('cached pixels')
+    await viaMessage.dispose()
+    expect(a.calls.map(call => call.route)).toEqual(['file-download'])
     a.fetcher.mockRejectedValue(new Error('current access denied'))
     const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
     const options = { purpose: 'file' as const, metadata }
@@ -201,6 +207,8 @@ describe('one cloud provider and verified raw chunk cache', () => {
       expect(blob.type).toBe(contentType)
       expect(digest(new Uint8Array(await blob.arrayBuffer()))).toBe(row.sha256)
       expect(fetcher.mock.calls.map(call => call[0])).toEqual(['https://objects.invalid/file'])
+      // The preview's own signature carries the original: one reservation, not one for the preview and one for the bytes.
+      expect(a.calls.filter(call => call.route === 'file-download')).toHaveLength(1)
       expect(image).not.toHaveBeenCalled()
     } finally { await preview.dispose() }
   })

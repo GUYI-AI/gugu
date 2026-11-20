@@ -5,7 +5,7 @@ import { getSupabaseUrl } from '@gugu/core/cloud/config'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { createCachedFileSink, type FileChunkCache } from '@gugu/core/shared/fileCache'
 import { createFileReads, FileReadError, type FileReadOptions, type FileReadState } from '@gugu/core/shared/fileReads'
-import { fileRefKey, FileReadRevokedError, MissingFileObjectError, snapshotBlob, requireFileRange, FILE_CHUNK_BYTES, type FileActor, type FileContext, type FileHandle, type FileMetadata, type FileRef, type FileRevision, type ResolvedFile, type ResolvedPreview } from '@gugu/core/shared/fileResolver'
+import { FileReadRevokedError, MissingFileObjectError, snapshotBlob, requireFileRange, FILE_CHUNK_BYTES, type FileActor, type FileContext, type FileHandle, type FileMetadata, type FileRef, type FileRevision, type ResolvedFile, type ResolvedPreview } from '@gugu/core/shared/fileResolver'
 import type { NativeFileReadCommand, NativeFileReadIpc } from '../../electron/nativeFileHost'
 import { attachmentsEndpoint } from './attachmentsEndpoint'
 import { budgetedCacheWriter } from './attachmentCacheBudget'
@@ -214,7 +214,7 @@ export async function resolveFile(ref: FileRef, actor: FileActor, options: { pur
     const { revision } = file
     const image = revision.content_type.startsWith('image/')
     const key = revision.source === 'managed-object' && image && revision.sha256
-      ? `${attachmentCacheOrigin}/preview/${encodeURIComponent(JSON.stringify([getSupabaseUrl(), actor, fileRefKey(ref), revision.sha256]))}` : null
+      ? `${attachmentCacheOrigin}/preview/${encodeURIComponent(JSON.stringify([getSupabaseUrl(), actor, revision.sha256]))}` : null
     const content = async () => {
       if (key) {
         const hit = await (await attachmentCache()).match(key)
