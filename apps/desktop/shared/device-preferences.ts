@@ -22,6 +22,7 @@ export type DevicePreferences = {
   /** The chat notification makes a sound. */
   chatSound: boolean
   meetingReminder: boolean
+  confirmBeforeCancelAndSend: boolean
 }
 
 /** @@@1424 the factory theme is light; language follows the system; the tint is off; badge, notifications and reminder on. */
@@ -33,6 +34,7 @@ export const DEVICE_PREFERENCES_FACTORY: DevicePreferences = {
   chatMessages: true,
   chatSound: true,
   meetingReminder: true,
+  confirmBeforeCancelAndSend: true,
 }
 
 type StoredRule = {
@@ -90,6 +92,11 @@ export const STORED_PREFERENCES = {
     key: 'gugu.voiceNotes.meetingReminder',
     read: (raw) => ({ meetingReminder: raw !== 'off' }),
     write: (p) => (p.meetingReminder ? 'on' : 'off'),
+  },
+  confirmBeforeCancelAndSend: {
+    key: 'gugu.confirm-before-cancel-and-send',
+    read: (raw) => ({ confirmBeforeCancelAndSend: raw !== 'false' }),
+    write: (p) => String(p.confirmBeforeCancelAndSend),
   },
 } satisfies Record<string, StoredRule>
 

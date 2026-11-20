@@ -209,7 +209,7 @@ export function SettingsNav({ activeSection, sections: availableSections, mobile
         {user && (
           <div className="gg-settings-identity">
             <div className="gg-settings-identity-avatar">
-              <Avatar name={user.nickname} avatarUrl={user.avatarUrl} seed={user.id} size={mobile ? 'md' : 'sm'} />
+              <Avatar name={user.nickname} avatarUrl={user.avatarUrl} seed={user.id} isAgent={false} size={mobile ? 'md' : 'sm'} />
             </div>
             <div className="gg-settings-identity-name" title={user.nickname}>
               {user.nickname}

@@ -33,16 +33,16 @@ const fileOpenLog = rendererLogger('chat/file-open')
 export type PreviewFile = Pick<ParsedAttachment, 'kind' | 'fileName' | 'mimeType' | 'sizeBytes' | 'source'> & { document?: boolean }
 
 /**
- * A file the chat's file service does not hold (a session's working copy, on this computer or another): the same preview,
- * with its bytes and what it can do said by whoever opened it.
+ * A file supplied directly by the opener, such as a workspace file or a draft attachment.
+ * The opener supplies its bytes and any actions specific to its source.
  */
 export interface HostedPreviewSource {
   kind: 'hosted'
   /** The bytes' identity: changing it reads them again. */
   key: string
   read: () => Promise<Blob>
-  registerHtml: (documentHtml: string) => Promise<HtmlPreviewRegistration>
-  quote: (selection: FileViewerSelection | null) => Promise<void>
+  registerHtml?: (documentHtml: string) => Promise<HtmlPreviewRegistration>
+  quote?: (selection: FileViewerSelection | null) => Promise<void>
   /** Its text preview offers Cite on a selection (a session's file): `quote` with that selection. */
   citesSelection?: boolean
   annotation?: FileAnnotationContext
@@ -53,12 +53,12 @@ export interface HostedPreviewSource {
   /** This file's source can be edited: the preview's Edit opens it there. */
   edit?: () => void
   /** The next step under a file it cannot draw, or could not read: never a dead end. */
-  unreadableAction: ReactNode
+  unreadableAction?: ReactNode
   /** Absent: this file has no address the system's programs can reach. */
   openExternal?: () => void
   /** The programs of this computer it opens in. */
   openIn?: readonly { key: string; label: string; open: () => void }[]
-  download: () => void
+  download?: () => void
 }
 export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { source: HostedPreviewSource; document?: undefined }
 
@@ -139,11 +139,12 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const activeKey = useRef(key)
   const viewerRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (readOnly || !viewerRef.current || (file.source.kind !== 'item' && file.source.kind !== 'hosted' && !message)) return
+    const hostedQuote = file.source.kind === 'hosted' ? file.source.quote : undefined
+    if (readOnly || !viewerRef.current || (file.source.kind !== 'item' && !hostedQuote && !message)) return
     return bindFileViewerMenu(viewerRef.current, () => ({
       resource: file.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: file.source.itemId, version: file.source.version } } : undefined,
       quote: async (selection) => {
-        if (file.source.kind === 'hosted') return file.source.quote(selection)
+        if (hostedQuote) return hostedQuote(selection)
         if (file.source.kind === 'item') return quoteChatFile(file.source.itemId, file.source.version, selection)
         const { UI_EVENTS } = await import('@/lib/uiEvents')
         window.dispatchEvent(new CustomEvent(UI_EVENTS.quoteMessage, { detail: { messageId: message!.id, source: message, senderName: file.fileName, content: selection ? selectedTextQuote(selection) : file.fileName } }))
@@ -248,7 +249,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   }
   const download = () => {
     if (missing) return
-    if (file.source.kind === 'hosted') { file.source.download(); return }
+    if (file.source.kind === 'hosted' && file.source.download) { file.source.download(); return }
     void previewBytes(file).then(({ blob }) => downloadBlob(blob, savedName)).catch((error) => {
       if (rememberMissing(error)) return
       fileOpenLog.error({ error }, 'preview file download failed'); toast(t('chatArea.downloadFailed'), 'error', messageForUser(error))

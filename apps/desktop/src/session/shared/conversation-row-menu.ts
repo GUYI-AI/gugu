@@ -1,25 +1,20 @@
 import { entryItems, type MenuExcludes, type MenuLabel, type MenuTableItem } from './menu-table'
 
 /**
- * One action table for a conversation — a DM with a person, a group, a topic, a project's group (menu-table.ts). Its
- * chat-list row (desktop right-click, phone long-press), the topics popup of a group header, a project row and its
- * contacts row all draw from it. My agent's rows are its task: session-menu.ts.
+ * One action table for a conversation — a DM with a person, a group, a topic, a project's group (menu-table.ts). The
+ * topics popup of a group header, a project row and its contacts row draw from it. A chat-list row (desktop right-click,
+ * phone long-press) draws from the personal table below ({@link personalConversationMenu}).
  *
  * Dissolving a group and deleting a topic are in no menu (menu-table.ts @@@menu-order, rule 4): rare, irreversible and
  * felt by every member, they are at the bottom of the group's settings page and of the topic's members page.
  */
 export type ConversationRowAction =
-  | 'open-chat' | 'set-alias' | 'mark-read' | 'mark-unread' | 'pin' | 'notifications' | 'mark-all-read'
+  | 'open-chat' | 'set-alias' | 'mark-read' | 'mark-unread' | 'pin' | 'notifications'
   | 'mark-topics-read' | 'leave-group' | 'remove-contact' | 'remove-project'
-export type ConversationMenuEntry = 'chat-row' | 'topic-popup' | 'project-row' | 'contacts' | 'contacts-group'
-/** Deleting my agent's DM (the session table's delete-chat) requires it archived or removed, matching delete_my_dm_conversation. */
-export function ownedAgentDmCanDelete(ownedAgentDm: { session_archived_at?: string | null; removed_at?: string | null }): boolean {
-  return ownedAgentDm.session_archived_at != null || ownedAgentDm.removed_at != null
-}
+export type ConversationMenuEntry = 'topic-popup' | 'project-row' | 'contacts' | 'contacts-group'
 export type ConversationRowMenuState = {
   kind: 'dm' | 'group' | 'topic' | 'project'
   hasUnread: boolean
-  hasAnyUnread?: boolean
   pinned?: boolean
   notificationsMuted?: boolean
   /** Unread among the topics of the topic's group (the topics popup). */
@@ -36,15 +31,9 @@ const LEAVE_IN_CONTACTS_OR_ROW = 'Leaving is on the group\'s own row in the chat
 const PROJECT_ROW = 'The project row stands for the project; its conversation\'s own actions are on its chat-list row.'
 /** The actions an entry leaves out, each with its reason. */
 export const CONVERSATION_MENU_EXCLUDES: MenuExcludes<ConversationMenuEntry, ConversationRowAction> = {
-  'chat-row': {
-    'open-chat': 'Clicking the row opens it.',
-    'mark-topics-read': 'Only the topics popup lists one group\'s topics.',
-    'remove-contact': 'Removing a friend is a change to the contact, offered where the person is listed (contacts); the chat row deletes conversations only.',
-  },
   'topic-popup': {
     'open-chat': 'Clicking the row opens it.',
     'mark-unread': 'The popup is a quick reader of the group\'s topics.',
-    'mark-all-read': 'The popup marks its own topics read (mark-topics-read); the whole chat list is marked from the chat list.',
     pin: 'The popup has its own topic pin, the icon on each row (it orders the topics in this popup).',
     notifications: 'The popup is a quick reader of the group\'s topics; notifications are on the topic\'s chat-list row.',
     'leave-group': LEAVE_IN_CONTACTS_OR_ROW,
@@ -54,17 +43,14 @@ export const CONVERSATION_MENU_EXCLUDES: MenuExcludes<ConversationMenuEntry, Con
     'mark-unread': PROJECT_ROW,
     pin: PROJECT_ROW,
     notifications: PROJECT_ROW,
-    'mark-all-read': 'Acts on the whole chat list, not on the project list.',
     'mark-topics-read': 'Only the topics popup lists one group\'s topics.',
     'leave-group': PROJECT_ROW,
   },
   contacts: {
-    'mark-all-read': 'Acts on the whole chat list, not on this contact.',
     'mark-topics-read': 'Only the topics popup lists one group\'s topics.',
   },
   'contacts-group': {
     'open-chat': 'Clicking a group row in contacts opens the group\'s page, whose first button enters the chat.',
-    'mark-all-read': 'Acts on the whole chat list, not on this group.',
     'mark-topics-read': 'Only the topics popup lists one group\'s topics.',
   },
 }
@@ -98,8 +84,6 @@ function allItems(state: ConversationRowMenuState): ConversationMenuItem[] {
   )
   // 更多 — alias: set once per friend.
   if (state.friend) items.push({ id: 'set-alias', label: contacts('contextMenu.setAlias'), icon: 'alias', fold: true })
-  // 更多 — mark all read: acts on the whole chat list, not on this row.
-  items.push({ id: 'mark-all-read', label: messaging('chatList.markAllRead'), icon: 'read', fold: true, disabled: !state.hasAnyUnread })
   // 更多 — the group's topics, as one list: only a list of one group's topics offers it (the topics popup).
   if (state.kind === 'topic') items.push({ id: 'mark-topics-read', label: messaging('chatList.markTopicsRead'), icon: 'read', fold: true, disabled: !state.hasTopicsUnread })
   // 更多, last — leaving a group or removing a friend: rare and destructive (back only by being invited or added
@@ -138,20 +122,22 @@ export function hasUnreadInRows(rows: readonly { unread_count: number; is_marked
 export function conversationCanHide(kind: string | null): boolean {
   return kind === 'dm' || kind === 'ai' || kind === 'group' || kind === 'topic'
 }
-export type PersonalConversationAction = 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'mark-all-read' | 'unpin-from-sidebar' | 'delete-chat'
+export type PersonalConversationAction = 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'archive' | 'unpin-from-sidebar' | 'delete-chat'
+/** `agent`: the DM's peer is an Agent, whose history is its task's: no clearing. `canArchive`: it is my active Agent. */
 export type PersonalConversationMenuState = {
   canDelete: boolean; pinned?: boolean; pinnedToSidebar?: boolean; notificationsMuted?: boolean
-  hasUnread: boolean; hasAnyUnread?: boolean
+  hasUnread: boolean; agent?: boolean; canArchive?: boolean
 }
-export function personalConversationMenu(state: PersonalConversationMenuState): {
-  id: PersonalConversationAction; label: string; icon: 'pin' | 'read' | 'notifications' | 'hide' | 'sidebar' | 'trash'; disabled?: boolean; fold?: boolean; danger?: boolean
-}[] {
-  return [
-    { id: 'pin', label: state.pinned ? 'unpin' : 'pin', icon: 'pin' },
-    { id: 'mark-read', label: 'markRead', icon: 'read', disabled: !state.hasUnread },
-    { id: 'notifications', label: state.notificationsMuted ? 'enableNotifications' : 'disableNotifications', icon: 'notifications' },
-    ...(state.canDelete ? [{ id: 'hide-chat', label: 'hide', icon: 'hide' } as const] : []),
-    ...(state.pinnedToSidebar ? [{ id: 'unpin-from-sidebar', label: 'unpinFromSidebar', icon: 'sidebar', fold: true } as const] : []),
-    ...(state.canDelete ? [{ id: 'delete-chat', label: 'clearHistory', icon: 'trash', danger: true } as const] : []),
+export function personalConversationMenu(state: PersonalConversationMenuState): MenuTableItem<PersonalConversationAction>[] {
+  const items: MenuTableItem<PersonalConversationAction>[] = [
+    { id: 'pin', label: messaging(state.pinned ? 'chatList.unpin' : 'chatList.pin'), icon: 'pin' },
+    { id: 'mark-read', label: messaging('chatList.markRead'), icon: 'read', disabled: !state.hasUnread },
+    { id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell' },
   ]
+  if (state.canDelete) items.push({ id: 'hide-chat', label: messaging('chatList.hide'), icon: 'hide' })
+  // The agent's archive, as its tab, sidebar row and contacts row name it (session-menu.ts).
+  if (state.canArchive) items.push({ id: 'archive', label: { ns: 'session', key: 'task.archiveTaskTitle' }, icon: 'archive' })
+  if (state.pinnedToSidebar) items.push({ id: 'unpin-from-sidebar', label: messaging('chatList.unpinFromSidebar'), icon: 'sidebar-off', fold: true })
+  if (state.canDelete && !state.agent) items.push({ id: 'delete-chat', label: messaging('chatList.clearHistory'), icon: 'trash', danger: true })
+  return items
 }

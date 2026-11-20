@@ -172,3 +172,19 @@ it('opens the existing full-usage page and supports Escape dismissal', async () 
     await until('Escape dismisses the usage popup', () => document.querySelector('[data-testid="usage-popover"]') === null)
   } finally { window.removeEventListener(UI_EVENTS.openSettings, settings) }
 })
+
+it('[#3368] draws every ring centred on its rail button, with the popover closed and open', async () => {
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><SidebarUsage /></SessionLocalizationProvider></QueryClientProvider>)
+  await until('both rings are drawn', () => document.querySelectorAll('.gg-usage-ring-track').length === 2)
+  const offsets = () => {
+    const button = page.getByTestId('sidebar-usage').element().getBoundingClientRect()
+    return [...document.querySelectorAll('.gg-usage-ring-track')].map((ring) => {
+      const box = ring.getBoundingClientRect()
+      return Math.max(Math.abs(box.x + box.width / 2 - (button.x + button.width / 2)), Math.abs(box.y + box.height / 2 - (button.y + button.height / 2)))
+    })
+  }
+  expect(Math.max(...offsets())).toBeLessThan(1)
+  await userEvent.click(page.getByTestId('sidebar-usage'))
+  await until('the nearby usage popup is open', () => document.querySelector('[data-testid="usage-popover"]') !== null)
+  expect(Math.max(...offsets())).toBeLessThan(1)
+})

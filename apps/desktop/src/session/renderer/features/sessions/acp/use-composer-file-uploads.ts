@@ -211,7 +211,8 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
     target.current = null;
   });
 
-  return { add, retry, toggleQuality, keepOnly, prepare, waitForUploads, unsettled, files, has, forget, clear };
+  return { add, retry, toggleQuality, keepOnly, prepare, waitForUploads, unsettled, files, has, forget, clear,
+    draftFile: (chipId: string) => uploads.get(chipId)?.file };
 }
 
 export function useComposerFileUploads(args: ComposerFileUploadArgs) {

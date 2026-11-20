@@ -25,7 +25,8 @@
 .gg-usage-section, .gg-usage-ring { --usage-fill:var(--quota-fill); --usage-edge:var(--quota-edge); --usage-track:var(--quota-track); }
 .gg-usage-track { height:5px; margin:7px 0 6px; border-radius:var(--radius-control); background:var(--usage-track); overflow:hidden; }
 .gg-usage-track > span { display:block; height:100%; border-radius:inherit; background:var(--usage-fill); box-shadow:inset 0 0 0 1px var(--usage-edge); }
-.gg-usage-rings { overflow:visible; }
+/* The svg itself turns (start at 12 o'clock): the rail's motion rule (`[data-rail] svg *`) re-origins any child's rotate(). */
+.gg-usage-rings { overflow:visible; rotate:-90deg; }
 .gg-usage-ring-track { stroke:var(--usage-track); }
 .gg-usage-ring-edge { stroke:var(--usage-edge); }
 .gg-usage-ring-fill { stroke:var(--usage-fill); }
