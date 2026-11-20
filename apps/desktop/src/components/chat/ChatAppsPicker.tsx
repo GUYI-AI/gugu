@@ -30,7 +30,7 @@ const chatAppHasFiles = replica({
   },
 })
 
-/** The Apps to list, and whether some file-only App is not answered yet (its row is a placeholder, ❌「无群应用」). */
+/** The Apps to list, and whether some file-only App is not answered yet (its row is a placeholder, ❌「无应用」). */
 function useChatApps(chatId: string) {
   const all = installedExtensionsStore.chatOpenableApps
   const fileOnly = all.filter((app) => !installedExtensionsStore.mainTabOf(app.extensionId))
