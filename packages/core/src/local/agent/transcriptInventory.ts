@@ -1,3 +1,4 @@
+import { JsonlFramer } from '../jsonl.mjs'
 import { open, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, join, sep } from 'node:path'
 import type { JsonlSearchResult } from './runtimeInfo'
@@ -71,7 +72,7 @@ async function listFilesByExtension(
   return files
 }
 
-async function readFirstLines(
+export async function readFirstLines(
   path: string,
   count: number,
   signal?: AbortSignal
@@ -79,21 +80,23 @@ async function readFirstLines(
   const chunkSize = 64 * 1024
   const maxBytes = 1024 * 1024
   const buffer = Buffer.alloc(chunkSize)
-  let text = ''
+  const frames = new JsonlFramer()
+  const lines: string[] = []
   let position = 0
   let handle
   try {
     signal?.throwIfAborted()
     handle = await open(path, 'r')
-    while (position < maxBytes && text.split('\n').length <= count) {
+    while (position < maxBytes && lines.length < count) {
       signal?.throwIfAborted()
       const { bytesRead } = await handle.read(buffer, 0, chunkSize, position)
       signal?.throwIfAborted()
       if (bytesRead === 0) break
       position += bytesRead
-      text += buffer.subarray(0, bytesRead).toString('utf8')
+      lines.push(...frames.write(buffer.subarray(0, bytesRead)))
     }
-    return text.split('\n').slice(0, count)
+    if (lines.length < count) lines.push(...frames.end())
+    return lines.slice(0, count)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error

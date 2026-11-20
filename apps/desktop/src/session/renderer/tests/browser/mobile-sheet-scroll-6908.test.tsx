@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { CreateTarget } from '@/mobile/agent-watch/CreateTarget';
+import { CreateTarget } from '@/components/session-watch/CreateTarget';
 import { Sheet } from '@/components/ui/Sheet';
 import { MemberProfilePopover } from '@/components/MemberProfilePopover';
 import { RequestDetailSheet } from '@/components/requests/RequestDetailSheet';
@@ -23,7 +23,7 @@ import type { MemberProfileCardModel } from '@/components/MemberProfileCard';
 import type { ChatItem } from '@gugu/core/shared/types/chat';
 import '@/i18n';
 import '@/styles/tokens.css';
-import '@/mobile/agent-watch/agent-watch.css';
+import '@/components/session-watch/agent-watch.css';
 
 // 资料卡、申请详情、发送到页经 lib/supabase 在加载时就建客户端,没有地址会当场抛;浏览器 project 没有 guguTestEnv,这里不连网,给个假地址。
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));

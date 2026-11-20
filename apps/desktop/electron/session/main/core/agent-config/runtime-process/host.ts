@@ -28,7 +28,7 @@ import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
-import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
+import { createHarnessConnection, renameHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
 import { detectCustomModelProtocols, listCustomModels, saveCustomModel, removeCustomModel, testCustomModel } from '@main/core/agents/custom-models';
 import { scanAgentHomes, importHarnessHome, diffHarnessHome, reimportHarnessHome } from '@main/core/agents/agent-homes';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
@@ -232,6 +232,7 @@ export function withHostResolvedCli(
     testCustomModel: (input) => connectionOperation(() => testCustomModel(input)),
     detectCustomModelProtocols: (input) => connectionOperation(() => detectCustomModelProtocols(input)),
     createConnection: (input) => connectionOperation(() => createHarnessConnection(input)),
+    renameConnection: (input) => connectionOperation(() => renameHarnessConnection(input)),
     // 读模型清单在宿主里做:key 只发给那个地址本身(#2507)。
     removeConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
       // 按原生解析取这份 env:❌ 解开要删的那把 key(它解不开时也得删得掉)。

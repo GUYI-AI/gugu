@@ -2,13 +2,14 @@ import { questionAnswerError, type PendingRequest, type Settlement } from '@gugu
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import { log } from '@main/lib/logger';
 import type { AskAnswer } from '../asks';
+import { publicQuestionCard, type PublicQuestionCard } from './agent-question-model';
 
 type Question = PendingRequest & { origin: NonNullable<PendingRequest['origin']> };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The archive owns the question and stable outbox id, rather than a process-local callback. */
-export function questionDeliveryPayload(sourceLink: string | undefined, answerMessageId: string) {
-  return { sourceLink: sourceLink ?? null, answerMessageId, deliveryVersion: 1 };
+export function questionDeliveryPayload(sourceLink: string | undefined, answerMessageId: string, publicCard?: PublicQuestionCard) {
+  return { sourceLink: sourceLink ?? null, answerMessageId, deliveryVersion: 1, ...(publicCard ? { publicCard } : {}) };
 }
 
 export function restoredAgentQuestion(settlement: Settlement): { request: Question; answerMessageId: string; answer?: AskAnswer } | null {
@@ -25,10 +26,12 @@ export function restoredAgentQuestion(settlement: Settlement): { request: Questi
     : settlement.state === 'pending' && settlement.itemId.startsWith('agent-question:') ? legacyId : '';
   if (!uuid.test(answerMessageId)) return null;
   const request: Question = { itemId: settlement.itemId, kind: 'question', title: settlement.title,
+    skippable: true, canDiscuss: true,
     questions: settlement.questions, options: settlement.options ?? settlement.questions[0].options,
     ...(settlement.askedAt !== undefined ? { askedAt: settlement.askedAt } : {}),
-    origin: { source: 'agent-question', payload: questionDeliveryPayload(typeof data.sourceLink === 'string' ? data.sourceLink : undefined, answerMessageId) } };
+    origin: { source: 'agent-question', payload: questionDeliveryPayload(typeof data.sourceLink === 'string' ? data.sourceLink : undefined, answerMessageId,publicQuestionCard(payload)) } };
   if (settlement.state === 'pending') return { request, answerMessageId };
+  if (settlement.optionId === 'discuss') return { request, answerMessageId, answer: { optionId: 'discuss', by: settlement.resolvedBy ?? 'owner' } };
   if (!settlement.optionId) return null;
   try {
     const answers: unknown = JSON.parse(settlement.optionId);
@@ -42,16 +45,17 @@ export function deliverAgentQuestionAnswer(sessionId: string, projectId: string,
   void result.then(async (answer) => {
     if (typeof answer === 'string') return;
     const submitted = Boolean(answer.answers);
+    const discussing = answer.optionId === 'discuss';
     const sourceLink = (request.origin.payload as { sourceLink?: string }).sourceLink;
     const source = sourceLink ? parseConversationLink(sourceLink) : null;
-    const resultText = JSON.stringify({ question_id: request.itemId, state: submitted ? 'answered' : 'withdrawn',
+    const resultText = JSON.stringify({ question_id: request.itemId, state: discussing ? 'discuss' : submitted ? 'answered' : 'withdrawn',
       questions: request.questions?.map(q => q.question), ...(submitted ? { answers: answer.answers } : {}),
       ...(sourceLink ? { source_link: sourceLink } : {}),
       ...(source?.messageId ? { reply_destination: { chat_id: source.chatId, reply_to_message_id: source.messageId } } : {}),
     }).replaceAll('<', '\\u003c');
     const { sendMessage } = await import('./sendMessage');
     const sent = await sendMessage({ projectId, sessionId, clientMessageId: answerMessageId,
-      text: `<gugu_question_answer>\n${resultText}\n</gugu_question_answer>\nThe owner explicitly ${submitted ? 'submitted these answers' : 'withdrew this question'} in Gugu. Resume only the corresponding work; forward the answer to its executor. Any reply about this work belongs to reply_destination, never an unrelated later greeting.`, kind: 'session-direct' });
+      text: `<gugu_question_answer>\n${resultText}\n</gugu_question_answer>\nThe owner explicitly ${discussing ? 'chose to discuss first; this question is no longer waiting for answers' : submitted ? 'submitted these answers' : 'withdrew this question'} in Gugu. Skipping a question or choosing to discuss first is not consent. Resume only the corresponding work; forward the answer to its executor. Any reply about this work belongs to reply_destination, never an unrelated later greeting.`, kind: 'session-direct' });
     if (sent.status === 'outcome-unknown') log.warn('agent question answer delivery outcome is unknown', { sessionId, itemId: request.itemId });
   }).catch((error: unknown) => log.error('agent question answer delivery failed', { sessionId, itemId: request.itemId, error: String(error) }));
 }

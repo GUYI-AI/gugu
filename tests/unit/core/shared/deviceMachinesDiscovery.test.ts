@@ -3,7 +3,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { createDeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import { deviceMachines } from '@gugu/core/shared/deviceMachines'
 import { remoteWorkspaceDevices } from '@/hooks/remoteWorkspaceDevices'
-import { directoryMachines, visibleMachines } from '@/mobile/agent-watch/machine-list'
+import { directoryMachines, visibleMachines } from '@/components/session-watch/machine-list'
 
 const endpoint = (id: string, extra: Partial<Device> = {}): Device => ({
   device_id: id, machine_id: 'hardware', label: id, hostname: 'host', platform: 'linux',

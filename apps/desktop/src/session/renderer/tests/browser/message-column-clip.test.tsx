@@ -1,8 +1,8 @@
 /**
- * A laid-out message row's column is content-visibility:auto (tokens.css), which clips paint and hit testing to the column box
- * even while the row is on screen. What the bubble draws outside the column must still paint and take clicks: the read
+ * A laid-out message row's body is content-visibility:auto (tokens.css), which clips paint and hit testing to the body box
+ * even while the row is on screen. What the bubble draws beside its column must still paint and take clicks: the read
  * receipt ring left of an own bubble that fills the column (desktop, and the phone's 44px tap area), and the bubble tail.
- * Real MessageBubble in a laid-out row; judged by hit testing (clipped paint is not hit).
+ * Real MessageBubble in a real MessageRow; judged by hit testing (clipped paint is not hit).
  */
 import { createNode, createReactHarness, message, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -17,6 +17,7 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<obj
 vi.mock('@/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }));
 
 const { MessageBubble } = await import('@/components/chat/MessageBubble');
+const { MessageRow } = await import('@/components/chat/MessageRow');
 
 const lin: MemberProfileCardModel = { id: 'sender-1', displayName: '林知夏', avatar: null, email: null, type: 'human', role: 'member' } as MemberProfileCardModel;
 // Long enough that the bubble fills its column, so whatever is anchored beside it lies outside the column.
@@ -30,23 +31,24 @@ afterEach(() => harness?.cleanup());
 async function renderRow(isMine: boolean, compactMobile: boolean) {
   harness = createReactHarness();
   harness.container.style.width = compactMobile ? '390px' : '720px';
-  await renderWithAppProviders(harness, createNode('div', { role: 'listitem', 'data-laid-out': '', className: 'gg-msg-row' },
+  const id = `clip-${++seq}`;
+  await renderWithAppProviders(harness, createNode(MessageRow, { messageId: id },
     createNode(MessageBubble, {
-      msg: message({ id: `clip-${++seq}`, sender_user_id: 'sender-1', created_at: '2026-11-15T09:41:00.000Z', content: TEXT, is_mine: isMine }),
+      msg: message({ id, sender_user_id: 'sender-1', created_at: '2026-11-15T09:41:00.000Z', content: TEXT, is_mine: isMine }),
       onReaction: vi.fn(), memberReadSeqs: {}, onQuote: vi.fn(), onForward: vi.fn(), onDelete: vi.fn(),
       compactMobile, isGroup: true, memberProfile: lin, memberProfiles: { 'sender-1': lin },
       readReceiptRead: 0, readReceiptTotal: 2,
     })));
-  await until('bubble rendered', () => !!harness.container.querySelector('[data-bubble-tail]'));
+  await until('row laid out', () => !!harness.container.querySelector('[data-bubble-tail]') && harness.container.querySelector('[role=listitem]')!.hasAttribute('data-laid-out'));
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const column = harness.container.querySelector<HTMLElement>('[data-message-bubble-column]')!
-  expect(getComputedStyle(column).contentVisibility).toBe('auto')
+  expect(getComputedStyle(harness.container.querySelector<HTMLElement>('[data-row-body]')!).contentVisibility).toBe('auto')
   return { column: column.getBoundingClientRect(), bubble: harness.container.querySelector<HTMLElement>('[data-bubble-tail]')! }
 }
 
 const hit = (x: number, y: number) => document.elementFromPoint(x, y)
 
-describe('a laid-out message column does not clip what the bubble draws beside it', () => {
+describe('a laid-out message row does not clip what the bubble draws beside its column', () => {
   for (const compactMobile of [false, true]) {
     it(`${compactMobile ? 'phone' : 'desktop'}: the read receipt left of an own bubble that fills the column paints and takes clicks`, async () => {
       const { column } = await renderRow(true, compactMobile);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LOAD_RETRY_DELAYS_MS, RECORD_WAIT_RETRY_MS, RECORD_WAIT_WINDOW_MS, loadRetryDelay } from '../../../apps/desktop/src/mobile/agent-watch/record-wait'
+import { LOAD_RETRY_DELAYS_MS, RECORD_WAIT_RETRY_MS, RECORD_WAIT_WINDOW_MS, loadRetryDelay } from '../../../apps/desktop/src/components/session-watch/record-wait'
 
 // 读时间线的重试判据(record-wait.ts):会自己好的自己再试,不会好的立刻报。
 describe('loadRetryDelay', () => {

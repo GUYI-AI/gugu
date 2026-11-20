@@ -1,4 +1,5 @@
 import type { MessageItem, MessageSendState } from '../types/chat'
+import { parseComposerCard } from './taskCardModels'
 
 type DeliveryStatus = NonNullable<MessageItem['delivery_status']>
 
@@ -31,9 +32,18 @@ export function mergeMessageState(existing: MessageItem | undefined, incoming: M
     existing.readers?.length || incoming.readers?.length
       ? [...new Set([...(existing.readers ?? []), ...(incoming.readers ?? [])])]
       : incoming.readers
+  // Question settlement is terminal. A page requested before it committed must not reopen the same card.
+  let content = incoming.content
+  if (existing.content_type === 'card' && incoming.content_type === 'card' && !incoming.retracted_at) {
+    const previousCard = parseComposerCard(existing.content)
+    const nextCard = parseComposerCard(incoming.content)
+    if (previousCard?.type === 'question' && previousCard.settled && nextCard?.type === 'question'
+      && previousCard.questionId === nextCard.questionId && !nextCard.settled) content = existing.content
+  }
 
   return {
     ...incoming,
+    content,
     // Body-only rows (page reads, message_created revisions) carry no overlay snapshot.
     reactions: incoming.reactions ?? existing.reactions,
     delivery_blocks: incoming.delivery_blocks ?? existing.delivery_blocks,

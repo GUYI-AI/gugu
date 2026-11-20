@@ -24,7 +24,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpcOn: (device: string | null) => {
   scope.ipcRoute(device); return { sessionTimeline: { sessionVisible: scope.visible, sessionReadState: scope.snapshot } }
 } }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (device: string) => {
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: (device: string) => {
   scope.mobileRoute(device); return { sessionTimeline: { sessionVisible: scope.visible, sessionReadState: scope.snapshot } }
 } }))
 let harness: ReturnType<typeof createReactHarness>

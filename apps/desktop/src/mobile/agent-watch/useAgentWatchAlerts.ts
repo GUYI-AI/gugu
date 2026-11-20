@@ -1,3 +1,4 @@
+import { useAndroidPushConfirmed } from '../android-push/androidPushState'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -11,10 +12,10 @@ import {
   type AgentWatchAlert,
   type AgentWatchStatusMap,
 } from '@/lib/agent-wait/agent-watch-alerts'
-import * as sessionpageRpc from './sessionpage-rpc'
+import * as sessionpageRpc from '../../components/session-watch/sessionpage-rpc'
 import { startSessionListSync } from '@/session/shared/remote-sessions/session-list-sync'
 import { registerDeviceSessionsRetry, retainDeviceSessions, updateDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
-import { workspaceDevices } from './machine-list'
+import { workspaceDevices } from '../../components/session-watch/machine-list'
 import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner'
 
 /**
@@ -28,7 +29,8 @@ import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner'
  * 两种到达方式，按屏幕在不在人眼前分：
  *   · 页面可见 → 应用内提示条。
  *   · 刚切走（页面还活着但不可见）→ 浏览器本地通知。
- * ❌ 不接系统级推送（spec 一期明写不做）：这条通知由这张页自己发，App 被杀掉就没有了。
+ * 本 hook 只处理存活页面的本地提醒；#3123 的系统推送由 android-push 统一登记。
+ * 服务端确认后释放本地后台占用，后台展示由系统推送接管。
  *
  * 权限只在**用户动作之后**要一次（点开一条会话 = 他确实要看管它），且只要一次：
  * 一进 App 就弹权限框是最招人烦的那种，多数人会直接拒掉，然后这个功能永远用不了。
@@ -54,6 +56,7 @@ export function useAgentWatchFocus(focus: AgentWatchFocus): void {
 }
 
 export function useAgentWatchAlerts(devices: readonly Device[]): void {
+  const remotePush = useAndroidPushConfirmed()
   const { t } = useTranslation('main')
   const ownerId = useAuth().user?.id ?? null
   const statusRef = useRef<Record<string, AgentWatchStatusMap>>({})
@@ -105,7 +108,7 @@ export function useAgentWatchAlerts(devices: readonly Device[]): void {
      * 谁开谁关:它跟着这套订阅的寿命走,没有在线机器或退出登录就关掉,❌ 不留一条没人要的常驻通知在通知栏。
      */
     // 与 #7199 手机当设备共用这一条常驻通知:各自登记,最后一个放手才关(backgroundWatchClaims)。起不来的错在那里照实记。
-    if (platform.capabilities.backgroundWatch) {
+    if (platform.capabilities.backgroundWatch && !remotePush) {
       stops.push(claimBackgroundWatch('agentWatch', tRef.current('agentWatch.backgroundWatch', { count: onlineIds.length })))
     }
 
@@ -168,7 +171,7 @@ export function useAgentWatchAlerts(devices: readonly Device[]): void {
     }
     // onlineIds 是每次渲染新建的数组，进依赖会让这个 effect 每帧重挂；key 是它的稳定投影。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, ownerId])
+  }, [key, ownerId, remotePush])
 }
 
 let nativeAlertPermissionAsked = false

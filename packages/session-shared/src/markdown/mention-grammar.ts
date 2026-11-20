@@ -5,6 +5,8 @@
  * Pure TypeScript — no remark/unified dependencies.
  */
 
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral';
+
 /** Discriminator for the three inline-chip syntax forms. */
 export type MentionSyntax = 'at-bare' | 'at-bracket' | 'slash';
 
@@ -145,12 +147,6 @@ function findClosingParen(line: string, start: number): number {
 const NEEDS_ANGLE = /[\s()]/;
 
 /**
- * A label inside `@[…]`: a lone `]` ends the link text and the whole mention is lost (App 引用 pill 实测 10-14: `a]b`,
- * `图 2]` drew no pill at all), so brackets and backslashes are escaped; remark reads the label back unescaped.
- */
-const bracketLabel = (label: string) => label.replace(/[\\[\]]/g, (c) => `\\${c}`);
-
-/**
  * A draft's words, then its pills: a line apart, or a blank line when the words end in a `> ` quote — a quote's
  * last line would otherwise run on into the pills and take them in.
  */
@@ -213,11 +209,11 @@ export function stringifyMention(m: {
 }): string {
   if (m.kind === 'custom' && m.target && m.target !== m.label) {
     const dest = NEEDS_ANGLE.test(m.target) ? `<${m.target}>` : m.target;
-    return `@[${bracketLabel(m.label)}](${dest})`;
+    return `@[${markdownLiteral(m.label)}](${dest})`;
   }
   if ((m.kind === 'file' || m.kind === 'issue') && m.target) {
     const dest = NEEDS_ANGLE.test(m.target) ? `<${m.target}>` : m.target;
-    return `@[${bracketLabel(m.label)}](${dest})`;
+    return `@[${markdownLiteral(m.label)}](${dest})`;
   }
   return `@${m.target ?? m.label}`;
 }

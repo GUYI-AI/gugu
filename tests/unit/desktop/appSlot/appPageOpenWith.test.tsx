@@ -31,7 +31,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [] }) }))
 vi.mock('../../../../apps/desktop/src/store/theme', () => ({ useTheme: () => ({ theme: 'light' }) }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ onMachineChannel: () => () => undefined }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ onMachineChannel: () => () => undefined }))
 
 const { SessionAppFrame } = await import('../../../../apps/desktop/src/components/appSlot/SessionAppFrame')
 

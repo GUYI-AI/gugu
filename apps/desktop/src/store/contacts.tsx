@@ -21,7 +21,7 @@ import { type AgentLook } from '../components/agentAvatar/look'
 import { recordContactsRender } from '../lib/perfCounters'
 import { isMyAssistant } from '../lib/myAssistant'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
-import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import { renameOwnedAgent } from '../lib/archiveOwnedAgent'
 import { i18n } from '../i18n'
 

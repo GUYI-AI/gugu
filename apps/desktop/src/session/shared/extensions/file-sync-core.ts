@@ -1,4 +1,5 @@
 import { accessTokenExpirySeconds, userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider';
+import { serverNow } from '@gugu/core/shared/serverClock';
 import type { ExtensionCapability } from './manifest';
 import {
   FRAME_TYPE,
@@ -217,7 +218,8 @@ export class SyncConnection {
 
   get acceptsNewFiles(): boolean {
     // The auth coordinator owns refresh; reopening with the same still-valid token cannot renew it.
-    return this.state !== 'closed' && this.expiresAt > Date.now();
+    // A JWT's `exp` is on the backend's clock (`@@@server-clock`).
+    return this.state !== 'closed' && this.expiresAt > serverNow();
   }
 
   send(frame: Uint8Array): void {

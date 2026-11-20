@@ -24,6 +24,7 @@ import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
 import { SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
+import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
 // #2548 the desktop left sidebar, one list: the head (collapse, bell, 已安排, 会话历史, search), 创建智能体 + 「+」, then ONE list
 // (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome). 资源库 and 设置
@@ -183,6 +184,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
+          <UnfinishedAgentCreates collapsed={railed} />
           {/* @@@sidebar-single-scroller — the list's one scroll container, with one content layer in it: the chat list
               (ChatListPanel, @@@sidebar-chat-window) virtualises its lines against these two. It must be a **block**: as a
               flex column the content layer is shrunk to the container's height, scrollHeight collapses with it and the

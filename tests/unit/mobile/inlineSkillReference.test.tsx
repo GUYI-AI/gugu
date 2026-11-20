@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { afterEach, expect, it } from 'vitest'
 import { PromptEditor } from '../../../packages/session-ui/src/react/components/prompt-editor/prompt-editor'
 import type { PromptEditorRef } from '../../../packages/session-ui/src/react/components/prompt-editor/types'
-import { creationSkillInput } from '../../../apps/desktop/src/mobile/agent-watch/create-skill-draft'
+import { creationSkillInput } from '../../../apps/desktop/src/components/session-watch/create-skill-draft'
 import { createReactHarness } from '../../support/testHarness'
 
 const harness = createReactHarness()

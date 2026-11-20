@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
@@ -539,7 +541,8 @@ function createSessionState() {
 }
 
 function createDeps(context, injected = {}, state = createSessionState()) {
-  const fetchImpl = injected.fetch ?? fetch
+  // Its answers tune this process's `serverNow()` (`@@@server-clock`): message `created_at` is the database's clock.
+  const fetchImpl = withServerClock(injected.fetch ?? fetch)
   return {
     restGet: (path, profile) => restGet(context, path, profile, fetchImpl),
     restInsert: (table, row, profile) => restInsert(context, table, row, profile, fetchImpl),
@@ -769,8 +772,7 @@ async function workspaceRpcItem(deps, name, body, label) {
  * F112 Only the item's id: it is unique, and the host finds its group from it.
  */
 export function workspaceFileLink(item) {
-  const name = String(item.filename ?? '').replace(/[[\]\\]/g, (c) => `\\${c}`)
-  return `[${name}](${groupFileLink(item.id)})`
+  return `[${markdownLiteral(String(item.filename ?? ''))}](${groupFileLink(item.id)})`
 }
 function summarizeWorkspaceItem(item) {
   return {
@@ -1427,7 +1429,7 @@ const FLOOD_LIMITS = [
 
 async function floodNotice(deps, chatId, kind) {
   try {
-    const now = Date.now()
+    const now = serverNow()
     const since = new Date(now - FLOOD_LIMITS.at(-1).ms).toISOString()
     const rows = await deps.restGet(
       `messages?chat_id=eq.${enc(chatId)}&created_at=gte.${enc(since)}&deleted_at=is.null&select=sender_user_id,created_at&order=seq.desc&limit=200`,

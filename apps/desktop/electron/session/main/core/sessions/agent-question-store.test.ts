@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PendingRequest } from '@gugu/session-core/session-record';
-import { readAgentQuestionRecords, rememberAgentQuestion, settleAgentQuestionRecord } from './agent-question-store';
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, readAgentQuestionRecords, rememberAgentQuestion, rememberPublicQuestionCard, settleAgentQuestionRecord } from './agent-question-store';
 import { restoredAgentQuestion } from './agent-question-delivery';
 import { log } from '@main/lib/logger';
 
@@ -46,12 +46,39 @@ describe('durable agent question state, independent of transcript archives', () 
     expect(recovered).toMatchObject({ answerMessageId: '22222222-2222-4222-8222-222222222222', answer: { answers: [{ selected: ['PATH'] }] } });
     expect(() => settleAgentQuestionRecord('session-1', id, { state: 'resolved', optionId: '[]', by: 'second' })).toThrow(/already settled/);
   });
+  it('advertises skip support after restoring an older pending question and retains a skipped answer', () => {
+    rememberAgentQuestion('session-1', question());
+    const pending = readAgentQuestionRecords('session-1')[0];
+    expect(pending.skippable).toBeUndefined();
+    expect(restoredAgentQuestion(pending)?.request.skippable).toBe(true);
+    settleAgentQuestionRecord('session-1', id, { state: 'resolved', optionId: '[{"selected":[],"skipped":true}]', by: 'phone' });
+    expect(restoredAgentQuestion(readAgentQuestionRecords('session-1')[0])).toMatchObject({
+      request: { skippable: true }, answer: { answers: [{ selected: [], skipped: true }] },
+    });
+  });
   it('never revives a cancelled card, even when a timeline reports the old request again', () => {
     rememberAgentQuestion('session-1', question());
     settleAgentQuestionRecord('session-1', id, { state: 'cancelled', optionId: null, by: null });
     rememberAgentQuestion('session-1', question());
     expect(readAgentQuestionRecords('session-1')[0].state).toBe('cancelled');
     expect(restoredAgentQuestion(readAgentQuestionRecords('session-1')[0])).toBeNull();
+  });
+  it('restores a discussion receipt with the same durable delivery id', () => {
+    rememberAgentQuestion('session-1', question());
+    settleAgentQuestionRecord('session-1', id, { state: 'resolved', optionId: 'discuss', by: 'owner' });
+    expect(restoredAgentQuestion(readAgentQuestionRecords('session-1')[0])).toMatchObject({
+      request: { canDiscuss: true }, answerMessageId: '22222222-2222-4222-8222-222222222222', answer: { optionId: 'discuss' },
+    });
+  });
+  it('keeps the public destination across answer-before-post and restart, then marks only the synchronized card', () => {
+    rememberAgentQuestion('session-1', question());
+    settleAgentQuestionRecord('session-1', id, { state: 'resolved', optionId: '[{"selected":["PATH"]}]', by: 'owner' });
+    const card = { chatId: 'room', messageId: 'message', ownerUserId: 'owner' };
+    rememberPublicQuestionCard('session-1', id, card);
+    expect(allAgentQuestionRecords()).toMatchObject([{ sessionId: 'session-1', item: { state: 'resolved', origin: { payload: { publicCard: card } } } }]);
+    expect(restoredAgentQuestion(readAgentQuestionRecords('session-1')[0])?.request.origin?.payload).toMatchObject({ publicCard: card });
+    markPublicQuestionCardSynced('session-1', id);
+    expect(readAgentQuestionRecords('session-1')[0].origin?.payload).toMatchObject({ publicCard: { ...card,synced: true } });
   });
   it('fails publication when it cannot commit and refuses corrupt stored state instead of showing empty', () => {
     writeFileSync(join(root, 'agent-questions'), 'blocking-file');

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { CreateTarget } from '../../../apps/desktop/src/mobile/agent-watch/CreateTarget'
+import { CreateTarget } from '../../../apps/desktop/src/components/session-watch/CreateTarget'
 import { FILE_VIEWER_ATTRIBUTE, FILE_VIEWER_MENU_EVENT, type FileViewerMenuRequest } from '../../../apps/desktop/src/session/shared/preview/file-viewer-menu'
 import { workspaceFileQuote } from '../../../apps/desktop/src/components/preview/quote-preview-file'
-import { useOpenedOutputOpener } from '../../../apps/desktop/src/mobile/agent-watch/opened-output-opener'
+import { useOpenedOutputOpener } from '../../../apps/desktop/src/components/session-watch/opened-output-opener'
 import { ShareIntakeHost } from '../../../apps/desktop/src/mobile/share-intake/ShareIntakeHost'
 import { ServerLoginApproveHost } from '../../../apps/desktop/src/mobile/server-login/ServerLoginApproveHost'
 import { UI_EVENTS } from '../../../apps/desktop/src/lib/uiEvents'
@@ -18,8 +18,8 @@ const m = vi.hoisted(() => ({
   read: vi.fn(async () => new Uint8Array([1, 2, 3])),
   quote: vi.fn(), image: vi.fn(), revoke: vi.fn(), signal: null as AbortSignal | null,
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/opened-output-open', async (original) => ({
-  ...await original<typeof import('../../../apps/desktop/src/mobile/agent-watch/opened-output-open')>(),
+vi.mock('../../../apps/desktop/src/components/session-watch/opened-output-open', async (original) => ({
+  ...await original<typeof import('../../../apps/desktop/src/components/session-watch/opened-output-open')>(),
   readWholeOpenedFile: (input: { signal: AbortSignal }) => { m.signal = input.signal; return m.read() },
 }))
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer: m.image }))
@@ -136,7 +136,7 @@ it('incoming-share target selection: drafts immediately, navigates only after sh
 
 
 it('file preview: rejects a 100 MB file after one chunk and shows the existing size warning', async () => {
-  const actual = await vi.importActual<typeof import('../../../apps/desktop/src/mobile/agent-watch/opened-output-open')>('../../../apps/desktop/src/mobile/agent-watch/opened-output-open')
+  const actual = await vi.importActual<typeof import('../../../apps/desktop/src/components/session-watch/opened-output-open')>('../../../apps/desktop/src/components/session-watch/opened-output-open')
   const read = vi.fn(async () => ({ size: 100 * 1024 * 1024, etag: 'large', data: 'YQ==' }))
   m.read.mockImplementation(() => actual.readWholeOpenedFile({ read, conversationId: 'task-1', path: '/repo/big.log' }))
   await h.render(createNode(Preview, { path: '/repo/big.log' }))

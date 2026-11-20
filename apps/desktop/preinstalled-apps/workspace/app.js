@@ -1,5 +1,6 @@
 import { requestAt } from './annotation-selection.js'
 import { codeQuote } from './code-quote.js'
+import { markdownLiteral } from './markdown-literal.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
@@ -3814,7 +3815,7 @@ function insertionItems(current, range, below = true) {
       if (item.text !== undefined) return insert(item.text, item.caret, item.id)
       const arrived = await uploadFiles({ chat: current.entry.chat, ...(current.entry.parentId ? { folder: current.entry.parentId } : {}) })
       if (!arrived?.length) return
-      insert(arrived.map((entry) => `${item.id === 'image' && (entry.contentType || '').startsWith('image/') ? '!' : ''}[${entry.name.replace(/[[\]\\]/g, '\\$&')}](gugu-file://${entry.id})`).join('\n\n'))
+      insert(arrived.map((entry) => `${item.id === 'image' && (entry.contentType || '').startsWith('image/') ? '!' : ''}[${markdownLiteral(entry.name)}](gugu-file://${entry.id})`).join('\n\n'))
     }),
   }))
 }

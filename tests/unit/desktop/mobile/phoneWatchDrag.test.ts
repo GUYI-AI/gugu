@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cornerFromPhoneDock, movePhoneWatch, phoneWatchCorner, phoneWatchDock } from '@/mobile/agent-watch/phone-watch-drag'
+import { cornerFromPhoneDock, movePhoneWatch, phoneWatchCorner, phoneWatchDock } from '@/components/session-watch/phone-watch-drag'
 
 describe('phone viewing window gestures', () => {
   it('restores on the same side and vertical half after docking on either edge', () => {

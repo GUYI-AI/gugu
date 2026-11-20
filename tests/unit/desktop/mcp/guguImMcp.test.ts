@@ -1978,7 +1978,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
   })
   // 摩擦单 F10:名字里的方括号会提前截断 markdown 链接文字 —— 转义掉,链接仍是一整条。
   test('workspaceFileLink escapes brackets in the name', () => {
-    expect(workspaceFileLink({ filename: 'a]b[c.md', chat_id: '00000000-0000-4000-8000-000000000001', id: W_DOC })).toBe(String.raw`[a\]b\[c.md](gugu-file://` + `${W_DOC})`)
+    expect(workspaceFileLink({ filename: 'a]b[c.md', chat_id: '00000000-0000-4000-8000-000000000001', id: W_DOC })).toBe(`[a&#93;b&#91;c.md](gugu-file://${W_DOC})`)
   })
   // 摩擦单 F15(L7-d):app_pack { chat_id } 打完包就以卡片发进群 —— 走的就是 message_send_file 这条路,以 agent 本人发。
   // F31(L5 S1 第三轮):同一版本带 chat_id 再装一次,又发了一张卡。一张卡是一个 App 的一个版本:群里已有同名(<id>-<版本>)

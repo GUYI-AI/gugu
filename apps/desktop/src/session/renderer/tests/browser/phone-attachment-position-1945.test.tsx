@@ -4,8 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '@/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
 import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
 import { PhoneGroupAgentCreation } from '@/mobile/chat/PhoneNewTask'
@@ -42,7 +42,7 @@ vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOpti
   props: { permissionModeOptions: { full: { name: '完全访问' } }, selectedPermissionMode: 'full',
     modelOptions: { model: { name: '测试模型' } }, selectedModel: 'model' }, confirmation: null, steers: false,
 }) }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...await original<object>(),
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...await original<object>(),
   fetchBackgroundTasks: vi.fn(async () => []),
   fetchCreateOptions: vi.fn(async () => ({ projects: [], lastUsed: null, harnesses: [{ id: 'codex', name: 'Codex',
     status: 'available', watchable: true, sessionViews: ['general'], permissionModes: ['full-access'] }] })),
@@ -54,7 +54,7 @@ vi.mock('@/lib/attachmentsEndpoint', async original => ({ ...await original<obje
   prepareTaskAttachment: async () => null,
   placeTaskAttachment: async (file: File) => ({ itemId: file.name, version: 1, name: file.name, mimeType: file.type, sizeBytes: file.size }),
 }))
-vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null }) }))
+vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null }) }))
 
 type Surface = 'single' | 'group' | 'topic' | 'agent' | 'new-task'
 const surfaces: Surface[] = ['single', 'group', 'topic', 'agent', 'new-task']

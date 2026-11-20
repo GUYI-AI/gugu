@@ -203,6 +203,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-community
       - run: pnpm build:renderer:ci
+      - name: Check the bundle against the engine floor
+        run: node scripts/checks/check-engine-floor.mts dist
   desktop-build-linux:
     name: Desktop app build (ubuntu-24.04)
     needs: changes
@@ -261,6 +263,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-tools
         with:
           profile: android
+      - name: Compile optional FCM path with a synthetic project
+        run: node scripts/ci/android-fcm-fixture.mjs
       - run: pnpm android:build
       - name: Run Android JVM unit tests
         run: bash scripts/build/android-gradle-build.sh testDebugUnitTest

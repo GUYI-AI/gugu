@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settlement, SettlementQuestion, SettlementResponse } from '@gugu/session-core/session-record/contract'
-import { SettlementCard } from '../../../apps/desktop/src/mobile/agent-watch/TimelineView'
+import { SettlementCard } from '../../../apps/desktop/src/components/session-watch/TimelineView'
 import { createReactHarness } from '../../support/testHarness'
 
 // #6798 #7035:宿主能从手机代答的终端提问(结算带 `questions`),手机上整份题目按一套表单画;

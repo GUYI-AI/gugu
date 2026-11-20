@@ -5,6 +5,7 @@ import { customModelConnectionSchema, customModelProtocolProbeSchema, detectCust
 import {
   connectionModelListSchema,
   createHarnessConnectionSchema,
+  renameHarnessConnectionSchema,
   harnessConnectionSchema,
   harnessConnectionSelectSchema,
 } from './connections';
@@ -49,6 +50,7 @@ const commonAgentConfigContract = defineContract({
   detectCustomModelProtocols: fallible({ input: detectCustomModelProtocolsSchema, data: customModelProtocolProbeSchema, error: agentConfigAuthErrorSchema }),
   listConnections: fallible({ input: provider, data: z.array(harnessConnectionSchema), error: agentConfigAuthErrorSchema }),
   createConnection: fallible({ input: createHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
+  renameConnection: fallible({ input: renameHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
   selectConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
   removeConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
   agents: liveModel({

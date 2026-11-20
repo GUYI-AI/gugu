@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 // @@@recent-action-model (#437) - pure helpers for the recent-action pop-out: aggregate the windowed
 
 export interface RecentActionCount {
@@ -27,7 +28,7 @@ const RECENT_ACTIVITY_WINDOW_MS = 5 * 60 * 1000
 
 export function isRecentActivity(
   iso: string | null | undefined,
-  nowMs: number = Date.now(),
+  nowMs: number = serverNow(),
   windowMs: number = RECENT_ACTIVITY_WINDOW_MS
 ): boolean {
   if (!iso) return false
@@ -43,7 +44,7 @@ export function isRecentActivity(
 export function latestRecentAction(
   actions: readonly string[],
   lastActiveAt: string | null | undefined,
-  nowMs: number = Date.now()
+  nowMs: number = serverNow()
 ): string | null {
   if (!isRecentActivity(lastActiveAt, nowMs)) return null
   for (let i = actions.length - 1; i >= 0; i--) {

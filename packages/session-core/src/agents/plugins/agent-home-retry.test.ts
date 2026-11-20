@@ -16,7 +16,7 @@ it('retries a rejected provider home while sharing concurrent work and caching s
   } } as CLIAgentPluginProvider);
   vi.spyOn(registry, 'getAll').mockReturnValue([]);
   const home: ResolvedAgentHome = { providerId: 'broken', envVar: 'CONFIG_HOME',
-    shadowHome: '/managed', configRoot: '/managed/config', userConfigRoot: '/user/config', carryExclusions: [], seedFiles: [], importGroups: [], credentialPaths: [] };
+    shadowHome: '/managed', configRoot: '/managed/config', userConfigRoot: '/user/config', osHomeDir: '/user', carryExclusions: [], seedFiles: [], importGroups: [], credentialPaths: [] };
   const first = Promise.withResolvers<ResolvedAgentHome | null>();
   const provision = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(home);
   const fs = createLocalPluginFs('/unused');

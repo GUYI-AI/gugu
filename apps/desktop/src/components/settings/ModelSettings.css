@@ -84,3 +84,13 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
 
 .gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }
+
+.gg-model-page .gg-coding-provider { display: flex; flex-direction: column; gap: 20px; }
+.gg-model-page .gg-coding-provider-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
+.gg-model-page .gg-coding-provider-title > :first-child { width: 20px; height: 20px; }
+.gg-model-page .gg-coding-provider .gg-settings-row-title { font-weight: 400; }
+
+.gg-model-page .gg-model-name { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; cursor: text; text-align: left; }
+.gg-model-page .gg-model-name svg { opacity: 0; color: var(--model-settings-source); }
+.gg-model-page .gg-model-subscription-row:hover .gg-model-name svg,
+.gg-model-page .gg-model-name:focus-visible:not([data-pointer-focus]) svg { opacity: 1; }

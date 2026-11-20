@@ -1,7 +1,7 @@
 /**
  * 会话那一小格的**取值**(纯函数,不含组件)。
  *
- * 与 `mobile/agent-watch/StatusGlyph.tsx` 分开是有原因的:一个文件同时导出组件和普通函数会让 HMR 整页刷新
+ * 与 `components/session-watch/StatusGlyph.tsx` 分开是有原因的:一个文件同时导出组件和普通函数会让 HMR 整页刷新
  * (react-refresh/only-export-components),而这几个函数在会话列表里是按行调用的热点。
  *
  * 画成什么(那一句、颜色、动不动)❌ 不在这里另定:与会话页、聊天同一个 `presentAgentStatus`

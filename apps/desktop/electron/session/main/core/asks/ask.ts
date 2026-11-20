@@ -131,6 +131,15 @@ export function respondQuestion(
 ): SessionTimelineResult<SessionpageSessionRespondResult> {
   const ask = hostAsks.get(input.conversationId)?.get(input.itemId);
   if (!ask || current.state !== 'pending') return { ok: true, value: { accepted: false, settlement: current } };
+  if ('discuss' in input) {
+    if (current.canDiscuss !== true) return fail('answer_invalid', 'This host question does not support discussion');
+    try { settleAgentQuestionRecord(input.conversationId, input.itemId, { state: 'resolved', optionId: 'discuss', by: input.by }); }
+    catch (error) { return fail('persist_failed', String(error)); }
+    const settled = timeline.settle({ itemId: input.itemId, optionId: 'discuss', by: input.by });
+    if (!settled.ok) return { ok: true, value: { accepted: false, settlement: settled.existing } };
+    ask.answered({ optionId: 'discuss', by: input.by });
+    return { ok: true, value: { accepted: true, settlement: settled.settlement } };
+  }
   if ('decline' in input) {
     try { settleAgentQuestionRecord(input.conversationId, input.itemId, { state: 'cancelled', optionId: null, by: input.by }); }
     catch (error) { return fail('persist_failed', String(error)); }
@@ -138,6 +147,7 @@ export function respondQuestion(
     ask.answered({ optionId: 'withdrawn', by: input.by });
     return { ok: true, value: { accepted: true, settlement: timeline.getSnapshot({ limit: 1 }).settlements.find(s => s.itemId === input.itemId)! } };
   }
+  if (current.skippable !== true && input.answers.some(answer => answer.skipped === true)) return fail('answer_invalid', 'This host question does not support skipping');
   const invalid = questionAnswerError(current.questions ?? [], input.answers);
   if (invalid) return fail('answer_invalid', invalid);
   try { settleAgentQuestionRecord(input.conversationId, input.itemId, { state: 'resolved', optionId: JSON.stringify(input.answers), by: input.by }); }
