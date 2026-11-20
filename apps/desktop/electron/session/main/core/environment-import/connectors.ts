@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { constants, promises as fs } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'smol-toml';
@@ -70,8 +70,10 @@ async function readSource({ home, signal }: CodexConnectorOptions): Promise<Sour
       if (!link.resolved) throw new ConnectorReadError('unreadable');
       input = link.resolved;
     }
-    handle = await disk.open(input, 'r');
+    const expected = await disk.lstat(input);
+    handle = await disk.open(input, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     const before = await handle.stat();
+    if (before.ino !== expected.ino || before.dev !== expected.dev) throw new ConnectorReadError('source-changed');
     if (!before.isFile() || before.size > CONFIG_LIMIT) throw new ConnectorReadError('invalid');
     const parts: Buffer[] = [];
     let length = 0;
@@ -85,8 +87,8 @@ async function readSource({ home, signal }: CodexConnectorOptions): Promise<Sour
       parts.push(buffer.subarray(0, read.bytesRead));
     }
     const after = await handle.stat();
-    const current = await disk.stat(input);
-    if (before.ino !== current.ino || before.dev !== current.dev || before.size !== length
+    const current = await disk.lstat(input);
+    if (!current.isFile() || before.ino !== current.ino || before.dev !== current.dev || before.size !== length
       || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs
       || before.mtimeMs !== current.mtimeMs || before.ctimeMs !== current.ctimeMs) throw new ConnectorReadError('source-changed');
     const bytes = Buffer.concat(parts, length);
@@ -154,11 +156,16 @@ async function targetFs({ home, signal }: CodexConnectorOptions): Promise<{ fs: 
       signal?.throwIfAborted();
       if (file !== path) throw new Error('CODEX_CONNECTOR_UNSAFE_TARGET');
       await safe();
-      if (lastRead === undefined || await base.read(file) !== lastRead) throw new Error('CODEX_CONNECTOR_TARGET_CHANGED');
       await initializeManagedAgentHome(home);
       signal?.throwIfAborted();
-      await base.write(file, content);
-      await disk.chmod(join(config, 'config.toml'), 0o600);
+      const temporary = join(config, `.config.toml.${randomUUID()}.tmp`);
+      try {
+        await disk.writeFile(temporary, content, { mode: 0o600, flag: 'wx' });
+        await safe();
+        if (lastRead === undefined || await base.read(file) !== lastRead) throw new Error('CODEX_CONNECTOR_TARGET_CHANGED');
+        signal?.throwIfAborted();
+        await disk.rename(temporary, join(config, 'config.toml'));
+      } finally { await disk.rm(temporary, { force: true }); }
     },
   } };
 }

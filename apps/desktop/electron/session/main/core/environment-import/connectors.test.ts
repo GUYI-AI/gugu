@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse, stringify } from 'smol-toml';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import type { ResolvedAgentHome } from '@gugu/session-core/agents/plugins';
 import { importCodexConnectors, scanCodexConnectors } from './connectors';
@@ -36,7 +36,7 @@ beforeEach(async () => {
   })!;
   await write(source(), stringify({ model: 'fixture-model', mcp_servers: servers }));
 });
-afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
 
 describe('Codex connector category — native managed configuration', () => {
   it('counts one HTTP/five stdio and returns stable metadata, without commands, URLs, env or login material', async () => {
@@ -165,5 +165,31 @@ describe('Codex connector category — native managed configuration', () => {
     ]);
     expect(result.flatMap((batch) => batch.items).every((item) => item.status === 'imported')).toBe(true);
     expect(parse(await fs.readFile(target(), 'utf8')).mcp_servers).toEqual(servers);
+  });
+
+  it('keeps a concurrent native edit made while the new configuration is staged', async () => {
+    await write(target(), 'model = "before"\n');
+    const chosen = (await selection()).slice(0, 1);
+    const originalWrite = fs.writeFile;
+    vi.spyOn(fs, 'writeFile').mockImplementation(async (path, data, options) => {
+      await originalWrite(path, data, options);
+      if (String(path).includes('.config.toml.') && String(path).endsWith('.tmp')) await originalWrite(target(), 'model = "user-edit-during-import"\n');
+    });
+    expect((await importCodexConnectors({ home, selection: chosen })).items[0]).toMatchObject({ status: 'conflict', reason: 'target-changed' });
+    expect(await fs.readFile(target(), 'utf8')).toBe('model = "user-edit-during-import"\n');
+    expect((await fs.readdir(home.configRoot)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('cancels during staging, removes the unpublished file, and propagates the original reason', async () => {
+    const chosen = (await selection()).slice(0, 1);
+    const controller = new AbortController(), reason = new Error('cancel-during-staging');
+    const originalWrite = fs.writeFile;
+    vi.spyOn(fs, 'writeFile').mockImplementation(async (path, data, options) => {
+      await originalWrite(path, data, options);
+      if (String(path).includes('.config.toml.') && String(path).endsWith('.tmp')) controller.abort(reason);
+    });
+    await expect(importCodexConnectors({ home, selection: chosen, signal: controller.signal })).rejects.toBe(reason);
+    await expect(fs.stat(target())).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readdir(home.configRoot)).toEqual([]);
   });
 });
