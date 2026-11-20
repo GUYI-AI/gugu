@@ -5,7 +5,7 @@
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, afterEach, expect, it } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { LocalizationProvider, getLocaleSnapshot, setLocalePreference } from '@/i18n'
 import { PhoneTabBar } from '@/mobile/PhoneTabBar'
 import { commandRegistry } from '@renderer/lib/commands/registry'
@@ -161,6 +161,24 @@ it('tapping a tab runs the liquid capsule animation (#3310), never while swiping
     .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && [...rule.cssRules].some((inner) => inner.cssText.includes('data-tab-switching')))
   expect(motionRules.length).toBeGreaterThan(0)
   for (const rule of motionRules) expect(rule.conditionText).toContain('prefers-reduced-motion: no-preference')
+})
+
+// #3310 真界面对照:安卓 WebView 点完一格,:hover 粘在那一格上,ghost 按钮的悬停底(4% 白)铺在目标格,
+// 胶囊拉长时叠出两截颜色。触屏(hover: none)上底栏格子不留悬停底;有鼠标的照旧。
+it('a tab left hovered by a finger tap paints no surface of its own, only on touch screens', async () => {
+  const { items } = await mountBar('dark')
+  await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+  try {
+    expect(matchMedia('(hover: none)').matches, 'touch emulation reports a touch-only screen').toBe(true)
+    await userEvent.hover(items[1]!)
+    expect(items[1]!.matches(':hover')).toBe(true)
+    expect(getComputedStyle(items[1]!).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  } finally {
+    await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  }
+  expect(matchMedia('(hover: hover)').matches).toBe(true)
+  await userEvent.hover(items[0]!)
+  expect(getComputedStyle(items[0]!).backgroundColor, 'a mouse still gets its hover surface').not.toBe('rgba(0, 0, 0, 0)')
 })
 
 it.each(['light', 'dark'] as const)('%s: pressing search preserves the glyph as well as the glass surface', async (theme) => {

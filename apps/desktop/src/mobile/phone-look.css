@@ -91,6 +91,12 @@
   font-weight: 500;
   line-height: var(--lh-caption);
 }
+/* 触屏上点完一格,安卓 WebView 把 :hover 留在那一格(粘住的悬停),ghost 按钮的悬停底就一直铺在目标格上:
+   胶囊拉长时叠出两截颜色,停稳后选中那格也比平时亮一档(#3310 真界面对照时量到 4% 白底)。选中只由胶囊表达,
+   触屏上不留悬停底;有鼠标的照旧。 */
+@media (hover: none) {
+  [data-phone-shell] .gg-phone-nav-item:hover:not([data-disabled]) { background-color: transparent; }
+}
 [data-phone-shell] .gg-phone-nav-icon { position: relative; display: flex; }
 /* 字的行盒收紧到字号本身:12px 字配 18px 行高时,行盒上下的空白不对称(中文字体在安卓上尤其偏下),
    图标 + 字这一摞看着不在胶囊正中(owner 10-28)。 */
