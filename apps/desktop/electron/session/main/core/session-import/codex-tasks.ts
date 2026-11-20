@@ -61,7 +61,7 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
       const row = available.get(request.id);
       if (!row) { result.items.push({ id: request.id, status: 'missing' }); continue; }
       if (row.revision !== request.revision) { result.items.push({ id: request.id, status: 'changed' }); continue; }
-      const [existing] = await db.select({ sessionId: sessions.id, projectId: sessions.projectId }).from(sessions)
+      const [existing] = await db.select({ sessionId: sessions.id }).from(sessions)
         .where(and(eq(sessions.provider, 'codex'), eq(sessions.providerSessionId, row.id))).limit(1);
       if (existing) result.items.push({ id: row.id, status: 'existing', ...existing });
       else selected.push(row);
@@ -103,7 +103,7 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
           filePath: join(home.configRoot, row.relativePath), title: row.title, cwd: row.cwd, sessionView: 'general' },
         { providerSessionId: row.id, title: row.title, cwd: row.cwd });
         await ledger.setOrThrow(row.id, { revision: row.revision, path: row.relativePath, state: 'bound', sessionId: binding.sessionId });
-        result.items.push({ id: row.id, status: binding.alreadyImported ? 'existing' : 'imported', projectId: binding.projectId, sessionId: binding.sessionId });
+        result.items.push({ id: row.id, status: binding.alreadyImported ? 'existing' : 'imported', sessionId: binding.sessionId });
       } catch {
         signal.throwIfAborted();
         result.items.push({ id: row.id, status: 'failed', message: '这条会话尚未导入，请重试' });

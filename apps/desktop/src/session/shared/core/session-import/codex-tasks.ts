@@ -28,6 +28,6 @@ export type CodexTaskScan = {
 };
 export type ImportCodexTaskParams = { id: string; revision: string };
 export type CodexTaskImportResult = {
-  items: ({ id: string } & ({ status: 'imported' | 'existing'; projectId: string; sessionId: string }
+  items: ({ id: string } & ({ status: 'imported' | 'existing'; sessionId: string }
     | { status: 'changed' | 'missing' | 'failed'; message?: string }))[];
 };

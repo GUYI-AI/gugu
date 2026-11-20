@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { access, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { execFile } from '@gugu/core/local/childProcess';
 import { KeyedMutex } from '@gugu/session-core/lib';
+import { canonicalPath } from '@gugu/session-core/files';
+import { ensureFolder, listFolders, listUnboundFolders } from '../folders/folders';
 
 export type CodexProjectSource = {
   projectId: string;
@@ -36,9 +38,9 @@ export type CodexProjectImportResult = CodexProjectSelection & {
   type: 'project';
   scope: 'project';
   status: 'imported' | 'exists' | 'skipped' | 'conflict' | 'failed';
-  reason?: 'source-changed' | 'missing-directory' | 'unreadable-directory' | 'archived-target'
-    | 'create-failed' | 'open-failed' | 'target-unavailable';
-  target?: { projectId: string; directory: string };
+  reason?: 'source-changed' | 'missing-directory' | 'unreadable-directory' | 'target-unavailable';
+  /** The folder on this device the root became (a folder without a group), or the folder that already holds it. */
+  target?: { folderId: string; directory: string };
 };
 
 type SourceRow = CodexProjectSource & { path: string };
@@ -173,13 +175,6 @@ export async function importCodexProjects(
   const scan = await scanCodexProjects(options);
   const byId = new Map(scan.items.map(item => [item.localSourceId, item]));
   const results: CodexProjectImportResult[] = [];
-  const operations = await Promise.all([
-    import('../projects/operations/getProjects'),
-    import('../projects/operations/project-folders'),
-    import('../projects/operations/create-local-project'),
-    import('../projects/operations/openProject'),
-  ]);
-  const [{ getLocalProjectByPath }, { getProjectOwningAttachedFolder }, { createLocalProject }, { openProject }] = operations;
   for (const selected of selection) {
     options.signal?.throwIfAborted();
     const base = { localSourceId: selected.localSourceId, sourceFingerprint: selected.sourceFingerprint,
@@ -198,45 +193,14 @@ export async function importCodexProjects(
         results.push({ ...base, status: 'skipped', reason: state });
         continue;
       }
-      const attached = await getProjectOwningAttachedFolder(item.directory);
-      const existing = attached ?? await getLocalProjectByPath(item.directory);
-      if (existing?.archivedAt) {
-        results.push({ ...base, status: 'skipped', reason: 'archived-target', target: { projectId: existing.id, directory: item.directory } });
-        continue;
-      }
       options.signal?.throwIfAborted();
-      // Match local-session import: only a directory with its own .git marker
-      // goes through repository inspection. A subdirectory keeps its exact cwd.
-      const isRepositoryRoot = !existing && await access(join(item.directory, '.git')).then(
-        () => true,
-        (error: unknown) => { if (code(error) === 'ENOENT' || code(error) === 'ENOTDIR') return false; throw error; },
-      );
-      options.signal?.throwIfAborted();
-      const created = existing ? undefined : await createLocalProject({
-        path: item.directory, name: item.name,
-        allowNonGit: true, exactPath: !isRepositoryRoot, reuseExisting: true, automatic: true,
-        createDirectory: false, initGitRepository: false,
-      });
-      if (created && !created.success) {
-        results.push({ ...base, status: 'failed', reason: 'create-failed' });
-        continue;
-      }
-      const project = existing ?? (created?.success ? created.data : undefined);
-      if (!project) throw new Error('Missing imported project');
-      const target = { projectId: project.id, directory: item.directory };
-      // Also inspect the returned target: an automatic create may race another
-      // registration and reuse its archived row. Never open/restore that row.
-      if (project.archivedAt) {
-        results.push({ ...base, status: 'skipped', reason: 'archived-target', target });
-        continue;
-      }
-      // Once registered, finish the mount and report it even if cancellation
-      // arrives. Cancellation is checked before the next item, not after commit.
-      const opened = await openProject(project.id);
-      results.push({ ...base, target,
-        status: opened.success ? existing ? 'exists' : 'imported' : 'failed',
-        ...(opened.success ? {} : { reason: 'open-failed' as const }),
-      });
+      // The exact original directory: a folder already at it, or one holding it, is reused; otherwise it becomes a
+      // folder of its own without a group (binding it to a group is the person's choice, as everywhere else).
+      const path = canonicalPath(item.directory);
+      const holder = [...listFolders(), ...listUnboundFolders()]
+        .find((folder) => path === folder.path || path.startsWith(`${folder.path}${sep}`));
+      const target = holder ?? ensureFolder(path);
+      results.push({ ...base, status: holder ? 'exists' : 'imported', target: { folderId: target.id, directory: item.directory } });
     } catch {
       options.signal?.throwIfAborted();
       results.push({ ...base, status: 'failed', reason: 'target-unavailable' });

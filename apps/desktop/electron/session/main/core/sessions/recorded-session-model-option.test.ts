@@ -8,7 +8,7 @@ const secondConnection = 'ae6fe897-adfa-4e9f-978d-4dd04f520c78';
 
 function readRecordedChoice(model?: string) {
   const built = buildSessionRow({
-    id: 'conversation', projectId: 'project', workspaceId: 'workspace',
+    id: 'conversation', groupChatId: null, workspaceId: 'workspace',
     agentDisplayName: 'Codex', provider: 'codex', runtime: 'acp',
     origin: { kind: 'create', firstUtterance: 'remember this conversation' },
     claimsFirstSpawn: false, permissionMode: 'edit', model,

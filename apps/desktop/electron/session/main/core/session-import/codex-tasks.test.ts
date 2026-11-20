@@ -25,13 +25,13 @@ beforeEach(() => {
   mocks.scan.mockResolvedValue({ status: 'ready', indexed: 1, missing: 0, invalid: 0, rows: [row] });
   mocks.existing.mockResolvedValue([]);
   mocks.plan.mockImplementation(async home => ({ paths: home.userConfigRoot === '/managed' ? [] : [row.relativePath], issues: [] }));
-  mocks.bind.mockResolvedValue({ sessionId: 'task', projectId: 'project', alreadyImported: false });
+  mocks.bind.mockResolvedValue({ sessionId: 'task', workingDirectory: '/work', alreadyImported: false });
 });
 
 it('plans, stages, verifies the native managed path, then binds a resumable chat task', async () => {
   mocks.append.mockImplementation(async (_home, _paths, options) => options.validate('/staged'));
   const result = await importCodexTasks([{ id: 'one', revision: 'r1' }]);
-  expect(result.items).toEqual([{ id: 'one', status: 'imported', projectId: 'project', sessionId: 'task' }]);
+  expect(result.items).toEqual([{ id: 'one', status: 'imported', sessionId: 'task' }]);
   expect(mocks.plan).toHaveBeenCalledWith(expect.objectContaining({ upgradeHistory: ['sessions/one.jsonl'] }), Number.MAX_SAFE_INTEGER,
     { sessionIds: new Set(['one']), includeShared: false });
   expect(mocks.verify.mock.calls.map(args => args[0])).toEqual(['/staged', '/managed']);
@@ -42,9 +42,9 @@ it('plans, stages, verifies the native managed path, then binds a resumable chat
 });
 
 it('does not copy stale/archived selections or tasks already bound in Gugu', async () => {
-  mocks.existing.mockResolvedValue([{ sessionId: 'existing', projectId: 'project' }]);
+  mocks.existing.mockResolvedValue([{ sessionId: 'existing' }]);
   const result = await importCodexTasks([{ id: 'one', revision: 'r1' }, { id: 'two', revision: 'r2' }]);
-  expect(result.items).toEqual([{ id: 'one', status: 'existing', sessionId: 'existing', projectId: 'project' }, { id: 'two', status: 'missing' }]);
+  expect(result.items).toEqual([{ id: 'one', status: 'existing', sessionId: 'existing' }, { id: 'two', status: 'missing' }]);
   expect(mocks.append).not.toHaveBeenCalled();
   expect(mocks.bind).not.toHaveBeenCalled();
   expect((await importCodexTasks([{ id: 'one', revision: 'old' }])).items).toEqual([{ id: 'one', status: 'changed' }]);

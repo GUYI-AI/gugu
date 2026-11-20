@@ -6,12 +6,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const host = vi.hoisted(() => ({
-  byPath: vi.fn(), attached: vi.fn(), create: vi.fn(), open: vi.fn(),
+  bound: vi.fn(), unbound: vi.fn(), ensure: vi.fn(),
 }));
-vi.mock('../projects/operations/getProjects', () => ({ getLocalProjectByPath: host.byPath }));
-vi.mock('../projects/operations/project-folders', () => ({ getProjectOwningAttachedFolder: host.attached }));
-vi.mock('../projects/operations/create-local-project', () => ({ createLocalProject: host.create }));
-vi.mock('../projects/operations/openProject', () => ({ openProject: host.open }));
+vi.mock('../folders/folders', () => ({ listFolders: host.bound, listUnboundFolders: host.unbound, ensureFolder: host.ensure }));
 import { importCodexProjects, scanCodexProjects } from './projects';
 
 let root: string;
@@ -30,12 +27,9 @@ beforeEach(async () => {
     created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);
     CREATE TABLE project_roots (project_id TEXT NOT NULL REFERENCES projects(id),
       position INTEGER NOT NULL, path TEXT NOT NULL, PRIMARY KEY(project_id,position));`);
-  host.byPath.mockResolvedValue(undefined);
-  host.attached.mockResolvedValue(undefined);
-  host.create.mockImplementation(async ({ path, name }: { path: string; name: string }) => ({
-    success: true, data: { id: `target:${path}`, path, name },
-  }));
-  host.open.mockResolvedValue({ success: true, data: {} });
+  host.bound.mockReturnValue([]);
+  host.unbound.mockReturnValue([]);
+  host.ensure.mockImplementation((path: string) => ({ id: `target:${path}`, path, chatId: null }));
 });
 afterEach(async () => {
   database.close();
@@ -71,7 +65,7 @@ describe('Codex project source', () => {
     expect(result.items[0].sources[0]).toMatchObject({ projectId: 'p1', rootPosition: 0 });
     expect(result.items[1].sources[0]).toMatchObject({ projectId: 'p1', rootPosition: 1 });
     expect(await digest(join(sourceRoot, 'state_5.sqlite'))).toBe(before);
-    expect(host.create).not.toHaveBeenCalled();
+    expect(host.ensure).not.toHaveBeenCalled();
   });
 
   it('deduplicates aliases and preserves all source relationships', async () => {
@@ -150,9 +144,7 @@ describe('Codex project import', () => {
     await project('p', [directory]);
     const [result] = await importCodexProjects((await scan()).items, { sourceRoot });
     expect(result.status).toBe('imported');
-    expect(host.create).toHaveBeenCalledWith(expect.objectContaining({
-      path: directory, exactPath: false, initGitRepository: false, createDirectory: false,
-    }));
+    expect(host.ensure).toHaveBeenCalledWith(directory);
     expect((await stat(join(directory, '.git'))).isDirectory()).toBe(kind === 'directory');
     if (kind === 'file') expect(await readFile(join(directory, '.git'), 'utf8')).toBe('gitdir: /fixture/worktree-metadata\n');
   });
@@ -164,64 +156,46 @@ describe('Codex project import', () => {
     await mkdir(directory);
     await project('p', [directory]);
     await importCodexProjects((await scan()).items, { sourceRoot });
-    expect(host.create).toHaveBeenCalledWith(expect.objectContaining({ path: directory, exactPath: true, initGitRepository: false }));
+    expect(host.ensure).toHaveBeenCalledWith(directory);
   });
 
-  it('registers the exact original directory and verifies its real open path', async () => {
+  it('records the exact original directory as a folder without a group, leaving the source untouched', async () => {
     const directory = await folder('original files');
     await writeFile(join(directory, 'README.md'), 'original');
     await project('p', [directory], 'Source name');
     const items = (await scan()).items;
     const before = await digest(join(sourceRoot, 'state_5.sqlite'));
     const [result] = await importCodexProjects(items, { sourceRoot });
-    expect(result).toMatchObject({ status: 'imported', target: { directory } });
-    expect(host.create).toHaveBeenCalledWith({
-      path: directory, name: 'Source name', allowNonGit: true, exactPath: true,
-      reuseExisting: true, automatic: true, createDirectory: false, initGitRepository: false,
-    });
-    expect(host.open).toHaveBeenCalledWith(result.target?.projectId);
+    expect(result).toMatchObject({ status: 'imported', target: { folderId: `target:${directory}`, directory } });
+    expect(host.ensure).toHaveBeenCalledWith(directory);
     expect(await readFile(join(directory, 'README.md'), 'utf8')).toBe('original');
     expect(await digest(join(sourceRoot, 'state_5.sqlite'))).toBe(before);
   });
 
-  it('reuses existing project and attached-folder ownership without registering duplicates', async () => {
+  it('reuses the folder at the directory or the folder holding it without recording a duplicate', async () => {
     const directory = await folder('attached');
     await project('p', [directory]);
     const items = (await scan()).items;
-    host.byPath.mockResolvedValue({ id: 'existing', path: directory });
-    expect((await importCodexProjects(items, { sourceRoot }))[0].status).toBe('exists');
-    host.attached.mockResolvedValue({ id: 'owner', path: root });
+    host.unbound.mockReturnValue([{ id: 'existing', path: directory, chatId: null }]);
     expect((await importCodexProjects(items, { sourceRoot }))[0])
-      .toMatchObject({ status: 'exists', target: { projectId: 'owner', directory } });
-    expect(host.create).not.toHaveBeenCalled();
-    expect(host.open).toHaveBeenLastCalledWith('owner');
+      .toMatchObject({ status: 'exists', target: { folderId: 'existing', directory } });
+    host.unbound.mockReturnValue([]);
+    host.bound.mockReturnValue([{ id: 'owner', path: root, chatId: 'group-1' }]);
+    expect((await importCodexProjects(items, { sourceRoot }))[0])
+      .toMatchObject({ status: 'exists', target: { folderId: 'owner', directory } });
+    expect(host.ensure).not.toHaveBeenCalled();
   });
 
-  it('never opens or restores an archived target, including an automatic-create race', async () => {
-    const directory = await folder('archived');
+  it('does not take a sibling whose name only starts the same for a holder', async () => {
+    const directory = await folder('app-two');
     await project('p', [directory]);
-    const items = (await scan()).items;
-    host.byPath.mockResolvedValue({ id: 'archived', path: directory, archivedAt: '2026-01-01' });
-    expect((await importCodexProjects(items, { sourceRoot }))[0])
-      .toMatchObject({ status: 'skipped', reason: 'archived-target' });
-    expect(host.create).not.toHaveBeenCalled();
-    host.byPath.mockResolvedValue(undefined);
-    host.create.mockResolvedValue({ success: true, data: { id: 'archived', path: directory, archivedAt: '2026-01-01' } });
-    expect((await importCodexProjects(items, { sourceRoot }))[0].reason).toBe('archived-target');
-    expect(host.open).not.toHaveBeenCalled();
-  });
-
-  it('reports create failures without claiming a target was opened', async () => {
-    await project('p', [await folder('create-failure')]);
-    host.create.mockResolvedValue({ success: false, error: { type: 'init-failed' } });
-    expect((await importCodexProjects((await scan()).items, { sourceRoot }))[0])
-      .toMatchObject({ status: 'failed', reason: 'create-failed' });
-    expect(host.open).not.toHaveBeenCalled();
+    host.bound.mockReturnValue([{ id: 'sibling', path: join(root, 'app'), chatId: 'group-1' }]);
+    expect((await importCodexProjects((await scan()).items, { sourceRoot }))[0].status).toBe('imported');
   });
 
   it('reports target exceptions per item without exposing the raw message', async () => {
     await project('p', await Promise.all(['failed', 'good'].map(folder)));
-    host.byPath.mockRejectedValueOnce(new Error('private target details'));
+    host.ensure.mockImplementationOnce(() => { throw new Error('private target details'); });
     const results = await importCodexProjects((await scan()).items, { sourceRoot });
     expect(results[0]).toMatchObject({ status: 'failed', reason: 'target-unavailable' });
     expect(results[1].status).toBe('imported');
@@ -234,7 +208,7 @@ describe('Codex project import', () => {
     } as { localSourceId: string; sourceFingerprint: string }], { sourceRoot });
     expect(result).toEqual({ localSourceId: 'unknown', sourceFingerprint: 'unknown', type: 'project', scope: 'project',
       status: 'conflict', reason: 'source-changed' });
-    expect(host.create).not.toHaveBeenCalled();
+    expect(host.ensure).not.toHaveBeenCalled();
   });
 
   it('revalidates source fingerprints and missing directories before any target writes', async () => {
@@ -246,48 +220,33 @@ describe('Codex project import', () => {
     const current = (await scan()).items;
     await rm(directory, { recursive: true });
     expect((await importCodexProjects(current, { sourceRoot }))[0].reason).toBe('missing-directory');
-    expect(host.create).not.toHaveBeenCalled();
-    expect(host.open).not.toHaveBeenCalled();
+    expect(host.ensure).not.toHaveBeenCalled();
   });
 
-  it('serializes repeated/concurrent selections and returns existing rows on retry', async () => {
+  it('serializes repeated/concurrent selections and returns the existing folder on retry', async () => {
     const directory = await folder('once');
     await project('p', [directory]);
     const items = (await scan()).items;
-    host.create.mockImplementation(async () => {
-      const target = { id: 'one-target', path: directory };
-      host.byPath.mockResolvedValue(target);
-      return { success: true, data: target };
+    host.ensure.mockImplementation((path: string) => {
+      const target = { id: 'one-target', path, chatId: null };
+      host.unbound.mockReturnValue([target]);
+      return target;
     });
     const results = (await Promise.all([importCodexProjects(items, { sourceRoot }), importCodexProjects(items, { sourceRoot })])).flat();
     expect(results.map(result => result.status).sort()).toEqual(['exists', 'imported']);
-    expect(host.create).toHaveBeenCalledTimes(1);
+    expect(host.ensure).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps open failures explicit and retries the mount of a registered project', async () => {
-    const directory = await folder('mount');
-    await project('p', [directory]);
-    const items = (await scan()).items;
-    host.open.mockResolvedValue({ success: false, error: { type: 'path-access-blocked' } });
-    const [result] = await importCodexProjects(items, { sourceRoot });
-    expect(result).toMatchObject({ status: 'failed', reason: 'open-failed', target: { directory } });
-    host.byPath.mockResolvedValue({ id: result.target?.projectId, path: directory });
-    host.open.mockResolvedValue({ success: true });
-    expect((await importCodexProjects(items, { sourceRoot }))[0].status).toBe('exists');
-    expect(host.create).toHaveBeenCalledTimes(1);
-  });
-
-  it('finishes a committed mount then propagates cancellation before the next item', async () => {
+  it('finishes a recorded folder then propagates cancellation before the next item', async () => {
     const directories = await Promise.all(['first', 'second'].map(folder));
     await project('p', directories);
     const items = (await scan()).items;
     const controller = new AbortController();
-    host.create.mockImplementation(async ({ path }: { path: string }) => {
+    host.ensure.mockImplementation((path: string) => {
       controller.abort(new Error('stop after commit'));
-      return { success: true, data: { id: 'committed', path } };
+      return { id: 'committed', path, chatId: null };
     });
     await expect(importCodexProjects(items, { sourceRoot, signal: controller.signal })).rejects.toThrow('stop after commit');
-    expect(host.open).toHaveBeenCalledTimes(1);
-    expect(host.create).toHaveBeenCalledTimes(1);
+    expect(host.ensure).toHaveBeenCalledTimes(1);
   });
 });

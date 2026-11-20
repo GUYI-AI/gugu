@@ -390,8 +390,8 @@ it('binds only host-validated managed metadata without reading an entire origina
   try {
     mocks.preview.mockReset();
     mocks.createSession.mockResolvedValue({ success: true, data: {} });
-    mocks.openProject.mockResolvedValue({ success: true, data: {} });
-    mocks.createLocalProject.mockResolvedValue({ success: true, data: { id: 'project', path: '/work/webapp', repositoryWorkspaceId: 'ws' } });
+    mocks.workspaceAtDirectory.mockReturnValue('workspace-repo-1');
+    mocks.rootFolderOf.mockReturnValue({ id: 'workspace-repo-1', chatId: null });
     const result = await bindLocalSession({ engine: 'codex', providerSessionId: CODEX_SESSION, filePath: '/managed/session.jsonl',
       title: 'Task', cwd: '/work/webapp', sessionView: 'general' },
     { providerSessionId: CODEX_SESSION, title: 'Task', cwd: '/work/webapp' });
