@@ -400,7 +400,8 @@ export function describePrompt(message: string, mode = '', home = ''): Omit<Serv
   const firstLine = message.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? ''
   const lastLine = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() ?? ''
   if (mode === 'none') return { kind: 'notice', message, label: firstLine }
-  if (/continue connecting|\(yes\/no|Please type 'yes', 'no'/i.test(message)) {
+  // Windows 上 askpass 经 .cmd 转一手,cmd 在第一个换行处截断参数:主机指纹的提问只剩「authenticity of host」那一行。
+  if (/continue connecting|\(yes\/no|Please type 'yes', 'no'|authenticity of host/i.test(message)) {
     const host = message.match(/authenticity of host '([^']+)'/)?.[1]?.replace(/\s*\(.*\)$/, '') ?? ''
     const key = message.match(/(\S+) key fingerprint is:?\s*(\S+?)\.?\s*$/m)
     return {
