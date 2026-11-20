@@ -154,6 +154,7 @@ import { persistedWorkspacePath, resolveSession, resolveWorkspace } from '@main/
 import { RETIRED_REMOTE_WORKSPACE_MESSAGE } from '@main/core/workspaces/resolve-workspace-kind'
 import { archiveSession } from '@main/core/sessions/archiveSession'
 import { getSessions } from '@main/core/sessions/getSessions'
+import { recordedSessionModelOption } from '@main/core/sessions/utils'
 import { sessionArchivalInventory, sessionArchivalState } from '@main/core/sessions/session-archival'
 export { sessionArchivalState as emdashSessionArchivalState, sessionMessageRefused as emdashSessionMessageRefused } from '@main/core/sessions/session-archival'
 import { mcpLibraryService, planLibraryMcpDelivery } from '@main/core/mcp-library/service'
@@ -1609,20 +1610,23 @@ export async function reloadEmdashSession(input: {
       + await restoreConfig(message),
     )
   }
-  if (input.resetModel && fresh.model) {
+  const recordedModel = recordedSessionModelOption(fresh)
+  if (input.resetModel && recordedModel) {
     // #5276 清模型:写了删键却读回来还有 = 记录层没生效。响亮停,❌ 带着旧模型重开。
-    const message = `did not drop its model (${reason}): record still says ${String(fresh.model)}`
+    const message = `did not drop its model (${reason}): record still says ${recordedModel}`
     throw new Error(
       `session ${sessionId} ${message}`
       + await restoreConfig(message),
     )
   }
   const modelRecordMatches = input.modelSource === 'platform'
-    ? !fresh.model
-    : fresh.model === nextModel
+    ? !recordedModel
+    : recordedModel === nextModel
   if (nextModel && !modelRecordMatches) {
     // 写进去了却读不回来 = 记录层没生效。响亮停,❌ 不带着旧模型重开。
-    const message = `did not take the new model (${reason}): asked ${nextModel} via ${input.modelSource}, record still says ${String(fresh.model)}`
+    // getSessions splits a custom option into model + customModel; compare the complete choice,
+    // not its native model ID, or every successful custom switch is rolled back before start.
+    const message = `did not take the new model (${reason}): asked ${nextModel} via ${input.modelSource}, record still says ${String(recordedModel)}`
     throw new Error(
       `session ${sessionId} ${message}`
       + await restoreConfig(message),
