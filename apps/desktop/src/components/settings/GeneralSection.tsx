@@ -107,23 +107,25 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
     || systemNotificationStates.notifications === 'blocked'
   const notificationHint = notificationTest?.kind
 
-  function changeNotificationSetting(key: 'chatMessages' | 'chatSound', on: boolean) {
-    writeDevicePreferences({ [key]: on })
-    if (key !== 'chatMessages' || !platform.systemPermissions.includes('batteryOptimization')) return
-    if (!on) {
+  useEffect(() => {
+    if (!devicePreferences.chatMessages) {
       setBatteryGuidance(null)
       return
     }
+    if (!platform.systemPermissions.includes('batteryOptimization')) return
+    let cancelled = false
     void (async () => {
       if (localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
       if (await platform.checkSystemPermission('batteryOptimization') !== 'prompt') return
+      if (cancelled) return
       const device = await nativePhoneActions.deviceInfo().catch(() => null)
-      if (!readDevicePreferences().chatMessages || localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
+      if (cancelled || !readDevicePreferences().chatMessages || localStorage.getItem(CHAT_BATTERY_GUIDANCE_KEY)) return
       localStorage.setItem(CHAT_BATTERY_GUIDANCE_KEY, 'shown')
       const onePlus = [device?.brand, device?.manufacturer].some(name => name?.toLowerCase() === 'oneplus')
       setBatteryGuidance({ onePlus, restricted: true })
     })().catch(() => undefined)
-  }
+    return () => { cancelled = true }
+  }, [devicePreferences.chatMessages])
 
   return (
     <SettingsPage>
@@ -203,7 +205,7 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
             control={(
               <Toggle
                 checked={devicePreferences[row.key]}
-                onChange={(on) => changeNotificationSetting(row.key, on)}
+                onChange={(on) => writeDevicePreferences({ [row.key]: on })}
                 ariaLabel={t(row.ariaKey)}
               />
             )}
