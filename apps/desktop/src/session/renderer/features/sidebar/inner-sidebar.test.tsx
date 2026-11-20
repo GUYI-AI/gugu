@@ -63,6 +63,7 @@ const state = vi.hoisted(() => ({
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
   moveSessionUnder: vi.fn(),
+  showDropHighlight: vi.fn(),
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
@@ -117,6 +118,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     parentOf: (id: string) => state.items.find((entry) => entry.id === id)?.parentSessionId ?? null,
   },
 }));
+vi.mock('@renderer/lib/drop-highlight', async (original) => ({ ...(await original<object>()), showDropHighlight: (...args: unknown[]) => state.showDropHighlight(...args) }));
 vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: (...args: unknown[]) => state.moveSessionUnder(...args) }));
 vi.mock('./sidebar-session-item', () => ({
   SidebarSessionItem: ({ sessionId, agentAvatar }: { sessionId: string; agentAvatar?: boolean }) => (
@@ -273,9 +275,11 @@ describe('inner sidebar', () => {
       clearDraggedScreenContent();
       return event.defaultPrevented;
     };
+    state.showDropHighlight.mockClear();
     expect(drag('dragover', 'shop-task'), 'already at the top level: no drop target').toBe(false);
+    expect(state.showDropHighlight).not.toHaveBeenCalled();
     expect(drag('dragover', 'shop-sub')).toBe(true);
-    expect(header.dataset.unnestTarget).toBe('true');
+    expect(state.showDropHighlight, 'the shared drop highlight moves onto the header').toHaveBeenCalledTimes(1);
     expect(drag('drop', 'shop-sub')).toBe(true);
     expect(state.moveSessionUnder).toHaveBeenCalledWith({ kind: 'session', projectId: 'p-shop', sessionId: 'shop-sub', title: 'shop-sub' }, null, 'shop-task');
   });
