@@ -362,7 +362,8 @@ export async function getStoredHistory(params: {
   const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : older ? REMOTE_OLDER_PAGE_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
   const lean: LeanPage = !params.lean || reader.local || params.fromSeq !== undefined ? false
     : params.lean === 'folded' && older ? 'folded' : true;
-  for (;;) {
+  // A constantly rewound conversation must not keep a read alive indefinitely.
+  for (let attempt = 0; attempt < 3; attempt++) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
       before: params.before,
@@ -374,11 +375,16 @@ export async function getStoredHistory(params: {
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
-    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, await nativeConversationHistoryFloor(params.sessionId));
+    const floor = await nativeConversationHistoryFloor(params.sessionId);
+    // Resolving the clear-history boundary can yield too. A rewind during that
+    // wait invalidates the rows just as one during readStoredTurns does.
+    if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
+    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, floor);
     return params.fromSeq === undefined
       ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget, lean)
       : { ...snapshot, turns: trimTurnsForTransport(snapshot.turns) };
   }
+  throw Object.assign(new Error('会话历史正在变化，请稍后重新读取'), { code: 'history_epoch_unstable' });
 }
 
 export async function getStoredToolImage(params: {
