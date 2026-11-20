@@ -22,7 +22,7 @@ const toolFields = 'id seq kind toolCallId title toolKind toolName status at com
 /** Public canonical header vocabulary for host producers; these scalar facts
  * are not a partial TranscriptItem or permission to manufacture missing fields. */
 export const WINDOW_PROJECTION_ITEM_FIELDS: Readonly<Record<string, string>> = Object.freeze({
-  message: 'id seq kind role at attachments files ownerNotification revertAnchor content',
+  message: 'id seq kind role at attachments files ownerNotification revertAnchor revertFiles content',
   thinking: 'id seq kind segmentId status startedAt durationMs content',
   compaction: 'id seq kind compactionId status startedAt trigger preTokens postTokens durationMs summary error',
   'context-reset': 'id seq kind reason at', 'session-notice': 'id seq kind code detail effectiveValue previousValue title at',

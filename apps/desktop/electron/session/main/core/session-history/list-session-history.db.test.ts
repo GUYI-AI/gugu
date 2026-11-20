@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   /** 假磁盘:目录 → 它所在 git 仓库的根(按前缀,worktree 可以映射到别处的主仓)。 */
   repoRoots: {} as Record<string, string>,
   remotes: {} as Record<string, string>,
+  /** 目录 → git 打开它时说的错(stderr)。 */
+  openErrors: {} as Record<string, string>,
   release: vi.fn(),
   /** 这台机器上的项目群绑定:本地项目 id → 项目群 chat id(没写的 = 不在任何项目群里)。 */
   groups: {} as Record<string, string>,
@@ -40,10 +42,12 @@ vi.mock('@main/core/projects/project-public-id', () => ({
   machineOutwardProjectIds: async () => (localId: string) => mocks.groups[localId] ?? null,
 }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: { acquire: async () => ({
-  value: { git: { openRepository: async (path: string) => ({
+  value: { git: { openRepository: async (path: string) => {
+    if (mocks.openErrors[path]) throw Object.assign(new Error(`git rev-parse --show-toplevel failed (exit 128)`), { stderr: mocks.openErrors[path] });
+    return {
     value: { getRemotes: async () => ({ remotes: mocks.remotes[path] ? [{ name: 'origin', url: mocks.remotes[path] }] : [] }) },
     release: mocks.release,
-  }) } }, release: mocks.release,
+  }; } } }, release: mocks.release,
 }) } }));
 
 // 仓库根的真磁盘判法由 repo-root.test.ts 钉住;这里给一张假表,只测「按仓库归节」的规则。
@@ -83,6 +87,7 @@ describe('listSessionHistory', () => {
     mocks.list.mockReset();
     mocks.repoRoots = { '/repo': '/repo' };
     mocks.remotes = {};
+    mocks.openErrors = {};
     mocks.groups = {};
     mocks.release.mockClear();
     mocks.list.mockImplementation(async () => ({
@@ -348,6 +353,21 @@ describe('listSessionHistory', () => {
     ]);
     expect(mocks.release).toHaveBeenCalledTimes(2);
     await expect(indexSessionsForApp({ groupPaths: ['relative'] })).rejects.toMatchObject({ code: 'invalid' });
+  });
+
+  it('Apps: a folder git calls "not a repository" is a plain folder; any other git failure stays on its own group', async () => {
+    mocks.repoRoots = { '/repo': '/repo', '/empty-git': '/empty-git', '/dubious': '/dubious' };
+    mocks.openErrors = {
+      '/empty-git': 'fatal: not a git repository (or any of the parent directories): .git',
+      '/dubious': "fatal: detected dubious ownership in repository at '/dubious'",
+    };
+    // One group per pass: vitest hands a second concurrent dynamic import of a mocked module the real one.
+    mocks.localRows = [local({ providerSessionId: 'E1', cwd: '/empty-git/a' })];
+    const page = await indexSessionsForApp({ groupPaths: ['/dubious/b'] });
+    expect(page.rows.map(({ group }) => group)).toEqual([{ key: '/empty-git', label: null }]);
+    expect(page.groups).toEqual([
+      { path: '/dubious/b', group: { key: '/dubious', label: null, repositoryError: "fatal: detected dubious ownership in repository at '/dubious'" } },
+    ]);
   });
 
   it('咕咕项目不吞它仓库之外的原件:路径是 /Users 的项目只收 cwd 就是 /Users 的那条', async () => {

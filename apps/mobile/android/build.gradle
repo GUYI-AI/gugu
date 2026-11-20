@@ -29,6 +29,19 @@ allprojects {
     }
 }
 
+// #3208: Capacitor regenerates the Cordova library without a Kotlin plugin.
+// Its standalone instrumented-test runtime can otherwise mix stdlib 1.8.22
+// with the pre-merge jdk7/jdk8 1.6.21 jars. Keep this in the tracked root so
+// cap sync preserves alignment, and leave duplicate-class checks enabled.
+project(':capacitor-cordova-android-plugins') { cordovaProject ->
+    cordovaProject.pluginManager.withPlugin('com.android.library') {
+        cordovaProject.dependencies.add(
+            'androidTestImplementation',
+            cordovaProject.dependencies.platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+        )
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

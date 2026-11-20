@@ -1,4 +1,5 @@
 export default {
+  "humanDm": { "notFriends": "对方还不是你的好友", "addFriend": "添加好友" },
   "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
   "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。", "sent": "已发送" },
   "agent": {
@@ -381,7 +382,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
-  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}"},
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}", "noSuchMessage": "这个会话里没有以 {{prefix}} 开头的消息", "messageUnavailable": "消息不可用", "chatUnavailable": "聊天不可用", "sessionUnavailable": "任务不可用", "messages": "{{count}} 条消息", "severalMessages": "这个会话里有 {{count}} 条消息以 {{prefix}} 开头，选一条"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "这个文件已删除，或者你已没有读取权限。",

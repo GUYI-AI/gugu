@@ -1,4 +1,35 @@
 export default {
+  "firstInstallImport": {
+    "title": "Bring your data into Gugu",
+    "description": "Bring along your memories, project rules, and work habits",
+    "available": "Import your local {{name}} configuration"
+  },
+  "usagePopover": {
+    "title": "Usage",
+    "refresh": "Refresh usage",
+    "remaining": "{{amount}}% remaining",
+    "reset": "Resets {{date}}",
+    "updated": "Updated {{time}}",
+    "windowMissing": "No usable window reported",
+    "fiveHours": "5-hour limit",
+    "weekly": "Weekly limit",
+    "readFailed": "Unable to read usage. Try again.",
+    "expired": "Sign-in expired",
+    "signedOut": "Not signed in",
+    "refreshFailed": "Refresh failed. Showing the last reading.",
+    "guguSubscription": "Gugu subscription",
+    "credits": "Remaining credits",
+    "fullUsage": "View full usage",
+    "reason": {
+      "vendor-console": "Check usage in the provider console.",
+      "not-reported": "The provider does not report usage.",
+      "not-signed-in": "Not signed in",
+      "custom-endpoint": "Usage is recorded by the connected service.",
+      "other-login": "The provider requires a different sign-in.",
+      "not-read-yet": "Not read yet. Refresh to check.",
+      "error": "Unable to read usage. Try again."
+    }
+  },
   "referrals": {
     "accountCount": "{{count}} invited",
     "invite": "Invite",
@@ -154,9 +185,9 @@ export default {
     "sourceChanged": "Source changed; retry",
     "unreadable": "Could not read this file"
   },
-  "local": "Local configuration",
-  "updated": "Local configuration has updates",
-  "row": "A copy was imported from {{path}} on {{date}}. Terminal and Gugu changes do not sync automatically.",
+  "local": "Terminal configuration",
+  "updated": ", later changed in the terminal",
+  "row": "Imported {{date}}",
   "upgradeKept": "Gugu kept your existing {{name}} configuration.",
   "upgradeRelogin": "Sign in to {{name}} again in Settings → Subscriptions.",
   "reimport": "Re-import",
@@ -585,6 +616,16 @@ export default {
     "subtitle": "Sign in and start working with AI",
     "brandSubtitle": "What you want to do, Gugu helps you get done.",
     "emailLabel": "Email",
+    "signup": {
+      "start": "Create an account",
+      "back": "Back to sign-in",
+      "agree": "Agree and continue",
+      "disagree": "Disagree",
+      "declined": "You cannot use Gugu without agreeing. Your email address will not be sent to us.",
+      "saveFailed": "Could not save your consent. Try again.",
+      "consentRequired": "Update Gugu before creating an account.",
+      "notRegistered": "This email is not registered yet. Choose Change email, then Create an account."
+    },
     "otpLabel": "Verification code",
     "or": "or",
     "invalidEmail": "Enter a valid email address.",
@@ -783,6 +824,7 @@ export default {
       "permissions": "Device control",
       "prompts": "Saved prompts",
       "sessions": "Tasks",
+      "team": "Team",
       "subscriptions": "Subscriptions",
       "usage": "Usage"
     },

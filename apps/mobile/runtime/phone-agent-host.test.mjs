@@ -33,6 +33,14 @@ function fakeCloud() {
   const identity = {
     rpc: async (name, args) => {
       calls.push([name, args])
+      if (name === 'register_gugu_device') {
+        const row = { ...structuredClone(args.p_device), user_id: ownerId, status: 'online', last_seen_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+        calls.push(['upsert_device', row])
+        const existing = devices.find((device) => device.device_id === row.device_id)
+        if (existing) Object.assign(existing, row)
+        else devices.push(structuredClone(row))
+        return { data: { device_id: row.device_id, created: !existing }, error: null }
+      }
       if (name === 'fetch_fair_pending_device_commands') return { data: commands.filter((command) => command.status === 'pending'), error: null }
       if (name === 'recheck_device_command_execution') return { data: true, error: null }
       if (name === 'recover_orphaned_device_commands') return { data: 0, error: null }
@@ -387,13 +395,9 @@ test('two minutes offline preserves the same queued task; a successful heartbeat
       }
       return access(body)
     }
-    const from = cloud.identity.from
-    cloud.identity.from = table => {
-      const query = from(table)
-      const upsert = query.upsert
-      query.upsert = (...args) => online ? upsert(...args) : Promise.reject(new TypeError('fetch failed'))
-      return query
-    }
+    const rpc = cloud.identity.rpc
+    cloud.identity.rpc = (name, args) => name === 'register_gugu_device' && !online
+      ? Promise.reject(new TypeError('fetch failed')) : rpc(name, args)
   } })
   try {
     await fx.host.invoke('agentSession.spawn', [caller, { action: 'spawn', harness: 'pi', prompt: '计算并交回' }], 'two-minute-outage')
@@ -1470,6 +1474,66 @@ test('a runtime ownership refusal stops the local turn and retains its registrat
     assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
   } finally { await fx.close() }
 })
+for (const unavailable of ['missing', 'moved']) for (const restored of [false, true]) {
+  test(`retained ${unavailable} phone identity is revalidated by fresh delivery (restored: ${restored})`, async () => {
+    let nudge, identity
+    const fx = await fixture(async () => assert.fail('empty inbox must not run a model'), {
+      prepare: async context => {
+        await seedInboxAgents(context, [agentId])
+        identity = structuredClone(context.users.find(row => row.id === agentId))
+        if (unavailable === 'missing') context.users.splice(context.users.findIndex(row => row.id === agentId), 1)
+        else context.users.find(row => row.id === agentId).device_id = 'another-phone'
+      },
+      onRpcStart: ({ onCommand }) => { nudge = onCommand },
+    })
+    try {
+      const sessionId = fx.host.state().sessions[0].sessionId
+      assert.match(fx.host.state().sessions[0].lastError, /历史已保留/)
+      if (restored) {
+        if (unavailable === 'missing') fx.users.push(identity)
+        else Object.assign(fx.users.find(row => row.id === agentId), identity)
+      }
+      fx.commands.push({ id: randomUUID(), type: 'agent.deliver', status: 'pending', created_at: new Date().toISOString(), payload: { agent_user_id: agentId } })
+      await nudge()
+      assert.deepEqual(inboxCalls(fx), restored ? [agentId] : [])
+      assert.equal(fx.commands.at(-1).status, restored ? 'done' : 'error')
+      const saved = await openPhoneAgentStore(fx.root, ownerId)
+      assert.equal(saved.state.agents[agentId].sessionId, sessionId)
+      if (restored) {
+        assert.equal(saved.state.agents[agentId].ownershipError, undefined)
+        assert.equal(fx.host.state().sessions[0].lastError, null)
+      } else assert.match(saved.state.agents[agentId].ownershipError, /历史已保留/)
+      assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
+      assert.equal(fx.calls.filter(([name]) => name === 'archive_user').length, 0)
+    } finally { await fx.close() }
+  })
+}
+
+test('fresh delivery keeps a retained phone identity guarded when ownership read fails', async () => {
+  let nudge
+  const fx = await fixture(async () => assert.fail('unreadable identity must not run a model'), {
+    prepare: async context => { await seedInboxAgents(context, [agentId]); context.users.splice(0, 1) },
+    onRpcStart: ({ onCommand }) => { nudge = onCommand },
+  })
+  try {
+    const sessionId = fx.host.state().sessions[0].sessionId
+    const from = fx.cloud.identity.from
+    fx.cloud.identity.from = table => {
+      const query = from(table)
+      if (table === 'active_users') query.maybeSingle = async () => ({ data: null, error: { message: 'identity service unavailable' } })
+      return query
+    }
+    fx.commands.push({ id: randomUUID(), type: 'agent.deliver', status: 'pending', created_at: new Date().toISOString(), payload: { agent_user_id: agentId } })
+    await nudge()
+    assert.deepEqual(inboxCalls(fx), [])
+    assert.equal(fx.commands.at(-1).status, 'error')
+    const saved = await openPhoneAgentStore(fx.root, ownerId)
+    assert.equal(saved.state.agents[agentId].sessionId, sessionId)
+    assert.match(saved.state.agents[agentId].ownershipError, /历史已保留/)
+    assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
+  } finally { await fx.close() }
+})
+
 const flushInbox = () => new Promise(resolve => setImmediate(resolve))
 const advanceInbox = async (t, ms) => {
   t.mock.timers.tick(ms)
@@ -1665,18 +1729,27 @@ test('queued tasks resume after RPC and auth recover without another message or 
   } finally { release(); await fx.close() }
 })
 
+test('a phone registration conflict stays failed without adopting or changing the historical row', async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  const before = structuredClone(fx.devices)
+  const original = fx.cloud.identity.rpc
+  fx.cloud.identity.rpc = (name, args) => name === 'register_gugu_device'
+    ? Promise.resolve({ data: null, error: { code: 'P0001', message: 'PHONE_DEVICE_ID_CONFLICT' } }) : original(name, args)
+  try {
+    await assert.rejects(fx.host.handle({ type: 'configure', config: fx.config }), /PHONE_DEVICE_ID_CONFLICT/)
+    assert.equal(fx.host.state().ready, false)
+    assert.equal(fx.host.state().deviceId, deviceId)
+    assert.equal(fx.host.state().errorCode, 'P0001')
+    assert.deepEqual(fx.devices, before)
+  } finally { await fx.close() }
+})
+
 test('a failed heartbeat changes admission state and other healthy signals cannot override it', async () => {
   const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
-  const original = fx.cloud.identity.from
+  const original = fx.cloud.identity.rpc
   let fail = true
-  fx.cloud.identity.from = (table) => {
-    const query = original(table)
-    if (table === 'gugu_devices') {
-      const upsert = query.upsert
-      query.upsert = (row, options) => fail ? Promise.resolve({ error: { message: 'heartbeat unreachable' } }) : upsert(row, options)
-    }
-    return query
-  }
+  fx.cloud.identity.rpc = (name, args) => name === 'register_gugu_device' && fail
+    ? Promise.resolve({ data: null, error: { message: 'heartbeat unreachable' } }) : original(name, args)
   try {
     await assert.rejects(fx.host.handle({ type: 'configure', config: fx.config }), /heartbeat unreachable/)
     assert.equal(fx.host.state().ready, false)

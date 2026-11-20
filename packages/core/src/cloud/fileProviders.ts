@@ -1,6 +1,8 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
-import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
+// Signed-URL expiries are on the backend's clock (`@@@server-clock`).
+import { serverNow } from '../shared/serverClock'
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, relayRefusedError, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
 import type { FileChunkCache } from '../shared/fileCache'
 import { AttachmentsError, attachmentRequest, type AttachmentsEndpoint } from './attachmentsApi'
 import { withBoundedOperation } from './boundedOperation'
@@ -15,7 +17,7 @@ const ACKNOWLEDGEMENT_MS = 15_000
 
 export type { FileChunkCache } from '../shared/fileCache'
 type Download = { status: string; code?: string; url: string; expires_at?: string; origin_available?: boolean; thumb_url?: string | null; download_id: string; transfer_id?: string; key?: string; codec?: string; sha256: string | null; size_bytes: number; ciphertext_bytes?: number; ciphertext_sha256?: string; bucket_id?: string; object_name?: string; message_id?: string }
-type RelayState = Partial<FileRevision> & { status: string; transfer_status: string; transfer_id?: string; retention?: string; host_label?: string | null; host_online?: boolean; download?: Download | null }
+type RelayState = Partial<FileRevision> & { status: string; transfer_status: string; transfer_id?: string; retention?: string; transfer_declined?: string | null; host_label?: string | null; host_online?: boolean; download?: Download | null }
 type RelayAdmission = { requestId: string; generation?: string; retention?: string; reusable: boolean }
 type SignedDownload = { lease: Download; direct: boolean }
 const missingObject = (row: { status: string; code?: string }) => row.status === 'missing' && row.code === 'object_not_found'
@@ -52,7 +54,7 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
           let response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
           const expires = Date.parse(lease!.expires_at ?? '')
           // A valid capability's 403 is a refusal. Only an actually expired lease may be renewed, once per read.
-          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= Date.now()) {
+          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= serverNow()) {
             void response.body?.cancel().catch(() => undefined); renewed = true
             const signed = await sign(true, origin); lease = signed.lease; origin = signed.direct
             response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
@@ -150,6 +152,8 @@ export function cloudFileProviders(deps: {
       () => request(context, 'file-request', { ref, as: context.actor.actorId, request_id: requestId,
         ...(downloadId && { download_request_id: downloadId }) }) as Promise<RelayState>,
       state => {
+        // A request ended with a reason (the holder declined it, or the server refused the holder) stops now, with that reason.
+        if (state.status === 'ready' && state.transfer_status === 'retired' && state.transfer_declined) throw relayRefusedError(state.transfer_declined)
         if (state.status !== 'ready' || state.transfer_status === 'retired') throw new FileReadError(state.status === 'expired' ? 'expired' : 'gone', 'File transfer is no longer available')
         if (state.transfer_status === 'ready') return
         if (state.host_online === false) throw new FileReadError('holder_offline', `${state.host_label?.trim() || 'The computer that keeps this file'} is offline. This file opens when it is back online.`)
@@ -368,7 +372,7 @@ export function cloudFileProviders(deps: {
         const lease = signed.lease
         if (video) {
           const expiresAt = Date.parse(lease.expires_at ?? '')
-          if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Invalid video preview lease')
+          if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
           return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
         }
         if (signed.direct || lease.thumb_url) {
@@ -381,7 +385,7 @@ export function cloudFileProviders(deps: {
             if (!renew) {
               const expires = Date.parse(next.lease.expires_at ?? ''), previous = Date.parse(signed.lease.expires_at ?? '')
               if (next.lease.download_id !== signed.lease.download_id || !Number.isFinite(expires) || !Number.isFinite(previous)
-                || origin && expires > previous || expires <= Date.now() || previous <= Date.now()) throw new Error('File thumbnail reservation changed')
+                || origin && expires > previous || expires <= serverNow() || previous <= serverNow()) throw new Error('File thumbnail reservation changed')
               // CDN expiry may retain subsecond precision omitted by an OSS V4 signature.
               next.lease.expires_at = new Date(Math.min(expires, previous)).toISOString()
             }

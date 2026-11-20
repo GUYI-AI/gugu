@@ -353,6 +353,8 @@ function makeTimeline(onCatchUp: () => void = () => undefined) {
           ...(request.options.length > 0 ? { options: request.options } : {}),
           ...(request.origin ? { origin: request.origin } : {}),
           ...(request.questions ? { questions: request.questions, askedAt: request.askedAt } : {}),
+          ...(request.skippable === true ? { skippable: true } : {}),
+          ...(request.canDiscuss === true ? { canDiscuss: true } : {}),
           state: 'pending',
           optionId: null,
           resolvedBy: null,
@@ -1573,6 +1575,50 @@ describe('session timeline service', () => {
       expect(await service.respond({ ...input, by: 'phone', answers: [{ selected: ['500'] }] })).toMatchObject({ ok: true, value: { accepted: false } });
       expect(state.deliverPermission).not.toHaveBeenCalled();
       expect(state.permissionChannelError).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('accepts an explicit skip only when advertised by the host: %s', async supported => {
+      state.rows = [row({ runtime: 'acp' })];
+      service.setSessionTimelineFactory(async () => makeTimeline().timeline);
+      const answered = asks.ask('conv-1', {
+        itemId: 'agent-question:skip', kind: 'question', title: 'Which?',
+        questions: [{ question: 'Which?', multiSelect: false, options: [{ optionId: 'one', name: 'One' }] }],
+        ...(supported ? { skippable: true as const } : {}),
+        options: [], origin: { source: 'agent-question', payload: {} },
+      }, { signal: new AbortController().signal });
+      const input = { conversationId: 'conv-1', itemId: 'agent-question:skip', kind: 'question' as const, by: 'phone', answers: [{ selected: [], skipped: true as const }] };
+      const result = await service.respond(input);
+      if (supported) {
+        expect(result).toMatchObject({ ok: true, value: { accepted: true, settlement: { state: 'resolved', skippable: true } } });
+        await expect(answered).resolves.toMatchObject({ answers: input.answers });
+        expect(await service.respond(input)).toMatchObject({ ok: true, value: { accepted: false } });
+      } else {
+        expect(result).toMatchObject({ ok: false, error: { code: 'answer_invalid' } });
+        expect(await settled(answered)).toBe('still asked');
+        asks.withdrawAll('conv-1', 'agent-question');
+      }
+    });
+
+    it.each([false, true])('only a host advertising discussion can end the wait this way: %s', async supported => {
+      service.setSessionTimelineFactory(async () => makeTimeline().timeline);
+      const answered = asks.ask('conv-1', {
+        itemId: 'agent-question:discuss', kind: 'question', title: 'Which?',
+        questions: [{ question: 'Which?', multiSelect: false, options: [] }],
+        ...(supported ? { canDiscuss: true as const } : {}), options: [], origin: { source: 'agent-question', payload: {} },
+      }, { signal: new AbortController().signal });
+      const input = { conversationId: 'conv-1', itemId: 'agent-question:discuss', kind: 'question' as const, discuss: true as const, by: 'phone' };
+      const result = await service.respond(input);
+      if (supported) {
+        expect(result).toMatchObject({ ok: true, value: { accepted: true, settlement: { state: 'resolved', optionId: 'discuss' } } });
+        await expect(answered).resolves.toEqual({ optionId: 'discuss', by: 'phone' });
+        expect(await service.respond({ ...input, answers: [{ selected: [], other: 'late' }] })).toMatchObject({ ok: true, value: { accepted: false } });
+        await vi.dynamicImportSettled();
+        expect(state.hostWaits.at(-1)).toMatchObject({ open: false });
+      } else {
+        expect(result).toMatchObject({ ok: false, error: { code: 'answer_invalid' } });
+        expect(await settled(answered)).toBe('still asked');
+        asks.withdrawAll('conv-1', 'agent-question');
+      }
     });
 
     it('a question keeps the session waiting on the person (a question wait) until it is withdrawn on interruption', async () => {

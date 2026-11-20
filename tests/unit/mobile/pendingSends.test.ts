@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import { settlePendingSends, userMessageIds, type PendingSend } from '@/mobile/agent-watch/pending-sends'
+import { settlePendingSends, userMessageIds, type PendingSend } from '@/components/session-watch/pending-sends'
 
 /**
  * 手机上「已按发送、记录里还没回来」的那几句什么时候让位。

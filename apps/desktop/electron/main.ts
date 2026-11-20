@@ -1,4 +1,7 @@
+import { createTeamPaymentCheckout } from './team-payment-checkout'
+import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
+import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
@@ -124,6 +127,8 @@ import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } fro
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
+import { isTeamInvitationLink } from '../shared/team-invitation-link'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { OpenedLinkMailbox } from './opened-link-mailbox'
 import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
@@ -256,6 +261,8 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
+import { createQuestionCardSync } from './sessionpage/question-card-sync'
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, onAgentQuestionRecordsChanged, rememberPublicQuestionCard } from './session/main/core/sessions/agent-question-store'
 import {
   emdashAgentRegistry,
   type LocalSessionPeer,
@@ -375,6 +382,7 @@ import {
 import { sessionPlatformModel } from './session/main/core/sessions/platform-model-selection'
 import { providerSessionIdForSession } from './session/main/core/sessions/provider-session-id'
 import { SESSIONPAGE_SESSION_RELOAD_CHANNEL } from '../src/session/shared/core/agents/session-reload'
+import { codexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../src/session/shared/core/agents/platform-model'
 import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import {
@@ -854,6 +862,22 @@ function desktopAuthProvider(): RuntimeAuthProvider {
 }
 bindElectronSupabaseAuth(async (forceRefresh) =>
   (await desktopAuthProvider().getAuth({ forceRefresh }))?.accessToken ?? null)
+const questionCardSync = createQuestionCardSync({
+  auth: () => desktopAuthProvider().getAuth(), records: allAgentQuestionRecords,
+  publish: async (auth,messageId,result) => {
+    const { data,error } = await makeChatClient(auth.accessToken).rpc('settle_agent_question_card', {
+      p_message_id: messageId,p_state: result.state,p_answers: 'answers' in result ? result.answers : null,
+    });
+    if (error) throw new Error(`Question card update failed: ${error.message}`);
+    return data;
+  },
+  committed: record => markPublicQuestionCardSynced(record.sessionId,record.item.itemId),
+  failed: error => createLogger('question-card/sync').warn({ error: String(error) },'Question card result is waiting to synchronize'),
+})
+onAgentQuestionRecordsChanged(() => { void questionCardSync.wake() })
+onElectronCloudAnswer(questionCardSync.cloudAnswered)
+void app.whenReady().then(() => questionCardSync.wake())
+app.once('will-quit', questionCardSync.stop)
 let primaryGuguMcpHost: DesktopGuguMcpHost | null = null
 
 function hasPersistedMcpGrants(name: string): boolean {
@@ -2459,6 +2483,21 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
 })
+const teamPaymentCheckout = createTeamPaymentCheckout({
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  open: input => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
+    return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
+  },
+  report: error => createLogger('team/payment').warn({ error: String(error) }, 'Team payment browser failed'),
+})
+ipcMain.handle('team-payment:open', (event, input: unknown) => {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
+    return { ok: false, error: { code: 'forbidden' } }
+  return teamPaymentCheckout.request(input)
+})
+app.on('before-quit', () => teamPaymentCheckout.close())
 ipcMain.handle('app:get-version', () => app.getVersion())
 ipcMain.handle('auth:oauth-redirect', () => `${GUGU_LINK_SCHEME}://auth/callback`)
 ipcMain.handle('opened-links:take', (event) => {
@@ -2668,7 +2707,8 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    const startupReason = codexStartupKind(error)
+    return { ok: false, error: error instanceof Error ? error.message : String(error), ...(startupReason ? { startupReason } : {}) }
   }
 })
 
@@ -2699,6 +2739,7 @@ const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
 })
 
 function onHumanAuthSessionChanged(): void {
+  void questionCardSync.wake()
   externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
@@ -2820,7 +2861,10 @@ registerErrorSummaryReporting({
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
   set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
-  revoke: () => projectionDeviceRuntime.invalidate(),
+  revoke: () => {
+    projectionDeviceRuntime.invalidate()
+    teamPaymentCheckout.identityChanged(pushedHumanAuth && typeof pushedHumanAuth === 'object' ? pushedHumanAuth : null)
+  },
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,
@@ -3574,7 +3618,7 @@ let guguLinksReady = false
 function handleGuguLink(url: string): void {
   if (!url.startsWith(`${GUGU_LINK_SCHEME}://`)) return
   openedLinks.push(url)
-  if (isOAuthCallback(url)) {
+  if (isOAuthCallback(url) || isTeamInvitationLink(url)) {
     focusMainWindow()
     return
   }
@@ -3612,7 +3656,7 @@ function flushPendingGuguLinks(): void {
   guguLinksReady = true
   // Windows / Linux 冷启动:链接是这一次启动的参数。
   const coldStart = process.argv.find((arg) => arg.startsWith(`${GUGU_LINK_SCHEME}://`))
-  if (coldStart && !isOAuthCallback(coldStart)) pendingGuguLinks.push(coldStart)
+  if (coldStart && !isOAuthCallback(coldStart) && !isTeamInvitationLink(coldStart)) pendingGuguLinks.push(coldStart)
   for (const url of pendingGuguLinks.splice(0)) handleGuguLink(url)
 }
 
@@ -3797,8 +3841,8 @@ function crossMachine(): CrossMachineSessions {
     lookupAgents: async ({ userIds, numbers }) => {
       const auth = await requireAuth()
       const query = (column: 'id' | 'gugu_number', values: Array<string | number>) => makeIdentityClient(auth.accessToken)
-        .from('active_users').select('id, device_id, gugu_number')
-        .eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
+        .from('users').select('id, device_id, gugu_number')
+        .is('removed_at', null).eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
       const results = await Promise.all([userIds.length ? query('id', userIds) : null, numbers.length ? query('gugu_number', numbers) : null])
       return results.flatMap((result) => {
         if (result?.error) throw new Error(`agent identity lookup failed: ${result.error.message}`)
@@ -3853,11 +3897,14 @@ function crossMachine(): CrossMachineSessions {
 async function cloudComputerClient() {
   const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(), override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
   if (!baseUrl) return null
+  const account = await desktopAuthProvider().getAuth()
+  if (account && teamAccountTokenHint(account.accessToken) !== 'personal') return null
   return createCloudComputerClient({
     baseUrl,
     accessToken: async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken) throw new Error('this machine is not signed in to 咕咕')
+      if (teamAccountTokenHint(auth.accessToken) !== 'personal') throw new Error('Cloud computer spending requires a separate personal account')
       return auth.accessToken
     },
     anonKey: getSupabaseAnonKey(),
@@ -4171,7 +4218,7 @@ async function applyAgentModelSelectionOnDevice(input: {
   agentUserId: string
   engineId: string | null
   selection: AgentModelSelection
-}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' }> {
+}): Promise<{ applied: 'hot' | 'reload' | 'next-session'; warning?: string; nativeSession?: 'preserved' | 'replaced' | 'route-switched' }> {
   const localAgent = await findLocalAgentByUserId(input.agentUserId, process.env)
   if (!localAgent) throw new Error('这个 Agent 不在当前设备上运行')
   const engineId = catalogEngineIdForAgent(localAgent, engineIdForAgentType) ?? input.engineId
@@ -4610,6 +4657,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
         return null
       })
       releaseCustomModelForwarders()
+      releaseConversionRouters()
       await releasePlatformModelsAtExit(live)
     }, reportShutdownPhase),
   ])
@@ -4997,6 +5045,7 @@ app.whenReady().then(async () => {
           return byNumber
         },
         resolvePrefixes: (input) => resolvePrefixes(input, signal),
+        receivedMessageIds: (prefix) => emdash.receivedMessageIds(context.sessionId, prefix),
         localSessionIds: (sessionIds) => emdash.localSessionIds(sessionIds),
         remote: crossMachine().messageDeps(() => remoteCaller(auth, context), signal),
       })
@@ -5040,7 +5089,8 @@ app.whenReady().then(async () => {
       // gugu-dev#181 ⑨ 问自群里的那一句,问题卡也进那个群(question-card.ts)。
       if (record.action === 'ask_user') {
         const asked = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions })
+        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions,
+          onPosting: (questionId,card) => rememberPublicQuestionCard(context.sessionId,questionId,card) })
       }
       // #7199 第二步:列我的设备与它们的动作 / 调某台设备的某个动作(`device` 是目标,❌ 当成「在那台机器上做」转发)。
       if (record.action === 'device_actions') {

@@ -22,7 +22,7 @@ import { cn } from '@/lib/cn'
 import { Hash, Search, Users } from '@/lib/icons'
 import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
-import { useAgentSessionRow } from '@/mobile/agent-watch/useAgentSessionRow'
+import { useAgentSessionRow } from '@/components/session-watch/useAgentSessionRow'
 import type { AgentSession } from '@/session/renderer/features/projects/stores/project-group-chats-bridge'
 
 // @@@float-one-edge (Refs #6104) — 名片是浮层:圆角 xl(12) + 一层 lift,❌ 不再叠描边。

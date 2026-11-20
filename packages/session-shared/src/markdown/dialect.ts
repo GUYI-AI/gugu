@@ -1,4 +1,5 @@
 import { guguLinkScheme, parseGuguLink } from '@gugu/core/shared/ui/guguLink';
+import { uuidPrefixRange } from '@gugu/core/shared/idPrefix';
 /**
  * The one markdown dialect of Gugu.
  *
@@ -40,6 +41,8 @@ export type MarkdownDialectOptions = {
   frontmatter?: boolean;
   /** `chat` trust: images stay image nodes, for a surface that paints them without loading them (link chips). */
   keepImageNodes?: boolean;
+  /** The chat this text is a message of: its `msg:<prefix>` ids link to messages there (remarkMessageIdLinks). */
+  messageChat?: string;
 };
 
 /** String-level rewrites that must happen before tokenising (a parsed tree has already decided what is math). */
@@ -97,17 +100,42 @@ function remarkCjkAutolinkBoundary() {
  * leaves it out of an autolink; CJK punctuation is cut by the autolink boundary that runs next.
  */
 function remarkBareGuguLinks() {
-  return (tree: Root) => {
-    const visit = (parent: Parent) => {
-      parent.children = parent.children.flatMap((child) => {
-        const node = child as Nodes;
-        if (node.type === 'text') return bareGuguLinks(node) as RootContent[];
-        if ('children' in node && node.type !== 'link' && node.type !== 'linkReference') visit(node as Parent);
-        return [child];
-      });
-    };
-    visit(tree);
+  return (tree: Root) => linkProse(tree, bareGuguLinks);
+}
+
+/** Each prose text node outside a link, split by `split` into text and links. */
+function linkProse(tree: Root, split: (node: Text) => Array<Text | Link>) {
+  const visit = (parent: Parent) => {
+    parent.children = parent.children.flatMap((child) => {
+      const node = child as Nodes;
+      if (node.type === 'text') return split(node) as RootContent[];
+      if ('children' in node && node.type !== 'link' && node.type !== 'linkReference') visit(node as Parent);
+      return [child];
+    });
   };
+  visit(tree);
+}
+
+const MESSAGE_ID_IN_TEXT = /(?<![\w:/-])msg:([0-9a-f]{8}[0-9a-f-]{0,28})(?![\w-])/gi;
+
+/**
+ * Owner 2026-11-16: `msg:<first 8+ characters>` in a message's prose links to that message in the message's own chat
+ * (`gugu-chat://<chat>/<prefix>`); the reader resolves the prefix there (a topic or DM is its own chat, never its source).
+ */
+function remarkMessageIdLinks(chatId: string) {
+  return (tree: Root) => linkProse(tree, (node) => {
+    const out: Array<Text | Link> = [];
+    let at = 0;
+    for (const match of node.value.matchAll(MESSAGE_ID_IN_TEXT)) {
+      if (!uuidPrefixRange(match[1]!)) continue;
+      if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) });
+      out.push({ type: 'link', url: `gugu-chat://${chatId}/${match[1]!.toLowerCase()}`, children: [{ type: 'text', value: match[0] }] });
+      at = match.index + match[0].length;
+    }
+    if (out.length === 0) return [node];
+    if (at < node.value.length) out.push({ type: 'text', value: node.value.slice(at) });
+    return out;
+  });
 }
 
 function bareGuguLinks(node: Text): Array<Text | Link> {
@@ -331,6 +359,7 @@ export function markdownRemarkPlugins(options: MarkdownDialectOptions): Pluggabl
     ...GRAMMAR,
     ...(options.trust === 'chat' ? [literalize] : []),
     ...(options.hardBreaks ? [remarkHardBreaks] : []),
+    ...(options.messageChat ? [[remarkMessageIdLinks, options.messageChat] as Pluggable] : []),
   ];
 }
 

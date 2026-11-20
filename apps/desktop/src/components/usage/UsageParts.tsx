@@ -40,8 +40,8 @@ export function StatStrip({ items, testId }: { items: StatItem[]; testId?: strin
 }
 
 /** 图表卡:头部(图标 + 标题 + 总计 + 右侧切换)+ 固定高度的图区。 */
-export function ChartCard({ icon, tone, title, total, actions, children, testId }: {
-  icon: ReactNode; tone: Tone; title: string; total?: string; actions?: ReactNode; children: ReactNode; testId?: string
+export function ChartCard({ icon, tone, title, total, totalLabel, actions, children, testId }: {
+  icon: ReactNode; tone: Tone; title: string; total?: string; totalLabel?: string; actions?: ReactNode; children: ReactNode; testId?: string
 }) {
   const { t } = useTranslation('settings')
   return (
@@ -50,7 +50,7 @@ export function ChartCard({ icon, tone, title, total, actions, children, testId 
         <div className="na-card-title">
           <IconBadge icon={icon} tone={tone} />
           <b>{title}</b>
-          {total !== undefined && <span>{t('usage.na.total')}{total}</span>}
+          {total !== undefined && <span>{totalLabel ?? t('usage.na.total')}{total}</span>}
         </div>
         {actions}
       </div>

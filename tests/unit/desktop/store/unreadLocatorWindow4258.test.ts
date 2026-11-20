@@ -384,7 +384,7 @@ describe('#4258 jumping to the unread locator', () => {
     await openBadgedChat()
     markStreamReadMock.mockClear()
     const seenEntry = latestStore!.unreadEntry!
-    await act(async () => { seenEntry.onSeen() })
+    await act(async () => { seenEntry.consume() })
     expect(latestStore!.unreadEntry).toBeNull()
     await setChatOnScreen(false)
     serverRows = [...serverRows, peerRow(12)]
@@ -392,9 +392,9 @@ describe('#4258 jumping to the unread locator', () => {
     await act(async () => { await latestStore!.openUnreadChat(CHAT_ID, false) })
     const nextEntry = latestStore!.unreadEntry!
     expect(nextEntry.locator.message_id).toBe('m12')
-    await act(async () => { seenEntry.onSeen() })
+    await act(async () => { seenEntry.consume() })
     expect(latestStore!.unreadEntry).toBe(nextEntry)
-    await act(async () => { nextEntry.onSeen() })
+    await act(async () => { nextEntry.consume() })
     expect(latestStore!.unreadEntry).toBeNull()
     expect(markStreamReadMock).not.toHaveBeenCalled()
   })

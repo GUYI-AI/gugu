@@ -7,12 +7,12 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs;运行时 import 可用。
-import { callTool, createGuguImServer } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { callTool, createGuguImServer, DOWNLOAD_CALL_BUDGET_MS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
 import { attachmentDownloadName } from '../../../../packages/core/src/shared/attachmentDownloadName.mjs'
 import { cloudFileProviders } from '../../../../packages/core/src/cloud/fileProviders'
 import { createFileChunkCache, createFileSaver, createFileSink, nodeFileReadStore } from '../../../../packages/core/src/local/files/fileSnapshots'
-import { createFileReads, FileReadError, type FileReadOptions, type FileReadRequest, type FileReadResult } from '../../../../packages/core/src/shared/fileReads'
+import { createFileReads, FileReadError, type FileReadOptions, type FileReadRequest, type FileReadResult, type FileReadState } from '../../../../packages/core/src/shared/fileReads'
 import type { FileHandle, FileProviders, FileRef } from '../../../../packages/core/src/shared/fileResolver'
 
 const AGENT = '11111111-1111-4111-8111-111111111111'
@@ -280,6 +280,74 @@ describe('message_download_file by source_message_id (#7290)', () => {
     }
     await expect(callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' })).rejects.toBe(failure)
     expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  // A call waits at most its budget: then it answers "still transferring" and the read keeps going; the same call again
+  // joins the read through FileReads' flight (modelled here by one shared transfer). Fake timers only.
+  test('returns transferring at the call budget, keeps reading, and a repeated call joins the same read', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-budget-')); homes.push(home)
+    const transfer = Promise.withResolvers<void>()
+    const listeners = new Set<(state: FileReadState) => void>()
+    let latest: FileReadState | undefined
+    const emit = (state: FileReadState) => { latest = state; for (const listener of listeners) listener(state) }
+    const requestFile = vi.fn((): FileReadRequest => ({
+      state$(listener) { listeners.add(listener); if (latest) listener(latest); return () => { listeners.delete(listener) } },
+      result: transfer.promise.then(async () => {
+        const file = await verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
+        return { file, route: 'oss' as const, reused: null, sha256: file.revision.sha256, waited_ms: 0 }
+      }),
+    }))
+    const context = { agentId: AGENT, guguHome: home, requestFile }
+    const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      emit({ status: 'waiting_sender', reason: 'relay' })
+      const first = callTool(context, 'message_download_file', args, {})
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
+      expect(JSON.parse(await first)).toEqual({ status: 'transferring', state: 'waiting_sender', waited_ms: DOWNLOAD_CALL_BUDGET_MS,
+        next: 'call message_download_file again with the same arguments' })
+      emit({ status: 'transferring', route: 'oss', done: 1, total: 5 })
+      const second = callTool(context, 'message_download_file', args, {})
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
+      expect(JSON.parse(await second)).toMatchObject({ status: 'transferring', state: 'transferring', waited_ms: DOWNLOAD_CALL_BUDGET_MS })
+      const third = callTool(context, 'message_download_file', args, {})
+      transfer.resolve()
+      expect(JSON.parse(await third)).toMatchObject({ file_name: 'big.bin', size_bytes: 5, route: 'oss' })
+      expect(requestFile).toHaveBeenCalledTimes(3)
+    } finally { vi.useRealTimers() }
+  })
+
+  test('a read that fails after its caller left is reported once to the next call, and the call after that reads afresh', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-late-')); homes.push(home)
+    const unhandled = vi.fn(); process.on('unhandledRejection', unhandled)
+    const refused = Promise.withResolvers<FileHandle>()
+    const requestFile = vi.fn(() => fileRead(verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })))
+      .mockImplementationOnce(() => fileRead(refused.promise))
+    const context = { agentId: AGENT, guguHome: home, requestFile }
+    const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const first = callTool(context, 'message_download_file', args, {})
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
+      expect(JSON.parse(await first)).toMatchObject({ status: 'transferring' })
+      refused.reject(new FileReadError('quota_full', "its account's storage is full (quota_full)"))
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
+      expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
+      expect(requestFile).toHaveBeenCalledTimes(2)
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers(); process.off('unhandledRejection', unhandled) }
+  })
+
+  test('a failure while a caller waits goes to that caller, and the next call reads afresh', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-wait-fail-')); homes.push(home)
+    const requestFile = vi.fn(() => fileRead(verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })))
+      .mockImplementationOnce(() => fileRead(Promise.reject(new FileReadError('quota_full', '(quota_full)'))))
+    const context = { agentId: AGENT, guguHome: home, requestFile }
+    const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
+    await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
+    expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
+    expect(requestFile).toHaveBeenCalledTimes(2)
   })
 
   test('refuses: a message the agent cannot see, one without an attachment, a deleted file, one it may no longer read', async () => {

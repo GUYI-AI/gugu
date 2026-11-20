@@ -133,11 +133,11 @@ describe('withLoopbackNoProxy', () => {
   it('真 spawn 用的是同一份:buildSpawn 带着合并后的 NO_PROXY', () => {
     const spawn = pluginRegistry.get('antigravity')!.behavior.acp!.buildSpawn({
       cwd: '/work',
-      env: { NO_PROXY: 'corp.internal' },
-      cli: '/managed/agy_acp_server',
+      env: { NO_PROXY: 'corp.internal', GEMINI_HOME: '/managed/.gemini' },
+      cli: '/managed/agy',
     });
-    expect(spawn.command).toBe('/managed/agy_acp_server');
-    expect(spawn.args).toEqual([]);
+    expect(spawn.command).toBe('/managed/agy');
+    expect(spawn.args).toEqual(['acp', '--stdio', '--gemini-dir', '/managed/.gemini']);
     expect(spawn.env).toEqual({
       NO_PROXY: 'corp.internal,127.0.0.1,localhost',
       no_proxy: 'corp.internal,127.0.0.1,localhost',

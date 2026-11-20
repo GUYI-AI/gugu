@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../support/testHarness'
-import { usePhoneInterruptedRetry } from '../../../apps/desktop/src/mobile/agent-watch/usePhoneInterruptedRetry'
+import { usePhoneInterruptedRetry } from '../../../apps/desktop/src/components/session-watch/usePhoneInterruptedRetry'
 import { state } from '../../../apps/desktop/src/lib/sessionInputOutboxBridge'
 
 const scope = vi.hoisted(() => ({ invoke: vi.fn(), notices: new Map<string | number, string>() }))

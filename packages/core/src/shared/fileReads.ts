@@ -6,7 +6,7 @@ const log = coreLogger('file-reads')
 
 export type FileReadRoute = 'local' | 'ssh' | 'oss'
 export type FileReadReuse = 'verified-local' | 'chunks' | null
-export type FileReadFailure = 'holder_offline' | 'transfer_disabled' | 'upload_failed' | 'expired' | 'gone'
+export type FileReadFailure = 'holder_offline' | 'transfer_disabled' | 'upload_failed' | 'quota_full' | 'expired' | 'gone'
   | 'access_revoked' | 'integrity_failed' | 'interrupted' | 'cancelled'
 export type FileReadState =
   | { status: 'waiting_sender'; reason: 'declared' | 'relay'; holder?: { label?: string; online?: boolean } }

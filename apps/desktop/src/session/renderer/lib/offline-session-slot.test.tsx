@@ -9,7 +9,7 @@ import { ChatStoreProvider, useChatStore } from '@/store/chatContext';
 import { readShellSlots } from '@/lib/shellSlots';
 import { updateDeviceSessions, removeDeviceSessions } from '@/session/shared/remote-sessions/session-directory';
 
-vi.mock('@/mobile/agent-watch/SessionTimelinePage', () => ({ SessionTimelinePage: () => {
+vi.mock('@/components/session-watch/SessionTimelinePage', () => ({ SessionTimelinePage: () => {
   const { drafts } = useChatStore('drafts');
   return <output data-shared-timeline="">{drafts['session:host/task']}</output>;
 } }));

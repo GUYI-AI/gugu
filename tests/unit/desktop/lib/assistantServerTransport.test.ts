@@ -13,7 +13,7 @@ vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: vi.fn() }))
 vi.mock('@/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: vi.fn() }))
 vi.mock('@/session/renderer/lib/ipc', () => ({ rpcOn: vi.fn() }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }))
-import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
 
 it('opens the real desktop pipe with its desktop hello for server assistant RPC', async () => {
   f.desktop = true

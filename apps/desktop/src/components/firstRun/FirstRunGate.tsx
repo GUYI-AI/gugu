@@ -22,6 +22,7 @@ import { availableTourSteps } from '../productTour/tourTargets'
 import { FeatureFilms } from '../productTour/FeatureFilms'
 import type { ProductTourRequest, TourStepId } from '../../lib/productTour'
 import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
+import { firstInstallImportHomes, showFirstInstallImportNotice } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { FirstRunHarness } from './FirstRunHarness'
 import { FirstRunTerminal } from './FirstRunTerminal'
 import { FirstRunInstallProvider } from './FirstRunInstallProvider'
@@ -122,6 +123,9 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
     void readAgentHomeUpgradeResults().then((homes) => {
       if (active) showAgentHomeUpgradeNotice(homes)
     }).catch((error: unknown) => log.error({ error: String(error) }, 'read configuration upgrade notices failed'))
+    void firstInstallImportHomes.fetch().then((homes) => {
+      if (active) showFirstInstallImportNotice(homes)
+    }).catch((error: unknown) => log.error({ error: String(error) }, 'read first-install import suggestions failed'))
     return () => { active = false }
   }, [state.kind])
 

@@ -6,7 +6,7 @@
  *
  * Components and styles keep referencing tokens through VE typed accessors
  * (vars.background, tokenVars.radiusMd); the prefix is applied transparently
- * here, under the hood in the contract name functions and codegen key builders.
+ * here, under the hood in the contract name functions.
  *
  * Usage:
  *   import { nsName, nsVar } from './namespace';

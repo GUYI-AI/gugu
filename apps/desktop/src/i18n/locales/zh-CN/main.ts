@@ -1,4 +1,35 @@
 export default {
+  "firstInstallImport": {
+    "title": "咕咕 支持一键数据导入啦",
+    "description": "快速带入你的记忆、项目规则和工作习惯",
+    "available": "可从本机导入 {{name}} 的配置"
+  },
+  "usagePopover": {
+    "title": "用量",
+    "refresh": "刷新用量",
+    "remaining": "剩余 {{amount}}%",
+    "reset": "{{date}} 重置",
+    "updated": "{{time}} 更新",
+    "windowMissing": "官方未返回可用窗口",
+    "fiveHours": "5 小时限额",
+    "weekly": "周限",
+    "readFailed": "暂时读不到用量，请重试。",
+    "expired": "登录已失效",
+    "signedOut": "尚未登录",
+    "refreshFailed": "刷新失败，显示上次读数。",
+    "guguSubscription": "咕咕订阅",
+    "credits": "剩余积分",
+    "fullUsage": "查看完整用量",
+    "reason": {
+      "vendor-console": "请到供应商后台查看用量。",
+      "not-reported": "供应商未提供用量读数。",
+      "not-signed-in": "尚未登录",
+      "custom-endpoint": "用量由接入的服务记录。",
+      "other-login": "需要供应商另一份登录，暂时无法读取。",
+      "not-read-yet": "尚未读取，点击刷新查看。",
+      "error": "暂时读不到用量，请重试。"
+    }
+  },
   "referrals": {
     "accountCount": "已邀请 {{count}} 人",
     "invite": "邀请",
@@ -142,9 +173,9 @@ export default {
     "sourceChanged": "来源已更新，请重试",
     "unreadable": "无法读取此文件"
   },
-  "local": "本机配置",
-  "updated": "本机配置有更新",
-  "row": "{{date}} 从 {{path}} 导入了一份。之后你在终端里的修改不会自动同步，咕咕里的改动也不会写回终端。",
+  "local": "终端配置",
+  "updated": "，终端里后来又改过",
+  "row": "{{date}} 导入",
   "upgradeKept": "咕咕已沿用你原来的 {{name}} 配置。",
   "upgradeRelogin": "请在设置 → 订阅中重新登录 {{name}}。",
   "reimport": "重新导入",
@@ -567,6 +598,16 @@ export default {
     "subtitle": "登录你的账号，开始与 AI 协作",
     "brandSubtitle": "你想做的，咕咕帮你做到。",
     "emailLabel": "邮箱",
+    "signup": {
+      "start": "新用户注册",
+      "back": "返回登录",
+      "agree": "同意并继续",
+      "disagree": "不同意",
+      "declined": "不同意就没法使用咕咕。你的邮箱不会发给我们。",
+      "saveFailed": "未能保存本次同意，请重试。",
+      "consentRequired": "请升级到新版咕咕再注册。",
+      "notRegistered": "这个邮箱还没有注册。点「换邮箱」回去，再点「新用户注册」。"
+    },
     "otpLabel": "验证码",
     "or": "或",
     "invalidEmail": "邮箱地址格式不正确",
@@ -765,6 +806,7 @@ export default {
       "permissions": "本机控制",
       "prompts": "提示词",
       "sessions": "项目",
+      "team": "团队",
       "subscriptions": "订阅",
       "usage": "用量"
     },

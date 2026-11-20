@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { recordSessionPlatformModel } from './platform-model-selection';
+import { armSwitchedModelMemory } from './switched-model-memory';
 
 /**
  * 会话中途**当场**换成了一个模型(活会话已确认 `applied`)之后,会话记录跟上。
@@ -47,4 +48,6 @@ export async function recordLiveModelSwitch(input: {
     await db.update(sessions).set({ config: current }).where(eq(sessions.id, input.sessionId));
     throw error;
   }
+  // #3293 Its first successful reply makes it the new-session memory's last-used model.
+  armSwitchedModelMemory(input.sessionId);
 }

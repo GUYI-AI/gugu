@@ -457,6 +457,7 @@ export class AgentAuthManager {
     const spawn = await this.deps.agentHost.buildAcpSpawn(providerId, {
       cwd: this.deps.agentHost.homeDir,
       runContext: context.runContext,
+      authProgram: program ?? null,
     });
     if (!spawn.success) throw new Error(agentConfigAuthErrorMessage(spawn.error));
     if (!this.isCurrentLogin(key, context.generation)) {

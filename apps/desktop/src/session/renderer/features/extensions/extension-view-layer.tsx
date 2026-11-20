@@ -70,7 +70,8 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
         const contribution = enabled.get(page.kind);
         return contribution ? (
           <ExtensionPage
-            key={page.key}
+            // A rebuild (extensionViewStore.reload) is a new key: a new webview, loaded from the start.
+            key={`${page.key}\u0000${extensionViewStore.builds.get(page.key) ?? 0}`}
             kind={page.kind}
             extensionId={contribution.extensionId}
             layerRef={layerRef}
@@ -396,8 +397,18 @@ export const ExtensionPage = observer(function ExtensionPage({
         registeredRef.current = null;
         element.reload();
       };
+      // @@@page-failure - a document that did not load cannot say so itself (what a loaded page throws comes through the App
+      // runtime's own reportError): the host says it as the page's error, and whoever claims the page next has it built
+      // afresh. A page that threw is left as it is (it may hold unsaved work) until the person reloads it (reloadAppPage).
+      const failed = (event: Event) => {
+        const failure = event as Event & { errorCode?: number; errorDescription?: string; isMainFrame?: boolean };
+        if (webviewRef.current !== element || !pageKey || failure.isMainFrame === false || failure.errorCode === -3) return;
+        extensionViewStore.pageFailed(pageKey);
+        extensionSurfaceStore.sayOfPage(pageKey, { error: failure.errorDescription || 'The page did not load' });
+      };
       element.addEventListener('dom-ready', ready);
       element.addEventListener('render-process-gone', gone);
+      element.addEventListener('did-fail-load', failed);
       // Loaded is enough for a widget (its snapshot is waiting); any other page shows at its first contentful paint, or after 3s.
       const load = () => { if (isInline) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
@@ -417,6 +428,7 @@ export const ExtensionPage = observer(function ExtensionPage({
         offZoom?.();
         element.removeEventListener('dom-ready', ready);
         element.removeEventListener('render-process-gone', gone);
+        element.removeEventListener('did-fail-load', failed);
         element.removeEventListener('ipc-message', signal);
         element.removeEventListener('ipc-message', escape);
         element.removeEventListener('did-finish-load', load);
@@ -424,7 +436,7 @@ export const ExtensionPage = observer(function ExtensionPage({
         if (frame) cancelAnimationFrame(frame);
       };
     },
-    [aimAt, claimOf, guestBinding, kind, isInline, extensionId, capture, notePainted]
+    [aimAt, claimOf, guestBinding, kind, isInline, extensionId, capture, notePainted, pageKey]
   );
 
   // 认领方一换(切会话 / 换 tab / 聊天栏换会话)→ 重新指向 + 重新摆位。

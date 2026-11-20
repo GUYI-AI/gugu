@@ -5,7 +5,7 @@ import type { SessionModelMenu } from '@main/core/session-timeline/session-model
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
 import { PLATFORM_RATE_KEY } from '@/session/shared/platform-model-labels'
-import { createModelName, createModelOptions, sessionModelView } from '@/mobile/agent-watch/session-model-menu'
+import { createModelName, createModelOptions, sessionModelView } from '@/components/session-watch/session-model-menu'
 
 // #6845 手机模型选择与桌面同一份装配:组头分出「你的 Codex 模型」与「咕咕提供的模型」,咕咕条目用咕咕目录的名字与倍率,
 // 收起时写「咕咕 X」;换法(当场换 / 重开换计费路)与桌面 planModelSwitch 同一个判定。

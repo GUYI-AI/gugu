@@ -6,12 +6,15 @@ import { userVisibleAuthError } from './authErrors'
 import { rendererLogger } from './log'
 import { i18n } from '@/i18n'
 import { readDisplayIdentities } from './identityReadAdapter'
-import { runLoginOtpRequest, type LoginOtpMetadata } from './loginOtpTransport'
+import { loginOtpRequestKey, runLoginOtpRequest, type LoginOtpIntent, type LoginOtpMetadata } from './loginOtpTransport'
+import { signupConsentRequired, validSignupConsent } from './signupConsent'
+import { accountKindFromMetadata } from '@/features/team/accountKind'
 
 const authLog = rendererLogger('auth/otp')
 
 export interface AuthUser {
   id: string
+  accountKind?: import('../features/team/types').TeamAccountKind
   gugu_number?: number | null
   email: string
   nickname: string
@@ -27,17 +30,24 @@ export interface AuthResult {
   error?: string
 }
 
-export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number }
-function loginOtpFailure(error: unknown, metadata: LoginOtpMetadata): LoginOtpResult {
+export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number; reason?: 'signup_consent_required' }
+function loginOtpFailure(error: unknown, metadata: LoginOtpMetadata, intent?: LoginOtpIntent): LoginOtpResult {
   const detail = error as { status?: number; code?: string; message?: string } | undefined
   const status = metadata.status ?? detail?.status
+  // An explicit sign-in never creates an account, so GoTrue refuses an unregistered address with
+  // otp_disabled ("Signups not allowed for otp"). Say that in the person's language instead of the raw server text.
+  const notRegistered = intent?.kind === 'login'
+    && (detail?.code === 'otp_disabled' || /signups not allowed for otp/i.test(detail?.message ?? ''))
   const limited = status === 429 || detail?.code === 'over_email_send_rate_limit'
   const bodyWait = detail?.message?.match(/(?:after|in)\s+(\d+)\s+seconds?/i)?.[1]
   const cause = metadata.networkError ?? (status !== undefined && status !== detail?.status
     ? { status, code: detail?.code, message: detail?.message ?? String(error) } : error)
   return {
     success: false,
-    error: userVisibleAuthError(cause, 'sendOtp'),
+    error: signupConsentRequired(error, status) ? i18n.t('auth.signup.consentRequired', { ns: 'main' })
+      : notRegistered ? i18n.t('auth.signup.notRegistered', { ns: 'main' })
+      : userVisibleAuthError(cause, 'sendOtp'),
+    ...(signupConsentRequired(error, status) ? { reason: 'signup_consent_required' as const } : {}),
     ...(status === undefined ? {} : { status }),
     ...(detail?.code ? { code: detail.code } : {}),
     ...(limited ? { retryAfterSeconds: Math.max(1, metadata.retryAfterSeconds ?? (bodyWait ? Number(bodyWait) : 30)) } : {}),
@@ -63,6 +73,7 @@ export async function hydrateIdentityAuthUser(user: User, signal: AbortSignal): 
   if (!identityUser) return null
   return {
     id: user.id,
+    accountKind: accountKindFromMetadata(user.app_metadata),
     gugu_number: identityUser.gugu_number,
     email: user.email ?? '',
     nickname: identityUser.display_name,
@@ -72,28 +83,34 @@ export async function hydrateIdentityAuthUser(user: User, signal: AbortSignal): 
 }
 
 export const authService = {
-  requestLoginOtp(email: string): Promise<LoginOtpResult> {
+  requestLoginOtp(email: string, intent?: LoginOtpIntent): Promise<LoginOtpResult> {
+    if (intent?.kind === 'signup' && !validSignupConsent(intent.consent)) {
+      return Promise.resolve({ success: false, reason: 'signup_consent_required', error: i18n.t('auth.signup.consentRequired', { ns: 'main' }) })
+    }
     return runLoginOtpRequest(email, async (metadata) => {
       const nickname = email.split('@')[0] || 'User'
       const data: Record<string, unknown> = { nickname, display_name: nickname }
-      const referrer = consumePendingReferrer()
+      const referrer = intent?.kind === 'login' ? undefined : consumePendingReferrer()
       if (referrer) data.referrer_gugu_number = referrer
+      if (intent?.kind === 'signup') data.cross_border_consent = {
+        document_version: intent.consent.document_version, accepted_at: intent.consent.accepted_at,
+      }
       try {
         const { error } = await supabase.auth.signInWithOtp({
           email,
-          options: { shouldCreateUser: true, data }
+          options: { shouldCreateUser: intent?.kind !== 'login', data }
         })
         if (error)
-          return loginOtpFailure(error, metadata)
+          return loginOtpFailure(error, metadata, intent)
         return { success: true }
       } catch (error) {
         authLog.error(
           { error: error instanceof Error ? error.message : String(error) },
           'request login OTP failed',
         )
-        return loginOtpFailure(error, metadata)
+        return loginOtpFailure(error, metadata, intent)
       }
-    })
+    }, loginOtpRequestKey(email, intent))
   },
 
   async verifyLoginOtp(email: string, token: string): Promise<AuthResult> {

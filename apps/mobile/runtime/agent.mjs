@@ -1,4 +1,4 @@
-import { createInterface } from 'node:readline'
+import { createJsonlReader } from '../../../packages/core/src/local/jsonl.mjs'
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runTurn, cancelTurn } from './pi-session.mjs'
@@ -12,7 +12,7 @@ const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 const bridge = createNativeBridge(output)
 const entry = createAgentEntry({ runTurn, cancelTurn, startPhoneAgentHost, bridge, output })
 
-const input = createInterface({ input: process.stdin })
+const input = createJsonlReader({ input: process.stdin })
 process.stderr.on('error', () => { process.exitCode = 1 })
 bindAgentEntry(entry, {
   input, output: process.stdout,

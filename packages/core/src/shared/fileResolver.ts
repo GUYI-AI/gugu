@@ -65,6 +65,13 @@ export class MissingFileObjectError extends Error {
 export class FileReadRevokedError extends Error {
   constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
 }
+const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])
+/** A relay request ended with a reason (read-contract §2.8): the holder's own words, or the server's code for a refusal. */
+export function relayRefusedError(reason: string) {
+  return RELAY_QUOTA_FULL.has(reason)
+    ? new FileReadError('quota_full', `The computer that keeps this file could not send it: its account's storage is full (quota_full). Free storage on that account, then read the file again.`)
+    : new FileReadError('upload_failed', `The computer that keeps this file could not send it (upload_failed: ${reason}). Ask the sender to send it again.`)
+}
 export interface FileBytes {
   /** An authorized immutable snapshot with exact length; stored digests are verified when present. */
   readonly size: number
