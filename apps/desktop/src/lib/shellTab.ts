@@ -35,6 +35,8 @@ export type ShellTabStore = {
   searchLeft(): void
   /** Back on the chat page: what to show again (the caller shows it), or null = back to the origin's root page. */
   popChat(): ChatUnder | null
+  /** Inspect the return destination without changing the navigation trail. */
+  peekChat(): ChatUnder | null
   subscribe(listener: () => void): () => void
 }
 export type ShellChatList = {
@@ -95,6 +97,9 @@ export function createShellTabStore(initial: SidebarTab, chatList?: ShellChatLis
       let under = trail.pop()
       while (under && gone(under)) under = trail.pop()
       return under ?? null
+    },
+    peekChat() {
+      return [...trail].reverse().find(entry => !gone(entry)) ?? null
     },
     subscribe(listener) {
       listeners.add(listener)
