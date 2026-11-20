@@ -22,9 +22,14 @@ export async function watchRemoteTaskPage(args: { watchId: string; deviceId: str
 /** Local and remote task pages share the same acknowledged picture/input transport. */
 export async function watchTaskPageConnection(watchId: string, connect: () => ReturnType<typeof watchRemoteProjection>): Promise<{ success: true }> {
   if (typeof watchId !== 'string' || !watchId || watchId.length > 128) throw new Error('A task page watch needs an id');
-  // The picture's reset asks again with the same id (as for a projection on this computer): start that watch over.
-  unwatchRemoteTaskPage(watchId);
-  const watching = connect();
+  // A reset reuses the watch id. Its last viewer drops the source synchronously in close(), so
+  // finish that handoff before connect() can look up the previous (now closed) screen resource.
+  const previous = watches.get(watchId);
+  const watching = (async () => {
+    const viewer = await previous?.catch(() => undefined);
+    viewer?.close();
+    return connect();
+  })();
   watches.set(watchId, watching);
   try { await watching; }
   catch (error) { if (watches.get(watchId) === watching) watches.delete(watchId); throw error; }
