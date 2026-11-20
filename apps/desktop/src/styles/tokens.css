@@ -1053,7 +1053,7 @@
 /* ── @@@window-material-css (#7333) 窗口底层材质 ─────────────────────────────────────────────
    真值是 `<html data-window-material>`:只由主进程按系统信号写(electron/window-material.ts,只有 mac 主窗可能是 native),
    ❌ 在 CSS 里再按平台名或 prefers-reduced-transparency 自己判一遍 —— 两个真值会打架。
-   native 时:窗口底层那两块(最左栏、壳里的导航列)让出底色,透出系统 vibrancy;内容表面(聊天、详情、设置卡片)
+   native 时:只有最左栏让出底色,透出系统 vibrancy(列表在 C 档工作区上,浅色深色同一份,desktop-shell.css);内容表面(聊天、详情、设置卡片)
    一律保持不透明,正文不受背后变化干扰。浮层仍是不透明面 + 投影 —— 那是当前的可读降级,不等于原生 glass。
    壳根与内容容器的底色走 --shell-bg(MainLayout 内联读它);它们透明之后,每个内容面得自己画 --bg。 */
 :root {
@@ -1069,22 +1069,7 @@
 :root[data-window-material='opaque'][data-theme='light'] {
   --nav-rail: var(--muted);
 }
-/* 只管壳里的导航列;设置弹窗(挂在 body 上,不在壳里)的左栏照旧是 --sidebar 实色。 */
-:root[data-window-material='native'] [data-gugu-shell-phase] .gg-pane[data-role='nav'] {
-  background: transparent;
-}
-/* 「侧栏渐进底色」打开时:导航列在材质上再铺一层内容色的薄纱,三栏仍是一条阶梯(rail 透 → 列表半透 → 内容实)。 */
-:root[data-window-material='native'][data-sidebar-tint='on'] [data-gugu-shell-phase] .gg-pane[data-role='nav'] {
-  background: color-mix(in oklab, var(--bg) 40%, transparent);
-}
-/* @@@dark-material-veil 深色材质上这层薄纱默认就铺,且加到 70%:深色 sidebar 材质随窗口背后内容在 rgb(43,47,49)…(76,79,82) 之间变,
-   背后是白窗口时分区标题(--muted-fg)只有 2.7:1;70% 之后三种背景(深 / 白 / 花哨)都在 4.7–5.4,条目仍比标题亮,最左栏照旧全透。
-   读数是 mac1 屏幕合成像素(按窗口号截图拍不到材质混色,恒为 70,73,75)。浅色导航列本来就落在不透明工作区底上,不受影响。
-   ❌ 低于 ~63%:背后是白窗口时标题掉回 4.5 以下。 */
-:root[data-window-material='native']:not([data-theme='light']) [data-gugu-shell-phase] .gg-pane[data-role='nav'] {
-  background: color-mix(in oklab, var(--bg) 70%, transparent);
-}
-/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出材质,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
+/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出下面的 C 档工作区,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
    正文(WorkspaceContentLayout 的 bg-background)与各块(screen-frame)照旧不透明。
    浮出预览(data-peek,盖在正文上)❌ 透:那一层要稳定的不透明面。拖入文件时的高亮底(bg-background-2)也保留。
    ❌ 把 .bg-background-tertiary 这个通用类一律清空:正文里的分块也用它。
@@ -1096,18 +1081,11 @@
 :root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
-:root[data-window-material='native'][data-sidebar-tint='on'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
-  background-color: color-mix(in oklab, var(--bg) 40%, transparent);
-}
-/* 同 @@@dark-material-veil:任务页停靠列、群 / 项目的内层栏与壳里的导航列同一层薄纱。 */
-:root[data-window-material='native']:not([data-theme='light']) .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
-  background-color: color-mix(in oklab, var(--bg) 70%, transparent);
-}
 
-/* #7610 owner 选 C:列表、工作区上下留边与右侧导航共用接近白色的整块底。
+/* #7610 owner 选 C:列表、工作区上下留边与右侧导航共用一整块底(浅色接近白色;深色同一结构,只换色)。
    外层圆角归这块工作区,不再只圈右侧正文;布局处方见 desktop-shell.css。
    从既有 sidebar 档取色,渐进底色开关也只改这一份真值。 */
-:root[data-window-material][data-theme='light'] {
+:root[data-window-material] {
   --desktop-workspace-bg: var(--sidebar);
 }
 
