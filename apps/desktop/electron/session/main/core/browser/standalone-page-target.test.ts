@@ -31,25 +31,139 @@ async function fixture(replies: Record<string, (params: Record<string, unknown>,
 }
 
 describe('a standalone page: windows it opens', () => {
-  it('reports the address of a window the page opens and closes that window in Chrome when asked to', async () => {
+  const windowOpen = (url: string, userGesture = true) => ({ url, windowName: '_blank', userGesture });
+  const created = (targetId: string, extra: Record<string, unknown> = {}) => ({ targetInfo: { targetId, type: 'page', openerId: TARGET, url: '', ...extra } });
+
+  it('reports the address of a window the page opens together with the Chrome page it opened, and leaves that page open to be adopted', async () => {
     const f = await fixture();
-    f.target.denyNewWindows();
+    f.target.reportNewWindows();
     const opened: unknown[] = [];
     f.target.on('window-open', (open: unknown) => opened.push(open));
-    f.event('Page.windowOpen', { url: 'http://site.test/next', windowName: '_blank', userGesture: true }, WATCH);
-    f.event('Target.targetCreated', { targetInfo: { targetId: 'P1', type: 'page', openerId: TARGET, url: '' } });
-    expect(opened).toEqual([{ url: 'http://site.test/next' }]);
-    expect(f.sentMethods('Target.closeTarget').map(call => call.params)).toEqual([{ targetId: 'P1' }]);
+    f.event('Page.windowOpen', windowOpen('http://site.test/next'), WATCH);
+    f.event('Target.targetCreated', created('P1'));
+    expect(opened).toEqual([{ url: 'http://site.test/next', popup: 'P1' }]);
+    expect(f.sentMethods('Target.closeTarget')).toEqual([]);
   });
 
-  it('leaves windows alone that another page opened, that are not pages, or when nothing asked for them to be closed', async () => {
+  it('pairs several windows in the order they were opened', async () => {
     const f = await fixture();
-    f.event('Target.targetCreated', { targetInfo: { targetId: 'P0', type: 'page', openerId: TARGET } });
-    f.target.denyNewWindows();
-    f.event('Target.targetCreated', { targetInfo: { targetId: 'P2', type: 'page', openerId: 'another-page' } });
-    f.event('Target.targetCreated', { targetInfo: { targetId: 'W1', type: 'service_worker', openerId: TARGET } });
+    f.target.reportNewWindows();
+    const opened: unknown[] = [];
+    f.target.on('window-open', (open: unknown) => opened.push(open));
+    f.event('Page.windowOpen', windowOpen('http://a.test/'), WATCH);
+    f.event('Page.windowOpen', windowOpen('http://b.test/'), WATCH);
+    f.event('Target.targetCreated', created('P1'));
+    f.event('Target.targetCreated', created('P2'));
+    expect(opened).toEqual([{ url: 'http://a.test/', popup: 'P1' }, { url: 'http://b.test/', popup: 'P2' }]);
+  });
+
+  it('calls a window that opens empty about:blank, as the page may point it somewhere later', async () => {
+    const f = await fixture();
+    f.target.reportNewWindows();
+    const opened: unknown[] = [];
+    f.target.on('window-open', (open: unknown) => opened.push(open));
+    f.event('Page.windowOpen', windowOpen(''), WATCH);
+    f.event('Target.targetCreated', created('P1'));
+    expect(opened).toEqual([{ url: 'about:blank', popup: 'P1' }]);
+  });
+
+  it('reports at once, by address only, a window Chrome blocked because no one clicked: no page exists to adopt', async () => {
+    const f = await fixture();
+    f.target.reportNewWindows();
+    const opened: unknown[] = [];
+    f.target.on('window-open', (open: unknown) => opened.push(open));
+    f.event('Page.windowOpen', windowOpen('http://ads.test/', false), WATCH);
+    expect(opened).toEqual([{ url: 'http://ads.test/' }]);
+  });
+
+  it('reports by address only when Chrome never creates the page it was told about', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = await fixture();
+      f.target.reportNewWindows();
+      const opened: unknown[] = [];
+      f.target.on('window-open', (open: unknown) => opened.push(open));
+      f.event('Page.windowOpen', windowOpen('http://site.test/lost'), WATCH);
+      expect(opened).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(opened).toEqual([{ url: 'http://site.test/lost' }]);
+      f.event('Target.targetCreated', created('P-late')); // Nothing left to pair it with.
+      expect(opened).toHaveLength(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('leaves windows alone that another page opened, that are not pages, or when nothing asked to hear about them', async () => {
+    const f = await fixture();
+    const opened: unknown[] = [];
+    f.target.on('window-open', (open: unknown) => opened.push(open));
+    f.event('Page.windowOpen', windowOpen('http://site.test/x'), WATCH);
+    f.event('Target.targetCreated', created('P0'));
+    f.target.reportNewWindows();
+    f.event('Target.targetCreated', created('P2', { openerId: 'another-page' }));
+    f.event('Target.targetCreated', created('W1', { type: 'service_worker' }));
     f.event('Target.targetCreated', { targetInfo: { targetId: 'P3', type: 'page' } });
+    expect(opened).toEqual([]);
     expect(f.sentMethods('Target.closeTarget')).toEqual([]);
+  });
+});
+
+describe('a standalone page: Chrome closes it', () => {
+  it('tells when the page closes itself, as window.close() does, but not when Gugu closed it', async () => {
+    const f = await fixture();
+    const closed: unknown[] = [];
+    f.target.on('closed-by-page', () => closed.push('closed'));
+    f.target.expectClose();
+    f.event('Target.targetDestroyed', { targetId: TARGET });
+    expect(closed).toEqual([]);
+    expect(f.target.isDestroyed()).toBe(true);
+    const g = await fixture();
+    const gClosed: unknown[] = [];
+    g.target.on('closed-by-page', () => gClosed.push('closed'));
+    g.event('Target.targetDestroyed', { targetId: 'another-page' });
+    expect(gClosed).toEqual([]);
+    g.event('Target.targetDestroyed', { targetId: TARGET });
+    expect(gClosed).toEqual(['closed']);
+    expect(g.target.isDestroyed()).toBe(true);
+  });
+});
+
+describe('a standalone page: the icon in the tab', () => {
+  const icons = (value: unknown) => ({ 'Runtime.evaluate': () => ({ result: { value } }) });
+
+  it('reports the icons the loaded page declares, once for a document', async () => {
+    const f = await fixture(icons(['http://site.test/fav.png', 'http://site.test/touch.png']));
+    const updated: unknown[] = [];
+    f.target.on('page-favicon-updated', (detail: unknown) => updated.push(detail));
+    f.event('Page.frameStoppedLoading', { frameId: 'main' }, WATCH);
+    await f.settle();
+    f.event('Page.navigatedWithinDocument', { frameId: 'main', url: 'http://site.test/#x' }, WATCH);
+    await f.settle();
+    expect(updated).toEqual([{ favicons: ['http://site.test/fav.png', 'http://site.test/touch.png'] }]);
+  });
+
+  it('reports again for the next document and when the list changes within one', async () => {
+    let value: string[] = ['http://site.test/a.png'];
+    const f = await fixture({ 'Runtime.evaluate': () => ({ result: { value } }) });
+    const updated: unknown[] = [];
+    f.target.on('page-favicon-updated', (detail: unknown) => updated.push(detail));
+    f.event('Page.frameStoppedLoading', { frameId: 'main' }, WATCH); await f.settle();
+    value = ['http://site.test/b.png'];
+    f.event('Page.navigatedWithinDocument', { frameId: 'main', url: 'http://site.test/#y' }, WATCH); await f.settle();
+    f.event('Page.frameNavigated', { frame: { id: 'main', url: 'http://other.test/' } }, WATCH);
+    value = ['http://site.test/b.png'];
+    f.event('Page.frameStoppedLoading', { frameId: 'main' }, WATCH); await f.settle();
+    expect(updated).toEqual([{ favicons: ['http://site.test/a.png'] }, { favicons: ['http://site.test/b.png'] }, { favicons: ['http://site.test/b.png'] }]);
+  });
+
+  it('says nothing for a page without icons or one that cannot be read', async () => {
+    for (const replies of [icons([]), icons(undefined), { 'Runtime.evaluate': () => { throw new Error('gone'); } }]) {
+      const f = await fixture(replies);
+      const updated: unknown[] = [];
+      f.target.on('page-favicon-updated', (detail: unknown) => updated.push(detail));
+      f.event('Page.frameStoppedLoading', { frameId: 'main' }, WATCH);
+      await f.settle();
+      expect(updated).toEqual([]);
+    }
   });
 });
 
