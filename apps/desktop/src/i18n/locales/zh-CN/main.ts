@@ -607,7 +607,7 @@ export default {
       "back": "返回登录",
       "agree": "同意并继续",
       "disagree": "不同意",
-      "declined": "不同意将无法使用咕咕。你的邮箱地址不会被发送。",
+      "declined": "不同意将无法使用咕咕。你的邮箱不会发送给我们。",
       "saveFailed": "无法保存同意记录，请重试。",
       "consentRequired": "请升级到新版咕咕后再注册。",
       "notRegistered": "此邮箱尚未注册。请点击「换邮箱」返回，再点击「新用户注册」。"

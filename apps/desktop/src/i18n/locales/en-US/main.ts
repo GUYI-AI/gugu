@@ -625,7 +625,7 @@ export default {
       "back": "Back to sign-in",
       "agree": "Agree and continue",
       "disagree": "Disagree",
-      "declined": "You cannot use Gugu without agreeing. Your email address will not be sent.",
+      "declined": "You cannot use Gugu without agreeing. Your email address will not be sent to us.",
       "saveFailed": "Could not save your consent. Try again.",
       "consentRequired": "Update Gugu before creating an account.",
       "notRegistered": "This email is not registered yet. Choose Change email, then Create an account."

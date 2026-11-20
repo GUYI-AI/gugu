@@ -84,7 +84,7 @@ it('does not expose or submit an email before a separate affirmative consent', a
   expect(host.querySelector('[data-signup-consent]')?.textContent).toContain('未满 14 周岁的，请让父母或其他监护人来点同意。')
   expect(host.querySelector<HTMLAnchorElement>('[data-signup-consent] a')?.href).toBe('https://gugu.nextmind.space/zh/privacy.html')
   await click('不同意')
-  expect(host.querySelector('[role="status"]')?.textContent).toContain('你的邮箱地址不会被发送。')
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('你的邮箱不会发送给我们。')
   expect(host.querySelector('input')).toBeNull()
   expect(m.accept).not.toHaveBeenCalled()
   expect(m.request).not.toHaveBeenCalled()
