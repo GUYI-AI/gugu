@@ -730,7 +730,7 @@ export function useReplicas<A extends unknown[], V>(model: Replica<A, V>, argsLi
   return results.map((result, index) => (keys[index] ? readingOf(result, keys[index]!) : UNKNOWN))
 }
 
-/** Test seam: the live session as the replica sees it. */
+/** The account as the replica sees it (the outbox binds its writes to it; tests read it too). */
 export function replicaAccount(): AccountState { return account }
 
 /** Whether a read of this model's entry (arguments left out match any) is on its way now: e.g. a check running. */
