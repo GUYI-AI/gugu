@@ -48,7 +48,7 @@ describe('转写一段', () => {
     const provider = { getAuth: async () => ({ userId: 'team-principal', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'team-principal', session_id: sessionId, app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }) }
     issuePlatformModelAccess.mockResolvedValueOnce({ ...ticket(), teamTask: { actorUserId: 'team-principal', memberIdentityId: 'team-principal', authSessionId: sessionId,
       funding: { kind: 'team', team_id: 'team-a', member_id: 'member-a', task_id: 'voice-task-a', unit_version: 2, locked_at: '2026-11-15T00:00:00Z' } } })
-    fetchMock.mockResolvedValue(reply(200, { choices: [{ message: { content: 'ok' } }] }))
+    fetchMock.mockImplementation(async () => reply(200, { choices: [{ message: { content: 'ok' } }] }))
     await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toEqual({ ok: true, text: 'ok' })
     sessionId = 'new-session'
     await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toMatchObject({ ok: false })

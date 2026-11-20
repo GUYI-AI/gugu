@@ -60,7 +60,7 @@ beforeEach(() => {
   awaitAgentIdentity.mockReset().mockResolvedValue(undefined)
   issuePlatformModelAccess.mockReset().mockResolvedValue(ticket())
   revokePlatformModelAccess.mockClear()
-  fetchMock.mockReset().mockResolvedValue(reply(200, { choices: [{ message: { content: '{"title": "verifyLoginOtp 登录后跳回首页"}' } }] }))
+  fetchMock.mockReset().mockImplementation(async () => reply(200, { choices: [{ message: { content: '{"title": "verifyLoginOtp 登录后跳回首页"}' } }] }))
 })
 afterEach(() => {
   vi.useRealTimers()
