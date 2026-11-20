@@ -9,7 +9,7 @@ import { ExtensionViewLayer } from './features/extensions/extension-view-layer';
 import { IntegrationsProvider } from './features/integrations/integrations-provider';
 import { WorkspaceLayoutContextProvider } from './lib/layout/layout-provider';
 import { WorkspaceViewProvider } from './lib/layout/provider';
-import { ModalRenderer } from './lib/modal/modal-renderer';
+import { SessionModalHost } from '@/components/SessionModalHost';
 import { GithubContextProvider } from './lib/providers/github-context-provider';
 import { ThemeProvider } from './lib/providers/theme-provider';
 import { TerminalPoolProvider } from './lib/pty/pty-pool-provider';
@@ -42,7 +42,7 @@ function AppContent() {
                 <AppMenuEvents />
                 <RightSidebarProvider>
                   <ThemeProvider>
-                    <ModalRenderer />
+                    <SessionModalHost />
                     <ExtensionViewLayer />
                     <AuxWindowHost />
                     <AppVoiceNotesHost />
