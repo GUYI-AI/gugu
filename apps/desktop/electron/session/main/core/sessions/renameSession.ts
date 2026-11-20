@@ -124,8 +124,8 @@ function isFirstPromptEcho(title: string, firstUtterance: string | undefined): b
 }
 
 // A bound name changed on the roster (rename here, publish, another device, provisioning). The task has
-// one name at a time: binding clears the pending-bind record; unbinding (archive, removal) writes the
-// identity's last name back into it, which is also the name a restored task's new identity takes.
+// one name at a time: binding clears the pending-bind record; unbinding (removal) writes the identity's
+// last name back into it, which is also the name a new identity of the task takes. Archiving keeps the binding.
 onTaskNamesChanged((changes) => {
   for (const { sessionId, previous, next } of changes) {
     const row = readRow(sessionId);
