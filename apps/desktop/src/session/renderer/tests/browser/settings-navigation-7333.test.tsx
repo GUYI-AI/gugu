@@ -232,7 +232,8 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     await until('the real settings dialog finished entering', () => dialog.getAnimations({ subtree: true }).every((animation) => animation.playState === 'finished'));
     const verify = () => {
       const title = detail.querySelector<HTMLElement>('[data-slot="pane-header"] h2')!;
-      const column = detail.querySelector<HTMLElement>('.gg-settings-body > *')!;
+      // A session-page section sits in a display: contents wrapper; its own element is the column.
+      const column = detail.querySelector<HTMLElement>('.gg-settings-body [data-session-settings-section]') ?? detail.querySelector<HTMLElement>('.gg-settings-body > *')!;
       expect(detail.getBoundingClientRect().width).toBeGreaterThan(550);
       expect(column.getBoundingClientRect().width).toBeGreaterThan(500);
       expect(column.getBoundingClientRect().width).toBeLessThanOrEqual(720);
@@ -243,6 +244,9 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     await page.getByRole('button', { name: i18n.t('settings.nav.about', { ns: 'main' }), exact: true }).click();
     await until('About opens in the same dialog', () => !detail.isConnected || document.querySelector('[data-settings-modal-card]')?.getAttribute('data-settings-section') === 'about');
     expect(detail.isConnected, 'navigating to About must not unmount the settings panel').toBe(true);
+    verify();
+    await page.getByRole('button', { name: i18n.t('settings.nav.subscriptions', { ns: 'main' }), exact: true }).click();
+    await until('Subscriptions (drawn by the session page) opens in the same dialog', () => detail.querySelector('[data-session-settings-section="subscriptions"] [data-testid="subscriptions-refresh"]') !== null);
     verify();
     expect(document.querySelectorAll('[data-settings-modal-card]')).toHaveLength(1);
   });
