@@ -8,7 +8,7 @@ import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BU
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import { keepHistoryReverted, markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
-import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision, type StoredTurnInput } from './session-turn-storage';
+import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision, sessionTurnRootObjectSql, type StoredTurnInput } from './session-turn-storage';
 import { turnPayloadFiles, withTurnPayloadWrite } from './session-turn-payload-owners';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
@@ -243,11 +243,11 @@ export function storedMessagesWithPromptHash(sessionId: string, nativeText: stri
     .filter(item => JSON.stringify(item).includes(digest));
 }
 
-/** Record-backed rows without an outcome, with their sequence: a later read may complete them (see below). */
+/** Unfinished or host-ended record rows: a genuine late native outcome may still complete the same row. */
 export function readUnfinishedRecordRowsNow(sessionId: string): Array<{ seq: number; turn: TranscriptTurn }> {
   return db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
-      sql`${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NULL`)).all()
+      sql`(${sql.raw(sessionTurnHeaderSql('outcome_kind', '$.outcome.kind'))} IS NULL OR ${sql.raw(sessionTurnRootObjectSql('hostEnd'))})`)).all()
     .map(row => ({ seq: row.seq, turn: readSessionTurn(db.connection, row) }));
 }
 

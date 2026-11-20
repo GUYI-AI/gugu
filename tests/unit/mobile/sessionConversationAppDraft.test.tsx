@@ -277,3 +277,16 @@ it('settles only the discarded host input notice when the real life event remove
   expect(sendNotices.size).toBe(1)
   expect(hostActions.discard.mock.calls).toEqual([[sessionId, 'host-a'], [sessionId, 'host-a']])
 })
+
+
+it('does not query ACP-only options for a PTY conversation (#3374)', async () => {
+  const { fetchSessionOptions } = await import('../../../apps/desktop/src/components/session-watch/sessionpage-rpc');
+  vi.mocked(fetchSessionOptions).mockClear();
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    deviceId: 'machine', sessionId: 'pty-3374', local: false, mobile: true, sessionRuntime: 'pty',
+    agentName: 'Claude Code', machineLabel: 'Test host', respondingItemId: null, onRespond: vi.fn(),
+    onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false, stopping: false,
+    timeline: emptyAgentWatchTimeline(), onStop: vi.fn(), onLoadOlder: async () => undefined,
+  }));
+  expect(fetchSessionOptions).not.toHaveBeenCalled();
+});

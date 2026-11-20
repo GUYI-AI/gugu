@@ -218,6 +218,18 @@ export function sessionTurnHeaderSql(field: 'reference_id' | 'outcome_kind' | 's
     ELSE json_extract(${table}.data, '${legacyPath}') END`;
 }
 
+/**
+ * Whether a root turn field currently holds an object, without decoding the turn. A committed root field overrides
+ * the legacy body (a stored NULL is its removal); a turn born normalized has no legacy body to fall back to.
+ */
+export function sessionTurnRootObjectSql(field: string, table = 'session_turns'): string {
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(field)) throw new Error('Invalid turn field name');
+  const stored = `SELECT f.value FROM session_turn_fields f WHERE f.row_id=${table}.id AND f.node_key='root' AND f.field='${field}'`;
+  return `(CASE WHEN EXISTS (${stored}) THEN coalesce(json_extract((${stored}), '$.t') IN ('object', 'node'), 0)
+    WHEN EXISTS (SELECT 1 FROM session_turn_heads h WHERE h.row_id=${table}.id AND h.base='empty') THEN 0
+    ELSE coalesce(json_type(${table}.data, '$.${field}') = 'object', 0) END)`;
+}
+
 /** Message identity/text only. A tool, picture, terminal or outcome change performs no FTS writes. */
 export function syncSessionTurnText(connection: Database.Database, rowId: string, turn: TranscriptTurn): void {
   const owner = connection.prepare('SELECT session_id,seq FROM session_turns WHERE id=?').get(rowId) as { session_id: string; seq: number } | undefined;

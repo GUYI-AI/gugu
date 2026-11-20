@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openFixture } from '@tooling/utils/db';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { prepareSessionTurn, readSessionTurn, sessionTurnRevision, turnPayloadFiles } from './session-turn-storage';
+import { prepareSessionTurn, readSessionTurn, sessionTurnRevision, sessionTurnRootObjectSql, turnPayloadFiles } from './session-turn-storage';
 import { collectTurnPayloads, withTurnPayloadWrite } from './session-turn-payload-owners';
 import Database from 'better-sqlite3';
 import { backfillTurnText } from '@main/db/initialize';
@@ -85,6 +85,19 @@ describe('versioned session turn storage', () => {
       const attempts = fixture.sqlite.prepare('SELECT count(*) n FROM payload_insert_attempts WHERE kind=?').get(kind);
       expect(attempts).toEqual(fixture.sqlite.prepare(`SELECT count(*) n FROM ${table}`).get());
     }
+  });
+
+  it.each([true, false])('selects a root object field from the committed head, legacy body or normalized row (legacy=%s)', legacy => {
+    const hostEnded = (): boolean => (fixture.sqlite.prepare(`SELECT ${sessionTurnRootObjectSql('hostEnd')} AS hit FROM session_turns`).get() as { hit: number }).hit === 1;
+    const value = { ...turn(), hostEnd: { at: 20 } }, row = insert(value, legacy);
+    expect(hostEnded()).toBe(true);
+    const closed: TranscriptTurn = { ...turn(), outcome: { kind: 'done' } };
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, closed, false).commit())();
+    expect(readSessionTurn(fixture.sqlite, row).hostEnd).toBeUndefined();
+    expect(hostEnded()).toBe(false);
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, { ...closed, hostEnd: { at: 30 } }, false).commit())();
+    expect(hostEnded()).toBe(true);
+    expect(() => sessionTurnRootObjectSql("hostEnd' OR 1=1 --")).toThrow();
   });
 
   it('updates a small field without rewriting data, static image bytes or searchable message rows', () => {

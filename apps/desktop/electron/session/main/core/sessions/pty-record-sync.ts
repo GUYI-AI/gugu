@@ -4,6 +4,7 @@ import { log } from '@main/lib/logger';
 import { agentStatusWriter } from '../agent-status/agent-status-writer';
 import { syncStoredHistoryFromRecord } from './record-backfill';
 import { sessionTurnHeaderSql } from './session-turn-storage';
+import { onPtyEngineEnd } from './pty-turn-ends';
 
 /**
  * Terminal tasks whose record must be read once at boot, from facts that were persisted before this host started:
@@ -52,6 +53,8 @@ export function startPtyRecordSync(resume: readonly string[]): () => void {
     else running.delete(change.sessionId);
     if (wasRunning && !change.reading.running) read(change.sessionId);
   });
+  // Reclaim can kill an already-idle engine: no working→idle edge follows, but its unfinished record still needs closing.
+  const offEnded = onPtyEngineEnd(read);
   for (const id of resume) read(id);
-  return () => { off(); for (const controller of watches.values()) controller.abort(); watches.clear(); running.clear(); };
+  return () => { off(); offEnded(); for (const controller of watches.values()) controller.abort(); watches.clear(); running.clear(); };
 }
