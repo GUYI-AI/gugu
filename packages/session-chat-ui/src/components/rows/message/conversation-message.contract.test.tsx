@@ -178,7 +178,10 @@ describe('agent-centered conversation bubbles', () => {
           expect(bubble.contains(name)).toBe(false);
           expect(name!.textContent).toBe('Codex 11');
           // 时间、复制那一行在气泡下面占着位置,鼠标停上去才显出来(设计稿 `.acts{opacity:0}`,owner 10-28)。
-          expect(getComputedStyle(actions.querySelector('button')!).opacity).toBe('0');
+          // Read at rest: a fade still running on the control (CI caught one mid-way) ends first.
+          const copy = actions.querySelector('button')!;
+          await Promise.all(copy.getAnimations().map(animation => animation.finished));
+          expect(getComputedStyle(copy).opacity).toBe('0');
         } else {
           expect(Math.abs(bubble.getBoundingClientRect().right - row.getBoundingClientRect().right)).toBeLessThanOrEqual(1);
           // What the reader typed here carries no name row (owner 2026-11-07); its quote sits below the bubble.
