@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   setAppSettingsValueInCache: vi.fn(),
   updateAppSettingsRequest: vi.fn((_key: string, _value: unknown) => Promise.resolve()),
   showModal: vi.fn(),
+  platform: { kind: 'electron' },
+  device: { confirmBeforeCancelAndSend: true },
 }));
 
 vi.mock('@renderer/features/settings/app-settings-client', () => ({
@@ -14,6 +16,11 @@ vi.mock('@renderer/features/settings/app-settings-client', () => ({
   invalidateAppSettingsKey: vi.fn(),
   beginAppSettingsWrite: () => () => {},
   writeAppSetting: (key: string, value: unknown) => mocks.updateAppSettingsRequest(key, value),
+}));
+vi.mock('@/platform', () => ({ platform: mocks.platform }));
+vi.mock('@/lib/devicePreferences', () => ({
+  readDevicePreferences: () => mocks.device,
+  writeDevicePreferences: (patch: Partial<typeof mocks.device>) => Object.assign(mocks.device, patch),
 }));
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
@@ -31,7 +38,30 @@ type ModalArgs = {
 const lastModal = () => mocks.showModal.mock.calls.at(-1)?.[1] as ModalArgs;
 
 describe('requestSendQueuedPromptNow', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.platform.kind = 'electron';
+    mocks.device.confirmBeforeCancelAndSend = true;
+  });
+
+  it('lets the phone remember approval and ask again when the device setting is reset', () => {
+    mocks.platform.kind = 'capacitor';
+    mocks.getAppSettingValueSnapshot.mockReturnValue(undefined);
+    const send = vi.fn();
+    requestSendQueuedPromptNow({ cancelsTurn: true, send });
+    expect(lastModal().dontAskAgainLabel).toBe('chat.cancelAndSendAlwaysAllow');
+    expect(send).not.toHaveBeenCalled();
+    lastModal().onSuccess({ dontAskAgain: true, scopeChecked: false });
+    expect(mocks.device.confirmBeforeCancelAndSend).toBe(false);
+    requestSendQueuedPromptNow({ cancelsTurn: true, send });
+    expect(mocks.showModal).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(mocks.updateAppSettingsRequest).not.toHaveBeenCalled();
+    mocks.device.confirmBeforeCancelAndSend = true;
+    requestSendQueuedPromptNow({ cancelsTurn: true, send });
+    expect(mocks.showModal).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
 
   it('sends straight away when no turn is running', () => {
     mocks.getAppSettingValueSnapshot.mockReturnValue({ confirmBeforeCancelAndSend: true });

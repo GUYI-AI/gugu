@@ -5,7 +5,7 @@ import { useGroupRef } from 'react-resizable-panels';
 import { Settings, X } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { observeGroupParticipantWidth } from '@renderer/features/chats/group-participant-width';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { extensionSurfaceStore } from '@renderer/features/extensions/extension-surface-store';
 import { useAppPageTab } from '@renderer/features/extensions/extension-tab-provider';
@@ -304,7 +304,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
             label={label}
             title={tooltip}
             labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={takeAway}
           />
@@ -325,7 +325,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
   const { translate } = useSessionMessages();
   const { chatId, tabKind, itemId, title } = content;
   const slot = `screen:${blockId}`;
-  const { contribution, label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, slot), tabKind, itemId ? title : undefined, title);
+  const { label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, slot), tabKind, itemId ? title : undefined, title);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const putBack = () => {
@@ -355,7 +355,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
             label={label}
             title={tooltip}
             labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={putBack}
           />

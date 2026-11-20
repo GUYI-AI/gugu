@@ -1,4 +1,4 @@
-import { Folder, Globe } from '@/lib/icons';
+import { Globe } from '@/lib/icons';
 import { openApp } from '@/components/appSlot/useOpenApp';
 import { OpenSuperseded, openLinkTarget } from '@/lib/guguLinks';
 import { notify } from '@/lib/notices';
@@ -29,7 +29,7 @@ import { decideBrowserReload } from './browser-navigation-controls';
 import { fitBrowserPageToPane } from './browser-page-fit';
 import { browserSessionStore } from './browser-session-store';
 import { peekInstalledAppsTracked } from '../extensions/installed-extensions';
-import { ExtensionMark } from '../extensions/extension-mark';
+import { ExtensionMark, TabKindMark } from '../extensions/extension-mark';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem, WORKSPACE_APP_KIND } from '../chats/chat-tabs/chat-panel-item';
 import { openFileInSessionEditor } from '../sessions/stores/open-file-in-file-editor';
@@ -133,7 +133,7 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   const { translate } = useSessionMessages();
   const openFolder = () => openPanelItem(chatId, folderItem(), { from: tabId });
   const startPageActions: WorkspacePanelAction[] = [
-    { id: 'files', label: translate('workspace.files'), icon: <Folder className="size-3.5" />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
+    { id: 'files', label: translate('workspace.files'), icon: <TabKindMark kind={WORKSPACE_APP_KIND} />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
     // What is installed here not read yet: only the host's own actions (the Apps appear when it is read).
     ...(peekInstalledAppsTracked()?.openableApps ?? []).map((app): WorkspacePanelAction => ({

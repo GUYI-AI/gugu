@@ -72,6 +72,7 @@ export const devicePreferencesSchema = z.object({
   chatMessages: z.boolean(),
   chatSound: z.boolean(),
   meetingReminder: z.boolean(),
+  confirmBeforeCancelAndSend: z.boolean().default(true),
 }) satisfies z.ZodType<DevicePreferences>;
 
 /**

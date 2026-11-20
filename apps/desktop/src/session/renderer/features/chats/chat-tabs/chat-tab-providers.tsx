@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, MessageSquare, Users } from '@/lib/icons';
+import { MessageSquare, Users } from '@/lib/icons';
 import { AppFileMark } from '@renderer/features/extensions/app-file-mark';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
@@ -19,7 +19,8 @@ import type { ResolvedTab, TabBarItemProps, TabContentProps, TabEntry, TabResour
 import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-registry';
 import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
-import { groupPageSlot, isFolderItem, panelItemKey, type PanelItem } from './chat-panel-item';
+import { groupPageSlot, isFolderItem, panelItemKey, WORKSPACE_APP_KIND, type PanelItem } from './chat-panel-item';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
@@ -123,7 +124,7 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
 
 function PanelIcon({ item }: { item: PanelItem }) {
   const installed = useInstalledApps(LOCAL_HOST);
-  if (isFolderItem(item)) return <Folder size={14} />;
+  if (isFolderItem(item)) return <TabKindMark kind={WORKSPACE_APP_KIND} />;
   const apps = installed.state === 'value' ? installed.value : null;
   const extensionId = item.kind && (installed.state === 'unknown' || !showsFile(item, apps)) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   if (extensionId && installed.state === 'unknown') return <Unknown className="size-4 shrink-0" />;
