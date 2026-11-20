@@ -38,4 +38,20 @@ describe('standalone layout zoom and restart', () => {
     expect(send.mock.calls.at(-2)).toEqual(['Emulation.setDeviceMetricsOverride', { width: 800, height: 1600, deviceScaleFactor: 0.5, mobile: false }]);
     for (const factor of [0, NaN, Infinity, 5.01]) expect(() => view.zoom(factor)).toThrow('Invalid browser zoom');
   });
+  it('says it is sized only once the pane\'s size has been applied to the page, not for saved zoom alone', async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const send = vi.fn(async () => ({})).mockImplementationOnce(async () => { await blocked; return {}; });
+    const view = new TaskPageViewport(send);
+    let sized = false;
+    void view.sized().then(() => { sized = true; });
+    await view.zoom(0.5);
+    await Promise.resolve();
+    expect(sized).toBe(false);
+    const resize = view.resize({ width: 400, height: 800, scale: 1 });
+    await Promise.resolve(); await Promise.resolve();
+    expect(sized).toBe(false); // Sent, not yet applied.
+    release(); await resize; await Promise.resolve();
+    expect(sized).toBe(true);
+  });
 });

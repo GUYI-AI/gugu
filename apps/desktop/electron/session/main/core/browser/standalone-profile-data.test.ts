@@ -100,16 +100,34 @@ describe('standalone cookie import and data clearing', () => {
     expect(await readdir(f.root)).toEqual([path.basename(f.pool.directoryFor(other))]);
   });
 
-  it('empties a running profile and reopens its tabs where they were; other profiles are untouched', async () => {
-    const f = await fixture({ [other]: 'Cookies' });
+  it('"all" on a running profile is cleared in place like the cookies: no restart, the tab keeps its page and history, other profiles are untouched', async () => {
+    const f = await fixture({ [other]: 'Cookies' }, () => ['https://stored.test/']);
     await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://a.test/page', signal });
     const directory = await f.seed(work, 'Local Storage');
+    f.cookies.mockResolvedValueOnce({ cookies: [{ name: 'sid', value: 'v', domain: 'a.test', secure: true }] });
     await f.data.clear(work, 'all');
-    await expect(readdir(directory)).rejects.toThrow();
-    expect(f.create).toHaveBeenCalledTimes(2);
-    expect(f.opened.filter(page => page.id === 'tab').map(page => page.url)).toEqual(['https://a.test/page', 'https://a.test/page']);
+    expect(f.create).toHaveBeenCalledOnce(); // Chrome was not restarted,
+    expect(f.opened.filter(page => page.id === 'tab')).toHaveLength(1); // and the tab's page is the one it had, with its history.
+    expect(await readdir(directory)).toEqual(['Local Storage']);
+    // Sites are listed from their cookies, so the cookies go after the sites; the cache goes too.
+    const order = methods(f);
+    expect(order.filter(method => method === 'Storage.clearDataForStorageKey')).toHaveLength(2);
+    expect(order.indexOf('Network.clearBrowserCookies')).toBeGreaterThan(order.lastIndexOf('Storage.clearDataForStorageKey'));
+    expect(order).toContain('Network.clearBrowserCache');
+    expect(f.commands.filter(command => command.method === 'Storage.clearDataForStorageKey').map(command => command.params?.storageKey))
+      .toEqual(['https://a.test/', 'https://stored.test/']); // The open page's site, and the one Chrome's databases list; the cookie's site is the first again.
     expect(f.pool.livePartitions).toEqual([work]);
     expect(await readdir(f.pool.directoryFor(other))).toEqual(['Cookies']);
+    await f.pool.dispose();
+  });
+
+  it('"all" on a running profile still clears cookies and cache when the sites cannot be listed, and then reports it', async () => {
+    const f = await fixture({ [work]: 'Cookies' }, () => { throw new Error('Chrome quota database is locked'); });
+    await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://open.test/', signal });
+    await expect(f.data.clear(work, 'all')).rejects.toThrow('quota database is locked');
+    expect(methods(f)).toContain('Network.clearBrowserCookies');
+    expect(methods(f)).toContain('Network.clearBrowserCache');
+    expect(f.create).toHaveBeenCalledOnce();
     await f.pool.dispose();
   });
 

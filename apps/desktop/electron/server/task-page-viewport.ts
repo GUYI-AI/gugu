@@ -7,13 +7,20 @@ export class TaskPageViewport {
   private viewport: Viewport | undefined;
   private factor = 1;
   private pending: Promise<void> = Promise.resolve();
+  private firstSize!: () => void;
+  private readonly sizedOnce = new Promise<void>(resolve => { this.firstSize = resolve; });
   constructor(private readonly send: (method: string, params: Record<string, unknown>) => Promise<unknown>) {}
 
   ready(): Promise<void> { return this.pending; }
 
+  /** Resolves once the page has been given the size of its pane. Until then it lays out at Chrome's own window width. */
+  sized(): Promise<void> { return this.sizedOnce; }
+
   resize(viewport: Viewport): Promise<void> {
     this.viewport = viewport;
-    return this.apply();
+    const applied = this.apply();
+    void applied.then(this.firstSize, () => {});
+    return applied;
   }
 
   zoom(factor: number): Promise<void> {

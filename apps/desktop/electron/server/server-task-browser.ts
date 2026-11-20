@@ -38,6 +38,7 @@ export interface TaskPageContents {
   hostCommand?(method: string, params: Record<string, unknown>): Promise<unknown>;
   /** Host layout zoom, never part of the restricted page protocol. */
   setZoomFactor?(factor: number): Promise<void>;
+  sized?(): Promise<void>;
   /**
    * A page in a headless Chrome stays blocked by alert / confirm until the host answers. Events 'javascript-dialog' (type, message) and
    * 'javascript-dialog-closed', 'screening' (watched or not), 'agent-detached' tell the host; these answer and report.
@@ -138,6 +139,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
   async hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
     await this.viewport.ready();
     if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
+    if (method === 'Page.reload') this.reloadAsked = true;
     return this.connection.send(method, params, this.watchSession);
   }
   private readonly viewport = new TaskPageViewport((method, params) => {
@@ -145,6 +147,15 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
     return this.connection.send(method, params, this.watchSession);
   });
   setZoomFactor(factor: number): Promise<void> { return this.viewport.zoom(factor); }
+  /** Resolves when Gugu has given the page the size of its pane; rejects if the page closes first. */
+  sized(): Promise<void> {
+    if (this.destroyed) return Promise.reject(new Error('The task browser page closed'));
+    return new Promise((resolve, reject) => {
+      const closed = () => reject(new Error('The task browser page closed'));
+      this.once('destroyed', closed);
+      void this.viewport.sized().then(() => { this.off('destroyed', closed); resolve(); });
+    });
+  }
   readonly feedback = browserPageFeedback(this);
   private session: string | null = null;
   private readonly children = new Set<string>();
@@ -165,6 +176,12 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
   private watchSession: string | null = null;
   private mainFrame: string | null = null;
   private loading = false;
+  /** The main frame shows Chrome's own error page, in place of a page that did not load. */
+  private errorPage = false;
+  /** Gugu (the person's toolbar, or the agent) asked for a reload that has not started yet. */
+  private reloadAsked = false;
+  /** Chrome is reloading its own error page, as it does about a second after one: not a load the person or Gugu asked for. */
+  private chromeReload = false;
   private history: { entries: { url: string }[]; ids: number[]; index: number } = { entries: [], ids: [], index: -1 };
   title = '';
   url = 'about:blank';
@@ -244,6 +261,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
       if (!sessionId && method === 'Page.enable') this.agentPage = true;
       if (!sessionId && method === 'Page.disable') this.agentPage = false;
       if (!sessionId && method === 'Page.setInterceptFileChooserDialog') this.agentIntercept = params.enabled === true;
+      if (method === 'Page.reload') this.reloadAsked = true;
       return this.connection.send(method, params, sessionId || this.session);
     },
     on: (event: 'message' | 'detach', listener: (...args: never[]) => void) => this.native.on(event, listener as (...args: unknown[]) => void),
@@ -260,19 +278,27 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
     const main = (frameId: unknown) => frameId === this.mainFrame;
     switch (message.method) {
       case 'Page.frameStartedNavigating':
-        if (main(params.frameId)) this.emit('did-start-navigation', { isMainFrame: true, url: String(params.url) });
+        if (!main(params.frameId)) break;
+        this.emit('did-start-navigation', { isMainFrame: true, url: String(params.url) });
+        // Chrome reloads its error page by itself; only a reload nobody asked for, on an error page, is that.
+        this.chromeReload = params.navigationType === 'reload' && this.errorPage && !this.reloadAsked;
+        if (params.navigationType === 'reload') this.reloadAsked = false;
         break;
       case 'Page.frameStartedLoading':
-        if (main(params.frameId)) { this.loading = true; this.changed(); }
+        if (main(params.frameId) && !this.chromeReload) { this.loading = true; this.changed(); }
         break;
       case 'Page.frameStoppedLoading':
-        if (main(params.frameId)) { this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); void this.readFavicons(); }
+        if (!main(params.frameId)) break;
+        if (this.chromeReload && this.errorPage) { this.chromeReload = false; break; } // Still the error page: nothing loaded, nothing stopped.
+        this.chromeReload = false;
+        this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); void this.readFavicons();
         break;
       case 'Page.frameNavigated': {
         const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string; unreachableUrl?: string } | undefined;
         if (!frame || frame.parentId || !main(frame.id)) break;
         // Chrome's error page stands in for a page that did not load; the address stays what was asked for.
         const failed = frame.url === CHROME_ERROR_PAGE_URL;
+        this.errorPage = failed;
         this.url = failed ? frame.unreachableUrl ?? this.url : `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
         this.favicons = []; // A new document declares its own.
         this.feedback.invalidate();
@@ -477,7 +503,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
         if (id !== undefined) await this.connection.send('Page.navigateToHistoryEntry', { entryId: id }, session);
         return;
       }
-      case 'reload': await this.connection.send('Page.reload', {}, session); return;
+      case 'reload': this.reloadAsked = true; await this.connection.send('Page.reload', {}, session); return;
       case 'stop': await this.connection.send('Page.stopLoading', {}, session); return;
       case 'resize':
         await this.viewport.resize(control);

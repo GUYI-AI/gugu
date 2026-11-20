@@ -72,7 +72,8 @@ export class StandaloneProfileData {
       case 'cache': return this.host(partition, command => command('Network.clearBrowserCache'));
       // A running profile keeps its tabs and its Chrome, so its sites are cleared one by one; a dormant one is emptied whole.
       case 'siteData': return this.options.pool.livePartitions.includes(partition) ? this.clearSiteDataInPlace(partition) : this.reset(partition, true);
-      case 'all': return this.reset(partition, false);
+      // Like the cookies, a running profile is emptied in place: its Chrome, tabs and history stay, so the tab reloads where it was.
+      case 'all': return this.options.pool.livePartitions.includes(partition) ? this.clearAllInPlace(partition) : this.reset(partition, false);
     }
   }
 
@@ -118,6 +119,20 @@ export class StandaloneProfileData {
       if (failed) problems.push(`Chrome could not clear the data of ${failed} site${failed === 1 ? '' : 's'}`);
     });
     if (problems.length) throw new Error(problems.join('; '));
+  }
+
+  /**
+   * What the built-in engine's "clear all" covers: site data, cookies and the cache. No CDP command empties everything, so the sites
+   * come first (they are partly listed from the cookies); a failure to list or clear some is reported after cookies and cache are gone too.
+   */
+  private async clearAllInPlace(partition: string): Promise<void> {
+    let problem: unknown;
+    try { await this.clearSiteDataInPlace(partition); } catch (error) { problem = error; }
+    await this.host(partition, async command => {
+      await command('Network.clearBrowserCookies');
+      await command('Network.clearBrowserCache');
+    });
+    if (problem) throw problem;
   }
 
   /** Chrome offers no "clear all site data" command, so an idle profile is emptied; cookies may be carried over. */

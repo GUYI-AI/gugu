@@ -238,3 +238,107 @@ describe('a standalone page: a main frame that fails to load', () => {
     expect(failed).toEqual([]);
   });
 });
+
+describe('a standalone page: Chrome reloads its own error page', () => {
+  const failure = (url: string) => ({ frame: { id: 'main', url: 'chrome-error://chromewebdata/', unreachableUrl: url } });
+  const MAIN = 'main';
+  /** What Chrome does about a second after it showed an error page: it reloads the page itself, and says nothing more about the failure. */
+  const chromeReloads = (f: Awaited<ReturnType<typeof fixture>>) => {
+    f.event('Page.frameStartedNavigating', { frameId: MAIN, url: 'http://down.test/', navigationType: 'reload' }, WATCH);
+    f.event('Page.frameStartedLoading', { frameId: MAIN }, WATCH);
+  };
+  const watchLoading = (f: Awaited<ReturnType<typeof fixture>>) => {
+    const loading: boolean[] = [];
+    f.target.on('state', () => loading.push(f.target.state().isLoading));
+    const stopped: number[] = [];
+    f.target.on('did-stop-loading', () => stopped.push(stopped.length));
+    return { loading, stopped };
+  };
+  const mainFrame = (f: Awaited<ReturnType<typeof fixture>>) => f.event('Page.frameNavigated', { frame: { id: MAIN, url: 'http://start.test/' } }, WATCH);
+
+  it.each([
+    ['a refused connection', 'ERR_CONNECTION_REFUSED', -102],
+    ['a port Chrome will not use', 'ERR_UNSAFE_PORT', -9],
+  ])('does not take Chrome\'s reload of the error page for %s as a new load, so the failure stays shown', async (_name, line, code) => {
+    const f = await fixture({ 'Runtime.evaluate': () => ({ result: { value: line } }) });
+    const failed: unknown[] = [];
+    f.target.on('did-fail-load', (detail: unknown) => failed.push(detail));
+    mainFrame(f);
+    f.event('Page.frameNavigated', failure('http://down.test/'), WATCH);
+    await f.settle();
+    const seen = watchLoading(f);
+    chromeReloads(f);
+    expect(f.target.state().isLoading).toBe(false);
+    f.event('Page.frameStoppedLoading', { frameId: MAIN }, WATCH);
+    await f.settle();
+    expect(seen.loading).not.toContain(true);
+    expect(seen.stopped).toEqual([]);
+    expect(f.target.state().url).toBe('http://down.test/');
+    expect(failed).toEqual([{ errorCode: code, errorDescription: line, validatedURL: 'http://down.test/' }]);
+  });
+
+  it('still takes a reload Gugu asked for on the error page as a load', async () => {
+    const f = await fixture({ 'Runtime.evaluate': () => ({ result: { value: 'ERR_CONNECTION_REFUSED' } }) });
+    f.event('Page.frameNavigated', failure('http://down.test/'), WATCH);
+    await f.settle();
+    await f.target.control({ action: 'reload' });
+    chromeReloads(f);
+    expect(f.target.state().isLoading).toBe(true);
+    f.event('Page.frameStoppedLoading', { frameId: MAIN }, WATCH);
+    expect(f.target.state().isLoading).toBe(false);
+  });
+
+  it('takes a reload the agent asked for through its own session as a load too', async () => {
+    const f = await fixture({ 'Runtime.evaluate': () => ({ result: { value: 'ERR_CONNECTION_REFUSED' } }) });
+    f.target.debugger.attach();
+    f.event('Page.frameNavigated', failure('http://down.test/'), WATCH);
+    await f.settle();
+    await f.target.debugger.sendCommand('Page.reload', {});
+    chromeReloads(f);
+    expect(f.target.state().isLoading).toBe(true);
+  });
+
+  it('takes a reload of a page that did not fail as a load', async () => {
+    const f = await fixture();
+    mainFrame(f);
+    f.event('Page.frameStartedNavigating', { frameId: MAIN, url: 'http://start.test/', navigationType: 'reload' }, WATCH);
+    f.event('Page.frameStartedLoading', { frameId: MAIN }, WATCH);
+    expect(f.target.state().isLoading).toBe(true);
+  });
+
+  it('takes the next address as a load, and a reload Chrome makes that ends on a working page as the page loaded', async () => {
+    const f = await fixture({ 'Runtime.evaluate': () => ({ result: { value: 'ERR_CONNECTION_REFUSED' } }) });
+    f.event('Page.frameNavigated', failure('http://down.test/'), WATCH);
+    await f.settle();
+    chromeReloads(f);
+    f.event('Page.frameNavigated', { frame: { id: MAIN, url: 'http://down.test/' } }, WATCH); // The server came back.
+    const seen = watchLoading(f);
+    f.event('Page.frameStoppedLoading', { frameId: MAIN }, WATCH);
+    expect(seen.stopped).toEqual([0]);
+    f.event('Page.frameStartedNavigating', { frameId: MAIN, url: 'http://other.test/', navigationType: 'differentDocument' }, WATCH);
+    f.event('Page.frameStartedLoading', { frameId: MAIN }, WATCH);
+    expect(f.target.state().isLoading).toBe(true);
+  });
+});
+
+describe('a standalone page: it has the size of its pane', () => {
+  it('is sized once Gugu has resized it, and not before', async () => {
+    const f = await fixture();
+    let sized = false;
+    void f.target.sized().then(() => { sized = true; });
+    await f.settle();
+    expect(sized).toBe(false);
+    await f.target.control({ action: 'resize', width: 370, height: 700, scale: 1 });
+    await f.settle();
+    expect(sized).toBe(true);
+    expect(f.sentMethods('Emulation.setDeviceMetricsOverride')[0]?.params).toMatchObject({ width: 370, height: 700 });
+  });
+
+  it('gives up waiting when the page closes before it was sized', async () => {
+    const f = await fixture();
+    const waiting = f.target.sized();
+    f.target.destroy();
+    await expect(waiting).rejects.toThrow('closed');
+    await expect(f.target.sized()).rejects.toThrow('closed');
+  });
+});

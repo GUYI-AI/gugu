@@ -182,6 +182,8 @@ export async function snapshotStandalonePage(browserId: string): Promise<string>
 }
 
 export async function measureStandalonePage(browserId: string) {
+  // A page measures the width it is laid out at, which is Chrome's own window width until the page has the size of its pane.
+  await (await standalonePage(browserId)).sized?.();
   const result = await standaloneHostCommand(browserId, 'Runtime.evaluate', { expression: BROWSER_PAGE_MEASURE_SCRIPT, awaitPromise: true, returnByValue: true }) as { result?: { value?: unknown }; exceptionDetails?: unknown };
   if (result.exceptionDetails) throw new Error('Could not measure the standalone browser page');
   return parseBrowserPageLayout(result.result?.value);
