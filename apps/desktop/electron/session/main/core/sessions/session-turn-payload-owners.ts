@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { opendirSync, type Dir } from 'node:fs';
 import { INLINE_PAYLOAD_BYTES, TurnPayloadFiles, unbindTurnPayloadDirectory, type TurnPayloadRef } from './session-turn-payloads';
 import { coreLogger } from '@gugu/core/log';
+import { runTurnRows } from './session-turn-sql';
 
 type State = { files: TurnPayloadFiles; writers: number; timer?: NodeJS.Timeout; scanDone: boolean; scan?: Dir; statements?: ReturnType<typeof prepareStatements> };
 const log = coreLogger('session-turn-payloads');
@@ -42,9 +43,6 @@ function prepareStatements(connection: Database.Database) {
     size: connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined FROM session_turn_payload_objects WHERE hash=?'),
     chunk: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES (?,?,?)'),
     children: connection.prepare('SELECT child_hash FROM session_turn_payload_edges WHERE parent_hash=?'),
-    edge: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_edges(parent_hash,child_hash) VALUES (?,?)'),
-    clearField: connection.prepare('DELETE FROM session_turn_payload_fields WHERE row_id=? AND node_key=? AND field=?'),
-    putField: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_fields(row_id,node_key,field,hash) VALUES (?,?,?,?)'),
   };
 }
 
@@ -71,17 +69,24 @@ export function registerTurnPayloads(connection: Database.Database): void {
       throw new Error('Payload registry size or storage mismatch');
   }
   // Consult the transaction, rather than optimistic JS flags: an earlier registration may have rolled back.
+  const edges: string[][] = [];
   for (const [hash, object] of files.staged) if (object.children.size) {
     const existing = inserted.has(hash) ? new Set<string>()
       : new Set((query.children.all(hash) as { child_hash: string }[]).map(row => row.child_hash));
-    for (const child of object.children.values()) if (!existing.has(child.hash)) query.edge.run(hash, child.hash);
+    for (const child of object.children.values()) if (!existing.has(child.hash)) edges.push([hash, child.hash]);
   }
+  runTurnRows(connection, 'INSERT OR IGNORE INTO session_turn_payload_edges(parent_hash,child_hash) VALUES', edges);
 }
 
-export function ownTurnFieldPayloads(connection: Database.Database, rowId: string, nodeKey: string, field: string, roots: readonly TurnPayloadRef[]): void {
-  const query = statements(connection);
-  query.clearField.run(rowId, nodeKey, field);
-  for (const root of roots) query.putField.run(rowId, nodeKey, field, root.hash);
+export type TurnFieldPayloads = { nodeKey: string; field: string; roots: readonly TurnPayloadRef[] };
+export function ownTurnFieldsPayloads(connection: Database.Database, rowId: string, fields: readonly TurnFieldPayloads[]): void {
+  // Check this transaction, rather than the head observed before asynchronous source publication.
+  const replace = connection.prepare('SELECT 1 FROM session_turn_payload_fields WHERE row_id=? LIMIT 1').get(rowId);
+  if (replace) runTurnRows(connection,
+    'DELETE FROM session_turn_payload_fields WHERE (row_id,node_key,field) IN (VALUES',
+    fields.map(field => [rowId, field.nodeKey, field.field]), ')');
+  runTurnRows(connection, 'INSERT OR IGNORE INTO session_turn_payload_fields(row_id,node_key,field,hash) VALUES',
+    fields.flatMap(field => field.roots.map(root => [rowId, field.nodeKey, field.field, root.hash])));
 }
 
 export function ownTurnSourcePayload(connection: Database.Database, sourceId: string, root: TurnPayloadRef): void {

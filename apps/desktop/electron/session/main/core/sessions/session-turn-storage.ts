@@ -5,7 +5,8 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
 import { encodeTurnValue, decodeTurnValue, turnImages, turnValueRoots, type StoredTurnValue } from './session-turn-codec';
 import type { TurnPayloadFiles } from './session-turn-payloads';
-import { ownTurnFieldPayloads, registerTurnPayloads, turnPayloadFiles } from './session-turn-payload-owners';
+import { ownTurnFieldsPayloads, registerTurnPayloads, turnPayloadFiles } from './session-turn-payload-owners';
+import { runTurnRows } from './session-turn-sql';
 export { turnPayloadFiles } from './session-turn-payload-owners';
 
 type Fields = Record<string, unknown>;
@@ -191,21 +192,20 @@ export function prepareSessionTurn(connection: Database.Database, row: StoredTur
         started_at=excluded.started_at,notified_source=excluded.notified_source,text_bytes=excluded.text_bytes`).run(row.id, base, revision, turn.referenceId ?? null,
           turn.outcome?.kind ?? null, turn.startedAt ?? null, notification?.kind === 'message' ? notification.ownerNotification?.sourceTurnId ?? null : null,
           turn.items.reduce((bytes, item) => bytes + (item.kind === 'message' ? Buffer.byteLength(item.text) : 0), 0));
-    const writeNode = connection.prepare(`INSERT INTO session_turn_nodes(row_id,node_key,parent_key,collection,kind,ordinal,children,removed,reset_fields) VALUES (?,?,?,?,?,?,?,?,?)
+    runTurnRows(connection, 'INSERT INTO session_turn_nodes(row_id,node_key,parent_key,collection,kind,ordinal,children,removed,reset_fields) VALUES',
+      changes.map(({ node, removed }) => [row.id, node.key, node.parent, node.collection, node.kind, node.ordinal, Number(node.children), Number(removed), 0]), `
       ON CONFLICT(row_id,node_key) DO UPDATE SET parent_key=excluded.parent_key,collection=excluded.collection,kind=excluded.kind,
         ordinal=excluded.ordinal,children=excluded.children,removed=excluded.removed,
         reset_fields=CASE WHEN session_turn_nodes.removed=1 THEN 1 ELSE session_turn_nodes.reset_fields END`);
-    const writeField = connection.prepare(`INSERT INTO session_turn_fields(row_id,node_key,field,value) VALUES (?,?,?,?)
-      ON CONFLICT(row_id,node_key,field) DO UPDATE SET value=excluded.value`);
     for (const change of changes) {
-      const node = change.node;
-      writeNode.run(row.id, node.key, node.parent, node.collection, node.kind, node.ordinal, Number(node.children), Number(change.removed), 0);
-      if (change.removed) connection.prepare('DELETE FROM session_turn_fields WHERE row_id=? AND node_key=?').run(row.id, node.key);
-      for (const field of change.fields) {
-        writeField.run(row.id, node.key, field.name, field.value);
-        ownTurnFieldPayloads(connection, row.id, node.key, field.name, field.value === null ? [] : turnValueRoots(JSON.parse(field.value) as StoredTurnValue));
-      }
+      if (change.removed) connection.prepare('DELETE FROM session_turn_fields WHERE row_id=? AND node_key=?').run(row.id, change.node.key);
     }
+    const fields = changes.flatMap(change => change.fields.map(field => ({ ...field, nodeKey: change.node.key })));
+    runTurnRows(connection, 'INSERT INTO session_turn_fields(row_id,node_key,field,value) VALUES',
+      fields.map(field => [row.id, field.nodeKey, field.name, field.value]),
+      'ON CONFLICT(row_id,node_key,field) DO UPDATE SET value=excluded.value');
+    ownTurnFieldsPayloads(connection, row.id, fields.map(field => ({ nodeKey: field.nodeKey, field: field.name,
+      roots: field.value === null ? [] : turnValueRoots(JSON.parse(field.value) as StoredTurnValue) })));
     if (!insert && changes.length) connection.prepare('DELETE FROM session_window_commit_positions WHERE row_id=?').run(row.id);
     if (textChanged) syncSessionTurnText(connection, row.id, turn);
   } };

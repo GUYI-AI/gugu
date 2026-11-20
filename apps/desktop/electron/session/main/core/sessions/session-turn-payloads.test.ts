@@ -78,6 +78,22 @@ it('keeps small shared objects out of physical files', () => {
   expect(readdirSync(root)).toEqual([]);
 });
 
+it('reuses bounded text encoding without losing descriptor children or retaining a settled writer', () => {
+  const files = new TurnPayloadFiles(root), text = 'shared execute output'.repeat(100);
+  const stringify = vi.spyOn(JSON, 'stringify');
+  const first = files.putText(text);
+  expect(files.putText(text)).toEqual(first);
+  expect(stringify.mock.calls.filter(([value]) => value === text)).toHaveLength(1);
+  const child = files.putText('owned child');
+  expect(files.putText(text, [child])).toEqual(first);
+  expect(files.staged.get(first.hash)!.children.get(child.hash)).toEqual(child);
+  for (let index = 0; index < 64; index++) files.putText(`other ${index}`);
+  files.putText(text);
+  expect(stringify.mock.calls.filter(([value]) => value === text)).toHaveLength(3);
+  files.clear(); files.putText(text);
+  expect(stringify.mock.calls.filter(([value]) => value === text)).toHaveLength(4);
+});
+
 it('point-reads a late range under the original budget and checks the bytes actually requested', () => {
   const files = new TurnPayloadFiles(root), bytes = Buffer.alloc(1024 * 1024, 13), ref = files.putBytes(bytes);
   files.durable();

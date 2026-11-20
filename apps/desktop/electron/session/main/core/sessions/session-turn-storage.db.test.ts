@@ -149,6 +149,40 @@ describe('versioned session turn storage', () => {
     expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_heads').get()).toEqual({ n: 0 });
   });
 
+  it('rolls back a later ownership batch, retries it, and releases only replaced field owners', async () => {
+    const original = turn(), row = insert(original, true);
+    const revised = { ...original, items: [...original.items, ...Array.from({ length: 100 }, (_, index) => {
+      const outputText = `output ${index}: ${'body'.repeat(400)}`;
+      return { kind: 'execute-tool-call' as const, id: `batch-${index}`, seq: index + 3, toolCallId: `batch-${index}`,
+        title: 'execute', status: 'done' as const, outputText, rawOutput: JSON.stringify({ aggregatedOutput: outputText }) };
+    })] };
+    const prepared = prepareSessionTurn(fixture.sqlite, row, revised, false);
+    fixture.sqlite.exec(`CREATE TEMP TABLE owner_attempts(n INTEGER); INSERT INTO owner_attempts VALUES(0);
+      CREATE TEMP TRIGGER fail_later_owner BEFORE INSERT ON session_turn_payload_fields BEGIN
+        UPDATE owner_attempts SET n=n+1;
+        SELECT CASE WHEN (SELECT n FROM owner_attempts)>70 THEN RAISE(ABORT,'later ownership batch') END;
+      END;`);
+    expect(() => fixture.sqlite.transaction(() => prepared.commit())()).toThrow('later ownership batch');
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(original);
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_heads').get()).toEqual({ n: 0 });
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turn_payload_objects').get()).toEqual({ n: 0 });
+    fixture.sqlite.exec('DROP TRIGGER fail_later_owner');
+    // Reuse the same prepared writer after the registry transaction was rolled back.
+    await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => prepared.commit())());
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(revised);
+    const replaced = { ...revised, items: revised.items.map(item => item.kind === 'execute-tool-call'
+      ? { ...item, outputText: 'replacement'.repeat(200), rawOutput: undefined } : item) };
+    await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, replaced, false).commit())());
+    while (collectTurnPayloads(fixture.sqlite)) { /* Exercise last-owner collection across multiple batches. */ }
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(JSON.parse(JSON.stringify(replaced)));
+    expect(fixture.sqlite.prepare(`SELECT count(*) n FROM session_turn_payload_objects o WHERE refs !=
+      (SELECT count(*) FROM session_turn_payload_fields WHERE hash=o.hash)+
+      (SELECT count(*) FROM session_turn_payload_edges WHERE child_hash=o.hash)+
+      (SELECT count(*) FROM session_turn_payload_sources WHERE hash=o.hash)`).get()).toEqual({ n: 0 });
+    expect(fixture.sqlite.pragma('foreign_key_check')).toEqual([]);
+    expect(fixture.sqlite.prepare('SELECT data FROM session_turns WHERE id=?').get(row.id)).toEqual({ data: row.data });
+  });
+
   it('collects replaced bodies and rolled-back writes while keeping bodies shared by surviving fields', async () => {
     const original = turn();
     original.items.push({ ...original.items[2], id: 'shared-picture', seq: 3 });
