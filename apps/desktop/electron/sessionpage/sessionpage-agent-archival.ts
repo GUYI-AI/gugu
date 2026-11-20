@@ -43,7 +43,7 @@ function boundSessionId(agent: LocalAgentRecord): string {
 /**
  * The session's archival is the one fact; the roster row's status is its local projection. An archived session's
  * roster row is archived, so every roster reader that skips archived rows (presence reconcile, activity publish,
- * boot routing, task names) leaves it alone. Restore returns it to idle. Only sessions that have ever been archived
+ * boot routing) leaves it alone; its task keeps its identity's name. Restore returns it to idle. Only sessions that have ever been archived
  * (revision > 0) and rows bound to an owner are touched: rows archived for another reason keep their status.
  */
 export async function projectArchivalOntoRoster(archival: readonly SessionArchivalState[], env: NodeJS.ProcessEnv): Promise<void> {
