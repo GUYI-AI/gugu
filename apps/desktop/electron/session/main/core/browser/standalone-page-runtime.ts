@@ -14,6 +14,9 @@ import { connectTaskPageScreen } from './task-page-screen';
 import { watchTaskPageConnection } from './remote-task-page';
 import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
 import { wireStandalonePageFeatures, type FeatureHost, type FeaturePage } from './standalone-page-features';
+import { kernelAfterCapabilityGate } from './standalone-capability-gate';
+import { remoteBrowserBinding } from './remote-loopback-requests';
+import { appSettingsService } from '../settings/settings-service';
 import { log } from '@main/lib/logger';
 
 export const browserKernelBindings = new BrowserKernelBindings();
@@ -67,7 +70,11 @@ export function registerBrowserKernel(input: { browserId: string; partition: str
     if (old && old.partition !== input.partition) await closeStandalonePage(input.browserId);
     // Internal preview/file protocols belong to Electron and never leave its document sandbox.
     const web = !input.url || input.url === 'about:blank' || /^https?:\/\//i.test(input.url);
-    const kernel = old?.kernel ?? (web ? input.kernel ?? await standaloneKernelService().selection() : 'builtin');
+    const wanted = web ? input.kernel ?? await standaloneKernelService().selection() : 'builtin';
+    const kernel = old?.kernel ?? await kernelAfterCapabilityGate(wanted, input.browserId, {
+      remoteSession: browserId => remoteBrowserBinding(browserId) !== null,
+      relaxCorsForLocalhost: async () => (await appSettingsService.get('browser')).relaxCorsForLocalhost,
+    });
     if (kernel === 'standalone' && !await standaloneKernelService().installation()) throw new Error('The standalone browser is not installed');
     if (kernel === 'standalone') standaloneKernelService().pool.reserveTab(input.browserId, input.partition);
     return browserKernelBindings.bind(input, kernel);

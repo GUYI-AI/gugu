@@ -7,7 +7,18 @@ export type CapabilityGateFacts = {
   relaxCorsForLocalhost(): Promise<boolean>;
 };
 
-/** Not implemented yet. */
-export async function kernelAfterCapabilityGate(wanted: BrowserKernelKind, _browserId: string, _facts: CapabilityGateFacts): Promise<BrowserKernelKind> {
-  return wanted;
+/**
+ * The one place that holds a tab on the built-in browser although the standalone browser was chosen: what the standalone Chrome
+ * cannot do the way the built-in browser does ("独立端不支持的能力 → Built-in"). A tab snapshots its engine when it registers, so a
+ * setting changed later applies to tabs opened after it.
+ * - remote-session tab: the built-in browser's session forwards the page's localhost requests to the other machine
+ *   (remote-loopback-requests.ts, #6264); the standalone Chrome would send them to this computer's own ports.
+ * - relax CORS for localhost: applied through the built-in browser's request hooks (browser-cors-relaxation.ts); the standalone
+ *   Chrome has no equivalent.
+ */
+export async function kernelAfterCapabilityGate(wanted: BrowserKernelKind, browserId: string, facts: CapabilityGateFacts): Promise<BrowserKernelKind> {
+  if (wanted !== 'standalone') return wanted;
+  if (facts.remoteSession(browserId)) return 'builtin';
+  if (await facts.relaxCorsForLocalhost()) return 'builtin';
+  return 'standalone';
 }
