@@ -113,13 +113,13 @@ describe('搬家入口', () => {
     mocks.nativePending = { assistantId: 'agent-1', direction: 'to-cloud', source: { kind: 'computer', deviceId: 'dev-mac' } }
     await render(computer)
     expect(q('assistant-move-resume')).not.toBeNull()
-    expect(body()).not.toContain('暂时读不到搬家恢复记录，请重试。')
+    expect(body()).not.toContain('无法读取迁移恢复记录，请重试。')
     mocks.recoveryError = new Error('Recovery unavailable')
     const { moveRecovery } = await import('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire')
     await act(async () => { await moveRecovery.refresh('agent-1').catch(() => undefined) })
     await act(async () => {})
     expect(q('assistant-move-resume')).not.toBeNull()
-    expect(body()).toContain('暂时读不到搬家恢复记录，请重试。')
+    expect(body()).toContain('无法读取迁移恢复记录，请重试。')
   })
 
   it('DE-3: the plan unreadable (the balance read) says so with a retry, and moving to the cloud waits (❌ disabled without a word)', async () => {

@@ -75,7 +75,7 @@ describe('selected model native Fast capability query', () => {
     read.mockRejectedValueOnce(new Error('target request failed'))
     await harness.render(tree('model-a'))
     await vi.waitFor(() => expect(current).toMatchObject({ kind: 'unavailable' }))
-    await vi.waitFor(() => expect(document.body.textContent).toMatch(/Couldn't read the latest|没读到最新的/))
+    await vi.waitFor(() => expect(document.body.textContent).toMatch(/无法获取最新内容/))
     expect(offered).toBeUndefined()
     expect(harnessModelCatalog.peek('codex', 'acp', 'device-a')).toMatchObject({ state: 'value', value: defaults })
     expect(document.body.textContent).not.toContain('target request failed')
