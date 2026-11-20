@@ -2289,7 +2289,7 @@ const heartbeatRowSources = {
   // 会话摘要随心跳上云:机器离线后手机就只剩它可读了(product spec 的验收)。
   // 经桥拿,与设备 RPC 同一条规矩。桥没起来就报空 —— 那时这台机器上确实一条会话页会话
   // 都还没有,❌ 不为此把心跳判失败(心跳是 presence 的唯一写者,拿主要的换次要的)。
-  sessionDigest: () => loadEmdashBridge()?.sessionpageSessionDigest?.() ?? [],
+  sessionDigest: (limit: number) => loadEmdashBridge()?.sessionpageSessionDigest?.(limit) ?? [],
   // #7199 第二步:这台电脑能被调用的动作随心跳登记(没授权的也登记、标不可用)。
   deviceActions: () => deviceActionsRuntime().capability(),
 }
