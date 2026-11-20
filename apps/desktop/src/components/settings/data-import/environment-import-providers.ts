@@ -5,6 +5,7 @@ import {
   type EnvironmentImportCategory, type EnvironmentImportScan, type EnvironmentImportSelection,
 } from '@shared/core/session-import/environment-import'
 import type { ImportProvider, ImportResult, ImportPreparation } from './import-providers'
+import { i18n } from '@/i18n/runtime'
 
 const emptyResult = (): ImportResult => ({ imported: [], entities: [], details: [], existing: 0, failed: 0 })
 
@@ -27,7 +28,7 @@ function categoryProvider(category: Exclude<EnvironmentImportCategory, 'tasks'>)
   }
   async function run(snapshot: EnvironmentImportScan | undefined, deviceId: string | null,
     onProgress: (done: number, total: number) => void, signal: AbortSignal): Promise<ImportResult> {
-    if (deviceId || !snapshot) throw new Error('请先刷新导入来源')
+    if (deviceId || !snapshot) throw new Error(i18n.t('settings.dataImport.refreshFirst', { ns: 'main' }))
     signal.throwIfAborted()
     const result = emptyResult()
     const selection: EnvironmentImportSelection[] = snapshot.items.flatMap(item =>
@@ -83,7 +84,7 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
   async function run(snapshot: CodexTaskScan | undefined, deviceId: string | null,
     onProgress: (done: number, total: number, preparation?: ImportPreparation | null) => void, signal: AbortSignal): Promise<ImportResult> {
     if (deviceId) return transcripts.importAll(deviceId, onProgress, signal)
-    if (!snapshot) throw new Error('请先刷新导入来源')
+    if (!snapshot) throw new Error(i18n.t('settings.dataImport.refreshFirst', { ns: 'main' }))
     signal.throwIfAborted()
     const api = rpcOn(null).sessionImport
     const result = emptyResult()

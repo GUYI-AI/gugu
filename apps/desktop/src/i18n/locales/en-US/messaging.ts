@@ -430,6 +430,12 @@ export default {
     "action": "Add to composer"
   },
   "composer": {
+    "sessionInput": {
+      "attachmentsKept": "The attachment draft is kept. You can send it when the connection is restored.",
+      "composerNotReady": "The task input is not ready yet. The draft is kept.",
+      "accountNotReady": "Task input for the current account is not ready yet.",
+      "notConfirmed": "The task has not confirmed receipt of this message. Gugu will retry automatically."
+    },
     "phoneTask": {
       "attachFolder": "Attach folder",
       "attachFailed": "Could not attach the folder. Try again.",
@@ -933,6 +939,7 @@ export default {
     "title": "Send to"
   },
   "topic": {
+    "untitled": "Topic",
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
     "removeHint": "They can still read it, but will not get notifications from this topic",
@@ -988,6 +995,23 @@ export default {
     "helpSend": "Choose an agent",
     "helpAsk": "Add what you want to do",
     "helpConfirm": "Review before changes",
+  },
+  "projectRecovery": {
+    "unavailable": "Unavailable",
+    "folderMissing": "Folder not found on this computer",
+    "restore": "Restore",
+    "clean": "Clean up",
+    "cancel": "Cancel",
+    "cleanLabel": "Clean up unavailable projects",
+    "cleanTitle": "Clean up {{count}} unavailable projects?",
+    "cleanBody": "Their groups will be collapsed and can be restored later.",
+    "checkFailed": "Could not check the project status. Try again later.",
+    "incompleteHistory": "The recovery record is incomplete. Contact the maintainers to check it.",
+    "invalidDirectory": "Choose a usable folder.",
+    "inspectFailed": "Could not read this folder. Check its access permissions.",
+    "pathConflict": "This folder already belongs to another project. Choose a different folder.",
+    "stateChanged": "The project status has changed. Confirm again.",
+    "failed": "The operation did not complete. Check the folder access permissions and the project group permissions, then try again."
   },
   "filePill": {
     "picked": "Picked on version {{version}}"

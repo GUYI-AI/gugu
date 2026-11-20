@@ -121,7 +121,7 @@ export async function fetchVersionManifest(
   const channel = await fetchImpl(`${base}/${readChannel(home)}/${platformKey()}.txt`).catch(() => null)
   const latest = channel?.ok ? parseManifest(await channel.text()) : null
   if (latest?.version === version) return latest
-  const message = `下载站上没有 ${version} 这一版(${response ? response.status : '连不上'}):${url}`
+  const message = `下载站上没有 ${version} 版本(${response ? response.status : '无法连接'}):${url}`
   if (!response && !channel) throw new DownloadSiteUnreachableError(message)
   // 还没发 = 版本清单 404、通道还没走到这一版;通道已越过它或也取不到 = 真没有(下载站对任何不存在的路径都回 404)。
   throw response?.status === 404 && latest && compareServerVersions(latest.version, version) < 0

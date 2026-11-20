@@ -225,7 +225,7 @@ export function closeMachineClient(deviceId: string): void {
  */
 export function machineWireTransport(deviceId: string, channel: string): WireTransport {
   const host = machineClient(deviceId);
-  if (!host) throw new Error(`[machine] 连不上 ${deviceId.slice(0, 8)} 的任务页宿主`);
+  if (!host) throw new Error(`[machine] cannot reach the task page host of ${deviceId.slice(0, 8)}`);
   const codec = machineCodec(deviceId);
   const inner = reconnectingTransport(() => host.openWireTransport(channel));
   return {

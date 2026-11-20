@@ -165,7 +165,8 @@ function detailsHeight(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): 
 function replyLayout(item: ChatMessage, ctx: MeasureCtx) {
   const reply = cardFacts(item)?.replyTo;
   if (!reply || ctx.commands?.onConversationReply) return null;
-  const text = rowTranslator(ctx)('transcript.deliveryReplyTo', {
+  const t = rowTranslator(ctx);
+  const text = t('transcript.deliveryReplyTo', {
     from: shownSender(reply.from, reply.fromId, ctx.selfIdentity ?? null) ?? reply.fromId,
     preview: quotedWords(reply.preview),
   });

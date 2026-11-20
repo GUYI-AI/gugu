@@ -145,8 +145,8 @@ export default {
   "migrationSkipped_other": "{{count}} 项未迁移，查看",
   "migrationResults": "配置迁移结果",
   "migrationRelogin": "需要重新登录 {{name}}，才能在咕咕里使用该账号。",
-  "codexUpgradeReloginTitle": "{{name}} 需要重新登录一次",
-  "codexUpgradeRelogin": "咕咕与其他客户端不能共用 ChatGPT 登录。请在咕咕里重新登录一次，避免登录被另一个客户端顶掉。",
+  "codexUpgradeReloginTitle": "{{name}} 需要重新登录",
+  "codexUpgradeRelogin": "咕咕与其他客户端无法共用 ChatGPT 登录。请在咕咕中重新登录，以免登录被其他客户端取代。",
   "signInSettings": "登录设置",
   "configurationImportFailed": "配置导入未完成，请重试。",
   "migrationReadFailed": "无法读取配置迁移结果。",
@@ -575,6 +575,7 @@ export default {
     }
   },
   "auth": {
+    "phoneHostSignOutUnconfirmed": "手机宿主未确认退出登录",
     "loadingMethods": "正在加载登录方式",
     "google": {
       "signIn": "用 Google 登录",
@@ -871,6 +872,7 @@ export default {
       "thisComputer": "这台电脑",
       "devices": "来源设备",
       "refresh": "刷新导入来源",
+      "refreshFirst": "请先刷新导入来源",
       "available_other": "{{count}} 个会话可导入",
       "action": "导入",
       "importSource": "导入 {{source}} 内容",

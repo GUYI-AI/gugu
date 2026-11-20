@@ -273,7 +273,7 @@ export async function startTunnelEndpoint(input: {
         keys.add(request.publicKey)
         const relay = await frpc.waitUp(RELAY_WAIT_MS)
         if (!relay.ok) {
-          return { error: { code: 'relay_down', message: `这台机器连不上远程隧道的中转(${relay.reason}):${relay.detail}` } }
+          return { error: { code: 'relay_down', message: `这台机器无法连接远程隧道的中转(${relay.reason}):${relay.detail}` } }
         }
         const result: TunnelOpenResponse = {
           relay: { ...input.relay, user: input.accountUserId, serverName, secretKey },

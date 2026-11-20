@@ -13,7 +13,7 @@ it.each([288, 328, 360, 390, 800])('uses one ordinary body row with a working re
   const recharge = vi.fn();
   const result = await renderAndMeasureUnit(turnOutcomeUnitDef, item, makeContractCtx({ width }), host => {
     expect(host.querySelectorAll('[data-credit-exhausted]')).toHaveLength(1);
-    expect(host.textContent?.replace(/\s+/g, ' ')).toBe('You’re out of credits. Top up to continue.');
+    expect(host.textContent?.replace(/\s+/g, ' ')).toBe('You have run out of credits. Top up to continue.');
     expect(host.querySelectorAll('a')).toHaveLength(1);
     expect(host.textContent).not.toContain(said);
     expect(host.querySelector('[role="alert"], [data-slot="turn-outcome-badge"], [data-slot="turn-outcome-rule"]')).toBeNull();
@@ -40,7 +40,7 @@ it.each([true, false])('renders the shared Pi reader outcome without exposing ra
   } : {}) } };
   await renderAndMeasureUnit(turnOutcomeUnitDef, projected, makeContractCtx({ width: 328 }), host => {
     expect(host.querySelectorAll('[data-credit-exhausted]')).toHaveLength(exhausted ? 1 : 0);
-    expect(host.textContent?.includes('You’re out of credits. Top up to continue.')).toBe(exhausted);
+    expect(host.textContent?.replace(/\s+/g, ' ').includes('You have run out of credits. Top up to continue.')).toBe(exhausted);
     expect(host.querySelectorAll('a')).toHaveLength(exhausted ? 1 : 0);
     expect(host.textContent).not.toContain('Gugu credits');
     if (!exhausted) expect(host.querySelector('[data-slot="turn-outcome-badge"]')).not.toBeNull();
@@ -51,7 +51,7 @@ it.each([true, false])('renders the shared Pi reader outcome without exposing ra
 it('does not invent a recharge button when the host did not connect that action', async () => {
   await renderAndMeasureUnit(turnOutcomeUnitDef, item, makeContractCtx({ width: 360 }), host => {
     expect(host.querySelector('a, button')).toBeNull();
-    expect(host.textContent).toBe('You’re out of credits. Top up to continue.');
+    expect(host.textContent).toBe('You have run out of credits. Top up to continue.');
     return {};
   });
 });

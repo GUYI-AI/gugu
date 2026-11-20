@@ -2,6 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { page } from './test-support/page-protocol-fixture';
 import { leasePageProtocol } from './leased-page-protocol';
 
+// The action captions are written in the host's language; the App bridge host is not installed here.
+vi.mock('../extensions/extension-bridge', () => ({ extensionPresentation: () => ({ locale: 'en-US' }) }));
+
 it('cancellation while restoration is pending cannot dispatch a late native input or attach a debugger', async () => {
   const selected = page(), ready = Promise.withResolvers<void>();
   const lease = leasePageProtocol(selected.contents, { ready: ready.promise, capture: vi.fn() });
