@@ -76,7 +76,8 @@ async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => P
     const meta = row.meta?.customModel;
     if (!meta) return;
     if (meta.discovery) taken.add(meta.discovery.identity);
-    else {
+    for (const identity of meta.suppresses ?? []) taken.add(identity);
+    if (!meta.discovery) {
       const key = await secretOf(row.accountId);
       if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
     }
@@ -156,16 +157,40 @@ export async function saveCustomModel(input: SaveCustomModel): Promise<CustomMod
   return view(id);
 }
 
-/** Soft deletion retains credentials for already-bound sessions and downgrade. */
+/** The row stays as a removal record (bound sessions and discovery read it); the key does not. Sessions bound to it stop at "unavailable". */
 export async function removeCustomModel(connectionId: string): Promise<void> {
   // A connection nobody has used is removed without ever keeping its key; only the removal is recorded.
   await ensureStored(connectionId, { keepKey: false });
   const row = await registry.getAccount(namespace, connectionId);
   if (!row?.meta?.customModel) throw new Error('The custom model no longer exists');
-  await registry.upsertAccount({
-    providerId: namespace, accountId: connectionId,
-    meta: { ...row.meta, customModel: { ...row.meta.customModel, removed: true } },
-  });
+  const meta = row.meta.customModel;
+  const key = await registry.resolveSecret(namespace, connectionId);
+  const suppresses = key ? rememberedIdentities(meta, key) : meta.suppresses;
+  await registry.retireAccount(namespace, connectionId, { ...row.meta, customModel: { ...meta, removed: true, ...(suppresses?.length ? { suppresses } : {}) } });
+}
+
+/** What discovery recognises a key by at each of the connection's addresses. Never the key. */
+function rememberedIdentities(meta: { endpoints: { baseUrl: string }[]; suppresses?: string[] }, key: string): string[] {
+  return [...new Set([...(meta.suppresses ?? []), ...meta.endpoints.map(({ baseUrl }) => discoveryIdentity(baseUrl, key))])];
+}
+
+/**
+ * Removal records written before removal dropped the key still hold it (#3428). Remember what the key was to discovery
+ * (its identity), then drop it, so a connection removed earlier neither keeps a key nor comes back in the list. A key
+ * that cannot be read is dropped all the same; the record then only loses the memory of what it held.
+ */
+export async function dropRemovedConnectionKeys(): Promise<void> {
+  for (const row of await registry.listAccounts(namespace)) {
+    const meta = row.meta?.customModel;
+    if (!meta?.removed) continue;
+    try {
+      const key = await registry.resolveSecret(namespace, row.accountId);
+      if (key) await registry.retireAccount(namespace, row.accountId, { ...row.meta, customModel: { ...meta, suppresses: rememberedIdentities(meta, key) } });
+    } catch (error) {
+      log.warn('[custom-models] could not remember a removed connection before dropping its key', { error: error instanceof Error ? error.name : 'unknown' });
+    }
+  }
+  await registry.dropRetiredSecrets();
 }
 
 export async function testCustomModel(input: TestCustomModel): Promise<ConnectionModelList> {

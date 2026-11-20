@@ -14,7 +14,7 @@ vi.mock('@main/core/provider-accounts/provider-account-registry-instance', () =>
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn() } }));
 // The host injects the login-shell snapshot; the user's own shell must not decide what these tests find.
 vi.mock('@main/utils/userEnv', () => ({ loginShellEnv: () => null }));
-const { listCustomModels, saveCustomModel, removeCustomModel, testCustomModel, resolveCustomModel, validateCustomModelSelection } = await import('./custom-models');
+const { listCustomModels, saveCustomModel, removeCustomModel, testCustomModel, resolveCustomModel, validateCustomModelSelection, dropRemovedConnectionKeys } = await import('./custom-models');
 
 const KEY = 'sk-live-0123456789abcdefWXYZ';
 const ROTATED = 'sk-live-ffffffffffffffffQRST';
@@ -137,6 +137,49 @@ it('a removal record never holds the default; the first connection really used t
   expect(rows().map(row => row.isDefault)).toEqual([false]);
   await saveCustomModel({ id: openai.id, name: 'OpenAI', preset: 'openai', endpoints: openai.endpoints, models: [{ id: 'picked' }] });
   expect(Object.fromEntries(rows().map(row => [row.accountId, row.isDefault]))).toEqual({ [acme.id]: false, [openai.id]: true });
+});
+
+it('removing a connection drops its key from encrypted storage, saved by hand or first used from a discovery, and bound sessions stop at unavailable', async () => {
+  await twoFound();
+  const manual = await saveCustomModel({ name: 'By hand', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://hand.example.test/v1' }], models: [{ id: 'm' }], apiKey: 'sk-live-handhandhandhandhand' });
+  const acme = await named('Acme Gateway');
+  await saveCustomModel({ id: acme.id, name: acme.name, preset: null, endpoints: acme.endpoints, models: [{ id: 'acme-large' }] });
+  expect(state.fixture!.secretStore.secrets.size).toBe(2);
+  session('bound', 'codex', customModelOptionId({ connectionId: manual.id, modelId: 'm' }));
+  await removeCustomModel(manual.id);
+  await removeCustomModel(acme.id);
+  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  expect(rows().map(row => row.meta?.customModel?.removed)).toEqual([true, true]);
+  await expect(resolveCustomModel('codex', 'bound')).rejects.toThrow('Custom model unavailable');
+});
+
+const OPENAI = 'https://api.openai.com/v1';
+const names = async () => (await listCustomModels()).map(connection => connection.name).sort();
+
+it('a connection saved by hand and removed does not make the same key on this machine come back, though its key is gone', async () => {
+  await twoFound();
+  const mine = await saveCustomModel({ name: 'Mine', apiKey: KEY, preset: 'openai', endpoints: [{ protocol: 'openai-responses', baseUrl: OPENAI }], models: [{ id: 'm' }] });
+  expect(await names()).toEqual(['Acme Gateway', 'Mine']);
+  await removeCustomModel(mine.id);
+  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  for (let index = 0; index < 2; index += 1) expect(await names()).toEqual(['Acme Gateway']);
+  expect(JSON.stringify(rows()[0]!.meta)).not.toContain(KEY);
+});
+
+it('a connection removed by an earlier build loses its key at startup and still does not come back', async () => {
+  await twoFound();
+  await state.fixture!.registry.upsertAccount({
+    providerId: 'models:custom', accountId: 'earlier', secret: KEY,
+    meta: { displayName: 'Earlier', customModel: { preset: 'openai', endpoints: [{ protocol: 'openai-responses', baseUrl: OPENAI }], models: [{ id: 'm' }], removed: true } },
+  });
+  expect(await names()).toEqual(['Acme Gateway']);
+  await dropRemovedConnectionKeys();
+  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  expect(await names()).toEqual(['Acme Gateway']);
+  const before = rows()[0]!.updatedAt;
+  await dropRemovedConnectionKeys();
+  expect(rows()[0]!.updatedAt).toBe(before);
+  expect(JSON.stringify(rows()[0]!.meta)).not.toContain(KEY);
 });
 
 it('editing a discovered connection saves it as that connection and keeps its discovery identity', async () => {

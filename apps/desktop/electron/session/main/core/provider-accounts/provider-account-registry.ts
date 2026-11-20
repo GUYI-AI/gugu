@@ -348,6 +348,26 @@ export class ProviderAccountRegistry {
     return toProviderAccount(removed);
   }
 
+  /**
+   * Take a connection away but keep its row as a removal record (sessions bound to it, and discovery, still read the row).
+   * The only place a soft removal is written: the record never keeps the connection's secret. The secret goes first, so a
+   * failure here leaves a connection that is still listed (and can be removed again) rather than a removed one holding a key.
+   */
+  async retireAccount(providerId: string, accountId: string, meta: ProviderAccountMetaInput): Promise<ProviderAccount> {
+    const existing = await this.findRow(providerId, accountId);
+    if (!existing) throw new Error('Account no longer exists');
+    await this.secretStore.deleteSecret(existing.credentialRef);
+    return (await this.upsertAccount({ providerId, accountId, meta })).account;
+  }
+
+  /** Removal records written before they dropped the secret still hold it; drop it. A plain delete by key, no decryption. */
+  async dropRetiredSecrets(): Promise<number> {
+    const rows = this.db.select().from(providerAccounts).all()
+      .filter((row) => row.meta?.customModel?.removed || row.meta?.harnessConnection?.removed);
+    for (const row of rows) await this.secretStore.deleteSecret(row.credentialRef);
+    return rows.length;
+  }
+
   /** Remove every account (and secret) for a provider. */
   async removeAllAccounts(providerId: string): Promise<void> {
     const rows = this.db.transaction((tx) => {
