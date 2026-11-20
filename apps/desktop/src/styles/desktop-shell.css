@@ -36,11 +36,6 @@
   border-inline-end: 0;
 }
 
-/* A blank contacts header remains a window-drag lane, without a decorative rule. */
-[data-shell-contacts] > div > .gg-pane[data-role='detail'] > .gg-pane-header:not(:has(.gg-pane-title)) {
-  border-bottom: 0;
-}
-
 /* Embedded full-width pages (assistant, library, Apps) use the same inset surface as
  * projects. Their frame/skin must expose the shell underneath even with no list open;
  * an opaque backing here paints white corners around the surface's rounded edge.
