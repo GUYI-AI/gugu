@@ -15,6 +15,38 @@ const escape = (text: string, layers: number) => {
   return text;
 };
 
+/**
+ * Quotes and backslashes are the only bytes another JSON layer expands. A native search wins on sparse text, but dense text
+ * (quoted output, nested JSON) would return to JS once per hit, so past a few hits count four bytes per step instead.
+ */
+export function jsonSpecialBytes(input: Uint8Array): number {
+  const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+  let count = 0;
+  for (const byte of [34, 92]) for (let at = bytes.indexOf(byte); at !== -1; at = bytes.indexOf(byte, at + 1)) if (++count > 16) return denseSpecialBytes(input);
+  return count;
+}
+
+function denseSpecialBytes(bytes: Uint8Array): number {
+  const special = (byte: number) => byte === 34 || byte === 92;
+  let count = 0, at = 0;
+  const head = (4 - (bytes.byteOffset & 3)) & 3;
+  if (bytes.length - head >= 4) {
+    for (; at < head; at++) if (special(bytes[at])) count++;
+    const words = new Uint32Array(bytes.buffer, bytes.byteOffset + at, (bytes.length - at) >>> 2);
+    // An indexed loop: for-of over a typed array ran this scan at half the speed.
+    for (let index = 0; index < words.length; index++) {
+      // An exact per-byte equality test, with no borrow between bytes: a byte keeps its high bit only where it matched.
+      const word = words[index], quote = word ^ 0x22222222, slash = word ^ 0x5c5c5c5c;
+      const hits = (~(((quote & 0x7f7f7f7f) + 0x7f7f7f7f) | quote | 0x7f7f7f7f) >>> 7)
+        + (~(((slash & 0x7f7f7f7f) + 0x7f7f7f7f) | slash | 0x7f7f7f7f) >>> 7);
+      count += Math.imul(hits, 0x01010101) >>> 24;
+    }
+    at += words.length * 4;
+  }
+  for (; at < bytes.length; at++) if (special(bytes[at])) count++;
+  return count;
+}
+
 /** The leaf is already JSON encoded: further layers expand only quotes and backslashes. */
 function escapedText(input: Uint8Array, layers: number, range?: { start: number; end: number }): { bytes: number; value?: Buffer } {
   const expansion = 2 ** layers;
@@ -25,11 +57,8 @@ function escapedText(input: Uint8Array, layers: number, range?: { start: number;
     return { bytes: input.byteLength, value: range ? Buffer.from(input.subarray(range.start, range.end)) : undefined };
   }
   if (!range) {
-    // Source construction needs the length, not the expanded body. Scan the two ASCII bytes natively.
-    const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
-    let special = 0;
-    for (const byte of [34, 92]) for (let at = bytes.indexOf(byte); at !== -1; at = bytes.indexOf(byte, at + 1)) special++;
-    const length = bytes.length + special * (expansion - 1);
+    // Source construction needs the length, not the expanded body.
+    const length = input.byteLength + jsonSpecialBytes(input) * (expansion - 1);
     if (!Number.isSafeInteger(length)) throw new Error('Canonical JSON length exceeds addressable bytes');
     return { bytes: length };
   }
