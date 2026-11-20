@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { AccountImRepository } from '../lib/imRepository'
+import { pruneUnreferencedIdentities, referencedIdentityIds, type AccountImRepository } from '../lib/imRepository'
 import { readDisplayIdentities } from '../lib/identityReadAdapter'
 import { refreshObservedAgentPresenceFromRevision } from '../lib/agentPresenceStore'
 import { dataClient } from '../lib/supabase'
@@ -7,24 +7,39 @@ import { subscribeAuthenticatedRealtimeChannel, unsubscribeAuthenticatedRealtime
 import { UI_EVENTS } from '../lib/uiEvents'
 import { rendererLogger } from '../lib/log'
 
-/** Broadcasts only invalidate known caches. Reconnect always reads authoritative snapshots. */
-export function useIdentityLifecycle(userId: string | null | undefined, getRepository: () => Promise<AccountImRepository>, reload: () => Promise<unknown>): void {
+/**
+ * Broadcasts only invalidate known caches. Reconnect always reads authoritative snapshots first; afterwards the
+ * identity cache keeps only what the conversation list and the contacts still name, so the re-read that follows asks
+ * for live identities only (an archived or departed agent's cached row is not read again on every reconnect).
+ * `contactIds` returns the current contact ids, or null while they are unknown (then nothing is dropped).
+ */
+export function useIdentityLifecycle(userId: string | null | undefined, getRepository: () => Promise<AccountImRepository>, reload: () => Promise<unknown>, contactIds: () => readonly string[] | null): void {
   const reloadRef = useRef(reload)
   reloadRef.current = reload
+  const contactIdsRef = useRef(contactIds)
+  contactIdsRef.current = contactIds
   useEffect(() => {
     if (!userId) return
     let active = true
     const invalidate = async (id: string | null) => {
       const repository = await getRepository()
       if (!active) return
+      if (id === null) {
+        await reloadRef.current()
+        if (!active) return
+        const contacts = contactIdsRef.current()
+        if (contacts) await pruneUnreferencedIdentities(repository, referencedIdentityIds(repository, contacts))
+        if (!active) return
+      }
       const snapshot = repository.snapshot()
-      const known = new Set([...snapshot.identity.map(row => row.id), ...snapshot.membership.map(row => row.identityId)])
+      const listed = new Set(snapshot.chat.map(row => row.id))
+      const known = new Set([...snapshot.identity.map(row => row.id), ...snapshot.membership.filter(row => listed.has(row.chatId)).map(row => row.identityId)])
       if (id !== null && !known.has(id)) return
       const ids = id === null ? [...known] : [id]
       await Promise.all([
         readDisplayIdentities(ids).then(rows => { if (active) return repository.putIdentities(rows) }),
         refreshObservedAgentPresenceFromRevision(ids.map(agent_user_id => ({ agent_user_id }))),
-        reloadRef.current(),
+        ...(id === null ? [] : [reloadRef.current()]),
       ])
       if (active) window.dispatchEvent(new CustomEvent(UI_EVENTS.identityInvalidated, { detail: { id } }))
     }
