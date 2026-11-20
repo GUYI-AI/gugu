@@ -260,6 +260,24 @@ export default {
     "summary_other": "群号 {{number}}，{{count}} 名成员",
     "title": "加入群聊"
   },
+  "requestsPane": {
+    "empty": "没有新的请求",
+    "nonePending": "没有待处理的",
+    "pending_one": "{{count}} 个待处理",
+    "pending_other": "{{count}} 个待处理"
+  },
+  "searchPane": {
+    "count_one": "{{count}} 个结果",
+    "count_other": "{{count}} 个结果",
+    "empty": "没有找到「{{query}}」",
+    "title": "搜索「{{query}}」"
+  },
+  "sectionPane": {
+    "agents": "Agent",
+    "count_one": "{{count}} 个",
+    "count_other": "{{count}} 个",
+    "groups": "群"
+  },
   "panel": {
     "addContact": "添加联系人",
     "agentSectionTitle": "Agent",
