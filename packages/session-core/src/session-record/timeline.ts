@@ -314,6 +314,7 @@ class RecordTimeline implements SessionTimeline {
     }
     // Register only after a successful read, and refresh any boundary recorded during that read.
     this.hostEnds = this.deps.hostTurnEnds?.read() ?? [];
+    this.hostEnded = new WeakMap();
     this.stopHostTurnEnds = this.deps.hostTurnEnds?.subscribe(() => {
       this.hostEnds = this.deps.hostTurnEnds!.read();
       this.hostEnded = new WeakMap();
@@ -970,6 +971,12 @@ class RecordTimeline implements SessionTimeline {
   private publish(): void {
     if (this.disposed || this.suspended) return;
     const turns = this.currentTurns();
+    // Questions held by this ended native turn have lost their answer channel too. Do not retain a false waiting state.
+    for (const settlement of this.settlements.values()) {
+      if (settlement.state !== 'pending') continue;
+      const ended = turns.find(turn => turn.hostEnd && toolNameIn(turn.items, settlement.itemId) !== null);
+      if (ended?.hostEnd) this.putSettlement({ ...settlement, state: 'cancelled', resolvedAt: ended.hostEnd.at });
+    }
     const nextSeq = this.seq + 1;
     let changed = this.needsPublish || this.dirtySettlements.size > 0 || this.queuedDirty || this.liveReplyDirty || this.terminalsDirty;
 

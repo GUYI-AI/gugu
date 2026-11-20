@@ -30,7 +30,11 @@ it('ends an actual unfinished Claude record in snapshot, delta and reopen withou
   const at = Date.parse('2026-11-20T03:28:51Z');
   const user = (uuid: string, time: number, parentUuid: string | null) => JSON.stringify({ type: 'user', uuid, parentUuid,
     sessionId: providerSessionId, timestamp: new Date(time).toISOString(), message: { role: 'user', content: 'test request' } }) + '\n';
-  const original = user('first', at, null);
+  const original = user('first', at, null) + JSON.stringify({ type: 'assistant', uuid: 'question', parentUuid: 'first',
+    sessionId: providerSessionId, timestamp: new Date(at + 1).toISOString(), message: { id: 'question', role: 'assistant',
+      content: [{ type: 'tool_use', id: 'ask-3374', name: 'AskUserQuestion', input: { questions: [
+        { question: 'Test question?', header: 'Test', options: [{ label: 'Yes', description: 'Test yes' }, { label: 'No', description: 'Test no' }], multiSelect: false },
+      ] } }], stop_reason: 'tool_use' } }) + '\n';
   await writeFile(file, original);
   let ends: HostTurnEnd[] = [];
   const listeners = new Set<() => void>();
@@ -41,17 +45,19 @@ it('ends an actual unfinished Claude record in snapshot, delta and reopen withou
   try {
     const before = timeline.getSnapshot();
     expect(before.turns.at(-1)?.outcome).toBeUndefined();
+    expect(before.settlements.some(one => one.state === 'pending')).toBe(true);
     const closedAt = at + 10 * 60_000;
     ends = [{ cutoff: closedAt, endedAt: closedAt }];
     for (const listener of listeners) listener();
     const ended = timeline.getSnapshot().turns.at(-1)!;
     expect(ended).toMatchObject({ outcome: { kind: 'cancelled' }, endedAt: closedAt, hostEnd: { at: closedAt } });
+    expect(timeline.getSnapshot().settlements.every(one => one.state !== 'pending')).toBe(true);
     expect(timeline.getAfter(before.cursor)).toMatchObject({ ok: true, batch: { turns: [expect.objectContaining({ outcome: { kind: 'cancelled', reason: 'cancelled' }, endedAt: closedAt })] } });
     timeline.dispose(); expect(listeners.size).toBe(0);
     timeline = await open();
     expect(timeline.getSnapshot().turns.at(-1)).toEqual(ended);
     // A genuinely later native reply remains authoritative, rather than inheriting the host cancellation.
-    await appendFile(file, JSON.stringify({ type: 'assistant', uuid: 'reply', parentUuid: 'first', sessionId: providerSessionId,
+    await appendFile(file, JSON.stringify({ type: 'assistant', uuid: 'reply', parentUuid: 'question', sessionId: providerSessionId,
       timestamp: new Date(closedAt + 1).toISOString(), message: { id: 'reply', role: 'assistant',
         content: [{ type: 'text', text: 'late native answer' }], stop_reason: 'end_turn' } }) + '\n');
     await vi.waitFor(() => expect(timeline.getSnapshot().turns.at(-1)?.outcome?.kind).toBe('done'));
