@@ -1,5 +1,6 @@
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
 import { inspectBrowserAnnotation } from './browser-annotation';
+import { isAnnotationConversation, type AnnotationConversation } from '@shared/browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
   destroyBrowserPage,
@@ -39,8 +40,9 @@ export const browserController = createRPCController({
   kernelStatus: () => standaloneKernelService().status(),
   kernelAction: (action: BrowserKernelAction) => standaloneKernelService().action(action),
   /** `sessionId`:页签开在哪条会话里(#7191 会话的 agent 据此找到自己的页签);新建任务的草稿面板不带。 */
-  registerSession: async (args: { browserId: string; partition: string; sessionId?: string; kernel?: BrowserKernelKind; url?: string }) => {
-    if (!args.browserId.trim() || !isBrowserPartition(args.partition)) {
+  registerSession: async (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string }) => {
+    if (!args.browserId.trim() || !isBrowserPartition(args.partition) || (args.conversation !== undefined && (!isAnnotationConversation(args.conversation)
+      || (args.sessionId && (args.conversation.kind !== 'session' || args.conversation.sessionId !== args.sessionId))))) {
       return { success: false as const, error: 'Invalid browser session' };
     }
     if (args.kernel !== undefined && args.kernel !== 'builtin' && args.kernel !== 'standalone') throw new Error('Invalid browser kernel');
@@ -50,6 +52,7 @@ export const browserController = createRPCController({
       browserId: args.browserId,
       partition: args.partition,
       ...(args.sessionId?.trim() ? { sessionId: args.sessionId } : {}),
+      ...(args.conversation ? { conversation: args.conversation } : {}),
     });
     return { success: true as const, kernel };
   },
@@ -90,9 +93,12 @@ export const browserController = createRPCController({
   snapshotPage: async (browserId: string) => ({ dataUrl: await (isStandalonePage(browserId) ? snapshotStandalonePage(browserId) : snapshotBrowserPage(browserId)) }),
   inspectAnnotation: async (args: Parameters<typeof inspectBrowserAnnotation>[0]) => {
     if (!isStandalonePage(args.browserId)) return inspectBrowserAnnotation(args);
-    if (browserKernelBindings.get(args.browserId)?.sessionId !== args.sessionId) throw new Error('This conversation has no selected browser page');
-    const result = await (await standaloneScreen(args.browserId)).control({ action: 'annotate', query: args.query, capture: args.capture });
+    if (!browserKernelBindings.belongsTo(args.browserId, args.conversation)) throw new Error('This conversation has no selected browser page');
+    const binding = browserKernelBindings.get(args.browserId);
+    const screen = await standaloneScreen(args.browserId);
+    const result = await screen.control({ action: 'annotate', query: args.query, capture: args.capture });
     if (!result) throw new Error('The browser annotation could not be read');
+    if (browserKernelBindings.get(args.browserId) !== binding || screen.state().url !== result.target.url) throw new Error('The page changed during selection');
     return result;
   },
   setAnnotationBrowsing: (args: { browserId: string; browsing: boolean }) => ({

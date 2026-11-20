@@ -2,6 +2,7 @@ import { clipboard, ClipboardItem } from 'electron';
 import { events } from '@main/lib/events';
 import { browserPageEventChannel, browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout } from '@shared/browser-page-layout';
+import type { AnnotationConversation } from '@shared/browser-annotation';
 import type { BrowserKernelKind } from '@shared/browser-kernel';
 import type { BrowserPageCommand } from './browser-page-views';
 import type { TaskPageContents, TaskPageScreenTarget } from '../../../../server/server-task-browser';
@@ -14,10 +15,10 @@ import { watchTaskPageConnection } from './remote-task-page';
 export const browserKernelBindings = new BrowserKernelBindings();
 const contents = new Map<string, TaskPageContents>();
 
-export function registerBrowserKernel(input: { browserId: string; partition: string; sessionId?: string; kernel?: BrowserKernelKind; url?: string }) {
+export function registerBrowserKernel(input: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string }) {
   return browserKernelBindings.run(input.browserId, async () => {
     const old = browserKernelBindings.get(input.browserId);
-    if (old && old.sessionId !== input.sessionId) throw new Error('This browser tab belongs to another conversation');
+    browserKernelBindings.assertOwner(input);
     if (old && old.partition !== input.partition) await closeStandalonePage(input.browserId);
     // Internal preview/file protocols belong to Electron and never leave its document sandbox.
     const web = !input.url || input.url === 'about:blank' || /^https?:\/\//i.test(input.url);

@@ -33,6 +33,19 @@ describe('browser engine lifetime', () => {
     expect(tabs.forSession('one')).toHaveLength(1);
   });
 
+  it('keeps chat ownership separate from Agent session ownership, including equal raw ids', () => {
+    const tabs = new BrowserKernelBindings();
+    const input = { browserId: 'chat-tab', partition: 'persist:browser:default' };
+    tabs.bind({ ...input, conversation: { kind: 'chat', chatId: 'one' } }, 'standalone');
+    expect(tabs.belongsTo(input.browserId, { kind: 'chat', chatId: 'one' })).toBe(true);
+    expect(tabs.belongsTo(input.browserId, { kind: 'session', sessionId: 'one' })).toBe(false);
+    expect(tabs.forSession('one')).toEqual([]);
+    expect(() => tabs.bind({ ...input, conversation: { kind: 'chat', chatId: 'two' } }, 'standalone')).toThrow('another conversation');
+    expect(() => tabs.assertOwner({ ...input, sessionId: 'one' })).toThrow('another conversation');
+    tabs.bind({ ...input, browserId: 'session-tab', conversation: { kind: 'session', sessionId: 'one' } }, 'builtin');
+    expect(tabs.forSession('one').map(tab => tab.browserId)).toEqual(['session-tab']);
+  });
+
   it('releases a closed identity before a new tab chooses its own engine', () => {
     const tabs = new BrowserKernelBindings();
     tabs.bind({ browserId: 'tab', partition: 'persist:browser:default' }, 'builtin');
