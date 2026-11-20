@@ -137,6 +137,7 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "nativeHistorySummary": "Previous Gugu sessions: {{removed}} moved, {{pending}} pending, {{retained}} retained; {{unowned}} belong to other profiles",
   "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
   "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
   "preparation": { "preparing": "Preparing migration", "copying": "Importing configuration and sessions", "history": "Preparing history", "elapsedLabel_one": "{{label}}, {{count}} second elapsed", "elapsedLabel_other": "{{label}}, {{count}} seconds elapsed" },
