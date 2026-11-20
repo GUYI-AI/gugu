@@ -22,27 +22,15 @@ beforeEach(() => {
 })
 afterEach(() => { harness.cleanup(); removeDeviceSessions('host'); publishDirectoryDevices([]) })
 const action = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
-const present = (id: string) => document.querySelector(`[data-testid="${id}"]`) !== null
-const render = () => harness.render(<ChatRowContextMenu chat={scope.chats[0]} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onDelete={vi.fn()} />)
-
-it('enables the existing mark-all action for native-only unread and disables it after the host projection clears', async () => {
-  await render()
-  expect(action('conversation-row-mark-all-read').hasAttribute('data-disabled')).toBe(true)
-  await act(async () => updateDeviceSessions('host', { sessions: [{ conversationId: 'native', nativeUnreadKeys: ['reply'] } as never] }))
-  expect(action('conversation-row-mark-all-read').hasAttribute('data-disabled')).toBe(false)
-  await act(async () => action('conversation-row-mark-all-read').click())
-  expect(scope.mark).toHaveBeenCalledExactlyOnceWith()
-  await act(async () => updateDeviceSessions('host', { sessions: [{ conversationId: 'native', nativeUnreadKeys: [] } as never] }))
-  expect(action('conversation-row-mark-all-read').hasAttribute('data-disabled')).toBe(true)
-})
+const render = () => harness.render(<ChatRowContextMenu chat={scope.chats[0]} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onHide={vi.fn(async () => undefined)} />)
 
 it('enables a personal read only for that row’s native replies', async () => {
   updateDeviceSessions('host', { sessions: [{ conversationId: 'other', agent: { userId: 'other' }, nativeUnreadKeys: ['reply'] } as never] })
   await render()
-  // Nothing of this row unread: its read row offers mark unread (the read state is one row).
-  expect([present('conversation-row-mark-read'), present('conversation-row-mark-unread')]).toEqual([false, true])
+  // Nothing of this row unread: its mark read is disabled.
+  expect(action('conversation-row-mark-read').hasAttribute('data-disabled')).toBe(true)
   await act(async () => updateDeviceSessions('host', { sessions: [{ conversationId: 'mine', agent: { userId: 'mine' }, nativeUnreadKeys: ['reply'] } as never] }))
-  expect([present('conversation-row-mark-read'), present('conversation-row-mark-unread')]).toEqual([true, false])
+  expect(action('conversation-row-mark-read').hasAttribute('data-disabled')).toBe(false)
   await act(async () => action('conversation-row-mark-read').click())
   expect(scope.mark).toHaveBeenCalledExactlyOnceWith('dm')
 })

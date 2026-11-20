@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// 通讯录 agent 行的重渲染范围:一个 agent 变了只重画那一行;设备表心跳不重画任何一行。
-// 从前改一个名字整列每行都重画(100 个 agent = 每次 100 行),n 个 agent 各推一次就是 O(n²)。
+// 通讯录 agent 节点(分组页的导图,AgentMindMap @@@map-node-memo)的重渲染范围:一个 agent 变了只重画那一个节点;
+// 设备表心跳不重画任何一个。从前改一个名字整列每行都重画(100 个 agent = 每次 100 行),n 个 agent 各推一次就是 O(n²)。
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -9,16 +9,17 @@ import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsP
 import { DevicesContext, type DevicesContextValue } from '../../../../apps/desktop/src/store/devicesContext'
 import { clickElement, contact, createNode, createReactHarness, device, renderWithAppProviders } from '../../../support/testHarness'
 
+// 每个导图节点每次渲染都按自己的名字问一次显示名(useShownAgentName):按名字数这一问,就是数节点渲染了几次。
 const rowRenders = vi.hoisted(() => new Map<string, number>())
-vi.mock('../../../../apps/desktop/src/components/ui/ListRow', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../../../apps/desktop/src/components/ui/ListRow')>()
+vi.mock('../../../../apps/desktop/src/hooks/useShownAgentName', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../../apps/desktop/src/hooks/useShownAgentName')>()
   return {
     ...original,
-    ListRow: (props: Parameters<typeof original.ListRow>[0] & { 'data-contact-id'?: string }) => {
-      const id = props['data-contact-id']
-      if (id) rowRenders.set(id, (rowRenders.get(id) ?? 0) + 1)
-      return original.ListRow(props)
-    },
+    useShownAgentName: ((input: { name: string } | readonly { name: string }[]) => {
+      const name = Array.isArray(input) ? null : (input as { name: string }).name
+      if (name && /^(Agent |Renamed )/.test(name)) rowRenders.set(name, (rowRenders.get(name) ?? 0) + 1)
+      return original.useShownAgentName(input as never)
+    }) as unknown as typeof original.useShownAgentName,
   }
 })
 vi.mock('../../../../apps/desktop/src/lib/chat', () => import('../../../support/contactsChatServiceTestDouble'))
@@ -33,9 +34,10 @@ const devicesStore = (devices: Device[]): DevicesContextValue => ({
 })
 const agents = ['a', 'b', 'c'].map((id) => contact({ id, type: 'agent', display_name: `Agent ${id}`, owner_user_id: 'owner-1', device_id: 'laptop' }))
 
-// 设备段默认收起、收起时只挂轻行(见 ContactsDeviceSections @@@folded-rows):先点开,完整行才在。
+// 像用户一样在左栏点开这台设备的分组:右边铺开它的导图。
 async function openDeviceSection() {
-  await clickElement(harness.container.querySelector('[data-testid="contacts-device-section"] [data-slot="section-label"]') as HTMLElement)
+  const navs = [...harness.container.querySelectorAll<HTMLElement>('[data-testid="contacts-section-nav"]')]
+  await clickElement(navs.find((nav) => !['unknown', 'people', 'groups'].includes(nav.dataset.sectionKey!))!)
 }
 
 async function render(contacts: ContactUser[], devices: Device[]) {
@@ -52,12 +54,12 @@ describe('contacts agent rows re-render only for their own change', () => {
     const devices = [device('laptop', [], { is_online: true })]
     await render(agents, devices)
     await openDeviceSection()
-    expect([...rowRenders.keys()].sort()).toEqual(['a', 'b', 'c'])
+    expect([...rowRenders.keys()].sort()).toEqual(['Agent a', 'Agent b', 'Agent c'])
     rowRenders.clear()
 
     await render([agents[0]!, { ...agents[1]!, display_name: 'Renamed b' }, agents[2]!], devices)
     expect(harness.container.querySelector('[data-contact-id="b"]')?.textContent).toContain('Renamed b')
-    expect(Object.fromEntries(rowRenders)).toEqual({ b: 1 })
+    expect(Object.fromEntries(rowRenders)).toEqual({ 'Renamed b': 1 })
   })
 
   it('a device heartbeat (new device list, same facts) re-renders no row', async () => {

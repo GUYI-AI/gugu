@@ -47,9 +47,13 @@ describe('historical process disclosure after new turns', () => {
     await until('old header is expanded', () => v.header().getAttribute('aria-expanded') === 'true');
     await v.settle();
     expect(v.steps()).not.toBeNull();
-    expect(v.steps()!.textContent).toContain('Called 1 MCP tool');
-    expect(v.steps()!.querySelector('[data-slot="tool-run"]')?.getAttribute('data-step-count')).toBe('1');
-    expect(v.steps()!.textContent).not.toContain('message_conversations');
+    const tool = v.steps()!.querySelector<HTMLElement>('[data-slot="tool-call-trigger"]')!;
+    expect(tool.textContent).toContain('plugin_gugu-product_gugu, message_conversations');
+    expect(tool.getAttribute('aria-expanded')).toBe('false');
+    expect(v.steps()!.querySelector('[data-slot="tool-run"]')).toBeNull();
+    tool.click();
+    await until('the recorded MCP result is disclosed', () => v.steps()?.querySelector('[data-slot="tool-call-result"]')?.textContent?.includes('Status read successfully.') === true);
+    expect(v.steps()!.querySelector('[data-slot="tool-call-request"]')?.textContent).toContain('{}');
     expect(v.steps()!.offsetHeight).toBeGreaterThan(0);
   });
 
@@ -69,8 +73,8 @@ describe('historical process disclosure after new turns', () => {
     v.header().click();
     await v.settle();
     expect(v.steps()).not.toBeNull();
-    expect(v.steps()!.textContent).toContain('Called 1 MCP tool');
-    expect(v.steps()!.textContent).not.toContain('message_conversations');
+    expect(v.steps()!.textContent).toContain('plugin_gugu-product_gugu, message_conversations');
+    expect(v.steps()!.querySelector('[data-slot="tool-run"]')).toBeNull();
   });
 
   it('keeps send-only segments non-expandable without losing their step counts or bubbles', async () => {

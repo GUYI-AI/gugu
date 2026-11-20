@@ -17,8 +17,6 @@ export const codeWrapper = style({
   overflowY: 'hidden',
   paddingLeft: '8px',
   background: 'transparent',
-  // Thin scrollbar
-  scrollbarWidth: 'thin',
 });
 
 // Use the existing border token's 8% ink strength on the bubble's own text color.

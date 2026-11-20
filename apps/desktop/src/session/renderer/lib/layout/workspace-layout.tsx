@@ -158,7 +158,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         />
       ) : null}
       {/* #2642 内层栏右边缘的分隔条,规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
-          收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西(desktop-shell.css 用相邻选择器把两半拼成一张卡片)。 */}
+          收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西。 */}
       {showInnerHandle ? (
         <PanelResizeHandle
           edge="end"
@@ -181,7 +181,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         />
       ) : null}
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
-          #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
+          #2548 有内层栏时它归列表那一层,紧挨着正文那张卡片(desktop-shell.css)。 */}
       {sidebarHidden ? null : innerSidebar}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
         {mainContent}

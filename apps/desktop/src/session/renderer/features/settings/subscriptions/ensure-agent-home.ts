@@ -1,3 +1,4 @@
+import { openShellSettings } from '@renderer/lib/open-shell-settings'
 import { WireError } from '@gugu/session-wire'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { errorText } from './subscription-queries'
@@ -6,7 +7,11 @@ import { showModal } from '@renderer/lib/modal/modal-provider'
 /** Re-import an already migrated configuration from Subscriptions. */
 export async function openAgentHomeImport(providerId: string, machine: string | null): Promise<boolean> {
   const home = await readAgentHome(providerId, machine)
-  if (!home || home.needsImport) return false
+  if (!home) return false
+  if (home.needsImport) {
+    if (!machine && home.sourceReadable) openShellSettings('data-import')
+    return false
+  }
   const diff = await readAgentHomeDiff(providerId, machine)
   return new Promise((resolve) => showModal('agentHomeReimportModal', {
     providerId, machine, diff, onSuccess: () => resolve(true), onClose: () => resolve(false),

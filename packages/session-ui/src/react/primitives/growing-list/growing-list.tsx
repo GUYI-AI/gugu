@@ -44,8 +44,8 @@ export type GrowingListWindow = Virtualizer<HTMLElement, Element> & {
 
 /** Lines a window holds at most once grown (every list shares it): 600 member rows are ~12 000 DOM nodes. */
 export const GROW_CAP = 600
-/** One idle slice aims at this many ms (render, commit, layout of the lines it adds); the next slice adds fewer lines
- *  when one took longer. */
+/** One idle slice aims at this many ms (render, commit, layout of the lines it adds); the next adds fewer lines when one
+ *  took longer, never under 8: on a busy machine a slice costs itself, not its lines (at 2, 600 lines took 300 slices). */
 const GROW_SLICE_MS = 5
 /** A page that is never idle still grows: a slice runs at the latest this long after the previous one. */
 const GROW_TIMEOUT_MS = 1000
@@ -136,7 +136,7 @@ export function useGrowingList({ count, getKey, estimateSize, scroller, isSticky
     if (!sliceStarted.current) return
     const spent = performance.now() - sliceStarted.current
     sliceStarted.current = 0
-    sliceLines.current = Math.max(2, Math.min(64, Math.round(spent > GROW_SLICE_MS * 1.6 ? sliceLines.current / 2 : spent < GROW_SLICE_MS * 0.8 ? sliceLines.current * 1.5 : sliceLines.current)))
+    sliceLines.current = Math.max(8, Math.min(64, Math.round(spent > GROW_SLICE_MS * 1.6 ? sliceLines.current / 2 : spent < GROW_SLICE_MS * 0.8 ? sliceLines.current * 1.5 : sliceLines.current)))
   }, [grown])
   const live = enabled && scroller !== null
   useEffect(() => {

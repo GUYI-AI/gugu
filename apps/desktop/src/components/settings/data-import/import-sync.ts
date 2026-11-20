@@ -1,3 +1,4 @@
+import { syncCategoryEnabled } from './environment-import-view'
 import { i18n } from '@/i18n'
 import { sessionCoordinator } from '@/lib/sessionCoordinator'
 import { fetchAppSettingValue } from '@renderer/features/settings/app-settings-client'
@@ -20,7 +21,9 @@ export async function syncImports(ownerId: string, signal?: AbortSignal): Promis
     const t = i18n.getFixedT(null, 'main')
     for (const provider of importProviders) {
       if (!stillSignedIn()) break
-      if (!provider.supportsAutomaticSync || !preferences.sources.includes(provider.id)) continue
+      const connected = preferences.sources.includes(provider.id) || !!provider.sourceId && preferences.sources.includes(provider.sourceId)
+      const selected = syncCategoryEnabled(preferences.categories, provider.category)
+      if (!provider.supportsAutomaticSync || !connected || !selected) continue
       try {
         let reading = await provider.scan(null)
         while (reading?.pending && stillSignedIn()) {
@@ -29,9 +32,11 @@ export async function syncImports(ownerId: string, signal?: AbortSignal): Promis
           reading = await provider.scan(null)
         }
         const latest = await fetchAppSettingValue('dataImport')
-        if (!latest.owners[ownerId]?.automatic || !stillSignedIn()) break
+        const latestPreferences = latest.owners[ownerId]
+        if (!latestPreferences?.automatic || !stillSignedIn()) break
+        if (!syncCategoryEnabled(latestPreferences.categories, provider.category)) continue
         if (reading?.count) enqueueImport(ownerId, {
-          provider, automatic: true,
+          provider, automatic: true, seen: latestPreferences.categoryAttempts?.[provider.id],
           devices: [{ deviceId: null, deviceName: t('settings.dataImport.thisComputer'), count: reading.count }],
         }, t)
       } catch (error) {

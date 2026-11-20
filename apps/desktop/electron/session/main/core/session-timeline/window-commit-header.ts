@@ -54,14 +54,16 @@ export async function publishCommitHeader(input: Input, signal?: AbortSignal) {
     }
     let page = 0, member = 0, done = false;
     while (!done) {
+      // One page per step, like the root batch: one page read and one reader,
+      // stopping at the page's end or once over 12 KiB of the budget is used.
       await step(async budget => {
         const found = await readIndexedCommitContainerPage(context, page, budget, signal);
         if (found.kind === 'end') { done = true; return; }
         if (found.kind !== 'page') throw new Error('Header index is incomplete');
-        const value = found.page.members[member];
-        if (!value?.key) throw new Error('Invalid header object member');
         const reader = createWindowCommitReader(c.directory, c.receipt.binding, c.receipt.source, budget, signal);
-        try {
+        try { for (;;) {
+          const value = found.page.members[member];
+          if (!value?.key) throw new Error('Invalid header object member');
           const decoded = value.key.end - value.key.start <= 512 ? await reader.string(
             { start: value.key.start + 1, end: value.key.end }, { rawOffset: value.key.start + 1, decodedOffset: 0 }, 128) : null;
           if (decoded?.complete && selected.fields.has(decoded.text)) {
@@ -80,10 +82,10 @@ export async function publishCommitHeader(input: Input, signal?: AbortSignal) {
               else result.deferred.push({ field, kind: 'string', range: { ...value.range } });
             } else result.deferred.push({ field, kind: value.kind, range: { ...value.range } });
           }
-        } finally { reader.close(); }
-        if (member + 1 < found.page.members.length) member++;
-        else if (found.next !== null) { page = found.next; member = 0; }
-        else done = true;
+          if (member + 1 < found.page.members.length) member++;
+          else { if (found.next !== null) { page = found.next; member = 0; } else done = true; break; }
+          if (budget.counters.indexBytes > 12 * 1024) break;
+        } } finally { reader.close(); }
       });
       committed(c); await setImmediate(undefined, { signal });
     }

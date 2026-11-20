@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Markdown } from '@/components/markdown/Markdown'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { fileTextRange, sourceLineRange } from '@/components/preview/file-text-range'
-import { selectedTextQuote, selectionPosition } from '@/components/preview/quote-preview-file'
+import { selectedTextQuote, selectionCite, selectionPosition } from '@/components/preview/quote-preview-file'
 import { i18n } from '@/i18n'
 import '@/i18n/registerMessagingCatalog'
 import { readFileSync } from 'node:fs'
@@ -24,6 +24,10 @@ afterEach(async () => {
   document.getSelection()?.removeAllRanges()
   host.remove()
 })
+
+const file = { name: 'notes.txt', target: '/home/me/notes.txt' }
+/** A chat's text preview on a phone (no annotation editor): Copy · Cite, the cite handed to `cite`. */
+const selectable = (cite = vi.fn()) => ({ conversation: { kind: 'chat' as const, chatId: 'group-1' }, file, cite, sends: false })
 
 async function markdown(content: string) {
   await act(async () => root.render(createElement(Markdown, { content, trust: 'chat', hardBreaks: true, sourceLines: true })))
@@ -71,7 +75,7 @@ describe('file source ranges', () => {
 
   it('excludes the untouched next line at an end boundary and keeps code text without line numbers', async () => {
     const content = 'one\r\ntwo\r\nthree'
-    await act(async () => root.render(createElement(FileTextContent, { content, kind: 'text', onCite: vi.fn() })))
+    await act(async () => root.render(createElement(FileTextContent, { content, kind: 'text', selectable: selectable() })))
     const first = host.querySelector('[data-file-line="1"]')!
     const third = host.querySelector('[data-file-line="3"]')!
     const range = document.createRange()
@@ -122,7 +126,7 @@ describe('file source ranges', () => {
 
 it('cites each selected range on its own, as many times as asked', async () => {
   const onCite = vi.fn()
-  await act(async () => root.render(createElement(FileTextContent, { content: 'first\nsecond\nthird', kind: 'text', onCite })))
+  await act(async () => root.render(createElement(FileTextContent, { content: 'first\nsecond\nthird', kind: 'text', selectable: selectable(onCite) })))
   for (const line of [2, 3]) {
     const span = host.querySelector(`[data-file-line="${line}"]`)!
     const range = document.createRange()
@@ -133,19 +137,19 @@ it('cites each selected range on its own, as many times as asked', async () => {
       document.dispatchEvent(new Event('selectionchange'))
     })
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
-    const buttons = document.querySelectorAll<HTMLButtonElement>('.gg-file-cite-popup button')
-    expect(buttons).toHaveLength(1)
-    expect(document.querySelector('.gg-file-cite-popup input')).toBeNull()
-    await act(async () => buttons[0].click())
-    expect(onCite).toHaveBeenLastCalledWith({ text: line === 2 ? 'second' : 'third', at: { lines: String(line) }, code: true })
-    expect(document.querySelector('.gg-file-cite-popup')).toBeNull()
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.gugu-selection-menu button')
+    expect([...buttons].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'cite'])
+    expect(document.querySelector('.gugu-selection-menu input')).toBeNull()
+    await act(async () => buttons[1].click())
+    expect(onCite).toHaveBeenLastCalledWith(selectionCite(selectable().conversation, file, { text: line === 2 ? 'second' : 'third', places: [{ at: { lines: `${line}` } }], code: true }))
+    expect(document.querySelector('.gugu-selection-menu')).toBeNull()
   }
   expect(onCite).toHaveBeenCalledTimes(2)
 })
 
 it('cites a code gutter range, including the empty final source line', async () => {
   const onCite = vi.fn()
-  await act(async () => root.render(createElement(FileTextContent, { content: 'one\n', kind: 'text', onCite })))
+  await act(async () => root.render(createElement(FileTextContent, { content: 'one\n', kind: 'text', selectable: selectable(onCite) })))
   const gutter = host.querySelectorAll<HTMLButtonElement>('.gg-file-line-number')
   await act(async () => gutter[0].click())
   await act(async () => gutter[1].dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
@@ -153,8 +157,8 @@ it('cites a code gutter range, including the empty final source line', async () 
     document.dispatchEvent(new Event('selectionchange'))
     await new Promise(resolve => requestAnimationFrame(resolve))
   })
-  await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-cite-popup button')!.click())
-  expect(onCite).toHaveBeenCalledWith({ text: 'one\n', at: { lines: '1-2' }, code: true })
+  await act(async () => document.querySelector<HTMLButtonElement>('.gugu-selection-menu [data-file-selection-action="cite"]')!.click())
+  expect(onCite).toHaveBeenCalledWith(selectionCite(selectable().conversation, file, { text: 'one\n', places: [{ at: { lines: '1-2' } }], code: true }))
 })
 
 it('says a place and quotes code as the Files App does, word for word', async () => {
