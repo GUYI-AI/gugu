@@ -2484,7 +2484,7 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
   }
 })
 const teamPaymentCheckout = createTeamPaymentCheckout({
-  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: egress.fetch,
   open: input => {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
     return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
