@@ -74,7 +74,7 @@ describe('DispatchSheet', () => {
     await type(document.body.querySelector('input') as HTMLInputElement, 'codex')
     const row = document.body.querySelector('[data-pick-row="agent:user:a-other"]')!
     expect(row.textContent).toContain('Codex 5')
-    expect(row.textContent).not.toContain('正在起名…')
+    expect(row.textContent).not.toContain('正在生成名称…')
     await click(row)
     await click(document.body.querySelector('[data-testid="dispatch-sheet-action"]'))
     await expect(picked).resolves.toEqual({ to: { agent: 'user:a-other' }, visible: false, text: 'cite' })

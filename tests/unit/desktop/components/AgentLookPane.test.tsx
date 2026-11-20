@@ -143,7 +143,7 @@ describe('形象工坊', () => {
       expect(stageWear()).toBe('crown.2,glasses.0')
       await clickElement(q('[data-outfit="headphones"]')!) // 耳机和所有帽子打架
       expect(stageWear()).toBe('glasses.0,headphones.0')
-      expect(q('.gg-look-outfit-note')?.textContent).toMatch(/摘下了|took off/)
+      expect(q('.gg-look-outfit-note')?.textContent).toMatch(/摘下与之冲突的|removed the conflicting/)
       expect(q('.gg-look-tag--draft')).not.toBeNull()
       await clickElement(q('.gg-look-save')!)
       expect(setAgentLook).toHaveBeenCalledWith('agent-1', { color: BODY_COLORS.findIndex((c) => c.en === 'Lagoon'), rest: 'surprised', wear: [{ id: 'glasses', cw: 0 }, { id: 'headphones', cw: 0 }] })
