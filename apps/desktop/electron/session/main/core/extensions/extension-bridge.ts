@@ -2171,6 +2171,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       }
       const { dispatchForApp } = await import('@main/core/extensions/extension-send');
       const operator = page?.operator;
+      const drawnIn = page?.conversation ? chatsDrawnIn.get(page.conversation) : undefined;
       return await dispatchForApp(
         extensionId,
         args,
