@@ -171,7 +171,7 @@ describe('task card in a chat (gugu-dev#181)', () => {
     await renderWithAppProviders(harness, card('card-run'))
     const row = () => harness.container.querySelector('[data-testid="composer-card"]')!.lastElementChild!
     expect(row().textContent, 'a braille spinner frame').toMatch(/[\u2800-\u28ff]/)
-    expect(row().querySelector('[data-animate="false"]'), 'it turns').toBeNull()
+    expect(row().querySelector('.cli-spinner'), 'it turns').not.toBeNull()
     harness.cleanup(); harness = createReactHarness()
     agentStatus = 'idle'
     await renderWithAppProviders(harness, card('card-done'))

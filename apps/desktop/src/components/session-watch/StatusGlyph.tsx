@@ -5,32 +5,6 @@ import { Avatar } from '@/components/Avatar'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 
-/**
- * 会话状态的那一小格。形制照抄 orca 手机端(`mobile/src/components/AgentSpinner.tsx`):
- * **12×12 的外壳里放一个 8×8 的字形**,在跑时是缺口环、其余是实心圆点。
- *
- * 为什么是外壳套内胆:状态在几种字形之间切换时,行高与基线不能跳。外壳定死 12×12,
- * 内胆怎么换都不影响排版。
- *
- * 画什么由 presentation 决定(与会话页、聊天同一张表):`data-tone` 选颜色与字形,`data-animate` 决定转不转
- * (后台在跑是同一个环、静止)。`null` = 这一格不说状态(离线机器上的「在跑」快照),画一个灰点。
- */
-export function StatusGlyph({ presentation }: { presentation: AgentStatusPresentation | null }) {
-  return (
-    <span
-      className="gg-aw-glyph"
-      data-tone={presentation?.tone ?? 'none'}
-      data-animate={presentation?.animate ? 'true' : undefined}
-      role={presentation ? 'img' : undefined}
-      aria-label={presentation ? agentStatusText(presentation.label) : undefined}
-      aria-hidden={presentation ? undefined : true}
-      data-testid="agent-watch-status-glyph"
-    >
-      <span className="gg-aw-glyph-inner" />
-    </span>
-  )
-}
-
 /** Session rows share the canonical agent avatar; sessions without an identity use their stable session id. */
 export function SessionAvatar({
   agentId,

@@ -6,7 +6,7 @@
   },
   "mainRendererGeometryDebt": {
     "inlineFontSizeLiterals": 6,
-    "inlineRadiusLiterals": 3,
+    "inlineRadiusLiterals": 2,
     "rawButtons": 73,
     "inlineStyleBlocks": 337
   },

@@ -32,7 +32,6 @@ import { useStructurallyShared } from '../hooks/useStructurallyShared'
 import { RunningBarSlot, RunningTokenBar } from './RunningTokenBar'
 import { AgentConversationNoticeSlot } from './AgentTurnFailureBar'
 import { useAgentDisplayStatuses, useAgentRecentActivity } from '../hooks/useAgentDisplayStatus'
-import { groupAgentStatusIndicatorProps } from '../lib/groupAgentStatus'
 import { useMessageFilePreview } from './chat/useMessageFilePreview'
 import type { MemberProfileCardModel, MemberProfileChatTarget } from './MemberProfileCard'
 import { useShownAgentStatus } from './chat/useAgentsOnCloudComputer'
@@ -524,7 +523,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
-          statusIndicatorProps: groupAgentStatusIndicatorProps(shownAgent.members(groupCollabSnapshot?.agents ?? [], groupAgentStatuses), groupAgentStatuses),
           onReload: loadGroupCollab,
         } : undefined}
         moreButtonRef={moreButtonRef}

@@ -188,7 +188,7 @@ export function TaskCardHandedTo({ agentName, agentAvatar, agentUserId, note, ma
 }
 
 /**
- * 行尾那一格,和侧栏会话行同一枚字形(AgentStatusGlyph,同一个 presentAgentStatus):在跑 = 四个点在转、后台在跑 = 同一枚静止、
+ * 行尾那一格,和侧栏会话行同一枚字形(AgentStatusGlyph,同一个 presentAgentStatus):在跑 = 四个点在转、后台在跑 = 黄色双竖线、
  * 需要你 = 琥珀点、出错 = 红点;做完(空闲)= 勾;归档 / 离线不画。
  */
 export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefined }) {
