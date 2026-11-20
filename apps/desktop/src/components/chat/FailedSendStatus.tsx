@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
-import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
+import { messageForUser } from '@/lib/userFacingError'
 
 /** Shared failed-message disclosure, including the existing touch menu. */
 export function FailedSendStatus({ reason, label, onRetry, onDiscard }: {
@@ -9,7 +9,7 @@ export function FailedSendStatus({ reason, label, onRetry, onDiscard }: {
 }) {
   const { t } = useTranslation('messaging')
   const [open, setOpen] = useState(false)
-  const failureReason = safeFailureLine(reason ?? '')
+  const failureReason = messageForUser(reason ?? '')
   const run = (action: () => void) => { setOpen(false); action() }
   return <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
     <DropdownMenu.Trigger type="button" data-testid="message-send-failed" aria-label={t('message.sendStatus.failedHint')}

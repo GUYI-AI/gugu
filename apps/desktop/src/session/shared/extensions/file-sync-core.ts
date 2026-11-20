@@ -364,7 +364,8 @@ export class FileSyncRelay {
    * the connections here and now: a person taken out of a group is cut off at once (真源原则 9).
    */
   revoke(id: number, reason: SyncRevokeReason | null, docNames?: (grant: Grant) => boolean): Promise<void> {
-    if (reason !== null) for (const listener of this.pageReleaseListeners) listener(id, docNames);
+    // A revocation always names what it takes (all of the page when no docNames): only a page that is gone passes none.
+    if (reason !== null) for (const listener of this.pageReleaseListeners) listener(id, docNames ?? (() => true));
     const page = this.pages.get(id);
     if (!page) return Promise.resolve();
     const letGo: Promise<void>[] = [];

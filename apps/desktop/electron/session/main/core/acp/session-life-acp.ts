@@ -260,7 +260,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     const worker = read<Worker>(have.process);
     const { command } = read<Cli>(have.cli);
     const platformTicket = read<Platform>(have.platform).injected && !command.input.runContext?.customModel;
-    const result = await callSessionStart(() => worker.client.startSession(command), sessionId, platformTicket);
+    const result = await callSessionStart(() => worker.client.startSession(command), sessionId, platformTicket, command.input.providerId);
     if (known().providerId === 'pi') signal.throwIfAborted();
     finishPiStartup();
     await persistAcpStartResult(command.input, result, {

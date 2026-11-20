@@ -1,5 +1,9 @@
 import { replica } from '@/lib/replica'
+import { rendererLogger } from '@/lib/log'
+
 import { locateImportProvider } from './import-providers'
+
+const log = rendererLogger('settings/data-import')
 
 export const importSourceCounts = replica({
   name: 'settingsImportSourceCounts',
@@ -8,7 +12,12 @@ export const importSourceCounts = replica({
   refreshJoinsRead: true,
   read: async (_owner, sourceId: string, deviceId: string | null) => {
     const provider = locateImportProvider(sourceId)
-    return provider ? await provider.scan(deviceId) : null
+    try {
+      return provider ? await provider.scan(deviceId) : null
+    } catch (error) {
+      log.warn({ sourceId, deviceId, error }, 'Import source scan failed')
+      throw error
+    }
   },
 })
 

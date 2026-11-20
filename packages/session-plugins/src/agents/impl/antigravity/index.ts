@@ -27,6 +27,8 @@ import { antigravityMcpAdapter } from './mcp';
 import { antigravitySubscriptionBehavior } from './subscription';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
+import { antigravitySessionProgram, buildAntigravityAcpSpawn } from './acp-routing';
+import { bindAgyTierObservation } from './acp-tier';
 import {
   ANTIGRAVITY_GATEWAY_AUTH,
   withGatewayAuthentication,
@@ -37,14 +39,13 @@ import {
   ANTIGRAVITY_SESSION_TUI_ENABLED,
   antigravitySessionBundleDescriptor,
   materializeAntigravitySessionBundle,
-  withLoopbackNoProxy,
 } from './session-bundle';
 
 const sessionBundle = antigravitySessionBundleDescriptor satisfies SessionBundleDescriptor;
 
 /**
- * 终端腿的程序 `agy`(Antigravity CLI)—— 与聊天面板腿的 `agy_acp_server` 是 Google 分开发行的
- * **两个程序**(owner 拍板两条腿都要 ⇒ 两个都装,#6335)。点「安装」一次装两个。
+ * `agy` now owns new ACP chats and the terminal leg. The primary `agy_acp_server` installation remains
+ * available only for conversations already stored in its native store.
  *
  * 分发:Google 官方 install.sh 用的同一份按平台版本清单
  * (`/tmp/agy-acp-probe/agy-install.sh`:`$DOWNLOAD_BASE_URL/manifests/$platform.json` → `{version,url,sha512}`),
@@ -56,10 +57,10 @@ const sessionBundle = antigravitySessionBundleDescriptor satisfies SessionBundle
  * `antigravity` 命令(「在 Antigravity IDE 中打开」靠它判 IDE,`openInApps.ts`)。
  * 用户自己用 install.sh 装在 `~/.local/bin/agy` 的那一份,按二进制名 `agy` 照常被认出来。
  */
-const ANTIGRAVITY_CLI_COMPANION = {
+export const ANTIGRAVITY_CLI_COMPANION = {
   id: ANTIGRAVITY_CLI_PROGRAM,
   name: 'Antigravity CLI',
-  legs: ['tui' as const],
+  legs: ANTIGRAVITY_SESSION_TUI_ENABLED ? ['acp' as const, 'tui' as const] : ['acp' as const],
   dependency: miseDependency({
     id: 'agy',
     backend: 'vendor-manifest',
@@ -160,7 +161,7 @@ export const plugin = definePlugin(
     name: 'Antigravity',
     publisher: 'Google',
     description:
-      'Google Antigravity: the official ACP server (agy_acp_server) for chat, and the agy CLI for terminal sessions.',
+      'Google Antigravity: agy for new chat and terminal sessions, with legacy ACP session resume.',
     // ACP 服务的官方说明页(注册表条目给的同一个出处)。
     websiteUrl: 'https://antigravity.google/docs/ide/extensions',
   },
@@ -213,6 +214,7 @@ export const plugin = definePlugin(
     /** 三档由 `session/new` 的 `mode` 配置项自报,运行期经 `session/set_config_option` 下发 —— 读数与映射见 `ANTIGRAVITY_PERMISSION_MODES`。 */
     autoApprove: {
       kind: 'supported',
+      modesExhaustive: true,
       modes: ANTIGRAVITY_PERMISSION_MODES,
     },
     /**
@@ -243,25 +245,28 @@ export const plugin = definePlugin(
        * `cli-login`、不带参数:`agy` 没有登录子命令,裸起它就是登录首屏(./auth.ts)。
        * 同样只摆 Google 账号 —— 它的「Use a Google Cloud project」与 API key 模式是它自己的兼容性,
        * 状态照实读(API key 模式判为已登录),❌ 不为它们造入口。
-       * Windows 上终端腿不开(`ANTIGRAVITY_SESSION_TUI_ENABLED`),这份登录也就不声明 —— 没有会用到它的会话。
+       * Windows 的聊天也用 agy，但不用 POSIX 影子 home 启动器。它的 ACP 握手自报 oauth-personal。
        */
-      ...(ANTIGRAVITY_SESSION_TUI_ENABLED
-        ? {
-            programs: {
-              [ANTIGRAVITY_CLI_PROGRAM]: {
-                methods: [
-                  {
-                    kind: 'cli-login' as const,
-                    id: ANTIGRAVITY_CLI_LOGIN_METHOD_ID,
-                    name: 'Google 账号',
-                    args: [],
-                    description: 'Starts agy; its own sign-in screen opens Google sign-in in your browser.',
-                  },
-                ],
-              },
-            },
-          }
-        : {}),
+      programs: {
+        [ANTIGRAVITY_CLI_PROGRAM]: {
+          methods: [
+            ANTIGRAVITY_SESSION_TUI_ENABLED
+              ? {
+                  kind: 'cli-login' as const,
+                  id: ANTIGRAVITY_CLI_LOGIN_METHOD_ID,
+                  name: 'Google 账号',
+                  args: [],
+                  description: 'Starts agy; its own sign-in screen opens Google sign-in in your browser.',
+                }
+              : {
+                  kind: 'acp-authenticate' as const,
+                  id: ANTIGRAVITY_CLI_LOGIN_METHOD_ID,
+                  name: 'Google 账号',
+                  methodId: ANTIGRAVITY_OAUTH_PERSONAL,
+                },
+          ],
+        },
+      },
     },
     // 托管安装:ACP 注册表来源(#6335)—— 版本与各平台归档读注册表 `antigravity-acp` 那一条。
     // 注册表**没有 darwin-x86_64**,Intel Mac 上装不了,是厂商侧的覆盖面。
@@ -388,14 +393,10 @@ export const plugin = definePlugin(
 );
 
 /**
- * 托管装好的 `agy_acp_server` 就是 `ctx.cli`,不带参数。
- * 回环免代理必须在**这里**加而不是在物化器里:模型目录探针也走这条 `buildSpawn`,
- * 不经物化 —— 只在物化器里加,探针那一趟就会在代理机器上起不来(理由见 `withLoopbackNoProxy`)。
+ * New ACP starts use the same host-resolved agy as TUI. Stored conversations choose their original
+ * native store and executable; loopback proxy exclusions apply to both paths and catalog probes.
  */
-const antigravityAcp = createNativeAcpBehavior((ctx) => ({
-  args: [],
-  env: withLoopbackNoProxy(ctx.env),
-}), { interruptAtToolBoundary: true });
+const antigravityAcp = createNativeAcpBehavior(buildAntigravityAcpSpawn, { interruptAtToolBoundary: true });
 
 export const provider = registerPluginBehavior(plugin, {
   // 声明了 `auth` 就必须配 `behavior.auth`(framework 直接抛)。
@@ -415,6 +416,10 @@ export const provider = registerPluginBehavior(plugin, {
   sessions: { forkSessionInStorage: (ctx) => forkAntigravityCliSession(ctx) },
   acp: {
     ...antigravityAcp,
+    sessionProgram: antigravitySessionProgram,
+    catalogModelSource: 'config-options',
+    // The standalone server reports no tier; agy's open responses carry the plan of the account that opened them.
+    observeSessionMetadata: async (ctx) => ctx.sessionProgram === 'antigravity' ? async () => {} : bindAgyTierObservation(ctx),
     // 连接会话(带着网关上线开关起的进程)在开第一条会话前选网关;别的会话原样过(见 ./api-key-connection.ts)。
     connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, toClient)),
     // 模型目录探针照同一份声明认证,否则连接会话的目录读成「需要登录」,输入框列不出连接的模型。
@@ -422,13 +427,16 @@ export const provider = registerPluginBehavior(plugin, {
     // 用户 skill 它读进了系统提示却不经 ACP 报 ⇒ 咕咕按它认的四处目录补进「/」面板(见 ./skills.ts)。
     discoverCommands: discoverAntigravitySkills,
     // `session/fork` 回 `{}` ⇒ 复制存档并改写 id,运行时再 `session/load`(见 ./fork.ts)。
-    forkSessionInStorage: (ctx) => forkAntigravitySession(ctx),
+    forkSessionInStorage: (ctx) => ctx.sessionProgram === 'antigravity'
+      ? forkAntigravitySession(ctx) : forkAntigravityCliSession(ctx),
     // 规则文件它一处都不读 ⇒ 咕咕按官方文档的位置读出来,随会话级背景进第一轮(见 ./rules.ts)。
     readRules: readAntigravityRules,
-    // `skills.json` 它不读 ⇒ 起进程前把那些 skill 链进托管根的 config/skills/(见 ./skills-json.ts)。
-    prepareSession: linkSkillsJsonRoots,
-    // `Stop` 钩子它只在会话结束时跑、且不认 continue ⇒ 咕咕每轮结束代跑(见 ./stop-hooks.ts)。
-    onTurnEnded: runAntigravityStopHooks,
+    // agy acp 1.5.11 实测可通过 skills.json 加载外部技能。仅旧服务需要链接。
+    prepareSession: (ctx) => ctx.sessionProgram === 'antigravity'
+      ? linkSkillsJsonRoots(ctx) : Promise.resolve(),
+    // agy acp 1.5.11 实测在回合结束执行一次 Stop。仅旧服务由咕咕代跑。
+    onTurnEnded: (ctx) => ctx.sessionProgram === 'antigravity'
+      ? runAntigravityStopHooks(ctx) : Promise.resolve(null),
     // 失败的回合它报成 end_turn(错误写成一句回复,或只在 stderr 留一行)⇒ 认出来按失败结算(见 ./turn-failure.ts)。
     turnFailure: {
       fromAgentMessage: antigravityFailureFromAgentMessage,

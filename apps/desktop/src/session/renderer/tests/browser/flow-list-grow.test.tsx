@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { userEvent } from '@vitest/browser/context'
 import { useFlowList, type FlowListHandle, type ListLanding } from '@/lib/flowList'
 import { GroupAvatarSlot } from '@/components/chat/StickyGroupAvatar'
+import { MessageRow } from '@/components/chat/MessageRow'
 import '@renderer/index.css'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 
@@ -21,20 +22,23 @@ function Scene({ landing, rowHeight = 100, jumpAtMount = false }: { landing: Lis
     <button onClick={() => api.current!.autoscrollToBottom()}>Latest</button>
     <button onClick={() => { setPrepended(true); setRows(previous => [...Array.from({ length: 4 }, (_, i) => `old${i}`), ...previous]) }}>Prepend</button>
     <button onClick={() => setRows(ids(124).slice(4))}>Trim head</button>
-    <div ref={scrollerRef} data-flow-view="" tabIndex={0} style={{ height: 300, width: 500, overflowY: 'auto', overflowAnchor: 'auto' }}>
+    <div ref={scrollerRef} data-flow-view="" tabIndex={0} style={{ height: 300, width: 500, overflowY: 'auto', overflowAnchor: 'auto', position: 'relative' }}>
       <div ref={contentRef}>{rows.slice(start, end).map((id, offset) => {
         const index = start + offset
-        return <div key={id} data-row={id} role="listitem" aria-posinset={index + 1} style={{ display: 'flex', height: id === 'r0' && !prepended ? 133 : rowHeight }}>
-          <GroupAvatarSlot wide={false} groupedWithPrev={index > 0} groupedWithNext={index < rows.length - 1}><button>Avatar</button></GroupAvatarSlot>
-          <div data-message-bubble-row="" style={{ flex: 1 }}>{id}</div>
-        </div>
+        return <MessageRow key={id} messageId={id}>
+          {/* The row's place (aria-posinset) is on the row before the list's layout effects read it, as the old fixture had it. */}
+          <div ref={(body) => body?.closest('[role="listitem"]')?.setAttribute('aria-posinset', String(index + 1))} style={{ display: 'flex', height: id === 'r0' && !prepended ? 133 : rowHeight }}>
+            <GroupAvatarSlot wide={false} groupedWithPrev={index > 0} groupedWithNext={index < rows.length - 1}><button>Avatar</button></GroupAvatarSlot>
+            <div data-message-bubble-row="" style={{ flex: 1 }}>{id}</div>
+          </div>
+        </MessageRow>
       })}</div>
     </div>
   </>
 }
 const view = () => host.querySelector<HTMLElement>('[data-flow-view]')!
-const row = (id: string) => host.querySelector<HTMLElement>(`[data-row="${id}"]`)
-const count = () => host.querySelectorAll('[data-row]').length
+const row = (id: string) => host.querySelector<HTMLElement>(`[data-msg-id="${id}"]`)
+const count = () => host.querySelectorAll('[data-msg-id]').length
 const y = (id: string) => row(id)!.getBoundingClientRect().top - view().getBoundingClientRect().top
 const frames = async (read = () => 0) => {
   const result = [read()]
@@ -60,8 +64,8 @@ it('keeps only the filled slice idle, then grows by real keyboard scrolling with
   await until('near-edge growth after native keyboard scroll', () => count() > 6)
   expect(count()).toBeLessThan(120)
   expect(row('r119')).toBe(tail)
-  const layer = row('r119')!.querySelector<HTMLElement>('.absolute')!
-  await until('continued group layer reaches first mounted row', () => Number.parseFloat(layer.style.height) >= count() * 100 - 1)
+  const track = row('r119')!.querySelector<HTMLElement>('[data-avatar-track]')!
+  await until('continued group track reaches first mounted row', () => Number.parseFloat(track.style.height) >= count() * 100 - 1)
 })
 
 it('mounts an omitted jump target before positioning it and can return to the real tail', async () => {

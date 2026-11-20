@@ -63,6 +63,41 @@ const question: QuestionCard = {
 }
 
 describe('question card (gugu-dev#181 ⑨)', () => {
+  const questions = [
+    { question: '展示方式？', header: '展示', multiSelect: false, options: [{ optionId: 'chat', name: '聊天', description: '当前聊天' }] },
+    { question: '范围？', multiSelect: true, options: [{ optionId: 'group', name: '群聊' }] },
+    { question: '补充？', multiSelect: false, options: [] },
+  ]
+
+  test('round-trips the complete public snapshot without changing legacy fields or previews', () => {
+    const complete = { ...question, questions }
+    const raw = serializeComposerCard(complete)
+    expect(parseComposerCard(raw)).toEqual(complete)
+    expect(composerCardPreview(raw.slice(0, 100))).toEqual({ type: 'question', text: question.text })
+    expect(parseComposerCard(serializeComposerCard(question))).toEqual(question)
+  })
+
+  test('round-trips the confirmed original-card result including explicit skips and rejects invalid answers', () => {
+    const complete: QuestionCard = { ...question, questions, settled: { state: 'answered', at: '2026-11-19T14:00:00Z',
+      answers: [{ selected: ['chat'] }, { selected: [], skipped: true }, { selected: [], other: 'Keep the wording' }] } }
+    expect(parseComposerCard(serializeComposerCard(complete))).toEqual(complete)
+    expect(parseComposerCard(JSON.stringify({ ...complete, settled: { ...complete.settled, answers: [{ selected: ['unknown'] }] } })))
+      .toEqual({ ...question, questions })
+    for (const settled of [null, {}, { state: 'pending', at: 'now' }, { state: 'answered', at: 'now', answers: [] },
+      { state: 'discuss', at: 'now', answers: [] }, { state: 'answered', at: 'now', answers: [{ selected: [], skipped: false }] }]) {
+      expect(parseComposerCard(JSON.stringify({ ...question, settled }))).toEqual(question)
+    }
+  })
+
+  test.each([null, {}, [], [null], [{ ...questions[0], question: '' }], [{ ...questions[0], multiSelect: 'yes' }],
+    [{ ...questions[0], header: 1 }], [{ ...questions[0], options: null }], [{ ...questions[0], options: [null] }],
+    [{ ...questions[0], options: [{ optionId: 'a', name: 'A', description: 1 }] }],
+    [{ ...questions[0], options: [{ optionId: 'a', name: '' }] }],
+    [{ ...questions[0], options: [{ optionId: 'a', name: 'A' }, { optionId: 'a', name: 'B' }] }],
+  ].map(questions => ({ questions })))('ignores a malformed questions extension %j and still parses the legacy card', ({ questions: value }) => {
+    expect(parseComposerCard(JSON.stringify({ ...question, questions: value }))).toEqual(question)
+  })
+
   test('round-trips, and its cut reads as a question', () => {
     const raw = serializeComposerCard(question)
     expect(parseComposerCard(raw)).toEqual(question)

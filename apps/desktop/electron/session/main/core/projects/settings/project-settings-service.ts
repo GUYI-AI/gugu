@@ -4,22 +4,15 @@ import { events } from '@main/lib/events';
 import { HookCore, type Hookable } from '@main/lib/hookable';
 import { log } from '@main/lib/logger';
 import {
-  type MigrateProjectConfigRequest,
-  type MigrateProjectConfigResult,
   type ProjectSettingsPatch,
   type ProjectSettings,
   type ProjectSettingsPage,
   type WriteProjectConfigRequest,
 } from '@shared/core/project-settings/project-settings';
-import { hasConfiguredShareableProjectSettings } from '@shared/core/project-settings/project-settings-fields';
 import { projectSettingsChangedChannel } from '@shared/core/projects/projectEvents';
 import type { UpdateProjectSettingsError } from '@shared/projects';
 import { projectManager } from '../project-manager';
 import type { ProjectProvider } from '../project-provider';
-import {
-  inspectProjectConfigMigrations,
-  migrateProjectConfigFromProvider,
-} from './sharing/config-migration';
 import { computeProjectSettingsOverrideState } from './sharing/project-settings-override-state';
 import {
   getProjectSettingsWriteTargets,
@@ -105,29 +98,6 @@ export class ProjectSettingsService implements Hookable<ProjectSettingsHooks>, I
     return ok(page);
   }
 
-  async migrateProjectConfig(
-    projectId: string,
-    request: MigrateProjectConfigRequest
-  ): Promise<Result<MigrateProjectConfigResult, UpdateProjectSettingsError>> {
-    const project = this.requireProject(projectId);
-    if (!project.success) return project;
-
-    const settings = await project.data.settings.get();
-    if (hasConfiguredShareableProjectSettings(settings)) {
-      return err({
-        type: 'write-config-failed',
-        message: 'Shareable project settings are already configured.',
-      });
-    }
-
-    const result = await migrateProjectConfigFromProvider(project.data, request);
-    if (!result.success) return result;
-
-    const page = await this.getProjectSettingsPageForProject(project.data);
-    this.emitSettingsChanged(projectId, page.settings);
-    return ok({ page, migration: result.data });
-  }
-
   private requireProject(projectId: string): Result<ProjectProvider, UpdateProjectSettingsError> {
     const project = projectManager.getProject(projectId);
     return project ? ok(project) : err({ type: 'project-not-found' });
@@ -140,16 +110,7 @@ export class ProjectSettingsService implements Hookable<ProjectSettingsHooks>, I
     const resolvedTargets = await resolveAllProjectSettingsTargets(project);
     const writeTargets = getProjectSettingsWriteTargets(resolvedTargets);
     const overrideState = await computeProjectSettingsOverrideState(resolvedTargets);
-    const configMigrations = hasConfiguredShareableProjectSettings(settings)
-      ? []
-      : await inspectProjectConfigMigrations(project);
-    return {
-      settings,
-      writeTargets,
-      overrideState,
-      configMigrations,
-      shouldPromptConfigMigration: configMigrations.length > 0,
-    };
+    return { settings, writeTargets, overrideState };
   }
 
   private emitSettingsChanged(projectId: string, settings: ProjectSettings): void {

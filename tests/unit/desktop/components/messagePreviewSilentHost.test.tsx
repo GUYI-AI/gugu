@@ -51,7 +51,7 @@ it('names the online host that did not answer', async () => {
   fixture.presence = { deviceOnline: true, payload: { deviceId: 'device-lab' } }
   const card = await render([labDevice])
   expect(card.dataset.previewError).toBe('host_silent')
-  expect(card.textContent).toContain('lab-box 没有应答')
+  expect(card.textContent).toContain('lab-box 无响应')
 })
 
 it('says the host is offline when its device row is offline', async () => {
@@ -64,12 +64,12 @@ it('says the host is offline when its device row is offline', async () => {
 it("calls a machine outside this account's device list its computer", async () => {
   fixture.presence = { deviceOnline: true, payload: { deviceId: 'device-teammate' } }
   const card = await render([labDevice])
-  expect(card.textContent).toContain('它所在的电脑 没有应答')
+  expect(card.textContent).toContain('运行设备 无响应')
 })
 
 it('keeps the generic text when nothing is known about the host', async () => {
   fixture.presence = null
   const card = await render([labDevice])
   expect(card.dataset.previewError).toBe('host_unreachable')
-  expect(card.textContent).toContain('暂时拿不到它的近况')
+  expect(card.textContent).toContain('暂时无法获取近期活动')
 })

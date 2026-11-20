@@ -17,7 +17,7 @@ export interface PanelToggle {
   open: boolean
   /** 按钮此刻的名字(收起 / 展开…),已本地化。 */
   label: string
-  /** 收起态悬停浮出的预览(sidebar-peek)。浮着时再点 = 钉住,❌ 再放一次展开动画。 */
+  /** 收起态悬停浮出的预览。浮着时再点 = 钉住,❌ 再放一次展开动画。 */
   peeking?: boolean
   toggle: () => void
   /** 开关钮把悬停报给面板:悬停意图成立才浮出预览。 */

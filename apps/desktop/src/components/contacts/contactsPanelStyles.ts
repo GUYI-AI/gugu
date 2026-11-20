@@ -9,10 +9,9 @@ export const ct = i18n.getFixedT(null, 'contacts')
 
 // @@@ui-ruler 本地样式副本(rowBase / meta / name / sharedTag / reqBadge / section* / cpane*)已按角色
 // 收口进原语,这里只剩原语不管的那点:头像壳(agent 状态角标挂在它的 ::after 上)、
-// 分区标签的 chevron 与加号、资料卡排版。几何一律取 tokens,❌ 字面量像素。
+// 资料卡排版。几何一律取 tokens,❌ 字面量像素。
 export const rowAvatarClass =
   'gg-c-av flex h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 items-center justify-center overflow-hidden rounded-full'
-export const sectionLabelClass = 'gg-c-sec-h !mt-3'
 // 资料卡(cpane):头像 --avatar-xl(96)、名字 --font-size-xl、状态 --font-body。
 export const cpaneCardClass = 'gg-c-cpane-card flex flex-col items-center animate-[ggCNaPop_var(--dur-med)_var(--ease)_both]'
 export const cpaneAvatarClass =
@@ -40,12 +39,6 @@ export const detailBodyClass = (mobile?: boolean) =>
   cn(
     'flex-1 overflow-y-auto overflow-x-hidden',
     mobile ? '!px-4 !pt-4 !pb-[max(24px,env(safe-area-inset-bottom))]' : '!px-6 !py-6',
-  )
-
-export const sectionChevronClass = (collapsed: boolean) =>
-  cn(
-    'gg-c-sec-chev flex shrink-0 transition-transform duration-[var(--dur-med)] [transition-timing-function:var(--ease)]',
-    collapsed && '-rotate-90',
   )
 
 export const agentAvatarClass = (tone: AgentContactTone | null) => cn(rowAvatarClass, agentContactAvatarBadgeClass(tone))

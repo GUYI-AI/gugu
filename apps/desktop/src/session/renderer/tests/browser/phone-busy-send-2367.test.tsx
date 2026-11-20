@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, useSyncExternalStore } from 'react';
 import { page } from 'vitest/browser';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation';
-import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
+import { SessionConversation } from '@/components/session-watch/SessionConversation';
+import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -29,7 +29,7 @@ const store = <T,>(initial: T) => {
 };
 
 const hostLife = vi.hoisted(() => ({ store: null as null | { get: () => LifeView | null; useValue: () => LifeView | null } }));
-vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({
+vi.mock('@/components/session-watch/useSessionLifeView', () => ({
   useSessionLifeView: () => {
     const view = hostLife.store!.useValue();
     return { view, error: null, current: () => hostLife.store!.get() };
@@ -37,7 +37,7 @@ vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({
 }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
 
 const life = store<LifeView | null>(null);
 hostLife.store = life;

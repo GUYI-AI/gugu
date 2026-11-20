@@ -1,3 +1,4 @@
+import { markdownLiteral, readMarkdownLiteral } from '../markdownLiteral';
 import { conversationLink, parseConversationLink } from './guguLink';
 
 export type MessageQuoteSource =
@@ -5,7 +6,7 @@ export type MessageQuoteSource =
   | { kind: 'chat'; chatId: string; messageId: string };
 
 const escapePart = (value: string) => encodeURIComponent(value).replace(/[()]/g, char => `%${char.charCodeAt(0).toString(16)}`);
-const escapeLabel = (value: string) => value.replace(/\\/g, '\\\\').replace(/([[\]])/g, '\\$1').replace(/[\r\n]+/g, ' ');
+const escapeLabel = (value: string) => markdownLiteral(value.replace(/[\r\n]+/g, ' '));
 
 /** A timeline item keeps its own identity; an IM message keeps its real chat/message identity. */
 export function messageQuoteLink(source: MessageQuoteSource): string {
@@ -41,5 +42,5 @@ export function readMessageQuote(text: string): { source: MessageQuoteSource; li
   let index = 1;
   while (index < lines.length && /^>(?: |$)/.test(lines[index]!)) quoted.push(lines[index++]!.replace(/^> ?/, ''));
   if (!quoted.length || lines[index] !== '') return null;
-  return { source, link: header[2]!, sender: header[1]!.replace(/\\([\\[\]])/g, '$1'), excerpt: quoted.join('\n'), body: lines.slice(index + 1).join('\n') };
+  return { source, link: header[2]!, sender: readMarkdownLiteral(header[1]!), excerpt: quoted.join('\n'), body: lines.slice(index + 1).join('\n') };
 }

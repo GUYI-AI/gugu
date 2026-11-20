@@ -86,3 +86,14 @@ it('reads authenticated balance in the independent session entry without an Auth
   await act(async () => { publishRendererSession('SIGNED_OUT', null); publishSelfIdentity(null) })
   expect(container.querySelector('[role="status"]')).toBeNull()
 })
+
+it('does not read personal billing or offer personal recharge for a team identity in the independent entry', async () => {
+  publishRendererSession('SIGNED_IN', { access_token: 'synthetic-team-entry-token', user: { id: 'team-principal' } } as Session)
+  publishSelfIdentity({ userId: 'team-principal', displayName: '林晓', guguNumber: null, accountKind: 'team_member' })
+  await act(async () => {
+    root = renderEntryRoot('session-embedded', container, createElement(ConversationCreditNotice, { modelOptionId: 'platform:test' }))
+  })
+  await settle()
+  expect(sent).toHaveLength(0)
+  expect(container.querySelector('[role="status"],button')).toBeNull()
+})

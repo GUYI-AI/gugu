@@ -55,6 +55,6 @@ export async function openProject(
 
   return ok({
     repositoryWorkspaceId,
-    baseRef: (await result.data.resolveGitless()) ? null : project.baseRef,
+    baseRef: (await result.data.git.open()) ? project.baseRef : null,
   });
 }

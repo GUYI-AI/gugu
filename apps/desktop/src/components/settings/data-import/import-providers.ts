@@ -1,3 +1,5 @@
+import type { EnvironmentImportCategory } from '@shared/core/session-import/environment-import'
+import { codexEnvironmentProviders, withCodexTaskImport } from './environment-import-providers'
 import { rpcOn } from '@renderer/lib/ipc'
 import { resolveImportSource, LOCAL_IMPORT_DEVICE } from '@renderer/features/session-import/import-source'
 import {
@@ -7,21 +9,28 @@ import {
 } from '@shared/core/session-import/session-import'
 
 export type ImportedSession = { title: string; projectId: string | null; sessionId: string }
-export type ImportResult = { imported: ImportedSession[]; existing: number; failed: number }
+export type ImportPreparation = { phase: 'copying' | 'history' | 'binding'; startedAt: number }
+export type ImportedEntity = { id: string; title: string; category: EnvironmentImportCategory }
+export type ImportOutcome = ImportedEntity & { status: 'imported' | 'existing' | 'conflict' | 'skipped' | 'failed'; reason?: string }
+export type ImportResult = { details?: ImportOutcome[]; imported: ImportedSession[]; entities?: ImportedEntity[]; attempts?: Record<string, string>; existing: number; failed: number }
 
 export type ImportProvider = {
   id: string
   label: string
   iconId: string
+  sourceId?: string
+  sourceLabel?: string
+  category?: EnvironmentImportCategory
+  capture?(seen?: Readonly<Record<string, string>>): ImportProvider
   supportsAutomaticSync?: boolean
   localOnly?: boolean
-  scan(deviceId: string | null): Promise<{ count: number; pending: boolean; needsSource?: boolean } | null>
-  pickSource?(deviceId: string | null): Promise<void>
+  historyOnly?: boolean
+  scan(deviceId: string | null): Promise<{ count: number; pending: boolean } | null>
   openImportedSession?(session: ImportedSession, deviceId: string | null): Promise<void>
   listHistory?(deviceId: string | null): Promise<Array<ImportedSession & { importedAt: number }>>
   importAll(
     deviceId: string | null,
-    onProgress: (done: number, total: number) => void,
+    onProgress: (done: number, total: number, preparation?: ImportPreparation | null) => void,
     signal: AbortSignal,
   ): Promise<ImportResult>
 }
@@ -84,7 +93,10 @@ function transcriptProvider(engine: LocalSessionEngine): ImportProvider {
   }
 }
 
-export const importProviders = (Object.keys(LOCAL_SESSION_ENGINE_LABEL) as LocalSessionEngine[]).map(transcriptProvider)
+export const importProviders = (Object.keys(LOCAL_SESSION_ENGINE_LABEL) as LocalSessionEngine[]).flatMap(engine => {
+  const provider = transcriptProvider(engine)
+  return engine === 'codex' ? [withCodexTaskImport(provider), ...codexEnvironmentProviders] : [provider]
+})
 
 const extraProviders = new Map<string, ImportProvider>()
 

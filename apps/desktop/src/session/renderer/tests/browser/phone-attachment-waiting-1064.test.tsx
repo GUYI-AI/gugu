@@ -3,8 +3,8 @@ import { createReactHarness, renderWithAppProviders } from '../../../../../../..
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '@/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import '@/i18n'
 import { publishRendererSession } from '@/lib/sessionPublication'
@@ -26,8 +26,8 @@ vi.mock('@/lib/notices', async original => {
   const actual = await original<typeof import('@/lib/notices')>()
   return { ...actual, notify: (notice: import('@/lib/notices').Notice) => { sendFailure(notice); return actual.notify(notice) } }
 })
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/mobile/agent-watch/sessionpage-rpc')>(),
+vi.mock('@/components/session-watch/sessionpage-rpc', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/components/session-watch/sessionpage-rpc')>(),
   SessionpageRpcError: class extends Error {},
   fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   setSessionOption: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('@/lib/attachmentsEndpoint', async (importOriginal) => ({
   placeTaskAttachment: (file: File) => place(file),
   prepareTaskAttachment: async () => null,
 }))
-vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null }) }))
+vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null }) }))
 const placed = (file: File) => ({ itemId: file.name, version: 1, name: file.name, mimeType: file.type, sizeBytes: file.size })
 const sentNames = (call: unknown[] | undefined) => ((call?.[1] ?? []) as Array<{ name: string }>).map((file) => file.name)
 

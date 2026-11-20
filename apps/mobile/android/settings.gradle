@@ -1,5 +1,25 @@
+// Every project of this build resolves its dependencies and its build classpath from this one repository set, applied
+// as each project is created: the root, our modules, and the Capacitor plugin projects under node_modules, whose own
+// buildscript lists only google() and mavenCentral() (with a cold cache on a runner Maven Central did not serve, their
+// Android Gradle Plugin classpath could not be resolved at all).
+gradle.allprojects { project ->
+    [project.buildscript.repositories, project.repositories].each { repositories ->
+        repositories.google()
+        repositories.mavenCentral()
+        repositories.maven { url 'https://maven.aliyun.com/repository/google' }
+        repositories.maven { url 'https://maven.aliyun.com/repository/central' }
+        repositories.maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+    }
+}
+
 include ':app'
 include ':capacitor-cordova-android-plugins'
 project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
 
 apply from: 'capacitor.settings.gradle'
+include ':mixpush-core'
+project(':mixpush-core').projectDir = new File('mixpush/mixpush-core')
+if (new File(rootDir, 'app/google-services.json').exists()) {
+    include ':mixpush-fcm'
+    project(':mixpush-fcm').projectDir = new File('mixpush/mixpush-fcm')
+}

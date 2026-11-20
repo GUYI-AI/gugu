@@ -88,8 +88,8 @@ describe('搬家入口', () => {
     mocks.recoveryError = new Error('Recovery unavailable')
     await render(computer)
     expect(q('assistant-move-current-home')?.textContent).toContain('这台电脑')
-    expect(q('assistant-move-current-home')?.textContent).toContain('当前住处')
-    expect(body()).toContain('暂时读不到搬家恢复记录，请重试。')
+    expect(q('assistant-move-current-home')?.textContent).toContain('当前运行设备')
+    expect(body()).toContain('无法读取迁移恢复记录，请重试。')
     expect((q('assistant-move-to-cloud') as HTMLButtonElement).disabled).toBe(true)
   })
 
@@ -111,7 +111,7 @@ describe('搬家入口', () => {
     expect(document.body.querySelector('[data-phase="done"]')).toBeNull()
     expect(body()).not.toContain('不影响使用')
     expect(body()).toContain(step === 'files' ? '/new/note.md' : '可能暂时无法回复')
-    expect(document.body.querySelector('[data-testid="assistant-move-retry"]')?.textContent).toContain('接着搬')
+    expect(document.body.querySelector('[data-testid="assistant-move-retry"]')?.textContent).toContain('继续迁移')
   })
   it('住这台电脑 + 会员:「搬到云上」可点;没有「会员到期」那一行', async () => {
     await render(computer)
@@ -128,7 +128,7 @@ describe('搬家入口', () => {
     expect(q('assistant-move-member')).not.toBeNull()
   })
 
-  it('住云上 + 会员已到期:写「在休息」+ 续费,同时给「搬回这台电脑」', async () => {
+  it('住云上 + 会员已到期:写「在休息」+ 续费,同时给「迁移回这台电脑」', async () => {
     mocks.tier = 'free'
     await render(cloud)
     expect(q('assistant-move-expired')?.textContent).toContain('会员已到期')
@@ -136,7 +136,7 @@ describe('搬家入口', () => {
     expect(q('assistant-move-to-computer')).not.toBeNull()
   })
 
-  it('住云上 + 会员在期:只有「搬回这台电脑」', async () => {
+  it('住云上 + 会员在期:只有「迁移回这台电脑」', async () => {
     await render(cloud)
     expect(q('assistant-move-expired')).toBeNull()
     expect(q('assistant-move-to-computer')).not.toBeNull()
@@ -175,7 +175,7 @@ describe('搬家入口', () => {
 })
 
 describe('点了先列清带走什么,确认才搬', () => {
-  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接去已安装的连接器', async () => {
+  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接打开已安装的连接器', async () => {
     mocks.previewMove.mockResolvedValue({
       bytes: 2048,
       files: 3,
@@ -221,10 +221,10 @@ describe('点了先列清带走什么,确认才搬', () => {
     })
     await act(async () => {})
     expect(mocks.runAssistantMove).toHaveBeenCalledWith(expect.objectContaining({ assistantId: 'agent-1' }), 'to-cloud', expect.any(Function))
-    expect(document.body.querySelector('[data-testid="assistant-move-report"]')?.textContent).toContain('1 个账号已带过去')
+    expect(document.body.querySelector('[data-testid="assistant-move-report"]')?.textContent).toContain('1 个账号已迁移')
     expect(document.body.querySelector('[data-testid="assistant-move-no-keyring"]')?.textContent).toContain('没有可用的系统钥匙串')
     // 同名、凭据不同的那一份可能已经失效(OAuth 刷新 token 被另一头轮换):也要看得到、能去重连。
-    expect(document.body.querySelector('[data-testid="assistant-move-exists"]')?.textContent).toContain('没有覆盖')
+    expect(document.body.querySelector('[data-testid="assistant-move-exists"]')?.textContent).toContain('未覆盖')
     expect(document.body.querySelector('[data-testid="assistant-move-done-reconnect-list"]')?.textContent).toContain('github')
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
     expect(done).toContain('Notion (a@x.cn)')

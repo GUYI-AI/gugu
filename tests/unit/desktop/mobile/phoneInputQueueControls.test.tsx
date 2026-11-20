@@ -5,8 +5,8 @@ import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { createReactHarness } from '../../../support/testHarness'
 import { SessionInputOutbox, type SessionInput } from '@/lib/sessionInputOutbox'
 import { state, changed, EMPTY, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
-import { usePhoneInputQueue } from '@/mobile/agent-watch/use-phone-input-queue'
-import { phoneQueueReady } from '@/mobile/agent-watch/phone-input-queue'
+import { usePhoneInputQueue } from '@/components/session-watch/use-phone-input-queue'
+import { phoneQueueReady } from '@/components/session-watch/phone-input-queue'
 
 const { cancel, remote, snapshot } = vi.hoisted(() => ({ cancel: vi.fn(async () => ({ cancelled: true })), remote: vi.fn(async () => null), snapshot: vi.fn() }))
 const timeline = vi.hoisted(() => ({ changed: () => {}, unsubscribe: vi.fn(async () => {}) }))

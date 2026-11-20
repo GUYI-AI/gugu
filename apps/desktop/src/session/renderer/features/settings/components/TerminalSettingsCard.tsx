@@ -23,7 +23,6 @@ import {
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
-  ComboboxLabel,
   ComboboxTrigger,
   ComboboxValue,
 } from '@renderer/lib/ui/combobox';
@@ -327,8 +326,7 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
                 />
                 <ComboboxList>
                   {(group: FontGroup) => (
-                    <ComboboxGroup key={group.value} items={group.items}>
-                      <ComboboxLabel>{group.label}</ComboboxLabel>
+                    <ComboboxGroup key={group.value} items={group.items} label={group.label}>
                       <ComboboxCollection>
                         {(item: FontOption) => (
                           <ComboboxItem key={item.value || '__default__'} value={item}>

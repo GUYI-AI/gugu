@@ -1,6 +1,7 @@
+import type { IAcpBehavior } from '@gugu/session-core/agents/plugins';
 import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
-import { isAcpAuthRequired } from '@gugu/session-core/acp';
+import { isAcpAuthRequired, isCodexRefreshTokenRevoked } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
 import { findToolImage, trimItemsForTransport, type ToolImageLookup } from '@gugu/session-core/session-record';
 import { randomUUID } from 'node:crypto';
@@ -132,6 +133,7 @@ interface SessionRecordBase {
   startupProcessExit?: AdapterExit;
   idleCompaction?: IdleCompaction;
   input: AcpStartInput;
+  sessionProgram?: string | null;
   cell: SessionCell;
   live: SessionLiveModels;
   /**
@@ -579,6 +581,32 @@ export class SessionManager implements InboundRouter {
       return acpErr.initializeFailed(toSerializedError(error));
     }
 
+    const binding = this.deps.agentHost.resolveAcp(input.providerId);
+    if (!binding) {
+      return acpErr.providerUnsupported(input.providerId);
+    }
+
+    const canStartFreshWhenMissing = !input.forkFromProviderSessionId && input.freshIfProviderSessionMissing === true;
+    let providerSessionId = input.forkFromProviderSessionId ?? input.providerSessionId;
+    let sessionProgram: string | null = null;
+    let contextResetReason: string | null = null;
+    try {
+      if (providerSessionId) sessionProgram = binding.behavior.sessionProgram?.({ env: this.providerEnv(input), providerSessionId }) ?? null;
+    } catch (error) {
+      const cause = toSerializedError(error);
+      if (!providerSessionId || !isProviderSessionMissingError(error, { resumingProviderSessionId: providerSessionId })) {
+        return acpErr.initializeFailed(cause);
+      }
+      if (!canStartFreshWhenMissing) return acpErr.providerSessionMissing(cause);
+
+      // No native store exists yet. The host expressly allowed this agent's first session.
+      this.deps.logger.warn('SessionManager: provider session missing before launch; starting a new session', {
+        sessionId: input.sessionId, cause,
+      });
+      providerSessionId = null;
+      contextResetReason = 'The saved provider conversation could not be found.';
+    }
+
     this.upsertSessionSummary(input, null, {
       lifecycle: 'starting',
       isGenerating: false,
@@ -587,11 +615,6 @@ export class SessionManager implements InboundRouter {
       backgroundCommandCount: 0,
       queuedPromptCount: input.initialQueue?.length ?? 0,
     });
-
-    const binding = this.deps.agentHost.resolveAcp(input.providerId);
-    if (!binding) {
-      return acpErr.providerUnsupported(input.providerId);
-    }
 
     // Every conversation owns its adapter process. Runtime-only forks still use provider metadata
     // (Claude's `resume + forkSession`) to derive a child from the parent's durable transcript,
@@ -615,7 +638,8 @@ export class SessionManager implements InboundRouter {
       input.workspaceId,
       input.sessionId,
     );
-    const record: SessionRecord = this.createRecord(input, input.providerSessionId ?? '');
+    const record: SessionRecord = this.createRecord(input, contextResetReason === null ? input.providerSessionId ?? '' : '');
+    record.sessionProgram = sessionProgram;
     let initialQueueAdmitted = false;
     if (input.initialQueue?.length) {
       const queueResult = this.queueInitialPrompts(record);
@@ -630,7 +654,7 @@ export class SessionManager implements InboundRouter {
     await this.attachProviderRules(record, binding.behavior);
     if (binding.behavior.prepareSession) {
       await binding.behavior
-        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir() })
+        .prepareSession({ cwd: input.cwd, env: this.providerEnv(input), homeDir: os.homedir(), sessionProgram })
         .catch((error: unknown) => {
           this.deps.logger.warn('SessionManager: provider session preparation failed', {
             sessionId: input.sessionId,
@@ -654,6 +678,7 @@ export class SessionManager implements InboundRouter {
         cwd: input.cwd,
         behavior: binding.behavior,
         runContext: input.runContext,
+        sessionProgram,
         platform: input.platform,
         capabilitySpawnEnv: input.capabilitySpawnEnv,
         capabilitySpawnArgs: input.capabilitySpawnArgs,
@@ -702,6 +727,8 @@ export class SessionManager implements InboundRouter {
           }
         : undefined;
       const resolveForkSource = binding.behavior.resolveForkSource;
+      // Bound before any native new/load/fork request leaves (see `IAcpBehavior.observeSessionMetadata`).
+      const observeMetadata = await this.beginSessionMetadata(record, binding.behavior);
       let resolvedFork: { loadProviderSessionId: string } | undefined;
       if (input.forkFromProviderSessionId && input.sourceSessionId && resolveForkSource) {
         if (!input.forkSourceSession) {
@@ -724,6 +751,7 @@ export class SessionManager implements InboundRouter {
       if (input.forkFromProviderSessionId && !resolvedFork && storageFork) {
         const forked = await storageFork({
           sourceProviderSessionId: input.forkFromProviderSessionId,
+          sessionProgram,
           cwd: input.cwd,
           env: this.providerEnv(input),
           homeDir: os.homedir(),
@@ -753,10 +781,7 @@ export class SessionManager implements InboundRouter {
       // `session/new` 的 resume/fork 输入。若先按这个字段走 `session/load`,side chat
       // 会重新绑定到 parent,而下面的 fork metadata 分支永远不可达。分叉身份优先于
       // 这个可选的持久化 session id;持久分叉仍在上面拿到独立 id 后进入 load。
-      let loadProviderSessionId = input.forkFromProviderSessionId ? undefined : input.providerSessionId;
-      // 重放失败、退回 `session/new` 时的原因。有值 = 这条会话在引擎那侧是**新**的,
-      // 转录开头要画一条界告诉用户「往上的内容它没有」(#5381 ④)。
-      let contextResetReason: string | null = null;
+      let loadProviderSessionId = input.forkFromProviderSessionId ? undefined : providerSessionId;
       // The engine's "no such session" for a session the host declared never-ran (#7223): what the reset line says.
       let neverRanMissing: unknown;
       // 启动期的降级通知(模型用不了 / 模型被换掉)。**不杀会话** —— 会话照常开,
@@ -866,6 +891,7 @@ export class SessionManager implements InboundRouter {
         record.cell.setAcpSessionId(response.sessionId);
         // 路由必须在**拿到 sessionId 的那一刻**就登记 —— 见下面 newSession 分支的说明。
         this.registerRoute(connection.key, response.sessionId, input.sessionId);
+        await observeMetadata(response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -924,6 +950,7 @@ export class SessionManager implements InboundRouter {
             });
             return {};
           });
+          await observeMetadata(response);
           if (response.availableCommands) record.providerCommands = response.availableCommands;
           record.cell.applySessionLoaded({
             modes: response.modes,
@@ -978,7 +1005,7 @@ export class SessionManager implements InboundRouter {
           // #7223 建来常驻、一句没聊过的 agent(宿主说的,见 `freshIfProviderSessionMissing`):引擎没有这条 =
           // 它缺的只是一次还没发生的启动 ⇒ 照下面的降级退回 `session/new`,同一张票、同一条 record,
           // 启动途中排进来的话都还在。聊过的(没带这一格)照旧如实报 missing。
-          const neverRan = missing && !resolvedFork && input.freshIfProviderSessionMissing === true;
+          const neverRan = missing && canStartFreshWhenMissing;
           if (missing && !neverRan) {
             this.removeRecord(input.sessionId, false, false, true);
             await acquired.release();
@@ -1104,6 +1131,7 @@ export class SessionManager implements InboundRouter {
             availableCommands: response.availableCommands,
           },
         });
+        await observeMetadata(response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -1294,10 +1322,10 @@ export class SessionManager implements InboundRouter {
 
   finishHistoryRevert(sessionId: string): void { this.cells.get(sessionId)?.cell.finishHistoryRevert(); }
 
-  async revertSession(sessionId: string, anchor: string) {
+  async revertSession(sessionId: string, anchor: string, restoreFiles?: boolean) {
     const record = this.cells.get(sessionId);
     if (!record) return acpErr.sessionNotFound(sessionId);
-    return record.cell.revertSession(anchor);
+    return record.cell.revertSession(anchor, restoreFiles);
   }
 
   async stopBackgroundTask(
@@ -1452,8 +1480,8 @@ export class SessionManager implements InboundRouter {
    * recorded model; the host hands both halves of the record in:
    *
    * - `input.model` — a harness-native id (the user's own model), or, with an API key connection
-   *   that names its model through the process environment, the connection's model name — which
-   *   that spawn already runs (`runContext.customModel.model`), so there is nothing to assert.
+   *   that names its model through the process environment, the connection's model name
+   *   (`runContext.customModel.model`) — asserted by whatever id the live session advertises for it.
    * - `input.platformModel` — the Gugu platform model this start pinned (canonical id). Its wire
    *   form is taken from the list the live session itself advertises (`gugu-platform/<id>` on
    *   pi / opencode, the bare id where nothing is advertised — copilot), never spelled here.
@@ -1625,11 +1653,19 @@ export class SessionManager implements InboundRouter {
     // 自己的模型:只有这一步把它落进会话 —— 新会话与续接一律断言(spawn 不带它)。
     if (!platformModel) {
       if (!input.model) return null;
-      // #2507 例外:key 走环境变量的家(Qwen、Copilot、ZCode、Hermes、Antigravity),记录里是 API Key 连接的模型名,
-      // 而这次 spawn 的环境点名的正是它 ⇒ 进程起来就跑它。这一家的 id 是自己的写法(qwen `$runtime|openai|<名>(openai)`),
-      // 拿名字去设只会被拒、再报一条「模型不可用」的假警报。❌ 不按前缀拼它的 id —— 各家写法不同,同一条规则对五家都成立的
-      // 是「环境已经点名就不设」。续接同理:记录与环境点名同一个模型,这家记着的也是它。
-      if (input.runContext?.customModel?.model === input.model) return null;
+      // #2507 API Key connections name their model in the spawn environment. Whether the process then runs it is the
+      // provider's to report: agy acp 1.5.12 lists the gateway's whole catalog and defaults to its first entry. So the
+      // live model option decides — the option whose id or name is the connection's model is asserted by the
+      // provider's own id (agy uses placeholder ids), or is already running. No such option = the provider spells ids
+      // its own way (qwen `$runtime|openai|<name>(openai)`) and the environment is all there is: setting the bare name
+      // would only be refused and raise a false "model unavailable".
+      if (input.runContext?.customModel?.model === input.model) {
+        const options = record.cell.config.modelOptions;
+        const named = options?.available.find((option) => option.id === input.model || option.name === input.model);
+        if (!named) return null;
+        if (options?.selected === named.id) return { kind: 'already-running' };
+        return { kind: 'assert', requested: input.model, wireValue: named.id };
+      }
       return { kind: 'assert', requested: input.model, wireValue: input.model };
     }
     // 平台模型:spawn 的注入已经带着它,只有续接一条带会话记忆的 provider 会话时才可能被顶掉。
@@ -2059,6 +2095,7 @@ export class SessionManager implements InboundRouter {
     record.stopHookContinuations = 0;
     void hook({
       providerSessionId: record.cell.acpSessionId,
+      sessionProgram: record.sessionProgram,
       cwd: input.cwd,
       env: this.providerEnv(input),
       homeDir: os.homedir(),
@@ -2365,6 +2402,7 @@ export class SessionManager implements InboundRouter {
         ? { sessionModes: provider.capabilities.acp.sessionModes }
         : {}),
       historyRecovery: this.deps.agentHost.resolveAcp(input.providerId)?.behavior.historyRecovery,
+      revert: this.deps.agentHost.resolveAcp(input.providerId)?.behavior.revert,
       ...(() => {
         const turnFailure = this.deps.agentHost.resolveAcp(input.providerId)?.behavior.turnFailure;
         return turnFailure
@@ -2524,6 +2562,24 @@ export class SessionManager implements InboundRouter {
     return ok();
   }
 
+
+  private async beginSessionMetadata(record: SessionRecord, behavior: IAcpBehavior): Promise<(response: unknown) => Promise<void>> {
+    const { input } = record;
+    const ignore = async () => {};
+    if (!behavior.observeSessionMetadata || input.runContext.cli.kind !== 'resolved') return ignore;
+    const warn = (error: unknown) => this.deps.logger.warn('SessionManager: provider metadata cache update failed', {
+      providerId: input.providerId, error: toSerializedError(error),
+    });
+    try {
+      const observe = await behavior.observeSessionMetadata({
+        env: this.providerEnv(input), cli: input.runContext.cli.path, sessionProgram: record.sessionProgram,
+      });
+      return async (response) => { try { await observe(response); } catch (error) { warn(error); } };
+    } catch (error) {
+      warn(error);
+      return ignore;
+    }
+  }
 
   private async applyConfiguredPermissionMode(
     record: SessionRecord,
@@ -3172,7 +3228,7 @@ const LATE_MODEL_DIMENSION_WAIT_MS = 30_000;
 function isAuthRequiredError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const value = error as { code?: unknown; data?: unknown; cause?: unknown };
-  if (isAcpAuthRequired(value)) return true;
+  if (isAcpAuthRequired(value) || isCodexRefreshTokenRevoked(toSerializedError(error))) return true;
   return isAuthRequiredError(value.cause);
 }
 

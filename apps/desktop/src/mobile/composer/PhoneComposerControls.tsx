@@ -7,7 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronUp, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import { PhoneViewportContext } from '../usePhoneViewport'
-import '../agent-watch/create-controls-catalog'
+import '../../components/session-watch/create-controls-catalog'
 import './phone-composer-controls.css'
 
 export function PhoneComposerControlRow({ children, conversationKey }: { children: ReactNode; conversationKey?: string }) {
@@ -39,9 +39,11 @@ function ComposerControlRow({ children }: { children: ReactNode }) {
     observer.observe(scope, { childList: true, characterData: true, subtree: true })
     return () => { observer.disconnect(); scope.removeEventListener('input', update); scope.removeEventListener('focusin', update); scope.removeEventListener('focusout', afterBlur) }
   }, [])
+  const hidden = editing || hasDraft
+  // A shown, non-empty row is the top band of the composer stack: jump-to-latest stands above it (thread-scroll-to-bottom).
   return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined}
-    hidden={editing || hasDraft}>
-    <div className="gg-phone-composer-controls-items">{children}</div>
+    hidden={hidden}>
+    <div className="gg-phone-composer-controls-items" data-composer-top-band={hidden ? undefined : 'menu'}>{children}</div>
   </div>
 }
 

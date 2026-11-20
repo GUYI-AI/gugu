@@ -251,11 +251,8 @@ export function readAgentInboxBatchAuditForTest(): Array<{ agentUserId: string; 
 const PULL_LIMIT = 80
 
 // ── 缺省云端实现 ────────────────────────────────────────────────────────────────
-async function fetchUnreadViaRpc(
-  input: AgentInboxFetchInput,
-  accessToken: string,
-): Promise<AgentInboxUnreadRow[]> {
-  const response = await fetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/pull_agent_inbox_v2`, {
+async function identityRpc(name: string, body: Record<string, unknown>, accessToken: string): Promise<unknown> {
+  const response = await fetch(`${getSupabaseUrl().replace(/\/+$/, '')}/rest/v1/rpc/${name}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -264,20 +261,31 @@ async function fetchUnreadViaRpc(
       'Accept-Profile': 'identity',
       'Content-Profile': 'identity',
     },
-    body: JSON.stringify({
-      p_agent_user_id: input.agentUserId,
-      p_chat_id: input.chatId ?? null,
-      p_after_seq: input.afterSeq ?? null,
-      p_limit: input.limit ?? PULL_LIMIT,
-      p_scan_after: input.scanAfter ? { chat_id: input.scanAfter.chatId, seq: input.scanAfter.seq } : null,
-      p_scan_max_ingest_seq: input.scanFence ?? null,
-    }),
+    body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    throw new Error(`pull_agent_inbox_v2 failed: HTTP ${response.status} ${await response.text().catch(() => '')}`)
-  }
-  const rows = (await response.json()) as Array<Record<string, unknown>>
+  if (!response.ok) throw new Error(`${name} failed: HTTP ${response.status} ${await response.text().catch(() => '')}`)
+  return response.json()
+}
+
+async function fetchUnreadViaRpc(
+  input: AgentInboxFetchInput,
+  accessToken: string,
+): Promise<AgentInboxUnreadRow[]> {
+  const rows = (await identityRpc('pull_agent_inbox_v2', {
+    p_agent_user_id: input.agentUserId,
+    p_chat_id: input.chatId ?? null,
+    p_after_seq: input.afterSeq ?? null,
+    p_limit: input.limit ?? PULL_LIMIT,
+    p_scan_after: input.scanAfter ? { chat_id: input.scanAfter.chatId, seq: input.scanAfter.seq } : null,
+    p_scan_max_ingest_seq: input.scanFence ?? null,
+  }, accessToken)) as Array<Record<string, unknown>>
   return rows.map(unreadRowFromRpc)
+}
+
+/** One read for a whole roster: the agents pull_agent_inbox_v2 has rows for. A waking host pulls only these. */
+export async function agentsWithInbox(agentUserIds: readonly string[], accessToken: string): Promise<string[]> {
+  const rows = (await identityRpc('agents_with_inbox', { p_agent_user_ids: agentUserIds }, accessToken)) as Array<{ agent_user_id: string }>
+  return rows.map(row => row.agent_user_id)
 }
 
 /** pull_agent_inbox_v2 必须回这三列(gugu-supabase #129 的 delta):没回就是库和客户端不配套,❌ 当成「文件已删」悄悄交下去。 */

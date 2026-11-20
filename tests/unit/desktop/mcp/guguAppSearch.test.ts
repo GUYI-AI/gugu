@@ -82,6 +82,16 @@ describe('searchApps (shared: the agent and the Apps page)', () => {
     expect(ids(searchApps([together, soup, ...SIXTY], { query: '一起玩海龟汤' }).items)).toEqual(['turtle-soup', 'together'])
     expect(searchApps(SIXTY, { query: '狼人杀' }).items).toEqual([])
   })
+
+  // #889: 「tac」 inside 「contact」 is not a word of the text — by it the market's one App was offered to an agent
+  // looking for tic-tac-toe. A word counts where a word of the text starts; a prefix a person is typing still does.
+  it('a query word inside a word of the text is not a match — an unrelated single App is not offered', () => {
+    const context = { ...app(62), state: 'market' as const, manifest: { ...app(62).manifest, id: 'context', name: 'Context', subtitle: 'Contacts and statistics', contributes: { ...app(62).manifest.contributes, instructions: 'Keep the arithmetic context together.' } } }
+    expect(searchApps([context], { query: 'tic-tac-toe' }).items).toEqual([])
+    expect(ids(searchApps([context], { query: 'contex' }).items)).toEqual(['context'])
+    expect(ids(searchApps([context], { query: 'context' }).items)).toEqual(['context'])
+    expect(ids(searchApps([context], { query: 'statistic' }).items)).toEqual(['context'])
+  })
 })
 
 describe('app_search, the tool', () => {

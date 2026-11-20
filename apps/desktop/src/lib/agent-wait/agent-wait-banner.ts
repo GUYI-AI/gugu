@@ -19,7 +19,7 @@ import { readDevicePreferences } from '@/lib/devicePreferences'
 export async function announceAgentWait(text: string, silent = !readDevicePreferences().chatSound): Promise<void> {
   // The desktop's banner is its main process's (on every OS); a phone's is its native outlet.
   if (platform.kind === 'electron' || platform.systemPermissions.includes('notifications')) {
-    void platform.showNotification({ title: text, chatId: null, silent }).catch(() => undefined)
+    void platform.showNotification({ title: text, chatId: null, silent, ...(platform.androidNotificationSettings ? { kind: 'task_attention' as const } : {}) }).catch(() => undefined)
     return
   }
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return

@@ -8,6 +8,18 @@
 // 一个复数类别，`_one` 永远不会被选中，但 catalog 的共享类型是 `Record<keyof typeof enUS…, string>`，
 // 两侧 key 集合必须逐字相等，所以中文侧照样写满两个形态。
 export const enUSSessionWorkflowMessages = {
+  'taskError.codexChooseModel': 'Choose a model again',
+  'taskError.codexProviderMissing': 'This conversation’s model source is no longer configured. Choose an available model to continue. Your history is preserved.',
+  'taskError.codexProviderMismatch': 'The selected model uses a different source. The switch did not complete; your original conversation is preserved. Choose a model again.',
+  'taskError.codexProviderPolicy': 'Your organization does not allow this model source. Choose an allowed model. Your history is preserved.',
+  "taskError.codexMissing": "Codex is not installed. Install it in engine settings, then retry.",
+  "taskError.codexPermission": "File permissions prevent Codex from starting. Check permissions or reinstall it.",
+  "taskError.codexConfiguration": "Codex configuration is invalid. Check model and service settings, then retry.",
+  "taskError.codexProtocol": "Codex returned unreadable data. Retry.",
+  "taskError.codexExited": "The Codex process exited. Retry.",
+  "taskError.codexTimeout": "Codex did not respond in time. Retry.",
+  "taskError.codexStartFailed": "Codex could not start. Retry.",
+
   'transcript.copySelection': 'Copy selected text',
   'sessionImport.title': 'Import session',
   'sessionImport.done': 'Done',
@@ -631,6 +643,18 @@ export const enUSSessionWorkflowMessages = {
 } as const;
 
 export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflowMessages, string> = {
+  'taskError.codexChooseModel': '重新选择模型',
+  'taskError.codexProviderMissing': '这条会话的模型来源已不可用。请选择可用模型继续，原历史已保留。',
+  'taskError.codexProviderMismatch': '所选模型使用不同的来源。这次切换未完成，原会话已保留，请重新选择模型。',
+  'taskError.codexProviderPolicy': '组织策略不允许这个模型来源。请选择允许的模型，原历史已保留。',
+  "taskError.codexMissing": "尚未安装 Codex，请在引擎设置中安装后重试。",
+  "taskError.codexPermission": "文件权限不允许启动 Codex，请检查权限或重新安装。",
+  "taskError.codexConfiguration": "Codex 配置有误，请检查模型与服务设置后重试。",
+  "taskError.codexProtocol": "Codex 返回的数据无法读取，请重试。",
+  "taskError.codexExited": "Codex 进程已退出，请重试。",
+  "taskError.codexTimeout": "Codex 暂未响应，请重试。",
+  "taskError.codexStartFailed": "Codex 启动失败，请重试。",
+
   'transcript.copySelection': '复制所选文字',
   'sessionImport.title': '导入会话',
   'sessionImport.done': '完成',

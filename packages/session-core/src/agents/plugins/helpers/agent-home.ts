@@ -116,6 +116,7 @@ export function resolveAgentHome(input: {
     shadowHome,
     configRoot: join(input.guguHome, ...segments),
     userConfigRoot: moved || join(input.osHomeDir, spec.userPath),
+    osHomeDir: input.osHomeDir,
     carryExclusions: spec.carryExclusions.map((entry) => entry.path),
     importGroups: spec.importGroups.map((group) => ({ ...group, paths: group.paths.map((entry) => {
       const path = typeof entry === 'string' ? { path: entry } : entry;

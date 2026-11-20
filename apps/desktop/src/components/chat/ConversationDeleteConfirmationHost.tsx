@@ -1,8 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
-import { Checkbox } from '@renderer/lib/ui/checkbox'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { readConversationDeleteConfirmation, subscribeConversationDeleteConfirmation } from '@/lib/conversationDeleteConfirmation'
@@ -17,7 +16,6 @@ export function ConversationDeleteConfirmationHost() {
 function Choice({ request }: { request: NonNullable<ReturnType<typeof readConversationDeleteConfirmation>> }) {
   const { t } = useTranslation('messaging')
   const { translate } = useSessionMessages()
-  const [checked, setChecked] = useState(false)
   const cancel = () => request.finish(null)
   useBackLayer(cancel, true)
   return <Dialog.Root open onOpenChange={open => { if (!open) cancel() }}>
@@ -28,14 +26,10 @@ function Choice({ request }: { request: NonNullable<ReturnType<typeof readConver
           <div className="flex flex-col gap-3 p-6">
             <Dialog.Title className="text-[length:var(--font-title)] font-medium">{t('chatList.clearHistoryTitle', { name: request.name })}</Dialog.Title>
             <Dialog.Description className="leading-relaxed text-[var(--text-secondary)]">{t('chatList.deleteHistoryDescription')}</Dialog.Description>
-            {request.agentOption ? <label className="flex items-start gap-2">
-              <Checkbox className="border-[var(--border-strong)] bg-[var(--card)] data-checked:border-[var(--primary)] data-checked:bg-[var(--primary)] data-checked:text-[var(--primary-fg)]" checked={checked} onCheckedChange={value => setChecked(Boolean(value))} />
-              <span>{t('chatList.alsoRemoveAgent')}</span>
-            </label> : null}
           </div>
           <div className="flex justify-end gap-2 px-6 pb-6">
             <Button variant="secondary" onClick={cancel}>{translate('common.cancel')}</Button>
-            <Button variant="danger" data-testid="conversation-delete-submit" onClick={() => request.finish(checked)}>{t('chatList.clearHistoryConfirm')}</Button>
+            <Button variant="danger" data-testid="conversation-delete-submit" onClick={() => request.finish(true)}>{t('chatList.clearHistoryConfirm')}</Button>
           </div>
         </Dialog.Popup>
       </Dialog.Viewport>

@@ -50,6 +50,8 @@ export function androidClosurePreparation(native: AndroidClosureBridge): Android
       return { deviceId: reply.deviceId }
     },
     async retire(ownerId, deviceId) {
+      const { prepareAndroidPushSignOut } = await import('../mobile/android-push/startAndroidPush')
+      await prepareAndroidPushSignOut(ownerId)
       if (fields(await native.retireDevice({ ownerId, deviceId })).retired !== true) throw invalid()
     },
     async cancel(scope) {

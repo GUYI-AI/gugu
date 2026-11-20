@@ -7,7 +7,8 @@ import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
-import { sessionStartupFailureCopy } from '../session-input-failure-copy';
+import { isCodexStartupFailure, sessionStartupFailureCopy } from '../session-input-failure-copy';
+import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -197,9 +198,10 @@ import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
-import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
+import { useLastTurnSignIn } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
+import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { filterSlashCommands } from './slash-command-matching';
 import { startupPlaceholderKey } from './startup-placeholder';
@@ -214,7 +216,6 @@ import {
 import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
 import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
 import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
-import { offerSessionSend } from '../session-send';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -268,6 +269,7 @@ const ComposerForStore = observer(function ComposerForStore({
   onViewAttachment,
   onScrollToBottom,
   modelMenuRequest,
+  onModelMenuRequest,
   onMembershipLockChange,
 }: {
   store: AcpChatStore;
@@ -276,6 +278,7 @@ const ComposerForStore = observer(function ComposerForStore({
   contentOverlaySlot: HTMLElement | null;
   /** 面板要把模型菜单打开(「这个模型要会员」那一行上的「换模型」):每变一次开一次。 */
   modelMenuRequest: number;
+  onModelMenuRequest: () => void;
   /** 这条会话正在用的咕咕模型要开会员了(#7056):报给面板,由它挂那一行条件。null = 没有。 */
   onMembershipLockChange: (lock: { modelName: string } | null) => void;
   /** 点开一枚附件 chip 看里面是什么(#5269)。图片看图,文本看内容。 */
@@ -317,7 +320,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [inputFailure, setInputFailure] = useState<SessionInputNotice | null>(null);
   useSessionInputNotice(`session-settings:${store.sessionId}`, inputFailure && { ...inputFailure, attempt: inputFailure });
   const reportInputFailure = useCallback((title: string, diagnostic?: unknown, description?: string) => {
-    setInputFailure({ title, description: description ?? translate('taskError.settingFailedRetry'), diagnostic });
+    setInputFailure({ title, description: description ?? (isCodexStartupFailure(diagnostic) ? sessionStartupFailureCopy(diagnostic, translate) : translate('taskError.settingFailedRetry')), diagnostic });
   }, [translate]);
   const [sendHold, setSendHold] = useState<'waiting' | 'blocked' | null>(null);
   const sendingRef = useRef(false);
@@ -742,8 +745,6 @@ const ComposerForStore = observer(function ComposerForStore({
     agentCreationToolsByEngine,
     localSessionMentionProvider,
   ]);
-  // A selection's Send (`SelectionSend`) sends through this composer: typed words' path, this composer's @.
-  useEffect(() => offerSessionSend(store.sessionId, { send: text => store.submitPrompt(text), mentionProvider }), [store, mentionProvider]);
 
   const { data: agents } = useAgents();
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
@@ -868,6 +869,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [catalogMenuSession, setCatalogMenuSession] = useState<string | null>(null);
   const readOwnCatalog = route !== 'own' || !store.session || catalogMenuSession === store.sessionId;
   const harnessCatalog = useHarnessModelCatalog(readOwnCatalog ? providerId : null, 'acp');
+  const modelPreparationNotice = useCodexPreparationNotice(harnessCatalog.preparation);
   const onModelMenuOpen = () => {
     platformCatalog.refresh();
     if (readOwnCatalog) harnessCatalog.refresh();
@@ -1080,7 +1082,7 @@ const ComposerForStore = observer(function ComposerForStore({
       try {
         const result = await requestSessionReload(reloadRequestFor(target, store.sessionId));
         if (!result.ok) {
-          reportInputFailure(translate('chat.modelSwitchFailedTitle', { target: target.label }), result.error ?? '');
+          reportInputFailure(translate('chat.modelSwitchFailedTitle', { target: target.label }), result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '');
           return;
         }
         setInputFailure(null);
@@ -1237,14 +1239,18 @@ const ComposerForStore = observer(function ComposerForStore({
         reportInputFailure(translate(
             pending.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
             { target: pending.label },
-          ), result.error ?? '');
+          ), result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '');
+        if (isCodexProviderStartupKind(result.startupReason ?? codexStartupKind(result.error))) {
+          setPendingReload(null);
+          onModelMenuRequest();
+        }
       }
     } finally {
       setReloading(false);
       // Keep the target in the confirmation surface after a failed restart so it can be retried.
       if (succeeded) setPendingReload(null);
     }
-  }, [pendingReload, store, platformCatalog, reportInputFailure, translate]);
+  }, [pendingReload, store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
 
   /**
    * `/mcp` —— **咕咕自己的**命令:拦下来开面板,**一个字都不发给 agent**。
@@ -1500,7 +1506,7 @@ const ComposerForStore = observer(function ComposerForStore({
         onModelChange={handleModelChange}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
-        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
+        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
         onModelMenuOpen={onModelMenuOpen}
         modelUnlock={ownCatalogRetry}
         onModelUnlock={ownCatalogRetry ? harnessCatalog.retry : undefined}
@@ -1548,7 +1554,7 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachmentExtra={annotationDraft.items.length ? <AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
+        attachmentExtra={annotationDraft.items.length ? <AnnotationTray conversation={{ kind: 'session', sessionId: store.sessionId }} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}
@@ -1766,17 +1772,17 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    * 两个条件缺一不可 —— 重新登录成功(或别处一次会话成功)撤掉标记的那一刻,这一行自己消失,
    * 而那一轮的失败行照旧留在历史里说「登录已失效」(那是当时的事实)。
    */
-  const lastTurnSignIn = useLastTurnSignInRequired(store?.chatState.transcript);
+  const lastTurnSignIn = useLastTurnSignIn(store?.chatState.transcript);
   // #6264 会话在别的机器上:登录读数与重新登录都在那台机器上(与资源库「账号」一行同一条路)。
   const { auth: harnessAuth } = useAgentAuthStatus(providerId, undefined, { probe: false, machine });
-  const signInExpired = lastTurnSignIn && isAuthExpired(harnessAuth);
+  const signInExpired = !!lastTurnSignIn && isAuthExpired(harnessAuth);
   // 同一个信号(这一轮因凭据不能用而失败),而这家在这台电脑上压根没登录过(MiMo 没 key 时):说「还没登录」。
-  const signInMissing = lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
+  const signInMissing = !!lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
   // Expired credentials go directly to the existing login flow, scoped to this session's machine.
   const signInAgain = useCallback((anchor?: HTMLElement) => {
-    if (signInExpired && agent) connections.signIn(agent, machine);
+    if ((signInExpired || lastTurnSignIn === 'revoked') && agent) connections.signIn(agent, machine);
     else openAgentAccount(anchor);
-  }, [signInExpired, agent, machine, connections.signIn, openAgentAccount]);
+  }, [signInExpired, lastTurnSignIn, agent, machine, connections.signIn, openAgentAccount]);
 
   // #4900 登录 ❌ 不自动发起。owner 2026-09-04:「我不登录也行啊」——自动弹登录终端会
   // 连带跑起厂商的 `<cli> login`,浏览器随即弹出授权页,这就是「强登」本身。
@@ -1861,14 +1867,14 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         signInExpired || signInMissing
           ? {
               code: 'auth-required',
-              label: translate(signInExpired ? 'chat.signInExpiredLead' : 'chat.signInMissingLead', {
+              label: translate(lastTurnSignIn === 'revoked' ? 'chat.signInRevokedLead' : signInExpired ? 'chat.signInExpiredLead' : 'chat.signInMissingLead', {
                 agent: agent?.name ?? providerId ?? '',
               }),
               detail: signInExpired ? 'sign-in-expired' : 'sign-in-missing',
               ...(cliAuthMethod
                 ? {
                     actions: [{
-                      label: translate(signInExpired ? 'chat.signInAgain' : 'transcript.condition.signIn'),
+                      label: translate(signInExpired || lastTurnSignIn === 'revoked' ? 'chat.signInAgain' : 'transcript.condition.signIn'),
                       run: signInAgain,
                     }],
                   }
@@ -1927,10 +1933,12 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 两颗都不能少(#4900):「去登录」与「我登好了」是两个动作,后者 ❌ 不能用「重试」顶替。
           return {
             code: 'auth-required',
+            ...(error.signInReason === 'revoked' ? { label: translate('chat.signInRevokedLead', { agent: agent?.name ?? providerId ?? '' }) } : {}),
             detail: error.message,
             actions: [
               ...(cliAuthMethod
-                ? [{ label: translate('transcript.condition.signIn'), run: openAgentAccount }]
+                ? [{ label: translate(error.signInReason === 'revoked' ? 'chat.signInAgain' : 'transcript.condition.signIn'),
+                    run: error.signInReason === 'revoked' && agent ? () => connections.signIn(agent, machine) : openAgentAccount }]
                 : []),
               { label: translate('chat.signInDone'), run: () => store.retry() },
             ],
@@ -1990,8 +1998,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 认得的说法给修法,认不得的只说「无法启动」+ 重试:原话留在本机日志,不上界面(见 session-condition.def)。
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
-          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error.message, translate);
-          if (!reason) return { code: 'start-failed', label: text, detail: text, actions: [retry] };
+          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error, translate);
+          if (!reason) return { code: 'start-failed', label: text, detail: text, actions: isCodexProviderStartupKind(codexStartupKind(error))
+            ? [{ label: translate('taskError.codexChooseModel'), run: () => setModelMenuRequest((value) => value + 1) }]
+            : [retry] };
           return {
             code: membership ? 'membership-required' : 'start-failed',
             label: text,
@@ -2010,7 +2020,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
@@ -2119,7 +2129,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onEditMessage: ({ itemId }) => store?.beginMessageEdit(itemId),
       onRetrySend: (itemId) => store?.retryPendingInput(itemId),
       editingMessage: messageEdit ? {
-        ...messageEdit,
+        itemId: messageEdit.itemId,
+        text: messageEdit.text,
         pending: messageEditPending,
         canSubmit: (historyActionsEnabled || !!store?.isRejectedInput(messageEdit.itemId)) && !messageEditPending && messageEdit.text.trim().length > 0,
         // A rejected input has no reply yet: sending it removes nothing.
@@ -2127,6 +2138,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         onChange: (text) => store?.changeMessageEdit(messageEdit.itemId, text),
         onCancel: () => store?.cancelMessageEdit(messageEdit.itemId),
         onSubmit: () => void store?.sendMessageEdit(messageEdit.itemId),
+        ...(store?.canRestoreFiles(messageEdit.itemId) ? { restoreFiles: {
+          checked: messageEdit.restoreFiles === true,
+          onChange: (checked: boolean) => store.changeMessageEditRestoreFiles(messageEdit.itemId, checked),
+        } } : {}),
       } : undefined,
       onStop: () => {
         if (!store) return;
@@ -2370,6 +2385,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           onViewAttachment={handleAttachmentView}
           onScrollToBottom={() => { store.closeHistoryWindow(); viewRef.current?.scrollToBottom({ behavior: 'smooth' }); }}
           modelMenuRequest={modelMenuRequest}
+          onModelMenuRequest={() => setModelMenuRequest((value) => value + 1)}
           onMembershipLockChange={setMembershipLock}
         />
       )}

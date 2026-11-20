@@ -22,7 +22,7 @@ it('returns pending without holding the model turn, then delivers only the expli
   void postAgentQuestion(input).then((result) => { posted = result })
   await new Promise((resolve) => setTimeout(resolve, 0)) // one event-loop turn, without answering the card
   expect(posted).toMatchObject({ state: 'pending', source_link: input.sourceLink })
-  expect(mocks.ask).toHaveBeenCalledWith('assistant', expect.objectContaining({ itemId: posted!.question_id }), { signal: expect.any(AbortSignal) })
+  expect(mocks.ask).toHaveBeenCalledWith('assistant', expect.objectContaining({ itemId: posted!.question_id, skippable: true }), { signal: expect.any(AbortSignal) })
   expect(mocks.send).not.toHaveBeenCalled()
   answer({ optionId: 'answered', by: 'desktop', answers: [{ selected: ['PATH'] }] })
   await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1))
@@ -51,6 +51,29 @@ it('delivers an explicit withdrawal as withdrawal, never approval', async () => 
   await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1))
   expect(mocks.send.mock.calls[0][0].text).toContain('"state":"withdrawn"')
   expect(mocks.send.mock.calls[0][0].text).not.toContain('"answers"')
+})
+
+it('delivers explicit skips as structured answers, never consent', async () => {
+  await postAgentQuestion(input)
+  answer({ optionId: 'answered', by: 'phone', answers: [{ selected: [], skipped: true }] })
+  await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1))
+  const text = mocks.send.mock.calls[0][0].text
+  expect(text).toContain('"answers":[{"selected":[],"skipped":true}]')
+  expect(text).toContain('Skipping a question or choosing to discuss first is not consent.')
+  expect(readQuestionAnswerDelivery(text)).toEqual({ answer: '（已跳过）' })
+})
+
+it('ends the wait for discussion, without fabricating answers or consent', async () => {
+  await postAgentQuestion(input)
+  expect(mocks.ask.mock.calls[0][1].canDiscuss).toBe(true)
+  answer({ optionId: 'discuss', by: 'phone' })
+  await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1))
+  const text = mocks.send.mock.calls[0][0].text
+  expect(text).toContain('"state":"discuss"')
+  expect(text).not.toContain('"answers"')
+  expect(text).toContain('this question is no longer waiting for answers')
+  expect(text).toContain('is not consent')
+  expect(readQuestionAnswerDelivery(text)).toEqual({ answer: '先讨论' })
 })
 
 it('records a failed answer handoff instead of claiming it was delivered', async () => {

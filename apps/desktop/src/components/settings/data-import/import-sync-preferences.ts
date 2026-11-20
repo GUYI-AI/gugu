@@ -2,7 +2,7 @@ import type { AppSettings } from '@shared/core/app-settings'
 import { fetchAppSettingValue, setAppSettingsValueInCache, updateAppSettingsRequest } from '@renderer/features/settings/app-settings-client'
 
 type OwnerImportSettings = AppSettings['dataImport']['owners'][string]
-export const EMPTY_IMPORT_SETTINGS: OwnerImportSettings = { automatic: false, sources: [] }
+export const EMPTY_IMPORT_SETTINGS: OwnerImportSettings = { automatic: false, sources: [], categories: ['tasks', 'projects', 'memories', 'skills', 'connectors'] }
 
 export function importSettingsForOwner(stored: AppSettings['dataImport'], ownerId: string): OwnerImportSettings {
   return stored.owners[ownerId] ?? EMPTY_IMPORT_SETTINGS

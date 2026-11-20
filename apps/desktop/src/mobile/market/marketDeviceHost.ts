@@ -1,6 +1,6 @@
 import type { Device } from '@gugu/core/shared/types/chat'
 import { machineLibraryHost } from '@renderer/features/library/library-host'
-import { phoneLibraryTransport } from '../agent-watch/sessionpage-rpc'
+import { phoneLibraryTransport } from '../../components/session-watch/sessionpage-rpc'
 
 export function marketDeviceHost(device: Device) {
   return machineLibraryHost({

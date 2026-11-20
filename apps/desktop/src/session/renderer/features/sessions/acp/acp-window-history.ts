@@ -1,7 +1,7 @@
 import type { SessionpageSessionEvent, SessionpageSessionWindowStatusEvent } from '@gugu/session-core/session-record/contract';
 import {
   applyTimelineResult, emptyAgentWatchTimeline, type AgentWatchTimeline,
-} from '@/mobile/agent-watch/agent-watch-store';
+} from '@/components/session-watch/agent-watch-store';
 
 /** The local IPC adapter binds both event channels to this conversation and subscription. */
 export interface AcpWindowHistoryClient {

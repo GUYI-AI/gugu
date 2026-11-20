@@ -1,6 +1,6 @@
 import type { WindowCursor } from '@gugu/session-core/session-record/contract'
-import type { SessionpageTimelineClient } from '@/mobile/agent-watch/use-timeline-session'
-import * as remote from '@/mobile/agent-watch/sessionpage-rpc'
+import type { SessionpageTimelineClient } from '@/components/session-watch/use-timeline-session'
+import * as remote from '@/components/session-watch/sessionpage-rpc'
 import { rpcOn, events } from '@/session/renderer/lib/ipc'
 import { sessionpageSessionTimelineChannel, sessionpageSessionWindowStatusChannel } from '@/session/shared/core/session-timeline/sessionTimelineEvents'
 import { prepareAcpWindowHistory } from '@/session/renderer/features/sessions/acp/acp-window-client'

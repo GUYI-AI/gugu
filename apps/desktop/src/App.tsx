@@ -37,7 +37,13 @@ import { installAssistantPanelHost } from './components/assistant/assistant-pane
 import { installConnectionHost } from './components/connections/connection-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
 import { useAndroidNotificationReminder } from './lib/useAndroidNotificationReminder'
+import { TeamAccessGate, TeamProvider } from './features/team/context'
+import { hasTeamAccountMarker } from './features/team/accountKind'
+import './features/team/team.css'
+import { teamInvitation } from './features/team/invitation'
+import { TeamInvitationHandoff } from './features/team/TeamInvitationHandoff'
 import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startAndroidPush } from './mobile/android-push/startAndroidPush'
 import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
 import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
@@ -81,7 +87,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
         </ShellErrorBoundary>
         <AgentPresencePrewarm />
         <AgentStatusFeedBridge />
-        {/* 从前挂在已下架的 AgentCreateRetryHost 里,#6299 起直接挂在这里。 */}
+        {/* 续建记录由壳持有；未完成创建的继续/删除入口在任务侧栏。 */}
         <StarterContinuationHost active={effectsActive} />
         <ShareIntakeHost active={effectsActive} />
         <UnfinishedAgentCreateSweeper active={effectsActive} />
@@ -119,7 +125,7 @@ export default function App() {
   // #5048 会话页投递卡对「自己发的」消息用本地 profile 显示发信人(spec delivery-envelope)。
   useEffect(() => {
     publishSelfIdentity(user
-      ? { userId: user.id, displayName: user.nickname?.trim() || null, guguNumber: user.gugu_number ?? null }
+      ? { userId: user.id, displayName: user.nickname?.trim() || null, guguNumber: user.gugu_number ?? null, accountKind: user.accountKind }
       : null)
   }, [user])
 
@@ -130,8 +136,10 @@ export default function App() {
     if (iosOwnerAvailable()) return startIOSOwnerPublication()
   }, [])
   useEffect(startIOSPush, [])
+  useEffect(startAndroidPush, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
+  useEffect(() => teamInvitation.start(), [])
   useEffect(() => { authCallbacks.setAuthenticated(Boolean(session.session)) }, [session.session])
   useEffect(() => { googleLogin.initialize() }, [])
 
@@ -179,14 +187,17 @@ export default function App() {
         <ToastProvider>
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
+            <TeamInvitationHandoff />
             <IOSHostRoot />
             <ReferralLinkPrompt />
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
             {/* 启动外壳期间那张候选证可能已过期:等协调器接受了会话再读,不另起刷新 */}
-            {session.status === 'authenticated' && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}
-            <FirstRunGate key={user.id} user={user}>
-              <AuthenticatedProduct key={user.id} user={user} />
-            </FirstRunGate>
+            {session.status === 'authenticated' && !hasTeamAccountMarker(user) && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}
+            {hasTeamAccountMarker(user) ? <TeamProvider key={user.id} user={user}>
+              <TeamAccessGate><AuthenticatedProduct user={user} /></TeamAccessGate>
+            </TeamProvider> : <FirstRunGate key={user.id} user={user}>
+              <AuthenticatedProduct user={user} />
+            </FirstRunGate>}
           </AuthContext.Provider>
         </ToastProvider>
       </Tooltip.Provider>

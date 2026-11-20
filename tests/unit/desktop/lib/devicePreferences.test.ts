@@ -8,6 +8,7 @@ import {
   readStoredPreferences,
   removeStoredPreferences,
   storedPreferenceStrings,
+  writeStoredPreferences,
   type DevicePreferences,
 } from '../../../../apps/desktop/shared/device-preferences'
 
@@ -36,7 +37,7 @@ describe('the one-time move of the old keys (main adopts, preload deletes what w
     const adoption = adoptStoredPreferences(storedPreferenceStrings(localStorage), () => false)
     expect(adoption.patch).toEqual({
       theme: 'dark', locale: 'en-US', sidebarTint: true, trayBadge: false, chatMessages: false, chatSound: true, meetingReminder: false,
-    } satisfies DevicePreferences)
+    } satisfies Partial<DevicePreferences>)
     expect(adoption.unreadable).toEqual([])
     removeStoredPreferences(localStorage, adoption.settled)
     expect(Object.keys(OLD_KEYS).filter((key) => localStorage.getItem(key) !== null)).toEqual([])
@@ -67,6 +68,16 @@ describe('the one-time move of the old keys (main adopts, preload deletes what w
 })
 
 describe("the shell's first value", () => {
+  it('keeps the send confirmation local and lets the device turn it back on', () => {
+    const initial = readStoredPreferences(localStorage)
+    expect(initial.confirmBeforeCancelAndSend).toBe(true)
+    writeStoredPreferences(localStorage, { ...initial, confirmBeforeCancelAndSend: false }, initial)
+    const saved = readStoredPreferences(localStorage)
+    expect(saved.confirmBeforeCancelAndSend).toBe(false)
+    writeStoredPreferences(localStorage, initial, saved)
+    expect(readStoredPreferences(localStorage).confirmBeforeCancelAndSend).toBe(true)
+  })
+
   it('web / phone read localStorage, the retired plain-white as light', () => {
     localStorage.setItem('app-theme', 'plain-white')
     localStorage.setItem('gugu.sidebar-tint', 'true')
@@ -84,7 +95,9 @@ describe("the shell's first value", () => {
 })
 
 describe('the boot script draws the first frame from the same store', () => {
-  const bootScript = readFileSync('apps/desktop/index.html', 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1]!
+  // The theme boot script, picked by what it writes: the engine-floor gate runs before it.
+  const bootScript = [...readFileSync('apps/desktop/index.html', 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(m => m[1]!).find(s => s.includes('data-theme-preference'))!
   const runBoot = () => new Function('window', 'document', 'localStorage', bootScript)(window, document, localStorage)
   const root = document.documentElement
 

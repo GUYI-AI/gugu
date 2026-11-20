@@ -622,3 +622,46 @@ describe('question 进结算(#7035)', () => {
     expect(settlement()).toMatchObject({ state: 'resolved', resolvedBy: null, resultRecorded: true });
   });
 });
+
+describe("opencode revert marker", () => {
+  const REVERTED = "msg_fb45512f1001d1dug7LR32eirc";
+  const messageIdsOf = (entries: RecordEntry[], fixture: Fixture) => {
+    const owner = new Map(fixture.parts.map((row) => [row.id, row.message_id]));
+    return new Set(entries.flatMap((entry) => {
+      const part = /^opencode:(prt_[^#:]+)/.exec(entry.key)?.[1];
+      return part && owner.has(part) ? [owner.get(part)!] : [];
+    }));
+  };
+  const withRevertColumn = (dbPath: string, marker: string | null, id: string) => {
+    const db = new Database(dbPath);
+    if (!(db.prepare("pragma table_info(session)").all() as Array<{ name: string }>).some((column) => column.name === "revert")) {
+      db.exec("alter table session add column revert text");
+    }
+    db.prepare("update session set revert = ? where id = ?").run(marker, id);
+    db.close();
+  };
+
+  it("leaves out what the marker reverted, until opencode deletes it", async () => {
+    const { dbPath, fixture } = await stage();
+    withRevertColumn(dbPath, JSON.stringify({ messageID: REVERTED }), fixture.session.id);
+    const entries = await startAll(createOpencodeSqliteSource({ harness: "opencode", providerSessionId: fixture.session.id, roots: [dbPath] }));
+    const ids = messageIdsOf(entries, fixture);
+    expect(ids.has(REVERTED)).toBe(false);
+    expect(ids.size).toBeGreaterThan(0);
+  });
+
+  it("starts the reading over when a revert lands in a live session", async () => {
+    const { dbPath, fixture } = await stage();
+    withRevertColumn(dbPath, null, fixture.session.id);
+    const resets: string[] = [];
+    let entries: RecordEntry[] = [];
+    const source = createOpencodeSqliteSource({ harness: "opencode", providerSessionId: fixture.session.id, roots: [dbPath] }, { pollIntervalMs: 60_000 });
+    disposers.push(() => source.stop());
+    await source.start({ onEntries: (batch) => entries.push(...batch), onReset: (reason) => { resets.push(reason); entries = []; } });
+    expect(messageIdsOf(entries, fixture).has(REVERTED)).toBe(true);
+    withRevertColumn(dbPath, JSON.stringify({ messageID: REVERTED }), fixture.session.id);
+    await source.catchUp?.();
+    expect(resets).toEqual(["source_replaced"]);
+    expect(messageIdsOf(entries, fixture).has(REVERTED)).toBe(false);
+  });
+});

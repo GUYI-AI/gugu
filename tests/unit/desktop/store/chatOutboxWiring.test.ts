@@ -36,6 +36,9 @@ vi.mock('sonner', () => ({ toast: Object.assign(notices.show, {
 }) }))
 import { notify } from '../../../../apps/desktop/src/lib/notices'
 vi.mock('../../../../apps/desktop/src/lib/widgetLabels', () => ({ widgetReferenceTexts: async () => new Map() }))
+// A delivered send advances the read marker, whose write would go to the network: it failed late, inside a later test,
+// and the failed write's probe request counted as that test's pull (CI: called 2 times). No test here is about reads.
+vi.mock('../../../../apps/desktop/src/lib/readWriter', async (original) => ({ ...(await original<object>()), writeRead: async () => {} }))
 
 function persistedMessage(id: string): MessageItem {
   return {
@@ -594,4 +597,17 @@ it('a refused native publication is resent from its row like an upload', async (
   await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce())
   expect((await f.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: native.id, state: 'uploading', operation: { kind: 'upload' } })])
   f.wiring.dispose()
+})
+
+it('keeps a refused nonfriend DM failed and puts its cause in the existing offscreen notice', async () => {
+  setLocalePreference('zh-CN')
+  vi.useFakeTimers()
+  vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('dm_friendship_required'))
+  const h = wiringHarness('not-friends', { chatShown: () => false })
+  await h.wiring.enqueue({ ...enqueueInput('not-friends'), toUserIds: ['human-peer'] })
+  await vi.advanceTimersByTimeAsync(20_000)
+  expect(h.messages()[0]).toMatchObject({ id: 'not-friends', local_send_state: 'failed', local_send_error: 'dm_friendship_required', seq: -1 })
+  expect(notices.visible.size).toBe(1)
+  expect(notices.show).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ description: '请先添加对方为好友，再发送消息。' }))
+  h.wiring.dispose()
 })

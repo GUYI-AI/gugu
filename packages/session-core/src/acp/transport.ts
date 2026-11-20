@@ -1,4 +1,5 @@
 import { dirname } from 'node:path';
+export { AcpProbeRpcClient } from './probe-rpc';
 import type { Readable, Writable } from 'node:stream';
 import type { TerminalExit } from './models/terminals';
 

@@ -5,7 +5,10 @@ import lockfile from 'proper-lockfile'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const f = vi.hoisted(() => ({ root: '', available: false, unusable: false, probe: vi.fn(), install: vi.fn() }))
-vi.mock('@gugu/session-core/deps/runtime', () => ({ agentProgramsOf: () => [{ dependencyId: 'claude-code' }] }))
+vi.mock('@gugu/session-core/deps/runtime', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@gugu/session-core/deps/runtime')>(),
+  agentProgramsOf: () => [{ dependencyId: 'claude-code' }],
+}))
 const registry = vi.hoisted(() => ({ getPlugin: vi.fn(() => ({})) }))
 vi.mock('../../../../apps/desktop/electron/session/main/core/agents/plugin-registry', () => registry)
 vi.mock('../../../../apps/desktop/electron/session/main/core/dependencies/managed-agent-home', () => ({

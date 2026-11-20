@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { RailApp } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { DropdownMenu } from '../ui/Menu'
-import { OpenableAppRows } from '../chat/OpenAppMenuItems'
+import { OpenableAppRows } from '../chat/OpenableAppRows'
 import { railAppVisibleCount } from './railAppCapacity'
 
 interface DockMetrics { height: number; rowHeight: number; gap: number }

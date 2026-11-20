@@ -57,3 +57,11 @@ describe('#7103 回合失败那一行说上游回的那一句', () => {
   });
 
 });
+
+it.each(['team-monthly-cap-reached', 'team-credits-exhausted'])('keeps %s on the shared turn failure path without a personal recharge action', reason => {
+  const { outcome } = classifyTurnFailure({ at: 'prompt', platformCredentials: true,
+    credentialRefusal: `gugu-models:${reason}`, cause: { name: 'RequestError', message: 'private provider diagnostics' } });
+  expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed', detail: expect.stringContaining('credits_exhausted') });
+  expect(JSON.stringify(outcome)).not.toContain('private provider diagnostics');
+  if (outcome.kind === 'error') expect(JSON.parse(outcome.detail!).error.reason_code).toBe(reason === 'team-credits-exhausted' ? 'team_credits_exhausted' : 'team_member_monthly_cap_reached');
+});
