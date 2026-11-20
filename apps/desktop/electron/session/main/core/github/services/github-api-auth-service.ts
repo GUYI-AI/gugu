@@ -1,93 +1,53 @@
 import { err, ok, type Result } from '@gugu/session-shared';
 import { normalizeRepositoryHost } from '@shared/repository-ref';
-import {
-  GITHUB_PROVIDER_ID,
-  toGitHubAccount,
-  type GitHubAccount,
-  type GitHubAccountStore,
-} from '../accounts/github-accounts';
+import { toGitHubAccount, type GitHubAccount } from '../accounts/github-accounts';
+import type { GitHubVaultAccountStore } from '../accounts/github-vault-accounts';
+import { CONNECTOR_SUBJECT, grantedCredential, projectSubject, vaultGitHubFetch } from '../github-credential';
 import {
   githubApiAccountHostMismatch,
   githubApiAccountNotFound,
   githubApiAuthRequired,
   githubApiTokenMissing,
+  vaultProblem,
   type GitHubApiAuthError,
 } from './github-api-auth-errors';
 
+/**
+ * Whose GitHub credential a request uses: one the person is picking on a screen right now (`accountId`), the one a project
+ * chose (`projectId`, its `host:github:project:<id>` grant), else the connector's current one.
+ */
 export type GitHubApiAuthContext = {
   accountId?: string;
+  projectId?: string;
 };
 
-type GitHubAccountLookup = Pick<
-  GitHubAccountStore,
-  'getDefaultAccountId' | 'listAccounts' | 'resolveSecret'
->;
-
-type GitHubCliTokenLookup = {
-  readToken(host: string, login?: string): Promise<string | null>;
-};
+/** A GitHub host's requests, sent by the password vault with the chosen credential (`vaultGitHubFetch`). */
+export type GitHubRequestAuth = { fetch: typeof fetch; account: GitHubAccount; cacheKey: string };
 
 export class GitHubApiAuthService {
-  constructor(
-    private readonly accountLookup: GitHubAccountLookup,
-    private readonly cliTokenLookup: GitHubCliTokenLookup
-  ) {}
+  constructor(private readonly accounts: Pick<GitHubVaultAccountStore, 'listAccounts'>) {}
 
-  async getToken(
-    host: string,
-    context: GitHubApiAuthContext = {}
-  ): Promise<Result<string, GitHubApiAuthError>> {
+  async resolve(host: string, context: GitHubApiAuthContext = {}): Promise<Result<GitHubRequestAuth, GitHubApiAuthError>> {
     const normalizedHost = normalizeRepositoryHost(host);
-    const accountId = context.accountId?.trim() || null;
-    const account = await this.resolveAccount(normalizedHost, accountId);
-    if (!account) return err(githubApiAuthRequired(normalizedHost));
-    if (!account.success) return err(account.error);
-
-    const token = await this.resolveToken(account.data);
-    if (!token) return err(githubApiTokenMissing(normalizedHost, account.data.id));
-    return ok(token);
-  }
-
-  /**
-   * gh-sourced accounts hold no local copy: ask gh each time, so a token it has
-   * rotated or logged out of fails here immediately instead of silently using a
-   * stale one. Every other source resolves from the encrypted store as before.
-   */
-  private async resolveToken(account: GitHubAccount): Promise<string | null> {
-    if (account.credentialSource === 'cli') {
-      return this.cliTokenLookup.readToken(account.host, account.login || undefined);
-    }
-    return this.accountLookup.resolveSecret(GITHUB_PROVIDER_ID, account.id);
-  }
-
-  private async resolveAccount(
-    normalizedHost: string,
-    accountId: string | null
-  ): Promise<Result<GitHubAccount, GitHubApiAuthError> | null> {
-    const accounts = (await this.accountLookup.listAccounts(GITHUB_PROVIDER_ID)).map(
-      toGitHubAccount
-    );
+    let accounts: GitHubAccount[];
+    try { accounts = (await this.accounts.listAccounts('github')).map(toGitHubAccount); }
+    catch (error) { return err(githubApiTokenMissing(normalizedHost, context.accountId ?? '', vaultProblem(error) ?? String(error))); }
+    const accountId = context.accountId?.trim();
     if (accountId) {
       const account = accounts.find((candidate) => candidate.id === accountId);
       if (!account) return err(githubApiAccountNotFound(normalizedHost, accountId));
-
-      const accountHost = normalizeRepositoryHost(account.host);
-      if (accountHost !== normalizedHost) {
-        return err(githubApiAccountHostMismatch(normalizedHost, account.id, accountHost));
-      }
-
-      return ok(account);
+      if (normalizeRepositoryHost(account.host) !== normalizedHost) return err(githubApiAccountHostMismatch(normalizedHost, account.id, account.host));
+      return ok({ fetch: vaultGitHubFetch(normalizedHost, { credentialId: account.id }), account, cacheKey: `${normalizedHost}:account:${account.id}` });
     }
-
-    const defaultAccountId = await this.accountLookup.getDefaultAccountId(GITHUB_PROVIDER_ID);
-    if (!defaultAccountId) return null;
-
-    const defaultAccount =
-      accounts.find(
-        (candidate) =>
-          candidate.id === defaultAccountId &&
-          normalizeRepositoryHost(candidate.host) === normalizedHost
-      ) ?? null;
-    return defaultAccount ? ok(defaultAccount) : null;
+    let subject = CONNECTOR_SUBJECT;
+    try {
+      if (context.projectId && await grantedCredential(normalizedHost, projectSubject(context.projectId))) subject = projectSubject(context.projectId);
+      const chosen = await grantedCredential(normalizedHost, subject);
+      const account = chosen && accounts.find((candidate) => candidate.id === chosen.id);
+      if (!account) return err(githubApiAuthRequired(normalizedHost));
+      return ok({ fetch: vaultGitHubFetch(normalizedHost, { subject }), account, cacheKey: `${normalizedHost}:${subject}:${account.id}` });
+    } catch (error) {
+      return err(githubApiTokenMissing(normalizedHost, '', vaultProblem(error) ?? String(error)));
+    }
   }
 }

@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@main/core/github/accounts/github-account-service-instance', () => ({
   githubAccountService: {
     listAccounts: mocks.listAccounts,
-    importCliAccounts: vi.fn(),
     removeAccount: vi.fn(),
     setDefaultAccount: vi.fn(),
   },
@@ -24,6 +23,8 @@ vi.mock('@main/core/github/services/github-device-flow-service-instance', () => 
     cancel: vi.fn(),
   },
 }));
+
+vi.mock('@main/core/github/github-credential', () => ({}));
 
 vi.mock('@main/core/github/services/repo-service', () => ({
   repoService: {},

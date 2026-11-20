@@ -83,7 +83,7 @@ export type LibraryIntegrationsRpc = Pick<
 /** GitHub 账号(集成那一页的 GitHub 卡片、连接弹窗、设备码弹窗)。 */
 export type LibraryGithubRpc = Pick<
   GithubApi,
-  'listAccounts' | 'importCliAccounts' | 'setDefaultAccount' | 'removeAccount' | 'auth' | 'authCancel'
+  'listAccounts' | 'saveToken' | 'setDefaultAccount' | 'removeAccount' | 'auth' | 'authCancel'
 > & {
   /** 这台机器主进程推的事件(设备码 / 成功 / 失败);别的机器只在 `auth` 进行中转过来。返回退订。 */
   onEvent<T>(event: { name: string; _data?: T }, listener: (data: T) => void): () => void;
@@ -170,7 +170,7 @@ export function isTooOld(error: unknown): boolean {
 
 const localGithub: LibraryGithubRpc = {
   listAccounts: () => rpc.github.listAccounts(),
-  importCliAccounts: () => rpc.github.importCliAccounts(),
+  saveToken: (input) => rpc.github.saveToken(input),
   setDefaultAccount: (id) => rpc.github.setDefaultAccount(id),
   removeAccount: (id) => rpc.github.removeAccount(id),
   auth: (...args) => rpc.github.auth(...args),
@@ -264,7 +264,7 @@ export function createRemoteLibraryHost(
     integrations,
     github: {
       listAccounts: () => there.github.listAccounts(),
-      importCliAccounts: () => there.github.importCliAccounts(),
+      saveToken: (input) => there.github.saveToken(input),
       setDefaultAccount: (id) => there.github.setDefaultAccount(id),
       removeAccount: (id) => there.github.removeAccount(id),
       auth: (...args) => there.github.auth(...args),

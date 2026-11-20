@@ -10,7 +10,7 @@ function fixture() {
   const base = { key: 'native',remote: { online: false },
     integrations: { connect: native,authorize: native,cliLoginStart: native,cliToolPrepare: native,cliLoginWait: wait,cliLoginProgress: native,cancelAuthorization: native,
       list: native,accounts: native,checkAllConnections: native,checkConfiguredConnections: ready },
-    github: { auth: native,authCancel: native,listAccounts: native,importCliAccounts: native,onEvent: subscribe },
+    github: { auth: native,authCancel: native,listAccounts: native,saveToken: native,onEvent: subscribe },
   } as unknown as LibraryHost
   const panel = { ownerId: 'owner',assistantId: 'assistant',assertCurrent: vi.fn(async () => {}),
     collection: vi.fn(async () => []),snapshot: vi.fn(async () => ({ application: [] })),body: vi.fn(),change: vi.fn(),save: vi.fn(),

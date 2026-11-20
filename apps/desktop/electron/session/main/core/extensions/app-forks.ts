@@ -1,7 +1,6 @@
 import { requireAgentFileAccess, requireAgentFileTreeAccess } from '@gugu/core/local/state/agentFileBoundary';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
-import { setTimeout as delay } from 'node:timers/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
@@ -22,23 +21,10 @@ const forkRecordSchema = z.object({
 });
 type ForkRecord = z.infer<typeof forkRecordSchema>;
 
-async function git(cwd: string, args: string[], token?: string): Promise<string> {
+/** Git as the person's own environment has it: the source is a public repository; nothing of the host's is lent to it. */
+async function git(cwd: string, args: string[]): Promise<string> {
   const env = reviewGitEnv({ processEnv: process.env, loginShellEnv: loginShellEnv() });
-  // Credentials stay in the child environment: never in a URL, Git config on disk, argv or an exception's command.
-  if (token) {
-    const count = Number(env.GIT_CONFIG_COUNT ?? '0');
-    Object.assign(env, {
-      GIT_CONFIG_COUNT: String(count + 2), [`GIT_CONFIG_KEY_${count}`]: 'credential.helper', [`GIT_CONFIG_VALUE_${count}`]: '',
-      [`GIT_CONFIG_KEY_${count + 1}`]: 'http.https://github.com/.extraheader',
-      [`GIT_CONFIG_VALUE_${count + 1}`]: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
-    });
-  }
-  try {
-    return (await run(getGitExecutable(), args, { cwd, env, maxBuffer: 4 * 1024 * 1024 })).stdout.trim();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(token ? message.replaceAll(token, '[redacted]').replaceAll(Buffer.from(`x-access-token:${token}`).toString('base64'), '[redacted]') : message);
-  }
+  return (await run(getGitExecutable(), args, { cwd, env, maxBuffer: 4 * 1024 * 1024 })).stdout.trim();
 }
 
 function checkedSource(source: MarketCodeSource): void {
@@ -89,13 +75,6 @@ export async function createAppFork(id: string, requestedName?: string) {
   // A compiled release there (`releases/<id>/<version>`) is cloned whole, like any other repository.
   const marketSources = isOfficialMarketSource(source) && (source.path === `sources/${id}` || source.path.startsWith(`sources/${id}/`));
   const branch = marketSources ? `fork/${id}/${name}` : `gugu-fork/${name}`;
-  const [{ githubAccountService }, { githubApiAuthService }, { getOctokit }] = await Promise.all([
-    import('../github/accounts/github-account-service-instance'), import('../github/services/github-api-auth-service-instance'), import('../github/services/octokit-provider'),
-  ]);
-  const account = (await githubAccountService.listAccounts()).find((entry) => entry.isDefault && entry.host === 'github.com');
-  const auth = account ? await githubApiAuthService.getToken('github.com', { accountId: account.accountId }) : null;
-  if (auth && !auth.success) throw new Error(`Reconnect GitHub in Settings before forking: ${auth.error.message}`);
-  const token = auth?.success ? auth.data : undefined;
   fs.mkdirSync(appSourcesRoot(), { recursive: true });
   const existing = fs.existsSync(root) ? await forkOfDirectory(sourceDir) : null;
   if (fs.existsSync(root) && (!existing || existing.id !== id || existing.name !== name)) {
@@ -104,10 +83,10 @@ export async function createAppFork(id: string, requestedName?: string) {
   if (!existing) {
     try {
       await git(appSourcesRoot(), ['clone', '--no-checkout', '--origin', 'upstream',
-        ...(marketSources ? ['--filter=blob:none', '--sparse'] : []), `https://github.com/${source.repo}.git`, root], token);
-      if (marketSources) await git(root, ['sparse-checkout', 'set', '--', `sources/${id}`], token);
-      await git(root, ['fetch', 'upstream', source.commit], token);
-      await git(root, ['checkout', '-b', branch, source.commit], token);
+        ...(marketSources ? ['--filter=blob:none', '--sparse'] : []), `https://github.com/${source.repo}.git`, root]);
+      if (marketSources) await git(root, ['sparse-checkout', 'set', '--', `sources/${id}`]);
+      await git(root, ['fetch', 'upstream', source.commit]);
+      await git(root, ['checkout', '-b', branch, source.commit]);
       await requireAgentFileAccess(path.join(sourceDir, 'manifest.json'));
       const manifest = service.inspectDirectory(sourceDir).manifest;
       if (manifest.id !== id || manifest.version !== version) throw new Error(`The indexed source does not contain ${id}@${version}; ask the publisher to correct its source record.`);
@@ -119,39 +98,9 @@ export async function createAppFork(id: string, requestedName?: string) {
     }
   }
   service.retainUpstream(id, { name: 'upstream', base: version, commit: source.commit, repo: source.repo, path: source.path, dir: null, sha256: row.sha256, bytes: row.bytes });
-  let repo: string | null = null;
-  if (account) {
-    try {
-      const client = await getOctokit('github.com', { accountId: account.accountId });
-      if (!client.success) throw new Error(client.error.message);
-      const [owner, repository] = source.repo.split('/') as [string, string];
-      repo = `${account.login}/${repository}`;
-      if (repo !== source.repo) {
-        try {
-          const own = await client.data.repos.get({ owner: account.login, repo: repository });
-          if (own.data.parent?.full_name !== source.repo && own.data.source?.full_name !== source.repo) throw new Error(`${repo} already exists and is not a fork of ${source.repo}; rename that repository before retrying app_create.`);
-        } catch (error) {
-          if ((error as { status?: number }).status !== 404) throw error;
-          await client.data.repos.createFork({ owner, repo: repository });
-          // GitHub forks asynchronously; wait for the exact Git object before pushing (GitHub documents up to 5 min).
-          for (let attempt = 0; ; attempt++) {
-            try {
-              await client.data.git.getCommit({ owner: account.login, repo: repository, commit_sha: source.commit });
-              break;
-            } catch (error) {
-              if (![404, 409].includes((error as { status?: number }).status ?? 0) || attempt >= 60) throw error;
-              await delay(5_000);
-            }
-          }
-        }
-      }
-      const remotes = (await git(root, ['remote'])).split('\n');
-      await git(root, ['remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', `https://github.com/${repo}.git`]);
-      await git(root, ['push', '-u', 'origin', branch], token);
-    } catch (error) {
-      throw new Error(`The local fork is ready at ${sourceDir}, but GitHub setup did not finish. Fix the GitHub error and retry app_create with the same fork_of and name: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  // A fork on GitHub and its push are the agent's, with the person's own git and gh (guide apps-fork): the host's GitHub
+  // credentials stay in the password vault and never go into a git process.
+  const repo: string | null = null;
   return { id, name, source_dir: sourceDir, git_dir: root, branch, repo, base: existing?.base ?? version, commit: await git(root, ['rev-parse', 'HEAD']), next: `Edit source_dir, keep the App id and data format, then app_install {source_dir:${JSON.stringify(sourceDir)}} to activate this variant. Read guide apps-fork.` };
 }
 

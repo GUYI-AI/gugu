@@ -25,6 +25,8 @@ export interface ConsentPrompt {
   /** The button that says no, when 「取消」 would mislead (first run's 「不装」: never asked again). */
   cancelLabel?: string;
   variant: 'default';
+  /** API 61: the websites whose saved credential is picked on the sheet (installConsentPrompt adds the manifest it binds to). */
+  credentialSites?: string[];
 }
 
 /**
@@ -94,6 +96,11 @@ function describeAgentResources(capability: 'chat:resources' | 'chat:resources:w
  * card showing another machine) — every `{computer}` of these sentences is filled from here (owner: a consent says its
  * reach as it is).
  */
+const credentialSites = (manifest: Pick<ExtensionManifest, 'permissions'>) => {
+  const sites = (manifest.permissions?.credentials ?? []).map(({ site }) => site);
+  return sites.length ? { credentialSites: sites } : {};
+};
+
 export function computerNamed(translate: SessionTranslate, machine?: string): string {
   return machine ? translate('extensions.permissionsOnMachine', { machine }) : translate('extensions.permissionsThisComputer');
 }
@@ -142,6 +149,14 @@ export function programDetails(manifest: ExtensionManifest, translate: SessionTr
   return { label: translate('extensions.consentDetails'), caption: translate('extensions.consentDetailsCommands'), lines };
 }
 
+/** `permissions.credentials` (61), one line per website: which saved credential, and the only place its value goes. */
+function describeCredentials(manifest: Pick<ExtensionManifest, 'permissions'>, translate: SessionTranslate, key: 'extensions.permissionsCredential' | 'extensions.permissionsCredentialAgain'): string[] {
+  const hosts = manifest.permissions?.network ?? [];
+  return (manifest.permissions?.credentials ?? []).map(({ site }) => translate(key, {
+    site, hosts: hosts.filter((host) => { const bare = host.replace(/^\*\./, ''); return bare === site || bare.endsWith(`.${site}`); }).join(', '),
+  }));
+}
+
 /**
  * The permission list in plain words — abilities first, then where it may go.
  * An extension that asked for nothing says so: "no permissions" is information,
@@ -157,6 +172,7 @@ export function describePermissions(
   if (hosts.length > 0) {
     lines.push(translate('extensions.permissionsNetwork', { hosts: hosts.join(', ') }));
   }
+  lines.push(...describeCredentials(manifest, translate, 'extensions.permissionsCredential'));
   // Asking for nothing still reaches one thing: the file the person opens with it.
   if (lines.length === 0) return translate('extensions.permissionsNone');
   return lines.join('\n');
@@ -200,6 +216,7 @@ export function consentPrompt(
       ...(details ? { details } : {}),
       confirmLabel: translate('extensions.installAction'),
       variant: 'default',
+      ...credentialSites(candidate),
     };
   }
   const { capabilities: addedCapabilities, network: addedHosts } = addedPermissions(
@@ -211,6 +228,8 @@ export function consentPrompt(
   if (addedHosts.length > 0) {
     added.push(translate('extensions.permissionsNetwork', { hosts: addedHosts.join(', ') }));
   }
+  // Another version is other code: the saved credentials it uses are confirmed again (owner 11-20), picked on this sheet.
+  added.push(...describeCredentials(candidate, translate, (installed.permissions?.credentials ?? []).length ? 'extensions.permissionsCredentialAgain' : 'extensions.permissionsCredential'));
   const goingBack = compareExtensionVersions(candidate.version, installed.version) < 0;
   const permissionsLine =
     added.length === 0
@@ -229,5 +248,6 @@ export function consentPrompt(
     // Going back is no update: the button says which version it puts there (the title says it is older).
     confirmLabel: goingBack ? translate('extensions.useVersion', { version: candidate.version }) : translate('extensions.updateAction'),
     variant: 'default',
+    ...credentialSites(candidate),
   };
 }

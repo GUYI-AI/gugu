@@ -2,11 +2,15 @@
 export type VaultCode = 'SYSTEM_STORAGE_UNAVAILABLE' | 'LOCKED' | 'UNAVAILABLE' | 'INVALID_INPUT' | 'NOT_INITIALIZED' | 'ALREADY_EXISTS'
   | 'DATA_MISSING' | 'DATA_DAMAGED' | 'WRONG_ACCOUNT' | 'WRONG_INSTALLATION' | 'CANNOT_UNLOCK'
   | 'RECOVERY_INVALID' | 'STALE_REFERENCE' | 'STORAGE_FAILED' | 'AUDIT_FAILED' | 'CANCELLED'
+  /** The request sink: no credential chosen for this user and website, or the App's code changed since it was confirmed. */
+  | 'NOT_GRANTED' | 'GRANT_STALE'
+  /** A reset of the synced vault was refused: an approved device or the recovery code can still open it. */
+  | 'VAULT_STILL_OPENABLE'
 export class VaultError extends Error {
   constructor(readonly code: VaultCode) { super(code); this.name = 'VaultError' }
 }
 export interface CredentialReference { id: string; version: number; epoch: string }
-export interface CredentialGrant { subject: string; level: 'read' | 'write' }
+export interface CredentialGrant { subject: string; level: 'read' | 'write'; code?: string }
 /** Values marked non-secret are included (`account`, a field's `value`); secret ones never are. */
 export interface CredentialSummary { reference: CredentialReference; name: string; origin: string; account?: string; maskedAccount: string; accountSecret: boolean
   hasPassword: boolean; fields: { id: string; name: string; secret: boolean; value?: string }[]; grants: CredentialGrant[]; sites: string[] }
@@ -49,6 +53,8 @@ export interface VaultDependencies {
   acquireFeatureGuard?(operation: 'save' | 'use', signal: AbortSignal): Promise<VaultFeatureGuard>
   keys: VaultKeyProtector
   browser?: VaultBrowserSink
+  /** The request sink's transport (tests); the host uses the platform fetch. */
+  http?: typeof fetch
   /** Synchronous revocation first, then wait for browser cleanup before edit/delete success. */
   invalidate(event: Invalidation): Promise<void>
   /** Cross-device sync (SYNC.md). Absent = this device keeps a local-only vault. */

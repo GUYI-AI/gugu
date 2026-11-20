@@ -18,13 +18,13 @@ export async function searchIssues(
   const term = normalizeSearchTerm(opts.searchTerm);
   if (!term) return ok([]);
 
-  const parsedCredentials = readGitHubCredentials(host.credentials);
+  const parsedCredentials = readGitHubCredentials(host.credentials, host.fetch);
   if (!parsedCredentials.success) return err(parsedCredentials.error);
 
   const repository = resolveGitHubRepository(parsedCredentials.data, opts.repositoryUrl);
   if (!repository.success) return err(repository.error);
 
-  const octokit = createGitHubClient(parsedCredentials.data);
+  const octokit = createGitHubClient(parsedCredentials.data, host.fetch);
 
   try {
     const { data } = await octokit.rest.search.issuesAndPullRequests({

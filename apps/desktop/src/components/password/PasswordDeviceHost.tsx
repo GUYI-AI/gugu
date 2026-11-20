@@ -24,6 +24,7 @@ export function PasswordDeviceHost() {
   const [aside, setAside] = useState<ReadonlySet<string>>(new Set())
   const [cardClosed, setCardClosed] = useState(false)
   const [recovering, setRecovering] = useState(false)
+  const [startingOver, setStartingOver] = useState(false)
   const [newCode, setNewCode] = useState<string>()
   useOpenPasswordDevicePrompt(useCallback((deviceId: string | null) => {
     if (deviceId) setAside(previous => new Set([...previous].filter(id => id !== deviceId)))
@@ -69,6 +70,15 @@ export function PasswordDeviceHost() {
           ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">两边数字一致，就在那台设备上点允许。</div></>
           : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">打开你另一台设备上的咕咕，那里会弹出提示。</div>}
       {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>另一台设备都不在了？用恢复码</Button>}
+      {/* No recovery code: when no device can open them any more, the only way on is to delete them and start here. */}
+      {!joining.recovery && joining.state !== 'refused' && (startingOver
+        ? <><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]" data-testid="password-start-over-warning">账号里已保存的密码会全部删掉，找不回来。这台电脑上的密码留下，用它们重新建一个。</div>
+          {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+          <div className="flex gap-2">
+            <Button variant="danger" size="sm" disabled={busy} data-testid="password-start-over-confirm" onClick={() => { void run({ type: 'sync-reset' }).then(reply => { if (reply) setStartingOver(false) }) }}>全部删除，重新开始</Button>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => { clear(); setStartingOver(false) }}>取消</Button>
+          </div></>
+        : <Button variant="ghost" size="sm" className="self-start" data-testid="password-start-over" onClick={() => { clear(); setStartingOver(true) }}>另一台设备都不在了，也没有恢复码？</Button>)}
     </div>, document.body)}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}
       onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setRecovering(false); setNewCode(reply.recoveryCode) } }} />}

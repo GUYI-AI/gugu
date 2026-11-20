@@ -11,6 +11,7 @@ import {
 import { retireExtensionPrograms } from '@main/core/extensions/extension-programs';
 import { notifyInstalledAppsChanged } from '@main/core/extensions/extension-bridge';
 import { log } from '@main/lib/logger';
+import type { AppCredentialDeclaration } from '@shared/extensions/app-credentials';
 
 /**
  * What has to happen once a bundle's files are in place — whoever installed it.
@@ -21,8 +22,15 @@ import { log } from '@main/lib/logger';
  * background page — its tools answered "no running background page" — and an
  * upgrade an agent installed kept serving the previous version. Refs #6387.
  */
-export function applyInstalledExtension(installed: { manifest: { id: string; apiVersion?: number; permissions?: { network?: readonly string[] } }; rootDir: string }): void {
+export function applyInstalledExtension(installed: { manifest: { id: string; apiVersion?: number; permissions?: { network?: readonly string[]; credentials?: AppCredentialDeclaration[] } }; rootDir: string; manifestDigest?: string }): void {
   const id = installed.manifest.id;
+  // The saved credentials the person picked in this install's sheet become the App's, bound to the code just installed.
+  if (installed.manifestDigest && installed.manifest.permissions?.credentials?.length) {
+    const installedWithDigest = { ...installed, manifestDigest: installed.manifestDigest };
+    void import('@main/core/extensions/app-credentials').then(({ applyStagedCredentialChoices }) => applyStagedCredentialChoices(installedWithDigest)).catch((error: unknown) => {
+      log.warn('The credentials picked at install could not be given to the App', { extensionId: id, error: error instanceof Error ? error.message : String(error) });
+    });
+  }
   // An upgrade replaces the files under a session that is already serving
   // them. Without this, a tab that is open right now keeps enforcing the
   // previous version's host list and being served its CSP — including when

@@ -6,6 +6,7 @@ export const passwordErrorText = (code: string) => code === 'SYSTEM_STORAGE_UNAV
   : code === 'INVALID_INPUT' ? '请填写 https 网址、账号和密码；字段名不能重复。'
     : code === 'STALE_REFERENCE' ? '这条密码刚被改过，请返回后重试。'
     : code === 'RECOVERY_INVALID' ? '恢复码不对，请核对后重输。'
+    : code === 'VAULT_STILL_OPENABLE' ? '还有设备能打开这些密码：到那台设备上点允许；设备丢了的话，先在「设置 › 设备」里移除它。'
       : '暂时无法完成，请稍后重试。'
 
 /** Which device requests this device should put in front of the person: not those opened on another device. */

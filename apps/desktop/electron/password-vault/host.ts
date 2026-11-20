@@ -9,7 +9,7 @@ export type VaultFeatureGuardProvider = NonNullable<VaultDependencies['acquireFe
 export type VaultStoragePorts = Readonly<{ vault: LocalPasswordVault; outcomeAudit: FixedOutcomeAuditPort }>
 
 /** Fixed desktop-host construction only. No default readiness, registration, new custodian or lock state.
- * The native factory supplies macVaultKeyProtector(), trusted identities, the protected root and live readers.
+ * The native factory supplies systemVaultKeyProtector(), trusted identities, the protected root and live readers.
  * Wire the returned audit port into the unique handoff registry before issuing any use capability.
  */
 export function createVaultStorage(dependencies: VaultStorageDependencies, browser: VaultBrowserSink,
@@ -30,7 +30,7 @@ export function createVaultStorage(dependencies: VaultStorageDependencies, brows
     invalidate: dependencies.invalidate.bind(dependencies), now: dependencies.now?.bind(dependencies),
     sync: dependencies.sync ? Object.freeze({ publish: dependencies.sync.publish.bind(dependencies.sync) }) : undefined,
     keys: Object.freeze({ verifyPerson: keys.verifyPerson.bind(keys), wrap: keys.wrap.bind(keys), unwrap: keys.unwrap.bind(keys) }),
-    browser: sink, acquireFeatureGuard,
+    browser: sink, acquireFeatureGuard, ...(dependencies.http ? { http: dependencies.http } : {}),
   })
   const vault = new LocalPasswordVault(fixed)
   return Object.freeze({ vault, outcomeAudit: vault.outcomeAudit })

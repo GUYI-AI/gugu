@@ -126,6 +126,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   filesSelectionAction: { action: 'cite', file: { name: 'a.md' }, places: [{ at: { lines: '1' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   openLink: { url: 'gugu://ext/radar/radar' },
   cloudWrite: { name: 'radar_save', args: {} },
+  credentialsWrite: { site: 'github.com', method: 'PUT', url: 'https://api.github.com/repos/o/r/pulls/1/merge', body: { sha: 'abc' } },
   pickAgent: {},
   taskMessage: { intent: 'pause' },
   assistantOpen: { name: 'main', screen: 'move' },

@@ -46,25 +46,13 @@ describe('ProjectGitHubAuthContextResolver', () => {
     });
   });
 
-  it('resolves the selected account from project settings for a mounted project', async () => {
-    const project = makeProject({ githubAccountId: ' github.com:42 ' });
-    projects.setProject('project-1', project);
-
-    await expect(resolver.resolve('project-1')).resolves.toEqual(
-      ok({ accountId: 'github.com:42' })
-    );
-  });
-
-  it('reports unconfigured when the project settings have no selected GitHub account', async () => {
+  it('resolves to the project: its own pick in the password vault, else the connector\'s current account', async () => {
     projects.setProject('project-1', makeProject({}));
+    projects.setProject('project-2', makeProject({ githubAccountId: 'github.com:42' }));
 
-    await expect(resolver.resolve('project-1')).resolves.toEqual(
-      err<ProjectGitHubAuthContextError>({
-        type: 'unconfigured',
-        projectId: 'project-1',
-        message: 'No GitHub account is configured for this project.',
-      })
-    );
+    await expect(resolver.resolve('project-1')).resolves.toEqual(ok({ projectId: 'project-1' }));
+    // A pick from before the vault is moved into it when the project mounts; it does not choose here.
+    await expect(resolver.resolve('project-2')).resolves.toEqual(ok({ projectId: 'project-2' }));
   });
 
   it('reports disabled when the project settings explicitly clear the selected GitHub account', async () => {

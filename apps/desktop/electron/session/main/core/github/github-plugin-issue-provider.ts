@@ -1,7 +1,8 @@
 import type { IssuesPluginProvider } from '@gugu/session-plugins/issues';
 import { err, ok, type Result } from '@gugu/session-shared';
 import { match, P } from 'ts-pattern';
-import { GITHUB_PROVIDER_ID, toGitHubAccount } from '@main/core/github/accounts/github-accounts';
+import { GITHUB_PROVIDER_ID } from '@main/core/github/accounts/github-accounts';
+import { githubVaultAccountStore } from '@main/core/github/accounts/github-vault-accounts';
 import type { GitHubApiAuthContext } from '@main/core/github/services/github-api-auth-service';
 import { githubApiAuthService } from '@main/core/github/services/github-api-auth-service-instance';
 import { githubApiBaseUrlForHost } from '@main/core/github/services/github-api-base-url';
@@ -13,7 +14,6 @@ import {
   toIssueProviderCapabilities,
   toLinkedIssue,
 } from '@main/core/issues/plugin-issue-adapter';
-import { providerAccountRegistry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { log } from '@main/lib/logger';
 import {
   type IssueListError,
@@ -66,30 +66,22 @@ async function resolveRepository(opts: {
   return err(error);
 }
 
+/** The plugin gets a `fetch` that the password vault answers with the chosen GitHub credential; never a token. */
 async function resolveGitHubPluginCredentials(
   repository: RepositoryRef,
   authContext: GitHubApiAuthContext | undefined
-): Promise<Result<{ accessToken: string; apiBaseUrl: string }, IssueListError>> {
-  const token = await githubApiAuthService.getToken(repository.host, authContext);
-  if (!token.success) return err(token.error);
-  return ok({ accessToken: token.data, apiBaseUrl: githubApiBaseUrlForHost(repository.host) });
+): Promise<Result<{ fetch: typeof fetch; apiBaseUrl: string }, IssueListError>> {
+  const auth = await githubApiAuthService.resolve(repository.host, authContext);
+  if (!auth.success) return err(auth.error);
+  return ok({ fetch: auth.data.fetch, apiBaseUrl: githubApiBaseUrlForHost(repository.host) });
 }
 
 async function getDefaultLinkedAccountConnection(capabilities: IssueProviderCapabilities) {
-  const defaultAccountId = await providerAccountRegistry.getDefaultAccountId(GITHUB_PROVIDER_ID);
-  if (!defaultAccountId) return null;
-
-  const account = (await providerAccountRegistry.listAccounts(GITHUB_PROVIDER_ID))
-    .map(toGitHubAccount)
-    .find((candidate) => candidate.id === defaultAccountId);
-  if (!account) return null;
-
-  const token = await githubApiAuthService.getToken(account.host, { accountId: account.id });
-  if (!token.success) return null;
-
+  const auth = await githubApiAuthService.resolve('github.com');
+  if (!auth.success) return null;
   return {
     connected: true,
-    displayName: account.login,
+    displayName: auth.data.account.login,
     capabilities,
   };
 }
@@ -108,7 +100,7 @@ export function createGitHubPluginIssueProvider(plugin: IssuesPluginProvider): I
     const credentials = await resolveGitHubPluginCredentials(repository.data, authContext.data);
     if (!credentials.success) return err(credentials.error);
 
-    const host = { log: pluginLog, credentials: credentials.data };
+    const host = { log: pluginLog, credentials: { apiBaseUrl: credentials.data.apiBaseUrl }, fetch: credentials.data.fetch };
     const behavior = plugin.behavior.issues;
     if (!behavior) throw new Error('github issues plugin has no issues behavior registered');
     const result = await behavior.searchIssues(host, {
@@ -126,7 +118,7 @@ export function createGitHubPluginIssueProvider(plugin: IssuesPluginProvider): I
     type: 'github',
     capabilities,
     isConfigured: async () =>
-      (await providerAccountRegistry.listAccounts(GITHUB_PROVIDER_ID)).length > 0,
+      (await githubVaultAccountStore.listAccounts(GITHUB_PROVIDER_ID)).length > 0,
     checkConnection: async () => {
       const linkedAccountConnection = await getDefaultLinkedAccountConnection(capabilities);
       if (linkedAccountConnection) return linkedAccountConnection;

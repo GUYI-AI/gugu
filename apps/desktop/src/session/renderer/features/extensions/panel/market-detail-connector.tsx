@@ -35,6 +35,11 @@ type MarketConnectorProps = {
   disconnectDescription?: string;
   onTryPlaybook?: (prompt: string) => void;
   onClose: () => void;
+  /**
+   * Saved credentials it can use, when there can be several (GitHub: the password vault's GitHub credentials, the current
+   * one marked and switched here). With them, connecting again adds one — it is never 「已连接」 and done.
+   */
+  credentials?: ReactNode;
 };
 
 export function MarketConnectorDetail(props: MarketConnectorProps) {
@@ -47,7 +52,7 @@ export function MarketConnectorDetail(props: MarketConnectorProps) {
 
 function MarketConnectorCard({
   id, name, description, icon, connected, readOnly, status, abilities, playbooks,
-  local, readDevice, authorizationOwnDialog, authorize, onConnected, onDisconnect, disconnectDescription, onTryPlaybook, onClose,
+  local, readDevice, authorizationOwnDialog, authorize, onConnected, onDisconnect, disconnectDescription, onTryPlaybook, onClose, credentials,
 }: MarketConnectorProps) {
   const { translate } = useSessionMessages();
   const confirm = useMarketDetailConfirmation();
@@ -82,8 +87,8 @@ function MarketConnectorCard({
         notice={status ? <p role="status" className="text-foreground-muted">{status}</p> : undefined}
         actions={(
           <>
-            <Button disabled={connected || readOnly} onClick={connect}>
-              {translate(connected ? 'integrations.statusConnected' : 'integrations.connect')}
+            <Button disabled={(connected && !credentials) || readOnly} onClick={connect}>
+              {translate(connected ? (credentials ? 'integrations.addCredential' : 'integrations.statusConnected') : 'integrations.connect')}
             </Button>
             {connected && !readOnly && (
               <DropdownMenu>
@@ -104,6 +109,13 @@ function MarketConnectorCard({
           <MarketConnectorDevices id={id} readDevice={readDevice} connect={enqueue} authorizing={!!authorization} />
         ) : undefined}
       >
+        {credentials && connected ? (
+          <section data-testid="market-connector-credentials">
+            <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">{translate('integrations.credentialsLabel')}</h3>
+            {credentials}
+            <p className="mt-3 text-foreground-muted">{translate('integrations.credentialsNote')}</p>
+          </section>
+        ) : null}
         {abilities.length > 0 && (
           <section>
             <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">

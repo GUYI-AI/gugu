@@ -204,13 +204,13 @@ export function ownerConnectionActions(base: LibraryHost, host: LibraryHost,devi
   },github: { ...host.github,onEvent,
     setDefaultAccount: safe(host.github.setDefaultAccount,'github','defaultFailed'),removeAccount: safe(host.github.removeAccount,'github','disconnectFailed'),
     authCancel: async () => { cancel('github'); return host.github.authCancel() },
-    importCliAccounts: safe(async () => {
+    saveToken: safe(async (input: { token: string; host?: string }) => {
       const intent = await beginNative('github')
       await assertApplicationAvailable('github',true)
-      const result = await base.github.importCliAccounts()
-      if (result.success && result.importedAccountIds.length) {
+      const result = await base.github.saveToken(input)
+      if (result.success) {
         const rows = await base.integrations.ownerAccounts!('github')
-        const accounts = result.importedAccountIds.map(id => {
+        const accounts = [result.account.accountId].map(id => {
           const row = rows.find(row => row.accountId === id)
           if (!row) throw new ConnectionError('invalid-response','CONNECTION_AUTHORIZATION_ACCOUNT_MISSING')
           const { publicMetadata,...data } = row

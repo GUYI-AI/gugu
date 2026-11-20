@@ -414,6 +414,23 @@ export class VaultSync {
     }).then(() => this.refresh())
   }
   /** Refused, and the person asks again on purpose: a new device key makes a new request. */
+  /**
+   * Nobody can open the vault any more (every approved device is gone and there is no recovery code): the cloud's copy
+   * is deleted (`password_vault_reset`) and this device starts over as if it were the first, keeping what it holds
+   * locally — the next step creates the vault from it (`password_vault_initialize`). The cloud refuses while an approved
+   * device or a recovery code could still open it; that is said as it is, nothing else is tried.
+   */
+  reset(): Promise<SyncView> {
+    return this.serial(async () => {
+      const file = await this.load()
+      try { await this.call('password_vault_reset', { p_device_id: file.deviceId }) }
+      catch (error) { throw error instanceof SyncError && error.code === 'STATE' ? new VaultError('VAULT_STILL_OPENABLE') : error }
+      Object.assign(file, { merged: false, revision: '0', versions: {} })
+      delete file.nonce; delete file.pinned; delete file.pinnedKey; delete file.trusted; delete file.pending
+      this.#state = undefined
+      await this.save()
+    }).then(() => this.refresh())
+  }
   askAgain(): Promise<SyncView> {
     return this.serial(async () => {
       const file = await this.load(), pair = await c.createDeviceKeyPair()

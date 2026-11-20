@@ -8,19 +8,25 @@ import {
   type GitHubClient,
   type GitHubCredentials,
   gitHubCredentialsSchema,
+  gitHubTokenCredentialsSchema,
   type GitHubVerifiedConnection,
 } from './types';
 
 const VERIFY_TIMEOUT_MS = 10_000;
 
+/** A token is required unless the host sends the credential it keeps (`hostFetch`). */
 export function readGitHubCredentials(
-  credentials: IntegrationCredentials
+  credentials: IntegrationCredentials,
+  hostFetch?: typeof fetch
 ): Result<GitHubCredentials, IntegrationError> {
-  return parseCredentials(gitHubCredentialsSchema, credentials);
+  return parseCredentials(hostFetch ? gitHubCredentialsSchema : gitHubTokenCredentialsSchema, credentials);
 }
 
-export function createGitHubClient(credentials: GitHubCredentials): GitHubClient {
-  return new Octokit({ auth: credentials.accessToken, baseUrl: credentials.apiBaseUrl });
+/** With the host's `fetch` (it sends the credential it keeps), or else with the token read by `readGitHubCredentials`. */
+export function createGitHubClient(credentials: GitHubCredentials, hostFetch?: typeof fetch): GitHubClient {
+  return hostFetch
+    ? new Octokit({ baseUrl: credentials.apiBaseUrl, request: { fetch: hostFetch } })
+    : new Octokit({ auth: credentials.accessToken, baseUrl: credentials.apiBaseUrl });
 }
 
 export async function verifyGitHubCredentials(

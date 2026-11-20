@@ -59,10 +59,10 @@ export class ProjectSettingsService implements Hookable<ProjectSettingsHooks>, I
     const project = this.requireProject(projectId);
     if (!project.success) return project;
 
-    const result = await project.data.settings.update(settings);
+    const result = await project.data.settings.update(await withGitHubPick(projectId, settings));
     if (!result.success) return result;
 
-    const updatedSettings = await project.data.settings.get();
+    const updatedSettings = await withGitHubAccount(projectId, await project.data.settings.get());
     this.emitSettingsChanged(projectId, updatedSettings);
     return ok(updatedSettings);
   }
@@ -74,10 +74,10 @@ export class ProjectSettingsService implements Hookable<ProjectSettingsHooks>, I
     const project = this.requireProject(projectId);
     if (!project.success) return project;
 
-    const result = await project.data.settings.patch(patch);
+    const result = await project.data.settings.patch(await withGitHubPick(projectId, patch));
     if (!result.success) return result;
 
-    const updatedSettings = await project.data.settings.get();
+    const updatedSettings = await withGitHubAccount(projectId, await project.data.settings.get());
     this.emitSettingsChanged(projectId, updatedSettings);
     return ok(updatedSettings);
   }
@@ -106,7 +106,7 @@ export class ProjectSettingsService implements Hookable<ProjectSettingsHooks>, I
   private async getProjectSettingsPageForProject(
     project: ProjectProvider
   ): Promise<ProjectSettingsPage> {
-    const settings = await project.settings.get();
+    const settings = await withGitHubAccount(project.projectId, await project.settings.get());
     const resolvedTargets = await resolveAllProjectSettingsTargets(project);
     const writeTargets = getProjectSettingsWriteTargets(resolvedTargets);
     const overrideState = await computeProjectSettingsOverrideState(resolvedTargets);
@@ -115,6 +115,30 @@ export class ProjectSettingsService implements Hookable<ProjectSettingsHooks>, I
 
   private emitSettingsChanged(projectId: string, settings: ProjectSettings): void {
     this._hooks.callHookBackground('project-settings:changed', { projectId, settings });
+  }
+}
+
+/**
+ * A project's GitHub account is the password vault's grant to it (`host:github:project:<id>`), not a stored setting: a
+ * `githubAccountId` written here (a credential id) becomes that grant and is not stored; `null` (「不用 GitHub」) is.
+ */
+async function withGitHubPick<T extends { githubAccountId?: string | null }>(projectId: string, value: T): Promise<T> {
+  if (typeof value.githubAccountId !== 'string') return value;
+  const { chooseProjectGitHubCredential, githubCredentials } = await import('@main/core/github/github-credential');
+  const credential = (await githubCredentials()).find((item) => item.id === value.githubAccountId);
+  if (!credential) throw new Error(`No saved GitHub credential ${value.githubAccountId}`);
+  await chooseProjectGitHubCredential(projectId, credential.id, new URL(credential.origin).hostname);
+  return { ...value, githubAccountId: undefined };
+}
+/** What the settings read back say: the account the project uses (its own pick, else the connector's), unless it uses none. */
+async function withGitHubAccount<T extends { githubAccountId?: string | null }>(projectId: string, settings: T): Promise<T> {
+  if (settings.githubAccountId === null) return settings;
+  try {
+    const { projectGitHubCredentialId } = await import('@main/core/github/github-credential');
+    const id = await projectGitHubCredentialId('github.com', projectId);
+    return id ? { ...settings, githubAccountId: id } : settings;
+  } catch {
+    return settings; // The vault cannot be read: the connector says why (GitHubAccountState.error); the settings page still opens.
   }
 }
 

@@ -13,8 +13,8 @@ describe('classifyGitHubApiError', () => {
       host: 'ghe.example.com',
       status: 401,
       message:
-        'GitHub Enterprise authentication required for ghe.example.com. Run: gh auth login --hostname ghe.example.com',
-      hint: 'Run: gh auth login --hostname ghe.example.com',
+        'GitHub Enterprise authentication required for ghe.example.com. Paste a token for ghe.example.com in Connectors › GitHub.',
+      hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
     });
   });
 

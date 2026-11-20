@@ -1,9 +1,11 @@
 import { retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { rpcOn } from '@renderer/lib/ipc';
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
 import { cachedDevicesAccount } from '@/store/devicesCache';
+import { usePasswordSnapshot } from '@/lib/passwordBetaNotifications';
 
 export const GITHUB_ACCOUNTS_QUERY_KEY = ['github:accounts'] as const;
 export const GITHUB_ACCOUNT_STATE_QUERY_KEY = ['github:account-state'] as const;
@@ -21,6 +23,14 @@ function invalidateGitHubAccountState(queryClient: ReturnType<typeof useQueryCli
  */
 export function useGitHubAccounts() {
   const host = useLibraryHost();
+  // The accounts are this computer's password vault's GitHub credentials: a change there (one added or edited in
+  // Settings › Passwords) is a change here.
+  const queryClient = useQueryClient(), vault = usePasswordSnapshot(), seen = useRef(vault);
+  useEffect(() => {
+    if (seen.current === vault) return;
+    seen.current = vault;
+    if (!host.remote) invalidateGitHubAccountState(queryClient);
+  }, [vault, host.remote, queryClient]);
   return useQuery({
     queryKey: host.remote || host.assistantPanelExpected || host.connectionMetadataExpected ? [...GITHUB_ACCOUNTS_QUERY_KEY, host.key] : GITHUB_ACCOUNTS_QUERY_KEY,
     queryFn: () => host.github.listAccounts(),
@@ -31,14 +41,15 @@ export function useGitHubAccounts() {
   });
 }
 
-export function useImportGitHubCliAccounts() {
+/** 「粘贴令牌」: GitHub checks it, then it is saved into the password vault as a GitHub credential. */
+export function useSaveGitHubToken() {
   const queryClient = useQueryClient();
   const host = useLibraryHost();
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (input: { token: string; host?: string }) => {
       const ownerId = cachedDevicesAccount();
-      const result = await host.github.importCliAccounts();
-      if (result.success && result.importedAccountIds.length && !host.connectionMetadataExpected) await reportAssistantAppChange({ rpc: rpcOn(host.remote?.deviceId ?? null) }, undefined,
+      const result = await host.github.saveToken(input);
+      if (result.success && !host.connectionMetadataExpected) await reportAssistantAppChange({ rpc: rpcOn(host.remote?.deviceId ?? null) }, undefined,
         { resource: 'integrations', operation: 'saved', section: 'accounts', id: 'github', deviceId: host.remote?.deviceId }, ownerId);
       return result;
     },

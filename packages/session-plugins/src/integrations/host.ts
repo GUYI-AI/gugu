@@ -28,4 +28,9 @@ export type IntegrationHostContext = {
  */
 export type ConnectedIntegrationHostContext = IntegrationHostContext & {
   credentials: IntegrationCredentials;
+  /**
+   * The host's transport for this account when the host keeps its credential itself (the desktop's password vault): each
+   * request goes out with it, and the plugin never sees it. Absent: the plugin authenticates with `credentials`.
+   */
+  fetch?: typeof fetch;
 };
