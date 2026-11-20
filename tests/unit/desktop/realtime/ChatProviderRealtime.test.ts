@@ -21,7 +21,6 @@ const {
   openImRepositoryMock,
   revisionListeners,
   revisionCoordinatorMock,
-  messageStorage,
 } =
   vi.hoisted(() => ({
     readMock: vi.fn(),
@@ -45,7 +44,6 @@ const {
     // @@@947 - openLocalSyncDb is overridden per-test to a memory-backed db so the L2 cold-start cache is
     openImRepositoryMock: vi.fn(),
     revisionListeners: new Map<string, (operations: readonly unknown[]) => void | Promise<void>>(),
-    messageStorage: { sqlite: false },
     revisionCoordinatorMock: {
       start: vi.fn(),
       stop: vi.fn(),
@@ -187,7 +185,6 @@ vi.mock('../../../../apps/desktop/src/lib/devicePreferences', async (importOrigi
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { subscribeAppForeground: () => () => {},
-    get localMessages() { return messageStorage.sqlite ? 'sqlite' : undefined },
     capabilities: { notifications: false, badge: false },
     showNotification: vi.fn(),
     setBadge: vi.fn()
@@ -197,15 +194,19 @@ import { ChatProvider } from '../../../../apps/desktop/src/store/chat'
 import { useChatStore } from '../../../../apps/desktop/src/store/chatContext'
 import { useReportChatOnScreen } from '../../../../apps/desktop/src/lib/onScreenChat'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { ingestMessages } from '../../../../apps/desktop/src/lib/messageIngest'
-import { initializeMessageWindows, clearMessageWindows } from '../../../../apps/desktop/src/lib/messageWindows'
+import { ingestMessages, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
+import { clearMessageWindows } from '../../../../apps/desktop/src/lib/messageWindows'
 import { messageItemFromRow, type RawMessageRow } from '@gugu/core/cloud/messageItem'
-import {
-  readMessageWindow,
-  replaceMessageWindow,
-  ingestAccountMessage,
-  type AccountImRepository,
-} from '../../../../apps/desktop/src/lib/imRepository'
+import type { AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+/** The stored window of a chat: what a page fetch of exactly these rows would leave in the message store. */
+async function storeWindow(chatId: string, rows: MessageItem[]): Promise<void> {
+  const keep = new Set(rows.map(row => row.id))
+  const old = (await readMessagePage('user-1', { chatId, limit: 500 })).rows.filter(row => !keep.has(row.id))
+  const seqs = rows.map(row => row.seq)
+  await ingestMessages('user-1', { writes: [...old.map(row => ({ type: 'delete' as const, chatId, id: row.id })),
+    ...rows.map(message => ({ type: 'put' as const, message }))], revisions: [],
+    ranges: rows.length ? [{ chatId, fromSeq: Math.min(...seqs), toSeq: Math.max(...seqs) }] : [] })
+}
 // @@@947 - the per-test memory-backed L2 handle (reset in beforeEach). Tests seed it via writeCachedMessages
 let memRepository: AccountImRepository
 function message(overrides: Partial<MessageItem> = {}): MessageItem {
@@ -281,7 +282,7 @@ async function emitRevision(event: string, payload: Record<string, unknown>): Pr
     // account message now, rather than decoding the server row themselves.
     if (event === 'message_created' && payload.message) {
       const item = messageItemFromRow(payload.message as RawMessageRow, 'user-1')
-      if (item) await memRepository.transaction(tx => ingestAccountMessage(memRepository, tx, item, '1'))
+      if (item) await ingestMessages('user-1', { writes: [], revisions: [{ revision: '1', writes: [{ type: 'put', message: item }] }] })
     }
     await listener([{ revision: '1', event, payload }])
   })
@@ -308,7 +309,6 @@ async function resolveDeferred<T>(item: ReturnType<typeof deferred<T>>, value: T
   })
 }
 beforeEach(async () => {
-  messageStorage.sqlite = false
   authOverride.current = null
   latestStore = null
   revisionListeners.clear()
@@ -346,6 +346,7 @@ beforeEach(async () => {
   const actualRepository = await vi.importActual<typeof import('../../../../apps/desktop/src/lib/imRepository')>(
     '../../../../apps/desktop/src/lib/imRepository',
   )
+  clearMessageWindows('user-1')
   memRepository = await actualRepository.openImRepository('user-1', {
     adapter: createMemoryLocalSyncDb(),
     storage: window.localStorage,
@@ -648,7 +649,7 @@ describe('#1873 reaction_changed realtime', () => {
     await renderActiveChat('chat-1')
     expect(latestStore?.messages.find((m) => m.id === 'chat-1-message')?.reactions).toEqual([])
     await emitRevision('reaction_changed', { chat_id: 'chat-1', entity_id: 'chat-1-message' })
-    expect(chatServiceMock.fetchMessageOverlays).toHaveBeenCalledWith(['chat-1-message'], 'user-1')
+    expect(chatServiceMock.fetchMessageOverlays).toHaveBeenCalledWith([{ id: 'chat-1-message', chat_id: 'chat-1' }], 'user-1')
     expect(latestStore?.messages.find((m) => m.id === 'chat-1-message')?.reactions).toEqual([
       { emoji: '👍', count: 1, my_reaction: false },
     ])
@@ -680,7 +681,7 @@ describe('#1873 reaction_changed realtime', () => {
     )
     await renderActiveChat('chat-1')
     await emitRevision('reaction_changed', { chat_id: 'chat-1', entity_id: 'chat-1-message' })
-    expect(chatServiceMock.fetchMessageOverlays).toHaveBeenCalledWith(['chat-1-message'], 'user-1')
+    expect(chatServiceMock.fetchMessageOverlays).toHaveBeenCalledWith([{ id: 'chat-1-message', chat_id: 'chat-1' }], 'user-1')
     expect(latestStore?.messages[0]?.reactions).toEqual([
       { emoji: '👍', count: 1, my_reaction: true },
     ])
@@ -751,19 +752,11 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
   }
   const ids = () => latestStore?.messages.map((m) => m.id) ?? []
   const seqs = () => latestStore?.messages.map((m) => m.seq) ?? []
-  async function waitForL2(chatId: string, expectedIds: string[], tries = 40) {
-    for (let i = 0; i < tries; i += 1) {
-      const w = readMessageWindow(memRepository, chatId)
-      if (JSON.stringify(w?.messages.map((m) => m.id) ?? []) === JSON.stringify(expectedIds)) return w
-      await macroFlush()
-    }
-    const w = readMessageWindow(memRepository, chatId)
-    throw new Error(`waitForL2: not settled; L2=${JSON.stringify(w?.messages.map((m) => m.id))}`)
-  }
+
   it('paints the L2 window gap-free and SKIPS initialLoad (acceptance ① + ⑥ gap-free)', async () => {
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Chat One', next_message_seq: 6 })]))
     await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2, 3, 4, 5]), false)
+    await storeWindow('chat-1', window('chat-1', [1, 2, 3, 4, 5]))
     await setActiveChat('chat-1')
     await waitForStore(() => ids().length === 5)
     expect(ids()).toEqual(['m1', 'm2', 'm3', 'm4', 'm5'])
@@ -778,7 +771,7 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     const heldDelta = deferred<MessageItem[]>()
     chatServiceMock.getMessages.mockReturnValue(heldDelta.promise)
     const rendered = await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2], 'settled'), false)
+    await storeWindow('chat-1', window('chat-1', [1, 2], 'settled'))
     await appendMessages(chatMessage('chat-1', 'restored optimistic', {
       id: 'rapid-1',
       seq: -1,
@@ -797,7 +790,7 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Chat One', next_message_seq: 8 })]))
     chatServiceMock.getMessages.mockResolvedValue(window('chat-1', [6, 7], 'delta'))
     await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2, 3, 4, 5]), false)
+    await storeWindow('chat-1', window('chat-1', [1, 2, 3, 4, 5]))
     await setActiveChat('chat-1')
     await waitForStore(() => seqs().length === 7)
     expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(1)
@@ -809,7 +802,7 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Chat One', next_message_seq: 6, unread_count: 1 })]))
     chatServiceMock.getMessages.mockResolvedValue(window('chat-1', [6], 'delta'))
     await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2, 3, 4, 5]), false)
+    await storeWindow('chat-1', window('chat-1', [1, 2, 3, 4, 5]))
     await setActiveChat('chat-1')
     await waitForStore(() => seqs().length === 6)
     expect(chatServiceMock.getMessages).toHaveBeenCalledWith('chat-1', 'user-1', 'loadNewer', 200, undefined, 5)
@@ -821,7 +814,7 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Chat One', next_message_seq: 6, unread_count: 1 })]))
     chatServiceMock.getMessages.mockResolvedValue([]) // authoritative mainline tail: nothing newer than cursor
     await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2, 3, 4, 5]), false)
+    await storeWindow('chat-1', window('chat-1', [1, 2, 3, 4, 5]))
     await setActiveChat('chat-1')
     await waitForStore(() => seqs().length === 5)
     expect(chatServiceMock.getMessages).toHaveBeenCalledWith('chat-1', 'user-1', 'loadNewer', 200, undefined, 5)
@@ -835,7 +828,7 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     chatServiceMock.getMessages.mockImplementation(async (_c: string, _u: string, source: string) =>
       source === 'loadNewer' ? fullPage : tail)
     await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2, 3], 'stale'), true)
+    await storeWindow('chat-1', window('chat-1', [1, 2, 3], 'stale'))
     await setActiveChat('chat-1')
     await waitForStore(() => seqs()[0] === 271 && seqs().length === 30)
     expect(chatServiceMock.getMessages).toHaveBeenCalledWith('chat-1', 'user-1', 'initialLoad', 30)
@@ -857,19 +850,20 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
   it('cold reopen revalidation drops a deleted cached message and patches an edited one (acceptance ⑧)', async () => {
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Chat One', next_message_seq: 4 })]))
     const h = await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', [
+    await storeWindow('chat-1', [
       chatMessage('chat-1', 'keep', { id: 'm1', seq: 1 }),
       chatMessage('chat-1', 'old body', { id: 'm2', seq: 2 }),
       chatMessage('chat-1', 'deleted text', { id: 'm3', seq: 3 }),
-    ], false)
+    ])
     chatServiceMock.revalidateWindow.mockImplementation(async () => ({
       overlays: new Map(),
       mutations: new Map([['m2', { content: 'new body', content_type: 'text', retracted_at: null }]]),
       presentIds: new Set(['m1', 'm2']),
     }))
     await setActiveChat('chat-1')
-    const persisted = await waitForL2('chat-1', ['m1', 'm2'])
-    expect(persisted?.messages.find((m) => m.id === 'm2')?.content).toBe('new body')
+    // The view takes the revalidation; the stored rows take it inside revalidateMessageWindow (chatMessageRevalidation).
+    await waitForStore(() => ids().join() === 'm1,m2')
+    expect(latestStore?.messages.find((m) => m.id === 'm2')?.content).toBe('new body')
     expectTextMissing(h, 'deleted text')
     expect(ids()).toEqual(['m1', 'm2'])
   })
@@ -907,7 +901,7 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Chat One', next_message_seq: 251 })]))
     chatServiceMock.getMessages.mockResolvedValue([]) // loadNewer: no new mainline; initialLoad must NOT run
     await renderChatProvider()
-    await replaceMessageWindow(memRepository, 'chat-1', window('chat-1', [1, 2, 3], 'main'), true)
+    await storeWindow('chat-1', window('chat-1', [1, 2, 3], 'main'))
     await setActiveChat('chat-1')
     await waitForStore(() => seqs().length === 3 && seqs()[0] === 1)
     expect(seqs()).toEqual([1, 2, 3])
@@ -976,67 +970,40 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     expect(readMock).toHaveBeenLastCalledWith('chat-1', 2)
   })
 
-  it('reads a desktop arrival from its committed local window without repeating the network repair', async () => {
+  it('reads an arrival from its committed local window without repeating the network repair', async () => {
     chatServiceMock.getMessages.mockResolvedValue([message({ id: 'before', seq: 1 })])
     const rendered = await renderActiveChat()
-    messageStorage.sqlite = true
-    initializeMessageWindows('user-1')
-    const rows: MessageItem[] = []
-    const invoke = vi.fn(async (method: string, ...args: unknown[]) => {
-      if (method === 'imMessages.ingest') {
-        const batch = args[1] as { writes: { message: MessageItem }[] }
-        rows.push(...batch.writes.map(write => write.message)); return batch.writes
-      }
-      if (method === 'imMessages.windows') return rows
-      throw new Error(`Unexpected RPC ${method}`)
-    })
-    const bridge = vi.spyOn(await import('../../../../apps/desktop/src/platform/desktopIpc'), 'desktopIpc')
-      .mockReturnValue({ invoke, eventOn: () => () => {} })
-    try {
-      chatServiceMock.getMessages.mockClear()
-      chatServiceMock.getOtherMembersReadSeqs.mockClear()
-      chatServiceMock.revalidateWindow.mockClear()
-      for (const seq of [2, 3]) {
-        const item = message({ id: `desktop-${seq}`, seq, content: `desktop body ${seq}` })
-        await actAndFlush(async () => { await ingestMessages('user-1', { writes: [{ type: 'put', message: item }], revisions: [] }) })
-        expectTextContains(rendered, item.content!)
-        expect(memRepository.snapshot().message.some(row => row.id === item.id)).toBe(false)
-        console.info('desktop arrival before listener', { id: item.id, sqliteWrites: invoke.mock.calls.filter(([method]) => method === 'imMessages.ingest').length, repositoryRows: memRepository.snapshot().message.length })
-        await emitRevision('message_created', { chat_id: 'chat-1', entity_id: item.id })
-      }
-      expect(chatServiceMock.getMessages).not.toHaveBeenCalled()
-      expect(chatServiceMock.getOtherMembersReadSeqs).not.toHaveBeenCalled()
-      expect(chatServiceMock.revalidateWindow).not.toHaveBeenCalled()
-      expect(readMock).toHaveBeenLastCalledWith('chat-1', 3)
-    } finally {
-      clearMessageWindows('user-1')
-      messageStorage.sqlite = false
-      bridge.mockRestore()
+    chatServiceMock.getMessages.mockClear()
+    chatServiceMock.getOtherMembersReadSeqs.mockClear()
+    chatServiceMock.revalidateWindow.mockClear()
+    for (const seq of [2, 3]) {
+      const item = message({ id: `stored-${seq}`, seq, content: `stored body ${seq}` })
+      await actAndFlush(async () => { await ingestMessages('user-1', { writes: [{ type: 'put', message: item }], revisions: [] }) })
+      expectTextContains(rendered, item.content!)
+      await emitRevision('message_created', { chat_id: 'chat-1', entity_id: item.id })
     }
+    expect(chatServiceMock.getMessages).not.toHaveBeenCalled()
+    expect(chatServiceMock.getOtherMembersReadSeqs).not.toHaveBeenCalled()
+    expect(chatServiceMock.revalidateWindow).not.toHaveBeenCalled()
+    expect(readMock).toHaveBeenLastCalledWith('chat-1', 3)
   })
 
-  it('#5649 a carried row beyond the verified tail, or a thread reply, still takes the gap-heal path', async () => {
+  it('#5649 a thread reply still takes the gap-heal path', async () => {
+    // A main-stream arrival lands from the message store (the revision log delivers a chat's visible messages in seq
+    // order, so it cannot skip one); a thread reply is not in the main window, so its line repairs with the thread.
     const before = message({ id: 'before', seq: 1, content: 'before' })
-    const two = message({ id: 'two', seq: 2, content: 'two' })
-    const three = message({ id: 'three', seq: 3, content: 'three' })
     serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Fresh chat', next_message_seq: 4 })]))
-    chatServiceMock.getMessages.mockResolvedValueOnce([before]).mockResolvedValueOnce([two, three]).mockResolvedValueOnce([])
+    chatServiceMock.getMessages.mockResolvedValueOnce([before]).mockResolvedValue([])
     const harness = await renderActiveChat()
-
-    // seq 3 到了、seq 2 还没:窗口已验证尾是 1,不能把 3 单独落下去(#4439 交错入站)
-    await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'three', tombstone: false, message: {
-      id: 'three', chat_id: 'chat-1', sender_user_id: 'user-2', seq: 3, content: 'three', content_type: 'text', created_at: '2026-09-15T00:00:03Z',
+    await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'two', tombstone: false, message: {
+      id: 'two', chat_id: 'chat-1', sender_user_id: 'user-2', seq: 2, content: 'two', content_type: 'text', created_at: '2026-09-15T00:00:02Z',
+    } })
+    expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(1)
+    expectTextContains(harness, 'before', 'two')
+    await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'reply', tombstone: false, message: {
+      id: 'reply', chat_id: 'chat-1', sender_user_id: 'user-2', seq: 3, content: 'reply', content_type: 'text', created_at: '2026-09-15T00:00:03Z', thread_root_id: 'two',
     } })
     expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(2)
-    // A sparse account cache cannot use its highest seq as a repair cursor.
-    expect(chatServiceMock.getMessages).toHaveBeenLastCalledWith('chat-1', 'user-1', 'loadNewer', 200, undefined, 0)
-    expectTextContains(harness, 'before', 'two', 'three')
-
-    // 话题回复不进主线,连话题快照/摘要一起补 ⇒ 仍走补洞
-    await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'reply', tombstone: false, message: {
-      id: 'reply', chat_id: 'chat-1', sender_user_id: 'user-2', seq: 4, content: 'reply', content_type: 'text', created_at: '2026-09-15T00:00:04Z', thread_root_id: 'three',
-    } })
-    expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(3)
   })
 
   it('#5649 one member\'s read event never drops the other members from the receipt denominator', async () => {

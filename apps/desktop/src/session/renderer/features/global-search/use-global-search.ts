@@ -17,7 +17,6 @@ import { renderMentionTokens } from '@renderer/lib/chat/render-mention-tokens'
 import { rankPaletteMatches } from '../command-palette/palette-rank'
 import type { SearchChip, SearchFacet, SearchKind } from './search-session'
 import { localMessageQueries } from '@/lib/messageIngest'
-import { platform } from '@/platform'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 
 /** One page per source: the counts beside the filters are these rows, shown as "100+" when a source returns a full page. */
@@ -66,9 +65,9 @@ const storedMessageSearch = replica({
   name: 'storedMessageSearch',
   scope: 'account',
   read: async (owner, query: string, chatId: string, from: string | null, _clears: string): Promise<MessageRow[]> => {
-    const store = localMessageQueries()
-    if (!store) throw new Error('This device keeps no messages to search.')
-    const rows = await store.search(owner, chatId, query, SEARCH_LIMIT, from ?? undefined)
+    const search = localMessageQueries().search
+    if (!search) throw new Error('This device keeps no message text index to search.')
+    const rows = await search(owner, chatId, query, SEARCH_LIMIT, from ?? undefined)
     return rows.map(row => ({ id: row.id, chat_id: row.chat_id, sender_user_id: row.sender_user_id,
       sender_name: '', content_type: row.content_type, content: row.content, created_at: row.created_at, file_item_id: row.file_item_id ?? null }))
   },
@@ -186,9 +185,9 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
   const kinds = scopes.flatMap((chip) => chip.kind === 'type' ? [chip.type] : [])
   // A quick filter (a sender or a kind of message) is a search on its own: no words means every message, newest first.
   const runnable = (!!query || !!from || kinds.length > 0) && !unresolved
-  // Online, one conversation is searched in the cloud like every other scope. Offline on desktop, the messages
-  // stored on this device answer instead. Phase two removes the platform seam when the phone uses SQLite too.
-  const localScope = !!inChat && !online && platform.localMessages === 'sqlite'
+  // Online, one conversation is searched in the cloud like every other scope. Offline, the messages stored on this
+  // device answer instead where the store indexes their text (the desktop's SQLite FTS; the phone's store does not).
+  const localScope = !!inChat && !online && !!localMessageQueries().search
   const boundaries = useMemo(() => [...summaries].flatMap(([id, chat]) => chat.historyClearedAt
     ? [[id, chat.historyClearedAt] as const] : []).sort(([left], [right]) => left.localeCompare(right)), [summaries])
   // Part of every search's arguments: a clear (here, another window, another device) is a new search, ❌ the cached

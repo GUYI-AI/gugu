@@ -26,23 +26,9 @@ export function trimToMessageWindow(messages: MessageItem[]): MessageItem[] {
 }
 
 // 窗口(缓存)已落定行的最大 seq。seq 从 1 起(004_chat_extensions.sql:next_message_seq DEFAULT 1、
-// RETURNING next-1),所以 0 = 「没有已验证尾」;乐观行(seq<0)不参与。#621 spine 与 @@@4439 跳号
-// 判定共用这一份扫描,❌ 别再各写一份(哨兵语义分叉过一次:-1 哨兵基于「seq 0-based」的过时注释,
-// 让首条消息 seq=1 被误判成跳号)。
+// RETURNING next-1),所以 0 = 「没有已验证尾」;乐观行(seq<0)不参与。
 export function maxMainlineSeq(rows: readonly MessageItem[] | undefined): number {
   let max = 0
   for (const m of rows ?? []) if (m.seq > max) max = m.seq
   return max
-}
-
-// @@@4439 ack-seq-jump — 判定一条权威单行合并是否越过了窗口的「已验证连续尾」,返回需要重验证的
-// 游标(合并前旧尾),无跳号返回 null。realtime heal 与冷启增量都拿窗口 max seq 当已验证连续尾;
-// 权威 ack/附件回读这类单行摄入的 seq 若比旧尾大超过 1,说明服务端在两者之间还落了本窗口没取过的
-// 行(交错入站),不重验证它就会永久沉到游标下方(#4439:DB 有行,前端不渲染)。seq 从 1 起 ⇒
-// 空窗口(哨兵 0)+ 首条消息(seq 1)没有可越区间,不触发;空窗口 + seq≥2 才是真跳号(新会话首轮
-// 交错:入站 seq 1 落库在先、己方 ack seq 2 抢先合并,正是要修的形态)。
-export function seqJumpRepairCursor(windowRows: readonly MessageItem[] | undefined, ackedSeq: number): number | null {
-  if (ackedSeq < 0) return null
-  const prevMax = maxMainlineSeq(windowRows)
-  return ackedSeq > prevMax + 1 ? prevMax : null
 }

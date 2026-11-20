@@ -5,6 +5,12 @@ import { MAX_WINDOW } from '../store/chatMessageWindow'
 
 type Window = { chatId: string; root: string | null; rows: MessageItem[] }
 const accounts = new Map<string, Map<string, Window>>()
+/** Accounts whose local history was explicitly cleared (logout): a late write must not bring it back until they open again. */
+const closed = new Set<string>()
+/** Each open (or close) of an account starts a new generation of its windows. */
+const generations = new Map<string, number>()
+export function messageWindowGeneration(accountId: string): number { return generations.get(accountId) ?? 0 }
+const nextGeneration = (accountId: string) => generations.set(accountId, messageWindowGeneration(accountId) + 1)
 const key = (chatId: string, root: string | null) => JSON.stringify([chatId, root])
 /** One viewport cache per account; a rebind replaces the previous one. null rows = the conversation left. */
 const publishers = new Map<string, (chatId: string, rows: MessageItem[] | null) => void>()
@@ -13,8 +19,11 @@ export function publishMessageWindows(accountId: string, publish: (chatId: strin
   publishers.set(accountId, publish)
 }
 
+/** Opening an account starts its windows from the store (they are a mirror of it); prefetch publishes them again. */
 export function initializeMessageWindows(accountId: string): void {
-  if (!accounts.has(accountId)) accounts.set(accountId, new Map())
+  closed.delete(accountId)
+  nextGeneration(accountId)
+  accounts.set(accountId, new Map())
 }
 
 export function setMessageWindow(accountId: string, chatId: string, root: string | null, rows: readonly MessageItem[]): void {
@@ -26,7 +35,7 @@ export function setMessageWindow(accountId: string, chatId: string, root: string
   if (!root) publishers.get(accountId)?.(chatId, sorted)
 }
 
-/** Null means this account uses the unchanged phone cache. An empty desktop window is still authoritative. */
+/** Null means the account is not open (logged out or not yet initialized). An empty window is still authoritative. */
 export function messageWindow(accountId: string, chatId: string, root: string | null = null): MessageItem[] | null {
   return accounts.has(accountId) ? accounts.get(accountId)!.get(key(chatId, root))?.rows ?? [] : null
 }
@@ -59,4 +68,7 @@ export function acceptMessageWrites(accountId: string, writes: readonly ImMessag
   return [...reads.values()]
 }
 
-export function clearMessageWindows(accountId: string): void { accounts.delete(accountId) }
+export function clearMessageWindows(accountId: string): void { accounts.delete(accountId); closed.add(accountId); nextGeneration(accountId) }
+
+/** Logged out on this device since it last opened. An account not opened yet is not closed: its writes simply land. */
+export function messageAccountClosed(accountId: string): boolean { return closed.has(accountId) }

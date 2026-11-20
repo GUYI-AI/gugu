@@ -1,6 +1,18 @@
 import { beforeEach, vi } from 'vitest'
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
 import { layOutScrollers } from './scrollerLayout'
 import { installJsdomCanvasStub } from './jsdom-canvas-stub'
+
+// 不在桌面壳里时,消息存储跑在 IndexedDB 上(lib/localMessageStore):每个用例一个空库,用例之间不串数据。
+beforeEach(() => { globalThis.indexedDB = new IDBFactory() })
+// fake-indexeddb 在 setImmediate 上排它的事务步骤(真 IndexedDB 不受计时器影响)。用例自己没列 toFake 时,
+// 假计时器照默认全部伪造,但留下 setImmediate:否则存储的每一步都卡在没人推进的假时钟上。用例明确列了的照列。
+const fakeTimers = vi.useFakeTimers.bind(vi)
+const fakeable = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance',
+  'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback'] as const
+vi.useFakeTimers = (config?: Parameters<typeof vi.useFakeTimers>[0]) => fakeTimers({ ...config,
+  toFake: config?.toFake ?? fakeable.filter(name => name in globalThis) })
 
 // 真 lottie 播放器不进单测进程 —— 它模块顶层那条轮询关不掉,会活过 jsdom 拆除再把无关的 job 判红。
 // 机制、为什么两份 setup 都要装、为什么这个名字必须在 vitest 别名表里定死:见替身模块的抬头。

@@ -74,6 +74,11 @@ function timeoutOnce(healthyAccount = 'account-a') {
   } }))
   return { first, snapshots: () => snapshots }
 }
+/** The account's startup lands: a frame, then its message-store writes (IndexedDB steps on the faked clock). */
+async function startupSettled() {
+  await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+  await vi.waitFor(() => expect(consumer).toHaveBeenCalled())
+}
 async function mountAccount() {
   harness = createReactHarness()
   await renderWithAppProviders(harness, <ChatProvider><Probe /></ChatProvider>, { auth: { id: 'account-a' } })
@@ -102,7 +107,7 @@ describe('account startup recovery', () => {
     expect(consumer).not.toHaveBeenCalled()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(REVISION_RECONCILE_INTERVAL_MS) })
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    await startupSettled()
     expect(fault.snapshots()).toBe(2)
     expect(view.chats.map(row => row.id)).toEqual(['group-a'])
     expect(view.chatsLoadFailed).toBe(false)
@@ -123,7 +128,7 @@ describe('account startup recovery', () => {
     expect(view.chatsLoadFailed).toBe(true)
     harness!.cleanup()
     await mountAccount()
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    await startupSettled()
     expect(fault.snapshots()).toBe(2)
     expect(view.chats.map(row => row.id)).toEqual(['group-a'])
     expect(view.chatsLoadFailed).toBe(false)
@@ -158,7 +163,7 @@ describe('account startup recovery', () => {
     expect(rpc).toHaveBeenCalledWith('sync_snapshot')
     projection.rows = [chat({ id: 'group-b', kind: 'group', name: 'Account B group' })]
     await renderWithAppProviders(harness!, <ChatProvider><Probe /></ChatProvider>, { auth: { id: 'account-b' } })
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    await startupSettled()
     expect((await view.getImRepository()).accountId).toBe('account-b')
     expect(view.chats.map(row => row.id)).toEqual(['group-b'])
     expect(consumer).toHaveBeenCalledOnce()
@@ -185,7 +190,7 @@ describe('account startup recovery', () => {
     })
     expect(fault.snapshots()).toBe(1)
     await act(async () => { fault.first.resolve({ data: snapshot, error: null }) })
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    await startupSettled()
     expect(fault.snapshots()).toBe(1)
     expect(view.chats.map(row => row.id)).toEqual(['group-a'])
     expect(view.chatsLoadFailed).toBe(false)
