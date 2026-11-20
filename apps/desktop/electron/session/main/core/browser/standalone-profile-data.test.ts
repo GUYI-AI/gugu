@@ -17,6 +17,7 @@ async function fixture(initial: Record<string, string> = {}) {
   const commands: { profile: string; method: string; params?: Record<string, unknown> }[] = [];
   const opened: { profile: string; id: string; url?: string }[] = [];
   const cookies = vi.fn(async () => ({ cookies: [] as Record<string, unknown>[] }));
+  const failures = new Set<string>();
   const create = vi.fn(({ profile }: { profile: string }): ServerTaskBrowser => {
     const pages = new Map<string, string>();
     return {
@@ -25,6 +26,7 @@ async function fixture(initial: Record<string, string> = {}) {
         pages.set(id, url ?? 'about:blank');
         return { hostCommand: async (method: string, params?: Record<string, unknown>) => {
           commands.push({ profile, method, params });
+          if (method === 'Storage.clearDataForOrigin' && failures.has(String(params?.origin))) throw new Error('Chrome refused');
           return method === 'Network.getAllCookies' ? cookies() : method === 'Network.setCookie' ? { success: true } : {};
         } } as unknown as TaskPageContents;
       }),
@@ -42,7 +44,7 @@ async function fixture(initial: Record<string, string> = {}) {
     return directory;
   };
   for (const [partition, file] of Object.entries(initial)) await seed(partition, file);
-  return { root, pool, data, create, commands, opened, cookies, seed };
+  return { root, pool, data, create, commands, opened, cookies, failures, seed };
 }
 const methods = (f: Awaited<ReturnType<typeof fixture>>) => f.commands.map(command => command.method);
 const signal = new AbortController().signal;
@@ -111,16 +113,46 @@ describe('standalone cookie import and data clearing', () => {
     await f.pool.dispose();
   });
 
-  it('site data keeps the cookies: they are read first and put back before the tabs reopen', async () => {
+  it('site data of a running profile is cleared in place: no restart, tabs untouched, cookies kept', async () => {
+    const f = await fixture({ [work]: 'Cookies' });
+    f.cookies.mockResolvedValueOnce({ cookies: [
+      { name: 'sid', value: 'v', domain: '.secure.test', secure: true },
+      { name: 'plain', value: 'v', domain: 'plain.test', secure: false },
+    ] });
+    await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://open.test/page?x=1', signal });
+    await f.data.clear(work, 'siteData');
+    const types = 'file_systems,indexeddb,local_storage,websql,service_workers,cache_storage';
+    const cleared = f.commands.filter(command => command.method === 'Storage.clearDataForOrigin');
+    expect(cleared.map(command => command.params)).toEqual([
+      { origin: 'https://open.test', storageTypes: types },
+      { origin: 'https://secure.test', storageTypes: types },
+      { origin: 'https://plain.test', storageTypes: types },
+      { origin: 'http://plain.test', storageTypes: types },
+    ]);
+    expect(methods(f)).not.toContain('Network.clearBrowserCookies');
+    expect(methods(f)).not.toContain('Storage.setCookies');
+    expect(f.create).toHaveBeenCalledOnce();
+    expect(f.opened.filter(page => page.id === 'tab')).toHaveLength(1);
+    expect(f.pool.inUse).toBe(true);
+    await f.pool.dispose();
+  });
+
+  it('reports sites Chrome refused to clear instead of pretending the data is gone', async () => {
+    const f = await fixture({ [work]: 'Cookies' });
+    f.cookies.mockResolvedValueOnce({ cookies: [{ name: 'a', value: 'v', domain: 'a.test', secure: true }] });
+    await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://open.test/', signal });
+    f.failures.add('https://a.test');
+    await expect(f.data.clear(work, 'siteData')).rejects.toThrow('1 site');
+    await f.pool.dispose();
+  });
+
+  it('site data of a dormant profile keeps the cookies: they are read first and put back after the wipe', async () => {
     const f = await fixture({ [work]: 'Cookies' });
     f.cookies.mockResolvedValueOnce({ cookies: [{ name: 'sid', value: 'v', domain: 'a.test', path: '/', expires: 1900000000, session: false, size: 4 }] });
-    await f.pool.pageFor({ browserId: 'tab', partition: work, url: 'https://a.test/', signal });
     await f.data.clear(work, 'siteData');
-    const order = f.commands.map(command => command.method);
-    expect(order).toEqual(['Network.getAllCookies', 'Storage.setCookies']);
+    expect(methods(f)).toEqual(['Network.getAllCookies', 'Storage.setCookies']);
     expect(f.commands[1]!.params).toEqual({ cookies: [{ name: 'sid', value: 'v', domain: 'a.test', path: '/', expires: 1900000000 }] });
-    expect(f.opened.at(-1)).toMatchObject({ id: 'tab', url: 'https://a.test/' });
-    await f.pool.dispose();
+    expect(await readdir(f.root)).toEqual([]);
   });
 
   it('clears every profile for one category, and for "all" also directories no profile owns', async () => {
