@@ -257,7 +257,7 @@ async function stryker(ctx) {
   const report = resolve(ctx.root, 'reports/mutation/mutation.json')
   rmSync(report, { force: true })
   // Stryker's in-place restore rewrites files without their executable bit; put tracked modes back afterwards.
-  const executables = execFileSync('git', ['ls-files', '-s'], { cwd: ctx.root, encoding: 'utf8' })
+  const executables = execFileSync('git', ['ls-files', '-s'], { cwd: ctx.root, encoding: 'utf8', maxBuffer: 1 << 30 })
     .split('\n').filter((line) => line.startsWith('100755 ')).map((line) => line.split('\t')[1])
   let result
   try {
