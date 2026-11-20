@@ -4958,15 +4958,14 @@ app.whenReady().then(async () => {
           const sender = await senderBinding(context, auth.userId)
           if (!sender.guguAgentUserId || !auth.accessToken) throw new Error('Session file handoff requires an Agent identity')
           const caller = await remoteCaller(auth, context)
-          const remotePeers = new Map<string, Array<Record<string, unknown>>>()
           const recipients: string[] = []
           for (const target of targets) {
             let agentId: string | null = target.agentId ?? null
             if (agentId) { recipients.push(agentId); continue }
             if (!target.deviceId) agentId = await guguAgentUserIdForSession(target.sessionId, process.env)
             else {
-              if (!remotePeers.has(target.deviceId)) remotePeers.set(target.deviceId, await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers' }, signal) as Array<Record<string, unknown>>)
-              const peer = remotePeers.get(target.deviceId)!.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
+              const peers = await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers', session_id: target.sessionId }, signal) as Array<Record<string, unknown>>
+              const peer = peers.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
               const identity = peer?.identity as { users?: { id?: string } } | undefined
               agentId = typeof peer?.agentUserId === 'string' ? peer.agentUserId : typeof peer?.agent_user_id === 'string' ? peer.agent_user_id.replace(/^user:/, '') : identity?.users?.id ?? null
             }
@@ -5192,7 +5191,7 @@ app.whenReady().then(async () => {
       if (!auth?.accessToken || !auth.userId) throw new CrossMachineError('host_not_signed_in', 'that machine is not signed in to 咕咕')
       const signal = new AbortController().signal
       return crossMachine().answer(name, caller, action, {
-        peers: () => localSessionPeers(emdash, auth),
+        peers: (sessionId) => localSessionPeers(emdash, auth, sessionId),
         // app_install { device } from another machine: installed here the way a card's package is — fetched and checked
         // here (L4 10-02); the same dispatcher as this machine's app_*. D-31: that machine asks the person, as its agent's
         // approval — `consent` says hand back the ask, or install the bytes they agreed to.
