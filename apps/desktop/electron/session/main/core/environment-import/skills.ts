@@ -94,9 +94,11 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
     let fields: Record<string, unknown> | null;
     try { fields = parse(match[1]!) as Record<string, unknown> | null; }
     catch { return null; } // YAML exceptions may embed source contents.
-    if (typeof fields?.name !== 'string' || !fields.name.trim() || fields.name.length > 64
-      || /[\r\n]/.test(fields.name) || typeof fields.description !== 'string' || !fields.description.trim()) return null;
-    return { name: fields.name.trim(), description: fields.description.trim() };
+    if (typeof fields?.name !== 'string' || typeof fields.description !== 'string') return null;
+    const name = fields.name.trim(), description = fields.description.trim();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || name.length > 64
+      || !description || description.length > 1024) return null;
+    return { name, description };
   } finally { await handle.close(); }
 }
 

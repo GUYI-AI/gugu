@@ -127,6 +127,17 @@ it('does not peel a plugin-cache skill out through a user skill alias', async ()
   expect((await scanCodexSkills({ home: f.home })).items[0]).toMatchObject({ status: 'skipped', reason: 'excluded' });
 });
 
+it('accepts YAML block descriptions and rejects names or descriptions outside the skill metadata limits', async () => {
+  const f = await fixture();
+  await f.write(join(f.codex, 'block', 'SKILL.md'), '---\nname: block\ndescription: >-\n  First line\n  second line\n---\nBody stays private.\n');
+  await f.write(join(f.codex, 'bad-name', 'SKILL.md'), '---\nname: Bad Name\ndescription: Description\n---\n');
+  await f.write(join(f.codex, 'bad-description', 'SKILL.md'), '---\nname: bad-description\ndescription: ' + 'x'.repeat(1025) + '\n---\n');
+  const scan = await scanCodexSkills({ home: f.home });
+  expect(scan.count).toBe(1);
+  expect(scan.items.find(({ name }) => name === 'block')).toMatchObject({ status: 'ready', description: 'First line second line' });
+  expect(scan.items.filter(({ reason }) => reason === 'invalid-skill')).toHaveLength(2);
+});
+
 it('keeps distinct same-name sources as conflicts and protects a differently named existing target folder', async () => {
   const f = await fixture();
   await f.skill(f.codex, 'first', 'same-name');
