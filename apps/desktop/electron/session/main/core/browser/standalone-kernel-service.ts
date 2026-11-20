@@ -32,15 +32,8 @@ const downloadSaver: DownloadSaver = {
     const { canceled, filePath } = window && !window.isDestroyed() ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
     return canceled || !filePath ? null : filePath;
   },
-  failed: (name, error) => {
-    log.warn('Standalone browser download failed', { name, error: error.message });
-    const window = getMainWindow();
-    if (!window || window.isDestroyed()) return;
-    const zh = app.getLocale().toLowerCase().startsWith('zh');
-    void dialog.showMessageBox(window, {
-      type: 'error', message: zh ? `无法保存“${name}”` : `Could not save “${name}”`, detail: error.message,
-    }).catch(() => undefined);
-  },
+  // The built-in browser says nothing when a download is interrupted; a failure is only logged here, never lost silently.
+  failed: (name, error) => log.warn('Standalone browser download failed', { name, error: error.message }),
 };
 
 /** Device-local installation and profiles. Creating the service never downloads or starts Chrome. */

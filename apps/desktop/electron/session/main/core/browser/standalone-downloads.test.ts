@@ -26,7 +26,7 @@ async function fixture() {
     once: (event: 'closed', listener: () => void) => events.once(event, listener),
   };
   const answer = deferred<string | null>();
-  const saver = { chooseFile: vi.fn(() => answer.promise), failed: vi.fn() } satisfies DownloadSaver;
+  const saver = { chooseFile: vi.fn((_name: string) => answer.promise), failed: vi.fn() } satisfies DownloadSaver;
   await manageDownloads(connection, saver, root);
   const behavior = sent.find(call => call.method === 'Browser.setDownloadBehavior')?.params;
   const scratch = String(behavior?.downloadPath);
