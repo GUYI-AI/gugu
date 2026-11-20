@@ -45,13 +45,13 @@
   background: var(--shell-bg);
 }
 
-/* #7610:浅色 C 档是一整块工作区,从 rail 右边开始包住列表、页签条与内容。
+/* #7610:C 档是一整块工作区(浅色、深色同一结构,只换颜色 token),从 rail 右边开始包住列表、页签条与内容。
  * 桌面主窗都用这一档,不分材质:native 时 rail 透出系统材质,opaque(Windows / Linux / mac 减弱透明度)时 rail 是
  * --nav-rail 实色;选择器只要 data-window-material 存在(只有带主进程桥的主窗才写),网页版与子窗口不在内。
  * MainLayout 这层已有 margin:0 的内联布局;这里只覆盖该值,不搬 DOM 或重建会话。
  * fixed 的会话页 overlay 仍按 viewport 定位,clip-path 只负责把它裁在共同圆角里。
  */
-:root[data-window-material][data-theme='light'] [data-desktop-shell] > .gg-sidebar-rail + div {
+:root[data-window-material] [data-desktop-shell] > .gg-sidebar-rail + div {
   --shell-bg: var(--desktop-workspace-bg);
   --radius-page: var(--radius-surface);
   margin: var(--desktop-surface-inset) var(--desktop-surface-inset) var(--desktop-surface-inset) 0 !important;
@@ -63,7 +63,7 @@
 /* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。
  * #2548 会话页只有不带一级列表的整页(资源库、App)这样平铺;列表在旁边时正文是叠在列表上的那张卡片,群 / 项目的内层栏归列表那一层。
  */
-:root[data-window-material][data-theme='light'] :is(
+:root[data-window-material] :is(
   [data-desktop-shell] [data-shell-chat-detail],
   [data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
   [data-desktop-shell] .gugu-skin [data-workspace-sidebar-hidden] > [data-workspace-content-surface]
@@ -77,12 +77,12 @@
 }
 
 /* 材质只透出最左图标栏;列表与外框之间不重复叠半透明色。 */
-:root[data-window-material][data-theme='light'] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
-:root[data-window-material][data-theme='light'] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
+:root[data-window-material] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
+:root[data-window-material] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
   background-color: transparent;
 }
 
-:root[data-window-material][data-theme='light'] [data-desktop-shell] .gugu-skin {
+:root[data-window-material] [data-desktop-shell] .gugu-skin {
   --tab-strip: var(--desktop-workspace-bg);
 }
 
@@ -90,7 +90,7 @@
  * 审阅正文、侧边聊天与其加载层也用 bg-background-secondary-1,
  * 它们必须继续跟阅读面/聊天渐隐的白底一致。
  */
-:root[data-window-material][data-theme='light'] [data-desktop-shell] :is(
+:root[data-window-material] [data-desktop-shell] :is(
   [data-app-shell-focus-area='right-panel'],
   #file-tab-tree > div,
   [data-testid='editor-file-tree']:not(.bg-background-1),
