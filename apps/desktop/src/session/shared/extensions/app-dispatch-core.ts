@@ -17,7 +17,7 @@ import { widgetMessageError } from '@gugu/core/shared/ui/widgetModels';
  * - `{ chat }` with `draft`: only into that chat's composer (as `draft` into an agent's): the person sends it, or not.
  * - `{ binding }` with `draft` (40, `chat:draft`): the same, into the one conversation the person chose for the App's
  *   binding (#1927). The host finds the chat; the App never names or learns it.
- * - `{ chat }` with `widget` (62): an App view in a message of that chat, sent as the person (`chat.send_widget`) — the
+ * - `{ chat }` with `widget` (63): an App view in a message of that chat, sent as the person (`chat.send_widget`) — the
  *   same message `widget_send` makes. `app` defaults to the calling App. The person's own rights are its only bound.
  * No `to`: the person picks in the host's sheet (`DispatchSheet`), seeing the whole text, every pill and the target, and
  * only their press sends — so that call needs no capability, only their gesture (as compose's did).
@@ -101,7 +101,7 @@ export interface DispatchCall {
   key?: string;
   spawn: DispatchSpawn;
   offers: readonly DispatchOffer[] | null;
-  /** 62: an App view sent into `to.chat` as the person; `app` absent = the calling App. */
+  /** 63: an App view sent into `to.chat` as the person; `app` absent = the calling App. */
   widget?: DispatchWidget;
 }
 

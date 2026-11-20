@@ -238,7 +238,7 @@ describe('dispatchFromApp (the shared answer)', () => {
   });
 });
 
-describe('62: a widget sent into a chat (`widget` + `to: { chat }`)', () => {
+describe('63: a widget sent into a chat (`widget` + `to: { chat }`)', () => {
   const here = { chat, preselect: null };
   const send = async (args: Record<string, unknown>, as?: string) => {
     rpcs.length = 0;

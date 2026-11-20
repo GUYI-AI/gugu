@@ -2,7 +2,7 @@ import { ArrowRight, Cable, Globe, Plus, SquareTerminal } from '@/lib/icons'
 import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Button } from '@renderer/lib/ui/button';
@@ -98,7 +98,7 @@ export function useSessionWorkspaceActions(
     (contribution) => ({
       id: contribution.kind,
       label: contribution.title,
-      icon: <ExtensionMark iconDataUrl={contribution.iconDataUrl} />,
+      icon: <TabKindMark kind={contribution.kind} />,
       section: 'extensions',
       onClick: () => onOpenApp(contribution.kind),
     })

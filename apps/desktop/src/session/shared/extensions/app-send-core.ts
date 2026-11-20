@@ -153,9 +153,9 @@ function clipped(words: string): string {
 }
 
 /**
- * API 55 Send from a chat's folder (selection-send.ts): the pills of `refs` as a message holds them, read as the person, every
- * file one of `chatId`'s folder — the chat the page is drawn in, from the host's binding, never a chat the call names — and
- * the person still in that chat. Anything else opens nothing.
+ * A chat folder's files as a selection names them (file-selection.ts): the pills of `refs` as a message holds them, read as
+ * the person, every file one of `chatId`'s folder — the chat the page is drawn in, from the host's binding, never a chat the
+ * call names — and the person still in that chat. Anything else is refused.
  */
 export async function chatSelectionPills(platform: Pick<AppSendPlatform, 'account'>, chatId: string, refs: unknown): Promise<{ label: string; target: string }[]> {
   const checked = refsOf(refs);
@@ -270,7 +270,7 @@ async function sendToMember(
 }
 
 /**
- * `dispatch(text, { widget, to: { chat } })` (62): the App view as a message of that chat, written as the person — the
+ * `dispatch(text, { widget, to: { chat } })` (63): the App view as a message of that chat, written as the person — the
  * message `widget_send` makes for an agent, through the same `chat.send_widget`. Written as whoever works the page, as
  * every dispatch to a chat is (`as`: the person's agent; else the person). The database is its only bound (`can_act_as`).
  */

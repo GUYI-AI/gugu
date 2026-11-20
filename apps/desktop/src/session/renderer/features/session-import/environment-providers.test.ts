@@ -90,11 +90,11 @@ it('an unsupported or unexplained native failure remains a read failure', async 
   await expect(withCodexTaskImport(transcript()).scan(null)).rejects.toThrow();
 });
 
-it('groups the five native categories once without merging unrelated export-file sources', () => {
+it('groups the five native categories once without merging unrelated read-only history sources', () => {
   const providers = [withCodexTaskImport(transcript()), ...codexEnvironmentProviders,
-    { ...transcript(), id: 'chatgpt-json', label: 'ChatGPT export' }];
+    { ...transcript(), id: 'cursor', label: 'Cursor' }];
   const groups = groupImportProviders(providers);
-  expect(groups.map(group => [group.id, group.providers.length])).toEqual([['codex', 5], ['chatgpt-json', 1]]);
+  expect(groups.map(group => [group.id, group.providers.length])).toEqual([['codex', 5], ['cursor', 1]]);
 });
 
 it('keeps legacy automatic scope limited to tasks and honors an explicitly empty or selected scope', () => {

@@ -1,32 +1,30 @@
 import type { PersonalConversationHiding } from '../../lib/hideListedConversation'
+import { currentAuthSessionSignal } from '../../lib/authSessionLoss'
+import { showConversationHideNotice } from '../../lib/conversationHideNotice'
+import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../store/chatContext'
+import { useContactsStore } from '../../store/contactsContext'
+import { useAuth } from '../../store/auth'
 import { useToast } from '../toastContext'
 import { useMarkChatsRead } from '../../hooks/useMarkChatsRead'
-import { chatsInReadScope, hasUnreadInRows, ownedAgentDmCanDelete } from '../../session/shared/conversation-row-menu'
-import { rendererLogger } from '../../lib/log'
-import { messageForUser } from '../../lib/userFacingError'
-import { ConversationRowContextMenu } from './ConversationRowContextMenu'
-import { useAuth } from '../../store/auth'
+import { chatsInReadScope, conversationCanHide, hasUnreadInRows, personalConversationMenu, type PersonalConversationAction, type PersonalConversationMenuState } from '../../session/shared/conversation-row-menu'
 import { directoryRows, useDirectoryDevices, useLiveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { nativeUnreadTargets } from '../../lib/nativeUnreadTargets'
-import { sessionMenu, type SessionMenuAction } from '../../session/shared/session-menu'
-import { MenuTableItems } from '../MenuTableItems'
-import { Menu } from '../ui/Menu'
-import { showModal } from '@renderer/lib/modal/modal-provider'
-import { useContactsStore } from '../../store/contactsContext'
+import { confirmDeleteConversation } from '../../lib/confirmDeleteConversation'
 import { confirmOwnedAgentArchive } from '../../lib/archiveOwnedAgent'
 import { closeIfMyAssistant } from '../../lib/assistantClose'
-import { confirmConversationAction } from '../../lib/confirmDanger'
-import { AliasSheet } from '../contacts/AliasSheet'
-
-import { PersonalConversationRowMenu } from './PersonalConversationRowMenu'
+import { rendererLogger } from '../../lib/log'
+import { messageForUser } from '../../lib/userFacingError'
+import { MoreHorizontal } from '@/lib/icons'
+import { Menu, MenuFold, MenuItem, MenuSeparator } from '../ui/Menu'
+import { menuTableIcon, menuTableLabel } from '../menuTablePresentation'
 
 const log = rendererLogger('chat/row-menu')
 
-function LegacyChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotificationLevel, onDelete, ...menu }: {
+/** A chat-list row's menu (desktop right-click, phone long-press). Explicit hide callback prevents a personal menu from accidentally invoking group archival. */
+export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotificationLevel, onHide, ...menu }: {
   x: number
   y: number
   chat: ChatItem
@@ -35,89 +33,66 @@ function LegacyChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotifi
   /** #2548 given only for an agent row pinned to the desktop one list: the menu offers 取消固定到左侧栏. */
   onUnpinFromSidebar?: () => void
   onSetNotificationLevel: (level: NotificationLevel) => void
-  /** Delete my archived agent's conversation (the session table's delete-chat); only a chat-list row of a DM gives it. */
-  onDelete?: () => void
+  onHide: () => Promise<PersonalConversationHiding | undefined>
 }) {
-  const { chats, identitiesById, markUnread, leaveGroup } = useChatStore('chats', 'identitiesById', 'markUnread', 'leaveGroup')
+  const { chats, identitiesById, clearConversation, undoConversationHide } = useChatStore('chats', 'identitiesById', 'clearConversation', 'undoConversationHide')
   const nativeRows = directoryRows(useDirectoryDevices(), useLiveDeviceSessions())
   const { user } = useAuth()
+  const { removeOwnedAgent } = useContactsStore()
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const markRead = useMarkChatsRead()
-  const { updateAgentProfile, removeOwnedAgent, contacts, updateContactAlias } = useContactsStore()
-  const [aliasOpen, setAliasOpen] = useState(false)
-  const aliasOpening = useRef(false)
   const peer = identitiesById[chat.peer_user_id ?? '']
-  const ownedAgentDm = user && peer?.type === 'agent' && peer.owner_user_id === user.id ? peer : undefined
-  const friend = chat.kind === 'dm' ? contacts.find((contact) => contact.id === chat.peer_user_id && contact.type !== 'agent') : undefined
-  const hasUnread = hasUnreadInRows(chatsInReadScope(chats, chat.id)) || nativeUnreadTargets(nativeRows, chatsInReadScope(chats, chat.id), false).length > 0
-  const hasAnyUnread = hasUnreadInRows(chats) || nativeUnreadTargets(nativeRows, chats, true).length > 0
-  // My agent's row is its task (task-name.ts): the session menu, the one table its tab and sidebar row draw from
-  // (session/shared/session-menu.ts). Archive and rename go through the agent (lib/archiveOwnedAgent), which finds the
-  // machine its task is on.
-  if (ownedAgentDm) {
-    const agentName = peer?.display_name ?? ''
-    const run: Partial<Record<SessionMenuAction, () => void>> = {
-      'mark-read': () => markRead(chat.id),
-      'mark-unread': () => void markUnread(chat.id).catch((error: unknown) => toast(t('chatList.markUnreadFailed'), 'error', messageForUser(error))),
-      pin: onPin,
-      ...(onUnpinFromSidebar ? { 'sidebar-pin': onUnpinFromSidebar } : {}),
-      rename: () => showModal('renameSessionModal', { sessionId: '', currentTitle: agentName, rename: (name) => updateAgentProfile(ownedAgentDm.id, { name }) }),
-      notifications: () => onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none'),
-      archive: () => {
-        if (closeIfMyAssistant(user?.id, ownedAgentDm.id)) return // #7350 咕咕自己:换成关闭咕咕那一份确认
-        void confirmOwnedAgentArchive(ownedAgentDm.id, agentName, removeOwnedAgent).then((archived) => {
+  const agent = (chat.kind === 'dm' || chat.kind === 'ai') && peer?.type === 'agent'
+  const archivable = agent && user && peer.owner_user_id === user.id && !peer.removed_at && !peer.session_archived_at ? peer : undefined
+  const name = chatDisplayName(chat, peer?.display_name)
+  const scope = chatsInReadScope(chats, chat.id)
+  return <PersonalConversationContextMenu {...menu} state={{
+    canDelete: conversationCanHide(chat.kind), pinned: chat.is_pinned, pinnedToSidebar: onUnpinFromSidebar !== undefined,
+    notificationsMuted: chat.notification_level === 'none', agent, canArchive: archivable !== undefined,
+    hasUnread: hasUnreadInRows(scope) || nativeUnreadTargets(nativeRows, scope, false).length > 0 }}
+    onAction={(action) => {
+      if (action === 'mark-read') markRead(chat.id)
+      else if (action === 'pin') onPin()
+      else if (action === 'unpin-from-sidebar') onUnpinFromSidebar!()
+      else if (action === 'notifications') onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none')
+      else if (action === 'hide-chat') {
+        const boundary = currentAuthSessionSignal()
+        void onHide().then(receipt => {
+          if (receipt && user) showConversationHideNotice({ accountId: user.id, name, receipt, boundary,
+            undo: () => undoConversationHide(chat.id, receipt.operation_id) })
+        }).catch((error: unknown) => toast(t('chatList.hideFailed'), 'error', messageForUser(error)))
+      }
+      // My agent's archive, through the one agent archive confirmation (lib/archiveOwnedAgent), as contacts and its settings.
+      else if (action === 'archive') {
+        if (closeIfMyAssistant(user?.id, archivable!.id)) return // #7350 咕咕自己:换成关闭咕咕那一份确认
+        void confirmOwnedAgentArchive(archivable!.id, name, removeOwnedAgent).then((archived) => {
           if (archived) toast(t('toast.deletedAgent', { ns: 'contacts' }), 'success')
         }, (error: unknown) => {
           log.error({ error: String(error), chatId: chat.id }, 'archive agent failed')
           toast(t('toast.deleteAgentFailed', { ns: 'contacts' }), 'error', messageForUser(error))
         })
-      },
-      'mark-all-read': () => markRead(),
-      ...(onDelete ? { 'delete-chat': () => void confirmConversationAction('delete-chat', 'dm', agentName).then((ok) => {
-        if (ok) void Promise.resolve().then(onDelete).catch((error: unknown) => {
-          log.error({ error: String(error), chatId: chat.id }, 'delete chat failed')
-          toast(t('chatList.deleteFailed'), 'error', messageForUser(error))
-        })
-      }) } : {}),
-    }
-    const items = sessionMenu('chat-row', {
-      pinned: chat.is_pinned === true,
-      sidebarPin: onUnpinFromSidebar ? 'unpin' : null,
-      archived: ownedAgentDm.session_archived_at != null || ownedAgentDm.removed_at != null,
-      hasUnread, hasAnyUnread,
-      notificationsMuted: chat.notification_level === 'none',
-      canDeleteChat: ownedAgentDmCanDelete(ownedAgentDm),
-    }, new Set(Object.keys(run) as SessionMenuAction[]))
-    return <Menu x={menu.x} y={menu.y} minWidth={160} onClose={menu.onClose}>
-      <MenuTableItems items={items} testIdPrefix="conversation-row" onAction={(id) => { menu.onClose(); run[id]!() }} />
-    </Menu>
-  }
-  // A person's DM: the conversation table (conversation-row-menu.ts), as their contacts row. Alias is set in its sheet, which
-  // outlives the menu: choosing it keeps the menu's close request, the sheet's own close ends both.
-  if (aliasOpen && friend) return <AliasSheet name={friend.display_name} alias={friend.alias} avatarUrl={friend.avatar} seed={friend.id} onSave={(alias) => updateContactAlias(friend.id, alias)} onClose={menu.onClose} />
-  const name = chat.name || peer?.display_name || ''
-  const leave = () => void confirmConversationAction('leave-group', chat.kind, name).then((ok) => { if (ok) void leaveGroup(chat.id).catch((error: unknown) => {
-    log.error({ error: String(error), chatId: chat.id }, 'leave group failed')
-    toast(t('toast.leaveFailed', { ns: 'contacts' }), 'error', messageForUser(error))
-  }) })
-  return <ConversationRowContextMenu {...menu} entry="chat-row"
-    onClose={() => { if (!aliasOpening.current) menu.onClose() }}
-    state={{ kind: chat.kind === 'group' || chat.kind === 'topic' ? chat.kind : 'dm', pinned: chat.is_pinned,
-      canLeave: chat.kind === 'group' && chat.my_role != null && chat.my_role !== 'owner', friend: friend !== undefined,
-      notificationsMuted: chat.notification_level === 'none', hasUnread, hasAnyUnread }}
-    run={{
-      'set-alias': () => { aliasOpening.current = true; setAliasOpen(true) },
-      'mark-read': () => markRead(chat.id),
-      'mark-unread': () => void markUnread(chat.id).catch((error: unknown) => toast(t('chatList.markUnreadFailed'), 'error', messageForUser(error))),
-      'mark-all-read': () => markRead(),
-      pin: onPin,
-      notifications: () => onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none'),
-      'leave-group': leave,
+      }
+      else if (action === 'delete-chat') void confirmDeleteConversation({ name, clear: () => clearConversation(chat.id) })
+        .catch((error: unknown) => toast(t('chatList.deleteFailed'), 'error', messageForUser(error)))
     }} />
 }
 
-/** Personal list maintenance is independent of the task/identity lifecycle menu. */
-export function ChatRowContextMenu(props: Parameters<typeof LegacyChatRowContextMenu>[0] & { onHide?: () => Promise<PersonalConversationHiding | undefined> }) {
-  return props.onHide ? <PersonalConversationRowMenu {...props} onHide={props.onHide} /> : <LegacyChatRowContextMenu {...props} />
+function PersonalConversationContextMenu({ x, y, state, onClose, onAction }: {
+  x: number; y: number; state: PersonalConversationMenuState; onClose: () => void; onAction: (action: PersonalConversationAction) => void
+}) {
+  const { t } = useTranslation('messaging')
+  const items = personalConversationMenu(state)
+  const row = (item: typeof items[number]) => {
+    const Icon = menuTableIcon(item.icon)
+    return <MenuItem key={item.id} icon={<Icon size={15} />} danger={item.danger} disabled={item.disabled}
+      data-testid={`conversation-row-${item.id}`}
+      onClick={() => { onClose(); onAction(item.id) }}>{menuTableLabel(item.label)}</MenuItem>
+  }
+  return <Menu x={x} y={y} minWidth={200} onClose={onClose}>
+    {items.filter(item => !item.fold && !item.danger).map(row)}
+    {items.some(item => item.fold) ? <MenuFold icon={<MoreHorizontal size={15} />} label={t('message.actions.more')} data-testid="conversation-row-more">{items.filter(item => item.fold).map(row)}</MenuFold> : null}
+    {items.some(item => item.danger) && <MenuSeparator />}
+    {items.filter(item => item.danger).map(row)}
+  </Menu>
 }
