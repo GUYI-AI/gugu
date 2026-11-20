@@ -13,7 +13,9 @@ import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { registerHtmlPreview } from '@/components/preview/html-preview-registration';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
-import { quoteWorkspaceFile } from '@renderer/lib/editor/quote-workspace-file';
+import { citeIntoConversation } from '@renderer/lib/editor/cite-into-conversation';
+import { selectionCite, viewerPick } from '@/components/preview/quote-preview-file';
+import { selectionConversationOf } from '@shared/extensions/file-selection';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { workspaceBackend, workspaceEvents, workspaceRpc } from '../workspace-backend/workspace-backend';
 import { watchWorkspaceDirectory } from '../workspace-backend/watch-directory';
@@ -30,15 +32,17 @@ import { OpenWithSystemButton } from './open-with-system-button';
  * A file of a workspace in the preview a chat's file opens in: its bytes through that workspace (whichever machine it is
  * on), read again when the file changes there. A session's file tab and an App's peek both draw this.
  */
-export function WorkspaceFileView({ root, tabId, projectId, workspaceId, sessionId, path, absolutePath, inWorkspace, onClose }: {
+export function WorkspaceFileView({ root, tabId, projectId, workspaceId, sessionId, chatId, path, absolutePath, inWorkspace, onClose }: {
   /** The working copy's root: a folder of it in the path is a way to its list. */
   root?: string;
   /** The tab it is drawn in: editing goes to the folder App in this tab, and reading comes back to it. */
   tabId?: string;
   projectId: string;
   workspaceId: string;
-  /** Quoting a selection goes to this session's draft; none (a project's folder): nothing to quote into. */
+  /** The session whose file this is: its selection's Cite and Annotate go into its conversation. */
   sessionId?: string;
+  /** The chat it is opened in (a group's folder beside the group's page): with no session, the selection's conversation. */
+  chatId?: string;
   path: string;
   absolutePath: string;
   /** Inside the workspace, main also lets the system open it outside home. */
@@ -66,6 +70,9 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
   );
   const file = useMemo<HostedPreviewFile>(() => {
     const fileName = fileBaseName(path);
+    const conversation = selectionConversationOf({ session: sessionId, chat: chatId });
+    // Named where it is: its path on the machine it is on (file-selection.ts), the same for a cite and a comment.
+    const reference = { name: fileName, target: absolutePath };
     const { elsewhere } = workspaceBackend(projectId);
     const kind = getFileKind(path);
     const editable = !!sessionId && (kind === 'html' || kind === 'csv' || kind === 'svg');
@@ -84,8 +91,9 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         key: `${workspaceId}:${path}@${revision}`,
         read: () => readWorkspaceFileBytes(projectId, workspaceId, path, inWorkspace),
         registerHtml: (documentHtml) => registerHtmlPreview(documentHtml, (content) => workspaceRpc(projectId).files.createPreview(projectId, workspaceId, absolutePath, content)),
-        quote: (selection) => sessionId ? quoteWorkspaceFile(projectId, sessionId, path, selection) : Promise.resolve(),
-        citesSelection: !!sessionId,
+        // One cite for a selection and the file menu's 引用: the session's draft, the file named by its path on its machine.
+        quote: (selection) => conversation ? citeIntoConversation(conversation, selectionCite(conversation, reference, selection && viewerPick(selection))) : Promise.resolve(),
+        selectable: { conversation, file: reference, cite: (cite) => conversation ? citeIntoConversation(conversation, cite) : undefined, sends: true },
         ...(sessionId ? { annotation: { sessionId, path } } : {}),
         // On another machine this computer's programs cannot reach it: it is downloaded instead.
         ...(elsewhere ? {} : {
@@ -110,7 +118,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         download,
       },
     };
-  }, [root, tabId, projectId, workspaceId, sessionId, path, absolutePath, inWorkspace, revision, translate, toast, openInApps]);
+  }, [root, tabId, projectId, workspaceId, sessionId, chatId, path, absolutePath, inWorkspace, revision, translate, toast, openInApps]);
   return <MessageFilePreview fill tabbed readOnly={!sessionId} file={file} onClose={onClose} />;
 }
 

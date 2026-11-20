@@ -637,6 +637,22 @@ describe('assistant panel changes before schedule execution', () => {
     }
   });
 
+  it('runs other due work when a schedule belongs to a task that resolves no name', async () => {
+    // Preparation needs only which tasks own schedules; one task's missing name must not stop the machine's scheduler.
+    seedProject(fixture);
+    fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id) VALUES ('nameless-session', 'project-1')`).run();
+    assistantSchedule('nameless-task-schedule', 'nameless-session');
+    seedAutomation(fixture, { id: 'ordinary' });
+    const ordinary = await insertTestRun('ordinary');
+    setSessionAdmissionPreparation(async (_sessionId, text) => ({ text, assistantPanel: true, accepted: async () => {} }));
+    const record = recordingCallbacks();
+
+    await new AutomationScheduler(record.callbacks, doneExecutor).drainQueue();
+    await record.reached(ordinary.id, 'done');
+
+    expect(getRunRow(fixture, ordinary.id)?.status).toBe('done');
+  });
+
   it('keeps a temporarily blocked reminder queued, runs unrelated work and retries after recovery', async () => {
     seedProject(fixture);
     assistantSchedule('blocked','assistant-session');

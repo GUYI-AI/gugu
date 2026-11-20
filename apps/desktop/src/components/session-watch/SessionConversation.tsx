@@ -165,7 +165,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     editor.current?.setText(next)
     onDraftApplied?.()
   }, [draft, onDraftApplied, draftText, setDraftText])
-  const options = useConversationOptions({ deviceId, sessionId, local, phoneHost, reachable: hostReachable }, harness ? engineLabel(harness) : agentName, mobile)
+  const options = useConversationOptions(sessionRuntime === 'pty' ? null : { deviceId, sessionId, local, phoneHost, reachable: hostReachable }, harness ? engineLabel(harness) : agentName, mobile)
   const workOwnsPermissions = mobile && permissionsInWork && !!composerControls && !appPanel
     && !!options.props.onPermissionModeChange && Object.keys(options.props.permissionModeOptions ?? {}).length > 0
   const senderInputs = useQueuedSessionInputs(sessionId)

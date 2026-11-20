@@ -7,8 +7,8 @@ import { log } from '@main/lib/logger';
 import lockfile from '../../lib/proper-lockfile';
 import { replaceManagedLauncher, withManagedLauncherPublication } from './managed-launcher-publication';
 import { INSTALL_PHASES, type InstallProgressReport } from '@gugu/session-core/deps';
-import { DOWNLOAD_STAGE } from '@gugu/session-core/deps/runtime';
-import type { InstallCommandContext, InstallCommandError } from '@gugu/session-core/deps/runtime';
+import { DOWNLOAD_STAGE, isDownloadStageFailure } from '@gugu/session-core/deps/runtime';
+import type { InstallCommandContext, InstallCommandError, InstallCommandOutcome } from '@gugu/session-core/deps/runtime';
 import { err, ok, type Result } from '@gugu/session-shared';
 import release from '@shared/core/agents/mise-release.json';
 import { managedAgentBinDir, managedAgentNpmRoot, managedAgentPrefix, managedMiseBinDir } from './managed-agent-home';
@@ -17,6 +17,8 @@ import { miseProgress, runMiseProcess } from './mise-process';
 import { startInstallProgressMeter } from './install-progress-meter';
 import { buildAgentEnv } from '@main/core/pty/pty-env';
 import { anySignal } from '@gugu/core/shared/anySignal';
+import semver from 'semver';
+import { selectInstallSources, type InstallSourceCandidate, type InstallSourceSelection } from './install-source-race';
 
 const IDLE_MS = 60_000;
 /** 装到一半时多久往日志里记一笔进度:卡住时日志里要看得出停在哪一步(#7199 那次 2.5 分钟一行都没有)。 */
@@ -138,7 +140,7 @@ async function resolveNpmExecutable(directory: string, binary: string): Promise<
 }
 
 /** Mise owns downloads, verification, version directories and removal; Gugu owns publication and selection. */
-export async function runMiseOperation(context: InstallCommandContext, preparation?: { root: string; launcherDir: string }): Promise<Result<void, InstallCommandError>> {
+export async function runMiseOperation(context: InstallCommandContext, preparation?: { root: string; launcherDir: string }): Promise<Result<InstallCommandOutcome, InstallCommandError>> {
   const request = context.mise;
   if (!request) throw new Error('Mise operation target is required');
   const { target, operation } = request;
@@ -149,11 +151,16 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
   const launcher = path.join(preparation?.launcherDir ?? managedMiseBinDir(), target.binary + (process.platform === 'win32' ? '.cmd' : ''));
   // 与 agent 同一份环境(buildAgentEnv):用户登录 shell 里的代理、只开系统代理时补的代理(#6892)都在这里;
   // miseEnvironment 再按自己的白名单只留 OS / 传输层那几格。
-  let env = miseEnvironment(root, config, buildAgentEnv());
+  const baseEnv = miseEnvironment(root, config, buildAgentEnv());
+  let env = baseEnv;
   const mise = bundledMisePath();
   const started = Date.now();
   const abort = new AbortController();
-  const signal = anySignal([context.signal, abort.signal]);
+  let attemptAbort = new AbortController();
+  const operationSignal = anySignal([context.signal, abort.signal]);
+  let signal = anySignal([operationSignal, attemptAbort.signal]);
+  let sourceSelection: InstallSourceSelection | undefined;
+  const attemptedSources: Array<string | null> = [];
   let releaseLock: (() => Promise<void>) | undefined;
   let meter: ReturnType<typeof startInstallProgressMeter> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -198,7 +205,7 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
     const bytesDone = base.bytesTotal !== undefined ? base.bytesDone ?? 0 : Math.max(base.bytesDone ?? 0, measuredBytes);
     return { ...base, ...(bytesDone > 0 ? { bytesDone } : {}), elapsedMs: Date.now() - started };
   };
-  const touch = () => { clearTimeout(timer); timer = setTimeout(() => { idle = true; abort.abort(); }, IDLE_MS); };
+  const touch = () => { clearTimeout(timer); timer = setTimeout(() => { idle = true; attemptAbort.abort(); }, IDLE_MS); };
   const run = (args: string[], cancellable = true, onOutput?: (line: string) => void) => {
     const deadline = args[0] === 'install' ? undefined : AbortSignal.timeout(cancellable && args[0] === 'uninstall' ? 60_000 : 15_000);
     const signals = [...(cancellable ? [signal] : []), ...(deadline ? [deadline] : [])];
@@ -211,40 +218,46 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
     if (!Array.isArray(entries) || entries.some((entry) => !entry || typeof entry.version !== 'string' || typeof entry.install_path !== 'string' || typeof entry.installed !== 'boolean')) throw new Error('Invalid mise installation inventory');
     return entries;
   };
-  const perform = async (): Promise<Result<void, InstallCommandError>> => {
+  const failure = async (error: unknown): Promise<Result<InstallCommandOutcome, InstallCommandError>> => {
+    let output = error instanceof Error ? error.message : String(error);
+    let recoveryFailed = false;
+    if (candidate && !candidateExisted && !published) {
+      try { await run(['uninstall', tool + '@' + candidate], false); }
+      catch (cleanupError) { recoveryFailed = true; output += '\nCleanup: ' + String(cleanupError); }
+    }
+    if (!published && previousConfig !== undefined) {
+      try { await writeFile(config, previousConfig); }
+      catch (restoreError) { recoveryFailed = true; output += '\nRestore configuration: ' + String(restoreError); }
+    }
+    const artifacts = recoveryFailed ? [{ path: work, bytes: null }] : undefined;
+    const stage = downloading ? { stage: DOWNLOAD_STAGE } : {};
+    const last = lastProgress();
+    const at = last ? { lastProgress: last } : {};
+    const type = context.signal?.aborted ? 'cancelled' : idle ? 'stalled' : 'command-failed';
+    log.warn('[mise-installer] 安装没装成', { tool, type, registry: attemptedSources.at(-1) ?? null, lastProgress: last ?? null, error: String(error).slice(0, 300) });
+    if (type === 'cancelled') return err({ type, message: 'Installation cancelled.', output, artifacts, ...at });
+    if (type === 'stalled') return err({ type, message: 'Installation stopped making progress.', output, idleMs: IDLE_MS, artifacts, ...stage, ...at });
+    return err({ type, message: 'Managed installation failed.', output, artifacts, ...stage, ...at });
+  };
+  const installAttempt = async (selected: InstallSourceCandidate, old: Awaited<ReturnType<typeof inventory>>): Promise<Result<InstallCommandOutcome, InstallCommandError>> => {
+    candidate = undefined;
+    candidateExisted = false;
+    previousConfig = undefined;
+    published = false;
+    idle = false;
+    measuredBytes = 0;
+    lastReport = undefined;
+    env = baseEnv;
+    attemptAbort = new AbortController();
+    signal = anySignal([operationSignal, attemptAbort.signal]);
     try {
-      signal.throwIfAborted();
-      try { await access(mise); } catch { throw new Error('Bundled installation engine is missing. Reinstall Gugu.'); }
-      await mkdir(work, { recursive: true });
-      releaseLock = await lockfile.lock(work, { realpath: false, stale: 30_000, update: 10_000, retries: 0, onCompromised: (error) => abort.abort(error) });
-      try { await access(config); } catch { await writeFile(config, ''); }
-      const version = await run(['--version']);
-      if (!version.startsWith(release.version + ' ')) throw new Error('Unexpected bundled mise version: ' + version);
-      const old = await inventory();
-      if (operation === 'uninstall') {
-        const selected = request.selectedPath;
-        const legacyBin = managedAgentBinDir();
-        const isLegacy = selected && path.dirname(selected).toLowerCase() !== path.dirname(launcher).toLowerCase();
-        if (!isLegacy) {
-          await withManagedLauncherPublication(async assertOwned => {
-            await run(['uninstall', '--all', tool]);
-            if ((await inventory()).some((entry) => entry.installed)) throw new Error('Mise still reports an installed version after removal');
-            assertOwned();
-            await rm(launcher, { force: true });
-            await writeFile(config, '');
-          });
-        } else {
-          // Legacy Gugu npm copies predate mise's inventory. Retire only their private package and launchers.
-          const packageRoot = path.join(managedAgentNpmRoot(), target.package);
-          if (!selected.startsWith(managedAgentPrefix() + path.sep)) throw new Error('Selected legacy installation is outside the managed directory');
-          await rm(packageRoot, { recursive: true, force: true });
-          for (const suffix of ['', '.cmd', '.ps1']) await rm(path.join(legacyBin, target.binary + suffix), { force: true });
-        }
-        return ok();
-      }
-      progress({ phase: 'resolving', elapsedMs: 0 });
+      progress({ phase: 'resolving', elapsedMs: Date.now() - started });
       downloading = true;
-      const distribution = await resolveMiseDistribution(target, request.registry, signal);
+      const distribution = selected.distribution ?? await resolveMiseDistribution(target, selected.registry, signal);
+      if (request.minimumVersion && semver.valid(request.minimumVersion) && semver.lt(distribution.version, request.minimumVersion)) {
+        downloading = false;
+        throw new Error('The selected source has an older release than the installed version');
+      }
       candidate = distribution.installVersion;
       candidateExisted = old.some((entry) => entry.version === candidate && entry.installed);
       previousConfig = await readFile(config, 'utf8');
@@ -349,30 +362,63 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
       };
       if (preparation) await publish(() => {});
       else await withManagedLauncherPublication(publish);
-      return ok();
+      return ok({ ...(selected.registry ? { registry: selected.registry } : {}) });
     } catch (error) {
-      let output = error instanceof Error ? error.message : String(error);
-      let recoveryFailed = false;
-      if (candidate && !candidateExisted && !published) {
-        try { await run(['uninstall', tool + '@' + candidate], false); }
-        catch (cleanupError) { recoveryFailed = true; output += '\nCleanup: ' + String(cleanupError); }
-      }
-      if (!published && previousConfig !== undefined) {
-        try { await writeFile(config, previousConfig); }
-        catch (restoreError) { recoveryFailed = true; output += '\nRestore configuration: ' + String(restoreError); }
-      }
-      const artifacts = recoveryFailed ? [{ path: work, bytes: null }] : undefined;
-      const stage = downloading ? { stage: DOWNLOAD_STAGE } : {};
-      const last = lastProgress();
-      const at = last ? { lastProgress: last } : {};
-      const type = context.signal?.aborted ? 'cancelled' : idle ? 'stalled' : 'command-failed';
-      log.warn('[mise-installer] 安装没装成', { tool, type, lastProgress: last ?? null, error: String(error).slice(0, 300) });
-      if (type === 'cancelled') return err({ type, message: 'Installation cancelled.', output, artifacts, ...at });
-      if (type === 'stalled') return err({ type, message: 'Installation stopped making progress.', output, idleMs: IDLE_MS, artifacts, ...stage, ...at });
-      return err({ type, message: 'Managed installation failed.', output, artifacts, ...stage, ...at });
+      return failure(error);
     } finally {
       clearTimeout(timer);
       meter?.stop();
+    }
+  };
+  const perform = async (): Promise<Result<InstallCommandOutcome, InstallCommandError>> => {
+    try {
+      signal.throwIfAborted();
+      try { await access(mise); } catch { throw new Error('Bundled installation engine is missing. Reinstall Gugu.'); }
+      await mkdir(work, { recursive: true });
+      releaseLock = await lockfile.lock(work, { realpath: false, stale: 30_000, update: 10_000, retries: 0, onCompromised: (error: Error) => abort.abort(error) });
+      try { await access(config); } catch { await writeFile(config, ''); }
+      const version = await run(['--version']);
+      if (!version.startsWith(release.version + ' ')) throw new Error('Unexpected bundled mise version: ' + version);
+      const old = await inventory();
+      if (operation === 'uninstall') {
+        const selected = request.selectedPath;
+        const legacyBin = managedAgentBinDir();
+        const isLegacy = selected && path.dirname(selected).toLowerCase() !== path.dirname(launcher).toLowerCase();
+        if (!isLegacy) {
+          await withManagedLauncherPublication(async assertOwned => {
+            await run(['uninstall', '--all', tool]);
+            if ((await inventory()).some((entry) => entry.installed)) throw new Error('Mise still reports an installed version after removal');
+            assertOwned();
+            await rm(launcher, { force: true });
+            await writeFile(config, '');
+          });
+        } else {
+          // Legacy Gugu npm copies predate mise's inventory. Retire only their private package and launchers.
+          const packageRoot = path.join(managedAgentNpmRoot(), target.package);
+          if (!selected.startsWith(managedAgentPrefix() + path.sep)) throw new Error('Selected legacy installation is outside the managed directory');
+          await rm(packageRoot, { recursive: true, force: true });
+          for (const suffix of ['', '.cmd', '.ps1']) await rm(path.join(legacyBin, target.binary + suffix), { force: true });
+        }
+        return ok();
+      }
+      progress({ phase: 'resolving', elapsedMs: 0 });
+      sourceSelection = await selectInstallSources({ target, source: request.source, env: baseEnv,
+        signal: operationSignal, minimumVersion: request.minimumVersion });
+      // Persist the decision before starting a potentially long download, as one structured line.
+      log.info('[mise-installer] Installation source selection', {
+        ...sourceSelection.report, operation, candidates: sourceSelection.attempts.map(({ registry }) => registry ?? null),
+      });
+      if (!sourceSelection.attempts.length) throw new Error('No compatible platform release is available from the installation sources');
+      let result: Result<InstallCommandOutcome, InstallCommandError> = err({ type: 'command-failed', message: 'Managed installation failed.', output: 'No installation source' });
+      for (const selected of sourceSelection.attempts.slice(0, 2)) {
+        operationSignal.throwIfAborted();
+        attemptedSources.push(selected.registry ?? null);
+        result = await installAttempt(selected, old);
+        if (result.success || operationSignal.aborted || !isDownloadStageFailure(result.error) || ('artifacts' in result.error && result.error.artifacts?.length)) break;
+      }
+      return result;
+    } catch (error) {
+      return failure(error);
     }
   };
   let result = await perform();

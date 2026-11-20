@@ -1,5 +1,6 @@
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { appState } from '@renderer/lib/stores/app-state';
+import { machineOfAlias, machineRegistry } from '@renderer/lib/machine-routing';
 
 /**
  * 一个项目在这台桌面眼里在不在 —— 与主进程恢复导航时的判断(core/view-state `restoredSessionState`)同一条规矩:
@@ -8,10 +9,17 @@ import { appState } from '@renderer/lib/stores/app-state';
  *  · unknown:不在表里,而别的机器的清单这一端还没齐 —— 开机恢复上次视图那一刻总是这样(会话页还没起、名册还没接上)。
  *    名册接上、账号上那份并进来、连上读到清单,都会重跑守卫(remote-hosts-store),那时还没有,才是 deleted。
  *  · deleted:其余。本机项目开机就整张读进来;别的机器的清单到了也没有它。
+ *
+ * 例外(#3425):每台机器都有隐藏的任务工作区(`<固定 id>~<机器>`),而账号上记着的项目清单从不列它(#609)。名册里有那台机器、
+ * 它自己的清单还没读到 ⇒ 账号上那份里没有它什么也说明不了,是 unknown;只有那台机器自己的清单读到了仍没有它(或名册里已没有那台
+ * 机器)才是 deleted。
  */
 export type ProjectPresence = 'present' | 'unknown' | 'deleted';
 
 export function projectPresence(projectId: string): ProjectPresence {
   if (appState.projects.projects.has(projectId) || appState.projects.pendingCreationIds.has(projectId)) return 'present';
-  return remoteHostsStore.awaitsMachineLists() ? 'unknown' : 'deleted';
+  if (remoteHostsStore.awaitsMachineLists()) return 'unknown';
+  const machine = machineOfAlias(projectId, machineRegistry.fixedIds);
+  if (machine && remoteHostsStore.device(machine) && !remoteHostsStore.hasReadList(machine)) return 'unknown';
+  return 'deleted';
 }

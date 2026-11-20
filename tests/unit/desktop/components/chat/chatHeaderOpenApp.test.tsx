@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// 「在本群打开」的常驻入口:卡片划走以后,页头 ⋯ 列出这台设备上装着、开着、有自己页面的 App,点一下走卡片「打开」的同一条
-// `openApp`,在本对话的右栏打开它自己的页(海龟汤 / 读论文车道 10-19)。
+// 「在本对话打开」的常驻入口:卡片划走以后,页头「应用」(群与私聊同一颗)列出这台设备上装着、开着、有自己页面的 App,
+// 点一下走卡片「打开」的同一条 `openApp`,在本对话的右栏打开它自己的页(海龟汤 / 读论文车道 10-19)。
 import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
@@ -35,10 +35,10 @@ afterEach(() => {
   tellInstalled('local', { extensions: [], invalid: [], disabled: [] } as never)
 })
 
-async function openMenu(mobile: boolean) {
+async function openMenu(mobile: boolean, kind: 'group' | 'dm' = 'group') {
   await renderWithAppProviders(harness, createNode(ChatHeaderActions, {
-    isGroupChat: true,
-    isRoomChat: true,
+    isGroupChat: kind === 'group',
+    isRoomChat: kind === 'group',
     infoShown: false,
     showHeaderMenu: true,
     mobile,
@@ -49,18 +49,18 @@ async function openMenu(mobile: boolean) {
     onCloseInfo: vi.fn(),
     onToggleHeaderMenu: vi.fn(),
     onCloseHeaderMenu: vi.fn(),
-  }), { chat: { activeChatId: 'g', chats: [{ id: 'g', kind: 'group' }] as never } })
+  }), { chat: { activeChatId: 'g', chats: [{ id: 'g', kind }] as never } })
   const entry = mobile
     ? [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) => el.textContent === '应用')!
     : document.querySelector<HTMLElement>('button[aria-label="应用"]')!
   await clickElement(entry)
-  return Array.from(document.querySelectorAll<HTMLElement>('[data-testid="group-apps-open"]'))
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-testid="chat-apps-open"]'))
 }
 
 describe('应用 打开本机的 App', () => {
-  for (const mobile of [false, true]) {
-    it(`${mobile ? '手机' : '桌面'}:只列开着、有自己页面的 App;点一下 = openApp(它, 本对话)`, async () => {
-      const rows = await openMenu(mobile)
+  for (const kind of ['group', 'dm'] as const) for (const mobile of [false, true]) {
+    it(`${kind} ${mobile ? '手机' : '桌面'}:只列开着、有自己页面的 App;点一下 = openApp(它, 本对话)`, async () => {
+      const rows = await openMenu(mobile, kind)
       // 停用的(读论文)与只为文件打开的(你画我猜)不列。
       expect(rows.map((row) => row.querySelector('span.truncate')?.textContent)).toEqual(['海龟汤'])
       const asked = vi.fn()

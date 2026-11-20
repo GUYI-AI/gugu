@@ -20,6 +20,9 @@ import {
   type ChatProjection, type ChatProjectionAttachment,
 } from '../lib/chatProjection'
 import { shareRows } from '../lib/chatProjectionAlgebra'
+import { presentChatMessage } from '../lib/chatNotificationPresentation'
+import { unknownMemberName } from '../lib/memberFallbackName'
+import { rendererLogger } from '@/lib/log'
 import type { ChatWindowCache } from './chatWindowCache'
 
 // @@@selection-is-intent (#4314) — 一次刷新没提到某条会话，含义取决于这一发相对「最后一次看见它」有多新：
@@ -90,14 +93,17 @@ export async function applyFetchedChatList(
   return shareRows(currentChats, missing.length > 0 ? [...missing, ...visible] : visible)
 }
 
+const log = rendererLogger('chat-notification')
 const notifiedSends = new Set<string>()
+/** #3416 How long a banner waits for its pictures before going out without them (they are then refreshed, silently). */
+const PRESENTATION_BUDGET_MS = 1200
 
 /** Only the winner of the committed account message's IDB claim calls this outlet. */
 export async function notifyForIngestedMessage(
   accountId: string,
   chat: ChatItem,
   message: MessageItem,
-  context: { onScreen: (chatId: string) => boolean; notificationsEnabled: boolean; soundEnabled: boolean },
+  context: { onScreen: (chatId: string) => boolean; notificationsEnabled: boolean; soundEnabled: boolean; isCurrent?: () => boolean },
 ): Promise<void> {
   if (!platform.capabilities.notifications) return
   if (!shouldNotify({ kind: 'message', accountId, chat, message },
@@ -108,9 +114,24 @@ export async function notifyForIngestedMessage(
     notifiedSends.add(message.send_group_id)
     if (notifiedSends.size > 256) notifiedSends.delete(notifiedSends.values().next().value!)
   }
-  await platform.showNotification({ ...createChatNotificationPayload({ ...chat,
+  const payload = { ...createChatNotificationPayload({ ...chat,
     last_message_preview: (sendGroupPreview(message.send_group_size) ?? chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) }))
-      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
+      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled }
+  // #3416 A host that draws conversations is told whose message this is (the other person's / the group's face, the real
+  // author); the rest of the hosts get the notification exactly as before. Identity and faces stay on this device.
+  const presented = platform.capabilities.conversationNotifications
+    ? await import('../lib/chatNotificationFaces')
+      .then(({ createNotificationFaceSources }) =>
+        presentChatMessage({ accountId, chat, message, title: payload.title, unknownAuthorName: unknownMemberName() },
+          createNotificationFaceSources(), PRESENTATION_BUDGET_MS))
+      // The banner is what matters: without its pictures it still goes out as before.
+      .catch((error: unknown) => { log.error({ error: error instanceof Error ? error.name : 'unknown' }, 'chat notification presentation failed'); return null })
+    : null
+  await platform.showNotification(presented ? { ...payload, presentation: presented.presentation } : payload)
+  // Late pictures refresh the banner that is still up: same message, no new alert, never for another account.
+  void presented?.refresh?.then((presentation) => {
+    if (context.isCurrent?.() !== false) return platform.showNotification({ ...payload, presentation })
+  }).catch((error: unknown) => log.error({ error: error instanceof Error ? error.name : 'unknown' }, 'chat notification picture refresh failed'))
 }
 
 /** 屏上正打开的主时间线不产生未读红点；手工标未读与别的话题流仍保留。 */

@@ -160,6 +160,20 @@ describe('watchPresenceInterrupt (spec hook-status-derivation「打断边:会话
     expect(faults).toEqual(['no sessions/<pid>.json for session s-claude under /home/u/.claude or /home/u/other']);
   });
 
+  it('malformed JSON is a source fault, not an idle edge, and clears after the next valid sample (#3374)', async () => {
+    start();
+    await step('busy');
+    files.set(PATH, '{"pid":42,"sessionId":"s-claude",');
+    await step();
+    expect(faults.at(-1)).toEqual(expect.any(String));
+    expect(interrupted).toBe(0);
+    await step('busy');
+    expect(faults.at(-1)).toBeNull();
+    expect(interrupted).toBe(0);
+    await step('idle');
+    expect(interrupted).toBe(1);
+  });
+
   it('an unknown status or a file of another process is a fault, never an interrupt', async () => {
     start();
     await step('busy');

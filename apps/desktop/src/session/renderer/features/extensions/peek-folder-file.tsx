@@ -20,12 +20,12 @@ type FolderPeek = Extract<PeekTarget, { kind: 'folder' }>;
  * machine is the same: its project's calls go to that machine (machine-routing), and while it cannot be reached the
  * workspace's own line says why (offline since, sign in, update), as a session's files there say it.
  */
-export const PeekFolderFile = observer(function PeekFolderFile({ target, tabId }: { target: FolderPeek; tabId: string }) {
+export const PeekFolderFile = observer(function PeekFolderFile({ target, tabId, chatId }: { target: FolderPeek; tabId: string; chatId?: string }) {
   const unreachable = target.deviceId ? workspaceReachLabel(target.projectId) : null;
-  return unreachable ? <Unread target={target} why={unreachable} /> : <Reachable target={target} tabId={tabId} />;
+  return unreachable ? <Unread target={target} why={unreachable} /> : <Reachable target={target} tabId={tabId} {...(chatId ? { chatId } : {})} />;
 });
 
-function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
+function Reachable({ target, tabId, chatId }: { target: FolderPeek; tabId: string; chatId?: string }) {
   const held = useHeldWorkspace(target);
   const [opener, setOpener] = useState<SessionOpener | { failed: unknown } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -57,6 +57,7 @@ function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
         {...(workspaceSession(target.place) ? {} : { workspace: target.place.workspace })}
         tabId={tabId}
         filePath={target.path}
+        {...(chatId ? { chatId } : {})}
       />
     );
   }
@@ -66,6 +67,7 @@ function Reachable({ target, tabId }: { target: FolderPeek; tabId: string }) {
       projectId={target.projectId}
       workspaceId={target.workspaceId}
       {...(workspaceSession(target.place) ? { sessionId: workspaceSession(target.place)! } : {})}
+      {...(chatId ? { chatId } : {})}
       path={target.path}
       absolutePath={target.absolutePath}
       inWorkspace

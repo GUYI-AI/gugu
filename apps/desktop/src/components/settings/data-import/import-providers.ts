@@ -25,8 +25,7 @@ export type ImportProvider = {
   supportsAutomaticSync?: boolean
   localOnly?: boolean
   historyOnly?: boolean
-  scan(deviceId: string | null): Promise<{ count: number; pending: boolean; needsSource?: boolean } | null>
-  pickSource?(deviceId: string | null): Promise<void>
+  scan(deviceId: string | null): Promise<{ count: number; pending: boolean } | null>
   openImportedSession?(session: ImportedSession, deviceId: string | null): Promise<void>
   listHistory?(deviceId: string | null): Promise<Array<ImportedSession & { importedAt: number }>>
   importAll(

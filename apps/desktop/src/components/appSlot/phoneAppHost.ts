@@ -16,7 +16,6 @@ import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError
 import { AppSendError, chatSelectionPills, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
-import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
@@ -86,7 +85,7 @@ import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/s
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
 import { appToast } from '../../session/shared/extensions/app-toast'
-import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
+import { parseSelectionAction, selectionConversationOf, selectionMenu, type FileReference } from '../../session/shared/extensions/file-selection'
 import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
@@ -100,6 +99,9 @@ const log = rendererLogger('app-slot/phone-host')
  * Only what the phone has is answered: the rest is `invalid` (an App feature-detects, and the
  * runtime in the frame only offers what `framed-host.ts` lists).
  */
+
+/** Each frame's chat files named for a press on its selection menu (`filesSelectionAction`), read once per file. */
+const selectionNames = new WeakMap<object, Map<string, FileReference | null>>()
 
 /**
  * This phone can use the App (app-redesign §5): it has something to open here — a page of its own, which opens in any
@@ -461,6 +463,14 @@ export function hostAppFrame(
     extensionId: hosted.binding.extensionId,
     itemId: hosted.binding.itemId ?? null,
   })
+  /**
+   * 60 An opened file carries the menu its selections have in this frame (file-selection.ts): Cite and Send for a chat's file
+   * in a chat page (into that chat here); none for a session's page, whose composer is on another machine.
+   */
+  const withSelectionMenu = <T extends { entry: unknown }>(opened: T): T & { selectionMenu: ReturnType<typeof selectionMenu> } => {
+    const conversation = selectionConversationOf({ session: hosted.binding.session?.id, chat: hosted.binding.chatId })
+    return { ...opened, selectionMenu: selectionMenu(conversation, conversation?.kind === 'chat', true, hosted.binding.locale) }
+  }
   /** Who is in the chat the page is drawn for (摩擦单 F36): read when the frame first asks, again when the members change. */
   let members: ExtensionMember[] | null = null
   const contextHasMembers = () => !((installedNow().manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) >= 27)
@@ -692,15 +702,27 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
-      case 'filesSendSelection': {
-        requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedNow().origins[hosted.binding.extensionId] })
-        // API 55 A page of a chat's folder sends into that chat, the binding's; the call names none.
-        const chatId = session ? null : hosted.binding.chatId
-        if (!session && !chatId) refused('denied', 'Send needs a session page or a chat\'s folder')
-        const { draft, quote, pills } = session ? selectionSendOf(args, sessionWorkspace(session.id))
-          : await chatSelectionSendOf(args, refs => chatSelectionPills(sendPlatform, chatId!, refs))
-        // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
-        return await openSelectionSend({ cite: { draft, quote, pills }, to: session ? { session: session.id } : { chat: chatId! }, anchor: 'dock' })
+      case 'filesSelectionAction': {
+        // 60 Cite or Send pressed on the menu the runtime drew in this frame (file-selection.ts): a draft, or the host's box.
+        // A chat folder's file is named by its pill, into that chat here; a computer's path, or a session's composer on
+        // another machine, is not this phone's to reach — its menu has no Cite or Send (`selectionMenuHere`).
+        const pressed = parseSelectionAction(args)
+        const conversation = selectionConversationOf({ session: session?.id, chat: hosted.binding.chatId })
+        const ref = pressed.file
+        const chat = 'workspace' in ref ? null : ref.chat ?? hosted.binding.chatId
+        if (conversation?.kind !== 'chat' || !chat) refused('denied', 'This page\'s selection has no chat to go to')
+        const named = selectionNames.get(hosted) ?? new Map<string, FileReference | null>()
+        selectionNames.set(hosted, named)
+        const key = JSON.stringify([ref, pressed.version ?? null])
+        if (!named.has(key)) {
+          const [pill] = await chatSelectionPills(sendPlatform, chat, [{ file: ref, ...(pressed.version === undefined ? {} : { version: pressed.version }) }])
+          named.set(key, pill ? { name: pill.label, target: pill.target } : null)
+        }
+        const file = named.get(key)
+        if (!file) refused('not-found', 'This file is not in this chat')
+        const { runFileSelection } = await import('../../session/renderer/features/sessions/annotations/file-selection-overlay')
+        runFileSelection(hosted.frame, null, { webContentsId: 0, action: pressed.action, conversation, file, pick: pressed.pick, rect: pressed.rect, viewport: pressed.viewport })
+        return undefined
       }
       case 'listAgents': {
         const manifest = installedNow().manifestFor(hosted.binding.extensionId)
@@ -826,11 +848,11 @@ export function hostAppFrame(
         })
       }
       case 'filesOpen':
-        return files.open(surface(), { ref: chatRef(args.ref), ...(args.readOnly === true ? { readOnly: true } : {}), deferDetails: args.deferDetails === true })
+        return files.open(surface(), { ref: chatRef(args.ref), ...(args.readOnly === true ? { readOnly: true } : {}), deferDetails: args.deferDetails === true }).then(withSelectionMenu)
       case 'filesReopen': {
         const ref = chatRef(args.ref)
         if (!('id' in ref)) refused('invalid', 'reopen takes a file by its id')
-        return files.reopen(surface(), { ref: ref as Extract<ChatFileRef, { id: string }>, ...(args.readOnly === true ? { readOnly: true } : {}) })
+        return files.reopen(surface(), { ref: ref as Extract<ChatFileRef, { id: string }>, ...(args.readOnly === true ? { readOnly: true } : {}) }).then(withSelectionMenu)
       }
       case 'filesClose':
         return Promise.resolve(files.close(surface(), args as never))

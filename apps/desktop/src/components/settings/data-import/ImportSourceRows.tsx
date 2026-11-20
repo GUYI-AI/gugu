@@ -3,10 +3,9 @@ import { ENVIRONMENT_IMPORT_CATEGORIES } from '@shared/core/session-import/envir
 import { categoryLabelKey, groupImportProviders } from './environment-import-view'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronRight, Clock, FileText, X } from '@/lib/icons'
+import { Check, ChevronRight, Clock, X } from '@/lib/icons'
 import { useReplicas, retryOf } from '@/lib/replica'
 import { importSourceCounts } from './import-replicas'
-import { notify } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
 import { MachineList } from '@/components/ui/MachineList'
@@ -33,7 +32,7 @@ function useSources(providers: readonly ImportProvider[], deviceId: string | nul
 export function ImportSourceIcon({ provider }: { provider: ImportProvider }) {
   return (
     <span aria-hidden="true" className="gg-import-icon">
-      {provider.historyOnly && provider.pickSource ? <FileText size={24} /> : <AppIcon id={provider.iconId} size={24} />}
+      <AppIcon id={provider.iconId} size={24} />
     </span>
   )
 }
@@ -72,13 +71,12 @@ function findJob(jobs: readonly ImportJob[], providerId: string, deviceId: strin
 }
 
 function sourceCount(reading?: SourceReading): number | undefined {
-  const count = reading?.state === 'value' && reading.value && !reading.value.pending && !reading.value.needsSource ? reading.value.count : undefined
+  const count = reading?.state === 'value' && reading.value && !reading.value.pending ? reading.value.count : undefined
   return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : undefined
 }
 
 function sourceDescription(t: ReturnType<typeof useTranslation<'main'>>['t'], reading?: SourceReading) {
   if (reading?.state === 'error') return t('settings.dataImport.readFailed')
-  if (reading?.state === 'value' && reading.value?.needsSource) return t('settings.dataImport.chooseHint')
   const count = sourceCount(reading)
   return count === undefined ? t('settings.dataImport.reading') : t('settings.dataImport.available', { count })
 }
@@ -90,29 +88,10 @@ function SourceAction({ provider, reading, ownerId, deviceId, deviceName, job }:
   deviceId: string | null; deviceName: string; job?: ImportJob
 }) {
   const { t } = useTranslation('main')
-  const [picking, setPicking] = useState(false)
   const count = sourceCount(reading)
-  const pick = provider.pickSource
-  const needsFile = !!pick && ((reading?.state === 'value' && reading.value?.needsSource) || count === 0)
-  async function selectFile() {
-    if (!pick) return
-    setPicking(true)
-    try {
-      await pick(deviceId)
-      await importSourceCounts.refresh(provider.id, deviceId)
-    } catch {
-      notify({ tier: 'error', title: t('settings.dataImport.readFailed') })
-    } finally {
-      setPicking(false)
-    }
-  }
   if (job && isActiveImport(job)) return <ImportProgress job={job} label={provider.label} />
-  if (job?.state === 'finished' && count === 0 && !needsFile) return <ImportProgress job={job} label={provider.label} />
-  return needsFile ? (
-    <Button variant="secondary" size="sm" disabled={picking} onClick={() => { void selectFile() }}>
-      {t('settings.dataImport.pickSource')}
-    </Button>
-  ) : (
+  if (job?.state === 'finished' && count === 0) return <ImportProgress job={job} label={provider.label} />
+  return (
     <Button variant="secondary" size="sm" disabled={!count} aria-label={t('settings.dataImport.importSource', { source: provider.label })}
       onClick={() => count && enqueueImport(ownerId, { devices: [{ deviceId, deviceName, count }], provider }, t)}>
       {t('settings.dataImport.action')}
@@ -162,16 +141,15 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
         const rows = group.providers.map(provider => sources.find(source => source.provider.id === provider.id)!)
         if (rows.every(({ reading }) => reading?.state === 'value' && reading.value === null)) return null
         const failed = rows.some(({ reading }) => reading?.state === 'error')
-        const choosingFile = rows.some(({ reading }) => reading?.state === 'value' && reading.value?.needsSource)
         const settled = rows.every(({ reading }) => reading?.state === 'error'
-          || (reading?.state === 'value' && (reading.value === null || reading.value.needsSource || sourceCount(reading) !== undefined)))
+          || (reading?.state === 'value' && (reading.value === null || sourceCount(reading) !== undefined)))
         const ready = rows.every(({ reading }) => sourceCount(reading) !== undefined)
         const total = ready ? rows.reduce((sum, { reading }) => sum + sourceCount(reading)!, 0) : undefined
         const active = jobs.some(job => isActiveImport(job) && group.providers.some(provider => provider.id === job.provider.id))
         const first = group.providers[0]!
         return (
           <ImportCard key={group.id} name={group.label}
-            description={choosingFile ? t('settings.dataImport.pickSource') : !settled ? t('settings.dataImport.reading')
+            description={!settled ? t('settings.dataImport.reading')
               : failed ? t('settings.dataImport.sourceIncomplete') : total === undefined ? t('settings.dataImport.categoryUnavailable') : t(first.historyOnly ? 'settings.dataImport.readOnlyHistory' : 'settings.dataImport.environmentAvailable', { count: total })}
             icon={<ImportSourceIcon provider={first} />} open={open === group.id}
             onToggle={() => setOpen(open === group.id ? null : group.id)}>

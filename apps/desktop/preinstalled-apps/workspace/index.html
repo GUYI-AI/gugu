@@ -101,18 +101,15 @@
       <div class="dialog-actions"><button id="conflicts-done" type="button"></button></div>
     </div>
   </div>
-  <!-- Beside a selection, in the source or the preview (app.js places it). -->
+  <!-- Above a selection in the source (app.js places it): the marks it is wrapped in (the same text everyone edits).
+       What else a selection can do is the host's menu (gugu.files.showSelection). -->
   <div id="sel-bar" class="sel-bar" hidden>
-    <!-- In the source only: the marks a selection is wrapped in (the same text everyone edits). -->
     <span class="fmt-bar">
       <button id="fmt-bold" class="fmt" type="button" data-fmt="bold"><gugu-icon name="bold"></gugu-icon></button>
       <button id="fmt-italic" class="fmt" type="button" data-fmt="italic"><gugu-icon name="italic"></gugu-icon></button>
       <button id="fmt-code" class="fmt" type="button" data-fmt="code"><gugu-icon name="braces"></gugu-icon></button>
       <button id="fmt-link" class="fmt" type="button" data-fmt="link"><gugu-icon name="link"></gugu-icon></button>
     </span>
-    <button id="copy-sel" type="button"></button>
-    <button id="cite-sel" type="button"></button>
-    <button id="send-sel" type="button" hidden></button>
   </div>
   <script type="module" src="app.js"></script>
 </body>

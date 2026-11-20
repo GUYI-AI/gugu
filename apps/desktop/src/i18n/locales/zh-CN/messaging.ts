@@ -1,7 +1,6 @@
 export default {
   "humanDm": { "notFriends": "对方还不是你的好友", "addFriend": "添加好友" },
-  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
-  "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。", "sent": "已发送" },
+  "fileCite": { "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
   "agent": {
     "identity": {
       "phone": "手机 Agent",
@@ -739,12 +738,11 @@ export default {
     }
   },
   "header": {
-    "openApp": "打开应用",
-    "groupApps": "应用",
+    "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
-    "noGroupApps": "本设备暂无可用的应用。",
+    "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
     "groupInfo": "群信息",
     "chatInfo": "会话信息",

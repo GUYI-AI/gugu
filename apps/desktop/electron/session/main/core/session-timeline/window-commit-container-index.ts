@@ -118,17 +118,19 @@ export async function readIndexedCommitContainerPage(c: Context, ordinal: number
   const loaded = await load(c, null, budget);
   let h: Head;
   try { if (loaded.kind !== 'hit') return rebuild(c); h = head(c, parse(loaded.bytes)); } catch { return rebuild(c); }
-  await assertWindowCommitSource(c.directory, c.binding, c.source);
-  signal?.throwIfAborted();
-  if (h.state.phase !== 'done') return { kind: 'pending' as const };
-  if (ordinal >= h.pages) return { kind: 'end' as const };
-  const loadedPage = await load(c, ordinal, budget);
-  let p: Page;
-  try {
-    if (loadedPage.kind !== 'hit') return rebuild(c);
-    p = page(c, parse(loadedPage.bytes), ordinal);
-    if (p.next.ordinal > h.state.ordinal) return rebuild(c);
-  } catch { return rebuild(c); }
+  let result: { kind: 'pending' } | { kind: 'end' } | { kind: 'page'; page: Page; next: number | null };
+  if (h.state.phase !== 'done') result = { kind: 'pending' };
+  else if (ordinal >= h.pages) result = { kind: 'end' };
+  else {
+    const loadedPage = await load(c, ordinal, budget);
+    try {
+      if (loadedPage.kind !== 'hit') return rebuild(c);
+      const p = page(c, parse(loadedPage.bytes), ordinal);
+      if (p.next.ordinal > h.state.ordinal) return rebuild(c);
+      result = { kind: 'page', page: p, next: ordinal + 1 < h.pages ? ordinal + 1 : null };
+    } catch { return rebuild(c); }
+  }
+  // One source proof after every cache read this answer depends on.
   await assertWindowCommitSource(c.directory, c.binding, c.source); signal?.throwIfAborted();
-  return { kind: 'page' as const, page: p, next: ordinal + 1 < h.pages ? ordinal + 1 : null };
+  return result;
 }

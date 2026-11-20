@@ -25,7 +25,6 @@ vi.mock('./agent-payload-builder', () => ({
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('@main/core/sessions/impl/resolve-agent-executable', () => ({ clearResolvedPathCache: vi.fn() }));
 vi.mock('./session-runtime-compatibility', () => ({ clearRuntimeVersionProbeCache: vi.fn() }));
-vi.mock('../dependencies/agent-update-service', () => ({ agentUpdateService: { installSourceOrder: () => [] } }));
 vi.mock('../dependencies/host-dependency-store', () => ({ hostDependencyStore: { setSelection: vi.fn() } }));
 vi.mock('../settings/provider-settings-service', () => ({ providerOverrideSettings: {} }));
 vi.mock('./harness-model-catalog', () => ({ lookupHarnessModelCatalog: mocks.defaultCatalog, probeHarnessModelCatalog: mocks.targetCatalog }));

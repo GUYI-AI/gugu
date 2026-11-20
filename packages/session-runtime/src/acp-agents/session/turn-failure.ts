@@ -1,4 +1,4 @@
-import { isSignInFailure, upstreamSaid, type AdapterExit, type SessionFailure, type TranscriptTurnOutcome } from '@gugu/session-core/acp';
+import { isSignInFailure, isCodexRefreshTokenRevoked, upstreamSaid, type AdapterExit, type SessionFailure, type TranscriptTurnOutcome } from '@gugu/session-core/acp';
 import { guguReasonInText } from '@gugu/session-core/session-record/contract';
 import { errorDetail, type SerializedError } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
@@ -162,7 +162,7 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
       // `message` / `data` 里(评审抓到:那一侧有闸,这一侧当时没有)。
       const detail = redactSecrets(errorDetail(fact.cause) || fact.cause.name.trim());
       // 这家在这台机器上的登录不能用了(#6264):同一个 reason,多一格让界面说「登录已失效 · 重新登录」,
-      // 并让宿主把这家标成「登录已失效」。判据只认结构化信号,见 `isSignInFailure`。
+      // 并让宿主把这家标成「登录已失效」。判据见 `isSignInFailure`。
       const signInRequired = !fact.platformCredentials && isSignInFailure(fact.cause);
       // #7103 The failing side's own sentence goes on the row, never just "could not be completed".
       const said = signInRequired || !providerAuthored(fact.cause) ? undefined : upstreamSaid(fact.cause.message, fact.cause.data);
@@ -172,6 +172,7 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
           reason: 'prompt_failed',
           ...(detail ? { detail } : {}),
           ...(signInRequired ? { signInRequired: true } : {}),
+          ...(signInRequired && isCodexRefreshTokenRevoked(fact.cause) ? { signInReason: 'revoked' as const } : {}),
           ...(said ? { said } : {}),
         },
         provisional: !providerAuthored(fact.cause),

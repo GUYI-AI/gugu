@@ -10,6 +10,7 @@ type OneListRowProps = {
   tag?: string;
   time?: string;
   preview: string;
+  subtitle?: ReactNode;
   selected: boolean;
   onOpen: (beside: boolean) => void;
 } & Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'onClick' | 'onKeyDown'>;
@@ -20,7 +21,7 @@ type OneListRowProps = {
  * gutter (the chat list's own padding, or the tail's after it). Two lines like every conversation row; `preview` '' =
  * nothing said yet (the second line stays, empty).
  */
-export function OneListRow({ leading, name, tag, time, preview, selected, onOpen, ...data }: OneListRowProps & { leading: ReactNode }) {
+export function OneListRow({ leading, name, tag, time, preview, subtitle, selected, onOpen, ...data }: OneListRowProps & { leading: ReactNode }) {
   return (
     <ListRow
       {...data}
@@ -29,12 +30,13 @@ export function OneListRow({ leading, name, tag, time, preview, selected, onOpen
       selected={selected}
       onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter') onOpen(false);
       }}
       leading={leading}
       title={name}
       meta={time}
-      subtitle={tag ? <><Chip>{tag}</Chip>{' '}{preview}</> : preview}
+      subtitle={subtitle ?? (tag ? <><Chip>{tag}</Chip>{' '}{preview}</> : preview)}
     />
   );
 }

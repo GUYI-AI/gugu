@@ -15,7 +15,7 @@ export const storedAgentTurnFailures = replica({
   scope: 'account',
   read: async (_owner: string, scopeKey: string, idsKey: string): Promise<StoredAgentTurnFailure[]> => {
     try {
-      return (await readStoredAgentTurnFailures(JSON.parse(scopeKey) as StoredFailureScope, idsKey ? idsKey.split(',') : [])).failures
+      return (await readStoredAgentTurnFailures(JSON.parse(scopeKey) as StoredFailureScope, idsKey.split(','))).failures
     } catch (error) {
       log.error({ scope: JSON.parse(scopeKey) as StoredFailureScope, error: String(error) }, 'could not read agent reply outcome')
       throw error
@@ -59,8 +59,7 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
     }
     setDismissals({ userId: user.id, value: next })
   }, [user?.id])
-  // A chat with no agent left can still owe its owner a notice about one that was removed; the task page reads only its own.
-  const asks = !!user?.id && scopeKey !== null && !(scope === 'any-chat' && !ids)
+  const asks = !!user?.id && scopeKey !== null && !!ids
   const reading = useReplica(storedAgentTurnFailures, asks && scopeKey !== null ? [scopeKey, ids] : null)
   const read = reading.state === 'value' ? reading.value : null
   // A reading's failures that were dismissed before their revision was known: the dismissal now names that revision.
