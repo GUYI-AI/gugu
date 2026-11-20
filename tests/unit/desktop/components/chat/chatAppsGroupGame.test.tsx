@@ -16,7 +16,7 @@ vi.mock('@/components/appSlot/appsHere', () => ({
   },
 }))
 
-const { GroupAppsPicker } = await import('@/components/chat/GroupAppsPicker')
+const { ChatAppsPicker } = await import('@/components/chat/ChatAppsPicker')
 const { installedExtensionsStore } = await import('@/session/renderer/features/extensions/installed-extensions-store')
 const { EXTENSION_API_VERSION, parseExtensionManifest } = await import('@/session/shared/extensions/manifest')
 const { UI_EVENTS } = await import('@/lib/uiEvents')
@@ -44,7 +44,7 @@ afterEach(() => {
 })
 
 async function picker(chatId = 'g1') {
-  await renderWithAppProviders(harness, createNode(GroupAppsPicker, { chatId, mobile: true, anchor: createRef<HTMLButtonElement>(), onClose: vi.fn() }))
+  await renderWithAppProviders(harness, createNode(ChatAppsPicker, { chatId, mobile: true, anchor: createRef<HTMLButtonElement>(), onClose: vi.fn() }))
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   return [...document.querySelectorAll<HTMLElement>('[data-app-id]')].map((row) => row.dataset.appId)
 }
@@ -64,7 +64,7 @@ describe('the group\'s App list holds the group game an agent installed', () => 
     await picker()
     const opened = vi.fn()
     window.addEventListener(UI_EVENTS.openApp, opened)
-    await clickElement(document.querySelector('[data-app-id="tictactoe"] [data-testid="group-apps-open"]')!)
+    await clickElement(document.querySelector('[data-app-id="tictactoe"] [data-testid="chat-apps-open"]')!)
     window.removeEventListener(UI_EVENTS.openApp, opened)
     expect((opened.mock.calls[0]![0] as CustomEvent).detail).toEqual({ extensionId: 'tictactoe', chatId: 'g1' })
   })

@@ -741,13 +741,12 @@ export default {
     }
   },
   "header": {
-    "openApp": "Open an App",
-    "groupApps": "Apps",
+    "apps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
     "searchHistory": "Search chat history",
     "groupInfoAndSettings": "Group info and settings",
-    "noGroupApps": "No Apps available on this device.",
+    "noApps": "No Apps available on this device.",
     "announcement": "Group announcement",
     "groupInfo": "Group info",
     "chatInfo": "Conversation info",

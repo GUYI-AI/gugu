@@ -6,7 +6,7 @@ import { i18n } from '@/i18n';
 import { rendererLogger } from '@/lib/log';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
-import { GroupAppsPicker } from '@/components/chat/GroupAppsPicker';
+import { ChatAppsPicker } from '@/components/chat/ChatAppsPicker';
 import { Popover } from '@/components/ui/Popover';
 import { installedExtensionsStore } from '../../features/extensions/installed-extensions-store';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../shared/extensions/manifest';
@@ -34,7 +34,7 @@ function Picker() {
   const anchor = useRef<HTMLButtonElement>(null);
   return <Popover.Root open modal={false}>
     <Popover.Trigger ref={anchor} style={{ margin: 40 }}>Apps</Popover.Trigger>
-    <GroupAppsPicker chatId="width-fixture" anchor={anchor} onClose={() => {}} />
+    <ChatAppsPicker chatId="width-fixture" anchor={anchor} onClose={() => {}} />
   </Popover.Root>;
 }
 
@@ -55,7 +55,7 @@ async function measure(name: string) {
   const spacing = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spacing'));
   // The theme spacing token is rem-based; resolve it through the root font size.
   const unit = spacing * parseFloat(getComputedStyle(document.documentElement).fontSize);
-  rendererLogger('tests/group-apps-picker-width').info({ name, viewport: innerWidth, width, minWidth: getComputedStyle(popup).minWidth, maxWidth: getComputedStyle(popup).maxWidth, minimum: 40 * unit, maximum: Math.min(80 * unit, innerWidth - 4 * unit) }, 'GROUP_APPS_PICKER_WIDTH');
+  rendererLogger('tests/chat-apps-picker-width').info({ name, viewport: innerWidth, width, minWidth: getComputedStyle(popup).minWidth, maxWidth: getComputedStyle(popup).maxWidth, minimum: 40 * unit, maximum: Math.min(80 * unit, innerWidth - 4 * unit) }, 'GROUP_APPS_PICKER_WIDTH');
   return { popup, width, unit };
 }
 

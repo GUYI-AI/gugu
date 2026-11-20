@@ -81,21 +81,19 @@ const button = (label: string) => [...harness.container.querySelectorAll<HTMLBut
 const menuItem = (text: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) => element.textContent?.includes(text))
 
 describe('final group toolbar v4', () => {
-  it('[immediate] removes duplicate installed Apps only from wide-group More', async () => {
-    await header('group', { menu: true })
-    expect(document.querySelector('[data-testid="chat-header-apps-button"]')).not.toBeNull()
-    expect(document.querySelectorAll('[data-testid="chat-header-menu-app"]')).toHaveLength(0)
+  it.each(['group', 'dm', 'topic'] as const)('[immediate] a wide %s header has the one labeled Apps button and More lists no Apps', async (kind) => {
+    await header(kind, { menu: true })
+    expect(document.querySelector('[data-testid="chat-header-apps-button"]')?.textContent).toContain('应用')
+    expect(menuItem('应用')).toBeUndefined()
   })
 
-  it.each(['width', 'mobile', 'strip', 'dm', 'topic'] as const)('[immediate control] %s keeps the existing installed-App menu', async (mode) => {
+  it.each(['width', 'mobile', 'strip'].flatMap((mode) => (['group', 'dm'] as const).map((kind) => [mode, kind] as const)))('[immediate control] %s %s folds the Apps button into More, which opens the same picker', async (mode, kind) => {
     headerWidth = mode === 'width' ? 560 : 900
-    await header(mode === 'dm' || mode === 'topic' ? mode : 'group', { menu: true, mobile: mode === 'mobile', stripNarrow: mode === 'strip' })
-    const app = document.querySelector<HTMLElement>('[data-testid="chat-header-menu-app"]')
-    expect(app?.querySelector('.gg-menu-item-label')?.textContent).toBe('Toolbar App')
-    if (mode !== 'dm' && mode !== 'topic') {
-      expect(document.querySelector('[data-testid="chat-header-apps-button"]')).toBeNull()
-      expect(menuItem('应用')).toBeDefined()
-    }
+    await header(kind, { menu: true, mobile: mode === 'mobile', stripNarrow: mode === 'strip' })
+    expect(document.querySelector('[data-testid="chat-header-apps-button"]')).toBeNull()
+    await clickElement(menuItem('应用')!)
+    const app = document.querySelector<HTMLElement>('[data-app-id="toolbar-app"] [data-testid="chat-apps-open"]')
+    expect(app?.textContent).toContain('Toolbar App')
     const opened = vi.fn()
     window.addEventListener(UI_EVENTS.openApp, opened)
     try { await clickElement(app!) } finally { window.removeEventListener(UI_EVENTS.openApp, opened) }
@@ -116,7 +114,7 @@ describe('final group toolbar v4', () => {
   })
 
   it.each([['en-US', enMessaging, 'Apps'], ['zh-CN', zhMessaging, '应用']] as const)('[immediate] %s uses the short Apps label', (_locale, catalog, label) => {
-    expect(catalog.header.groupApps).toBe(label)
+    expect(catalog.header.apps).toBe(label)
   })
 
   it('puts members, topics, Apps and More on a wide group (no invitation button: it is the members page\'s first row); search and files live in More', async () => {

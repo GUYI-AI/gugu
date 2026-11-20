@@ -739,12 +739,11 @@ export default {
     }
   },
   "header": {
-    "openApp": "打开应用",
-    "groupApps": "应用",
+    "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
-    "noGroupApps": "本设备暂无可用的应用。",
+    "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
     "groupInfo": "群信息",
     "chatInfo": "会话信息",
