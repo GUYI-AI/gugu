@@ -52,23 +52,28 @@ const TRANSPORTED_BLOCKS = new Set(['diff', 'terminal']);
  */
 export const HELD_PREVIEW_CHARS = 300;
 const HELD_FIELDS: ReadonlySet<string> = new Set(['outputText', 'rawOutput']);
+/** Gugu's own calls whose answer the conversation view reads: a send's receipt, what a tab opened, and a wrapped call. */
+const READ_WHEN_FOLDED = /(?:^|__)(?:message_send|message_send_file|message_send_as_owner|widget_send|session_message|session_open_in_tab|catalog_call)$/;
+
 /**
  * Whether the conversation view does without a call's output. Not when it reads or shows it: a call that did not
  * succeed (the output is its reason), a patch, a plan, a sub-agent's dispatch and its completion (the roster reads
- * them), a question put to the reader or a plan to approve (a card with its answer), and an expandable MCP call.
+ * them), a question put to the reader or a plan to approve (a card with its answer), and the Gugu calls above.
  */
-function outputUnshown(node: ToolNode): boolean {
-  return node.status === 'done' && plainCall(node);
+function outputUnshown(node: ToolNode, unwrap = false): boolean {
+  return node.status === 'done' && plainCall(node, unwrap);
 }
 
 /** The same question without asking how the call ended: is it one of the kinds the view draws as a step and no more. */
-function plainCall(node: ToolNode): boolean {
+function plainCall(node: ToolNode, unwrap: boolean): boolean {
   if (node.kind === 'tool-group') return false;
   if (node.kind === 'patch-tool-call' || node.kind === 'create-plan-tool-call'
-    || node.kind === 'spawn-subagent-tool-call' || node.kind === 'subagent-done-tool-call'
-    || node.kind === 'mcp-tool-call') return false;
+    || node.kind === 'spawn-subagent-tool-call' || node.kind === 'subagent-done-tool-call') return false;
   if (isQuestionOrPlanToolName(toolCallName(node))) return false;
-  return true;
+  if (!(node.kind === 'mcp-tool-call' && isGuguServer(node.server) && READ_WHEN_FOLDED.test(node.tool))) return true;
+  // A wrapped call is what it wraps (a folded page looks; a lean page keeps every wrapped call whole).
+  const inner = unwrap ? catalogCall(node.tool, node.rawInput)?.tool : undefined;
+  return inner !== undefined && !READ_WHEN_FOLDED.test(inner);
 }
 
 /**
@@ -200,14 +205,14 @@ function trimToolNode(given: ToolNode, limit: number, lean: LeanPage = false, fa
   const source = node as unknown as Record<string, unknown>;
   let dropped = 0;
   let patch: Record<string, unknown> | null = node === given ? null : {};
-  const held = lean !== false && outputUnshown(node);
+  const held = lean !== false && outputUnshown(node, folded);
   const line = held && stepLineOnly(node);
   // A sub-agent's own call: never a row, read by the roster of running sub-agents.
   const rostered = held && !line && node.kind !== 'background-command-done-tool-call'
     && !('backgroundTaskId' in node && node.backgroundTaskId);
   // A call that failed is a step line too. Its segment stays out of any exchange (the view reads `status`, which a
   // stub keeps), and its reason is read when the line is drawn.
-  const failed = folded && node.status === 'error' && plainCall(node) && stepLineOnly(node);
+  const failed = folded && node.status === 'error' && plainCall(node, true) && stepLineOnly(node);
   if (folded && (line || failed || (rostered && facts?.ended.has((node as { parentToolCallId?: string }).parentToolCallId ?? '')))) return stubOf(node, limit, line || failed, facts);
   const withheld: string[] = [];
   if (folded && rostered) {
@@ -272,6 +277,12 @@ function trimToolNode(given: ToolNode, limit: number, lean: LeanPage = false, fa
     patch.children = trimmedChildren;
   }
 
+  // A lean MCP line still carries only its summary/preview. Once that row is actually visible, the reader can
+  // use the existing held-turn read to get this call's request/result; never put the raw input back in the page.
+  if (held && node.kind === 'mcp-tool-call'
+    && (withheld.includes('rawInput') || [...HELD_FIELDS].some(field => patch?.[field] !== undefined))) {
+    patch = { ...patch, held: true };
+  }
   if (!patch) return node;
   // 累加：这条调用**总共**少了多少字。它自己被裁过，`dropped` 就落在自己这一格上。
   const next: Record<string, unknown> = { ...node, ...patch, ...(dropped > 0 ? { trimmedChars: dropped } : {}) };

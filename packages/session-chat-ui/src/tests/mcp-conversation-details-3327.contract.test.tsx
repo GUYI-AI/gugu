@@ -9,7 +9,7 @@ import { turnProcessId } from '@session-chat/state/flatten';
 import { expect, it } from 'vitest';
 import { until } from '../../../../tests/support/awaitCondition';
 
-it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive live completion and remote history reopening', async provider => {
+it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive live completion and local history reopening', async provider => {
   const parser = new AcpTranscriptParser({ sessionId: `${provider}-mcp-details` });
   const decode = provider === 'claude' ? createClaudeSessionDecoder() : decodeV2SessionUpdate;
   const name = 'mcp__fixture__lookup';
@@ -48,15 +48,15 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
     trigger()!.click();
     await until('MCP disclosure closes', () => trigger()?.getAttribute('aria-expanded') === 'false');
     parser.endTurn();
-    const page = trimCursorPageForTransport({ turns: [...parser.history], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, 'folded');
+    const page = trimCursorPageForTransport({ turns: [...parser.history], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, false);
     state.transcript.activeTurn.set(null);
     state.transcript.history.seed(page.turns);
     state.session.setGenerating(false);
     view.dispose();
     view = createChatView({ context, state, parent: host });
-    await until('the reopened remote MCP row retains its identity', () => trigger()?.textContent?.includes('fixture, lookup') === true);
+    await until('the reopened local MCP row retains its identity', () => trigger()?.textContent?.includes('fixture, lookup') === true);
     trigger()!.click();
-    await until('remote history retains the complete result below the old preview limit', () => host.querySelector('[data-slot="tool-call-result"]')?.textContent?.includes('RESULT-END-3327') === true);
+    await until('local history retains the complete result below the old preview limit', () => host.querySelector('[data-slot="tool-call-result"]')?.textContent?.includes('RESULT-END-3327') === true);
     expect(host.querySelector('[data-slot="tool-call-request"]')?.textContent).toContain('needle-3327');
   } finally {
     view.dispose(); state.dispose(); context.dispose(); host.remove();
