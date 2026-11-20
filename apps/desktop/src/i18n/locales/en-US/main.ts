@@ -137,6 +137,7 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "nativeHistorySummary": "Previous Gugu sessions: {{removed}} moved, {{pending}} pending, {{retained}} retained; {{unowned}} belong to other profiles",
   "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
   "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
   "preparation": { "preparing": "Preparing migration", "copying": "Importing configuration and sessions", "history": "Preparing history", "elapsedLabel_one": "{{label}}, {{count}} second elapsed", "elapsedLabel_other": "{{label}}, {{count}} seconds elapsed" },
@@ -829,7 +830,8 @@ export default {
       "usage": "Usage"
     },
     "dataImport": {
-      "chatgptExport": "ChatGPT export file",
+      "chatgptExport": "ChatGPT JSON export",
+      "sourceIncomplete": "Some sources could not be read",
       "readOnlyHistory": "{{count}} read-only history entries",
 
       "alreadyImported": "{{count}} items already exist",
@@ -858,7 +860,6 @@ export default {
       "machineList": "Devices",
       "appTab": "Import from other apps",
       "deviceTab": "Import from other computers",
-      "chooseHint": "Choose an exported conversation file",
       "sessions": "Sessions",
       "sessionCount": "Sessions ({{count}})",
       "noDevices": "No other computers found on this account.",
@@ -881,7 +882,6 @@ export default {
       "save": "Save",
       "syncSaveFailed": "Couldn’t save sync settings. Try again.",
       "synced": "Automatically synced {{count}} items",
-      "pickSource": "Choose export file",
       "partialRead": "Couldn’t read sessions from some computers.",
       "thisComputer": "This computer",
       "devices": "Source devices",

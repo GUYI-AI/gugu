@@ -6,7 +6,7 @@ import './data-import.css'
 
 export function AgentHomeMigrationResultList({ homes }: { homes: readonly AgentHomeScan[] }) {
   const { t } = useTranslation('main')
-  const results = homes.filter((home) => home.migrationPreparation || home.historyImport || home.migrationSpace
+  const results = homes.filter((home) => home.migrationPreparation || home.nativeHistory || home.historyImport || home.migrationSpace
     || home.upgradeSignIn === 'relogin' || (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0) > 0)
   if (!results.length) return null
   return <section className="gg-import-history">
@@ -15,6 +15,7 @@ export function AgentHomeMigrationResultList({ homes }: { homes: readonly AgentH
       {results.map((home) => <div key={home.providerId} className="gg-import-history-entry p-3">
         <div className="gg-import-name">{home.name}</div>
         {home.migrationPreparation && <AgentHomePreparationStatus preparation={home.migrationPreparation} />}
+        {home.nativeHistory && <p className="gg-import-meta">{t('agentHome.nativeHistorySummary', home.nativeHistory)}</p>}
         {home.historyImport && <p className="gg-import-meta">{t('agentHome.historySummary', { count: home.historyImport.imported, skipped: home.historyImport.skipped })}</p>}
         {home.migrationSpace ? <p className="gg-import-meta">{t('agentHome.migrationSpaceNotice', { size: Math.ceil(home.migrationSpace.shortfallBytes / 100_000_000) / 10 })}</p> : home.upgradeIssues?.length ? <AgentHomeSkippedFiles issues={home.upgradeIssues} />
           : home.oldSessionsSkipped ? <p className="gg-import-meta">{t('agentHome.oldSessionsSkipped', { count: home.oldSessionsSkipped })}</p> : null}

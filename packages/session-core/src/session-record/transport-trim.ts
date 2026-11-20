@@ -277,6 +277,12 @@ function trimToolNode(given: ToolNode, limit: number, lean: LeanPage = false, fa
     patch.children = trimmedChildren;
   }
 
+  // A lean MCP line still carries only its summary/preview. Once that row is actually visible, the reader can
+  // use the existing held-turn read to get this call's request/result; never put the raw input back in the page.
+  if (held && node.kind === 'mcp-tool-call'
+    && (withheld.includes('rawInput') || [...HELD_FIELDS].some(field => patch?.[field] !== undefined))) {
+    patch = { ...patch, held: true };
+  }
   if (!patch) return node;
   // 累加：这条调用**总共**少了多少字。它自己被裁过，`dropped` 就落在自己这一格上。
   const next: Record<string, unknown> = { ...node, ...patch, ...(dropped > 0 ? { trimmedChars: dropped } : {}) };

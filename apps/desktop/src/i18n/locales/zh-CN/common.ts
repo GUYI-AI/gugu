@@ -3,15 +3,15 @@ export default {
     "slogan": "别自己做，让 AI 来。"
   },
   "staleRead": {
-    "failed": "没读到最新的，显示的是上次读到的。",
+    "failed": "无法获取最新内容，当前显示上次读取的结果。",
     "retry": "重试"
   },
   "menu": {
     "search": "搜索",
-    "noResults": "没有找到"
+    "noResults": "无结果"
   },
   "agentName": {
-    "naming": "正在起名…"
+    "naming": "正在生成名称…"
   },
   "needsYou": {
     "title": "需要你处理",
@@ -29,28 +29,28 @@ export default {
   },
   "cloudComputer": {
     "reason": {
-      "plan_required": "你的咕咕是 Plus 及以上的权益。",
+      "plan_required": "你的咕咕需要 Plus 及以上套餐。",
       "credits_exhausted": "积分已用完。",
-      "membership_expired": "会员已到期，云上的资源已停用。续费，或把它搬回你自己的电脑。",
-      "timeout": "两分钟内没连上。",
-      "network": "连不上你的咕咕服务，检查一下网络。",
-      "signed_out": "登录已失效，重新登录后再试。",
-      "gone": "你的咕咕已经关闭了。",
-      "failed": "你的咕咕那边出了问题。",
-      "server_install_failed": "云端服务没装好，请重试。",
-      "server_start_failed": "云端服务没能启动，请重试。",
-      "account_offline": "云端账号没能上线，请重试。",
-      "package_update_pending": "正在等当前任务结束后更新，请稍后再试。",
-      "home_restore_failed": "没能恢复之前的数据，请稍后再试。",
-      "host_unconfirmed": "暂时确认不了云主机状态，请稍后再试。",
-      "assistant_create_failed": "助理没建好，请重试。",
-      "assistant_busy": "助理正在忙，请稍后再试。",
+      "membership_expired": "会员已到期，云端资源已停用。请续费，或将其迁移到你自己的电脑。",
+      "timeout": "两分钟内未能建立连接。",
+      "network": "无法连接咕咕服务，请检查网络后重试。",
+      "signed_out": "登录已失效，请重新登录后重试。",
+      "gone": "你的咕咕已关闭。",
+      "failed": "你的咕咕运行出错。",
+      "server_install_failed": "云端服务安装失败，请重试。",
+      "server_start_failed": "云端服务启动失败，请重试。",
+      "account_offline": "云端账号无法上线，请重试。",
+      "package_update_pending": "更新将在当前任务结束后进行，请稍后重试。",
+      "home_restore_failed": "无法恢复之前的数据，请稍后重试。",
+      "host_unconfirmed": "暂时无法确认云主机状态，请稍后重试。",
+      "assistant_create_failed": "助理创建失败，请重试。",
+      "assistant_busy": "助理正忙，请稍后重试。",
       "login_expired": "云端登录已失效，需要重新授权。",
       "device_removed": "云端设备已被移除，需要确认后恢复。",
-      "provision_incomplete": "开通没完成，请重试。",
-      "wake_incomplete": "准备没完成，请稍后再试。",
-      "sleep_incomplete": "操作没完成，请稍后再试。",
-      "close_incomplete": "关闭没完成，请重试。"
+      "provision_incomplete": "开通未完成，请重试。",
+      "wake_incomplete": "准备未完成，请稍后重试。",
+      "sleep_incomplete": "操作未完成，请稍后重试。",
+      "close_incomplete": "关闭未完成，请重试。"
     }
   },
   "connection": {
@@ -71,7 +71,7 @@ export default {
     "done": "做完了",
     "idle": "空闲",
     "online": "在线",
-    "offline": "不在线",
+    "offline": "离线",
     "archived": "已归档",
     "removed": "已移除",
     "pending": "确认中",
@@ -103,7 +103,7 @@ export default {
   "errors": {
     "offline": "网络连接失败，请检查网络后重试",
     "operationFailed": "操作失败，请稍后重试",
-    "permissionDenied": "你没有权限做这件事"
+    "permissionDenied": "你没有执行此操作的权限"
   },
   "locale": {
     "enUS": "English",

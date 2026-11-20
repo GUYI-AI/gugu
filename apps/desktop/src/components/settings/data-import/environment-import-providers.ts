@@ -69,7 +69,9 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
     async scan(deviceId) {
       if (deviceId) return transcripts.scan(deviceId)
       preview = await rpcOn(null).sessionImport.scanCodexTasks()
-      if (preview.status !== 'ready') throw new Error('暂时无法读取 ChatGPT 本机会话')
+      if (preview.status !== 'ready' && preview.reason !== 'missing-index') {
+        throw new Error(`ChatGPT task source unavailable (${preview.reason ?? 'unknown'})`)
+      }
       return { count: preview.rows.length, pending: false }
     },
     capture(seen) {

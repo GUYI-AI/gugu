@@ -32,7 +32,7 @@ it('keeps the original name in contact search results and the selected contact',
   }), providers)
   const row = harness.container.querySelector<HTMLElement>('[data-contact-id="fresh-agent"]')!
   expect(row.textContent).toContain('Codex 5')
-  expect(row.textContent).not.toContain('正在起名…')
+  expect(row.textContent).not.toContain('正在生成名称…')
   await clickElement(row)
   expect(open).toHaveBeenCalledExactlyOnceWith(agent)
 })
@@ -41,7 +41,7 @@ it('identifies the real agent name in the sharing dialog', async () => {
   await renderWithAppProviders(harness, createNode(ShareAgentModal, { agent, contacts: [], onClose: vi.fn() }), providers)
   const dialog = document.body.querySelector('[role="dialog"]')!
   expect(dialog.textContent).toContain('Codex 5')
-  expect(dialog.textContent).not.toContain('正在起名…')
+  expect(dialog.textContent).not.toContain('正在生成名称…')
 })
 
 it('keeps settings selector values and options addressed by the real name', async () => {
@@ -49,7 +49,7 @@ it('keeps settings selector values and options addressed by the real name', asyn
   await renderWithAppProviders(harness, createNode(ChannelAgentPicker, { agentId: agent.id, onPick: pick, testId: 'agent-picker' }), providers)
   const trigger = harness.container.querySelector<HTMLElement>('[data-testid="agent-picker"]')!
   expect(trigger.textContent).toContain('Codex 5')
-  expect(trigger.textContent).not.toContain('正在起名…')
+  expect(trigger.textContent).not.toContain('正在生成名称…')
   await clickElement(trigger)
   expect(document.body.querySelector('[data-testid="channel-agent-option-fresh-agent"]')?.textContent).toContain('Codex 5')
 })
@@ -58,7 +58,7 @@ it.each(['user-1', 'other-owner'])('uses the same placeholder for either viewer,
   await renderWithAppProviders(harness, createNode(MemberProfileCard, {
     member: { id: agent.id, displayName: agent.display_name, avatar: null, email: null, type: 'agent', ownerUserId, role: 'member', membership: 'current', profileScope: 'group' },
   }), providers)
-  expect(harness.container.textContent).toContain('正在起名…')
+  expect(harness.container.textContent).toContain('正在生成名称…')
   expect(harness.container.textContent).not.toContain('Codex 5')
   const rename = harness.container.querySelector<HTMLElement>('[aria-label="重命名"]')
   if (ownerUserId === 'user-1') {
@@ -72,7 +72,7 @@ it('leaves a human with the same default-shaped name unchanged', async () => {
     member: { id: agent.id, displayName: agent.display_name, avatar: null, email: null, type: 'human', role: 'member', membership: 'current', profileScope: 'group' },
   }), providers)
   expect(harness.container.textContent).toContain('Codex 5')
-  expect(harness.container.textContent).not.toContain('正在起名…')
+  expect(harness.container.textContent).not.toContain('正在生成名称…')
 })
 
 it.each([false, true])('formats a phone contact for browsing while preserving selection and callback values (select=%s)', async selectionMode => {
@@ -83,7 +83,7 @@ it.each([false, true])('formats a phone contact for browsing while preserving se
     onCreateGroupFromSelection: vi.fn(), onSelect: selected, getContactRemoveLabel: () => 'Remove',
   }), providers)
   const row = harness.container.querySelector<HTMLElement>('[data-contact-id="fresh-agent"]')!
-  expect(row.textContent).toContain(selectionMode ? 'Codex 5' : '正在起名…')
+  expect(row.textContent).toContain(selectionMode ? 'Codex 5' : '正在生成名称…')
   await clickElement(row)
   expect(selected).toHaveBeenCalledExactlyOnceWith(agent)
 })
@@ -94,7 +94,7 @@ it('formats a phone session row using identity creation while opening the raw se
   const opened = vi.fn()
   await renderWithAppProviders(harness, createNode(SessionRow, { session, depth: 0, childCount: 0, childrenOpen: false, onToggleChildren: vi.fn(), onOpen: opened }), providers)
   const row = harness.container.querySelector<HTMLElement>('[data-session-id="task"]')!
-  expect(row.textContent).toContain('正在起名…')
+  expect(row.textContent).toContain('正在生成名称…')
   await clickElement(row)
   expect(opened).toHaveBeenCalledExactlyOnceWith(session)
   expect(session.title).toBe('Codex 5')

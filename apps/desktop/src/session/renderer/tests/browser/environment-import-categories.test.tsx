@@ -14,15 +14,23 @@ import '@/styles/tokens.css'
 import '@/components/settings/data-import/data-import.css'
 
 const state = vi.hoisted(() => ({
-  counts: {} as Record<string, number | 'error'>,
+  counts: {} as Record<string, number | 'error' | 'unknown' | 'pending'>,
   enqueue: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), cancelAutomatic: vi.fn(),
   owners: { fixture: { automatic: true, sources: ['codex'], categories: ['tasks'] as string[] } },
   update: vi.fn(),
+  listIcons: vi.fn(async () => ({
+    codex: { kind: 'svg' as const, variants: [{ minSize: 0, light: '<svg viewBox="0 0 16 16"><path d="M4 8h8" /></svg>' }] },
+  })),
+}))
+vi.mock('@renderer/lib/ipc', async load => ({
+  ...await load<typeof import('@renderer/lib/ipc')>(),
+  rpc: { agents: { listIcons: state.listIcons } },
 }))
 vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/replica')>(),
   useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id]) => state.counts[id] === 'error'
     ? { state: 'error', error: new Error('fixture') }
-    : { state: 'value', value: { count: state.counts[id] ?? 0, pending: false } }),
+    : state.counts[id] === 'unknown' ? { state: 'unknown' }
+    : { state: 'value', value: { count: typeof state.counts[id] === 'number' ? state.counts[id] : 0, pending: state.counts[id] === 'pending' } }),
 }))
 vi.mock('@/components/settings/data-import/import-replicas', () => ({ importSourceCounts: { refresh: state.refresh } }))
 vi.mock('@/components/settings/data-import/import-queue', () => ({
@@ -41,7 +49,8 @@ vi.mock('@/components/settings/data-import/import-sync-preferences', () => ({
 vi.mock('@/components/settings/data-import/import-sync', () => ({ syncImports: vi.fn() }))
 
 /** Source rows draw agent icons, which read through react-query. */
-const withQueries = (node: ReactNode) => <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
+let queryClient: QueryClient
+const withQueries = (node: ReactNode) => <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
 
 const providers: ImportProvider[] = ENVIRONMENT_IMPORT_CATEGORIES.map((category, index) => ({
   id: category === 'tasks' ? 'codex' : `codex:${category}`, label: 'ChatGPT', sourceLabel: 'ChatGPT', sourceId: 'codex',
@@ -53,6 +62,7 @@ let language: string
 let viewport: { width: number; height: number }
 beforeEach(async () => {
   vi.clearAllMocks()
+  queryClient = new QueryClient()
   providers.forEach((provider, index) => { state.counts[provider.id] = index + 1 })
   state.owners.fixture = { automatic: true, sources: ['codex'], categories: ['tasks'] }
   language = i18n.language; viewport = { width: innerWidth, height: innerHeight }
@@ -61,7 +71,14 @@ beforeEach(async () => {
   Object.assign(harness.container.style, { width: '620px', padding: '24px', fontFamily: 'system-ui, sans-serif', background: 'var(--bg)', color: 'var(--fg)' })
 })
 afterEach(async () => {
-  harness?.cleanup(); await i18n.changeLanguage(language); await page.viewport(viewport.width, viewport.height)
+  try {
+    harness?.cleanup()
+  } finally {
+    await queryClient.cancelQueries()
+    queryClient.clear()
+    await i18n.changeLanguage(language)
+    await page.viewport(viewport.width, viewport.height)
+  }
 })
 
 it('renders all five real category rows and queues only the selected category or all five', async () => {
@@ -86,6 +103,8 @@ it('a failed category never becomes a complete total or blocks another category 
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
   expect(rows[0]!.querySelector('button')!.disabled).toBe(true)
+  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).not.toContain(i18n.t('settings.dataImport.reading', {ns:'main'}))
+  expect(harness.container.textContent).toContain('部分来源暂不可读取')
   expect(rows[0]!.textContent).not.toContain('11')
   await clickElement(rows[4]!.querySelector('button')!)
   expect(state.refresh).toHaveBeenCalledWith('codex:skills', null)
@@ -118,9 +137,9 @@ it('renders the actual preparing-history status while a task import is running',
   await page.screenshot({ path: '../../../../../../../test-results/environment-import-preparing-zh.png', element: harness.container });
 });
 
-it('keeps legacy export-file histories distinct from resumable native tasks', async () => {
-  const history = { ...providers[0]!, id: 'chatgpt-json', sourceId: undefined, sourceLabel: undefined,
-    label: 'ChatGPT 导出文件', historyOnly: true };
+it('keeps read-only history sources distinct from resumable native tasks', async () => {
+  const history = { ...providers[0]!, id: 'cursor', sourceId: undefined, sourceLabel: undefined,
+    label: 'Cursor', historyOnly: true };
   state.counts[history.id] = 2;
   await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
   await clickElement(harness.container.querySelector('.gg-import-card-trigger')!);
@@ -128,3 +147,19 @@ it('keeps legacy export-file histories distinct from resumable native tasks', as
   expect(harness.container.querySelectorAll('.gg-import-row')).toHaveLength(2);
   expect(harness.container.textContent).not.toContain('任务');
 });
+
+it.each(['unknown', 'pending'] as const)('continues checking a genuinely %s source', async stateName => {
+  state.counts.codex = stateName;
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />));
+  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
+  expect(harness.container.querySelector('.gg-import-row button')!.hasAttribute('disabled')).toBe(true);
+});
+
+it('shows a confirmed empty native source without a perpetual checking label', async () => {
+  providers.forEach(provider => { state.counts[provider.id] = 0 });
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />));
+  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).toContain('0');
+  expect(harness.container.textContent).not.toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
+  expect(harness.container.querySelector('.gg-import-row button')!.hasAttribute('disabled')).toBe(true);
+});
+

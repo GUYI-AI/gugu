@@ -5,7 +5,7 @@ import { tags } from '@lezer/highlight';
 export function codeTheme(dark: boolean) {
   return [EditorView.theme({
     '&': { color: 'var(--foreground)', backgroundColor: 'var(--code-bg)', fontSize: '13px' },
-    '.cm-scroller': { fontFamily: 'var(--em-font-mono)', lineHeight: '20px', scrollbarWidth: 'thin' },
+    '.cm-scroller': { fontFamily: 'var(--em-font-mono)', lineHeight: '20px' },
     '.cm-content': { padding: '8px 0' },
     '.cm-line': { padding: '0 4px' },
     '.cm-gutters': { backgroundColor: 'var(--code-gutter)', color: 'var(--code-line-number)', border: 'none' },

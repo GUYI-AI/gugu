@@ -133,6 +133,7 @@ export default {
     "manageConnections": "管理连接"
   },
   "agentHome": {
+  "nativeHistorySummary": "旧咕咕会话：已移走 {{removed}} 条，待重试 {{pending}} 条，保留 {{retained}} 条；另有 {{unowned}} 条不属于当前档案",
   "historySummary_other": "已导入 {{count}} 条最近会话，{{skipped}} 条仍在原处",
   "preparation": { "preparing": "正在准备迁移", "copying": "正在导入配置和会话", "history": "正在整理历史", "elapsedLabel_other": "{{label}}，已用 {{count}} 秒" },
 
@@ -811,7 +812,8 @@ export default {
       "usage": "用量"
     },
     "dataImport": {
-      "chatgptExport": "ChatGPT 导出文件",
+      "chatgptExport": "ChatGPT 聊天记录导出文件",
+      "sourceIncomplete": "部分来源暂不可读取",
       "readOnlyHistory": "{{count}} 条只读历史记录",
 
       "alreadyImported": "{{count}} 项已存在，无需重复导入",
@@ -840,7 +842,6 @@ export default {
       "machineList": "设备",
       "appTab": "导入其他应用数据",
       "deviceTab": "导入其他电脑数据",
-      "chooseHint": "选择聊天记录导出文件",
       "sessions": "会话",
       "sessionCount": "会话（{{count}}）",
       "noDevices": "暂未发现同账号下的其他电脑数据。",
@@ -863,7 +864,6 @@ export default {
       "save": "保存",
       "syncSaveFailed": "同步设置保存失败，请重试",
       "synced": "已自动同步 {{count}} 项数据",
-      "pickSource": "选择导出文件",
       "partialRead": "有电脑暂时无法读取。",
       "thisComputer": "这台电脑",
       "devices": "来源设备",

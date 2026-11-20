@@ -10,6 +10,9 @@ import { friendRequestEntries } from '../../../../apps/desktop/src/lib/requestHi
 import type { FriendRequest } from '../../../../packages/core/src/shared/types/contacts'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
+// 页签是手机整页的版式(传 onBack = 手机);桌面是分节 + 抽屉,见 NewFriendsPanelDesktop.test.tsx。
+const phone = () => {}
+
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
 afterEach(() => { harness.cleanup() })
@@ -36,7 +39,7 @@ const row = (name: string) => rows().find((element) => element.textContent?.incl
 
 describe('#6704 好友页签 = 请求历史', () => {
   it('六种收发 × 状态同在一张列表,等我处理的在最上;页签角标只数它', async () => {
-    await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), { contacts: { friendRequests: friendRequestEntries(received, sent) } })
+    await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onBack: phone }), { contacts: { friendRequests: friendRequestEntries(received, sent) } })
     expect(rows().map((element) => element.querySelector('.nfp-name')?.textContent)).toEqual(['林小雨', '赵青禾', '孙明远', '何冬', '周以宁', '陈默'])
     expect(row('林小雨').querySelector('[data-testid="contacts-pending-request-accept-button"]')).not.toBeNull()
     expect(row('陈默').textContent).toContain('已添加')
@@ -53,7 +56,7 @@ describe('#6704 好友页签 = 请求历史', () => {
 
   it('点一行打开详情:完整附言与咕咕号;在详情里同意,详情收起', async () => {
     const acceptRequest = vi.fn(async () => ({ chatId: null, name: null, kind: null, created: false, member_count: null }))
-    await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), { contacts: { friendRequests: friendRequestEntries(received, sent), acceptRequest } })
+    await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onBack: phone }), { contacts: { friendRequests: friendRequestEntries(received, sent), acceptRequest } })
     expect(document.querySelector('[data-testid="request-detail"]')).toBeNull()
     await clickElement(row('林小雨'))
     const detail = document.querySelector('[data-testid="request-detail"]') as HTMLElement
@@ -66,7 +69,7 @@ describe('#6704 好友页签 = 请求历史', () => {
   })
 
   it('已处理的行也能点开,详情底部是同一句状态、没有操作', async () => {
-    await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), { contacts: { friendRequests: friendRequestEntries(received, sent) } })
+    await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onBack: phone }), { contacts: { friendRequests: friendRequestEntries(received, sent) } })
     await clickElement(row('孙明远'))
     const detail = document.querySelector('[data-testid="request-detail"]') as HTMLElement
     expect(detail.querySelector('[data-testid="request-detail-status"]')?.textContent).toBe('未通过')
@@ -79,7 +82,7 @@ describe('#6704 好友页签 = 请求历史', () => {
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
     try {
-      await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onOpenGroupChat }), { contacts: { friendRequests: friendRequestEntries(received, sent), acceptRequest } })
+      await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onOpenGroupChat, onBack: phone }), { contacts: { friendRequests: friendRequestEntries(received, sent), acceptRequest } })
       await clickElement(row('林小雨').querySelector('[data-testid="contacts-pending-request-accept-button"]') as HTMLElement)
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     } finally {

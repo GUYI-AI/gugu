@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { Check, ChevronRight, Clock, X } from '@/lib/icons'
 import { useReplicas } from '@/lib/replica'
 import { importSourceCounts } from './import-replicas'
-import { notify } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
 import { MachineList } from '@/components/ui/MachineList'
@@ -78,7 +77,6 @@ function sourceCount(reading?: SourceReading): number | undefined {
 
 function sourceDescription(t: ReturnType<typeof useTranslation<'main'>>['t'], reading?: SourceReading) {
   if (reading?.state === 'error') return t('settings.dataImport.readFailed')
-  if (reading?.state === 'value' && reading.value?.needsSource) return t('settings.dataImport.chooseHint')
   const count = sourceCount(reading)
   return count === undefined ? t('settings.dataImport.reading') : t('settings.dataImport.available', { count })
 }
@@ -90,29 +88,10 @@ function SourceAction({ provider, reading, ownerId, deviceId, deviceName, job }:
   deviceId: string | null; deviceName: string; job?: ImportJob
 }) {
   const { t } = useTranslation('main')
-  const [picking, setPicking] = useState(false)
   const count = sourceCount(reading)
-  const pick = provider.pickSource
-  const needsFile = !!pick && ((reading?.state === 'value' && reading.value?.needsSource) || count === 0)
-  async function selectFile() {
-    if (!pick) return
-    setPicking(true)
-    try {
-      await pick(deviceId)
-      await importSourceCounts.refresh(provider.id, deviceId)
-    } catch {
-      notify({ tier: 'error', title: t('settings.dataImport.readFailed') })
-    } finally {
-      setPicking(false)
-    }
-  }
   if (job && isActiveImport(job)) return <ImportProgress job={job} label={provider.label} />
-  if (job?.state === 'finished' && count === 0 && !needsFile) return <ImportProgress job={job} label={provider.label} />
-  return needsFile ? (
-    <Button variant="secondary" size="sm" disabled={picking} onClick={() => { void selectFile() }}>
-      {t('settings.dataImport.pickSource')}
-    </Button>
-  ) : (
+  if (job?.state === 'finished' && count === 0) return <ImportProgress job={job} label={provider.label} />
+  return (
     <Button variant="secondary" size="sm" disabled={!count} aria-label={t('settings.dataImport.importSource', { source: provider.label })}
       onClick={() => count && enqueueImport(ownerId, { devices: [{ deviceId, deviceName, count }], provider }, t)}>
       {t('settings.dataImport.action')}
@@ -161,13 +140,17 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
       {groups.map(group => {
         const rows = group.providers.map(provider => sources.find(source => source.provider.id === provider.id)!)
         if (rows.every(({ reading }) => reading?.state === 'value' && reading.value === null)) return null
+        const failed = rows.some(({ reading }) => reading?.state === 'error')
+        const settled = rows.every(({ reading }) => reading?.state === 'error'
+          || (reading?.state === 'value' && (reading.value === null || sourceCount(reading) !== undefined)))
         const ready = rows.every(({ reading }) => sourceCount(reading) !== undefined)
         const total = ready ? rows.reduce((sum, { reading }) => sum + sourceCount(reading)!, 0) : undefined
         const active = jobs.some(job => isActiveImport(job) && group.providers.some(provider => provider.id === job.provider.id))
         const first = group.providers[0]!
         return (
           <ImportCard key={group.id} name={group.label}
-            description={total === undefined ? t('settings.dataImport.reading') : t(first.historyOnly ? 'settings.dataImport.readOnlyHistory' : 'settings.dataImport.environmentAvailable', { count: total })}
+            description={!settled ? t('settings.dataImport.reading')
+              : failed ? t('settings.dataImport.sourceIncomplete') : total === undefined ? t('settings.dataImport.categoryUnavailable') : t(first.historyOnly ? 'settings.dataImport.readOnlyHistory' : 'settings.dataImport.environmentAvailable', { count: total })}
             icon={<ImportSourceIcon provider={first} />} open={open === group.id}
             onToggle={() => setOpen(open === group.id ? null : group.id)}>
             <ImportRow summary label={total === undefined ? t('settings.dataImport.scopeAll') : t('settings.dataImport.allCount', { count: total })}>

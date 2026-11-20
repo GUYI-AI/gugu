@@ -6,9 +6,9 @@ import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-ho
 import type { LocalProject, ProjectPathConflict } from '@shared/projects';
 
 function localProjectBaseRef(row: typeof projects.$inferSelect): string | null {
-  // Old task-home rows still say gitless=false. Its execution contract is an
-  // ordinary directory regardless of that historical flag or a leftover .git.
-  return row.gitless || isImplicitSessionHomeProjectId(row.id) ? null : (row.baseRef ?? 'main');
+  // Whether the directory has Git is read from disk when the project opens (@@@disk-decides-git). A task home is an
+  // ordinary directory regardless of a leftover .git.
+  return isImplicitSessionHomeProjectId(row.id) ? null : (row.baseRef ?? 'main');
 }
 
 function toLocalProject(row: typeof projects.$inferSelect): LocalProject {
