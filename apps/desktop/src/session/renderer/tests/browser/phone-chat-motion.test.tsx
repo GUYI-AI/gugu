@@ -16,7 +16,8 @@ let backs = 0, mounts = 0
 const controller = createRef<PhoneChatPageHandle>()
 const detail = () => document.querySelector<HTMLElement>('[data-shell-chat-detail]')!
 const list = () => document.querySelector<HTMLElement>('[data-mobile-tab-pager]')!
-const visible = () => detail().checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })
+// content-visibility hides descendants; the retained root still has its layout box.
+const visible = () => detail().querySelector('textarea')!.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })
 function Draft() {
   useEffect(() => { mounts++ }, [])
   return <textarea defaultValue="Keep this unfinished draft" />
@@ -83,6 +84,9 @@ it('follows Android progress over the real origin, cancels without navigation, a
   expect(backs).toBe(0)
   await until('native commit returned to the origin', () => backs === 1)
   expect(visible()).toBe(false)
+  expect(detail().inert).toBe(true)
+  expect(detail().getBoundingClientRect().width).toBe(0)
+  draft.focus(); expect(document.activeElement).not.toBe(draft)
   expect(list().style.transform).toBe('')
   await act(async () => show(true))
   await until('retained chat reopened', () => detail().style.transform === '')
@@ -146,5 +150,7 @@ it('honors reduced motion without keeping a hidden page transformed into view', 
   expect(detail().style.transform).toBe('')
   await act(async () => { controller.current!.back() })
   expect(backs).toBe(1); expect(visible()).toBe(false)
+  expect(detail().inert).toBe(true)
+  expect(detail().getBoundingClientRect().width).toBe(0)
   expect(detail().style.transform).toBe('scale(0)')
 })

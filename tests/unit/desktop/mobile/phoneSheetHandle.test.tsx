@@ -28,7 +28,8 @@ async function pointer(target: HTMLElement, type: string, x: number, y: number, 
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperties(event, Object.fromEntries(Object.entries({ pointerId: id, isPrimary: id === 1, pointerType: 'touch', clientX: x, clientY: y }).map(([k,v]) => [k, { value: v }])))
   // Ordinary routing/distance cases use slow motion; velocity cases specify their own real intervals.
-  Object.defineProperty(event, 'timeStamp', { value: at ?? (pointerTime += 200) })
+  // React replaces a native zero timestamp with Date.now(); keep all points in one monotonic domain.
+  Object.defineProperty(event, 'timeStamp', { value: 10_000 + (at ?? (pointerTime += 200)) })
   await act(async () => { target.dispatchEvent(event) })
 }
 async function click(target: HTMLElement, detail = 1) { await act(async () => { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail })) }) }
