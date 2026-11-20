@@ -41,8 +41,10 @@ const v1Schema = z.object({
       keyLast4: z.string().max(4),
       aliases: z.array(z.string().max(200)).max(32).optional(),
     }).optional(),
+    /** On a removed connection: what its key was, as identities (SHA-256 of address and key, never the key), so discovery does not list it again. */
+    suppresses: z.array(z.string().regex(/^[\da-f]{64}$/)).max(16).optional(),
   }).optional(),
-  /** Harness credentials belong to this device; removed connections remain available to bound sessions. */
+  /** Harness credentials belong to this device. A removed connection keeps its row (an account connection also its sign-in vault) for bound sessions, never a vendor key. */
   harnessConnection: z.object({
     kind: z.enum(['native', 'account', 'api-key']),
     /** 缺席 = 这家的官方地址(用户没改预填的那一个,#2507)。 */
