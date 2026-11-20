@@ -249,6 +249,20 @@ async function repowise(ctx) {
   }
 }
 
+// Unit test files (the projects `pnpm test:unit` runs) whose source imports one of these modules by path.
+function directTests(ctx, modules) {
+  const tests = execFileSync('git', ['ls-files', '*.test.ts', '*.test.tsx'], { cwd: ctx.root, encoding: 'utf8', maxBuffer: 1 << 30 })
+    .split('\n').filter((file) => file && !/\.(db|contract|real-electron)\.test\.|\/tests\/browser\/|^tests\/(integration|contract)\//.test(file))
+  const found = new Set()
+  for (const module of modules) {
+    const stem = module.replace(/\.(tsx?|mts|mjs)$/, '')
+    const name = stem.endsWith('/index') ? stem.split('/').slice(-2, -1)[0] : stem.split('/').pop()
+    const specifier = new RegExp(`from ['"][^'"]*/${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\.(tsx?|mjs))?['"]`)
+    for (const file of tests) if (specifier.test(readFileSync(resolve(ctx.root, file), 'utf8'))) found.add(file)
+  }
+  return [...found]
+}
+
 // Mutation testing on a few files: --stryker-files, else the files of the top hotspots. Stryker mutates the
 // checkout in place (stryker.config.mjs), so it runs last and alone.
 async function stryker(ctx) {
@@ -259,9 +273,14 @@ async function stryker(ctx) {
   // Stryker's in-place restore rewrites files without their executable bit; put tracked modes back afterwards.
   const executables = execFileSync('git', ['ls-files', '-s'], { cwd: ctx.root, encoding: 'utf8', maxBuffer: 1 << 30 })
     .split('\n').filter((line) => line.startsWith('100755 ')).map((line) => line.split('\t')[1])
+  // Only each module's own unit tests: the tests that import it directly. Following the import graph (`related`)
+  // reaches most of the suite, and Stryker's single worker thread then loads native addons (@parcel/watcher)
+  // twice and fails. The score then answers "do this module's own tests catch changes to it".
+  const testFiles = directTests(ctx, files.map((target) => target.replace(/:\d.*$/, '')))
+  if (testFiles.length === 0) throw new Error(`stryker: no unit test imports any of ${files.join(', ')}`)
   let result
   try {
-    result = run(ctx, bin(ctx, 'stryker'), ['run', 'stryker.config.mjs', '--mutate', files.join(',')], { allowExit: [0, 1] })
+    result = run(ctx, bin(ctx, 'stryker'), ['run', 'stryker.config.mjs', '--mutate', files.join(','), '--testFiles', testFiles.join(',')], { allowExit: [0, 1] })
   } finally {
     for (const file of executables) {
       const path = resolve(ctx.root, file)
@@ -297,6 +316,7 @@ async function stryker(ctx) {
       timeout: counts.Timeout ?? 0,
       survived: counts.Survived ?? 0,
       noCoverage: counts.NoCoverage ?? 0,
+      testFiles,
       errors: (counts.CompileError ?? 0) + (counts.RuntimeError ?? 0),
       files,
     },
