@@ -23,6 +23,9 @@ export interface CredentialProxyOptions {
   refresh?: (rejected: string) => Promise<string>
   credentialHeaders?: (token: string) => Record<string, string>
   maxRequestBytes?: number
+  refreshForbidden?: boolean
+  refusal?: (status: number, retried: boolean) => Promise<{ code: string; reason_code?: string; message: string } | null>
+  refusalError?: (error: unknown) => { code: string; reason_code?: string; message: string } | null
   warn: (event: { kind: 'connection' | 'stream'; status?: number; code?: string; headerNames?: string[]; proxies?: string[] }) => void
   streamTiming?: (timing: PlatformStreamTiming) => void
   httpError?: (diagnostic: PlatformHttpErrorDiagnostic) => void
@@ -108,14 +111,37 @@ export async function proxyPlatformCredentialRequest(
       else response.destroy()
       return
     }
-    if (upstreamResponse.status === 401 && !retried && options.refresh) {
+    const status = upstreamResponse.status
+    const refuse = (refusal: { code: string; reason_code?: string; message: string }) => {
+      if (harnessGone || response.headersSent) return
+      response.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', ...refusal } }))
+    }
+    if (options.refusal && (status === 401 || status === 403)) {
+      let refusal: Awaited<ReturnType<NonNullable<CredentialProxyOptions['refusal']>>>
+      try { refusal = await options.refusal(status, retried) }
+      catch {
+        void upstreamResponse.body?.cancel().catch(() => {})
+        if (!response.headersSent && !harnessGone) response.writeHead(503).end()
+        else response.destroy()
+        return
+      }
+      if (refusal) {
+        void upstreamResponse.body?.cancel().catch(() => {})
+        refuse(refusal)
+        return
+      }
+    }
+    if ((status === 401 || (status === 403 && options.refreshForbidden)) && !retried && options.refresh) {
       // No inference was accepted and no response headers/bytes have reached the harness.
       void upstreamResponse.body?.cancel().catch(() => {})
       let next: string
       try {
         next = await options.refresh(token)
-      } catch {
+      } catch (error) {
         if (!response.headersSent && !harnessGone) {
+          const refusal = options.refusalError?.(error)
+          if (refusal) { refuse(refusal); return }
           response.writeHead(503, { 'content-type': 'application/json' })
           response.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'Platform credential refresh failed' } }))
         }

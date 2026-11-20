@@ -2,6 +2,9 @@ import { createGuguSupabaseClient, type GuguSupabaseStorage } from '@gugu/core/c
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { Session } from '@supabase/supabase-js'
 import { authBoundedFetch } from './authBoundedFetch'
+import { withIdentityRealtime } from '../../shared/team-realtime-client'
+import { createRealtimeIdentityReader, publishTeamRealtimeRpc } from '../../shared/team-realtime-http'
+import { TEAM_REALTIME_CONTEXT_CHANGED } from '../../shared/team-realtime'
 import { getRendererAccessToken, getRendererSession } from './sessionPublication'
 import { MAIN_AUTH_STORAGE_KEY, isAuthTemporaryStorageKey } from '../../shared/auth-storage-keys'
 export { MAIN_AUTH_STORAGE_KEY, MAIN_PKCE_STORAGE_KEY, OAUTH_PENDING_STORAGE_KEY } from '../../shared/auth-storage-keys'
@@ -148,21 +151,29 @@ const authClient = createGuguSupabaseClient({
 })
 export const supabase: Pick<typeof authClient, 'auth'> = authClient
 
-export const dataClient = createGuguSupabaseClient({
+const teamRealtimeFetch: typeof fetch = (input, init) => fetch(input, init)
+const realtimeIdentity = createRealtimeIdentityReader(mainAccessToken, teamRealtimeFetch)
+const realtimeRuntime = {
+  readContext: realtimeIdentity.read,
+  publishTeam: (token: string, args: { p_topic: string; p_payload: unknown; p_event: string }) => publishTeamRealtimeRpc(teamRealtimeFetch, token, args),
+  onInvalidated: () => window.dispatchEvent(new Event(TEAM_REALTIME_CONTEXT_CHANGED)),
+}
+
+export const dataClient = withIdentityRealtime(createGuguSupabaseClient({
   accessToken: mainAccessToken,
   wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
-})
+}), realtimeRuntime)
 
-export const chatDb = createGuguSupabaseClient({
+export const chatDb = withIdentityRealtime(createGuguSupabaseClient({
   schema: 'chat',
   accessToken: mainAccessToken,
   wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
-})
-export const identityDb = createGuguSupabaseClient({
+}), realtimeRuntime)
+export const identityDb = withIdentityRealtime(createGuguSupabaseClient({
   schema: 'identity',
   accessToken: mainAccessToken,
   wrapFetch: next => (input, init) => authBoundedFetch(input, init, next),
-})
+}), realtimeRuntime)
 
 export async function getCurrentAuthUserId(): Promise<string> {
   const userId = getRendererSession()?.user.id

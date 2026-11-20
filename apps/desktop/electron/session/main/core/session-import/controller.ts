@@ -1,3 +1,5 @@
+import type { ImportCodexTaskParams } from '@shared/core/session-import/codex-tasks';
+import { scanCodexTaskImport, importCodexTasks, cancelCodexTaskImport, codexTaskImportProgress } from './codex-tasks';
 import type {
   ImportLocalSessionParams,
   ListLocalSessionsParams,
@@ -8,6 +10,10 @@ import { hasLocalSessionSource, getLocalSessionSource } from './host-source';
 import { importLocalSession } from './import-local-session';
 
 export const sessionImportController = createRPCController({
+  scanCodexTasks: () => scanCodexTaskImport(),
+  importCodexTasks: (params: ImportCodexTaskParams[]) => importCodexTasks(params),
+  cancelCodexTaskImport: async () => { cancelCodexTaskImport(); },
+  codexTaskImportProgress: async () => codexTaskImportProgress(),
   /** 本机能不能导入会话（web / 未接线的宿主上为 false，入口据此隐藏而不是点了才报错）。 */
   isAvailable: () => Promise.resolve(hasLocalSessionSource()),
   listLocalSessions: (params: ListLocalSessionsParams) => getLocalSessionSource().list(params),

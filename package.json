@@ -89,7 +89,7 @@
     "lint:source": "pnpm preflight:node && node scripts/checks/native-history-reads.cjs && node scripts/checks/check-jsonl-readline.mts && concurrently --group --timings --max-processes 8 --names eslint,console-usage-check,error-outlet-check,user-copy-leak-check,check-session-shell-port,check-case-collisions,check-file-url-paths,check-contract-producers,check-session-chat-ui-geometry,check-ui-visual-spec,check-css-parses,gen-icons,theme-color-check,check-focus-modality 'pnpm lint:eslint' 'node scripts/checks/console-usage-check.mts --root apps/desktop/src --root apps/desktop/electron --root apps/desktop/shared --root apps/desktop/session-tooling --root packages/core' 'node scripts/checks/error-outlet-check.mjs --root apps/desktop/electron --root packages' 'node scripts/checks/user-copy-leak-check.mts --root apps/desktop/src --root apps/desktop/electron --root packages' 'node scripts/checks/check-session-shell-port.mjs' 'node scripts/checks/check-case-collisions.mjs' 'node scripts/checks/check-file-url-paths.mjs' 'node scripts/checks/check-contract-producers.mjs' 'node scripts/checks/check-session-chat-ui-geometry.mjs' 'node scripts/checks/check-ui-visual-spec.mts' 'node scripts/checks/check-css-parses.mjs' 'node scripts/build/gen-icons.mjs --check' 'node scripts/checks/theme-color-check.mjs' 'node scripts/checks/check-focus-modality.mjs'"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "npm:@gugu-acp/claude-agent-acp@1.6.2",
+    "@agentclientprotocol/claude-agent-acp": "npm:@gugu-acp/claude-agent-acp@1.7.1",
     "@agentclientprotocol/sdk": "1.9.0",
     "@anthropic-ai/claude-agent-sdk": "0.3.293",
     "@codemirror/lang-css": "6.3.1",
@@ -226,6 +226,7 @@
     "codemirror": "6.0.2",
     "colorjs.io": "^0.5.2",
     "concurrently": "^8.2.2",
+    "core-js": "3.48.0",
     "croner": "^10.0.1",
     "cronstrue": "^3.14.0",
     "devicon": "^2.17.0",
@@ -252,6 +253,7 @@
     "katex": "^0.16.47",
     "lib0": "0.2.117",
     "libsodium-wrappers": "0.8.4",
+    "lightningcss": "1.33.0",
     "mobx": "^6.15.0",
     "mobx-react-lite": "^4.1.1",
     "nbranch": "^0.1.1",

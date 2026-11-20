@@ -23,6 +23,9 @@ export default {
     "fileOpenFailed": "This file could not be opened. Please try again later."
   },
   "question": {
+    "discuss": "Discuss first",
+    "needsOwner": "Input needed from {{name}}", "waitingForOwner": "Waiting for {{name}} to answer",
+    "skip": "Skip", "skipped": "Skipped",
     "count_one": "{{count}} question", "count_other": "{{count}} questions", "flowHint": "Submit all answers together", "progress": "Answer progress",
     "singleSelect": "Choose one", "multiSelect": "Choose any", "review": "Review answers", "reviewTitle": "Review before submitting",
     "reviewHint": "Confirm and send all answers together", "edit": "Edit", "back": "Back", "noSelection": "No selection", "answerSeparator": ", ",

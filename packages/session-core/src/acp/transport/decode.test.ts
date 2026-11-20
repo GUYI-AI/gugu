@@ -12,9 +12,14 @@ const fixtures: { name: string; update: unknown; event: NormalizedEvent }[] = [
     event: { kind: 'message', role: 'user', messageId: 'inserted', text: 'also print pwd', contentMode: 'replace', content: [{ type: 'text', text: 'also print pwd' }], steering: true, _meta: { guguSteering: true } },
   },
   {
-    name: 'user message without a native id retains its revert anchor',
-    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'edit this' }, _meta: { guguRevertAnchor: 'anchor' } },
+    name: 'user message without a native id retains its revert point',
+    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'edit this' }, _meta: { guguRevert: { before: 'anchor' } } },
     event: { kind: 'message', role: 'user', messageId: null, text: 'edit this', content: [{ type: 'text', text: 'edit this' }], contentMode: 'append', revertAnchor: 'anchor' },
+  },
+  {
+    name: 'a replayed prompt whose revert can restore files says so',
+    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'edit this' }, _meta: { guguRevert: { before: 'anchor', files: true } } },
+    event: { kind: 'message', role: 'user', messageId: null, text: 'edit this', content: [{ type: 'text', text: 'edit this' }], contentMode: 'append', revertAnchor: 'anchor', revertFiles: true },
   },
   {
     name: 'assistant message keeps the native id',

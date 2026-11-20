@@ -1,3 +1,5 @@
+import { createTeamPaymentCheckout } from './team-payment-checkout'
+import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
 import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
 import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
@@ -125,6 +127,8 @@ import { detectLocalSigning, downloadDmg, pickMacDmgFile, shouldUseDmgPath } fro
 import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
+import { isTeamInvitationLink } from '../shared/team-invitation-link'
+import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { OpenedLinkMailbox } from './opened-link-mailbox'
 import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
@@ -258,6 +262,8 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
+import { createQuestionCardSync } from './sessionpage/question-card-sync'
+import { allAgentQuestionRecords, markPublicQuestionCardSynced, onAgentQuestionRecordsChanged, rememberPublicQuestionCard } from './session/main/core/sessions/agent-question-store'
 import {
   emdashAgentRegistry,
   type LocalSessionPeer,
@@ -856,6 +862,22 @@ function desktopAuthProvider(): RuntimeAuthProvider {
 }
 bindElectronSupabaseAuth(async (forceRefresh) =>
   (await desktopAuthProvider().getAuth({ forceRefresh }))?.accessToken ?? null)
+const questionCardSync = createQuestionCardSync({
+  auth: () => desktopAuthProvider().getAuth(), records: allAgentQuestionRecords,
+  publish: async (auth,messageId,result) => {
+    const { data,error } = await makeChatClient(auth.accessToken).rpc('settle_agent_question_card', {
+      p_message_id: messageId,p_state: result.state,p_answers: 'answers' in result ? result.answers : null,
+    });
+    if (error) throw new Error(`Question card update failed: ${error.message}`);
+    return data;
+  },
+  committed: record => markPublicQuestionCardSynced(record.sessionId,record.item.itemId),
+  failed: error => createLogger('question-card/sync').warn({ error: String(error) },'Question card result is waiting to synchronize'),
+})
+onAgentQuestionRecordsChanged(() => { void questionCardSync.wake() })
+onElectronCloudAnswer(questionCardSync.cloudAnswered)
+void app.whenReady().then(() => questionCardSync.wake())
+app.once('will-quit', questionCardSync.stop)
 let primaryGuguMcpHost: DesktopGuguMcpHost | null = null
 
 function hasPersistedMcpGrants(name: string): boolean {
@@ -2461,6 +2483,21 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
 })
+const teamPaymentCheckout = createTeamPaymentCheckout({
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  open: input => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
+    return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
+  },
+  report: error => createLogger('team/payment').warn({ error: String(error) }, 'Team payment browser failed'),
+})
+ipcMain.handle('team-payment:open', (event, input: unknown) => {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
+    return { ok: false, error: { code: 'forbidden' } }
+  return teamPaymentCheckout.request(input)
+})
+app.on('before-quit', () => teamPaymentCheckout.close())
 ipcMain.handle('app:get-version', () => app.getVersion())
 ipcMain.handle('auth:oauth-redirect', () => `${GUGU_LINK_SCHEME}://auth/callback`)
 ipcMain.handle('opened-links:take', (event) => {
@@ -2698,6 +2735,7 @@ const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
 })
 
 function onHumanAuthSessionChanged(): void {
+  void questionCardSync.wake()
   externalImport?.ownerChanged()
   resumeDeclaredUploads()
   projectionDeviceRuntime.invalidate()
@@ -2818,7 +2856,10 @@ registerErrorSummaryReporting({
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
   set: (auth) => { pushedHumanAuth = auth; humanAuthRevision += 1; errorSummaryConsent.identityChanged() },
-  revoke: () => projectionDeviceRuntime.invalidate(),
+  revoke: () => {
+    projectionDeviceRuntime.invalidate()
+    teamPaymentCheckout.identityChanged(pushedHumanAuth && typeof pushedHumanAuth === 'object' ? pushedHumanAuth : null)
+  },
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
   leaveIfChanging: sessionLifeLeaveIfChanging,
@@ -3572,7 +3613,7 @@ let guguLinksReady = false
 function handleGuguLink(url: string): void {
   if (!url.startsWith(`${GUGU_LINK_SCHEME}://`)) return
   openedLinks.push(url)
-  if (isOAuthCallback(url)) {
+  if (isOAuthCallback(url) || isTeamInvitationLink(url)) {
     focusMainWindow()
     return
   }
@@ -3610,7 +3651,7 @@ function flushPendingGuguLinks(): void {
   guguLinksReady = true
   // Windows / Linux 冷启动:链接是这一次启动的参数。
   const coldStart = process.argv.find((arg) => arg.startsWith(`${GUGU_LINK_SCHEME}://`))
-  if (coldStart && !isOAuthCallback(coldStart)) pendingGuguLinks.push(coldStart)
+  if (coldStart && !isOAuthCallback(coldStart) && !isTeamInvitationLink(coldStart)) pendingGuguLinks.push(coldStart)
   for (const url of pendingGuguLinks.splice(0)) handleGuguLink(url)
 }
 
@@ -3851,11 +3892,14 @@ function crossMachine(): CrossMachineSessions {
 async function cloudComputerClient() {
   const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(), override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
   if (!baseUrl) return null
+  const account = await desktopAuthProvider().getAuth()
+  if (account && teamAccountTokenHint(account.accessToken) !== 'personal') return null
   return createCloudComputerClient({
     baseUrl,
     accessToken: async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken) throw new Error('this machine is not signed in to 咕咕')
+      if (teamAccountTokenHint(auth.accessToken) !== 'personal') throw new Error('Cloud computer spending requires a separate personal account')
       return auth.accessToken
     },
     anonKey: getSupabaseAnonKey(),
@@ -5042,7 +5086,8 @@ app.whenReady().then(async () => {
       // gugu-dev#181 ⑨ 问自群里的那一句,问题卡也进那个群(question-card.ts)。
       if (record.action === 'ask_user') {
         const asked = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions })
+        return withQuestionCard({ auth, caller: await remoteCaller(auth, context), projectId: context.projectId, asked, questions: record.questions,
+          onPosting: (questionId,card) => rememberPublicQuestionCard(context.sessionId,questionId,card) })
       }
       // #7199 第二步:列我的设备与它们的动作 / 调某台设备的某个动作(`device` 是目标,❌ 当成「在那台机器上做」转发)。
       if (record.action === 'device_actions') {

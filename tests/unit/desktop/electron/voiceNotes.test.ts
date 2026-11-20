@@ -43,6 +43,20 @@ afterEach(async () => {
 })
 
 describe('转写一段', () => {
+  it('refuses a cached team ticket after login session replacement and allows a later explicit transcription to issue afresh', async () => {
+    let sessionId = 'original-session'
+    const provider = { getAuth: async () => ({ userId: 'team-principal', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'team-principal', session_id: sessionId, app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }) }
+    issuePlatformModelAccess.mockResolvedValueOnce({ ...ticket(), teamTask: { actorUserId: 'team-principal', memberIdentityId: 'team-principal', authSessionId: sessionId,
+      funding: { kind: 'team', team_id: 'team-a', member_id: 'member-a', task_id: 'voice-task-a', unit_version: 2, locked_at: '2026-11-15T00:00:00Z' } } })
+    fetchMock.mockResolvedValue(reply(200, { choices: [{ message: { content: 'ok' } }] }))
+    await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toEqual({ ok: true, text: 'ok' })
+    sessionId = 'new-session'
+    await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toMatchObject({ ok: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(issuePlatformModelAccess).toHaveBeenCalledTimes(1)
+    expect(revokePlatformModelAccess).toHaveBeenCalledWith(provider, 'access-1')
+    await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toEqual({ ok: true, text: 'ok' })
+    expect(issuePlatformModelAccess.mock.calls[1][0]).not.toHaveProperty('keepFromAccessSessionId')
+  })
   it('以助理的名义签票(语音笔记那个模型),把 WAV 当 input_audio 交上去,回模型说的字', async () => {
     fetchMock.mockImplementation(async () => reply(200, { choices: [{ message: { content: '[00:01] 说话人1：你好' } }] }))
     await expect(transcribeVoiceNoteSegment(auth, request)).resolves.toEqual({ ok: true, text: '[00:01] 说话人1：你好' })

@@ -288,41 +288,31 @@ describe('claude acp vendor boundary', () => {
     }
   });
 
-  it('ships the UltraCode adapter mapping and toggles it independently from ordinary effort', async () => {
-    const effortEntry = vendorAgentEntry().replace(/acp-agent\.js$/, 'session-effort.js');
-    const vendor = await import(pathToFileURL(effortEntry).href) as {
-      effortFlagSettings(value: string | undefined, previous: string | undefined): {
-        ultracode?: boolean;
-        effortLevel: string | null;
-      };
+  it('ships the UltraCode effort row and turns ultracode off when the row is left', async () => {
+    const dist = dirname(vendorAgentEntry());
+    const vendor = await import(pathToFileURL(join(dist, 'session-effort.js')).href) as {
+      effortFlagSettings(value: string | undefined, ultracode: boolean): { ultracode?: boolean; effortLevel: string | null };
       buildEffortConfigOption(
         modelInfos: Array<{ value: string; supportsEffort: boolean; supportedEffortLevels: string[] }>,
         currentModelId: string,
         currentEffortLevel: string | undefined,
         useRecommendedValue: boolean,
+        ultracode?: { supported: boolean },
       ): { currentValue?: unknown; options?: Array<{ value: string }> } | undefined;
     };
-    expect(vendor.effortFlagSettings('ultracode', 'high')).toEqual({
-      ultracode: true,
-      effortLevel: null,
-    });
-    // 离开 UltraCode 必须在同一次 flag update 里显式关掉它。
-    expect(vendor.effortFlagSettings('high', 'ultracode')).toEqual({
-      ultracode: false,
-      effortLevel: 'high',
-    });
-    expect(vendor.effortFlagSettings('default', 'ultracode')).toEqual({
-      ultracode: false,
-      effortLevel: null,
-    });
+    // 1.7.x rides upstream's ultracode session state: the row turns it on and clears an ordinary effort pin in one write,
+    // and an ordinary effort keeps it on while the session has it.
+    expect(vendor.effortFlagSettings(undefined, true)).toEqual({ ultracode: true, effortLevel: null });
+    expect(vendor.effortFlagSettings('high', false)).toEqual({ effortLevel: 'high' });
+    // 离开 UltraCode 必须在同一次 flag update 里显式关掉它(1.7.x: the effort handler's leavingUltracode branch).
+    const agent = readFileSync(vendorAgentEntry(), 'utf8');
+    expect(agent).toContain('{ ...effortFlagSettings(value, false), ultracode: false }');
 
-    const xhigh = [{ value: 'sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'xhigh'] }];
-    const effortOption = vendor.buildEffortConfigOption(xhigh, 'sonnet', 'ultracode', false);
+    const levels = [{ value: 'sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'xhigh'] }];
+    const effortOption = vendor.buildEffortConfigOption(levels, 'sonnet', 'ultracode', false, { supported: true });
     expect(effortOption?.currentValue).toBe('ultracode');
     expect(effortOption?.options?.map((option) => option.value)).toContain('ultracode');
-
-    const noXhigh = [{ value: 'sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }];
-    const noXhighOption = vendor.buildEffortConfigOption(noXhigh, 'sonnet', undefined, false);
-    expect(noXhighOption?.options?.map((option) => option.value)).not.toContain('ultracode');
+    const unsupported = vendor.buildEffortConfigOption(levels, 'sonnet', undefined, false, { supported: false });
+    expect(unsupported?.options?.map((option) => option.value)).not.toContain('ultracode');
   });
 });

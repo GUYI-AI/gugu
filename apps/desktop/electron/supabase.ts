@@ -1,6 +1,9 @@
+import { egress } from '@gugu/core/shared/egress'
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import { pauseElectronRealtimeChannels, reconnectElectronRealtimeChannels } from './realtime-channel'
 import { createLogger } from './lib/logger'
+import { withIdentityRealtime } from '../shared/team-realtime-client'
+import { createRealtimeIdentityReader, publishTeamRealtimeRpc } from '../shared/team-realtime-http'
 
 /** Observes the egress fetch of the main process's cloud clients: an answer below 500 is a transport fact. */
 const observeCloudAnswers = (next: typeof globalThis.fetch) => (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -77,14 +80,22 @@ export function resumeElectronSupabaseRealtime(): Promise<void> {
 }
 
 let cachedSupabase: ElectronSupabaseClient | null = null
+// The identity reader and team publish are cloud requests like the clients': the same egress fetch, the same observer.
+const cloudFetch = observeCloudAnswers((input, init) => egress.fetch(input as string | URL | Request, init))
+function teamAwareRealtime(client: ElectronSupabaseClient, accessToken: () => Promise<string | null>) {
+  const identity = createRealtimeIdentityReader(accessToken, cloudFetch)
+  return withIdentityRealtime(client, { readContext: identity.read,
+    publishTeam: (token, args) => publishTeamRealtimeRpc(cloudFetch, token, args) })
+}
+const currentToken = async () => {
+  if (!currentAccessToken) throw new Error('Electron Supabase account provider is not bound')
+  return currentAccessToken()
+}
 function resolveSupabase(): ElectronSupabaseClient {
-  return (cachedSupabase ??= createGuguSupabaseClient({
-    accessToken: async () => {
-      if (!currentAccessToken) throw new Error('Electron Supabase account provider is not bound')
-      return currentAccessToken()
-    },
+  return (cachedSupabase ??= teamAwareRealtime(createGuguSupabaseClient({
+    accessToken: currentToken,
     wrapFetch: observeCloudAnswers
-  }))
+  }), currentToken))
 }
 
 export const supabase = new Proxy({} as ElectronSupabaseClient, {
@@ -97,7 +108,7 @@ export const supabase = new Proxy({} as ElectronSupabaseClient, {
 
 /** A host-owned short-lived connection, with no stored GoTrue session or shared channel objects. */
 export function createElectronRealtimeClient(accessToken: () => Promise<string | null>) {
-  return createGuguSupabaseClient({ accessToken, wrapFetch: observeCloudAnswers })
+  return teamAwareRealtime(createGuguSupabaseClient({ accessToken, wrapFetch: observeCloudAnswers }), accessToken)
 }
 
 // Returns an authenticated identity-schema client using the caller's access token.

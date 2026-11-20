@@ -462,6 +462,14 @@ export interface IAcpBehavior {
   forkViaNewSessionMeta?(sourceProviderSessionId: string): Record<string, unknown> | undefined;
 
   /**
+   * @@@revert - step the conversation back to before one of its turns, in place (same session id). ACP itself has no
+   * such method; a plugin that sets this says how its harness does it. Unset = this harness has no revert, and its
+   * messages never get a revert entry. Gugu's own bridges share `guguBridgeRevert` (`_session/revert`); a vendor-native
+   * ACP server gets its own (an extension method of its own).
+   */
+  revert?: AcpRevert;
+
+  /**
    * 模型目录探针那一条 `session/new` 带的 `_meta`:让这一家开一条**不装用户 MCP** 的会话。
    * 不声明 = 照常开(这一家的 `session/new` 会把用户的 MCP 全起一遍 —— 那是探针的副作用,不是它要的)。
    *
@@ -516,6 +524,37 @@ export interface IAcpBehavior {
   connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): AcpAgentApi;
 
 }
+
+/** Where a revert steps back to: `before` is the harness's own id for a turn, opaque to Gugu; `files` = it can also restore files. */
+export type AcpRevertPoint = { before: string; files?: true };
+
+export type AcpRevert = {
+  /**
+   * After a foreground turn settles: the point that steps back to before it, or null when it has none.
+   * `response` is how the turn ended as the agent sent it (its `_meta`, or vendor fields at the top level).
+   * Answer synchronously when the point is in `response`: the turn then settles at its idle like any other; a point
+   * that needs a request (a Promise) holds the turn's settlement until it answers.
+   */
+  point(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, response: Readonly<Record<string, unknown>>): AcpRevertPoint | null | Promise<AcpRevertPoint | null>;
+  /** Step back to before `before`, in place. `restoreFiles: false` must leave files untouched. Throws when it cannot. */
+  revert(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, before: string, restoreFiles: boolean): Promise<void>;
+};
+
+/** The point a Gugu bridge puts on a receipt, a turn's end, or a replayed prompt: `_meta.guguRevert`. */
+export function guguRevertPoint(meta: unknown): AcpRevertPoint | null {
+  const value = (meta as { guguRevert?: { before?: unknown; files?: unknown } } | undefined)?.guguRevert;
+  if (typeof value?.before !== 'string' || !value.before) return null;
+  return { before: value.before, ...(value.files === true ? { files: true as const } : {}) };
+}
+
+/** Gugu's own bridges (claude-agent-acp, the Codex app-server bridge): `_meta.guguRevert` and `_session/revert`. */
+export const guguBridgeRevert: AcpRevert = {
+  point(_agent, _sessionId, response) { return guguRevertPoint(response._meta); },
+  async revert(agent, sessionId, before, restoreFiles) {
+    const result = await agent.extMethod!('_session/revert', { sessionId, before, ...(restoreFiles ? { restoreFiles } : {}) });
+    if (result?.sessionId !== sessionId) throw new Error('Revert changed the provider session ID.');
+  },
+};
 
 /**
  * Describes whether a provider supports the Agent Client Protocol (ACP) transport.
