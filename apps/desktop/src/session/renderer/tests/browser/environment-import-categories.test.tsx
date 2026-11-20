@@ -18,6 +18,13 @@ const state = vi.hoisted(() => ({
   enqueue: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), cancelAutomatic: vi.fn(),
   owners: { fixture: { automatic: true, sources: ['codex'], categories: ['tasks'] as string[] } },
   update: vi.fn(),
+  listIcons: vi.fn(async () => ({
+    codex: { kind: 'svg' as const, variants: [{ minSize: 0, light: '<svg viewBox="0 0 16 16"><path d="M4 8h8" /></svg>' }] },
+  })),
+}))
+vi.mock('@renderer/lib/ipc', async load => ({
+  ...await load<typeof import('@renderer/lib/ipc')>(),
+  rpc: { agents: { listIcons: state.listIcons } },
 }))
 vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/replica')>(),
   useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id]) => state.counts[id] === 'error'
@@ -41,7 +48,8 @@ vi.mock('@/components/settings/data-import/import-sync-preferences', () => ({
 vi.mock('@/components/settings/data-import/import-sync', () => ({ syncImports: vi.fn() }))
 
 /** Source rows draw agent icons, which read through react-query. */
-const withQueries = (node: ReactNode) => <QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>
+let queryClient: QueryClient
+const withQueries = (node: ReactNode) => <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
 
 const providers: ImportProvider[] = ENVIRONMENT_IMPORT_CATEGORIES.map((category, index) => ({
   id: category === 'tasks' ? 'codex' : `codex:${category}`, label: 'ChatGPT', sourceLabel: 'ChatGPT', sourceId: 'codex',
@@ -53,6 +61,7 @@ let language: string
 let viewport: { width: number; height: number }
 beforeEach(async () => {
   vi.clearAllMocks()
+  queryClient = new QueryClient()
   providers.forEach((provider, index) => { state.counts[provider.id] = index + 1 })
   state.owners.fixture = { automatic: true, sources: ['codex'], categories: ['tasks'] }
   language = i18n.language; viewport = { width: innerWidth, height: innerHeight }
@@ -61,7 +70,14 @@ beforeEach(async () => {
   Object.assign(harness.container.style, { width: '620px', padding: '24px', fontFamily: 'system-ui, sans-serif', background: 'var(--bg)', color: 'var(--fg)' })
 })
 afterEach(async () => {
-  harness?.cleanup(); await i18n.changeLanguage(language); await page.viewport(viewport.width, viewport.height)
+  try {
+    harness?.cleanup()
+  } finally {
+    await queryClient.cancelQueries()
+    queryClient.clear()
+    await i18n.changeLanguage(language)
+    await page.viewport(viewport.width, viewport.height)
+  }
 })
 
 it('renders all five real category rows and queues only the selected category or all five', async () => {
