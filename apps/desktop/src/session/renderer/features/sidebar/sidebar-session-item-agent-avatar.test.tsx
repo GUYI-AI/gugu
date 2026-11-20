@@ -35,7 +35,7 @@ vi.mock('./sidebar-identity-card', () => ({
   useSidebarIdentityCardTrigger: () => ({ dismiss: () => {}, onPointerEnter: () => {}, onPointerLeave: () => {}, onPointerDown: () => {} }),
 }));
 vi.mock('./sidebar-store', () => ({ mountedSessionPresentation: () => null }));
-vi.mock('./use-session-drop-target', () => ({ useSessionDropTarget: () => ({ over: false, bind: () => ({}) }) }));
+vi.mock('./session-drop-target', () => ({ sessionDropTarget: () => ({}) }));
 vi.mock('./session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, pendingArchiveSessionId: null, syncCursorFromPointer: () => {} } }));
 vi.mock('./with-mounted-session', () => ({ withMountedSession: () => {} }));
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({

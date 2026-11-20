@@ -31,7 +31,7 @@ import { useSshLinkProblems } from '../hooks/useSshLinkProblems'
 // #6264 远程 SSH 的机器:这台电脑与它之间只走 SSH(product spec「两种连法，处处能用」)。
 // 连不上时 ❌ 退回咕咕云,各个模块照常报「问不到」;「怎么修」只在这一处说 —— 一张浮在窗口顶部中间的卡片
 // (与远端终端上那张 SSH 提问卡片同一副浮层),照 VS Code Remote-SSH 连接要密码时在窗口顶上问:
-//  · 要人回答(密码 / 口令 / 新主机指纹)才连得上:句子里一段「登录」,点了就在这张卡片里问;
+//  · 要人回答(密码 / 口令 / 新主机指纹)才连得上:❌ 自己出面;人在用到那台机器的地方点了「登录」,提问浮在这张卡片里;
 //  · 版本太旧:这台电脑当场替它更新(照 VS Code Remote-SSH),卡片说「正在更新」,升完自动连上、卡片收起;
 //    没更新成就说没成,句子里一段「重试」;老到没法自动更新的,给出在那台机器上重装的那一行命令;
 //  · 指纹变了 / 被拒绝 / 没登这个账号 / 没装:如实说(被拒绝 ❌ 当成太旧去升级 —— 升级只因为版本)。
@@ -80,8 +80,9 @@ export function SshLinkSignIn() {
       ) ?? null,
     [devices, dismissed],
   )
-  // 正在登录的那台优先(登录中它的原因会被清掉,卡片 ❌ 跳到别的机器上去)。
-  const signingMachine = signingIn ? devices.find((d) => d.device_id === signingIn) : null
+  // 正在登录的那台优先(从哪里点的「登录」都一样,提问浮在这张卡片上;登录中它的原因会被清掉,卡片 ❌ 跳到别的机器上去)。
+  const signingId = signingIn ?? prompt?.deviceId
+  const signingMachine = signingId ? devices.find((d) => d.device_id === signingId) : null
   const shown: SshLinkNotice | null = signingMachine
     ? { deviceId: signingMachine.device_id, name: signingMachine.label, reason: 'signInRequired' }
     : (notice ?? (tunnelWaiting ? { deviceId: tunnelWaiting.device_id, name: tunnelWaiting.label, reason: 'waitingIdle' } : null))
@@ -191,7 +192,7 @@ export function SshLinkSignIn() {
                 </span>
               ) : (
                 <>
-                  {t(`devices.link.${noticeKey(shown.reason)}`, { name: shown.name })}
+                  {t(`devices.link.${shown.reason}`, { name: shown.name })}
                   {shown.reason === 'outdated' ? (
                     <>
                       {' '}
@@ -221,21 +222,4 @@ export function SshLinkSignIn() {
       </div>
     </div>
   )
-}
-
-function noticeKey(reason: SshLinkFailure): 'signInNeeded' | 'hostKeyChanged' | 'outdated' | 'refused' | 'notSignedIn' | 'notInstalled' {
-  switch (reason) {
-    case 'refused':
-      return 'refused'
-    case 'hostKeyChanged':
-      return 'hostKeyChanged'
-    case 'outdated':
-      return 'outdated'
-    case 'notSignedIn':
-      return 'notSignedIn'
-    case 'notInstalled':
-      return 'notInstalled'
-    default:
-      return 'signInNeeded'
-  }
 }

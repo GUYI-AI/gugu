@@ -131,11 +131,11 @@ function failureOf(error: unknown): { code: string; status: number; message: str
 
 /** 对方回了话、但这会儿用不了(额度、QPS、临时错误):稍后再试。 */
 function unavailable(name: string): string {
-  return `${name} isn't available right now; try again later.`;
+  return `${name} is currently unavailable. Try again later.`;
 }
 
 /** 这台设备连不上平台(没网,或等不到回话)。 */
-const NO_NETWORK = "Can't reach Gugu; check your network.";
+const NO_NETWORK = 'Cannot reach Gugu. Check your network.';
 
 /** 服务端诊断只进日志,界面按这个类型使用自己的双语文案。 */
 function serviceUnavailable(name: string): { error: string; errorType: 'service_unavailable' } {
@@ -156,12 +156,12 @@ function connectFailure(error: unknown, name: string, secrets: readonly string[]
     case 'unknown_provider':
       return { success: false, error: `The Gugu platform does not offer ${name} yet.`, errorType: 'generic' };
     case 'request_timeout':
-      return { success: false, error: "Your request didn't reach Gugu in time; your network may be unstable.", errorType: 'timed_out' };
+      return { success: false, error: 'Your request did not reach Gugu in time. Your network may be unstable.', errorType: 'timed_out' };
     case 'network':
       return { success: false, error: NO_NETWORK, errorType: 'network' };
     case 'rate_limited':
     case 'too_many_streams':
-      return { success: false, error: `Too many requests to ${name} right now; try again shortly.`, errorType: 'rate_limited' };
+      return { success: false, error: `Too many requests to ${name}. Try again later.`, errorType: 'rate_limited' };
     default:
       return { success: false, ...serviceUnavailable(name) };
   }

@@ -71,7 +71,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
 }) {
   const { translate } = useSessionMessages();
   // #2548 the chip reads 「新智能体」, as the composer button that opened this box (mock v33 派智能体); the box asks
-  // 「想让新智能体做点什么？」 (already says it is a new one, so no per-caller wording) and the group chip reads 「进群：群名」.
+  // 「新智能体要做什么？」 (already says it is a new one, so no per-caller wording) and the group chip reads 「加入：群名」.
   const draftKey = taskDispatchDraftKey(verbKey);
   // 选词那一刻框里写着的话跟过来:要在 NewSessionComposer 挂上(读草稿)之前放好。
   useState(() => {

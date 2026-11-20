@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// #2548 the new-agent box opened from a chat's composer (mock v33 派智能体): it asks 「想让新智能体做点什么？」 whoever opened
-// it, and in a group the target chip reads 「进群：<群名>」.
+// #2548 the new-agent box opened from a chat's composer (mock v33 派智能体): it asks 「新智能体要做什么？」 whoever opened
+// it, and in a group the target chip reads 「加入：<群名>」.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -93,10 +93,10 @@ const chip = () => host.querySelector<HTMLElement>('[data-testid="composer-birth
 const verbTag = () => host.querySelector<HTMLElement>('[data-composer-placeholder]')!.textContent;
 
 describe('TaskDispatchComposer copy', () => {
-  it('in a group: asks 想让新智能体做点什么？ and the chip reads 进群：<群名>', async () => {
+  it('in a group: asks 新智能体要做什么？ and the chip reads 加入：<群名>', async () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="group-1" chatName="产品讨论群" joinChat />));
-    expect(placeholder()).toBe('想让新智能体做点什么？');
-    expect(chip()?.textContent).toBe('进群：产品讨论群');
+    expect(placeholder()).toBe('新智能体要做什么？');
+    expect(chip()?.textContent).toBe('加入：产品讨论群');
     expect(verbTag()).toContain('新智能体');
   });
 
@@ -104,7 +104,7 @@ describe('TaskDispatchComposer copy', () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));
     // The chat's remembered project is read first (none here).
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-    expect(placeholder()).toBe('想让新智能体做点什么？');
+    expect(placeholder()).toBe('新智能体要做什么？');
     expect(chip()).toBeNull();
   });
 });
@@ -155,7 +155,7 @@ describe('the remembered project is a reading', () => {
     await act(async () => {});
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     const failed = host.querySelector('[data-testid="task-dispatch-project-failed"]');
-    expect(failed?.textContent).toContain('读不到这个对话上次用的项目');
+    expect(failed?.textContent).toContain('无法读取此对话上次使用的项目');
     // No composer: the task cannot be sent anywhere until the project is known.
     expect(host.querySelector('[data-composer-placeholder]')).toBeNull();
 

@@ -4,6 +4,7 @@ import { getCurrentAuthUserId } from '@/lib/supabase'
 import { thisPhoneDeviceId } from '../phone-device/phoneDeviceSettings'
 import { nativeAgent, phoneAgentAvailable } from './nativeAgent'
 import { bindIOSLocalHostRoute } from '../ios-host/iosLocalHostRoute'
+import { taskFlowText } from '@/components/session-watch/task-flow-catalog'
 
 const STARTUP_READS = new Set(['sessionTimeline.sessionCreateOptions', 'sessionTimeline.sessionCreateModels'])
 
@@ -18,8 +19,8 @@ function localCall(ownerId: string, deviceId: string, id: string, channel: strin
       settled = true
       signal?.removeEventListener('abort', abort)
       reject(Object.assign(new Error(channel === 'sessionTimeline.sessionCreate'
-        ? '手机还没有确认这次创建，请用原来的内容继续同一次创建。'
-        : '手机尚未返回操作结果，请重试。'), { code: 'host_call_timeout', requestId: id, deviceId }))
+        ? taskFlowText('errors.createUnconfirmed')
+        : taskFlowText('errors.noResult')), { code: 'host_call_timeout', requestId: id, deviceId }))
     }, timeoutMs)
     const finish = (error: unknown, result?: unknown) => {
       if (settled) return
@@ -63,6 +64,6 @@ export async function invokePhoneHost<T>(deviceId: string, channel: string, args
   }
   const reply = await callDeviceRpc<{ value: T }>(deviceId, 'taskhost.call', { channel, args }, { timeoutMs: timeoutMs ?? (channel === 'sessionTimeline.sessionCreate' ? 180_000 : 12_000), signal, ...(channel === 'sessionTimeline.sessionSend' ? { retainReplyOnTimeout: true } : {}) })
   if (reply.error) throw new SessionInputAdmissionError(reply.error.message, sessionInputAdmission(reply.error), reply.error.code)
-  if (!reply.result || !('value' in reply.result)) throw new Error('手机尚未返回操作结果，请重试')
+  if (!reply.result || !('value' in reply.result)) throw new Error(taskFlowText('errors.noResult'))
   return reply.result.value
 }

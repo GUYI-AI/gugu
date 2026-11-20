@@ -1,6 +1,6 @@
 // 通讯录侧 agent 状态视觉映射 —— 从 ContactsPanel 抽出(god freeze 冻结,参考 #2179 抽 groupMemberModels 打法)。
 // 文案、颜色与其它每一面同一张表(packages/core/src/shared/agentStatusPresentation.ts,owner 2026-09-25 定):
-//   working 运行中 橙 · parked 后台运行中 橙(静止)· needs_user 需要你 黄(Solar 感叹号字形)· error 出错了 红
+//   working 运行中 橙 · parked 后台运行中 黄(双竖线 AgentParkedGlyph)· needs_user 需要你 黄(Solar 感叹号字形)· error 出错了 红
 //   idle 在线 绿 · offline 不在线 灰(owner:待命 → 不在线,「待命会让人以为它还在运行」)· pending 确认中 灰 · removed 已移除
 // #6448 之前通讯录把「运行中」也写成「在线」(不强调活动细节),与头像、聊天头给出两个答案 —— 已改成同一句话。
 // ❌ 别在此私有飘(#1953 教训):颜色只写 `--agent-tone-*` 这几个 token。
@@ -50,7 +50,8 @@ export function agentContactTone(status: AgentDisplayStatus): Pick<AgentContactP
 
 // Tailwind 的 JIT 要在源码里看见完整的类名,所以这张表按 tone 逐条写出,色值只引 `--agent-tone-*`。
 export function agentContactRowToneColorClass(tone: AgentContactTone): string {
-  if (tone === 'working' || tone === 'parked') return 'bg-[var(--agent-tone-running)]'
+  if (tone === 'working') return 'bg-[var(--agent-tone-running)]'
+  if (tone === 'parked') return 'bg-[var(--agent-tone-parked)]'
   if (tone === 'idle') return 'bg-[var(--agent-tone-online)]'
   if (tone === 'offline' || tone === 'archived' || tone === 'pending' || tone === 'starting') return 'bg-[var(--agent-tone-muted)]'
   if (tone === 'needs_user') return 'bg-[var(--agent-tone-needs-user)]'
@@ -71,10 +72,10 @@ export function agentContactRowDotClass(tone: AgentContactTone): string {
 
 export function agentContactAvatarBadgeClass(tone: AgentContactTone | null): string {
   if (tone === 'idle') return agentAvatarBadge('after:bg-[var(--agent-tone-online)]')
-  if (tone === 'working' || tone === 'parked') return agentAvatarBadge('after:bg-[var(--agent-tone-running)]')
-  // needs_user is rendered as a Solar glyph by the row, so do not add the
-  // legacy pseudo-element dot on the avatar as a second, ambiguous marker.
-  if (tone === 'needs_user') return ''
+  if (tone === 'working') return agentAvatarBadge('after:bg-[var(--agent-tone-running)]')
+  // needs_user and parked are glyphs on the avatar's own badge (AgentNeedsUserGlyph / AgentParkedGlyph), so do not
+  // add the legacy pseudo-element dot as a second, ambiguous marker.
+  if (tone === 'needs_user' || tone === 'parked') return ''
   if (tone === 'error') return agentAvatarBadge('after:bg-[var(--agent-tone-error)]')
   if (tone === 'removed') return agentAvatarBadge('after:bg-[var(--agent-tone-removed)]')
   return ''

@@ -1,3 +1,4 @@
+import { vendorName } from '@/i18n/vendorName'
 import { useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
@@ -122,7 +123,7 @@ function AgentRows({ query, category, targets, installed, onOpen }: {
     const present = local || !installed && targets.some(device => device.capabilities.runtimes.includes(agent.id))
     const description = marketAgentDescription(agent, locale)
     if ((installed && !local) || (category !== 'all' && agentMarketCategoryOf(agent.id) !== category)) return []
-    if (query.trim() && !queryScore(query, [agent.id, agent.name, agent.publisher, description].join(' '))) return []
+    if (query.trim() && !queryScore(query, [agent.id, agent.name, agent.publisher, agent.publisher && vendorName(agent.publisher), description].join(' '))) return []
     return [{ agent, present, description }]
   })
   return <>
@@ -153,7 +154,7 @@ function PhoneMarketAgentDetail({ agent, targets, onClose }: { agent: AgentPaylo
   const category = translate(`extensions.agentCategory.${agentMarketCategoryOf(agent.id)}`)
   return <Sheet fullScreenMobile onClose={onClose} ariaLabel={agent.name} testId="phone-market-agent-detail">
     <AgentPane name={agent.name} onClose={onClose}>
-      <PhoneMarketRow name={agent.name} description={agent.publisher}
+      <PhoneMarketRow name={agent.name} description={agent.publisher && vendorName(agent.publisher)}
         icon={<AppIcon id={agent.id} asset={agent.icon} size={42} />} testId="phone-market-agent-detail-title" />
       <p className="phone-market-agent-description">{marketAgentDescription(agent, locale)}</p>
       <Button variant="primary" className="phone-market-install-submit" data-testid="phone-market-agent-install"
@@ -161,7 +162,7 @@ function PhoneMarketAgentDetail({ agent, targets, onClose }: { agent: AgentPaylo
       <PhoneMarketInstallSummary rows={rows} />
       <dl className="phone-market-agent-facts">
         {agent.latestVersion && <div><dt>{t('phoneMarket.latestVersion')}</dt><dd>{agent.latestVersion}</dd></div>}
-        {agent.publisher && <div><dt>{t('phoneMarket.publisher')}</dt><dd>{agent.publisher}</dd></div>}
+        {agent.publisher && <div><dt>{t('phoneMarket.publisher')}</dt><dd>{vendorName(agent.publisher)}</dd></div>}
         <div><dt>{t('phoneMarket.categories')}</dt><dd>{category}</dd></div>
       </dl>
     </AgentPane>

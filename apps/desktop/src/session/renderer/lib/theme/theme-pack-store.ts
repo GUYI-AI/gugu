@@ -96,7 +96,7 @@ export type ThemePackChoice = { slots: ThemePackSlots; preference: ThemePreferen
 /** 选一族主题。返回选之前的槽位与明暗偏好,给「撤销」用。 */
 export function chooseThemePack(id: string): ThemePackChoice {
   const pack = findThemePack(id);
-  if (!pack) throw new Error(`没有这个主题:${id}`);
+  if (!pack) throw new Error(`no such theme: ${id}`);
   const before = { slots: readThemePackSlots(), preference: readThemePreference() };
   const modes = packModes(pack);
   const next = { ...before.slots };

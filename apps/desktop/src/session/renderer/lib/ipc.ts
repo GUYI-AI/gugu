@@ -34,7 +34,7 @@ const electronAPI: SessionHostBridge = {
 
 class MachineUnreachableError extends Error {
   constructor(deviceId: string) {
-    super(`[machine] ${deviceId} 的任务页宿主连不上(桥没装)`);
+    super(`[machine] cannot reach the task page host of ${deviceId} (no bridge installed)`);
     this.name = 'MachineUnreachableError';
   }
 }

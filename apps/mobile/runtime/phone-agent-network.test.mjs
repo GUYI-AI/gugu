@@ -68,5 +68,5 @@ test('request labels include the operation but never identifiers, URLs or tokens
   assert.equal(phoneRequestOperation('https://private.invalid/rest/v1/users?select=private&token=bad'), 'table.users')
   assert.equal(phoneRequestOperation('https://private.invalid/rest/v1/rpc/set_agent_runtime_state'), 'rpc.set_agent_runtime_state')
   assert.equal(phoneRequestFailure(new AggregateError([Object.assign(new Error('private'), { code: 'ECONNRESET' })])).category, 'connection_reset')
-  assert.equal(phonePreparationFailureText(new TypeError('fetch failed')), '这次手机任务没能完成，网络暂时连不上。')
+  assert.equal(phonePreparationFailureText(new TypeError('fetch failed')), 'This phone task could not finish: the network was unreachable.')
 })

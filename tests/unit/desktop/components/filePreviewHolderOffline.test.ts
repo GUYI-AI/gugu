@@ -73,7 +73,7 @@ describe('a project file whose machine is off', () => {
     for (const answer of [kept(true, 'Studio Mac'), { status: 'ready', revision: { source: 'managed-object' } }]) {
       metadata.mockResolvedValue(answer)
       await open()
-      expect(pane.textContent).toBe('文件暂时打不开')
+      expect(pane.textContent).toBe('文件暂时无法打开')
       harness.cleanup(); harness = createReactHarness(); pane.replaceChildren()
     }
   })

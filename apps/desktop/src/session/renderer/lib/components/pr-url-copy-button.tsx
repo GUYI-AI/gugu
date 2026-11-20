@@ -57,7 +57,7 @@ export function PrUrlCopyButton({ url, className }: PrUrlCopyButtonProps) {
           </Button>
         }
       />
-      <TooltipContent>{copied ? 'Copied!' : 'Copy PR URL'}</TooltipContent>
+      <TooltipContent>{copied ? 'Copied' : 'Copy PR URL'}</TooltipContent>
     </Tooltip>
   );
 }

@@ -14,7 +14,6 @@ import { TopicSplitPane } from '../../../../apps/desktop/src/components/chat/Top
 import { createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import { Popover } from '../../../../apps/desktop/src/components/ui/Popover'
 import type { ActiveMemberProfile } from '../../../../apps/desktop/src/components/memberProfileModels'
-import { topicSourceReading } from '../../../support/topicSourceReading'
 
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 
@@ -140,7 +139,7 @@ describe('右键群聊消息头像 → @ 他', () => {
   it('话题分栏:右键头像,@ 进话题自己的输入框', async () => {
     await renderWithAppProviders(harness, createElement(TopicSplitPane, {
       topic: { chatId: 'topic-1', name: '分片下载失败' }, messages, loading: false, memberProfiles, memberReadSeqs: {}, visibleChats: [],
-      source: topicSourceReading('unknown'), onSend: async () => {}, onSendAttachments: async () => {},
+      onSend: async () => {}, onSendAttachments: async () => {},
       onClose: noop, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], memberProfileOpener: profileOpener(),
     }))
     expect(rightClick(avatarOf('m-claude'))).toBe(true)

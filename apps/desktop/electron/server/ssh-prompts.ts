@@ -199,7 +199,7 @@ export async function createTerminalAskpass(
     authenticated: () => {
       const request = broker.takeKeyRequest()
       if (!request || !installKey) return
-      void installKey(request.password)
+      return installKey(request.password)
         .catch((): SshKeyInstallOutcome => ({ status: 'failed', reason: 'unreachable' }))
         .then((outcome) => {
           for (const listener of keyListeners) listener(outcome)

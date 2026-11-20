@@ -1,6 +1,8 @@
 import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { passwordSaveDraft, passwordVault } from '@/lib/passwordBetaNotifications'
@@ -31,10 +33,10 @@ type View = { kind: 'list' } | { kind: 'form'; id?: string } | { kind: 'request'
 const host = (origin: string) => { try { return new URL(origin).host } catch { return origin } }
 const title = (item: PasswordItem) => item.name || host(item.origin)
 /** A list row's second line: its website when it has a name, its account when you may see it, else what it holds. */
-function subtitle(item: PasswordItem): string {
+function subtitle(t: TFunction<'settings'>, item: PasswordItem): string {
   const parts = [...(item.name ? [host(item.origin)] : []), ...(item.account ? [item.account] : [])]
   if (parts.length) return parts.join(metadataSeparator())
-  return [...(item.maskedAccount ? ['账号'] : []), ...(item.hasPassword ? ['密码'] : []), ...item.fields.map(field => field.name)].join('、')
+  return [...(item.maskedAccount ? [t('passwords.account')] : []), ...(item.hasPassword ? [t('passwords.password')] : []), ...item.fields.map(field => field.name)].join(t('passwords.listSeparator'))
 }
 /** Name, website, account (unless secret) and value names; secret values are never in the snapshot to match. */
 function matches(item: PasswordItem, query: string): boolean {
@@ -42,16 +44,16 @@ function matches(item: PasswordItem, query: string): boolean {
     ...item.fields.map(field => field.value ?? '')].join('\n').toLowerCase()
   return text.includes(query.trim().toLowerCase())
 }
-const LEVEL = { read: '可读', write: '可写' } as const
+const LEVEL = { read: 'passwords.levelRead', write: 'passwords.levelWrite' } as const
 /** A row is the field: the value is typed straight into it, and what you can do to it shows when you point at or edit it. */
 const ROW = 'group/row'
 const actions = (...nodes: ReactNode[]) => <span className="flex shrink-0 items-center opacity-0 transition-opacity duration-[var(--dur-fast)] group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100">{nodes}</span>
 const INLINE = 'rounded-[var(--radius-control)] !px-2 !py-1 hover:bg-[var(--hover)] focus:bg-[var(--hover)]'
 const control = (input: ReactNode, ...end: ReactNode[]) => <div className="flex w-[400px] items-center gap-1"><div className="min-w-0 flex-1">{input}</div>{actions(...end)}</div>
 /** Locked: an Agent sees the name only and 咕咕 fills the value. Unlocked: Agents with access may read it. */
-const secretMark = (label: string, secret: boolean, change: (value: boolean) => void) =>
-  <IconButton key="secret" size="sm" aria-label={`${label}${secret ? '保密' : '不保密'}`} aria-pressed={secret} onClick={() => change(!secret)}
-    title={secret ? '保密：智能体看不到值，只能由咕咕代填。点一下改为不保密' : '不保密：授权过的智能体能读到。点一下改为保密'}>{secret ? <Lock /> : <LockOpen />}</IconButton>
+const secretMark = (t: TFunction<'settings'>, label: string, secret: boolean, change: (value: boolean) => void) =>
+  <IconButton key="secret" size="sm" aria-label={t(secret ? 'passwords.secretOn' : 'passwords.secretOff', { label })} aria-pressed={secret} onClick={() => change(!secret)}
+    title={t(secret ? 'passwords.secretOnHint' : 'passwords.secretOffHint')}>{secret ? <Lock /> : <LockOpen />}</IconButton>
 
 export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLElement | null } = {}) {
   const vault = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
@@ -67,6 +69,7 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
 function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost }: Omit<ScreenProps, 'go'> & {
   vault: Reading<PasswordSnapshot>; clear(): void; actionsHost?: () => HTMLElement | null
 }) {
+  const { t } = useTranslation('settings')
   const [view, setView] = useState<View>({ kind: 'list' })
   const [query, setQuery] = useState('')
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
@@ -93,27 +96,27 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
   if (view.kind === 'request') return <><RequestedForm key={view.requestId} requestId={view.requestId} {...props} />{offer}</>
   if (view.kind === 'detail' && item) return <><CredentialDetail key={item.reference.id} item={item} {...props} />{offer}</>
   if (view.kind === 'grants' && item && snapshot) return <><GrantsPage {...props} item={item} snapshot={snapshot} />{offer}</>
-  const add = <Button variant="primary" disabled={busy} onClick={() => go({ kind: 'form' })}>添加</Button>
+  const add = <Button variant="primary" disabled={busy} onClick={() => go({ kind: 'form' })}>{t('passwords.add')}</Button>
   const slot = actionsHost?.()
   const listed = snapshot?.items.filter(value => !query.trim() || matches(value, query))
   return <SettingsPage data-testid="password-settings">
     <div className="flex items-center justify-between gap-3">
-      <SettingsNote>安全存储密码以供你的智能体使用。</SettingsNote>
+      <SettingsNote>{t('passwords.intro')}</SettingsNote>
       {slot ? createPortal(add, slot) : add}
     </div>
-    {!!snapshot?.items.length && <SearchField aria-label="搜索密码" placeholder="搜索名称、网站或账号" value={query} onChange={event => setQuery(event.target.value)}
-      clearLabel="清除搜索" onClear={() => setQuery('')} />}
+    {!!snapshot?.items.length && <SearchField aria-label={t('passwords.search')} placeholder={t('passwords.searchPlaceholder')} value={query} onChange={event => setQuery(event.target.value)}
+      clearLabel={t('passwords.clearSearch')} onClear={() => setQuery('')} />}
     <SettingsGroup presentation="navigation">
       {vault.state === 'unknown' && <SettingsRow title={<Unknown className="w-40" />} />}
-      {listed?.map(value => <SettingsRow key={value.reference.id} title={title(value)} description={subtitle(value)}
-        control={<span className="flex items-center gap-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{!!value.grants.length && `${value.grants.length} 个智能体`}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
+      {listed?.map(value => <SettingsRow key={value.reference.id} title={title(value)} description={subtitle(t, value)}
+        control={<span className="flex items-center gap-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{!!value.grants.length && t('passwords.agentCount', { count: value.grants.length })}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
         onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
-      {!!snapshot?.items.length && !listed?.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有匹配的密码</span>} />}
-      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
+      {!!snapshot?.items.length && !listed?.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{t('passwords.noMatches')}</span>} />}
+      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{t('passwords.empty')}</span>} />}
     </SettingsGroup>
     {(vault.state === 'error' || (vault.state === 'value' && vault.error)) && <div className="flex items-center gap-2" data-testid="password-vault-failed">
       <SettingsNote tone="danger" role="alert">{vault.error?.message}</SettingsNote>
-      <Button variant="secondary" size="sm" onClick={retryOf(vault)}>重试</Button>
+      <Button variant="secondary" size="sm" onClick={retryOf(vault)}>{t('passwords.retry')}</Button>
     </div>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
     {offer}
@@ -122,6 +125,7 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
 
 /** The form an Agent's save request opens, with what it proposed (passwordSaveDraft) handed to it once. */
 function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: string }) {
+  const { t } = useTranslation('settings')
   const draft = useReplica(passwordSaveDraft, [requestId])
   const credentialId = draft.state === 'value' ? draft.value?.credentialId : undefined
   // A request to change a stored credential opens on that credential, once the vault's state is there to find it in.
@@ -132,14 +136,15 @@ function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: strin
   return <RequestWaiting requestId={requestId} go={props.go}>
     {draft.state === 'error' ? <>
       <SettingsNote tone="danger" role="alert">{draft.error.message}</SettingsNote>
-      <Button variant="secondary" onClick={retryOf(draft)}>重试</Button>
-    </> : draft.state === 'value' && !draft.value ? <SettingsNote>这条保存请求已经处理过或已过期。</SettingsNote>
+      <Button variant="secondary" onClick={retryOf(draft)}>{t('passwords.retry')}</Button>
+    </> : draft.state === 'value' && !draft.value ? <SettingsNote>{t('passwords.requestHandled')}</SettingsNote>
       : <Unknown className="h-40 w-full" />}
   </RequestWaiting>
 }
 
 function RequestWaiting({ requestId, go, children }: { requestId: string; go(view: View): void; children: ReactNode }) {
-  useSettingsDetail(`password-request:${requestId}`, '添加密码', () => go({ kind: 'list' }))
+  const { t } = useTranslation('settings')
+  useSettingsDetail(`password-request:${requestId}`, t('passwords.addTitle'), () => go({ kind: 'list' }))
   return <SettingsPage data-testid="password-request">{children}</SettingsPage>
 }
 
@@ -150,9 +155,10 @@ interface ScreenProps {
 }
 
 function CredentialForm({ item, request, busy, run, go, error }: ScreenProps & { item?: PasswordItem; request?: { id: string; draft: PasswordSaveDraft } }) {
+  const { t } = useTranslation('settings')
   const editing = !!item
   const back = () => go(item ? { kind: 'detail', id: item.reference.id } : { kind: 'list' })
-  useSettingsDetail(editing ? `password-edit:${item.reference.id}` : 'password-add', editing ? title(item) : '添加密码', back)
+  useSettingsDetail(editing ? `password-edit:${item.reference.id}` : 'password-add', editing ? title(item) : t('passwords.addTitle'), back)
   const draft = request?.draft
   const [origin, setOrigin] = useState(item?.origin ?? draft?.origin ?? '')
   const [name, setName] = useState(draft?.name ?? item?.name ?? '')
@@ -188,47 +194,48 @@ function CredentialForm({ item, request, busy, run, go, error }: ScreenProps & {
     }
   }
   return <SettingsPage data-testid="password-form">
-    {draft && <SettingsNote>{draft.agentName} 请你{editing ? '修改' : '保存'}这条密码。它填好的部分已经放进来了，核对或补全后点{editing ? '「保存」' : '「添加」'}。</SettingsNote>}
+    {draft && <SettingsNote>{t(editing ? 'passwords.requestEdit' : 'passwords.requestSave', { agent: draft.agentName })}</SettingsNote>}
     <form className="contents" onSubmit={event => { event.preventDefault(); void submit() }}>
       <SettingsGroup>
-        <SettingsRow className={ROW} title="名称" control={control(<Field.Input variant="bare" className={INLINE} aria-label="名称" value={name} placeholder="可选，如「公司 GitHub」" onChange={event => setName(event.target.value)} />)} />
-        <SettingsRow className={ROW} title="网址" control={control(<Field.Input variant="bare" className={INLINE} required type="url" aria-label="网址" value={origin} readOnly={!!draft} placeholder="https://example.com" onChange={event => setOrigin(event.target.value)} />)} />
-        {!!sites.length && <SettingsRow title="也可填到" control={<div className="flex w-[400px] flex-wrap gap-1 pl-2">
+        <SettingsRow className={ROW} title={t('passwords.name')} control={control(<Field.Input variant="bare" className={INLINE} aria-label={t('passwords.name')} value={name} placeholder={t('passwords.namePlaceholder')} onChange={event => setName(event.target.value)} />)} />
+        <SettingsRow className={ROW} title={t('passwords.website')} control={control(<Field.Input variant="bare" className={INLINE} required type="url" aria-label={t('passwords.website')} value={origin} readOnly={!!draft} placeholder="https://example.com" onChange={event => setOrigin(event.target.value)} />)} />
+        {!!sites.length && <SettingsRow title={t('passwords.alsoFills')} control={<div className="flex w-[400px] flex-wrap gap-1 pl-2">
           {sites.map(site => <span key={site} className="group/site flex h-6 items-center rounded-full bg-[var(--hover)] pl-2 pr-1 text-[length:var(--font-caption)]">{host(site)}
-            <IconButton size="sm" aria-label={`不再填到 ${host(site)}`} className="!size-4 text-[var(--text-secondary)] opacity-0 hover:text-[var(--fg)] focus-visible:opacity-100 group-hover/site:opacity-100 [@media(hover:none)]:opacity-100"
+            <IconButton size="sm" aria-label={t('passwords.stopFilling', { site: host(site) })} className="!size-4 text-[var(--text-secondary)] opacity-0 hover:text-[var(--fg)] focus-visible:opacity-100 group-hover/site:opacity-100 [@media(hover:none)]:opacity-100"
               onClick={() => setSites(list => list.filter(value => value !== site))}><X size={11} aria-hidden="true" /></IconButton></span>)}
         </div>} />}
       </SettingsGroup>
       <SettingsGroup>
-        {login && <SettingsRow className={ROW} title="账号" control={control(<Field.Input variant="bare" className={INLINE} aria-label="账号" autoComplete="off" type={accountSecret ? 'password' : 'text'} value={account}
-          placeholder={editing && accountSecret && item.maskedAccount ? keep : '邮箱或用户名'} onChange={event => setAccount(event.target.value)} />,
-          secretMark('账号', accountSecret, setAccountSecret))} />}
-        {login && <SettingsRow className={ROW} title="密码" control={control(
-          <Field.Input variant="bare" className={INLINE} aria-label="密码" type={shown ? 'text' : 'password'} autoComplete="new-password" value={password} placeholder={editing && item.hasPassword ? keep : '密码'} onChange={event => setPassword(event.target.value)} />,
-          !!password && <IconButton key="show" size="sm" aria-label={shown ? '隐藏密码' : '显示密码'} onClick={() => setShown(value => !value)}>{shown ? <EyeOff /> : <Eye />}</IconButton>)} />}
+        {login && <SettingsRow className={ROW} title={t('passwords.account')} control={control(<Field.Input variant="bare" className={INLINE} aria-label={t('passwords.account')} autoComplete="off" type={accountSecret ? 'password' : 'text'} value={account}
+          placeholder={editing && accountSecret && item.maskedAccount ? keep : t('passwords.accountPlaceholder')} onChange={event => setAccount(event.target.value)} />,
+          secretMark(t, t('passwords.account'), accountSecret, setAccountSecret))} />}
+        {login && <SettingsRow className={ROW} title={t('passwords.password')} control={control(
+          <Field.Input variant="bare" className={INLINE} aria-label={t('passwords.password')} type={shown ? 'text' : 'password'} autoComplete="new-password" value={password} placeholder={editing && item.hasPassword ? keep : t('passwords.password')} onChange={event => setPassword(event.target.value)} />,
+          !!password && <IconButton key="show" size="sm" aria-label={t(shown ? 'passwords.hidePassword' : 'passwords.showPassword')} onClick={() => setShown(value => !value)}>{shown ? <EyeOff /> : <Eye />}</IconButton>)} />}
         {fields.map((field, index) => <SettingsRow key={field.id} className={ROW}
-          title={<div className="-ml-2 w-[180px]"><Field.Input variant="bare" className={INLINE} aria-label="名字" value={field.name} placeholder="名字，如 API Key" onChange={event => setFields(list => list.map((value, at) => at === index ? { ...value, name: event.target.value } : value))} /></div>}
+          title={<div className="-ml-2 w-[180px]"><Field.Input variant="bare" className={INLINE} aria-label={t('passwords.fieldName')} value={field.name} placeholder={t('passwords.fieldNamePlaceholder')} onChange={event => setFields(list => list.map((value, at) => at === index ? { ...value, name: event.target.value } : value))} /></div>}
           control={control(
-            <Field.Input variant="bare" className={INLINE} aria-label={`${field.name || '这一项'}的值`} type={field.secret === false ? 'text' : 'password'} autoComplete="off" value={field.value} required={missing(field)}
-              placeholder={missing(field) ? '待你填写' : field.secret !== false ? (item?.fields.some(value => value.id === field.id) ? keep : '保密的值') : '值'}
+            <Field.Input variant="bare" className={INLINE} aria-label={t('passwords.fieldValue', { name: field.name || t('passwords.thisField') })} type={field.secret === false ? 'text' : 'password'} autoComplete="off" value={field.value} required={missing(field)}
+              placeholder={missing(field) ? t('passwords.toFill') : field.secret !== false ? (item?.fields.some(value => value.id === field.id) ? keep : t('passwords.secretValue')) : t('passwords.value')}
               onChange={event => setFields(list => list.map((value, at) => at === index ? { ...value, value: event.target.value } : value))} />,
-            secretMark(field.name || '这一项', field.secret !== false, value => setFields(list => list.map((entry, at) => at === index ? { ...entry, secret: value } : entry))),
-            <IconButton key="remove" size="sm" aria-label={`移除${field.name || '这一项'}`} onClick={() => setFields(list => list.filter((_, at) => at !== index))}><Trash /></IconButton>)} />)}
+            secretMark(t, field.name || t('passwords.thisField'), field.secret !== false, value => setFields(list => list.map((entry, at) => at === index ? { ...entry, secret: value } : entry))),
+            <IconButton key="remove" size="sm" aria-label={t('passwords.removeField', { name: field.name || t('passwords.thisField') })} onClick={() => setFields(list => list.filter((_, at) => at !== index))}><Trash /></IconButton>)} />)}
         <SettingsRow title={<div className="-ml-2 flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => setFields(list => [...list, { id: crypto.randomUUID(), name: '', value: '', secret: true }])}><Plus size={14} aria-hidden="true" />添加一项</Button>
-          {!login && <Button variant="ghost" size="sm" onClick={() => setLogin(true)}><Plus size={14} aria-hidden="true" />账号和密码</Button>}
+          <Button variant="ghost" size="sm" onClick={() => setFields(list => [...list, { id: crypto.randomUUID(), name: '', value: '', secret: true }])}><Plus size={14} aria-hidden="true" />{t('passwords.addField')}</Button>
+          {!login && <Button variant="ghost" size="sm" onClick={() => setLogin(true)}><Plus size={14} aria-hidden="true" />{t('passwords.addLogin')}</Button>}
         </div>} />
       </SettingsGroup>
       {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={back}>取消</Button>
-        <Button variant="primary" type="submit" disabled={busy}>{editing ? '保存' : '添加'}</Button>
+        <Button variant="secondary" onClick={back}>{t('passwords.cancel')}</Button>
+        <Button variant="primary" type="submit" disabled={busy}>{t(editing ? 'passwords.save' : 'passwords.add')}</Button>
       </div>
     </form>
   </SettingsPage>
 }
 
 function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: PasswordItem }) {
+  const { t } = useTranslation('settings')
   useSettingsDetail(`password:${item.reference.id}`, title(item), () => go({ kind: 'list' }))
   const [secrets, setSecrets] = useState<PasswordSecrets>()
   const [confirming, setConfirming] = useState(false)
@@ -239,7 +246,7 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
     const reply = await run({ type: 'reveal', reference: item.reference })
     if (reply?.secrets) setSecrets(reply.secrets)
   }
-  const eye = <IconButton size="sm" aria-label={secrets ? '隐藏' : '显示（需要验证本人）'} disabled={busy} onClick={() => { void reveal() }}>{secrets ? <EyeOff /> : <Eye />}</IconButton>
+  const eye = <IconButton size="sm" aria-label={t(secrets ? 'passwords.hide' : 'passwords.showVerified')} disabled={busy} onClick={() => { void reveal() }}>{secrets ? <EyeOff /> : <Eye />}</IconButton>
   const hidden = <span className="tracking-widest text-[var(--text-secondary)]">••••••••</span>
   // The eye shows when you point at the row; a value on screen keeps its eye so it can be hidden again.
   const value = (text: string | undefined, secret?: boolean) => <div className="flex items-center gap-1">
@@ -247,37 +254,37 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
     <span className="select-text">{text ?? hidden}</span></div>
   /** A secret value's name carries a lock; what the lock means is said where it is set (the edit form). */
   const named = (name: string, secret: boolean) => secret
-    ? <span className="flex items-center gap-1">{name}<Lock size={13} aria-label="保密" className="text-[var(--text-secondary)]" /></span> : name
+    ? <span className="flex items-center gap-1">{name}<Lock size={13} aria-label={t('passwords.secret')} className="text-[var(--text-secondary)]" /></span> : name
   const authorized = item.grants.length
   return <SettingsPage data-testid="password-detail">
     <SettingsGroup>
       <SettingsRow title={title(item)}
         description={[...(item.name ? [host(item.origin)] : []), ...item.sites.map(host)].join(metadataSeparator()) || undefined}
-        control={<Button variant="ghost" size="sm" onClick={() => go({ kind: 'form', id: item.reference.id })}>编辑</Button>} />
+        control={<Button variant="ghost" size="sm" onClick={() => go({ kind: 'form', id: item.reference.id })}>{t('passwords.edit')}</Button>} />
     </SettingsGroup>
     <SettingsGroup>
-      {(item.account || item.maskedAccount) && <SettingsRow className={ROW} title={named('账号', item.accountSecret)} control={value(item.account ?? secrets?.account ?? item.maskedAccount, item.accountSecret)} />}
-      {item.hasPassword && <SettingsRow className={ROW} title={named('密码', true)} control={value(secrets?.password, true)} />}
+      {(item.account || item.maskedAccount) && <SettingsRow className={ROW} title={named(t('passwords.account'), item.accountSecret)} control={value(item.account ?? secrets?.account ?? item.maskedAccount, item.accountSecret)} />}
+      {item.hasPassword && <SettingsRow className={ROW} title={named(t('passwords.password'), true)} control={value(secrets?.password, true)} />}
       {item.fields.map(field => <SettingsRow key={field.id} className={ROW} title={named(field.name, field.secret)}
         control={value(field.value ?? secrets?.fields.find(entry => entry.id === field.id)?.value, field.secret)} />)}
     </SettingsGroup>
     <SettingsGroup presentation="navigation">
-      <SettingsRow title="已授权的智能体" description="其他智能体每次用都要你允许"
-        control={<span className="flex items-center gap-1 text-[var(--text-secondary)]">{authorized ? `${authorized} 个` : '无'}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
+      <SettingsRow title={t('passwords.authorizedAgents')} description={t('passwords.othersAsk')}
+        control={<span className="flex items-center gap-1 text-[var(--text-secondary)]">{authorized ? t('passwords.authorizedCount', { count: authorized }) : t('passwords.none')}<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" /></span>}
         onClick={() => go({ kind: 'grants', id: item.reference.id })} />
     </SettingsGroup>
     <SettingsGroup presentation="danger">
-      <SettingsRow title={<span className="text-[var(--danger)]">删除</span>} onClick={() => setConfirming(true)} />
+      <SettingsRow title={<span className="text-[var(--danger)]">{t('passwords.delete')}</span>} onClick={() => setConfirming(true)} />
     </SettingsGroup>
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
-    {confirming && <Sheet onClose={() => setConfirming(false)} desktopWidth="400px" mobileFitContent ariaLabel={`删除 ${title(item)} 的密码`}
+    {confirming && <Sheet onClose={() => setConfirming(false)} desktopWidth="400px" mobileFitContent ariaLabel={t('passwords.deleteLabel', { name: title(item) })}
       testId="password-delete-dialog" zIndex="var(--z-settings-modal)">
       <div className="flex flex-col gap-3 p-[18px]">
-        <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">删除 {title(item)} 的密码？</div>
-        <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">删除后智能体不能再用它登录。网站上的密码不受影响。</div>
+        <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t('passwords.deleteTitle', { name: title(item) })}</div>
+        <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{t('passwords.deleteBody')}</div>
         <div className="flex justify-end gap-2">
-          <Button size="sm" onClick={() => setConfirming(false)}>取消</Button>
-          <Button size="sm" variant="danger" disabled={busy} onClick={() => { void run({ type: 'delete', reference: item.reference }).then(ok => { setConfirming(false); if (ok) go({ kind: 'list' }) }) }}>删除</Button>
+          <Button size="sm" onClick={() => setConfirming(false)}>{t('passwords.cancel')}</Button>
+          <Button size="sm" variant="danger" disabled={busy} onClick={() => { void run({ type: 'delete', reference: item.reference }).then(ok => { setConfirming(false); if (ok) go({ kind: 'list' }) }) }}>{t('passwords.delete')}</Button>
         </div>
       </div>
     </Sheet>}
@@ -285,7 +292,8 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
 }
 
 function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { item: PasswordItem; snapshot: PasswordSnapshot }) {
-  useSettingsDetail(`password-grants:${item.reference.id}`, '已授权的智能体', () => go({ kind: 'detail', id: item.reference.id }))
+  const { t } = useTranslation('settings')
+  useSettingsDetail(`password-grants:${item.reference.id}`, t('passwords.authorizedAgents'), () => go({ kind: 'detail', id: item.reference.id }))
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const candidates = snapshot.candidates
@@ -302,23 +310,23 @@ function GrantsPage({ item, snapshot, busy, run, go, error }: ScreenProps & { it
     [candidates, item.grants, query])
   const describe = (subject: string) => {
     const value = label(subject)
-    return value?.kind === 'project' ? '项目里的所有任务' : value?.project
+    return value?.kind === 'project' ? t('passwords.allProjectTasks') : value?.project
   }
-  const levels = (subject: string, current?: 'read' | 'write') => <div className="flex items-center gap-1" role="radiogroup" aria-label="权限">
+  const levels = (subject: string, current?: 'read' | 'write') => <div className="flex items-center gap-1" role="radiogroup" aria-label={t('passwords.permission')}>
     {(['read', 'write'] as const).map(level => <Button key={level} variant="option" size="sm" role="radio" aria-checked={current === level} disabled={busy}
-      onClick={() => set(subject, level)}>{LEVEL[level]}</Button>)}
-    {current && <Button variant="ghost" size="sm" disabled={busy} onClick={() => set(subject)}>取消授权</Button>}
+      onClick={() => set(subject, level)}>{t(LEVEL[level])}</Button>)}
+    {current && <Button variant="ghost" size="sm" disabled={busy} onClick={() => set(subject)}>{t('passwords.revoke')}</Button>}
   </div>
   return <SettingsPage data-testid="password-grants">
-    <SearchField aria-label="搜索智能体" placeholder="搜索智能体或项目" value={query} onChange={event => setQuery(event.target.value)} />
-    <SettingsGroup note="不在名单里的智能体，每次使用都要你在私聊里允许。">
-      {granted.map(grant => <SettingsRow key={grant.subject} title={label(grant.subject)?.name ?? '已不在的智能体'} description={describe(grant.subject)} control={levels(grant.subject, grant.level)} />)}
-      {!item.grants.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有授权</span>} />}
-      <SettingsRow title={<Button variant="ghost" size="sm" onClick={() => setAdding(value => !value)}><Plus size={14} aria-hidden="true" />授权智能体</Button>} />
+    <SearchField aria-label={t('passwords.searchAgents')} placeholder={t('passwords.searchAgentsPlaceholder')} value={query} onChange={event => setQuery(event.target.value)} />
+    <SettingsGroup note={t('passwords.grantsNote')}>
+      {granted.map(grant => <SettingsRow key={grant.subject} title={label(grant.subject)?.name ?? t('passwords.removedAgent')} description={describe(grant.subject)} control={levels(grant.subject, grant.level)} />)}
+      {!item.grants.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{t('passwords.noGrants')}</span>} />}
+      <SettingsRow title={<Button variant="ghost" size="sm" onClick={() => setAdding(value => !value)}><Plus size={14} aria-hidden="true" />{t('passwords.grantAgent')}</Button>} />
     </SettingsGroup>
-    {adding && <SettingsGroup title="选择智能体或项目">
-      {available.map(value => <SettingsRow key={value.subject} title={value.name} description={value.kind === 'project' ? '项目里的所有任务' : value.project} control={levels(value.subject)} />)}
-      {!available.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">没有可选的</span>} />}
+    {adding && <SettingsGroup title={t('passwords.chooseSubject')}>
+      {available.map(value => <SettingsRow key={value.subject} title={value.name} description={value.kind === 'project' ? t('passwords.allProjectTasks') : value.project} control={levels(value.subject)} />)}
+      {!available.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{t('passwords.noCandidates')}</span>} />}
     </SettingsGroup>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
   </SettingsPage>

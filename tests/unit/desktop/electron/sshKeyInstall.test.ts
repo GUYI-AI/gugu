@@ -284,8 +284,9 @@ describe('直连终端的 askpass:登上之后才装,结果报给听的人(关�
     expect(prompt.offerKeyInstall).toBe(true)
     askpass.answer(prompt.id, 's3cret', { installKey: true })
     await askpass.close()
-    askpass.authenticated?.()
-    await vi.waitFor(() => expect(outcomes).toEqual([{ status: 'installed' }]))
+    // 返回装钥匙那一下:登录(Windows 没有共享连接)等它装好再开设备连接。
+    await askpass.authenticated?.()
+    expect(outcomes).toEqual([{ status: 'installed' }])
     expect(installKey).toHaveBeenCalledWith('s3cret')
     askpass.authenticated?.()
     expect(installKey).toHaveBeenCalledTimes(1)

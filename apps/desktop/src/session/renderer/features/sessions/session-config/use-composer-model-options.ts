@@ -4,6 +4,7 @@ import { customModels } from './custom-models';
 import { customComposerOptions } from './custom-model-options';
 import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
+import { vendorName } from '@/i18n/vendorName';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import type { PlatformModelOption } from '@shared/core/agents/platform-model';
 import { useAgents } from '@renderer/lib/stores/use-agents';
@@ -94,7 +95,7 @@ export function assembleComposerModelOptions(
   return composerModelOptions(
     harnessOptions,
     platformModels,
-    { ownTierLabel: composerTierLabel('own', agentName, translate), icon: modelProviderIcon },
+    { ownTierLabel: composerTierLabel('own', agentName, translate), icon: modelProviderIcon, providerName: vendorName },
     currentPlatformModelId
   );
 }

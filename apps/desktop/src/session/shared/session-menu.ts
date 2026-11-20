@@ -23,7 +23,7 @@ export type SessionMenuAction =
   | 'reload'
   | 'legacy-history'
 
-export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'phone' | 'contacts'
+export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'one-list-task' | 'phone' | 'contacts'
 
 export type SessionMenuLabel = MenuLabel
 export type SessionMenuItem = MenuTableItem<SessionMenuAction>
@@ -68,6 +68,17 @@ export const SESSION_MENU_EXCLUDES: MenuExcludes<SessionMenuEntry, SessionMenuAc
     'mark-read': 'A project task row has no conversation of its own to mark read.',
     'mark-unread': 'A project task row has no conversation of its own to mark unread.',
     notifications: 'A project task row has no conversation of its own to mute.',
+    reload: 'Restarting asks through the session page confirmation, which lives with the open session.',
+    'legacy-history': 'The legacy history dialog lives with the open session page.',
+  },
+  'one-list-task': {
+    'open-chat': 'Clicking the row opens it.',
+    'mark-read': 'A task without an identity has no conversation of its own to mark read.',
+    'mark-unread': 'A task without an identity has no conversation of its own to mark unread.',
+    pin: 'These rows follow every conversation, newest first (oneListTail): a pin would order nothing.',
+    'sidebar-pin': 'Pin to sidebar keeps an agent\'s row; a task without an identity has no agent.',
+    notifications: 'A task without an identity has no conversation of its own to mute.',
+    fork: 'Forking is offered on the open task\'s tab, where its engine and runtime are read.',
     reload: 'Restarting asks through the session page confirmation, which lives with the open session.',
     'legacy-history': 'The legacy history dialog lives with the open session page.',
   },

@@ -312,6 +312,7 @@ export default {
     "title": "Preparing your Gugu"
   },
   "cloud": {
+    "upgradeIncomplete": "Upgrading Gugu in the cloud did not finish. Try again.",
     "loading": "Reading Gugu's state…",
     "unreadable": "Could not read Gugu's state. Try again later."
   },

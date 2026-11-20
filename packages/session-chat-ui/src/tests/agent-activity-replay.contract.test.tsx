@@ -69,7 +69,7 @@ it.each([
   await page.screenshot({ element: host, path: `__screenshots__/activity-replay-${width}-${appearance}-closed.png` });
   const headers = host.querySelectorAll('[data-agent-activity]');
   expect(headers).toHaveLength(1);
-  expect(host.textContent).not.toContain('这一段选择不回话');
+  expect(host.textContent).not.toContain('此段未回复');
   expect(host.textContent).not.toContain('调用了 1 个 MCP 工具');
   headers[0].querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
   await until('original sent text restored', () => !!host.textContent?.includes('23:00 给我定论'));

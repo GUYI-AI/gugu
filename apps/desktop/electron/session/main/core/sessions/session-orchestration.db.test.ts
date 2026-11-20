@@ -893,7 +893,7 @@ describe('session orchestration', () => {
       setSessionHostLocale('en-US');
       await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('No agent is installed on this computer yet. Install one from New task, then try again.');
       setSessionHostLocale('zh-CN');
-      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上尚未安装 agent。请先在「新建任务」中安装，然后重试。');
       expect(childRows()).toEqual([]);
     });
 
@@ -2781,7 +2781,12 @@ describe('session_archive', () => {
     seedChild('child-a');
     seedChild('grandchild', 'child-a');
 
-    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a' })).resolves.toEqual({
+    // With a child under it the scope has no default: the agent says it, as the person ticks or leaves the box.
+    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a' })).rejects.toThrow(
+      'session has 1 child session(s): pass with_children=true to archive them with it, or with_children=false'
+    );
+    expect(archivedAt('child-a')).toBeNull();
+    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a', with_children: false })).resolves.toEqual({
       session_id: 'child-a',
       archived: true,
       with_children: false,

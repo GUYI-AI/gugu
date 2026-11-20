@@ -84,8 +84,8 @@ test('the real action catalog renders local time and leaves confirmation authori
   assert.ok(calendar.input_schema.properties.date)
   for (const name of ['recordings.read', 'photos.read']) {
     const description = all.find((action) => action.name === name).description
-    assert.match(description, /当前手机任务的 App 私有目录/)
-    assert.doesNotMatch(description, /自动.*电脑|供你看/)
+    assert.match(description, /current phone task's App-private directory/)
+    assert.doesNotMatch(description, /automatically.*computer|for you to view/)
   }
   for (const action of all) assert.equal('confirmed' in action.input_schema.properties, false)
 })
@@ -189,7 +189,7 @@ for (const failure of ['timeout', 'execution_unknown', 'os_permission', 'invalid
   const uncertain = ['timeout', 'execution_unknown'].includes(failure)
   assert.equal(outcome.code, uncertain ? 'execution_unknown' : failure)
   assert.equal(pending.status, uncertain ? 'interrupted' : 'failed')
-  if (uncertain) assert.match(outcome.message, /结果尚未确认.*不能自动重复执行/)
+  if (uncertain) assert.match(outcome.message, /result is not confirmed.*must not be repeated automatically/)
   assert.equal((await f.api.runConfirmation(f.agent, job)).code, pending.status)
   assert.equal(calls, 1, 'late retry must not dispatch the same confirmed operation again')
 })
@@ -201,7 +201,7 @@ test('lost native results keep the existing device-action wire codes and explici
   })
   const result = await f.api.runDeviceAction('calendar.events.create', { ...f.args, confirmed: true }, { callId: randomUUID() })
   assert.equal(result.code, 'execution_failed')
-  assert.match(result.message, /结果尚未确认/)
+  assert.match(result.message, /result is not confirmed/)
 })
 
 for (const action of permissionCases) test(`${action.name} preflights its grant and delivers only with the actual native proof`, async () => {

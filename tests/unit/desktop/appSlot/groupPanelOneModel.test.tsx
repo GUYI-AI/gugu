@@ -254,7 +254,7 @@ describe('an App opened in the group (「在本群打开」)', () => {
     expect(shownItem('group-6')).toBeNull()
     // 11-12: with none of its files in the chat yet, the card's 「打开」 came to nothing. It says so, in the same sheet.
     const sheet = harness.container.querySelector('[data-testid="group-app-slot-app-files"]')
-    expect(sheet?.textContent).toMatch(/还没有『Board』的文件|no files of “Board”/)
+    expect(sheet?.textContent).toMatch(/暂无『Board』的文件|no “Board” files/)
     expect(sheet?.querySelectorAll('[data-app-file]')).toHaveLength(0)
   })
 

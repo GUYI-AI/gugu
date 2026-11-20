@@ -32,7 +32,6 @@ import { useStructurallyShared } from '../hooks/useStructurallyShared'
 import { RunningBarSlot, RunningTokenBar } from './RunningTokenBar'
 import { AgentConversationNoticeSlot } from './AgentTurnFailureBar'
 import { useAgentDisplayStatuses, useAgentRecentActivity } from '../hooks/useAgentDisplayStatus'
-import { groupAgentStatusIndicatorProps } from '../lib/groupAgentStatus'
 import { useMessageFilePreview } from './chat/useMessageFilePreview'
 import type { MemberProfileCardModel, MemberProfileChatTarget } from './MemberProfileCard'
 import { useShownAgentStatus } from './chat/useAgentsOnCloudComputer'
@@ -66,8 +65,6 @@ import { comparer } from 'mobx'
 import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
-import { topicSource } from '@/hooks/useTopics'
-import { useReplica } from '@/lib/replica'
 import { useAgentFloodNotice } from '@/hooks/useAgentFloodNotice'
 import { TopicSplitPane } from './chat/TopicSplitPane'
 import { useToast } from './toastContext'
@@ -231,13 +228,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     embedded: Boolean(blockHost),
   })
   const topicSplitOpen = Boolean(topicSurface.splitTopic)
-  // @@@5856 分栏标题块要说清「引自哪一句」。三态必须分开(pending 还没读到 / null 读到了「没这条」/
-  // 有字 = 预览),合并任意两种都会让它说假话:首帧闪「已删除」、读取失败也渲染成「已删除」。
-  // @@@3922 按话题分键(topicSource),从话题 A 切到 B 时 B 不会顶着 A 的预览。
-  const splitTopicChatIdForPreview = mobile ? null : topicSurface.topic?.chatId ?? null // 手机的话题页没有标题块,不读
-  // 读数直接交给面包屑:未知或读失败什么都不说(❌ 谎报「已删除」),gone 说已删除,unreadable 不说,readable 画预览。
-  const topicSourceReading = useReplica(topicSource, splitTopicChatIdForPreview ? [splitTopicChatIdForPreview] : null)
-
   // @@@5856 **话题不整屏打开** —— owner 2026-09-19:「怎么还有把一个 topic 当做群的形式表达」。
   // 会话列表点话题走的是「切到来源线 + 往盒子里放一条请求」,聊天区在这里把它取出来开成分栏。
   // 挂载时取一次(列表点的时候聊天区可能根本还没挂 —— 一个会话都没选时主区是空状态),
@@ -502,7 +492,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
-          statusIndicatorProps: groupAgentStatusIndicatorProps(shownAgent.members(groupCollabSnapshot?.agents ?? [], groupAgentStatuses), groupAgentStatuses),
           onReload: loadGroupCollab,
         } : undefined}
         moreButtonRef={moreButtonRef}
@@ -552,7 +541,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       loading={topicSurface.splitLine.loadingMessages}
       memberProfiles={messageMemberProfiles}
       visibleChats={splitChats}
-      source={topicSourceReading}
       focusComposerToken={splitFocusToken}
       memberReadSeqs={topicSurface.splitLine.memberReadSeqs}
       mentionMembers={splitMentionMembers}

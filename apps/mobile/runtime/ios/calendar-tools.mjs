@@ -12,7 +12,7 @@ export function calendarTools(definitions, invoke) {
     delete parameters.properties.confirmed
     parameters.additionalProperties = false
     const description = actionName === 'calendar.events.update' || actionName === 'calendar.events.delete'
-      ? '修改或删除这台手机的单次日程；重复日程写入暂不支持。必须由主人在本机任务页对确切参数批准一次。'
+      ? 'Updates or deletes a single (non-recurring) event on this phone; writing recurring events is not supported yet. The owner must approve the exact parameters once on this phone\'s task page.'
       : action.description({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, utcOffset: utcOffsetOf(new Date()) })
     return { name, description, parameters,
       execute: async (toolCallId, args, signal) => {

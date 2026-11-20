@@ -131,7 +131,7 @@ describe('project picker › folders (#2640)', () => {
     await userEvent.hover(row('chat-gugu'))
     await until('three folder rows', () => document.body.querySelectorAll('[data-workspace-id]').length === 3)
     const labels = [...document.body.querySelectorAll('[data-workspace-id]')].map((item) => item.textContent)
-    expect(labels[0]).toContain('这台电脑')
+    expect(labels[0]).toContain('本机')
     expect(labels[0]).toContain('/Documents/gugu')
     expect(labels[2]).toContain('mac1')
     await userEvent.click(document.body.querySelector<HTMLElement>('[data-workspace-id="ws-3"]')!)
@@ -140,18 +140,18 @@ describe('project picker › folders (#2640)', () => {
 
   it('two projects named gugu stay distinguishable, and an empty one says so and offers to pick a folder', async () => {
     await mount()
-    // Row text, top level: the empty twin says "还没有文件夹", the other carries its path.
-    expect(row('chat-gugu-empty').textContent).toContain('还没有文件夹')
+    // Row text, top level: the empty twin says "暂无文件夹", the other carries its path.
+    expect(row('chat-gugu-empty').textContent).toContain('暂无文件夹')
     expect(row('chat-gugu').textContent).toContain('/Documents/gugu')
     await userEvent.hover(row('chat-gugu-empty'))
     await until('pick-a-folder rows', () => document.body.querySelectorAll('[data-testid="project-pick-folder-on"]').length >= 1)
     const offers = [...document.body.querySelectorAll('[data-testid="project-pick-folder-on"]')].map((item) => item.textContent)
-    expect(offers[0]).toContain('在这台电脑上选文件夹')
+    expect(offers[0]).toContain('在本机上选择文件夹')
   })
 
   it('a project whose folders are only on an offline device lists that device greyed, not "no folder"', async () => {
     await mount()
-    expect(row('chat-offline').textContent).not.toContain('还没有文件夹')
+    expect(row('chat-offline').textContent).not.toContain('暂无文件夹')
     await userEvent.hover(row('chat-offline'))
     await until('the greyed device row', () => document.body.querySelector('[data-device-id="d22-id"][data-disabled]') !== null)
     expect(document.body.querySelector('[data-device-id="d22-id"][data-disabled]')?.textContent).toContain('暂不可用')

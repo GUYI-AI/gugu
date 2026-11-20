@@ -142,16 +142,16 @@ export async function planTree(fs: HomeFs, root: string): Promise<CopyPlan> {
 /** 总量越界 / 有放不进新家的大文件 = 搬之前抛,带人话能用的数字。 */
 export function assertPlanFits(plan: CopyPlan, label: string): void {
   const big = plan.skipped.find((entry) => entry.reason === 'file-too-large');
-  if (big) throw new MoveCopyError('file_too_large', `${label}里「${big.rel}」超过 ${COPY_MAX_FILE_BYTES / 1024 / 1024}MB,搬不过去`);
+  if (big) throw new MoveCopyError('file_too_large', `${label}: "${big.rel}" exceeds ${COPY_MAX_FILE_BYTES / 1024 / 1024}MB and cannot be migrated`);
   if (plan.totalBytes > COPY_MAX_TOTAL_BYTES) {
-    throw new MoveCopyError('too_large', `${label}共 ${Math.ceil(plan.totalBytes / 1024 / 1024)}MB,超过 ${COPY_MAX_TOTAL_BYTES / 1024 / 1024}MB`);
+    throw new MoveCopyError('too_large', `${label}: ${Math.ceil(plan.totalBytes / 1024 / 1024)}MB in total exceeds ${COPY_MAX_TOTAL_BYTES / 1024 / 1024}MB`);
   }
 }
 
 /** 几棵树加起来的总量:单棵都不超、合起来超了也算超(搬家一次性的,不该变成挂一晚上)。 */
 export function assertTotalFits(totalBytes: number): void {
   if (totalBytes > COPY_MAX_TOTAL_BYTES) {
-    throw new MoveCopyError('too_large', `共 ${Math.ceil(totalBytes / 1024 / 1024)}MB,超过 ${COPY_MAX_TOTAL_BYTES / 1024 / 1024}MB`);
+    throw new MoveCopyError('too_large', `${Math.ceil(totalBytes / 1024 / 1024)}MB in total exceeds ${COPY_MAX_TOTAL_BYTES / 1024 / 1024}MB`);
   }
 }
 
@@ -169,7 +169,7 @@ export async function probeReadable(fs: HomeFs, root: string, plan: CopyPlan, co
       try {
         await fs.readChunk(join(root, file.rel), 0, 1);
       } catch (cause) {
-        failure ??= new MoveCopyError('unreadable', `${file.rel} 读不了:${cause instanceof Error ? cause.message : String(cause)}`);
+        failure ??= new MoveCopyError('unreadable', `${file.rel} is unreadable: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
   };
@@ -218,13 +218,13 @@ async function copyFile(
     const data = await from.readChunk(fromPath, offset, Math.min(COPY_CHUNK_BYTES, size - offset));
     const final = offset + data.length >= size;
     // 读到的比登记的少(文件在这期间被改短了)= 这次拷不完整,不当成成功。
-    if (data.length === 0 && !final) throw new MoveCopyError('copy_mismatch', `读 ${fromPath} 提前结束(${offset}/${size})`);
+    if (data.length === 0 && !final) throw new MoveCopyError('copy_mismatch', `reading ${fromPath} ended early (${offset}/${size})`);
     committed = await to.writeChunk({ path: toPath, uploadId, offset, data, total: size, final, expectedRevision: write?.revision });
     offset += data.length;
     onBytes(data.length);
   } while (offset < size);
   if (!committed || committed.size !== size) {
-    throw new MoveCopyError('copy_mismatch', `${toPath} 写完是 ${committed?.size ?? '未知'} 字节,应为 ${size}`);
+    throw new MoveCopyError('copy_mismatch', `${toPath} has ${committed?.size ?? 'unknown'} bytes after writing, expected ${size}`);
   }
 }
 

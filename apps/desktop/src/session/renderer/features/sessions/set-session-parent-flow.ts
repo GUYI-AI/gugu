@@ -23,7 +23,7 @@ function setSessionParent(child: { projectId: string; sessionId: string }, paren
 
 /**
  * 人在侧栏挪一条会话(spec session-page「把会话拖成 child」):拖到另一条会话的行上 = 挂到它下面(`parent`),
- * 拖回它自己那一行(项目行 /「任务」分区头)= 回到根(`parent` = null)。
+ * 拖到「智能体」分区头 = 回到根(`parent` = null)。
  * 保留父会话的折叠状态;提示里给一次「撤销」= 挂回原来那里(`previousParentId`,原来是根就回到根)。
  * fail-loud:没挪成就说出来(见 nestFailed),❌ 松手没反应。
  */

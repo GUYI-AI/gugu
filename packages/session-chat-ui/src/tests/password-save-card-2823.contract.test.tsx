@@ -51,13 +51,14 @@ async function remote(fail = false) {
   await expect.poll(() => host.querySelector<HTMLInputElement>('input[aria-label="手机号"]')?.value).toBe(field.value)
   return { commands, wire }
 }
+// Rendered without a host translator, the card reads the package's English fallback.
 describe('mobile save card without an Electron bridge', () => {
   it('shows the supplied non-secret field and saves it through the encrypted remote card', async () => {
     const f = await remote()
-    const button = [...host.querySelectorAll('button')].find(button => button.textContent === '保存')!
+    const button = [...host.querySelectorAll('button')].find(button => button.textContent === 'Save')!
     await expect.poll(() => button.disabled).toBe(false)
     button.click()
-    await expect.poll(() => host.querySelector('[role=status]')?.textContent).toBe('已保存')
+    await expect.poll(() => host.querySelector('[role=status]')?.textContent).toBe('Saved')
     expect(f.commands.find(command => command.type === 'save')).toMatchObject({ type: 'save', fields: [{ name: '手机号', value: '15500000000', secret: false }] })
     expect(JSON.stringify(f.wire)).not.toContain('15500000000')
   })
@@ -65,10 +66,10 @@ describe('mobile save card without an Electron bridge', () => {
     await remote(true)
     const input = host.querySelector<HTMLInputElement>('input[aria-label="手机号"]')!
     input.value = '15500000001'; input.dispatchEvent(new InputEvent('input', { bubbles: true }))
-    const button = [...host.querySelectorAll('button')].find(button => button.textContent === '保存')!
+    const button = [...host.querySelectorAll('button')].find(button => button.textContent === 'Save')!
     await expect.poll(() => button.disabled).toBe(false)
     button.click()
-    await expect.poll(() => host.querySelector('[role=alert]')?.textContent).toBe('保存失败，请重试')
+    await expect.poll(() => host.querySelector('[role=alert]')?.textContent).toBe('Could not save. Try again.')
     expect(input.value).toBe('15500000001')
     expect(button.disabled).toBe(false)
   })

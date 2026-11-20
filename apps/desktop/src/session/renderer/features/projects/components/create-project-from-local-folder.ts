@@ -41,9 +41,9 @@ export async function createProjectFromLocalFolder(
   } catch (failure) {
     log.error({ path, error: failure instanceof Error ? failure.message : String(failure) }, '恢复原项目失败');
     const incompleteHistory = failure instanceof Error && failure.message.includes('group_recovery_requires_topic_evidence');
-    toast({ title: '恢复项目未完成', description: incompleteHistory
-      ? '恢复记录不完整，请联系维护者核对'
-      : '请检查文件夹访问权限和项目群权限后再试。', variant: 'destructive' });
+    toast({ title: translate('projects.create.restoreFailed'), description: incompleteHistory
+      ? translate('projects.create.restoreIncomplete')
+      : translate('projects.create.restoreCheckPermissions'), variant: 'destructive' });
     return null;
   }
   try {

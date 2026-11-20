@@ -245,7 +245,7 @@ export async function assertAgentModelSelectionOpen(input: {
     throw new Error(`这个平台模型尚未对当前 Agent 开放（${selection.modelId} / ${selection.protocol}）`)
   }
   // 存成 Agent 默认也一样:免费档存一个会员模型,下一次开会话只会在签发那一步被拒(#7056)。
-  if (model.requiresMembership) throw new Error(`咕咕 ${model.displayName} 要开会员才能用`)
+  if (model.requiresMembership) throw new Error(`咕咕 ${model.displayName} 需要开通会员`)
 }
 
 export async function listPlatformModels(authProvider: RuntimeAuthProvider): Promise<PlatformModelCatalogItem[]> {
