@@ -283,7 +283,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
       </>}
 
       {mobile && !teamAccount && officialServicesEnabled() && (
-        <SettingsGroup presentation="summary"><GuguSubscriptionRow /></SettingsGroup>
+        <GuguSubscriptionRow />
       )}
 
       {/* Account-wide action stays below the editor and its save feedback. */}

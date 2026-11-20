@@ -452,40 +452,29 @@ it('subscriptions contains only Gugu membership and does not turn membership err
   expect(thrown).toEqual([]);
 });
 
-it.each([390, 720, 1120])('Gugu credits fit a %s px settings container with a prominent total and compact recharge action', async width => {
+it.each([390, 720, 1120])('Gugu credits are settings rows in a %s px container: labels left, figures in one right-aligned column', async width => {
   host.style.cssText = `width: ${width}px; container: gg-settings / inline-size`;
   root.render(<GuguSubscriptionRow />);
   await until('the Gugu balances render', () => host.querySelector('[data-testid="subscription-credits-balance"]')?.textContent?.includes('8.2') ?? false);
   const row = host.querySelector<HTMLElement>('[data-testid="subscription-row-gugu"]')!;
-  const quotas = [...row.querySelectorAll<HTMLElement>('.subscription-quota')];
-  await untilStable('the credit layout is measured', () => quotas.map(q => q.getBoundingClientRect().top).join(','));
-  const period = quotas[0].getBoundingClientRect();
-  const wallet = quotas[1].getBoundingClientRect();
-  const walletLabel = quotas[1].querySelector('span')!;
-  const walletCredits = quotas[1].querySelector('strong')!;
-  expect(walletLabel.textContent).toMatch(/^(不过期积分|Non-expiring credits)$/);
-  const labelRect = walletLabel.getBoundingClientRect();
-  const creditsRect = walletCredits.getBoundingClientRect();
-  expect(creditsRect.left - labelRect.right).toBeCloseTo(8, 0);
-  expect(Math.abs(creditsRect.top - labelRect.top)).toBeLessThan(8);
-  const total = row.querySelector<HTMLElement>('[data-testid="subscription-credits-balance"]')!;
-  expect(parseFloat(getComputedStyle(total).fontSize)).toBeGreaterThan(parseFloat(getComputedStyle(quotas[0].querySelector('strong')!).fontSize));
-  expect(total.getBoundingClientRect().bottom).toBeLessThanOrEqual(period.top);
+  const figures = ['subscription-credits-balance', 'subscription-period-credits', 'subscription-wallet-credits']
+    .map(id => row.querySelector<HTMLElement>(`[data-testid="${id}"]`)!.closest<HTMLElement>('.gg-settings-row')!);
+  await untilStable('the credit rows are measured', () => figures.map(f => f.getBoundingClientRect().top).join(','));
+  // Each figure is its row's trailing value, and the three share one right edge.
+  const rights = figures.map(f => f.querySelector<HTMLElement>('.gg-settings-row-control')!.getBoundingClientRect().right);
+  expect(Math.max(...rights) - Math.min(...rights)).toBeLessThanOrEqual(1);
+  for (const f of figures) {
+    expect(f.querySelector('.gg-settings-row-title')!.getBoundingClientRect().left).toBeLessThan(f.querySelector('.gg-settings-row-control')!.getBoundingClientRect().left);
+  }
+  // Same body size as every other settings value: no oversized total.
+  const sizes = figures.map(f => getComputedStyle(f.querySelector('.subscription-figure')!).fontSize);
+  expect(new Set(sizes).size).toBe(1);
   const recharge = row.querySelector<HTMLElement>('[data-testid="membership-open-web"]')!;
   expect(recharge.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/#topup');
   expect(row.querySelector('a')?.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/');
-  expect(recharge.getBoundingClientRect().width).toBeLessThan(row.clientWidth * 0.7);
+  expect(recharge.getBoundingClientRect().width).toBeLessThan(host.clientWidth * 0.7);
   expect(row.querySelector('[data-testid="subscription-billing-copy"]')).toBeNull();
-  if (width === 390) {
-    expect(wallet.top).toBeGreaterThanOrEqual(period.bottom);
-    expect(Math.abs(wallet.left - period.left)).toBeLessThanOrEqual(1);
-    const reset = quotas[0].querySelector('p')!.getBoundingClientRect();
-    expect(Math.abs(reset.left - period.left)).toBeLessThanOrEqual(1);
-    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
-  } else {
-    expect(Math.abs(wallet.top - period.top)).toBeLessThanOrEqual(1);
-    expect(wallet.left).toBeGreaterThan(period.right);
-  }
+  expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
 });
 
 it('explains reserved credits when the available total differs from the two balances', async () => {

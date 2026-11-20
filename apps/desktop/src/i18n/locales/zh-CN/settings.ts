@@ -800,8 +800,6 @@ export default {
     },
     "current": "本机",
     "empty": {
-      "none": "还没有登录咕咕的机器",
-      "title": "目前只有这台电脑",
       "hint": "添加服务器或其他电脑，让智能体在上面运行。"
     },
     "filter": {

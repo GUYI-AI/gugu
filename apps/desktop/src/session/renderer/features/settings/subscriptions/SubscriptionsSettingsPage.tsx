@@ -1,8 +1,7 @@
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices';
-import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsPrimitives';
+import { SettingsPage } from '@/components/settings/SettingsPrimitives';
 import { refreshSpendingPower } from '@/lib/billing';
-import { PageHeader } from '@renderer/lib/components/page-header';
-import { Button } from '@renderer/lib/ui/button';
+import { Button } from '@/components/ui/Button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { GuguSubscriptionRow } from './GuguSubscriptionRow';
 import './subscriptions.css';
@@ -12,13 +11,11 @@ export function SubscriptionsSettingsPage() {
   const { translate } = useSessionMessages();
   return (
     <SettingsPage>
-      <PageHeader
-        title={translate('subscriptions.title')}
-        aside={<Button variant="outline" size="sm" data-testid="subscriptions-refresh" onClick={refreshSpendingPower}>
+      {officialServicesEnabled() ? <GuguSubscriptionRow actions={(
+        <Button variant="ghost" size="sm" data-testid="subscriptions-refresh" onClick={refreshSpendingPower}>
           {translate('subscriptions.refresh')}
-        </Button>}
-      />
-      {officialServicesEnabled() ? <SettingsGroup><GuguSubscriptionRow /></SettingsGroup> : null}
+        </Button>
+      )} /> : null}
     </SettingsPage>
   );
 }

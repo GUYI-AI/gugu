@@ -800,8 +800,6 @@ export default {
     },
     "current": "This device",
     "empty": {
-      "none": "No machines signed in to Gugu yet",
-      "title": "Only this computer so far",
       "hint": "Add a server or another computer to run agents on it."
     },
     "filter": {

@@ -4,22 +4,22 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { useEffect, useId, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, RefreshCw, X } from '@/lib/icons'
+import { RefreshCw } from '@/lib/icons'
 import { notify } from '@/lib/notices'
 import { openLink } from '@/lib/guguLinks'
 import { useAuth } from '@/store/auth'
 import { useReplicas } from '@/lib/replica'
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
-import { Collapse } from '@/components/ui/Collapse'
 import { Button } from '@/components/ui/Button'
-import { IconButton } from '@/components/ui/IconButton'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { importDeviceChoices } from '@renderer/features/session-import/import-device'
-import { ImportSourceIcon, LocalImportSources, RemoteImportSources } from './ImportSourceRows'
+import { FoldingRow, ImportSourceIcon, LocalImportSources, RemoteImportSources } from './ImportSourceRows'
 import { importedSourceHistory, importSourceCounts } from './import-replicas'
 import { importJobs, type ImportedEntry } from './import-queue'
 import { importProviders, registerExtraImportProviders, type ImportProvider } from './import-providers'
 import { ImportSyncSettings } from './ImportSyncSettings'
+import { SettingsGroup, SettingsPage, SettingsRow } from '../SettingsPrimitives'
+import type { EnvironmentImportCategory } from '@shared/core/session-import/environment-import'
 import './data-import.css'
 
 type HistoryGroup = { id: string; provider: ImportProvider; finishedAt: number; entries: readonly ImportedEntry[] }
@@ -27,7 +27,6 @@ type HistoryGroup = { id: string; provider: ImportProvider; finishedAt: number; 
 function HistoryEntry({ group, onClose }: { group: HistoryGroup; onClose: () => void }) {
   const { t, i18n } = useTranslation('main')
   const [open, setOpen] = useState(false)
-  const panelId = useId()
   const date = new Date(group.finishedAt)
   const timestamp = new Intl.DateTimeFormat(i18n.language, { dateStyle: 'short', timeStyle: 'short' }).format(date)
   const { entries, provider } = group
@@ -51,29 +50,15 @@ function HistoryEntry({ group, onClose }: { group: HistoryGroup; onClose: () => 
   }
 
   return (
-    <div className="gg-import-history-entry">
-      <Button variant="ghost" className="gg-import-history-trigger" aria-expanded={open} aria-controls={panelId}
-        onClick={() => setOpen(!open)}>
-        <ImportSourceIcon provider={provider} />
-        <span className="gg-import-copy">
-          <span className="gg-import-name">{provider.label}</span>
-          <span className="gg-import-meta">{timestamp}<span>{t('settings.dataImport.result', { count: entries.length })}</span></span>
-        </span>
-        <ChevronDown size={16} className="gg-import-chevron" />
-      </Button>
-      <Collapse open={open} id={panelId} onOpenChange={setOpen}>
-        <ul className="gg-import-history-sessions">
-          {entries.map((session) => (
-            <li key={`${session.deviceId ?? ''}:${session.sessionId}`}>
-              <Button variant="ghost" className="gg-import-history-session" onClick={() => { void openSession(session) }}>
-                <span className="truncate" title={session.title}>{session.title}</span>
-                {session.deviceName && <span className="gg-import-device">{session.deviceName}</span>}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </Collapse>
-    </div>
+    <FoldingRow label={provider.label} open={open} onToggle={() => setOpen(!open)}
+      leading={<ImportSourceIcon provider={provider} />} title={provider.label}
+      description={<>{timestamp} · {t('settings.dataImport.result', { count: entries.length })}</>}>
+      {entries.map((session) => (
+        <SettingsRow key={`${session.deviceId ?? ''}:${session.sessionId}`} title={<span className="truncate" title={session.title}>{session.title}</span>}
+          control={session.deviceName ? <span className="gg-settings-row-value">{session.deviceName}</span> : undefined}
+          onClick={() => { void openSession(session) }} />
+      ))}
+    </FoldingRow>
   )
 }
 
@@ -129,17 +114,16 @@ export const DataImportSection = observer(function DataImportSection({
   history.sort((a, b) => b.finishedAt - a.finishedAt)
 
   return (
-    <div className="gg-data-import">
-      <IconButton shape="pill" size="lg" className="gg-import-close bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={onClose}><X /></IconButton>
+    <SettingsPage className="gg-data-import">
       <div className="gg-import-toolbar">
         <SegmentedTabs<ImportTab> ariaLabel={t('settings.nav.data-import')} value={tab} onChange={setTab} items={[
-          { value: 'apps', label: t('settings.dataImport.appTab'), panelId },
-          { value: 'devices', label: t('settings.dataImport.deviceTab'), panelId },
+          { value: 'apps', label: t('settings.dataImport.thisComputer'), panelId },
+          { value: 'devices', label: t('settings.dataImport.machineList'), panelId },
         ]} />
-        {local && <IconButton aria-label={t('settings.dataImport.refresh')} title={t('settings.dataImport.refresh')}
-          onClick={() => { void importSourceCounts.refresh() }}><RefreshCw size={16} /></IconButton>}
+        {local && <Button variant="ghost" size="sm" onClick={() => { void importSourceCounts.refresh() }}>
+          <RefreshCw size={14} />{t('settings.dataImport.refresh')}</Button>}
       </div>
-      <div id={panelId} className="gg-import-stack" role="tabpanel"
+      <div id={panelId} className="gg-settings-page" role="tabpanel"
         aria-label={t(local ? 'settings.dataImport.appTab' : 'settings.dataImport.deviceTab')}>
         {user && (local ? (
           <>
@@ -148,35 +132,34 @@ export const DataImportSection = observer(function DataImportSection({
             <ImportSyncSettings ownerId={user.id} />
           </>
         ) : (
-          <>
-            <p className="gg-import-meta">{t('settings.dataImport.remoteDescription')}</p>
-            <RemoteImportSources machines={machines} providers={providers.filter((provider) => !provider.localOnly)} ownerId={user.id} jobs={ownerJobs} />
-          </>
+          <RemoteImportSources machines={machines} providers={providers.filter((provider) => !provider.localOnly)} ownerId={user.id} jobs={ownerJobs} />
         ))}
-        {local && user && (categoryHistory.state !== 'value' || categoryHistory.items.length > 0) && <section className="gg-import-history">
-          <h3>{t('settings.dataImport.categoryResults')}</h3>
-          {categoryHistory.state !== 'value' && <div className="gg-import-progress" role="status">
-            <LoadingIndicator size="inline" />{t('settings.dataImport.reading')}
-          </div>}
-          <div className="gg-import-history-list">
-            {categoryHistory.items.map(group => <div className="gg-import-history-entry" key={`${group.providerId}:${group.finishedAt}`}>
-              <details className="p-3">
-                <summary>{group.items[0] && t(categoryLabelKey(group.items[0].category))} {t('settings.dataImport.categoryResultSummary', { count: group.items.filter(item => item.status === 'imported').length, existing: group.items.filter(item => item.status === 'existing').length, failed: group.items.filter(item => item.status && !['imported', 'existing'].includes(item.status)).length })}</summary>
-                <ul>{group.items.map(item => <li key={item.id}>{item.title}<span className="gg-import-meta"> {t(outcomeLabelKey(item.status, item.reason))}</span></li>)}</ul>
-                {group.items.some(item => item.category === 'connectors') && <p className="gg-import-meta">{t('settings.dataImport.configurationOnly')}</p>}
-              </details>
-            </div>)}
-          </div>
-        </section>}
+        {local && user && (categoryHistory.state !== 'value' || categoryHistory.items.length > 0) && <SettingsGroup title={t('settings.dataImport.categoryResults')}>
+          {categoryHistory.state !== 'value' && <SettingsRow title={t('settings.dataImport.reading')} control={<LoadingIndicator size="inline" />} />}
+          {categoryHistory.items.map(group => <CategoryResult key={`${group.providerId}:${group.finishedAt}`} items={group.items} />)}
+        </SettingsGroup>}
         {history.length > 0 && (
-          <section className="gg-import-history">
-            <h3>{t('settings.dataImport.history')}</h3>
-            <div className="gg-import-history-list">
-              {history.map((group) => <HistoryEntry key={group.id} group={group} onClose={onClose} />)}
-            </div>
-          </section>
+          <SettingsGroup title={t('settings.dataImport.history')}>
+            {history.map((group) => <HistoryEntry key={group.id} group={group} onClose={onClose} />)}
+          </SettingsGroup>
         )}
       </div>
-    </div>
+    </SettingsPage>
   )
 })
+
+type CategoryItems = readonly { id: string; title: string; category: EnvironmentImportCategory; status?: string; reason?: string }[]
+
+function CategoryResult({ items }: { items: CategoryItems }) {
+  const { t } = useTranslation('main')
+  const [open, setOpen] = useState(false)
+  const label = items[0] ? t(categoryLabelKey(items[0].category)) : ''
+  const failed = items.filter(item => item.status && !['imported', 'existing'].includes(item.status)).length
+  return (
+    <FoldingRow label={label} open={open} onToggle={() => setOpen(!open)} title={label}
+      description={t('settings.dataImport.categoryResultSummary', { count: items.filter(item => item.status === 'imported').length, existing: items.filter(item => item.status === 'existing').length, failed })}>
+      {items.map(item => <SettingsRow key={item.id} title={item.title} control={<span className="gg-settings-row-value">{t(outcomeLabelKey(item.status, item.reason))}</span>} />)}
+      {items.some(item => item.category === 'connectors') && <SettingsRow description={t('settings.dataImport.configurationOnly')} />}
+    </FoldingRow>
+  )
+}
