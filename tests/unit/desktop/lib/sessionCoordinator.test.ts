@@ -38,7 +38,8 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
   const foregroundUnsubscribe = vi.fn(() => { foregroundListener = () => {} })
   const deps: SessionCoordinatorDeps = {
     getSession: vi.fn(() => new Promise<{ data: { session: Session | null }; error: unknown }>(() => {})),
-    getUser: vi.fn(async () => ({ data: { user: session().user }, error: null })),
+    // Auth answers the owner of the token it was asked about, as restoreSession does below.
+    getUser: vi.fn(async (accessToken?: string) => ({ data: { user: session(accessToken?.replace(/^access-/, '') || 'user-a').user }, error: null })),
     refreshSession: vi.fn(async () => ({ data: { session: session() }, error: null })),
     restoreSession: vi.fn(async ({ access_token }) => ({
       data: { session: session(access_token.replace(/^access-/, '')) }, error: null,
