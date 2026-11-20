@@ -141,7 +141,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [userId, subscribeAccountRevision])
 
-  useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]))
+  useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]),
+    () => { const reading = contactRelations.peek(); return reading.state === 'value' ? reading.value.map((relation) => relation.id) : null })
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const searchUsers = useCallback(
