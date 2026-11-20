@@ -11,3 +11,6 @@ export * from './merge';
 export * from './parse-hook-event';
 export * from './standard-command';
 export * from './trust';
+
+
+export * from './agent-home-history-append';

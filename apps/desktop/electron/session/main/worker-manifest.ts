@@ -1,40 +1,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
-
-export const desktopWorkers = {
-  'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
-  'git-status': {
-    entry: 'main/core/git/status/worker.ts',
-    file: 'git-status.js',
-  },
-  'turn-text-backfill': {
-    entry: 'main/db/turn-text-backfill-worker.ts',
-    file: 'turn-text-backfill.js',
-  },
-  'task-turn-search': {
-    entry: 'main/core/search/task-turn-search-worker.ts',
-    file: 'task-turn-search.js',
-  },
-  acp: {
-    entry: 'src/main/core/acp/runtime-process/entry.ts',
-    file: 'acp-runtime.js',
-  },
-  'agent-config': {
-    entry: 'src/main/core/agent-config/runtime-process/entry.ts',
-    file: 'agent-config-runtime.js',
-  },
-  'fs-watch': {
-    entry: 'src/main/core/fs-watch/runtime-process/entry.ts',
-    file: 'fs-watch-runtime.js',
-  },
-  // #6334 用量页的 token 扫描。与上面三个不同:它是 worker_threads 线程(纯计算 + 读文件,不需要进程隔离),
-  // 不是 fork 子进程;但构建形态一样 —— 同一次 lib 构建的平铺入口,按本 chunk 同目录解析。
-  'usage-token-scan': {
-    entry: 'src/main/core/usage/token-scan-worker/entry.ts',
-    file: 'usage-token-scan.js',
-  },
-} as const;
+import { desktopWorkers } from './desktop-workers.mts';
 
 export type DesktopWorkerId = keyof typeof desktopWorkers;
 
@@ -67,10 +33,4 @@ export function appRuntimeEntryPath(file: string): string {
 
 export function guguMcpStdioRelayEntryPath(): string {
   return join(dirname(fileURLToPath(import.meta.url)), 'runtime', 'gugu-mcp-stdio-relay.mjs');
-}
-
-/** 幂等,已有值不覆盖(打包产物或测试可以从外面钉死)。 */
-export function registerGuguMcpStdioRelayEntry(): void {
-  if (process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV]?.trim()) return;
-  process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV] = guguMcpStdioRelayEntryPath();
 }

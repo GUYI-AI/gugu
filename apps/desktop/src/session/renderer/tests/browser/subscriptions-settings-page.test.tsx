@@ -808,6 +808,61 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
 function ModelsFixture() {
   return <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>;
 }
+
+it('keeps Coding Plan accounts on one line with aligned quota, state and delete columns', async () => {
+  await setLocalePreference('zh-CN');
+  await page.viewport(1280, 1000);
+  document.documentElement.dataset.theme = 'light';
+  control.codex = true;
+  control.connectionsByProvider.codex = [
+    { id: 'layout-codex-a', kind: 'account', name: 'fjj', current: false },
+    { id: 'layout-codex-b', kind: 'account', name: 'Codex 2', current: true },
+  ];
+  control.connectionsByProvider.claude = [
+    { id: 'layout-claude-a', kind: 'account', name: 'yyh', current: true },
+    { id: 'native', kind: 'native', name: '现有 CLI 配置', current: false },
+  ];
+  control.usageByConnection = {
+    'layout-codex-a': [{ windowMinutes: 300, usedPercent: 59 }, { windowMinutes: 10_080, usedPercent: 94 }],
+    'layout-codex-b': [{ windowMinutes: 300, usedPercent: 8 }, { windowMinutes: 10_080, usedPercent: 12 }],
+    'layout-claude-a': [{ windowMinutes: 300, usedPercent: 0 }, { windowMinutes: 10_080, usedPercent: 23 }],
+    native: [{ windowMinutes: 10_080, usedPercent: 5 }],
+  };
+  host.style.cssText = 'width:640px;background:var(--model-settings-page)';
+  try {
+    root.render(<>
+      <p>组件测试夹具，非真实订阅账号</p>
+      <div className="gg-pane gg-settings-detail"><div className="gg-settings-page gg-model-page"><ModelsFixture /></div></div>
+    </>);
+    await until('all four account rows have their available quota readings', () => host.querySelectorAll('[data-subscription-model] [role="meter"]').length === 7);
+    const rows = [...host.querySelectorAll<HTMLElement>('[data-subscription-model]')];
+    expect(rows).toHaveLength(4);
+    const columns = rows.map(row => {
+      const windows = [...row.querySelectorAll<HTMLElement>('.gg-model-quota-window')];
+      const state = row.querySelector<HTMLElement>('[data-testid^="model-current-"], [data-testid^="model-switch-"]')!;
+      const remove = row.querySelector<HTMLElement>('.gg-model-subscription-remove')!;
+      const centre = (element: Element) => { const box = element.getBoundingClientRect(); return box.y + box.height / 2; };
+      for (const window of windows) expect(Math.abs(centre(window) - centre(state))).toBeLessThan(1);
+      const range = document.createRange(); range.selectNodeContents(state);
+      const textLines = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
+      expect(new Set(textLines.map(rect => Math.round(rect.y))).size).toBe(1);
+      expect(getComputedStyle(state).whiteSpace).toBe('nowrap');
+      expect(row.scrollWidth).toBeLessThanOrEqual(Math.ceil(row.clientWidth));
+      return { state: state.getBoundingClientRect().x, remove: remove.getBoundingClientRect().x,
+        weekly: row.querySelector('[data-window-minutes="10080"]')!.getBoundingClientRect().x };
+    });
+    for (const column of columns) for (const key of ['state', 'remove', 'weekly'] as const) {
+      expect(Math.abs(column[key] - columns[0][key])).toBeLessThan(1);
+    }
+    expect(host.querySelector('[data-testid="model-current-layout-codex-b"]')?.textContent).toBe('使用中');
+    expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe('切换');
+    expect(host.querySelector('[data-testid="model-remove-native"]')).toBeNull();
+    await page.screenshot({ element: host, path: '../../../../../../../test-results/coding-plan-single-row-zh.png' });
+  } finally {
+    delete document.documentElement.dataset.theme;
+  }
+});
+
 it.each(['claude', 'codex'])('Models keeps exactly one current $provider subscription and switches through the existing action', async provider => {
   await setLocalePreference('zh-CN');
   control.codex = true;
@@ -930,8 +985,8 @@ it('refreshes usage for every saved subscription without selecting an account', 
   expect(control.selected).toBe('');
 });
 it.each([
-  ['environment', '环境变量'], ['config-file', '配置文件'], [undefined, undefined],
-] as const)('shows only a proven native credential origin: %s', async (origin, label) => {
+  ['environment'], ['config-file'], [undefined],
+] as const)('keeps the active native connection without a redundant origin label: %s', async (origin) => {
   await setLocalePreference('zh-CN');
   control.origin = origin;
   root.render(<ModelsFixture />);
@@ -939,6 +994,6 @@ it.each([
   const row = host.querySelector('[data-subscription-model="claude:native"]')!;
   expect(row.textContent).toContain('现有 CLI 配置');
   expect(row.textContent).toContain('使用中');
-  if (label) await until('the proven origin is shown', () => row.textContent?.includes(label) === true);
-  else { expect(row.textContent).not.toContain('环境变量'); expect(row.textContent).not.toContain('配置文件'); }
+  expect(row.textContent).not.toContain('环境变量');
+  expect(row.textContent).not.toContain('配置文件');
 });

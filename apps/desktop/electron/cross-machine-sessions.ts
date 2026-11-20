@@ -120,7 +120,8 @@ export type CrossMachineDeps = {
 
 /** 对端答 `agentSession.*` 时用到的宿主能力。 */
 export type AgentSessionHost = {
-  peers(): Promise<unknown>
+  /** One session's row when the caller names it (`session_id`), else this machine's whole roster. */
+  peers(sessionId?: string): Promise<unknown>
   /** 其余动作交给会话页编排(`runRemoteSessionAction`)。 */
   run(caller: RemoteSessionCaller, action: Action): Promise<unknown>
   /** 另一台机器上的 App 发来的消息:与本机 App 发消息同一个函数,信封写那个 App。 */
@@ -585,7 +586,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
       const { caller, action } = parsed as { caller: RemoteSessionCaller; action: AgentSessionAction }
       // 谁在哪台机器上发来的就记下:它派到这里的 child 回话时不必再挨台去问。
       known.set(caller.sessionId, caller.deviceId)
-      if (action.action === 'peers') return await host.peers()
+      if (action.action === 'peers') return await host.peers(typeof action.session_id === 'string' ? action.session_id : undefined)
       return await host.run(caller, action)
     } catch (error) {
       if (error instanceof CrossMachineError) throw error

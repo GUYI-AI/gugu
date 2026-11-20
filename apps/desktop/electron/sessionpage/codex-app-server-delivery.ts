@@ -32,6 +32,7 @@ import { isSignInFailure } from '@gugu/session-core/acp'
 import { loginShellPathDiagnosis } from '../shellPath'
 import type { ChildProcess } from 'node:child_process'
 import { execFile } from '@gugu/core/local/childProcess'
+import { codexSpawnDiagnostic, codexVersionFromUserAgent } from '@gugu/core/local/codex-spawn-diagnostic.mjs'
 import { statSync } from 'node:fs'
 import { writeCodexModelCatalog } from '../runtime/codex-model-catalog.mjs'
 import {
@@ -1812,6 +1813,10 @@ export class CodexAppServerSession {
         this.platform,
         childEnv
       )
+      deliveryLog.info(codexSpawnDiagnostic({
+        executable: this.codexBin,
+        appVersion: process.env.GUGU_APP_VERSION, mode: 'app-server-ws', phase: 'spawn',
+      }), 'codex runtime selected for spawn')
       if (this.tmuxBackendName) {
         // #6264 TUI 住在 tmux 里 ⇒ 它的推理进程也住进 tmux(见 tmux-backend.ts):宿主退出只断开,不杀;
         // 新宿主按会话名接回同一台(adopt)。❌ 不写 pidfile:它的生命归 tmux,启动回收不该碰它。
@@ -1889,7 +1894,11 @@ export class CodexAppServerSession {
         if (this.client === client) this.transportClosed(error)
       }
       await client.connect(endpoint, this.handshakeTimeoutMs)
-      await client.rpc('initialize', CODEX_INITIALIZE_PARAMS)
+      const initialized = await client.rpc('initialize', CODEX_INITIALIZE_PARAMS) as { userAgent?: unknown } | null
+      deliveryLog.info(codexSpawnDiagnostic({
+        executable: this.codexBin, nativeVersion: codexVersionFromUserAgent(initialized?.userAgent),
+        appVersion: process.env.GUGU_APP_VERSION, mode: 'app-server-ws', phase: 'initialized', versionSource: 'initialize',
+      }), 'codex runtime initialized')
       client.notify('initialized', {})
       // Before any thread: the roots are the app-server's, so the thread the TUI creates or resumes lists the skills.
       // Adopting a running app-server (below) skips this — it kept the roots it was started with.

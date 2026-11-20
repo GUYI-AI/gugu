@@ -17,7 +17,7 @@ export function forwardPreview(
   return text && text.length > 0 ? text : labels.empty
 }
 
-type Identity = { display_name: string; avatar: string | null; type?: string; owner_user_id?: string | null; session_archived_at?: string | null }
+type Identity = { display_name: string; avatar: string | null; type?: string; owner_user_id?: string | null }
 type Identities = Readonly<Record<string, Identity | undefined>>
 
 /** A chat as a row, by the name the caller gives it (its own for a group or topic, the peer's for a private chat). */
@@ -62,21 +62,15 @@ export interface Sendable {
   byId: ReadonlyMap<string, ChatItem>
 }
 
-/** An owned agent archived away: the chat list does not draw it, and nothing is sent to it. */
-function archivedOwnAgent(chat: ChatItem, q: SendableQuery): boolean {
-  const peer = q.identitiesById[chat.peer_user_id ?? '']
-  return (chat.kind === 'dm' || chat.kind === 'ai') && !!q.ownerId && peer?.type === 'agent' && peer.owner_user_id === q.ownerId && peer.session_archived_at != null
-}
-
 /**
  * The conversations this account can send into, as the chat list lists them: a private chat that has never been
- * talked in is listed only once it is searched for (isChatListed); an archived own agent is not; topics hang under their
- * group. One list for every «send to» page: forwarding, a share's 「发送到」, an App's dispatch.
+ * talked in is listed only once it is searched for (isChatListed); topics hang under their group. An archived agent's
+ * conversations never reach the list (they leave the account projection at the source). One list for every «send to» page: forwarding, a share's 「发送到」, an App's dispatch.
  */
 export function sendableConversations(chats: readonly ChatItem[], q: SendableQuery): Sendable {
   const needle = q.query.trim().toLocaleLowerCase()
   const matches = (chat: ChatItem) => !needle || q.displayName(chat).toLocaleLowerCase().includes(needle)
-  const listed = (chat: ChatItem) => chat.id !== q.sourceChatId && !archivedOwnAgent(chat, q) && (q.topics !== false || !isTopicRow(chat))
+  const listed = (chat: ChatItem) => chat.id !== q.sourceChatId && (q.topics !== false || !isTopicRow(chat))
     && (needle ? true : isChatListed(chat, { activeChatId: q.activeChatId, hasDraft: Boolean(q.drafts?.[chat.id]?.trim()) }))
   const byId = new Map(chats.map((chat) => [chat.id, chat]))
   const offered = (chat: ChatItem) => listed(chat) && matches(chat)
@@ -87,7 +81,7 @@ export function sendableConversations(chats: readonly ChatItem[], q: SendableQue
 }
 
 /**
- * The people this account can write to who have no conversation above: friends, and its own agents, not archived. A
+ * The people this account can write to who have no conversation above: friends, and its own agents (the contact list carries no archived one). A
  * pick of one is `person:<id>`; the private chat is found, or opened, when the forward is sent (useResolveTargets).
  */
 export function sendablePeople(contacts: readonly ContactUser[], shown: readonly ChatItem[], q: Pick<SendableQuery, 'ownerId' | 'query'> & { source?: ChatItem }): ContactUser[] {
@@ -95,7 +89,7 @@ export function sendablePeople(contacts: readonly ContactUser[], shown: readonly
   // The source's peer is no one to forward to: their private chat is where the words come from.
   const inList = new Set([...shown, ...(q.source ? [q.source] : [])].flatMap((chat) => (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id ? [chat.peer_user_id] : []))
   return contacts.filter((contact) => contact.id !== q.ownerId && !contact.removed_at && !inList.has(contact.id)
-    && (contact.type !== 'agent' || (!!q.ownerId && contact.owner_user_id === q.ownerId && !contact.session_archived_at))
+    && (contact.type !== 'agent' || (!!q.ownerId && contact.owner_user_id === q.ownerId))
     && (!needle || `${contact.alias ?? ''} ${contact.display_name}`.toLocaleLowerCase().includes(needle)))
 }
 

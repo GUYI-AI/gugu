@@ -27,12 +27,15 @@ export async function checkAgentHomeImportSpace(
     groups: ReadonlySet<AgentHomeGroupId>
     historyPaths?: readonly string[]
   }[],
+  signal?: AbortSignal,
   options: { includeStaging?: boolean; includeCredentials?: boolean } = {}
 ): Promise<void> {
+  signal?.throwIfAborted()
   if (!entries.length) return
   let bytes = 0
   const seen = new Set<string>()
   const size = async (path: string): Promise<void> => {
+    signal?.throwIfAborted()
     if (seen.has(path)) return
     seen.add(path)
     const stat = await disk.lstat(path).catch((error: unknown) => {
@@ -60,6 +63,7 @@ export async function checkAgentHomeImportSpace(
   }
   let parent = dirname(entries[0]!.home.shadowHome)
   for (;;) {
+    signal?.throwIfAborted()
     try {
       const stat = await disk.statfs(parent)
       const availableBytes = stat.bavail * stat.bsize
@@ -136,7 +140,7 @@ export async function importedLinkTarget(
   const rel = relative(sourceRoot, target).split(sep).join('/')
   const copied =
     inside(sourceRoot, source) && inside(sourceRoot, target) &&
-    included.some((item) => rel === item || rel.startsWith(item.replace(/\/$/, '') + '/'))
+    included.some((item) => item === '.' || rel === item || rel.startsWith(item.replace(/\/$/, '') + '/'))
   return copied ? raw : target
 }
 /** Bounded reads, including for large skill assets; compare the opened inode and content again when copying. */
@@ -145,8 +149,10 @@ export async function streamImportFile(
   destination?: string,
   expected?: string,
   root = dirname(source),
+  signal?: AbortSignal,
   onDestinationOpened?: (identity: { ino: number; dev: number }) => Promise<void>
 ): Promise<string> {
+  signal?.throwIfAborted()
   const checkParents = async () => {
     if (!inside(root, source)) throw new Error('Import source escapes its root');
     let current = root;
@@ -172,6 +178,7 @@ export async function streamImportFile(
       buffer = Buffer.alloc(64 * 1024)
     let total = 0
     for (;;) {
+      signal?.throwIfAborted()
       const { bytesRead } = await input.read(buffer, 0, buffer.length, null)
       if (!bytesRead) break
       total += bytesRead

@@ -33,7 +33,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -609,8 +608,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
               </DropdownMenuTrigger>
               {/* 档名带引擎名和「本机未导入」,窄了会折成两行:给够宽度,档名不换行。 */}
               <DropdownMenuContent align="start" className="min-w-56 whitespace-nowrap">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{translate('sessionHistory.colSource')}</DropdownMenuLabel>
+                <DropdownMenuGroup label={translate('sessionHistory.colSource')}>
                   <DropdownMenuRadioGroup value={source} onValueChange={(value) => setSource(value as SourceFilter)}>
                     <DropdownMenuRadioItem value="all" data-testid="session-history-filter-source-all">
                       {translate('sessionHistory.sourceAll')}
@@ -626,8 +624,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                   </DropdownMenuRadioGroup>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{translate('sessionHistory.colStatus')}</DropdownMenuLabel>
+                <DropdownMenuGroup label={translate('sessionHistory.colStatus')}>
                   <DropdownMenuRadioGroup value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
                     <DropdownMenuRadioItem value="all" data-testid="session-history-filter-status-all">
                       {translate('sessionHistory.statusAll')}
@@ -640,8 +637,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                   </DropdownMenuRadioGroup>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{translate('sessionHistory.sortLabel')}</DropdownMenuLabel>
+                <DropdownMenuGroup label={translate('sessionHistory.sortLabel')}>
                   <DropdownMenuRadioGroup value={sort} onValueChange={(value) => setSort(value as SessionHistorySort)}>
                     {SORT_OPTIONS.map((value) => (
                       <DropdownMenuRadioItem key={value} value={value} data-testid={`session-history-filter-sort-${value}`}>

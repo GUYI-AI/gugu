@@ -10,6 +10,8 @@ export type TurnSettlement = { sessionId: string; referenceId: string } & (
 );
 /** A real terminal turn crossed the durable writer, or that write failed. Never inferred from lifecycle. */
 export const sessionTurnSettledChannel = defineEvent<TurnSettlement>('session:turn-settled');
+/** Main rewrote the new-session memory itself (a switched model's first reply, #3293): the window's copy re-reads. */
+export const newSessionMemoryChangedChannel = defineEvent<Record<string, never>>('session:new-session-memory-changed');
 export const nativePersonalPublicationChannel = defineEvent<{ accountId: string; revision: string }>('session:native-personal-publication');
 
 export type ProviderReviewGate = 'mcp';

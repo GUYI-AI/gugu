@@ -83,20 +83,17 @@ describe('forward helpers', () => {
     expect(ids(chats, 'renamed', 'src', displayName)).toEqual(['a'])
     expect(ids(chats, 'beta group', 'src', displayName)).toEqual(['b'])
   })
-  it('lists as the chat list does: pinned first, then the latest; an empty private chat only when searched; no archived own agent', () => {
+  it('lists as the chat list does: pinned first, then the latest; an empty private chat only when searched', () => {
     const chats = [
       chat({ id: 'old', kind: 'group', name: 'Old', last_message_at: '2026-09-02T00:00:00Z' }),
       chat({ id: 'new', name: 'New', last_message_at: '2026-09-20T00:00:00Z' }),
       chat({ id: 'empty', name: 'Never talked' }),
       chat({ id: 'pinned', name: 'Pinned', last_message_at: '2026-08-01T00:00:00Z', is_pinned: true }),
-      chat({ id: 'gone', name: 'Archived agent', peer_user_id: 'bot', last_message_at: '2026-09-30T00:00:00Z' }),
     ]
-    const q = { ownerId: 'me', sourceChatId: '', displayName: (item: ChatItem) => item.name ?? '',
-      identitiesById: { bot: { display_name: 'Bot', avatar: null, type: 'agent', owner_user_id: 'me', session_archived_at: '2026-10-01T00:00:00Z' } } }
+    const q = { ownerId: 'me', sourceChatId: '', displayName: (item: ChatItem) => item.name ?? '', identitiesById: {} }
     expect(sendableConversations(chats, { ...q, query: '' }).chats.map((c) => c.id)).toEqual(['pinned', 'new', 'old'])
     expect(sendableConversations(chats, { ...q, query: 'never' }).chats.map((c) => c.id)).toEqual(['empty'])
     expect(sendableConversations(chats, { ...q, query: '', drafts: { empty: 'half' } }).chats.map((c) => c.id)).toContain('empty')
-    expect(sendableConversations(chats, { ...q, query: '', topics: false }).chats.map((c) => c.id)).not.toContain('gone')
   })
   it('nests topics under their group; a search for a topic brings its group; a topic of the source stands alone, its group named', () => {
     const chats = [
@@ -132,7 +129,7 @@ describe('forward helpers', () => {
     expect(found.topics).toHaveLength(6)
     expect(found.moreTopics).toBeUndefined()
   })
-  it('offers friends and own agents with no conversation listed; not someone else\'s agent, an archived or removed one, or oneself', () => {
+  it('offers friends and own agents with no conversation listed; not someone else\'s agent, a removed one, or oneself', () => {
     const contact = (patch: Partial<ContactUser>): ContactUser => ({ id: 'x', display_name: 'X', avatar: null, bio: null, type: 'human', ...patch })
     const contacts = [
       contact({ id: 'me', display_name: 'Me' }),
@@ -140,7 +137,6 @@ describe('forward helpers', () => {
       contact({ id: 'quiet', display_name: 'Quiet', alias: 'Q' }),
       contact({ id: 'mine', display_name: 'My bot', type: 'agent', owner_user_id: 'me' }),
       contact({ id: 'theirs', display_name: 'Their bot', type: 'agent', owner_user_id: 'other' }),
-      contact({ id: 'shelved', display_name: 'Shelved', type: 'agent', owner_user_id: 'me', session_archived_at: '2026-10-01T00:00:00Z' }),
       contact({ id: 'left', display_name: 'Left', removed_at: '2026-10-01T00:00:00Z' }),
     ]
     const shown = [chat({ id: 'c', peer_user_id: 'talked', last_message_at: '2026-01-01T00:00:00Z' })]

@@ -285,7 +285,7 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
       await save(); // Before either app-server can perform native backfill.
       await withCodexAppServer(sourceCtx, async native => {
         if (!wasDeleting) {
-          await checkAgentHomeImportSpace([{ home, groups: new Set(), historyPaths: closure.files.map(file => file.path) }], { includeStaging: false, includeCredentials: false });
+          await checkAgentHomeImportSpace([{ home, groups: new Set(), historyPaths: closure.files.map(file => file.path) }], signal, { includeStaging: false, includeCredentials: false });
           entry.state = 'copying'; entry.reason = undefined; await save();
           // Prior outputs may already be in use; only this attempt's new files may be rolled back.
           entry.created = []; entry.files = []; await save();
@@ -297,8 +297,8 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
               const created: CreatedFile = { path: file.path };
               entry.created.push(created); await save();
               await fs.mkdir(dirname(destination), { recursive: true });
-              const sha = await streamImportFile(source, destination, undefined, home.userConfigRoot, async identity => { Object.assign(created, identity); await save(); });
-              await streamImportFile(destination, undefined, sha, home.configRoot);
+              const sha = await streamImportFile(source, destination, undefined, home.userConfigRoot, signal, async identity => { Object.assign(created, identity); await save(); });
+              await streamImportFile(destination, undefined, sha, home.configRoot, signal);
             }
             const proof = await verifyNativeHistoryPrefix(source, destination, signal);
             entry.files.push({ path: file.path, destination: file.path, ...proof }); await save();

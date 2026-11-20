@@ -1,4 +1,5 @@
 import { browserAnnotationSpaceChannel } from '@shared/events/browserEvents';
+import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
 import { showContentContextMenu } from '../../../../content-context-menu';
 import { showEditableContextMenu } from '../../../../editable-context-menu';
 import type { ContentMenuEntry } from '@shared/content-context-menu';
@@ -38,6 +39,7 @@ type RegisteredBrowserSession = {
   partition: string;
   /** #7191 这个页签开在哪条会话里 —— 会话的 agent 只拿得到自己会话的页签。新建任务的草稿面板不带。 */
   sessionId?: string;
+  conversation?: AnnotationConversation;
 };
 
 // OAuth popups become real child windows sharing the browser partition; they
@@ -78,7 +80,16 @@ export class BrowserWebContentsRegistry {
   private browserShortcuts = getBrowserShortcuts();
 
   registerSession(input: RegisteredBrowserSession): void {
-    this.sessionsByBrowserId.set(input.browserId, Object.freeze({ ...input }));
+    const conversation = input.conversation ?? (input.sessionId ? { kind: 'session' as const, sessionId: input.sessionId } : undefined);
+    const sessionId = conversation?.kind === 'session' ? conversation.sessionId : undefined;
+    this.sessionsByBrowserId.set(input.browserId, Object.freeze({ ...input, sessionId, conversation }));
+  }
+
+  browserForConversation(browserId: string, conversation: AnnotationConversation): WebContents | undefined {
+    const owner = this.sessionsByBrowserId.get(browserId)?.conversation;
+    if (!owner || annotationConversationKey(owner) !== annotationConversationKey(conversation)) return undefined;
+    const contents = this.webContentsByBrowserId.get(browserId);
+    return contents && !contents.isDestroyed() ? contents : undefined;
   }
 
   unregisterSession(browserId: string): void {

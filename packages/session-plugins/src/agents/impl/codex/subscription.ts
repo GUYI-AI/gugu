@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { createJsonlReader } from '@gugu/core/local/jsonl.mjs';
 import { serverNow } from '@gugu/core/shared/serverClock';
 import { retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
@@ -149,7 +150,7 @@ export function windowsFromUsage(response: unknown, now = Date.now()): Subscript
  * 起一个 `codex app-server`,握手、问一句、拿到回答就停掉整棵进程树。
  * env 用宿主给的那份(代理、CODEX_HOME 都在里面);app-server 的 stderr 只留最后一段做报错原话。
  */
-export type CodexPrepareOptions = { signal?: AbortSignal; onProgress?: (progress: CodexPreparation | null) => void };
+export type CodexPrepareOptions = { verifyThreads?: readonly { id: string; path: string }[]; signal?: AbortSignal; onProgress?: (progress: CodexPreparation | null) => void };
 
 /** Native initialize is also the migration's index preparation entry; it never edits state tables. */
 export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, options: CodexPrepareOptions = {}): Promise<void> {
@@ -204,15 +205,24 @@ async function withCodexAppServerAttempt<T>(ctx: Pick<AgentAuthContext, 'cli' | 
   });
   try {
     const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
-    let announced = false;
-    return await run({ initialized, request: async (method, params) => {
+    child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
+    const server: CodexAppServer = { initialized, request: async (method, params) => {
       signal?.throwIfAborted();
-      if (!announced) { child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n'); announced = true; }
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), APP_SERVER_TIMEOUT_MS); });
       try { return await Promise.race([request(method, params), exited, aborted, timeout]); }
       finally { clearTimeout(timer); }
-    } });
+    } };
+    for (const expected of options.verifyThreads ?? []) {
+      const response = await server.request('thread/read', { threadId: expected.id, includeTurns: false });
+      const thread = objectAt(response, 'thread');
+      // Native lookup can fall back to source rollouts after backfill; require the managed path.
+      const path = typeof thread?.path === 'string' ? resolve(thread.path).replace(/\.zst$/, '') : null;
+      if (thread?.id !== expected.id || path !== resolve(expected.path).replace(/\.zst$/, '')) {
+        throw new Error('Codex returned a different imported session or rollout path');
+      }
+    }
+    return await run(server);
   } catch (error) {
     if (error instanceof Error) Object.assign(error, { stderrTail });
     throw error;

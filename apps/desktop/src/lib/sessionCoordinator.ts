@@ -1,6 +1,7 @@
 import type { HumanAuthSession } from '@gugu/core'
 import { isAuthRetryableFetchError, type Session, type User } from '@supabase/supabase-js'
 import { hydrateIdentityAuthUser } from './auth'
+import { accountKindFromMetadata } from '@/features/team/accountKind'
 import { setRejectedAccessTokenRecovery } from './authBoundedFetch'
 import { abortAuthSessionBoundary, keepAuthSessionBoundary, resetAuthSessionBoundary } from './authSessionLoss'
 import { publishRendererSession } from './sessionPublication'
@@ -19,6 +20,7 @@ export interface SessionCoordinatorDeps {
   refreshSession: (session: { refresh_token: string }) => Promise<{ data: { session: Session | null }; error: unknown }>
   restoreSession: (session: { access_token: string; refresh_token: string }) => Promise<{ data: { session: Session | null }; error: unknown }>
   onAuthStateChange: (listener: (event: string, session: Session | null) => void) => { data: { subscription: { unsubscribe: () => void } } }
+  prepareSignOut?: () => Promise<void>
   signOut: () => Promise<{ error: unknown; signedOutSession?: Session }>
   hydrateUser: (user: User, signal: AbortSignal) => Promise<AuthUser | null>
   publishSession: (event: string, session: Session | null) => void
@@ -94,7 +96,7 @@ function isPermanentAuthError(value: unknown): boolean {
 }
 function userFromSession(session: Session): AuthUser {
   const user = session.user
-  return { id: user.id, email: user.email ?? '', nickname: '', identityPending: true }
+  return { id: user.id, email: user.email ?? '', nickname: '', identityPending: true, accountKind: accountKindFromMetadata(user.app_metadata) }
 }
 function sessionWork(generation: number, session: Session): Work {
   return { generation, userId: session.user.id, accessToken: session.access_token, refreshToken: session.refresh_token }
@@ -207,6 +209,10 @@ export class SessionCoordinator {
   private async performLogout(): Promise<{ success: boolean }> {
     const session = this.snapshot.session
     if (!session) return { success: true }
+    if (this.deps.prepareSignOut) {
+      await this.deps.prepareSignOut()
+      if (this.snapshot.session !== session) return { success: false }
+    }
     const work = sessionWork(this.nextGeneration(), session)
     this.logoutWork = work
     abortAuthSessionBoundary()
@@ -625,6 +631,11 @@ export const sessionCoordinator = new SessionCoordinator({
   restoreSession: (session) => phoneHostRestoreSession(() => supabase.auth.setSession(session)),
   onAuthStateChange: (listener) => supabase.auth.onAuthStateChange((event, session) => listener(event, session)),
   // @@@6659 退出只吊销这一个会话 —— 不传 scope 时 supabase-js 默认 global,同账号所有设备一起被踢下线。
+  prepareSignOut: async () => {
+    if (!platform.androidNotificationSettings) return
+    const { prepareAndroidPushSignOut } = await import('../mobile/android-push/startAndroidPush')
+    await prepareAndroidPushSignOut()
+  },
   signOut: () => phoneHostSignOut(() => supabase.auth.signOut({ scope: 'local' })),
   hydrateUser: hydrateIdentityAuthUser,
   publishSession: publishRendererSession,

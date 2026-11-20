@@ -14,6 +14,7 @@ export interface WindowChromeLabels {
 
 const HOST_CATALOG = {
   'zh-CN': {
+    teamPaymentTitle: '团队积分充值',
     tray: {
       tooltip: '咕咕',
       show: '打开咕咕',
@@ -115,10 +116,13 @@ const HOST_CATALOG = {
         membership: '咕咕:你用的咕咕模型要开会员才能用。换个模型,或开通会员后再发一次',
         unreachable: '咕咕:连不上咕咕服务,稍后再发一次',
         serviceUnavailable: '咕咕:咕咕这边出错了,稍后再发一次',
+        teamMonthlyCap: '你本月的团队积分用完了，只影响你，其他人照常用。找管理员调高上限。',
+        teamCredits: '团队积分用完了，所有成员暂时无法使用 AI。找管理员充值。',
       },
     },
   },
   'en-US': {
+    teamPaymentTitle: 'Team credit payment',
     tray: {
       tooltip: 'Gugu',
       show: 'Open Gugu',
@@ -201,6 +205,8 @@ const HOST_CATALOG = {
         membership: 'Gugu: the Gugu model you are using needs a membership. Switch models, or get a membership, then resend',
         unreachable: 'Gugu: cannot reach the Gugu service. Resend in a moment',
         serviceUnavailable: "Gugu: something went wrong on Gugu's side. Resend in a moment",
+        teamMonthlyCap: 'You have used your monthly team credit limit. Only your AI use is paused. Ask an administrator to raise your limit.',
+        teamCredits: 'Team credits have run out. AI use is paused for everyone. Ask an administrator to top up.',
       },
     },
   },

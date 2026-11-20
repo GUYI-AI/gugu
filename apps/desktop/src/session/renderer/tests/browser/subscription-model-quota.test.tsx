@@ -7,6 +7,8 @@ import { setLocalePreference } from '@/i18n'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { subscriptionUsage } from '@renderer/features/settings/subscriptions/subscription-queries'
 import { SubscriptionModelQuota } from '@/components/settings/SubscriptionModelQuota'
+import { SettingsRow } from '@/components/settings/SettingsPrimitives'
+import { Sheet } from '@/components/ui/Sheet'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
@@ -67,6 +69,36 @@ it('shows real independent windows and their original update/reset times on hove
   const updated = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(1_790_000_000_000)
   expect(details.querySelector('.gg-model-quota-updated')?.textContent).toBe(`${updated} 更新`)
   expect(details.textContent).toContain('Test account')
+})
+
+it('paints subscription details above the real Settings Sheet rather than only opening them in the DOM', async () => {
+  await page.viewport(1280, 900)
+  root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <Sheet onClose={() => {}} zIndex="var(--z-settings)" ariaLabel="Settings" testId="quota-settings-sheet">
+      <SubscriptionModelQuota machine={null} provider="claude" connectionId="saved-account" account="Test account" enabled>
+        <SettingsRow title="Saved subscription" control={<span>使用中</span>} />
+      </SubscriptionModelQuota>
+    </Sheet>
+  </SessionLocalizationProvider></QueryClientProvider>)
+  await until('the Settings Sheet has finished opening', () => {
+    const sheet = document.querySelector('[data-testid="quota-settings-sheet"]')
+    return !!sheet && sheet.getAnimations().length === 0
+  })
+  await until('the saved subscription usage has loaded', () => subscriptionUsage.peek(null, 'claude', 'saved-account').state === 'value')
+  await userEvent.hover(page.getByText('Saved subscription', { exact: true }))
+  const popup = () => document.querySelector<HTMLElement>('[data-slot="tooltip-popup"][data-open]')
+  await until('the subscription detail card opens', () => popup() !== null)
+  const details = popup()!
+  const layer = details.closest<HTMLElement>('[data-slot="tooltip-positioner"]')!
+  const settings = document.querySelector<HTMLElement>('[data-testid="quota-settings-sheet"]')!.closest<HTMLElement>('.gg-sheet-viewport')!
+  expect(Number(getComputedStyle(layer).zIndex)).toBeGreaterThan(Number(getComputedStyle(settings).zIndex))
+  await until('the painted detail card is above Settings and receives hits', () => {
+    const box = details.getBoundingClientRect()
+    return box.width > 0 && box.height > 0 && getComputedStyle(details).opacity === '1'
+      && details.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
+  })
+  expect(details.textContent).toContain('Test account')
+  expect(details.querySelectorAll('.gg-model-quota-reset')).toHaveLength(2)
 })
 
 it('omits only the missing five-hour window instead of drawing a sample limit', async () => {

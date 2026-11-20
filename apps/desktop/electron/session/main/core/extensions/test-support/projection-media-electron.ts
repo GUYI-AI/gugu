@@ -17,10 +17,10 @@ import { projectionSources, type ProjectionHost } from '../../../../../../src/se
 import { openMediaProcess } from '../../../../../../native/projection-media/node/host.mjs';
 import { ProjectionSignals } from '../../../../../../native/projection-media/node/signaling.mjs';
 import { withFixtureCleanup } from '../../test-support/fixture-failure';
+import { untilObserved } from './fixture-wait';
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Pipeline fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
-const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 void app.whenReady().then(async () => {
   const id = 'projection-media-native-fixture', service = extensionsService();
@@ -94,11 +94,17 @@ void app.whenReady().then(async () => {
   let server: ReturnType<typeof createServer> | undefined, browser: ReturnType<typeof spawn> | undefined;
   let browserExit = Promise.resolve(), exited = false;
   let phase = 'setup';
+  let expectedViewerClose = false;
+  const requests: Record<string, number> = {};
+  const observations = () => ({ phase, requests, paints: paints.map(frame => frame.sequence),
+    outcomes: outcomes.length, expectedViewerClose, decoded: decoded.length, encoded: [...encoded.keys()], inputCalls, viewerGeneration: Boolean(viewerGeneration) });
   await withFixtureCleanup(() => phase, async () => {
     const opened = await signals.receive(context, { type: 'open', requestId: 'fixture-open', sourceId: publisher.id }) as { id: string; offer: { type: 'offer'; sdp: string } };
     assert.ok(opened?.offer);
     server = createServer(async (request, response) => {
       try {
+        const route = request.url ?? '';
+        if (['/', '/viewer.mjs', '/offer', '/answer', '/paint', '/result', '/error', '/viewer-closed'].includes(route)) requests[route] = (requests[route] ?? 0) + 1;
         if (request.url === '/viewer.mjs') { response.setHeader('Content-Type', 'text/javascript'); response.end(fs.readFileSync(path.join(process.cwd(), 'apps/desktop/native/projection-media/web/viewer.mjs'))); return; }
         if (request.url === '/offer') { response.end(JSON.stringify(opened.offer)); return; }
         if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); return; }
@@ -107,9 +113,10 @@ void app.whenReady().then(async () => {
         if (request.url === '/answer') await signals.receive(context, { type: 'answer', id: opened.id, sdp: JSON.parse(data) });
         else if (request.url === '/paint') paints.push(JSON.parse(data));
         else if (request.url === '/result') outcomes.push(JSON.parse(data));
+        else if (request.url === '/viewer-closed' && !expectedViewerClose) throw new Error('Viewer closed before test revocation: ' + data);
         else if (request.url === '/error') throw new Error(data);
         response.end('{}');
-      } catch (error) { fault = error; response.statusCode = 400; response.end(String(error)); }
+      } catch (error) { fault ??= error; response.statusCode = 400; response.end(String(error)); }
     });
     const listening = server;
     await new Promise<void>(resolve => listening.listen(0, '127.0.0.1', resolve));
@@ -120,11 +127,9 @@ void app.whenReady().then(async () => {
     browser.stderr?.on('data', data => { stderr = (stderr + data).slice(-4096); });
     const chromium = browser;
     browserExit = new Promise<void>(resolve => { chromium.once('error', error => { fault = error; }); chromium.once('close', () => { exited = true; resolve(); }); });
-    const until = async (condition: () => boolean) => {
-      const deadline = Date.now() + 12000;
-      while (!condition()) { if (fault) throw fault; if (exited) throw new Error('Chromium exited: ' + stderr);
-        if (Date.now() > deadline) throw new Error('Pipeline timed out: ' + stderr); await pause(20); }
-    };
+    const until = (condition: () => boolean) => untilObserved(condition, {
+      phase, fault: () => fault, exited: () => exited ? stderr : undefined, arrived: observations,
+    });
     phase = 'first-paint';
     await until(() => paints.some(paint => paint.sequence === 1) && outcomes.length > 0);
     const first = paints.find(paint => paint.sequence === 1)!;
@@ -150,6 +155,7 @@ void app.whenReady().then(async () => {
         width: 128, height: 96, fps: 10, bitrate: 500000, signal: new AbortController().signal }));
     phase = 'device-projection';
     const device = await probeDeviceProjection(id);
+    expectedViewerClose = true;
     service.setPermissionGranted(id, 'agents:tools', false);
     await assert.rejects(publisher.publish({ width: 128, height: 96, mime: 'image/png', data: 'YQ==' }), /revoked/);
     revokeExtensionProgramAccess(id);
@@ -176,7 +182,7 @@ import {openProjectionVideo} from '/viewer.mjs';
 (async()=>{
  let generation, sent=false;
  const video=document.querySelector('video'), ctx=document.querySelector('canvas').getContext('2d');
- await openProjectionVideo({video,offer:await(await fetch('/offer')).json(),
+ const viewer = await openProjectionVideo({video,offer:await(await fetch('/offer')).json(),
  answer:async sdp=>{const response=await fetch('/answer',{method:'POST',body:JSON.stringify(sdp)});if(!response.ok)throw new Error(await response.text())},
  onControl:raw=>{const value=JSON.parse(raw);if(value.type==='projection-generation')generation=value.generation;
  else if(value.type==='input-result')void fetch('/result',{method:'POST',body:raw})},
@@ -185,5 +191,10 @@ import {openProjectionVideo} from '/viewer.mjs';
  void fetch('/paint',{method:'POST',body:JSON.stringify({...frame,rgb:[p[0],p[1],p[2]]})});
  if(!sent){sent=true;send(JSON.stringify({type:'input',generation,frame:frame.sequence,sequence:1,input:{kind:'text',text:'整链中文🙂'}}))}}
  });
+ // Keep asynchronous media failures observable after the handshake promise resolves.
+ await viewer.closed.then(
+  ()=>fetch('/viewer-closed',{method:'POST',body:'closed'}),
+  error=>fetch('/viewer-closed',{method:'POST',body:String(error)})
+ );
 })().catch(error=>fetch('/error',{method:'POST',body:String(error)}));
 </script>`;

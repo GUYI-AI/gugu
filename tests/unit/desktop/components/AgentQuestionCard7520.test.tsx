@@ -17,6 +17,54 @@ const request = (id: string): Settlement => ({ itemId: id, kind: 'question', sta
 const click = async (selector: string) => act(async () => { (harness.container.querySelector(selector) as HTMLButtonElement).click() })
 
 describe('compact question card', () => {
+  it('offers discussion only with host support and collapses only after accepted settlement', async () => {
+    const settlement = request('discuss-capability')
+    const respond = vi.fn()
+    let accept!: (value: SessionpageSessionRespondResult) => void
+    const onDiscuss = vi.fn(() => new Promise<SessionpageSessionRespondResult>(resolve => { accept = resolve }))
+    await renderWithAppProviders(harness, <AgentQuestionCard scope="discuss" settlement={settlement} respond={respond} onDiscuss={onDiscuss} />)
+    expect(harness.container.querySelector('.agent-question-card__discuss')).toBeNull()
+    await renderWithAppProviders(harness, <AgentQuestionCard scope="discuss" settlement={{ ...settlement, canDiscuss: true, skippable: true }} respond={respond} onDiscuss={onDiscuss} />)
+    expect([...harness.container.querySelectorAll('.agent-question-card__footer button')].map(button => button.textContent)).toEqual(['先聊聊', '稍后回答', '跳过', '下一题'])
+    await click('.agent-question-card__discuss')
+    expect(onDiscuss).toHaveBeenCalledTimes(1)
+    expect(harness.container.querySelector('[data-testid="agent-question-discussion"]')).toBeNull()
+    expect((harness.container.querySelector('.agent-question-card__discuss') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => accept({ accepted: true, settlement: { ...settlement, state: 'resolved', optionId: 'discuss' } }))
+    expect(harness.container.textContent).toContain('先聊聊')
+    expect(harness.container.querySelector('button, textarea')).toBeNull()
+    expect(respond).not.toHaveBeenCalled()
+  })
+
+  it('shows skip only when the host advertises support and disables it offline', async () => {
+    const settlement = request('skip-capability')
+    const respond = vi.fn()
+    await renderWithAppProviders(harness, <AgentQuestionCard scope="skip-capability" settlement={settlement} respond={respond} />)
+    expect(harness.container.querySelector('.agent-question-card__skip')).toBeNull()
+    await renderWithAppProviders(harness, <AgentQuestionCard scope="skip-capability" settlement={{ ...settlement, skippable: true }} respond={respond} unavailable />)
+    expect((harness.container.querySelector('.agent-question-card__skip') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('skips single-choice questions, clears earlier picks, reviews and submits once', async () => {
+    const settlement = { ...request('skip-submit'), skippable: true as const }
+    const respond = vi.fn(async () => ({ accepted: true } as SessionpageSessionRespondResult))
+    await renderWithAppProviders(harness, <AgentQuestionCard scope="skip-submit" settlement={settlement} respond={respond} />)
+    await click('.agent-question-card__option')
+    await click('.agent-question-card__skip')
+    expect(harness.container.textContent).toContain('风格？')
+    await click('.agent-question-card__skip')
+    expect(harness.container.querySelectorAll('.agent-question-card__answer p')).toHaveLength(2)
+    expect([...harness.container.querySelectorAll('.agent-question-card__answer p')].map(p => p.textContent)).toEqual(['已跳过', '已跳过'])
+    expect(respond).not.toHaveBeenCalled()
+    await click('.agent-question-card__answer-head button')
+    expect(harness.container.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0)
+    await click('.agent-question-card__option')
+    await click('.agent-question-card__submit')
+    await click('.agent-question-card__submit')
+    await click('.agent-question-card__submit')
+    expect(respond).toHaveBeenCalledExactlyOnceWith([{ selected: ['300'] }, { selected: [], skipped: true }])
+  })
+
   it('deferring does not answer; all questions need an explicit final submit', async () => {
     const respond = vi.fn(async () => ({ accepted: true } as SessionpageSessionRespondResult))
     await renderWithAppProviders(harness, <AgentQuestionCard scope="owner:session" settlement={request('explicit-submit')} respond={respond} />)
