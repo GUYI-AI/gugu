@@ -35,7 +35,7 @@ export function installPhoneChatMotion(page: HTMLElement, underlay: HTMLElement,
     page.style.transform = `translateX(${x}px)`
     page.style.opacity = '1'; page.style.borderRadius = '0'
     const ratio = Math.max(0, Math.min(1, x / width()))
-    backdrop(-0.3 * width() * (1 - ratio), 0.5 * (1 - ratio))
+    backdrop(-0.3 * width() * (1 - ratio), 1 - ratio)
   }
   const paintNative = (q: number, commit = 0) => {
     progress = q
@@ -43,7 +43,7 @@ export function installPhoneChatMotion(page: HTMLElement, underlay: HTMLElement,
     page.style.transform = `translateX(${direction * width() * (0.03 * q + 0.09 * commit)}px) scale(${1 - 0.1 * q - 0.04 * commit})`
     page.style.borderRadius = `${width() * 0.075 * q}px`
     page.style.opacity = String(1 - commit)
-    backdrop(-0.3 * width() * (1 - q) * (1 - commit), 0.5 * (1 - q) * (1 - commit))
+    backdrop(-0.3 * width() * (1 - q) * (1 - commit), (1 - q) * (1 - commit))
   }
   const spring = (from: number, to: number, paint: (value: number) => void, done: () => void, velocity = 0) => {
     stop()

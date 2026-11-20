@@ -1,6 +1,6 @@
 .gg-phone-chat-page { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; position: relative; }
 .gg-phone-chat-page[data-mobile] { position: absolute; inset: 0; background: var(--bg); overflow: hidden; transform-origin: center; }
-.gg-phone-chat-dim { display: none; position: absolute; inset: 0; background: #000; pointer-events: none; }
+.gg-phone-chat-dim { display: none; position: absolute; inset: 0; background: var(--bg-overlay-modal); pointer-events: none; }
 .gg-shell-chat-list { display: contents; }
 .gg-shell-chat-list[data-mobile], .gg-shell-chat-list:not([data-active]) { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .gg-shell-chat-list[data-mobile] { flex-direction: column; }
