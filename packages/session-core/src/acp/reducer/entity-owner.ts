@@ -27,5 +27,58 @@ export function findEntityOwner(
     return visit(turn.items);
   };
   if (transcript.active && contains(transcript.active)) return transcript.active;
-  for (let i = transcript.committed.length - 1; i >= 0; i--) if (contains(transcript.committed[i])) return transcript.committed[i];
+  const has = committedTest(event);
+  for (let i = transcript.committed.length - 1; i >= 0; i--) if (has(entityIndex(transcript.committed[i]))) return transcript.committed[i];
 }
+
+/**
+ * @@@committed-entity-index - a committed turn is searched once per event that is not in the active turn, which on a
+ * record replay is nearly every event: walking each committed item every time made opening a long session quadratic
+ * (a 277 MB Claude record took most of a minute). Turns are immutable, so a committed turn's ids are indexed once per
+ * turn object and later lookups are set probes. Same answers as `contains` above.
+ */
+export interface EntityIndex { ids: Set<string>; local: Set<string>; toolCallIds: Set<string>; planIds: Set<string> }
+const indexes = new WeakMap<TranscriptTurn, EntityIndex>();
+
+export function entityIndex(turn: TranscriptTurn): EntityIndex {
+  let index = indexes.get(turn);
+  if (index) return index;
+  index = { ids: new Set(), local: new Set(), toolCallIds: new Set(), planIds: new Set() };
+  const prefix = `${turn.id}:`;
+  const visit = (items: readonly TranscriptItem[]): void => {
+    for (const item of items) {
+      index!.ids.add(item.id);
+      if (item.id.startsWith(prefix)) index!.local.add(item.id.slice(prefix.length));
+      if (item.kind === 'create-plan-tool-call') index!.planIds.add(item.planId);
+      if ('toolCallId' in item && item.kind !== 'subagent-done-tool-call') index!.toolCallIds.add(item.toolCallId);
+      if ('children' in item && item.children !== undefined) visit(item.children);
+    }
+  };
+  visit(turn.items);
+  indexes.set(turn, index);
+  return index;
+}
+
+/** `contains` for a committed turn, by its index. Message and thinking ids are `${turn.id}:<local>` unless a client id. */
+function committedTest(event: NormalizedEvent): (index: EntityIndex) => boolean {
+  if (event.kind === 'message') {
+    if (event.messageId === null) return () => false;
+    const wanted = messageEntityId(LOCAL, { ...event, messageId: event.messageId });
+    return wanted.startsWith(LOCAL_PREFIX) ? (index) => index.local.has(wanted.slice(LOCAL_PREFIX.length)) : (index) => index.ids.has(wanted);
+  }
+  if (event.kind === 'thinking') {
+    if (event.messageId === null) return () => false;
+    const local = makeThinkingId(LOCAL, event.messageId).slice(LOCAL_PREFIX.length);
+    return (index) => index.local.has(local);
+  }
+  if (event.kind === 'plan') {
+    const planId = event.planId ?? SESSION_PLAN_ID;
+    return (index) => index.planIds.has(planId);
+  }
+  const toolCallId = (event as { toolCallId: string }).toolCallId;
+  return (index) => index.toolCallIds.has(toolCallId);
+}
+
+/** A turn id no real turn has, so a built id that starts with it is a turn-local id and one that does not is a client id. */
+const LOCAL = '\u0000turn';
+const LOCAL_PREFIX = `${LOCAL}:`;

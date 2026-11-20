@@ -877,7 +877,7 @@ function assertTranscriptInvariants(transcript: TranscriptSlice): void {
  * All state changes return a new ParserState; no mutation occurs.
  */
 export function reduce(s: ParserState, input: ReducerInput, deps: ReducerDeps): ParserState {
-  return projectSubagentProgress(reduceState(s, input, deps));
+  return projectSubagentProgress(reduceState(s, input, deps), s);
 }
 
 function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): ParserState {
