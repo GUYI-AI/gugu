@@ -1,11 +1,11 @@
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
-import { Cable, Folder, Globe, Plus, SquareTerminal } from '@/lib/icons'
+import { Cable, Globe, Plus, SquareTerminal } from '@/lib/icons'
 import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { ExtensionMark, TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -19,7 +19,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuTrigger
 } from '@renderer/lib/ui/dropdown-menu';
 import { BoundShortcut } from '@renderer/lib/ui/shortcut';
@@ -143,23 +142,18 @@ const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string
 
 /** One built-in folder entry; its context supplies the name and the page to open. */
 function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }) {
-  return <DropdownMenuItem onClick={onOpen}><Folder className="size-3.5" /> {label}</DropdownMenuItem>;
+  return <DropdownMenuItem onClick={onOpen}><TabKindMark kind={WORKSPACE_APP_KIND} /> {label}</DropdownMenuItem>;
 }
 
 /**
  * 「App」那一段,两处同一份:列能在这里打开的 App,最后一行去「App」页装更多。
- * 标题与它下面的项必须在同一个 DropdownMenuGroup 里:DropdownMenuLabel 是 Base UI 的 Menu.GroupLabel,
- * 没有 Menu.Group 在上面就抛错,整页会被错误边界拿下(装着一个 App 时打开这个菜单就是这样)。
  */
 function AppsSection({ apps }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   return (
-    <DropdownMenuGroup>
-      {/* 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。 */}
-      <DropdownMenuLabel className="text-foreground-passive text-xs font-normal">
-        {translate('extensions.appsSection')}
-      </DropdownMenuLabel>
+    // 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。
+    <DropdownMenuGroup label={translate('extensions.appsSection')} labelClassName="text-foreground-passive text-xs font-normal">
       {apps.map((app) => (
         <DropdownMenuItem key={app.key} onClick={app.open}>
           <ExtensionMark iconDataUrl={app.iconDataUrl} /> {app.title}

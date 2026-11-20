@@ -61,8 +61,7 @@ vi.mock('@renderer/lib/ui/dropdown-menu', async () => {
     DropdownMenu: ({ open, onOpenChange, children }: { open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode }) => <Context.Provider value={{ open, change: onOpenChange }}>{children}</Context.Provider>,
     DropdownMenuTrigger: ({ children }: { children: ReactNode }) => { const c = useContext(Context); return <button data-trigger onClick={() => c.change(!c.open)}>{children}</button>; },
     DropdownMenuContent: ({ children }: { children: ReactNode }) => useContext(Context).open ? <div role="menu">{children}</div> : null,
-    DropdownMenuGroup: ({ children }: { children: ReactNode }) => <section data-apps>{children}</section>,
-    DropdownMenuLabel: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+    DropdownMenuGroup: ({ label, children }: { label?: ReactNode; children: ReactNode }) => <section data-apps><h2>{label}</h2>{children}</section>,
     DropdownMenuItem: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => <button role="menuitem" disabled={disabled} onClick={onClick}>{children}</button>,
   };
 });

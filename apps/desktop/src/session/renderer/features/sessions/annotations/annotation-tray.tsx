@@ -60,11 +60,8 @@ export const AnnotationTray = observer(function AnnotationTray({ conversation, o
             {draft.items.map(item => {
               const place = item.kind === 'browser' ? item.filePath ?? item.url : item.path;
               const position = item.kind === 'browser' ? item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')
-                : item.kind === 'file' ? item.startLine === item.endLine
-                  ? translate('annotations.line', { line: item.startLine })
-                  : translate('annotations.lines', { first: item.startLine, last: item.endLine })
-                  : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
-                    item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');
+                : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
+                  item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');
               return (
               <div key={item.id} className="flex flex-col gap-2 border-b border-border px-3 py-3 last:border-b-0">
                 <div className="flex min-w-0 items-start gap-2 text-xs text-foreground-muted">

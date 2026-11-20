@@ -155,8 +155,6 @@ describe('group mention recall through the real composer and send path', () => {
     await mount(); await type('@Alpha hi'); await send()
     await act(async () => update({ groupMembers: [{ ...members[0]!, name: 'Renamed' }] }))
     expect(hint()?.textContent).toBe('@Renamed')
-    await act(async () => update({ groupMembers: [{ ...members[0]!, session_archived_at: '2026-11-01T00:00:00Z' }] }))
-    expect(hint()).toBeNull()
     await act(async () => update({ groupMembers: [{ ...members[0]!, id: 'same-name-impostor' }] }))
     expect(hint()).toBeNull()
     await act(async () => update({ groupMembers: [] }))

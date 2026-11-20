@@ -158,8 +158,8 @@ describe('MemberListPanel archived members', () => {
     await renderWithAppProviders(harness, createNode(MemberListPanel, { chatId: 'chat-1', chatKind: 'group', head }), { contacts: {} })
     const search = harness.container.querySelector<HTMLInputElement>('[data-testid="member-list-search"]')!
     await typeInto(search, 'Codex 5')
-    expect(harness.container.querySelector('[data-member-name="fresh"]')?.textContent).toBe('正在起名…')
-    await typeInto(search, '正在起名')
+    expect(harness.container.querySelector('[data-member-name="fresh"]')?.textContent).toBe('正在生成名称…')
+    await typeInto(search, '正在生成名称')
     expect(harness.container.querySelector('[data-member-row="fresh"]')).toBeNull()
   })
   it('keeps the member and displays an actual muted archived label, not only an avatar tooltip', async () => {

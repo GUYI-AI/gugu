@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
 import { desktopIpc } from '@/platform/desktopIpc'
 import { useAuth } from '@/store/auth'
@@ -24,7 +25,7 @@ function requireLocalIpc(deviceId: string | null) {
   return ipc
 }
 
-function externalProvider(
+function historyProvider(
   id: ExternalImportSource,
   label: string,
   iconId: string,
@@ -35,22 +36,31 @@ function externalProvider(
     label,
     iconId,
     localOnly: true,
+    historyOnly: true,
+    // Without a scan result the source has no card; its stored history stays listed and openable.
+    async scan() { return null },
+    async importAll() { return { imported: [], existing: 0, failed: 0 } },
+    async listHistory(deviceId) {
+      const ipc = localIpc(deviceId)
+      return ipc ? await ipc.invoke(channels.list, id) as ExternalImportHistoryEntry[] : []
+    },
+    openImportedSession: open,
+  }
+}
+
+function cursorProvider(open: NonNullable<ImportProvider['openImportedSession']>): ImportProvider {
+  return {
+    ...historyProvider('cursor', 'Cursor', 'cursor', open),
     async scan(deviceId) {
       const ipc = localIpc(deviceId)
       if (!ipc) return null
-      return await ipc.invoke(channels.scan, id) as ExternalImportScan | null
+      return await ipc.invoke(channels.scan) as ExternalImportScan | null
     },
-    ...(id === 'chatgpt' ? {
-      async pickSource(deviceId: string | null) {
-        const { status } = await requireLocalIpc(deviceId).invoke(channels.pick) as { status: string }
-        if (status === 'invalid') throw new Error('Invalid conversation export')
-      },
-    } : {}),
     async importAll(deviceId, onProgress, signal) {
       const result: ImportResult = { imported: [], existing: 0, failed: 0 }
       if (signal.aborted) return result
       const ipc = requireLocalIpc(deviceId)
-      const batch = await ipc.invoke(channels.start, id) as { id: string; total: number }
+      const batch = await ipc.invoke(channels.start) as { id: string; total: number }
       let done = 0
       onProgress(0, batch.total)
       try {
@@ -67,15 +77,11 @@ function externalProvider(
       }
       return result
     },
-    async listHistory(deviceId) {
-      const ipc = localIpc(deviceId)
-      return ipc ? await ipc.invoke(channels.list, id) as ExternalImportHistoryEntry[] : []
-    },
-    openImportedSession: open,
   }
 }
 
 export function useExternalImportProviders() {
+  const { t } = useTranslation('main')
   const { user } = useAuth()
   const ownerId = user?.id
   const [opened, setOpened] = useState<OpenHistory | null>(null)
@@ -88,10 +94,10 @@ export function useExternalImportProviders() {
       setOpened({ ownerId, session, page })
     }
     return [
-      externalProvider('chatgpt', 'ChatGPT', 'codex', open),
-      externalProvider('cursor', 'Cursor', 'cursor', open),
+      historyProvider('chatgpt', t('settings.dataImport.chatgptExport'), 'codex', open),
+      cursorProvider(open),
     ]
-  }, [ownerId])
+  }, [ownerId, t])
 
   return {
     providers,

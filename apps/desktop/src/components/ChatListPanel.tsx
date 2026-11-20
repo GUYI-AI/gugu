@@ -1,7 +1,7 @@
 import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
-import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/chatRowDerivations'
+import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -25,7 +25,6 @@ import { isDuplicateAssistantChat } from '../lib/assistantChatList'
 import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
-import { useAuth } from '../store/auth'
 import { ChatRowContextMenu } from './chat/ChatRowContextMenu'
 import { warmRowAuthority } from './chat/useGroupChatSettings'
 import { chatPreviewText } from '../lib/systemNoticeText'
@@ -592,7 +591,6 @@ export function ChatListPanel({
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
-  const { user } = useAuth()
   const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
@@ -685,7 +683,6 @@ export function ChatListPanel({
   const isListed = (chat: ChatItem) =>
     (hasSearchQuery || visibleIds.has(chat.id)) &&
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
-      && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
       && (agentHomes ? oneListShows(chat, listedByActivity(chat), agentHomes, isOwnedAgentPeer)
         : (!mobile || chat.kind !== 'topic') && (mobile || !isProjectGroupLine(chat)) && listedByActivity(chat))
@@ -711,7 +708,7 @@ export function ChatListPanel({
     // isListed / matchesSearch 都是每次渲染新建的闭包,进依赖数组等于不缓存;
     // 它们的输入(chats / 搜索词 / 草稿 / 当前会话)已经在下面列全了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes, inSidebar, user?.id, identitiesById, agentStatuses])
+  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes, inSidebar])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
   // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []

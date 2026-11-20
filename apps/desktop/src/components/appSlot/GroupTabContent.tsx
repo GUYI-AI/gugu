@@ -433,7 +433,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
         </div>
       ) : null}
       {/* What the page on screen opens beside it (G1): over it here, the page kept for the way back. */}
-      <AppPeekSlot sessionId={null} tabId={slot} narrow={mobile}>
+      <AppPeekSlot sessionId={null} tabId={slot} chatId={chatId} narrow={mobile}>
         {/* A file asked for, its host not answered yet: the page waits. */}
         {isWaitingItem(item) ? <div className="relative min-h-0 flex-1" data-testid="group-app-slot-opening"><PageLoading /></div> : null}
         {item.file && (!mobile || visible !== false) ? <MessageFilePreview fill tabbed={tabbed} mobile={mobile} message={item.message} onForward={onForward} file={{ kind: 'file', document: item.file.document, fileName: item.fileName ?? item.title, mimeType: item.file.contentType, sizeBytes: item.file.size, source: { kind: 'item', itemId: item.itemId!, version: item.file.version } }} onBack={mobile || backIsPanel ? back : undefined} onClose={close} /> : null}

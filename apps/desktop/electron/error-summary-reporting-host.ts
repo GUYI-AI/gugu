@@ -15,6 +15,7 @@ declare const __GUGU_ERROR_REPORTING_ENDPOINT__: string | undefined
 // These are fixed source locations, never paths from a user's configuration or an error message.
 const migrationLocations = {
   inventory: 'apps/desktop/electron/session/main/core/agents/agent-homes.ts',
+  'native-history': 'packages/session-plugins/src/agents/impl/codex/native-history-relocation.ts',
   configuration: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts',
   history: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:454:1',
   marker: 'packages/session-core/src/agents/plugins/helpers/agent-home-import.ts:320:1',

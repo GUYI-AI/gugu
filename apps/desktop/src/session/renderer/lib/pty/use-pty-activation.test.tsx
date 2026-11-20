@@ -27,6 +27,8 @@ let pty: FrontendPty;
 let hostSize: number[];
 let dataSubscriptions: number;
 let handleInput: (data: string) => void;
+let pasteAction: (() => void) | undefined;
+const terminalPaste = vi.fn();
 const sink = createPaneDimensionSink();
 
 function TerminalPane() {
@@ -58,7 +60,8 @@ describe('terminal activation reasserts the visible pane grid', () => {
     vi.useFakeTimers();
     dataSubscriptions = 0;
     sendInput.mockReset();
-    eventOn.mockImplementation((channel: { name: string }) => {
+    eventOn.mockImplementation((channel: { name: string }, callback: () => void) => {
+      if (channel.name === 'app:paste') pasteAction = callback;
       if (channel.name !== 'pty:data') return () => {};
       dataSubscriptions += 1;
       return () => { dataSubscriptions -= 1; };
@@ -66,6 +69,7 @@ describe('terminal activation reasserts the visible pane grid', () => {
     dom = new JSDOM('<div id="root"></div>');
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
+    vi.stubGlobal('navigator', { clipboard: { readText: async () => 'first\nsecond' } });
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 16));
     vi.stubGlobal('cancelAnimationFrame', clearTimeout);
@@ -77,6 +81,7 @@ describe('terminal activation reasserts the visible pane grid', () => {
         cols: 100, rows: 30, options: {},
         _core: { _renderService: { dimensions: { css: { cell: { width: 10, height: 20 } } } } },
         attachCustomKeyEventHandler() {},
+        paste: terminalPaste.mockImplementation((text: string) => handleInput('\x1b[200~' + text + '\x1b[201~')),
         onSelectionChange: () => ({ dispose() {} }),
         resize() {},
       },
@@ -137,6 +142,14 @@ describe('terminal activation reasserts the visible pane grid', () => {
     notifyPtyOutput('remote-task', 'ready');
     handleInput('\x1b[I');
     expect(sendInput).toHaveBeenLastCalledWith('remote-task', '\x1b[I');
+  });
+
+  it('uses the terminal paste API for clipboard text instead of raw PTY input', async () => {
+    await show(true);
+    expect(pasteAction).toBeTypeOf('function');
+    await act(async () => pasteAction!());
+    expect(terminalPaste).toHaveBeenCalledWith('first\nsecond');
+    expect(sendInput).toHaveBeenCalledWith('remote-task', '\x1b[200~first\nsecond\x1b[201~');
   });
 
 });
