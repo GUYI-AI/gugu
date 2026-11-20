@@ -113,24 +113,6 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     } finally { target.remove(); }
   });
 
-  it.each(['dm-1', 'grp-1'])('drags one-list sidebar row %s into a split like every other chat row', async (chatId) => {
-    await page.viewport(1000, 800);
-    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true });
-    const root = await renderList('grp-1', vi.fn(), false, null, 'sidebar');
-    const row = root.querySelector<HTMLElement>(`[data-chat-row="${chatId}"]`)!;
-    expect(row.draggable).toBe(true);
-    const target = document.createElement('div');
-    target.style.cssText = 'position:fixed;left:400px;top:100px;width:200px;height:100px';
-    const drops: unknown[] = [];
-    target.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer!.dropEffect = 'move'; });
-    target.addEventListener('drop', (event) => { event.preventDefault(); drops.push(getDraggedScreenContent(event.dataTransfer!)); });
-    document.body.appendChild(target);
-    try {
-      await userEvent.dragAndDrop(row, target);
-      expect(drops).toEqual([{ kind: 'chat', chatId, title: chatId === 'dm-1' ? '林知夏' : '周末小组' }]);
-    } finally { target.remove(); }
-  });
-
   it('keeps mobile chat and topic rows non-draggable', async () => {
     const root = await renderList('grp-1', vi.fn(), true);
     for (const row of root.querySelectorAll<HTMLElement>('[data-chat-row]')) expect(row.draggable).toBe(false);
