@@ -193,12 +193,12 @@ describe('final group toolbar v4', () => {
     expect(button('话题')?.querySelector('.gg-chip')?.textContent).toBe(shown)
   })
 
-  it('keeps independent topics free of group-only tools, with members and conversation information', async () => {
+  it('keeps independent topics free of group-only tools, with members, Apps and conversation information', async () => {
     await header('topic', { menu: true })
     expect(button('成员列表')).toBeDefined()
     expect(button('话题')).toBeUndefined()
     expect(button('邀请')).toBeUndefined()
-    expect(button('应用')).toBeUndefined()
+    expect(button('应用')).toBeDefined()
     expect(menuItem('会话信息')).toBeDefined()
   })
 
