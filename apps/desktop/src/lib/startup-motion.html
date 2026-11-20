@@ -106,11 +106,8 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
     }
     if (event.data.type === 'gugu-startup-window') {
       windowVisible = event.data.visible;
+      if (event.data.foregroundRgb) { RGB = event.data.foregroundRgb; if (initialized) draw(performance.now()); }
       if (unseen() && raf) { cancelAnimationFrame(raf); raf = 0; } else resume();
-    }
-    if (event.data.type === 'gugu-startup-palette') {
-      RGB = event.data.foregroundRgb;
-      if (initialized) draw(performance.now());
     }
   });
   // A srcdoc may run before its iframe has a non-zero layout box. Observe real
