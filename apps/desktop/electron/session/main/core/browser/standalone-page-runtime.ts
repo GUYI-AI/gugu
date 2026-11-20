@@ -5,6 +5,7 @@ import { browserCloseTabChannel, browserOpenInNewTabChannel, browserPageEventCha
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout } from '@shared/browser-page-layout';
 import type { AnnotationConversation } from '@shared/browser-annotation';
 import type { BrowserKernelKind } from '@shared/browser-kernel';
+import { newTabSharesPartition, normalizeBrowserProfileSelection } from '@shared/browser';
 import type { BrowserPageCommand } from './browser-page-views';
 import type { TaskPageContents, TaskPageScreenTarget } from '../../../../server/server-task-browser';
 import { BrowserKernelBindings } from './browser-kernel-bindings';
@@ -14,13 +15,31 @@ import { connectTaskPageScreen } from './task-page-screen';
 import { watchTaskPageConnection } from './remote-task-page';
 import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
 import { wireStandalonePageFeatures, type FeatureHost, type FeaturePage } from './standalone-page-features';
-import { kernelAfterCapabilityGate } from './standalone-capability-gate';
+import { kernelAfterCapabilityGate, type CapabilityGateFacts } from './standalone-capability-gate';
 import { TaskPopupClosed } from '../../../../server/task-popups';
 import { remoteBrowserBinding } from './remote-loopback-requests';
 import { appSettingsService } from '../settings/settings-service';
 import { log } from '@main/lib/logger';
 
 export const browserKernelBindings = new BrowserKernelBindings();
+
+const capabilityFacts: CapabilityGateFacts = {
+  remoteSession: browserId => remoteBrowserBinding(browserId) !== null,
+  relaxCorsForLocalhost: async () => (await appSettingsService.get('browser')).relaxCorsForLocalhost,
+};
+
+/**
+ * Whether a tab opened now for a link of this page is a standalone tab in this page's own Chrome (partition), so it can take a window
+ * that Chrome created. A new tab opens in the profile the person chose in Settings and on the engine they chose, which are not
+ * necessarily those of the tab this page is in.
+ */
+async function newTabSharesBrowser(browserId: string): Promise<boolean> {
+  const binding = browserKernelBindings.get(browserId);
+  if (binding?.kernel !== 'standalone') return false;
+  const settings = await appSettingsService.get('browser');
+  if (!newTabSharesPartition(binding.partition, normalizeBrowserProfileSelection(settings.defaultProfileId, settings.profiles))) return false;
+  return await kernelAfterCapabilityGate(await standaloneKernelService().selection(), browserId, capabilityFacts) === 'standalone';
+}
 const contents = new Map<string, TaskPageContents>();
 
 /** The same message box the built-in browser puts over the Gugu window for a page's alert and confirm. */
@@ -76,10 +95,7 @@ export function registerBrowserKernel(input: { browserId: string; partition: str
     // Internal preview/file protocols belong to Electron and never leave its document sandbox.
     const web = !input.url || input.url === 'about:blank' || /^https?:\/\//i.test(input.url);
     const wanted = web ? input.kernel ?? await standaloneKernelService().selection() : 'builtin';
-    const kernel = old?.kernel ?? await kernelAfterCapabilityGate(wanted, input.browserId, {
-      remoteSession: browserId => remoteBrowserBinding(browserId) !== null,
-      relaxCorsForLocalhost: async () => (await appSettingsService.get('browser')).relaxCorsForLocalhost,
-    });
+    const kernel = old?.kernel ?? await kernelAfterCapabilityGate(wanted, input.browserId, capabilityFacts);
     if (kernel === 'standalone' && !await standaloneKernelService().installation()) throw new Error('The standalone browser is not installed');
     if (kernel === 'standalone') standaloneKernelService().pool.reserveTab(input.browserId, input.partition);
     return browserKernelBindings.bind(input, kernel);
@@ -117,6 +133,7 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
     if (features) {
       const host: FeatureHost = {
         openInNewTab: (url, popup) => events.emit(browserOpenInNewTabChannel, { sourceBrowserId: browserId, url, ...(popup && { popup }) }),
+        newTabSharesBrowser: () => newTabSharesBrowser(browserId),
         chooseFiles,
         closeTab: () => { if (contents.get(browserId) === page) events.emit(browserCloseTabChannel, { browserId }); },
         faviconsUpdated: favicons => events.emit(browserPageEventChannel, { browserId, type: 'page-favicon-updated', state: screen.state(), detail: { favicons } }),

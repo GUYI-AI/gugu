@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { wireStandalonePageFeatures, type FeatureHost } from './standalone-page-features';
 
-function fixture(options: { chosen?: string[] | null; interceptFails?: boolean; adoptedWindow?: boolean } = {}) {
+function fixture(options: { chosen?: string[] | null; interceptFails?: boolean; adoptedWindow?: boolean; sharesBrowser?: boolean | Error } = {}) {
   const page = Object.assign(new EventEmitter(), {
     reportNewWindows: vi.fn(),
     keepWindow: vi.fn(),
@@ -14,6 +14,7 @@ function fixture(options: { chosen?: string[] | null; interceptFails?: boolean; 
   });
   const host = {
     openInNewTab: vi.fn(),
+    newTabSharesBrowser: vi.fn(async () => { if (options.sharesBrowser instanceof Error) throw options.sharesBrowser; return options.sharesBrowser ?? true; }),
     chooseFiles: vi.fn(async (_options: { multiple: boolean }) => options.chosen === undefined ? ['/tmp/a.txt'] : options.chosen),
     closeTab: vi.fn(),
     faviconsUpdated: vi.fn(),
@@ -59,13 +60,46 @@ describe('a standalone page in the Gugu window', () => {
     expect(f.page.keepWindow).not.toHaveBeenCalled();
   });
 
-  it('lets a tab take the window of a link that has no window.opener anyway: the address loads once', async () => {
-    const f = fixture();
+  it('lets a tab take the window of a link that has no window.opener anyway, when the tab is in this Chrome: the address loads once', async () => {
+    const f = fixture({ sharesBrowser: true });
     await f.ready;
     f.page.emit('window-open', { url: 'https://site.test/link', popup: 'P1', features: [...asTab, 'noopener'], opener: false });
+    await f.settle();
     expect(f.host.openInNewTab.mock.calls).toEqual([['https://site.test/link', 'P1']]);
     expect(f.page.keepWindow.mock.calls).toEqual([['P1']]);
     expect(f.page.closeWindow).not.toHaveBeenCalled();
+  });
+
+  it('does not keep the window of a link when its tab opens in another Chrome (another profile, or another engine): the window goes unloaded, the tab loads the address', async () => {
+    const f = fixture({ sharesBrowser: false });
+    await f.ready;
+    f.page.emit('window-open', { url: 'https://site.test/link', popup: 'P1', features: asTab, opener: false });
+    f.page.emit('window-open', { url: 'https://site.test/quiet', popup: 'P2', features: [...asTab, 'noopener'], opener: false });
+    await f.settle();
+    expect(f.page.keepWindow).not.toHaveBeenCalled();
+    expect(f.page.closeWindow.mock.calls).toEqual([['P1'], ['P2']]);
+    expect(f.host.openInNewTab.mock.calls).toEqual([['https://site.test/link'], ['https://site.test/quiet']]); // No window named: the tab loads it itself.
+  });
+
+  it('treats a tab it cannot place like a tab in another Chrome, and says so', async () => {
+    const f = fixture({ sharesBrowser: new Error('settings unavailable') });
+    await f.ready;
+    f.page.emit('window-open', { url: 'https://site.test/link', popup: 'P1', features: asTab, opener: false });
+    await f.settle();
+    expect(f.page.keepWindow).not.toHaveBeenCalled();
+    expect(f.page.closeWindow.mock.calls).toEqual([['P1']]);
+    expect(f.host.openInNewTab.mock.calls).toEqual([['https://site.test/link']]);
+    expect(f.host.report).toHaveBeenCalledOnce();
+  });
+
+  it('asks nothing about where the tab opens for a sign-in window (its tab takes the page\'s own Chrome) or a window with an opener', async () => {
+    const f = fixture({ sharesBrowser: false });
+    await f.ready;
+    f.page.emit('window-open', { url: 'https://github.com/login', popup: 'P1', features: asPopup, opener: true });
+    f.page.emit('window-open', { url: 'https://site.test/x', popup: 'P2', features: asTab, opener: true });
+    expect(f.host.newTabSharesBrowser).not.toHaveBeenCalled();
+    expect(f.page.keepWindow.mock.calls).toEqual([['P1']]);
+    expect(f.page.closeWindow.mock.calls).toEqual([['P2']]);
   });
 
   it('opens nothing for an empty window or an address that is no web page, and closes the window Chrome created', async () => {

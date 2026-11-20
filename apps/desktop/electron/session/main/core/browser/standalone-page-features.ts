@@ -20,6 +20,12 @@ export type LoadFailure = { errorCode: number; errorDescription: string; validat
 export type FeatureHost = {
   /** A new Gugu tab next to the one that opened it. `popup` names the window Chrome already created for it, which the tab shows. */
   openInNewTab(url: string, popup?: string): void;
+  /**
+   * A tab opened for a link of this page is a standalone tab in the same Chrome as this page, so it can take a window this page's
+   * Chrome created. It is not when the person's default profile is another one (another Chrome process), or the engine setting
+   * has changed since this tab opened.
+   */
+  newTabSharesBrowser(): Promise<boolean>;
   /** The files the person picks for an `<input type=file>`; `null` when they cancel. */
   chooseFiles(options: { multiple: boolean }): Promise<string[] | null>;
   /** The page this tab shows closed itself (window.close()): the tab goes with it. */
@@ -43,14 +49,20 @@ export async function wireStandalonePageFeatures(page: FeaturePage, host: Featur
     // The built-in browser's rule, not another one: a sign-in address gets a window of its own, any other web address a tab.
     const decision = decideWindowOpen({ url, disposition: windowOpenDisposition(features), fromPopup: page.adoptedWindow === true });
     const window = typeof popup === 'string' ? popup : undefined;
-    // A window of its own, or one that has no window.opener to give anyway (a link): the tab takes Chrome's window and the address loads once.
-    if (decision === 'window' || (decision === 'tab' && opener === false)) {
-      if (window) page.keepWindow(window);
-      return host.openInNewTab(url, window);
-    }
-    // The built-in browser gives a tab no window.opener, which a window Chrome already created cannot be taken without: it goes, the tab loads the address itself.
-    if (window) page.closeWindow(window);
-    if (decision === 'tab') host.openInNewTab(url);
+    void (async () => {
+      // A window of its own, or one that has no window.opener to give anyway (a link): the tab takes Chrome's window and the address loads once.
+      let adopt = decision === 'window' || (decision === 'tab' && opener === false);
+      // A link's tab opens where the person's settings say, which may be another Chrome than this page's: it cannot take this window.
+      // When that cannot be told, the window is not taken: it goes and the tab loads the address itself, which is right either way.
+      if (adopt && decision === 'tab' && window && !await host.newTabSharesBrowser().catch(error => { host.report('Standalone browser could not tell where a new tab opens', error); return false; })) adopt = false;
+      if (adopt) {
+        if (window) page.keepWindow(window);
+        return host.openInNewTab(url, window);
+      }
+      // The built-in browser gives a tab no window.opener, which a window Chrome already created cannot be taken without: it goes, the tab loads the address itself.
+      if (window) page.closeWindow(window);
+      if (decision === 'tab') host.openInNewTab(url);
+    })().catch(error => host.report('Standalone browser could not open a window of a page', error));
   });
 
   page.on('closed-by-page', () => host.closeTab());

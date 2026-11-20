@@ -315,6 +315,21 @@ export function browserPartitionForProfile(
   return browserProfilePartition(profileId);
 }
 
+/** `persist:gugu-browser-isolated-…`: the partition of one session's isolated browser. */
+export function isIsolatedBrowserPartition(partition: string): boolean {
+  return partition.startsWith(`${BROWSER_PARTITION_PREFIX}-isolated-`);
+}
+
+/**
+ * Whether the tab a new tab opens for a page of `sourcePartition` is in that same partition, which the standalone browser keeps in
+ * one Chrome process. A new tab is opened in the profile chosen in Settings (`defaultProfileId`, already normalized), whatever
+ * profile the page's own tab is on; an isolated one is the partition of the session, which the new tab shares with the page.
+ */
+export function newTabSharesPartition(sourcePartition: string, defaultProfileId: BrowserProfileSelection): boolean {
+  if (defaultProfileId === BROWSER_ISOLATED_PROFILE_ID) return isIsolatedBrowserPartition(sourcePartition);
+  return sourcePartition === browserProfilePartition(defaultProfileId);
+}
+
 export function isNamedBrowserProfileId(value: string): boolean {
   return value !== BROWSER_ISOLATED_PROFILE_ID && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value);
 }
