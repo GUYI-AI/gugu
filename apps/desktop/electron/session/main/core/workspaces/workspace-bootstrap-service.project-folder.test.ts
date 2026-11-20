@@ -31,17 +31,14 @@ vi.mock('@main/lib/logger', () => {
 
 const { WorkspaceBootstrapService } = await import('./workspace-bootstrap-service');
 
-const projectGitRepository = { repo: 'root' };
-const projectFetchService = { fetch: 'root' };
+const projectGit = { git: 'root' };
 const project = {
   projectId: 'project-1',
   repoPath: '/work/gugu',
   defaultWorkspaceType: { kind: 'local' },
   defaultWorkspaceMachine: { kind: 'local' },
   settings: {},
-  isGitless: false,
-  gitRepository: projectGitRepository,
-  gitRepositoryFetchService: projectFetchService,
+  git: projectGit,
 };
 
 describe('ensureWorkspaceSetup for a project folder', () => {
@@ -77,11 +74,9 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     expect(context).toMatchObject({
       workDir: '/work/gugu-7341',
       projectPath: '/work/gugu',
-      gitless: false,
-      gitProbePath: '/work/gugu-7341',
     });
-    expect(context.gitRepository).toBeUndefined();
-    expect(context.gitRepositoryFetchService).toBeUndefined();
+    // Not the project's git: the workspace reads its own folder.
+    expect(context.git).toBeUndefined();
   });
 
   it('control — the project root: project git services as before, re-check stays on the project path', async () => {
@@ -91,10 +86,7 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     expect(context).toMatchObject({
       workDir: '/work/gugu',
       projectPath: '/work/gugu',
-      gitless: false,
-      gitRepository: projectGitRepository,
-      gitRepositoryFetchService: projectFetchService,
+      git: projectGit,
     });
-    expect(context).not.toHaveProperty('gitProbePath');
   });
 });

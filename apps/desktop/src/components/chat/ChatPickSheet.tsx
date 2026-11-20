@@ -55,6 +55,9 @@ interface ChatPickSheetProps {
   above?: ReactNode
   /** Above the rows while nothing is searched. */
   top?: ReactNode
+  /** Under the rows (an App's Hand to: what goes, in the composer's editor); with `listHidden` the rows give it their room. */
+  below?: ReactNode
+  listHidden?: boolean
   /** The foot: how many are picked (several at once; a one-row pick says nothing), and what the pick is for. */
   picked?: string
   actionLabel: string
@@ -156,12 +159,13 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
             ))}
           </div>
         ) : null}
-        <div role="listbox" aria-multiselectable={!single} className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-subtle)] !px-2 !pb-3">
+        <div role="listbox" aria-multiselectable={!single} hidden={props.listHidden} className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-subtle)] !px-2 !pb-3">
           {!query.trim() && props.top}
           {rows.length === 0 && sections.every((section) => section.rows.length === 0)
             ? <p className="!m-0 !p-8 text-center text-[length:var(--font-body)] text-[var(--muted-fg)]">{props.empty}</p>
             : list}
         </div>
+        {props.below}
         {props.error ? <p role="alert" className="!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{props.error}</p> : null}
         {!mobile && !single ? (
           <div className="flex shrink-0 items-center justify-end gap-3 border-t border-[var(--border-subtle)] !px-5 !py-3">

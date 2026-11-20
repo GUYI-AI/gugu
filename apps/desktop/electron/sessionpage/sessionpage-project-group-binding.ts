@@ -208,7 +208,8 @@ export function createSessionpageProjectGroupHost(deps: SessionpageProjectGroupH
           await rememberProjectGroupId(projectId, mapped, userId, env())
           return ok({ chatId: mapped, changed: false })
         }
-        // 归档了 / 不是群 / 这个账号已不在里面:与第一个会话遇到同样情形时一样,忘掉它、另起一个。
+        if (state === 'archived') return err({ type: 'group-unavailable', chatId: mapped, message: '项目群已收起，请使用现有文件夹恢复。' })
+        // 不是群 / 这个账号已不在里面:原来的绑定不能使用。
         log.info({ projectId, chatId: mapped, state }, '#7341 mapped project group is unusable — creating a fresh one')
         await forgetProjectGroupId(projectId, userId, env())
       }

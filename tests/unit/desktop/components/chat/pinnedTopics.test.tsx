@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => { harness.cleanup(); queryClient.clear() })
 
 describe('rich Topics menu', () => {
-  it('shows who is calling you in red, lists that topic first, and opens it', async () => {
+  it('shows who is calling you in red, keeps it in its place (pinned, then by activity), and opens it', async () => {
     const calling = chat({ id: 'calling', kind: 'topic', source_chat_id: 'g', name: 'Quiet but calling', last_message_at: '2026-10-01T00:00:00Z', last_message_preview: 'Not this', unread_count: 27, unread_locator: locator(27, 1) })
     save(['old'])
     await renderWithAppProviders(harness, topicMenu(), { auth: { id: 'u' }, chat: { activeChatId: 'g', chats: [...topics, calling] } })
@@ -62,7 +62,7 @@ describe('rich Topics menu', () => {
     expect(chip.dataset.tone).toBe('danger')
     await clickElement(button)
     await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="group-menu-topic"]')).toHaveLength(3))
-    expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'older than the rest and not pinned, still first').toEqual(['calling', 'old', 'new'])
+    expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'unread does not move a topic: same order as the chat list').toEqual(['old', 'new', 'calling'])
     const row = document.querySelector<HTMLElement>('[data-topic-id="calling"]')!
     expect(row.textContent, 'title only: no preview line').not.toContain('Not this')
     expect(row.querySelector('.gg-list-row-subtitle')).toBeNull()

@@ -12,12 +12,11 @@ import { graphemes, normalizeMentionKey } from '../../lib/mentionMatch'
 import { useChatsWhile } from '../../store/chatContext'
 import { Avatar } from '../Avatar'
 import { ListRow } from '../ui/ListRow'
-import { SearchField } from '../ui/SearchField'
 import { HeaderSearch } from '../ui/HeaderSearch'
 import { SectionLabel } from '../ui/SectionLabel'
 
-// 通讯录搜索(桌面侧栏与手机联系人首页共用):有关键词时,浏览视图(children)让位给一张结果表 ——
-// 人 / Agent / 群三组,组标题在组外、组内只有行,没命中的组不出现。浏览视图只隐藏不卸载,清空后折叠状态原样。
+// 手机联系人首页的通讯录搜索(桌面的在 ContactsSearchPane:框在左栏、结果铺在右边):有关键词时,浏览视图(children)让位给一张结果表 ——
+// 人 / Agent / 群三组,组标题在组外、组内只有行,没命中的组不出现。浏览视图只隐藏不卸载,清空后原样。
 // 键盘留在输入框:↑↓ 移动当前行,回车打开;打字本身不打开任何东西。
 
 export function ContactGroupAvatar({ group, size }: { group: ContactGroupChat; size: 'sm' | 'md' | 'lg' | number }) {
@@ -38,13 +37,6 @@ export function SelectionCheckbox({ checked }: { checked: boolean }) {
   )
 }
 
-/** 多选态(桌面建群)下,可选的人点一下是勾选而不是打开。 */
-export interface ContactSearchPick {
-  ids: ReadonlySet<string>
-  canPick: (contact: ContactUser) => boolean
-  onToggle: (contact: ContactUser) => void
-}
-
 type Row =
   | { kind: 'contact'; hit: ContactSearchHit<ContactUser> }
   | { kind: 'group'; hit: ContactSearchHit<ContactGroupChat> }
@@ -63,16 +55,15 @@ export function Marked({ text, hits }: { text: string; hits: number[] }) {
   return <>{runs.map((run) => <span key={run.at} className={run.hit ? 'text-[var(--fg)]' : 'text-[var(--muted-fg)]'}>{run.text}</span>)}</>
 }
 
-export function ContactSearch({ query, onQuery, mobile = false, head, people, agents, groups, pick, onOpenContact, onOpenGroup, onLookupNumber, children }: {
+export function ContactSearch({ query, onQuery, mobile = false, head, people, agents, groups, onOpenContact, onOpenGroup, onLookupNumber, children }: {
   query: string
   onQuery: (query: string) => void
   mobile?: boolean
-  /** 手机:页头。框收在页头的放大镜里(ui/HeaderSearch),与桌面那颗常驻框共用同一份输入与键盘处理。 */
+  /** 页头。框收在页头的放大镜里(ui/HeaderSearch)。 */
   head?: (searchButton: ReactNode) => ReactNode
   people: ContactUser[]
   agents: ContactUser[]
   groups: ContactGroupChat[]
-  pick?: ContactSearchPick
   onOpenContact: (contact: ContactUser) => void
   onOpenGroup: (group: ContactGroupChat) => void
   onLookupNumber: (number: string) => void
@@ -101,7 +92,6 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
   const open = (row: Row) => {
     if (row.kind === 'lookup') onLookupNumber(row.number)
     else if (row.kind === 'group') onOpenGroup(row.hit.item)
-    else if (pick?.canPick(row.hit.item)) pick.onToggle(row.hit.item)
     else onOpenContact(row.hit.item)
   }
   const changeQuery = (value: string) => { onQuery(value); setActive(0) }
@@ -142,16 +132,10 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
       return <ListRow key={group.id} {...common} data-group-id={group.id} leading={<ContactGroupAvatar group={group} size={avatarSize} />} title={<Marked text={groupDisplayName(group)} hits={hit.field === 'title' ? hit.hits : []} />} subtitle={why} />
     }
     const contact = row.hit.item
-    const picking = pick?.canPick(contact) ?? false
     return (
       <ListRow key={contact.id} {...common}
         data-contact-id={contact.id}
-        data-contact-option={picking ? contact.id : undefined}
-        aria-pressed={picking ? pick?.ids.has(contact.id) : undefined}
-        leading={<>
-          {picking ? <SelectionCheckbox checked={pick?.ids.has(contact.id) ?? false} /> : null}
-          <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={avatarSize} isAgent={contact.type === 'agent'} />
-        </>}
+        leading={<Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={avatarSize} isAgent={contact.type === 'agent'} />}
         title={<Marked text={displayName(contact)} hits={hit.field === 'title' ? hit.hits : []} />}
         subtitle={why} />
     )
@@ -160,23 +144,9 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
   let index = 0
   return (
     <>
-      {mobile ? (
-        <HeaderSearch mobile active={onScreen} value={query} onChange={changeQuery} onKeyDown={onKeyDown} placeholder={t('panel.searchContacts')} testId={AUTOMATION_TEST_IDS.contactsSearchInput}>
-          {(searchButton) => head?.(searchButton)}
-        </HeaderSearch>
-      ) : (
-        <div className="shrink-0 !px-3 !pb-2">
-          <SearchField
-            data-testid={AUTOMATION_TEST_IDS.contactsSearchInput}
-            value={query}
-            onChange={(event) => changeQuery(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={t('panel.searchContacts')}
-            clearLabel={t('friendSearch.clearSearch')}
-            onClear={() => onQuery('')}
-          />
-        </div>
-      )}
+      <HeaderSearch mobile active={onScreen} value={query} onChange={changeQuery} onKeyDown={onKeyDown} placeholder={t('panel.searchContacts')} testId={AUTOMATION_TEST_IDS.contactsSearchInput}>
+        {(searchButton) => head?.(searchButton)}
+      </HeaderSearch>
       {result ? (
         <div ref={listRef} data-testid="contacts-search-results" className="flex-1 overflow-y-auto !px-2 !pb-3">
           {sections.map((section) => (

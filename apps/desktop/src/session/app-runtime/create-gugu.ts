@@ -12,6 +12,7 @@ import { taskPagesApi, mountTaskPage } from './task-pages';
 import { appSurfacesApi } from './app-surfaces';
 import { bindingResourcesApi } from './binding-resources';
 import { voiceNoteApi } from './voice-note-api';
+import { selectionMenuApi } from './selection-menu';
 
 /**
  * `gugu` itself, built on a host — the same object wherever an App runs (F16): a page (desktop webview or
@@ -122,19 +123,18 @@ export function createGugu(
       const expectedVersion = options?.expectedVersion ?? null;
       return host.appFiles.replace({ ref, file: { name: '', contentType: content.type, bytes: await content.arrayBuffer() }, expectedVersion });
     });
+  const selectionMenu = selectionMenuApi(host);
   // Every call names where its file is (真源原则 13): an entry or `ctx.file` carries it, a place says it.
   const files = Object.freeze({
-    /** Preinstalled Files App only, inside a real click: the host's Send box beside the selection. Answers 'sent' or 'cancelled'. */
-    ...(host.appFiles.annotateSelection ? {
-      annotateSelection: (file: unknown, open: unknown) => host.appFiles.annotateSelection!({ file, open }),
-    } : {}),
-    ...(host.appFiles.sendSelection ? { sendSelection: (args: unknown) => host.appFiles.sendSelection!({ ...(args as Record<string, unknown> | null) }) } : {}),
+    /** A page's selection in a file it opened, or null when it goes: the host's selection menu, drawn here (selection-menu.ts). */
+    ...(host.appFiles.selectionAction ? { showSelection: (selection: unknown) => selectionMenu.show(selection) } : {}),
     open: (file: unknown, options?: { readOnly?: boolean }) => {
       const counts = countsOf(host);
       counts?.opened();
       return withRef(file, (ref) => {
         const entry = (file as { entry?: { version?: unknown }; version?: unknown } | null)?.entry ?? file as { version?: unknown } | null;
         const requested = host.appFiles.open({ ref, ...(!host.program ? { deferDetails: true } : {}), ...(typeof entry?.version === 'number' ? { expectedVersion: entry.version } : {}), ...(options?.readOnly === true ? { readOnly: true } : {}) });
+        void requested.then((opened) => selectionMenu.remember(opened.entry, opened.selectionMenu), () => undefined);
         const opening = loadFiles().then((m) => m.openFile(host, requested));
         // Observe a fast refusal even while the runtime is still loading.
         return Promise.all([opening, requested]).then(([opened]) => opened);
@@ -249,7 +249,7 @@ export function createGugu(
         options.signal?.removeEventListener('abort', stop);
       });
     }) } : {}),
-    // API 61: the person picks files of a chat in the host's sheet → the entries picked (`[]`: cancelled). Those open for
+    // API 62: the person picks files of a chat in the host's sheet → the entries picked (`[]`: cancelled). Those open for
     // this page with no capability: the pick is the consent.
     ...(pick ? { pick: (place: unknown, options?: { suffixes?: string[]; multiple?: boolean; title?: string; action?: string; upload?: boolean }) =>
       withPlace(place, (where) => pick({ ...options, place: where })) } : {}),

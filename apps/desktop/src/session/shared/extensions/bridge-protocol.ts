@@ -149,21 +149,22 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
 // as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
-// 54 (selection-send.ts): `files.sendSelection({ text, refs, rect, viewport })`, the preinstalled Files App only, inside a
-// real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
-// 55: the same Send on a page of a chat's folder: into that chat (the page's, from the binding), @ its members, every
-// file one of that folder. 'sent' is queued, as a composer's message is, not delivered.
+// 54: `files.sendSelection`, the preinstalled Files App's Send box beside a selection, into the page's session; 55: the same
+// on a chat folder's page, into that chat. Both withdrawn with 60 (the host's selection menu cites instead).
 // 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
 // only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
 // 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
-// 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
-// 61 (app-file-pick-core.ts): `files.pick(place, { suffixes, multiple, title, action, upload })`, the person picks chat files
+// 59: withdrawn (the preinstalled Files App's `files.annotateSelection`, and with 60 also 54/55's `files.sendSelection`).
+// 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
+// `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
+// Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
+// 62 (app-file-pick-core.ts): `files.pick(place, { suffixes, multiple, title, action, upload })`, the person picks chat files
 // in the host's sheet; the picked ones open for that page with no capability. `pickAgent({ include })` may also offer the
 // page's chat members (`people`, `all`); a person picked answers `{ member }`.
-export const EXTENSION_API_VERSION = 61;
+export const EXTENSION_API_VERSION = 62;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1044,7 +1045,7 @@ export const BRIDGE_VERBS = {
    */
   pickAgent: { needs: null, gesture: true, only: 'page', toAgent: { answer: { cancelled: true } } },
   /**
-   * API 61: the person picks files of the page's chat in the host's sheet (`app-file-pick-core.ts`). No capability: the App
+   * API 62: the person picks files of the page's chat in the host's sheet (`app-file-pick-core.ts`). No capability: the App
    * sees only what was picked, and the pick is the consent to open those (as `ctx.file`). The sheet's 「从电脑添加…」 row
    * is there only for an App holding `files:write`, the rule `files.upload` has.
    */
@@ -1116,8 +1117,8 @@ export const BRIDGE_VERBS = {
   filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
-  filesSendSelection: { needs: null, only: 'page', gesture: true },
-  filesAnnotateSelection: { needs: null, only: 'page', gesture: true },
+  /** 60 (file-selection.ts): Cite or Send pressed on the page's selection menu, in the person's gesture: a draft, or the host's own box. */
+  filesSelectionAction: { needs: null, only: 'page', gesture: true },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
   filesDraft: { needs: null, machine: 'place' },

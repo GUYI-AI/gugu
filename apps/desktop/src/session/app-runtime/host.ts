@@ -134,9 +134,8 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch(args: { watchId: string; place: AppPlace & { folder?: string; id?: string }; on: boolean }): Promise<void>;
     replace(args: { ref: AppFileRef; file: AppFileUpload; expectedVersion?: number | null }): Promise<AppFileEntry>;
     readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
-    /** API 54, the preinstalled Files App's page only (selection-send.ts): the host's Send box; only the outcome comes back. */
-    annotateSelection?(args: Record<string, unknown>): Promise<boolean>;
-    sendSelection?(args: Record<string, unknown>): Promise<import('@shared/extensions/selection-send').SelectionSendResult>;
+    /** API 60, a page's (file-selection.ts): the person pressed Cite or Send on the menu the runtime drew; in their gesture. */
+    selectionAction?(args: Record<string, unknown>): Promise<void>;
     exists(args: { ref: AppFileRef }): Promise<boolean>;
     draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;
     writeText(args: { ref: AppFileRef; text: string }): Promise<{ entry: AppFileEntry }>;
@@ -152,7 +151,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     download?(args: { ref: AppFileRef; folder?: boolean; transferId?: string } | { refs: AppFileRef[] }): Promise<boolean | number>;
     downloadStop?(args: { transferId: string }): Promise<void>;
     forward?(args: { refs: AppFileRef[] }): Promise<void>;
-    /** API 61: the person picks chat files in the host's sheet, inside a gesture; `[]` when they cancel. */
+    /** API 62: the person picks chat files in the host's sheet, inside a gesture; `[]` when they cancel. */
     pick?(args: { place: AppPlace; suffixes?: string[]; multiple?: boolean; title?: string; action?: string; upload?: boolean }): Promise<AppFileEntry[]>;
   };
   readonly clipboard?: {

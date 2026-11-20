@@ -126,7 +126,7 @@ export interface DesktopFilePage {
   pageId: number;
   extensionId: string;
   handed: (AppFileRef & { id: string }) | null;
-  /** API 61: the chat files the person picked for this page (`files.pick`): as handed as `handed`. */
+  /** API 62: the chat files the person picked for this page (`files.pick`): as handed as `handed`. */
   picked?: ReadonlySet<string>;
   /** Gateway-stamped versions of the cards handed to this exact call. */
   handedVersions?: readonly number[];

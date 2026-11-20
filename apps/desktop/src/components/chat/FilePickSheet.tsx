@@ -14,7 +14,7 @@ import { takeFilePickAsks, type FilePickAsked } from './filePickAsk'
 const UPLOAD = 'upload:new'
 
 /**
- * API 61 `gugu.files.pick`: the chat's files the host listed, drawn by the shell over whatever is on screen
+ * API 62 `gugu.files.pick`: the chat's files the host listed, drawn by the shell over whatever is on screen
  * (ExtensionConsentSheet), in the dispatch sheet's clothes (ChatPickSheet). A file row says what a file in a message says
  * (FileAttachmentCard: its mark, size and kind), with where it is in the folder and when it last changed; newest first,
  * a search keeps the files whose path has it (the host's `files.search` match). One file: a tap picks it. Several: ticked,

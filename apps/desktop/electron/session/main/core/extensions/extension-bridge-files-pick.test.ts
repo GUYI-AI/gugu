@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * API 61: an App's page asks the person to pick files of its chat (`files.pick`) or someone of its chat (`pickAgent({ include })`)
+ * API 62: an App's page asks the person to pick files of its chat (`files.pick`) or someone of its chat (`pickAgent({ include })`)
  * in the host's own sheet. Main lists what may be picked, as the person; the window draws it and says which; only what it was
  * handed counts, and the files picked open for that page with no capability until its document goes.
  */
@@ -26,7 +26,7 @@ vi.mock('@main/core/extensions/extensions-root', () => ({
   extensionsService: () => ({
     grantedCapabilities: () => [...capabilities],
     hasCapability: (_id: string, capability: string) => capabilities.has(capability),
-    get: () => ({ manifest: { name: 'Tree', apiVersion: 61, contributes: { tabs: [] } } }),
+    get: () => ({ manifest: { name: 'Tree', apiVersion: 62, contributes: { tabs: [] } } }),
     origins: () => ({}),
   }),
   extensionDataRoot: () => '/data/tree',

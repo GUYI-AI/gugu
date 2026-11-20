@@ -19,7 +19,7 @@ import { translateSessionMessage } from '../../session/renderer/localization/loc
 import { Check } from '../../lib/icons'
 import { DispatchSheet } from '../chat/DispatchSheet'
 import { FilePickSheet } from '../chat/FilePickSheet'
-import { SelectionSendLayer } from '../chat/SelectionSend'
+import { FileSelectionLayer } from '../../session/renderer/features/sessions/annotations/file-selection-overlay'
 
 type Ask = Extract<ExtensionConsentEventDetail, { type: 'ask' }>
 
@@ -54,14 +54,14 @@ function RequesterFace({ requester }: { requester: ExtensionConsentRequester }) 
  */
 export function ExtensionConsentSheet() {
   // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`), which chat files an App's page asks the
-  // person to pick (`gugu.files.pick`), and a selection's Send: the same shell,
-  // the same promise.
+  // person to pick (`gugu.files.pick`), and an App page's selection menu: the same shell, so what they send goes the way
+  // typed words go.
   return (
     <>
       <InstallConsentSheet />
       <DispatchSheet />
       <FilePickSheet />
-      <SelectionSendLayer />
+      <FileSelectionLayer />
     </>
   )
 }

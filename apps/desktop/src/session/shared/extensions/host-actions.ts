@@ -7,7 +7,6 @@ import type { MarketCodeSource } from './market';
 import type { ExtensionOrigin } from './upgrade';
 import type { AppModalPage } from './app-modal';
 import type { AssistantScreen, AssistantSetupAdvance } from './assistant-binding';
-import type { SelectionSendOpen, SelectionSendTo } from './selection-send';
 
 /**
  * What the bridge asks the renderer to do on an extension's behalf.
@@ -142,18 +141,10 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
 
 /**
- * API 61 `gugu.files.pick`: main asks the window that draws the page to let the person pick chat files (`FilePickSheet`):
+ * API 62 `gugu.files.pick`: main asks the window that draws the page to let the person pick chat files (`FilePickSheet`):
  * `FilePickAsk` → `FilePicked`. It waits on a person and closes by itself as dispatch's picker does.
  */
 export const EXTENSION_PICK_CHAT_FILES_METHOD = 'extensions.pickChatFiles';
-
-/**
- * API 54/55 `gugu.files.sendSelection` (selection-send.ts): main asks the window that draws the page to open Send beside the
- * page's selection: `SelectionSendAsk` → `SelectionSendResult`. It waits on a person, so it closes by itself after
- * `INSTALL_CONSENT_HUMAN_WINDOW_MS`, as dispatch's picker does (ipc-bridge's clock is longer).
- */
-export const EXTENSION_SELECTION_SEND_METHOD = 'extensions.selectionSend';
-export interface SelectionSendAsk { to: SelectionSendTo; webContentsId: number; open: SelectionSendOpen }
 
 /**
  * #50 (resources-management.ts) What an App's managing calls ask of the window that draws its page: the question the

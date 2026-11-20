@@ -156,8 +156,7 @@ export const HOST_CALLS = {
   'appFiles.close': { verb: 'filesClose' },
   'appFiles.list': { verb: 'filesList' },
   'appFiles.read': { verb: 'filesRead' },
-  'appFiles.sendSelection': { verb: 'filesSendSelection' },
-  'appFiles.annotateSelection': { verb: 'filesAnnotateSelection' },
+  'appFiles.selectionAction': { verb: 'filesSelectionAction' },
   'appFiles.readText': { verb: 'filesReadText' },
   'appFiles.exists': { verb: 'filesExists' },
   'appFiles.draft': { verb: 'filesDraft' },
@@ -191,7 +190,7 @@ export const HOST_CALLS = {
       ...(typeof args?.folder === 'string' ? { folder: args.folder } : {}),
     }),
   },
-  /** API 61: the person picks chat files in the host's sheet — a page's, inside a gesture. */
+  /** API 62: the person picks chat files in the host's sheet — a page's, inside a gesture. */
   'appFiles.pick': { verb: 'filesPick' },
   'appFiles.openWith': { verb: 'filesOpenWith' },
   'appFiles.download': { verb: 'filesDownload' },

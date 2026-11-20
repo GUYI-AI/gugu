@@ -85,7 +85,7 @@ export interface FileSurface {
   extensionId: string;
   /** The chat file the host handed this page (`ctx.file`), if any: it needs no capability. */
   itemId: string | null;
-  /** API 61: the chat files the person picked for this page in the host's sheet (`files.pick`): as handed as `itemId`. */
+  /** API 62: the chat files the person picked for this page in the host's sheet (`files.pick`): as handed as `itemId`. */
   picked?: ReadonlySet<string>;
   /**
    * 摩擦单 F16 An App's program opening the file one of this person's agents handed it: the agent (a uuid) it acts

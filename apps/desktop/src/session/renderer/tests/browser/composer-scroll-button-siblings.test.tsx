@@ -34,7 +34,7 @@ function FailureBand() {
   const [slot, setSlot] = useState<Element | null>(null)
   useLayoutEffect(() => { setSlot(host!.querySelector('[data-agent-failure-slot]')) }, [])
   return <><AgentFailureSlot agentUserId="controlled-layout-agent" />{slot ? createPortal(<AgentTurnFailureBar
-    failure={{ agentUserId: 'controlled-layout-agent', commandId: 'controlled-command', departed: false, at: 1, reason: 'generic' }}
+    failure={{ agentUserId: 'controlled-layout-agent', commandId: 'controlled-command', at: 1, reason: 'generic' }}
     displayName="Controlled layout agent" avatar={null} onDismiss={() => {}} />, slot) : null}</>
 }
 
