@@ -161,9 +161,11 @@ export function resolveComposerModelPanel(input: {
   modelCount: number;
   effortCount: number;
   unlock: boolean;
+  /** An actual preparation or setting notice keeps an empty menu reachable. */
+  notice?: boolean;
 }): ComposerModelPanel {
   const modelRow = input.modelCount > 0 || input.unlock ? 'list' : 'none';
-  if (modelRow === 'none' && input.effortCount === 0) return { kind: 'hidden' };
+  if (modelRow === 'none' && input.effortCount === 0 && !input.notice) return { kind: 'hidden' };
   return { kind: 'shown', modelRow };
 }
 
@@ -477,6 +479,11 @@ export function ComposerModelMenu({
                 )
               : translate('composer.model')}
           </span>
+          {!settingNotice && selectedModelItem?.tag && (
+            <span data-slot="composer-model-trigger-tag" className={styles.modelPanelItemTag}>
+              {selectedModelItem.tag}
+            </span>
+          )}
           {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;
               没 armed 时退回该模型自己的默认档,再压一档不透明度 —— 那是目录里的出厂
               默认,用户写在 ~/.codex/config.toml 里的值会盖过它,我们读不到。 */}
@@ -632,6 +639,11 @@ export function ComposerModelMenu({
                           <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
                             {m.name}
                           </span>
+                          {m.tag && (
+                            <span data-slot="composer-model-tag" className={styles.modelPanelItemTag}>
+                              {m.tag}
+                            </span>
+                          )}
                         </Combobox.Item>
                       )}
                     </Combobox.Collection>

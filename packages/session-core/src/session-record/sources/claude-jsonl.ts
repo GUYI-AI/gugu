@@ -1,7 +1,6 @@
-import { createReadStream } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { readFirstLines } from '@gugu/core/local/agent/transcriptInventory';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
@@ -529,21 +528,12 @@ class ClaudeJsonlSource implements SessionRecordSource {
 }
 
 async function readFirstMessageUuid(path: string): Promise<string | null> {
-  const stream = createReadStream(path, { encoding: 'utf8', highWaterMark: 16 * 1024 });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
-  let seen = 0;
-  try {
-    for await (const line of lines) {
-      if (seen >= HEAD_SCAN_MAX_LINES) break;
-      seen += 1;
-      const uuid = parseJson(line)?.uuid;
-      if (typeof uuid === 'string' && uuid) return uuid;
-    }
-  } catch {
-    return null;
-  } finally {
-    lines.close();
-    stream.destroy();
+  // Reuse inventory's bounded positional prefix read (64 KiB blocks, at most 1 MiB).
+  // It uses the common LF/UTF-8 framer, so Unicode separators do not consume the line cap.
+  const lines = await readFirstLines(path, HEAD_SCAN_MAX_LINES);
+  for (const line of lines) {
+    const uuid = parseJson(line)?.uuid;
+    if (typeof uuid === 'string' && uuid) return uuid;
   }
   return null;
 }

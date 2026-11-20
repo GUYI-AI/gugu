@@ -1,6 +1,7 @@
 import type { GroupImperativeHandle } from 'react-resizable-panels';
 import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { MIN_PANE_WIDTH_PX } from '@renderer/features/tabs/pane-store';
+import { setGroupLayout } from '@renderer/lib/ui/resizable';
 import type { GroupParticipantPanes } from './group-participant-panes';
 
 type Split = Extract<PaneLayoutNode, { type: 'split' }>;
@@ -30,8 +31,7 @@ export function observeGroupParticipantWidth(element: HTMLElement, node: Split, 
     const extent = widths.reduce((sum, width) => sum + width, 0) * total / 100;
     const sizes = participantSplitSizes(node, pair.targetIndex, panes.rightWidth, extent);
     const wanted = Object.fromEntries(node.children.map((child, index) => [child.type === 'pane' ? `block-panel-${child.paneId}` : `block-cut-${child.id}`, sizes[index]]));
-    const current = handle.getLayout();
-    if (Object.keys(wanted).some(id => Math.abs((current[id] ?? -1) - wanted[id]) > 0.001)) handle.setLayout(wanted);
+    setGroupLayout(handle, wanted, 0.001);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(element);

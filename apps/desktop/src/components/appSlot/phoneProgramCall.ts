@@ -42,7 +42,7 @@ export async function callOnComputer(app: PhoneApp, session: PhoneSession, metho
   if (session.online === false) throw refused('unavailable', `"${where}" is offline; nothing was sent there`)
   const caller = phoneAppCaller(app)
   // Imported when a call is made: the session page's connections are not this host's to open at load.
-  const { appCallOn } = await import('../../mobile/agent-watch/sessionpage-rpc')
+  const { appCallOn } = await import('../session-watch/sessionpage-rpc')
   try {
     return await appCallOn(session.deviceId, caller, action)
   } catch (error) {

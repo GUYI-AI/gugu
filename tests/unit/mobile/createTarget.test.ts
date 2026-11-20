@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { DeviceProject } from '@gugu/core/shared/types/deviceProject'
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
-import { accountProjects, createMachines, runCandidates } from '@/mobile/agent-watch/create-target'
+import { accountProjects, createMachines, runCandidates } from '@/components/session-watch/create-target'
 import { defaultRunMachine } from '@renderer/features/projects/components/main-panel/project-run-machine'
 
 const record = (localProjectId: string, chatId: string | null, path = `/${localProjectId}`): DeviceProject => ({

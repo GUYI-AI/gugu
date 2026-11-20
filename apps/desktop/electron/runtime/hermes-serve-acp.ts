@@ -2,7 +2,7 @@
 // ACP bridge for Hermes over `hermes serve` — the tui_gateway JSON-RPC that Hermes Desktop / TUI / Dashboard use.
 // Gugu is a Hermes desktop client: sessions, per-session model / reasoning / approvals, steering, slash commands
 // and history are Hermes' own, through the same calls its desktop makes. Design: builds/hermes/SERVE-BRIDGE-DESIGN.md.
-import { createInterface } from 'node:readline';
+import { createJsonlReader } from '../../../../packages/core/src/local/jsonl.mjs';
 import { nativePromptText as promptText } from '../../../../packages/session-core/src/acp/native-prompt.ts';
 import { platformModelFacts } from './codex-model-catalog.mjs';
 import { connectGateway, GatewayError, type Gateway, type GatewayEvent } from './hermes-serve/gateway.ts';
@@ -632,7 +632,7 @@ function handleNotification(method: string) {
 }
 
 let settingsQueue: Promise<void> = Promise.resolve();
-const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const reader = createJsonlReader({ input: process.stdin });
 reader.on('line', (line) => {
   let message: Json;
   try {

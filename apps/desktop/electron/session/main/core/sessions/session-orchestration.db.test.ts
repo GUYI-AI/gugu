@@ -211,6 +211,7 @@ import {
   stopExactSessionpageSession,
   type SessionCallerContext,
   stopSessionByPerson,
+  receivedMessageIds,
 } from './session-orchestration';
 import type { RemoteSessionCaller, SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
@@ -3066,6 +3067,28 @@ describe('schedule_list / schedule_cancel with session_id', () => {
     await expect(runSessionAction(context, { action: 'schedule_list', session_id: 'someone-elses' })).rejects.toThrow(/session not found on this machine/);
     await expect(runRemoteSessionAction(remoteCaller, { action: 'schedule_cancel', schedule_id: 'schedule:00000000-0000-4000-8000-000000000000', session_id: 'someone-elses' }))
       .rejects.toThrow(/session not found on this machine/);
+  });
+});
+
+// Owner 2026-11-16: session_message's reply_to_message_id written short names a delivery this session was given.
+describe('receivedMessageIds', () => {
+  const A = 'abcdef12-3456-4789-8abc-def012345678';
+  const B = 'abcdef12-0000-4000-8000-000000000000';
+  function seed(session: string, rows: string[]) {
+    fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, workspace_id, provider, runtime, config) VALUES (?, 'project-1', 'workspace-1', 'codex', 'acp', '{}')`).run(session);
+    rows.forEach((content, index) => fixture.sqlite.prepare('INSERT INTO messages (id, session_id, content, sender) VALUES (?, ?, ?, ?)').run(`${session}-${index}`, session, content, 'user'));
+  }
+
+  it('reads the msg ids of the envelopes this session was given, and only this session', async () => {
+    seed('receiver', [
+      `<gugu_delivery route="chat" msg="msg:${A}">hi</gugu_delivery>`,
+      `<gugu_delivery route="session-direct" msg="msg:${B}"><reply_to msg="msg:${A}"/>x</gugu_delivery>`,
+    ]);
+    seed('bystander', [`<gugu_delivery msg="msg:abcdef12-9999-4999-8999-999999999999">y</gugu_delivery>`]);
+    expect((await receivedMessageIds('receiver', 'ABCDEF12')).sort()).toEqual([B, A].sort());
+    expect(await receivedMessageIds('receiver', 'abcdef12-3')).toEqual([A]);
+    expect(await receivedMessageIds('receiver', 'abcdef13')).toEqual([]);
+    expect(await receivedMessageIds('receiver', '%%%%%%%%')).toEqual([]);
   });
 });
 });

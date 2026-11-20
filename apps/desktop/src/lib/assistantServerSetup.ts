@@ -1,5 +1,5 @@
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
-import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import { desktopIpc } from '../platform/desktopIpc'
 import { assistantResumeStore, cleanAssistantSetupDraft, completedAssistantSetup, type AssistantSetupDraft } from './assistantSetup'
 import { assistantSetupRules } from './assistantSetupRules'

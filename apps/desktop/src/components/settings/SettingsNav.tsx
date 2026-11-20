@@ -1,3 +1,4 @@
+import { settingsSectionsForAccount } from './sectionsForAccount'
 import type { JSX } from 'react'
 import { SETTINGS_GROUPS, type ActiveSection, type SettingsGroupId } from '@gugu/core/shared/enums/settingsSectionModels'
 import type { AuthUser } from '../../store/auth'
@@ -23,8 +24,12 @@ import {
   SquarePen,
   SquarePenFilled,
   SidebarMinimalistic,
+  Buildings,
+  HelpCircle,
+  HelpCircleFilled,
 } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
+import '../../i18n/registerProductTourCatalog'
 import { platformModels } from '../../lib/agentModelReplicas'
 
 interface NavItem {
@@ -38,10 +43,10 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
-  { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
+  { id: 'account', sections: ['account', 'team', 'subscriptions', 'usage'] },
   { id: 'preferences', sections: ['general', 'data-import', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'prompts', 'devices', 'browser', 'files'] },
-  { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
+  { id: 'diagnostics', sections: ['resource-monitor', 'help', 'about'] },
 ]
 
 interface SettingsNavProps {
@@ -143,9 +148,11 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'usage',   labelKey: 'settings.nav.usage', il: <IlUsage />,   ib: <IbUsage />   },
   { key: 'files', labelKey: 'settings.nav.files', il: <Folder size={15} />, ib: <FolderFilled size={15} /> },
   { key: 'subscriptions', labelKey: 'settings.nav.subscriptions', il: <IlSubscriptions />, ib: <IbSubscriptions /> },
+  { key: 'team', labelKey: 'settings.nav.team', il: <Buildings size={15} />, ib: <Buildings size={15} /> },
   { key: 'apps',    labelKey: 'settings.nav.apps', il: <IlApps />,    ib: <IbApps />    },
   { key: 'phone',   labelKey: 'settings.nav.phone', il: <IlPhone />,   ib: <IbPhone />   },
   { key: 'about',   labelKey: 'settings.nav.about', il: <IlAbout />,   ib: <IbAbout />   },
+  { key: 'help', labelKey: 'productTour:help.label', il: <HelpCircle size={15} />, ib: <HelpCircleFilled size={15} /> },
   // 会话页画的那几格(product spec)。同一套 Solar linear / bold,尺寸与上面这些一样。
   { key: 'prompts', labelKey: 'settings.nav.prompts', il: <FileText size={15} />, ib: <FileText size={15} /> },
   { key: 'sessions', labelKey: 'settings.nav.sessions', il: <SquarePen size={15} />, ib: <SquarePenFilled size={15} /> },
@@ -159,8 +166,9 @@ function warmSettingsSection(key: string): void {
   if (key === 'model' && platformModels.peek().state === 'unknown') void platformModels.prefetch()
 }
 
-export function SettingsNav({ activeSection, sections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
+export function SettingsNav({ activeSection, sections: availableSections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
   const { t } = useTranslation('main')
+  const sections = settingsSectionsForAccount(availableSections, user)
   if (!mobile && import.meta.env.DEV) {
     const missing = sections.filter((section) => !DESKTOP_NAV_GROUPS.some((group) => group.sections.includes(section)))
     if (missing.length > 0) throw new Error(`SettingsNav: desktop sections missing a group: ${missing.join(', ')}`)

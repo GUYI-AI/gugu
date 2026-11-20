@@ -1,9 +1,10 @@
-import { Folder, Globe, MessageSquare } from '@/lib/icons';
+import { Folder, Globe } from '@/lib/icons';
 import { openApp } from '@/components/appSlot/useOpenApp';
 import { OpenSuperseded, openLinkTarget } from '@/lib/guguLinks';
 import { notify } from '@/lib/notices';
 import { messageForUser } from '@/lib/userFacingError';
 import { useBrowserAnnotations } from './browser-annotations';
+import { isAnnotationConversation, type AnnotationConversation } from '@shared/browser-annotation';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -65,6 +66,7 @@ export const BrowserPane = observer(function BrowserPane({
   const surface = useWorkspaceSurface();
   const session = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
+  const conversation = isAnnotationConversation(pane.ctx.place) ? pane.ctx.place : undefined;
   const { translate } = useSessionMessages();
   const openInStart = (kind: string) => startTabId
     ? surface.paneLayout.open(kind, {}, { from: startTabId, intent: 'navigate', inPlace: true })
@@ -96,6 +98,7 @@ export const BrowserPane = observer(function BrowserPane({
   } : undefined;
   return (
     <BrowserPaneContent
+      conversation={conversation}
       browserId={browserId}
       visible={visible}
       focused={focused}
@@ -126,6 +129,7 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   workspaceStart: boolean;
 }) {
   const { pane } = usePaneContext();
+  const conversation = isAnnotationConversation(pane.ctx.place) ? pane.ctx.place : undefined;
   const { translate } = useSessionMessages();
   const openFolder = () => openPanelItem(chatId, folderItem(), { from: tabId });
   const startPageActions: WorkspacePanelAction[] = [
@@ -137,7 +141,7 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
       onClick: () => openApp(app.extensionId, chatId, tabId),
     })),
   ];
-  return <BrowserPaneContent browserId={browserId} visible={visible} focused={focused} devServerUrls={[]}
+  return <BrowserPaneContent conversation={conversation} browserId={browserId} visible={visible} focused={focused} devServerUrls={[]}
     onFocused={() => pane.setActiveTab(tabId)}
     onNavigateTab={(direction) => direction === 'next' ? pane.setNextTabActive() : pane.setPreviousTabActive()}
     startPageActions={startPageActions}
@@ -164,6 +168,7 @@ export const StandaloneBrowserPane = observer(function StandaloneBrowserPane({
 });
 
 const BrowserPaneContent = observer(function BrowserPaneContent({
+  conversation,
   browserId,
   visible,
   focused = true,
@@ -173,6 +178,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   onNavigateTab,
   onFocused,
 }: {
+  conversation?: AnnotationConversation;
   browserId: string;
   visible: boolean;
   focused?: boolean;
@@ -201,7 +207,9 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   const pendingInitialUrl = useRef<string | null>(null);
   const sessionBrowserId = session?.browserId;
   const sessionPartition = session?.partition;
-  const showStartPage = session?.currentUrl === 'about:blank' && !session.isLoading;
+  // 起始页 = 这张网页是空白页。❌ 再加「没在加载」:新页签挂网页时会先载一次 about:blank,那几十毫秒里起始页一撤,
+  // 底下的原生网页就露出来(深色外观下 about:blank 是黑的)。真去别的地址时 currentUrl 先变,起始页照常让开。
+  const showStartPage = session?.currentUrl === 'about:blank';
   const loadError = session && !session.isLoading ? session.loadError : undefined;
   const loadErrorUrl = loadError ? (loadError.url ?? session?.currentUrl ?? '') : '';
   const loadErrorPresentation = useMemo<BrowserLoadErrorPresentation | undefined>(
@@ -235,9 +243,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   }, [resolveUrl, session, sessionBrowserId, sessionPartition]);
 
   // #7191 页签开在哪条会话里,一并告诉主进程:那条会话的 agent 只拿得到它自己会话的页签。
-  const owningSessionId = session?.sessionId;
-  const annotations = useBrowserAnnotations({ sessionId: owningSessionId, browserId, visible, available: !!adapter && !showStartPage && !loadError,
-    inspect: (query, capture) => rpc.browser.inspectAnnotation({ browserId, sessionId: owningSessionId!, query, capture }) });
+  const annotations = useBrowserAnnotations({ conversation, browserId, visible, available: !!adapter && !showStartPage && !loadError,
+    inspect: (query, capture) => rpc.browser.inspectAnnotation({ browserId, conversation: conversation!, query, capture }) });
   useEffect(() => {
     if (!sessionBrowserId || !sessionPartition) return;
     let disposed = false;
@@ -246,7 +253,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       .registerSession({
         browserId: sessionBrowserId,
         partition: sessionPartition,
-        ...(owningSessionId ? { sessionId: owningSessionId } : {}),
+        ...(conversation ? { conversation } : {}),
       })
       .then((result) => {
         if (!disposed) setIsRegistered(result.success);
@@ -255,7 +262,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       disposed = true;
       setIsRegistered(false);
     };
-  }, [sessionBrowserId, sessionPartition, owningSessionId]);
+  }, [sessionBrowserId, sessionPartition, conversation]);
 
   useEffect(() => {
     return () => {
@@ -467,9 +474,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
         session={session}
         adapter={adapter}
         workspaceStart={showStartPage && !!workspaceStart}
-        annotationAction={annotations.toolbar ?? (workspaceStart && showStartPage
-          ? <Button type="button" size="icon-sm" variant="ghost" disabled aria-label={translate('annotations.annotate')}><MessageSquare className="size-4" /></Button>
-          : undefined)}
+        annotationAction={annotations.toolbar}
         // 空白页一露出来就把光标放进地址栏;并排时露出来的是另一页,❌ 把焦点从用户正看的那页抢走。
         autoFocusUrl={showStartPage && focused}
         onNavigate={navigateTo}

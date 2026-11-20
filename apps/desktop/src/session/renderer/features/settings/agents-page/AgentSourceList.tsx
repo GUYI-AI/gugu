@@ -20,7 +20,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { AgentPayload, Installation } from '@shared/core/agents/agent-payload';
 import { InstallProgressRow } from './InstallProgressRow';
 import { installFailureSummary } from './install-failure-summary';
-import { uninstallAgentWithToast } from './uninstall-agent-with-toast';
+import { useAgentUninstallConfirmation } from './agent-uninstall-confirmation';
 
 export type SourceKind = 'local' | 'managed' | 'custom';
 export type AgentSourceListProps = {
@@ -39,6 +39,7 @@ export type AgentSourceListProps = {
   onUpdate: (() => void) | undefined;
   onOpenCustom: () => void;
   customEditor: ReactNode | undefined;
+  managedVersions?: ReactNode;
 };
 
 /** Installation is always first; source selection never pretends an absent copy is active. */
@@ -57,9 +58,11 @@ export const AgentSourceList = observer(function AgentSourceList({
   onInstall,
   onUpdate,
   onOpenCustom,
-  customEditor
+  customEditor,
+  managedVersions,
 }: AgentSourceListProps) {
   const { translate } = useSessionMessages();
+  const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
   const busy = vm.isInstalling || vm.isUpdating || vm.isUninstalling;
   const lastFailure = vm.lastInstallError ?? vm.lastUpdateError;
   const failure = lastFailure && installFailureSummary(lastFailure, translate, !vm.lastInstallError);
@@ -82,7 +85,7 @@ export const AgentSourceList = observer(function AgentSourceList({
   };
   const uninstall = () => {
     const name = agentPayload?.name ?? translate('agentsPage.agentFallbackName');
-    uninstallAgentWithToast(name, vm.uninstall, translate);
+    requestUninstall(name, vm.uninstall);
   };
   let description: ReactNode = translate(
     available ? 'agentsPage.installed'
@@ -141,6 +144,7 @@ export const AgentSourceList = observer(function AgentSourceList({
     ) : null;
   return (
     <SettingsGroup>
+      {confirmation}
       <SettingsRow
         title={translate('agentsPage.installation')}
         description={vm.isInstalling || vm.isUpdating ? undefined : description}
@@ -270,6 +274,7 @@ export const AgentSourceList = observer(function AgentSourceList({
           {customEditor}
         </SettingsRow>
       )}
+      {managedVersions}
     </SettingsGroup>
   );
 });

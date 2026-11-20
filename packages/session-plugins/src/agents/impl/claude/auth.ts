@@ -23,8 +23,6 @@ type ExecErrorWithOutput = {
 };
 
 export async function claudeAuthStatus(ctx: AgentAuthContext): Promise<AgentAuthStatus> {
-  const envStatus = authenticatedFromEnv(ctx, USER_SUPPLIED_CREDENTIAL_ENV);
-  if (envStatus.kind === 'authenticated') return { ...envStatus, credentialKind: 'api-key' };
   // Claude Code 自己那份 `settings.json` 的 `env` 块**压得住进程环境**(cc-switch 一类中转就把令牌
   // 与中转地址写在那里),所以「这一家此刻拿什么凭据去打上游」在 `ctx.env` 里是看不全的。
   // 漏掉它的后果是**判成订阅登录**:这类用户没有 Anthropic 账号,凭据被拒时那条「登录已失效 · 重新
@@ -34,7 +32,9 @@ export async function claudeAuthStatus(ctx: AgentAuthContext): Promise<AgentAuth
     { ...ctx, env: await claudeSettingsEnv(ctx) },
     USER_SUPPLIED_CREDENTIAL_ENV
   );
-  if (settingsStatus.kind === 'authenticated') return { ...settingsStatus, credentialKind: 'api-key' };
+  if (settingsStatus.kind === 'authenticated') return { ...settingsStatus, credentialKind: 'api-key', credentialSource: 'config-file' };
+  const envStatus = authenticatedFromEnv(ctx, USER_SUPPLIED_CREDENTIAL_ENV);
+  if (envStatus.kind === 'authenticated') return { ...envStatus, credentialKind: 'api-key', credentialSource: 'environment' };
 
   try {
     const { stdout } = await ctx.exec(ctx.cli, ['auth', 'status'], {

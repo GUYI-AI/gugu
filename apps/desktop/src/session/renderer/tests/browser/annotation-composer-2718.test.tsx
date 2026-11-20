@@ -23,7 +23,7 @@ it('offers deletion without editing for saved file and diff comments', async () 
   const file = draft.add({ kind: 'file', path: 'notes.md', startLine: 2, endLine: 3, text: 'Source text', annotation: 'File note' });
   draft.add({ kind: 'diff', path: 'sample.ts', turnId: 'turn', patchIndex: 0, rowIndex: 1, oldLine: 8, text: 'Old line', annotation: 'Diff note' });
   harness = createReactHarness();
-  await harness.render(<SessionLocalizationProvider><AnnotationTray sessionId={id} onSend={() => {}} enabled /></SessionLocalizationProvider>);
+  await harness.render(<SessionLocalizationProvider><AnnotationTray conversation={{ kind: 'session', sessionId: id }} onSend={() => {}} enabled /></SessionLocalizationProvider>);
   await act(async () => { await userEvent.click(harness!.container.querySelector('[data-composer-annotations] button')!); });
   const buttons = () => document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]');
   await until('both file and diff comments are listed', () => buttons().length === 2);
@@ -52,7 +52,7 @@ it('places one annotation attachment above the phone input with edit and delete 
   harness = createReactHarness();
   await harness.render(<div data-phone-shell className="gugu-skin" style={{ width: 374, margin: 8 }}>
     <SessionLocalizationProvider><ChatComposer mobile canSubmit onSubmit={() => {}}
-      attachmentExtra={<AnnotationTray sessionId={id} onSend={() => {}} onRemove={remove} enabled />} />
+      attachmentExtra={<AnnotationTray conversation={{ kind: 'session', sessionId: id }} onSend={() => {}} onRemove={remove} enabled />} />
     </SessionLocalizationProvider>
   </div>);
   const attachment = harness.container.querySelector<HTMLElement>('[data-composer-annotations]')!;

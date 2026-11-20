@@ -537,7 +537,9 @@ export async function replaceMessageWindow(
     // Account arrivals (message-revision rows): a late older window must neither drop nor revive them.
     const arrivals = new Map(repository.snapshot().view.filter(row => row.key.startsWith('message-revision:'))
       .map(row => [row.key.slice('message-revision:'.length), row.value as { deleted?: boolean }]))
-    const fetched = messages.filter((message) => message.chat_id === chatId && message.seq >= 0 && !arrivals.get(message.id)?.deleted)
+    const eligible = messages.filter((message) => message.chat_id === chatId && message.seq >= 0 && !arrivals.get(message.id)?.deleted)
+    const fetchedIds = new Set(eligible.map(message => message.id))
+    const fetched = mergeMessagesById(imSelectors.messagesForChat(chatId)(repository.snapshot()).filter(message => fetchedIds.has(message.id)), eligible, chatId)
     const maxFetched = Math.max(0, ...fetched.map(message => message.seq))
     const coverageTail = verifiedTailSeq ?? maxFetched
     const sparse = (verifiedTailSeq === null

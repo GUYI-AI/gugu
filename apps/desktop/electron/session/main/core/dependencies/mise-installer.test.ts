@@ -85,6 +85,16 @@ describe('application-owned mise lifecycle', () => {
     expect(mocks.run.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(['uninstall', '--all', tool]))).toBe(true);
     await expect(readFile(launcher())).rejects.toMatchObject({ code: 'ENOENT' });
   });
+  it('an upgrade retains all earlier installed versions, including a long-running older program', async () => {
+    const earlier = path.join(home, 'agents/mise/data/installs/http-gugu-agent', '0.9.0');
+    await mkdir(path.join(earlier, 'bin'), { recursive: true });
+    await writeFile(path.join(earlier, 'bin/agent'), 'long-running old program');
+    entries = [{ version: '0.9.0', install_path: earlier, installed: true }];
+    expect((await runMiseOperation({ mise: { target, operation: 'update' } })).success).toBe(true);
+    expect(mocks.run.mock.calls.some(call => call[1][0] === 'uninstall')).toBe(false);
+    expect(await readFile(path.join(earlier, 'bin/agent'), 'utf8')).toBe('long-running old program');
+    expect(entries.map(entry => entry.version)).toEqual(['0.9.0', version]);
+  });
   // An install the desktop stopped half-way (the mise process group is killed with it, nothing after it runs): the
   // launcher is what makes an agent installed, and it is only published after mise finished and the program verified.
   it('a fresh install has no launcher while mise is still installing', async () => {

@@ -1,3 +1,4 @@
+import { serverNow } from '@gugu/core/shared/serverClock'
 import { ConnectionError } from '@gugu/core/cloud/connections'
 import type { IntegrationCredentials } from '@gugu/session-plugins/integrations'
 import { connectionBridge } from '@/lib/connectionBridge'
@@ -158,7 +159,7 @@ export function ownerConnectionActions(base: LibraryHost, host: LibraryHost,devi
     const attempt = await client.beginOAuth!(provider,signal)
     try {
       await openAuthorizationLink(attempt.authorizationUrl)
-      while (Date.now() < attempt.expiresAt) {
+      while (serverNow() < attempt.expiresAt) {
         signal.throwIfAborted()
         await assertRoute()
         const status = await client.oauthStatus!(provider,attempt.attemptId,signal)

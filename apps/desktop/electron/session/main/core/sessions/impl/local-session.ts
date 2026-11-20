@@ -630,6 +630,11 @@ export class LocalSessionProvider implements SessionProvider {
         resumeProviderSessionId: agentSession.isResuming
           ? session.providerSessionId
           : undefined,
+        // 换计费路的重开留下的分叉待办,只在它仍指着要续的这条时成立(见 session-config 同名字段)。
+        ...(agentSession.isResuming && session.providerSessionId
+          && session.forkOnStartProviderSessionId === session.providerSessionId
+          ? { forkKeepsAgent: true }
+          : {}),
         // #6264 TUI 住在 tmux 里 ⇒ 宿主把它的推理后台也放进 tmux(同名配对),活过宿主进程重启。
         ...(tmuxEnabled && process.platform !== 'win32'
           ? { tmuxSessionName: makeTmuxSessionName(ptySessionId) }

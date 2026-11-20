@@ -60,3 +60,14 @@ describe('attachment failure notices', () => {
     expect(renderToStaticMarkup(<>{result.description}</>)).toContain('File report.pdf')
   })
 })
+
+it.each(['zh-CN', 'en-US'] as const)('routes a friendship refusal through the shared localized failure exit (%s)', locale => {
+  setLocalePreference(locale)
+  const expected = locale === 'zh-CN' ? '请先添加对方为好友，再发送消息。' : 'Add this person as a friend before sending messages.'
+  for (const error of [new Error('dm_friendship_required'), { message: 'dm_friendship_required', code: '42501' }, new AttachmentsError('commit', 403, 'dm_friendship_required', 'dm_friendship_required')]) {
+    const result = notice([], error)
+    expect(result.tier).toBe('error')
+    expect(result.title).toContain(expected)
+    expect(result.title).not.toContain('dm_friendship_required')
+  }
+})

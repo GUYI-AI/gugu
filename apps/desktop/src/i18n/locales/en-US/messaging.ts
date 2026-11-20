@@ -1,4 +1,5 @@
 export default {
+  "humanDm": { "notFriends": "This person is not your friend yet.", "addFriend": "Add friend" },
   "fileCite": { "cite": "Cite", "selectLine": "Select line {{line}}", "line": "Line {{first}}", "lines": "Lines {{first}}–{{last}}" },
   "selectionSend": { "label": "Send this selection", "send": "Send", "sending": "Sending…", "placeholder": "Add a note, @ to mention (optional)", "failed": "Not sent. Try again.", "sent": "Sent" },
   "agent": {
@@ -382,7 +383,7 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
-  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}"},
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "messageUnavailable": "Message unavailable", "chatUnavailable": "Chat unavailable", "sessionUnavailable": "Session unavailable", "messages": "{{count}} messages", "severalMessages": "{{count}} messages in this chat start with {{prefix}} — pick one"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",

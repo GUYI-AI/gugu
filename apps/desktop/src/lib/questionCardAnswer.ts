@@ -20,7 +20,7 @@ export async function answerQuestionCard(card: QuestionCard, text: string): Prom
     conversationId: card.sessionId, itemId: card.questionId, kind: 'question' as const, answers: questionCardAnswers(card, text), by: 'desktop',
   }
   const here = (await platform.getLocalDeviceSelfSnapshot?.())?.device_id ?? null
-  if (here !== card.deviceId) return (await import('@/mobile/agent-watch/sessionpage-rpc')).respondToSettlement(card.deviceId, input)
+  if (here !== card.deviceId) return (await import('@/components/session-watch/sessionpage-rpc')).respondToSettlement(card.deviceId, input)
   const { rpcOn } = await import('@/session/renderer/lib/ipc')
   const result = await rpcOn(null).sessionTimeline.sessionRespond(input)
   if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code })

@@ -142,10 +142,13 @@ export default {
       "broadPickAnother": "换一个"
     },
     "title": "创建智能体",
-    "unfinishedSweep": {
-      "cancelledWithWarning": "上次有一个 Agent 没建完，已取消，但{{steps}}没有做干净。请重新创建。",
-      "pending": "上次有一个 Agent 没建完，取消还没做完（{{steps}}没有做干净），下次启动会再试。",
-      "pendingError": "上次有一个 Agent 没建完，这次没能取消，下次启动会再试。"
+    "unfinished": {
+      "title": "未完成创建",
+      "continue": "继续",
+      "delete": "删除",
+      "deleteTitle": "删除这次创建？",
+      "deleteDescription": "将取消“{{name}}”尚未完成的创建。",
+      "readFailed": "未能读取创建状态，记录已保留"
     },
     "toast": {
       "cancelFailed": "取消 Agent 创建失败。请重试。",
@@ -344,6 +347,7 @@ export default {
       "appliedHot": "已生效：当前会话已当场切换。",
       "appliedReloadPreserved": "已生效：会话已重开并续上历史。",
       "appliedReloadReplaced": "已生效：Agent 另起了一条自己的新会话；咕咕里的对话记录都在，但 Agent 不带之前的上下文。",
+      "appliedReloadRouteSwitched": "已生效：已切换计费路线。",
       "appliedReload": "已生效：会话已重开。",
       "appliedNextSession": "已保存：这个 Agent 此刻没有在跑的会话，下一个会话起生效。",
       "applyFailed": "设备没能应用这个选择，原因如下：",

@@ -114,6 +114,19 @@ export async function createHarnessConnection(input: CreateHarnessConnection): P
   return { id, name, kind: 'account', current: false };
 }
 
+/** Rename metadata on this device; never rewrite credentials or the selected account. */
+export async function renameHarnessConnection(input: { providerId: string; connectionId: string; name: string }): Promise<HarnessConnection> {
+  supported(input.providerId);
+  const name = input.name.trim();
+  if (!name || name.length > 80) throw new Error('Connection name must contain 1–80 characters');
+  const scope = namespace(input.providerId);
+  const target = await registry.getAccount(scope, input.connectionId);
+  if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
+  const renamed = await registry.renameAccount(scope, input.connectionId, name);
+  if (renamed.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
+  return connectionView(renamed);
+}
+
 export async function selectHarnessConnection(
   providerId: string,
   connectionId: string,

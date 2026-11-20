@@ -5,7 +5,7 @@ import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'
 import { onMachineEvent, rpcOn } from '../../session/renderer/lib/ipc'
-import { machineRpc } from '../../mobile/agent-watch/sessionpage-rpc'
+import { machineRpc } from '../session-watch/sessionpage-rpc'
 import { projectGroupBindingChangedChannel } from '../../session/shared/core/projects/projectEvents'
 import { sessionCreatedChannel } from '../../session/shared/core/sessions/sessionEvents'
 

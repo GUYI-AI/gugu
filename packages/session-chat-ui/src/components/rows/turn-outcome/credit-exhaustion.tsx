@@ -7,10 +7,12 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { vars } from '@session-chat/styles/theme.css';
 import { Show } from 'solid-js';
 import { readableLabel, rowTranslator } from '../readable-label';
+import { teamCreditReason } from '@gugu/session-core/session-record/team-credits';
 
 /** Only the gateway's own refusal is evidence that credits interrupted this turn. */
 export function isCreditExhaustion(outcome: TranscriptTurnOutcome): boolean {
   if (outcome.kind !== 'error' || outcome.signInRequired) return false;
+  if (teamCreditReason(outcome.detail)) return true;
   const text = outcome.said ?? '';
   if (/^咕咕积分用完了[。！]/.test(text)) return true;
   const detail = outcome.detail ?? '';
@@ -18,8 +20,15 @@ export function isCreditExhaustion(outcome: TranscriptTurnOutcome): boolean {
     && /咕咕积分|Gugu credits/i.test(detail);
 }
 
-export function creditExhaustionLayout(ctx: MeasureCtx, commands?: ChatCommands) {
+export function creditExhaustionLayout(ctx: MeasureCtx, commands?: ChatCommands, outcome?: TranscriptTurnOutcome) {
   const t = rowTranslator(ctx);
+  const team = teamCreditReason(outcome?.kind === 'error' ? outcome.detail : undefined);
+  if (team) {
+    const message = t(team === 'team_credits_exhausted' ? 'transcript.teamCreditsExhausted' : 'transcript.teamMonthlyCapReached');
+    const body = ctx.theme.config.roles.body;
+    const label = readableLabel(message, ctx, ctx.width, body.size, body.lineHeight, body.weight);
+    return { ...label, before: label.text, action: '', after: '' };
+  }
   const action = t('transcript.rechargeCredits');
   const message = t('transcript.creditsExhausted', { recharge: action });
   const body = ctx.theme.config.roles.body;
@@ -40,7 +49,7 @@ export function creditExhaustionLayout(ctx: MeasureCtx, commands?: ChatCommands)
 export function CreditExhaustionRow(props: { outcome: TranscriptTurnOutcome; ctx: () => MeasureCtx }) {
   const commands = useCommands();
   const translate = useChatTranslator();
-  const layout = () => creditExhaustionLayout({ ...props.ctx(), translate }, commands());
+  const layout = () => creditExhaustionLayout({ ...props.ctx(), translate }, commands(), props.outcome);
   return <div data-slot="turn-outcome" data-outcome="error" data-credit-exhausted=""
     style={{ height: `${layout().height}px`, color: vars.fgBody, 'font-family': vars.typeBodyFontFamily,
       'font-size': vars.typeBodyFontSize, 'font-weight': vars.typeBodyFontWeight, 'line-height': vars.typeBodyLineHeight,

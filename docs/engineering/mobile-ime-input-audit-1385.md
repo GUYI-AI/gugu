@@ -73,10 +73,10 @@
 | `packages/session-ui/src/react/primitives/input/index.tsx:15` | `InputPrimitive` / `{type}` | 单行：公共机制 |
 | `apps/desktop/src/mobile/partners/PhoneNewProjectPage.tsx:164` | `input` / `"text"` | 单行：公共机制 |
 | `apps/desktop/src/mobile/share-intake/ShareIntakeSheet.tsx:107` | `SearchField` / `"search"` | 单行：公共机制 |
-| `apps/desktop/src/mobile/agent-watch/SessionConversation.tsx:211` | `input` / `"file"` | 非文本控件：过滤 |
-| `apps/desktop/src/mobile/agent-watch/TimelineView.tsx:229` | `Field.Input` / `"text"` | 多行：保留原回车规则 |
-| `apps/desktop/src/mobile/agent-watch/TimelineView.tsx:230` | `textarea` / `"text"` | 多行：保留原回车规则 |
-| `apps/desktop/src/mobile/agent-watch/SessionsPage.tsx:100` | `Field.Input` / `"text"` | 单行：公共机制 |
+| `apps/desktop/src/components/session-watch/SessionConversation.tsx:211` | `input` / `"file"` | 非文本控件：过滤 |
+| `apps/desktop/src/components/session-watch/TimelineView.tsx:229` | `Field.Input` / `"text"` | 多行：保留原回车规则 |
+| `apps/desktop/src/components/session-watch/TimelineView.tsx:230` | `textarea` / `"text"` | 多行：保留原回车规则 |
+| `apps/desktop/src/components/session-watch/SessionsPage.tsx:100` | `Field.Input` / `"text"` | 单行：公共机制 |
 | `apps/desktop/src/components/productTour/FeatureTour.tsx:99` | `input` / `"range"` | 非文本控件：过滤 |
 | `apps/desktop/src/components/AddFriendSearch.tsx:62` | `SearchField` / `"search"` | 单行：公共机制 |
 | `apps/desktop/src/components/AddFriendSearch.tsx:322` | `textarea` / `"text"` | 多行：保留原回车规则 |
