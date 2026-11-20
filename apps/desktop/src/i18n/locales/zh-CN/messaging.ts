@@ -736,12 +736,11 @@ export default {
     }
   },
   "header": {
-    "openApp": "打开应用",
-    "groupApps": "应用",
+    "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
-    "noGroupApps": "本设备暂无可用的应用。",
+    "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
     "groupInfo": "群信息",
     "chatInfo": "会话信息",
@@ -957,11 +956,7 @@ export default {
       "openedBy": "由 {{name}} 创建",
       "quiet": "暂无消息"
     },
-    "breadcrumb": {
-      "sourceDeleted": "来源消息已删除，话题仍保留",
-      "sourcePreview": "引自：{{preview}}"
-    },
-    "openFailed": "无法打开话题。请稍后重试；如仍失败，请从其他消息开启话题。",
+    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。",
     "pane": {
       "attachments": "附件",
       "members": "成员",

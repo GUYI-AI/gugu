@@ -21,7 +21,7 @@ import { messageWindow } from './messageWindows'
 import { platform } from '../platform'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
-import { captureMessagePosition, inferMessagePosition, orderMessages } from '@gugu/core/shared/ui/messageTimeline'
+import { captureMessagePosition, orderMessages } from '@gugu/core/shared/ui/messageTimeline'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
 import {
   IM_STORE_NAMES,
@@ -711,8 +711,7 @@ export async function putOutboxRecord(repository: AccountImRepository, record: O
   const root = record.payload.threadRootId ?? null
   const rows = messageWindow(repository.accountId, record.chatId, root)
     ?? imSelectors.messagesForStream(root ? `thread:${record.chatId}:${root}` : `main:${record.chatId}`)(snapshot)
-  record.preview = { ...record.preview, local_timeline: held ?? (previous
-    ? inferMessagePosition(rows, record.enqueuedAt) : captureMessagePosition(rows, record.enqueuedAt)) }
+  record.preview = { ...record.preview, local_timeline: held ?? captureMessagePosition(rows, record.enqueuedAt) }
   await repository.transaction((transaction) => transaction.putOutbox(record))
 }
 

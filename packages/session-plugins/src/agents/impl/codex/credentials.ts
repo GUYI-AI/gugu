@@ -5,9 +5,11 @@ import { join } from 'node:path';
 import { parse as parseTOML } from 'smol-toml';
 import type { AgentAuthContext } from '@gugu/session-core/agents/plugins';
 import { readJsonObject } from '../../helpers/subscription';
+import { CODEX_NATIVE_AUTH_ENDPOINT, requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
 
 /** Official store selection, also used by cockpit-tools codex_account_authority_sync.rs. */
 export async function readCodexCredentials(ctx: AgentAuthContext): Promise<Record<string, unknown> | null> {
+  if (ctx.env[CODEX_NATIVE_AUTH_ENDPOINT]) return (await requestNativeCodexAccess(ctx.env))?.credentials ?? null;
   if (ctx.env.CODEX_HOME?.trim() && !ctx.fsFollowsConfigRoot) throw new Error('无法读取所选 CODEX_HOME 的登录凭据。');
   const configRaw = await ctx.fs.read('.codex/config.toml');
   // 解析不了不能按「没写」继续 —— 那会退回 file 存储,把旧 auth.json 里的账户当成当前凭据,

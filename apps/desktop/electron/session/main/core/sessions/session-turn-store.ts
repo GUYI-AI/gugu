@@ -236,11 +236,11 @@ export function storedMessagesWithPromptHash(sessionId: string, nativeText: stri
     .flatMap(row => (JSON.parse(row.data) as TranscriptTurn).items.filter(item => item.kind === 'message'));
 }
 
-/** Record-backed rows without an outcome, with their sequence: a later read may complete them (see below). */
+/** Unfinished or host-ended record rows: a genuine late native outcome may still complete the same row. */
 export function readUnfinishedRecordRowsNow(sessionId: string): Array<{ seq: number; turn: TranscriptTurn }> {
   return db.select({ seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
     .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
-      sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NULL`)).all()
+      sql`(json_extract(${sessionTurns.data}, '$.outcome.kind') IS NULL OR json_type(${sessionTurns.data}, '$.hostEnd') = 'object')`)).all()
     .map(row => ({ seq: row.seq, turn: JSON.parse(row.data) as TranscriptTurn }));
 }
 

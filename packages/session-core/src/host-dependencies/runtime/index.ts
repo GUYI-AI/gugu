@@ -60,6 +60,8 @@ export {
   type HostDependencyManagerOptions,
   type InstallCommandRunner,
 } from './host-dependency-manager';
+export { installSourceIntent } from './install-source-intent';
+export type { InstallSourceIntent, InstallCommandOutcome } from './types';
 export {
   resolveAllCommandPaths,
   resolveCommandPath,

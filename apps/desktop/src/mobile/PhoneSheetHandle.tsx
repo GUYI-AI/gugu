@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type PointerEvent } from 'react'
 import { IconButton } from '@/components/ui/IconButton'
 import { useMobileShell } from '@/hooks/useMobileShell'
+import { GestureVelocity, PHONE_FLICK_SPEED } from './gestureVelocity'
 import './phone-sheet-handle.css'
 
 interface Drag {
@@ -9,6 +10,7 @@ interface Drag {
   y: number
   distance: number
   popup: HTMLElement
+  velocity: GestureVelocity
 }
 
 /** Drag only the handle: scrolling a form must never dismiss it or discard its draft. */
@@ -35,13 +37,16 @@ export function PhoneSheetHandle({ onDismiss, disabled = false }: { onDismiss: (
     if (event.pointerType === 'mouse') return
     const popup = event.currentTarget.closest<HTMLElement>('[role="dialog"]')
     if (!popup) return
-    drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, distance: 0, popup }
+    const velocity = new GestureVelocity()
+    velocity.add(event.clientX, event.clientY, event.timeStamp)
+    drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, distance: 0, popup, velocity }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const move = (event: PointerEvent<HTMLButtonElement>) => {
     const current = drag.current
     if (!current || current.id !== event.pointerId) return
     const dx = event.clientX - current.x, dy = event.clientY - current.y
+    current.velocity.add(event.clientX, event.clientY, event.timeStamp)
     if (Math.hypot(dx, dy) > 8) suppressClick.current = true
     current.distance = dy > Math.abs(dx) ? dy : 0
     current.popup.style.setProperty('transition', 'none')
@@ -50,8 +55,13 @@ export function PhoneSheetHandle({ onDismiss, disabled = false }: { onDismiss: (
   const finish = (event: PointerEvent<HTMLButtonElement>, cancelled = false) => {
     const current = drag.current
     if (!current || current.id !== event.pointerId) return
+    current.velocity.add(event.clientX, event.clientY, event.timeStamp)
+    const dx = event.clientX - current.x, dy = event.clientY - current.y
+    if (Math.hypot(dx, dy) > 8) suppressClick.current = true
+    const distance = dy > Math.abs(dx) ? dy : 0
     const threshold = Math.max(64, Math.min(120, current.popup.getBoundingClientRect().height / 4))
-    const dismiss = !cancelled && !disabled && current.distance >= threshold
+    const dismiss = !cancelled && !disabled && (distance >= threshold
+      || (distance > 8 && current.velocity.read().y > PHONE_FLICK_SPEED))
     if (cancelled || dismiss) suppressClick.current = true
     reset()
     if (dismiss) onDismiss()

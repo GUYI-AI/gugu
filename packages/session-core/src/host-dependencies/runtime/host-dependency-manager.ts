@@ -3,6 +3,7 @@ import type { IExecutionContext } from '../../exec/execution-context';
 import { consoleLogger, type Logger } from '../../lib/logger';
 import type { InstallMethod, InstallOption, InstallTarget, Platform } from '../capability';
 import { resolveInstallOptions, pickInstallOption, toPlatform } from './install-options';
+import { installSourceIntent } from './install-source-intent';
 import type { HostDependencyLedger } from './ledger';
 import { createInstallMethodDetector, type InstallMethodDetector } from './method-detection';
 import {
@@ -16,7 +17,7 @@ import {
   versionLineOf,
   withProbeSwitches,
 } from './probe';
-import { isDownloadStageFailure, readHostDependency,
+import { readHostDependency,
   type CustomTarget,
 } from './types';
 import type {
@@ -35,6 +36,7 @@ import type {
   InstallationReading,
   InstallCommandContext,
   InstallCommandError,
+  InstallCommandOutcome,
   Installation,
   InstallProgressReport,
   InstallRecord,
@@ -53,22 +55,11 @@ import { resolveActiveInstallation, resolveSelectedSource } from './types';
 export type InstallCommandRunner = (
   command: string,
   context?: InstallCommandContext,
-) => Promise<Result<void, InstallCommandError>>;
+) => Promise<Result<InstallCommandOutcome, InstallCommandError>>;
 export type HostDependencyRunOptions = {
   run?: InstallCommandRunner;
   /** Registry id for a concrete package-manager source selection. */
   registry?: string;
-  /**
-   * 本次下载的候选源,**按测速排好**(最先正确答出版本的在前,#6157)。
-   *
-   * 第一条就是这次用的源;下载那一段失败(超时 / 校验不过)时换第二条**重试一次**,
-   * 用户只看到进度继续。测速在应用层做(`install-source-race.ts`)—— 这一层不知道也不该知道
-   * 「哪个源快」,它只负责按给定顺序试。
-   *
-   * 用户在「高级」里手动指定了源时调用方传 `registry`,这一项就不该出现:他指名要那个源,
-   * ❌ 不许悄悄换成别的。
-   */
-  registries?: readonly string[];
   /** 中止这次安装。传到底会真的杀掉安装进程（#5719）。 */
   signal?: AbortSignal;
   /** 实时读数往哪儿报。不给就不量。 */
@@ -80,9 +71,11 @@ function operationContext(
   operation: 'install' | 'update' | 'uninstall',
   options: HostDependencyRunOptions,
   selectedPath?: string,
+  choices: readonly InstallOption[] = [],
+  minimumVersion?: string,
 ): InstallCommandContext {
   return {
-    ...(option?.target?.kind === 'mise' ? { mise: { target: option.target, operation, registry: options.registry ?? option.registry, selectedPath } } : {}),
+    ...(option?.target?.kind === 'mise' ? { mise: { target: option.target, operation, ...(operation !== 'uninstall' ? { source: installSourceIntent(option, choices, options.registry), minimumVersion } : {}), selectedPath } } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   };
@@ -1147,47 +1140,15 @@ export class HostDependencyManager<Ctx extends IExecutionContext = IExecutionCon
       return err({ type: 'unknown-dependency', id });
     }
 
-    // 本次要试的源,按顺序。用户手动指定了源就只有那一条 —— 他指名要它,❌ 不许悄悄换。
-    // 没指定时用测速排出来的顺序;一条都没有(还没测过)就走 descriptor 的推荐源。
-    const attempts: Array<string | undefined> =
-      options.registry !== undefined
-        ? [options.registry]
-        : options.registries && options.registries.length > 0
-          ? [...options.registries]
-          : [undefined];
-
-    let option = pickInstallOption(descriptor, this.platform, method, attempts[0]);
-    let command = option?.command;
-
-    if (!command) {
-      return err({ type: 'no-install-command', id });
-    }
-
+    const option = pickInstallOption(descriptor, this.platform, method, options.registry);
+    const command = option?.command;
+    if (!option || !command) return err({ type: 'no-install-command', id });
     await this.ctx.refreshShellEnv?.();
-
     const runInstallCommand = options.run ?? this.runInstallCommand;
-    let installResult: Result<void, InstallCommandError> | undefined;
-    // 下载那一段失败就换下一个源再来一次 —— **只换一次**(spec:「自动换下一个源重试一次」)。
-    // ❌ 不无限重试:一条都连不上时,用户要的是一句失败,不是三分钟的静默轮询。
-    for (let attempt = 0; attempt < Math.min(2, attempts.length); attempt += 1) {
-      const registry = attempts[attempt];
-      const picked = pickInstallOption(descriptor, this.platform, method, registry);
-      const pickedCommand = picked?.command;
-      // 这个源在这个平台上没有对应的安装选项 —— 跳过它,❌ 不拿上一条命令顶着跑。
-      if (!pickedCommand) continue;
-      option = picked;
-      command = pickedCommand;
-      this.logOperation('install', attempt === 0 ? 'started' : 'retry', id, {
-        command, method: option?.method ?? null, registry: registry ?? option?.registry ?? null,
-      });
-      // 安装命令的上下文按 option 声明的事实组装:出错时去哪儿找残骸、以及让这个安装器
-      // 不提问地跑完所需的环境变量(#5719)。两者都可能缺席,缺席就不传。
-      installResult = await runOperation(
-        runInstallCommand, command, operationContext(option, 'install', { ...options, registry }),
-      );
-      if (installResult.success) break;
-      if (!isDownloadStageFailure(installResult.error)) break;
-    }
+    this.logOperation('install', 'started', id, { command, method: option.method, registry: options.registry ?? null });
+    // The host installer owns source choice/retry, including paths that bypass this manager.
+    const installResult = await runOperation(runInstallCommand, command,
+      operationContext(option, 'install', options, undefined, this.getInstallOptions(id)));
     if (!installResult || !installResult.success) {
       const error = installResult?.error ?? ({ type: 'no-install-command', id } as const);
       this.logOperation('install', 'failed', id, { error: error.type });
@@ -1200,7 +1161,7 @@ export class HostDependencyManager<Ctx extends IExecutionContext = IExecutionCon
 
     const pending: PendingInstall = {
       method: option?.method,
-      registry: option?.target?.kind === 'mise' ? option.registry ?? 'official' : pinnedRegistryIn(command, option?.registry),
+      registry: option?.target?.kind === 'mise' ? installResult.data?.registry ?? null : pinnedRegistryIn(command, option?.registry),
       target: option?.target,
     };
     this.pendingInstall.set(id, pending);
@@ -1291,7 +1252,7 @@ export class HostDependencyManager<Ctx extends IExecutionContext = IExecutionCon
       // ❌ 曾经从副本路径反推 npm prefix 来「更新用户自己那份」。那是对世界的推断,而且推错了:
       //    `~/.local/bin/codex` 看着像 npm 前缀,实际 npm 在 `~/.local` 下什么都不拥有。#4271
       const runResult = await runOperation(runInstallCommand, plan.command,
-        operationContext(plan.option, 'update', { ...options, registry: effectiveRegistry }, targetPath ?? undefined));
+        operationContext(plan.option, 'update', { ...options, registry: effectiveRegistry }, targetPath ?? undefined, this.getInstallOptions(id), versionBefore ?? undefined));
       if (!runResult.success) {
         this.logOperation('update', 'failed', id, { error: runResult.error.type });
         await this.refreshAfterFailedOperation(id);
@@ -1299,7 +1260,7 @@ export class HostDependencyManager<Ctx extends IExecutionContext = IExecutionCon
       }
       this.pendingInstall.set(id, {
         method: plan.option.method,
-        registry: plan.option.target?.kind === 'mise' ? effectiveRegistry ?? plan.option.registry ?? 'official' : pinnedRegistryIn(plan.command, plan.option.registry),
+        registry: plan.option.target?.kind === 'mise' ? runResult.data?.registry ?? null : pinnedRegistryIn(plan.command, plan.option.registry),
         target: plan.option.target,
       });
       this.lastInstallRecords.delete(id);

@@ -54,7 +54,6 @@ const topicServiceMock = vi.hoisted(() => ({
     source_chat_id: 'chat-1', source_message_id: 'msg-1', creator_user_id: 'me',
   })),
   listTopicsOfChat: vi.fn(async () => []),
-  getSourceState: vi.fn(async () => ({ kind: 'gone' as const })),
   getAgentFloodAdjustment: vi.fn(async () => null),
   undoAgentFloodAdjustment: vi.fn(async () => 0),
 }))

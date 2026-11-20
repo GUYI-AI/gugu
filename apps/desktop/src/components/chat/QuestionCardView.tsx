@@ -10,6 +10,7 @@ import { useAuth } from '../../store/auth'
 import { questionAnsweredText } from '../../lib/questionCardAnswer'
 import { composerCardCopy } from '../../lib/composerCardCopy'
 import { useAvatarIdentity } from '../../lib/avatarIdentity'
+import { unknownMemberName } from '../../lib/memberFallbackName'
 import { assistantTimelineClient } from '../assistant/assistantTimelineClient'
 import { AgentHarnessIcon } from '../AgentHarnessIdentity'
 import { Button } from '../ui/Button'
@@ -36,7 +37,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
   const { t } = useTranslation('assistant')
   const { user } = useAuth()
   const owner = useAvatarIdentity(card.ownerUserId)
-  const ownerName = owner?.display_name || t('group.memberFallback.unknown', { ns: 'messaging' })
+  const ownerName = owner?.display_name || unknownMemberName()
   const { devices } = useDevicesStore()
   const device = devices.find((row) => row.device_id === card.deviceId)
   const addressedToMe = user?.id === card.ownerUserId

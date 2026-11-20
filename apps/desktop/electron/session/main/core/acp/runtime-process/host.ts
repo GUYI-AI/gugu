@@ -30,7 +30,7 @@ import { prepareWindowCommitStorage } from '../../session-timeline/window-projec
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
-import { applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
+import { applyStartToAuthExpiry, applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
 import { clearProviderSessionMissing, markProviderSessionMissing } from '@main/core/sessions/mark-provider-session-missing';
 import { isResidentNeverRun } from '@main/core/sessions/never-run-session';
 import { setSessionMcpServers } from '@main/core/sessions/set-session-mcp-servers';
@@ -761,10 +761,13 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
 export async function callSessionStart<T extends { success: boolean }>(
   start: () => Promise<T>,
   sessionId: string,
-  credentialInjected: boolean
+  credentialInjected: boolean,
+  providerId?: string,
 ): Promise<T> {
   try {
     const result = await start();
+    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, platformCredentials: credentialInjected,
+      failure: 'error' in result ? result.error : undefined }, authExpiryWriter);
     if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);
     }

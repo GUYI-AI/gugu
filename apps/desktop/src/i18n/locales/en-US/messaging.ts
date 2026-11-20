@@ -738,13 +738,12 @@ export default {
     }
   },
   "header": {
-    "openApp": "Open an App",
-    "groupApps": "Apps",
+    "apps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
     "searchHistory": "Search chat history",
     "groupInfoAndSettings": "Group info and settings",
-    "noGroupApps": "No Apps available on this device.",
+    "noApps": "No Apps available on this device.",
     "announcement": "Group announcement",
     "groupInfo": "Group info",
     "chatInfo": "Conversation info",
@@ -960,11 +959,7 @@ export default {
       "openedBy": "by {{name}}",
       "quiet": "No messages yet"
     },
-    "breadcrumb": {
-      "sourceDeleted": "The source message was deleted, but this topic remains",
-      "sourcePreview": "From: {{preview}}"
-    },
-    "openFailed": "Could not open the topic. Try again later. If the problem persists, open the topic from another message.",
+    "openFailed": "Could not open the topic. The message may have been deleted. Open the topic from another message.",
     "pane": {
       "attachments": "Attachments",
       "members": "Members",

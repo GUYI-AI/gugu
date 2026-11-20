@@ -5,6 +5,15 @@ import { toLoadError } from './acp-load-error';
 const spawnFailed = (cause: Record<string, unknown>) =>
   new AcpStartError({ type: 'spawn_failed', cause } as never);
 
+it('keeps the revoked-token startup reason for the direct re-login action', () => {
+  const cause = { name: 'RequestError', message: 'refresh token was revoked', data: { codexErrorInfo: 'other' } };
+  expect(toLoadError(new AcpStartError({ type: 'auth_required', cause }))).toMatchObject({
+    kind: 'auth_required', signInReason: 'revoked',
+  });
+  expect(toLoadError(new AcpStartError({ type: 'auth_required', cause: { name: 'Error', message: 'Sign in required' } })))
+    .not.toHaveProperty('signInReason');
+});
+
 /**
  * 10-07 资源库体检:Hermes 0.21.0 起聊天腿,界面只有一行被截断的英文。版本闸的两个数现在原样带过运行时
  * (`source.ts` 放在 spawn_failed 的 `cause.data`),这里把它们读成 `runtime_upgrade`。

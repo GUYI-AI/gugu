@@ -73,12 +73,6 @@ export function useShownAgentStatus() {
       /** 按 id 直接取读数的那一份(成员资料表):收回着的那几位缺席 = 不画。❌ 喂给缺席即「确认中」的(groupAgentDisplayStatus)。 */
       statuses: (statuses: Readonly<Record<string, AgentDisplayStatus>>): Record<string, AgentDisplayStatus> =>
         Object.fromEntries(Object.entries(statuses).filter(([agentUserId, status]) => !quiet(agentUserId, status))),
-      /** 群的那一个汇总点:收回着的那几位不参与(只剩他们 = 不画点);读数原样交给汇总。 */
-      members: <T extends string | { id: string }>(members: readonly T[] | undefined, statuses: Readonly<Record<string, AgentDisplayStatus>>): T[] | undefined =>
-        members?.filter((member) => {
-          const id = typeof member === 'string' ? member : member.id
-          return !quiet(id, statuses[id])
-        }),
     }
   }, [reclaimed])
 }

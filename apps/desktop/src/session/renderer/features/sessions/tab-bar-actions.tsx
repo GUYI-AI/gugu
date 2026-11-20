@@ -5,9 +5,8 @@ import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
-import { ExtensionMark, TabKindMark } from '@renderer/features/extensions/extension-mark';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import {
   useSessionViewContext,
@@ -17,7 +16,6 @@ import { Button } from '@renderer/lib/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@renderer/lib/ui/dropdown-menu';
@@ -35,12 +33,11 @@ import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/u
 import { folderItem, WORKSPACE_APP_KIND } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
-import { openApp } from '@/components/appSlot/useOpenApp';
 
 /**
  * 页签条上的「+」(spec session-page「一屏几块」):紧跟最后一个页签,打开这一格要放的东西。一个「+」,一种样子,内容按它在哪:
- * - 任务页的一格(无 `chatId`):给这条会话加的那几项、文件夹、App;
- * - 块里一个对话的页签条(`chatId`:群、话题、人和人的私聊):这个对话的文件夹、能在这里打开的 App。
+ * - 任务页的一格(无 `chatId`):给这条会话加的那几项、文件夹;
+ * - 块里一个对话的页签条(`chatId`:群、话题、人和人的私聊):这个对话的文件夹。App 都在页头那颗「应用」(ChatAppsPicker)。
  */
 export const TabBarAddMenu = observer(function TabBarAddMenu({ chatId }: { chatId?: string }) {
   const { translate } = useSessionMessages();
@@ -70,7 +67,7 @@ export const TabBarAddMenu = observer(function TabBarAddMenu({ chatId }: { chatI
     : <>{menu}<OpenAddMenuCommand onOpen={() => setOpen(true)} /></>;
 });
 
-/** 任务页一格的那几项:文件夹(第一项,和对话的「+」同一个位置)、给这条会话加的(侧会话、审阅、终端、浏览器、端口),和已装的 App。 */
+/** 任务页一格的那几项:文件夹(第一项,和对话的「+」同一个位置)、给这条会话加的(侧会话、审阅、终端、浏览器、端口)。 */
 const TaskAddItems = observer(function TaskAddItems() {
   const { translate } = useSessionMessages();
   const sessionView = useWorkspaceViewModel();
@@ -95,19 +92,6 @@ const TaskAddItems = observer(function TaskAddItems() {
           canStartSideSession: canSideSession
         })
       )}
-      {/* Installed Apps extend the menu without joining the built-in union: their kinds exist only at runtime, and
-          widening that union would cost the exhaustiveness the built-ins get from it. Refs #2374.
-          behavior tab-extensions「+」菜单分两段:上面那几项是给这条会话加的;这一段列已装的 App,点一个 = 把它放到
-          这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。只列启用的:停用的不出现(owner 10-20「灰掉也占位置」),
-          启用在「App」页 —— 最后一行就去那里。 */}
-      <AppsSection
-        apps={installedExtensionsStore.enabledTabContributions.filter((entry) => entry.kind !== WORKSPACE_APP_KIND).map((contribution) => ({
-          key: contribution.kind,
-          title: contribution.title,
-          iconDataUrl: contribution.iconDataUrl,
-          open: () => openTab(contribution.kind),
-        }))}
-      />
     </>
   );
 });
@@ -122,22 +106,9 @@ function OpenAddMenuCommand({ onOpen }: { onOpen: () => void }) {
   return null;
 }
 
-/** 块里一个对话的那几项(gugu-dev#181 第 ⑥ 步):这个对话的文件夹(群文件夹 / 文件夹),和能在这里打开的 App。 */
+/** 块里一个对话的那一项(gugu-dev#181 第 ⑥ 步):这个对话的文件夹(群文件夹 / 文件夹);App 在页头的「应用」。 */
 const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string }) {
-  const folderName = useChatFolderName();
-  return (
-    <>
-      <FolderMenuItem label={folderName} onOpen={() => openPanelItem(chatId, folderItem())} />
-      <AppsSection
-        apps={installedExtensionsStore.openableApps.map((app) => ({
-          key: app.extensionId,
-          title: app.name,
-          iconDataUrl: app.iconDataUrl,
-          open: () => openApp(app.extensionId, chatId),
-        }))}
-      />
-    </>
-  );
+  return <FolderMenuItem label={useChatFolderName()} onOpen={() => openPanelItem(chatId, folderItem())} />;
 });
 
 /** One built-in folder entry; its context supplies the name and the page to open. */
@@ -145,26 +116,6 @@ function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }
   return <DropdownMenuItem onClick={onOpen}><TabKindMark kind={WORKSPACE_APP_KIND} /> {label}</DropdownMenuItem>;
 }
 
-/**
- * 「App」那一段,两处同一份:列能在这里打开的 App,最后一行去「App」页装更多。
- */
-function AppsSection({ apps }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] }) {
-  const { translate } = useSessionMessages();
-  const { navigate } = useNavigate();
-  return (
-    // 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。
-    <DropdownMenuGroup label={translate('extensions.appsSection')} labelClassName="text-foreground-passive text-xs font-normal">
-      {apps.map((app) => (
-        <DropdownMenuItem key={app.key} onClick={app.open}>
-          <ExtensionMark iconDataUrl={app.iconDataUrl} /> {app.title}
-        </DropdownMenuItem>
-      ))}
-      <DropdownMenuItem onClick={() => navigate('apps')}>
-        <Plus className="size-3.5" /> {translate('extensions.addAction')}…
-      </DropdownMenuItem>
-    </DropdownMenuGroup>
-  );
-}
 
 function renderWorkspaceActionMenuItem(
   actionId: SessionWorkspaceActionId,

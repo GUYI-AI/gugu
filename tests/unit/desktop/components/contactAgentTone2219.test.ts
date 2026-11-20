@@ -46,7 +46,6 @@ describe('contacts speak the one status table (#6448)', () => {
 
   it('paints running orange, needs-you yellow (a glyph) and error red through the shared tokens', () => {
     expect(agentContactRowDotClass('working')).toContain('bg-[var(--agent-tone-running)]')
-    expect(agentContactRowDotClass('parked')).toContain('bg-[var(--agent-tone-running)]')
     expect(agentContactRowDotClass('idle')).toContain('bg-[var(--agent-tone-online)]')
     expect(agentContactRowDotClass('error')).toContain('bg-[var(--agent-tone-error)]')
     // needs_user 是 8px 的 Solar 字形(颜色在字形上),不是色点。

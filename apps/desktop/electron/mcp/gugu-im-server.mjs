@@ -2355,6 +2355,17 @@ function newerVersionRefusal(file, version) {
   return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file), make your change on it, and send it with that version.`
 }
 
+/** Read under the sending agent's membership before choosing a replacement route; SQL checks again at the write. */
+async function replacementTarget(args, deps, chatId, file) {
+  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: file.itemId }, 'message_send')
+  if (item.chat_id !== chatId) throw new Error('message_send: the file belongs to another chat; nothing was sent')
+  if (item.kind !== 'file' && item.kind !== 'document') throw new Error('message_send: the target is not a file or text document; nothing was sent')
+  if (!Number.isInteger(item.version) || item.version < 1) throw new Error('message_send: the server did not confirm the current file version')
+  if (item.version > file.version) throw new Error(newerVersionRefusal(args.file, file.version))
+  if (item.version !== file.version) throw new Error(`message_send: the file is at version ${item.version}, not the supplied version ${file.version}; nothing was sent`)
+  return item
+}
+
 async function sendMessageAsOwner(args, deps, content, extra = {}, outcome = { uncertain: false }) {
   const request = {
     p_agent_user_id: deps.context.agentId,
@@ -2561,7 +2572,10 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   let uploadReceipt = {}
   // A text file the shared classifier makes a document goes up through the attachments commit, where the server makes it
   // one (as a person's upload does); only stored bytes are published from a project.
-  let documentBytes = null
+  const replacement = folderFile && args.file_path ? await replacementTarget(args, deps, chatId, folderFile) : null
+  const documentBytes = replacement?.kind === 'document'
+    ? await readUploadBytes('message_send', args, WORKSPACE_TEXT_MAX_BYTES)
+    : !folderFile ? await documentUploadBytes(args) : null
   if (folderFile && !args.file_path) {
     // 按引用发(attachments/share):消息钉住群文件夹里那个文件的那一版,不传字节;文本文件钉住它此刻的正文。
     if (isWhisper) throw new Error('message_send: a whisper cannot carry a file of the chat\'s folder; send it openly, or a file_path')
@@ -2570,11 +2584,11 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       sender_user_id: deps.context.agentId, ...meta,
     }).catch(refused)
     fileName = attachmentNameOf(message)
-  } else if (!(documentBytes = folderFile ? null : await documentUploadBytes(args)) && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
+  } else if (!documentBytes && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
     sender_user_id: deps.context.agentId, ...meta, ...(isWhisper ? { is_whisper: true } : {}) },
     folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
     const reason = String(error?.message ?? error)
-    if (folderFile && /File revision conflict/.test(reason)) throw new Error(newerVersionRefusal(args.file, folderFile.version))
+    if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
     refused(error)
   }))) {
     fileName = resolveUploadName(args)
@@ -2610,7 +2624,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
           note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
       }
       await deps.attachments.drop(messageId)
-      if (error.code === 'version_conflict') throw new Error(newerVersionRefusal(args.file, folderFile.version))
+      if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
       refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
