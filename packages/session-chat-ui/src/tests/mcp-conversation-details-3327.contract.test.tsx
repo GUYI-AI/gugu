@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { AcpTranscriptParser, decodeV2SessionUpdate } from '@gugu/session-core/acp';
-import { trimCursorPageForTransport, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET } from '@gugu/session-core/session-record';
+import { trimCursorPageForTransport, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET } from '@gugu/session-core/session-record/transport-trim';
 import { createClaudeSessionDecoder } from '../../../session-plugins/src/agents/impl/claude/acp-transform';
 import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
