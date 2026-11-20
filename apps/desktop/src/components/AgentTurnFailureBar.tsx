@@ -1,5 +1,5 @@
-// #2115 普通 ACP 回合失败条：composer 上方浮动条同槽位（RunningTokenBar 的失败态邻居，flexShrink:0
-// 兄弟，不 overlay 消息列表）。「{name} 回复失败：{人话}」+ 重试 + 关闭——重试 = CAS error→pending
+// #2115 普通 ACP 回合失败条：composer 上方浮动条同槽位（RunningTokenBar 的失败态邻居；ChatBottomDock
+// 浮在消息列表上，所以卡片用浮层的实底，见 turn-failure-card.css）。「{name} 回复失败：{人话}」+ 重试 + 关闭——重试 = CAS error→pending
 // 重排原 deliver 命令（真重投递，❌ 假按钮）。失败来自失败命令行，原因是宿主落的码，原始错误只在宿主日志。
 // 与聊天流共用 TurnFailureCard。
 
@@ -207,7 +207,7 @@ export function AgentTurnFailureBar({
       <TurnFailureCard reason={failure.reason} placement="composer"
         agentId={failure.agentUserId} displayName={displayName} avatar={avatar}
         createdAt={new Date(failure.at).toISOString()} onDismiss={onDismiss} onOpenSettings={onOpenModel}
-        onRetry={failure.departed ? undefined : () => void handleRetry()} retrying={retrying} />
+        onRetry={() => void handleRetry()} retrying={retrying} />
     </div>
   )
 }
