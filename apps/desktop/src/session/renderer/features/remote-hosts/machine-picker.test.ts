@@ -17,6 +17,7 @@ import type { MachineChoice } from './machine-choice';
 const mocks = vi.hoisted(() => ({
   hosts: new Map<string, { device: RemoteHostDevice }>(),
   states: new Map<string, string>(),
+  signIn: vi.fn(),
 }));
 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
@@ -31,6 +32,7 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
     cloudScope: () => null,
     canAddMachine: false,
     openAddMachine: () => {},
+    signIn: mocks.signIn,
   },
 }));
 
@@ -220,6 +222,18 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     const offline = container.querySelector('[data-device-id="linux1"]') as HTMLButtonElement;
     expect(offline.disabled).toBe(true);
     expect(container.querySelector('[data-testid="machine-picker"]')?.getAttribute('data-size')).toBe('compact');
+  });
+
+  it('新建框里要先登录的远程 SSH 机器能选:选它 = 要用它,当场登录', async () => {
+    const onSelect = vi.fn();
+    const signInFirst: MachineChoice = { id: 'ssh1', label: 'example-server', isLocal: false, isOnline: false, needsSignIn: true, link: 'ssh' };
+    await render(React.createElement(MachinePicker, { machines: [...machines, signInFirst], selectedId: 'local', onSelect, size: 'compact' }));
+    const row = container.querySelector('[data-device-id="ssh1"]') as HTMLButtonElement;
+    expect(row.disabled).toBe(false);
+    expect(row.textContent).toContain('要先登录');
+    await act(async () => row.click());
+    expect(mocks.signIn).toHaveBeenCalledWith('ssh1');
+    expect(onSelect).toHaveBeenCalledWith('ssh1');
   });
 
   it('模块层挂一份:模块里每一页的标题右边都是同一个选择器、同一份选择', async () => {
