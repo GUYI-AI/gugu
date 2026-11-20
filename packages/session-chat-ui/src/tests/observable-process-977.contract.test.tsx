@@ -47,7 +47,7 @@ describe('observable conversation process', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].getAttribute('data-step-count')).toBe('2');
     expect(runs[0].textContent).not.toMatch(/MCP/i);
-    expect(runs[0].textContent).toContain('launched 1 subagent');
+    expect(runs[0].textContent).toMatch(/launched 1 subagent/i);
     expect(runs[0].textContent).toContain('used 1 tool');
     expect(v.host.textContent).not.toContain(nativeName);
     const tool = v.host.querySelector<HTMLElement>('[data-slot="tool-call-trigger"]')!;
