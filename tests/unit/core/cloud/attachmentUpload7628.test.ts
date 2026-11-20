@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { createHash } from 'node:crypto'
+import { withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// The upload alone: `use` hands back its key.
+const uploadAttachmentBytes = (...[endpoint, file, scope, options]: [Parameters<typeof withUploadedAttachment>[0], Parameters<typeof withUploadedAttachment>[1], Parameters<typeof withUploadedAttachment>[2], Parameters<typeof withUploadedAttachment>[4]?]) =>
+  withUploadedAttachment(endpoint, file, scope, async key => key, options)
 
 describe('attachment upload transports', () => {
   it.each([{ retry: false, request_id: 'reservation' }, { retry: true, request_id: undefined }])('does not accept a storage conflict without a retry of the same reservation (%j)', async options => {
@@ -37,7 +42,7 @@ describe('attachment upload transports', () => {
     }, { chat_id: 'source-chat', as: 'sender-agent', request_id: '12345678-1234-4234-8234-123456789abc' })
     expect(key).toBe('staging/u/file')
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
-      size_bytes: 3, content_type: 'application/octet-stream', chat_id: 'source-chat', as: 'sender-agent', request_id: '12345678-1234-4234-8234-123456789abc',
+      size_bytes: 3, sha256: createHash('sha256').update(new Uint8Array([1, 2, 3])).digest('hex'), content_type: 'application/octet-stream', chat_id: 'source-chat', as: 'sender-agent', request_id: '12345678-1234-4234-8234-123456789abc',
     })
     const upload = fetcher.mock.calls[1][1] as RequestInit
     expect(upload.method).toBe('PUT')
@@ -56,7 +61,7 @@ describe('attachment upload transports', () => {
       bytes: new Blob([new Uint8Array([1])]), name: 'data.bin', contentType: 'application/octet-stream',
     }, { chat_id: null, as: 'private-sender' })
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
-      size_bytes: 1, content_type: 'application/octet-stream', chat_id: null, as: 'private-sender', request_id: expect.stringMatching(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i),
+      size_bytes: 1, sha256: expect.stringMatching(/^[0-9a-f]{64}$/), content_type: 'application/octet-stream', chat_id: null, as: 'private-sender', request_id: expect.stringMatching(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i),
     })
     const upload = fetcher.mock.calls[1][1] as RequestInit
     expect(upload.method).toBe('POST')

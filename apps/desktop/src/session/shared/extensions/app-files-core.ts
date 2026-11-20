@@ -1,6 +1,6 @@
 import { readDocumentText, ChatFolderReadError } from './chat-folder-text';
 import { FILE_KEEPS, type FileKeep } from '@gugu/core/shared/fileStorage';
-import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachmentBytes } from '@gugu/core/cloud/attachmentsApi';
+import { AttachmentsError, configuredEndpoint, placeAttachment, withUploadedAttachment } from '@gugu/core/cloud/attachmentsApi';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
@@ -1506,10 +1506,10 @@ export function createAppFiles(platform: FilesPlatform) {
       const endpoint = configuredEndpoint(token);
       let replaced: ItemRow & { version: number; pruned_pointers: string[] | null };
       try {
-        const stagingKey = await uploadAttachmentBytes(endpoint, { bytes: new Uint8Array(file.bytes), name: row.filename, contentType }, { chat_id: row.chat_id, as: surface.asAgent ?? userId });
-        replaced = await placeAttachment(endpoint, {
-          staging_key: stagingKey, item_id: row.id, expected_version: expected, as_user_id: surface.asAgent ?? userId, content_type: contentType,
-        }) as unknown as ItemRow & { version: number; pruned_pointers: string[] | null };
+        replaced = await withUploadedAttachment(endpoint, { bytes: new Uint8Array(file.bytes), name: row.filename, contentType }, { chat_id: row.chat_id, as: surface.asAgent ?? userId },
+          stagingKey => placeAttachment(endpoint, {
+            staging_key: stagingKey, item_id: row.id, expected_version: expected, as_user_id: surface.asAgent ?? userId, content_type: contentType,
+          })) as unknown as ItemRow & { version: number; pruned_pointers: string[] | null };
       } catch (error) {
         const changed = error instanceof AttachmentsError && error.code === 'version_conflict' ? /got (\d+)/.exec(error.message) : null;
         if (changed) throw replacedSinceError(row.filename, Number(changed[1]), expected);
@@ -1561,9 +1561,9 @@ export function createAppFiles(platform: FilesPlatform) {
         try {
           const store = async () => {
             const endpoint = configuredEndpoint(token);
-            const stagingKey = await uploadAttachmentBytes(endpoint, { bytes: new Uint8Array(file.bytes), name, contentType }, { chat_id: chatId, as: actor });
-            return await placeAttachment(endpoint, { staging_key: stagingKey, chat_id: chatId, file_name: name, folder: folder ?? null,
-              as_user_id: actor, source_message_ids: sourceMessageIds, content_type: contentType, ...(keep ? { keep } : {}) }) as unknown as ItemRow;
+            return await withUploadedAttachment(endpoint, { bytes: new Uint8Array(file.bytes), name, contentType }, { chat_id: chatId, as: actor },
+              stagingKey => placeAttachment(endpoint, { staging_key: stagingKey, chat_id: chatId, file_name: name, folder: folder ?? null,
+                as_user_id: actor, source_message_ids: sourceMessageIds, content_type: contentType, ...(keep ? { keep } : {}) })) as unknown as ItemRow;
           };
           const asText = workspaceUploadKind(name, contentType, new Uint8Array(file.bytes));
           if (asText.kind === 'document') {

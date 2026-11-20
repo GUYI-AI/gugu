@@ -1,7 +1,11 @@
 // Multipart uploads from a host that can send signed part PUTs (S6): the client half of attachments upload /
 // upload-parts / upload-complete. The fake server keeps the state the way the backend does (the parts reported done).
 import { describe, expect, it } from 'vitest'
-import { contentRequestId, declareAttachment, finishDeclaredAttachment, uploadAttachmentBytes, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { contentRequestId, declareAttachment, finishDeclaredAttachment, withUploadedAttachment, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// The upload alone: `use` hands back its key.
+const uploadAttachmentBytes = (...[endpoint, file, scope, options]: [Parameters<typeof withUploadedAttachment>[0], Parameters<typeof withUploadedAttachment>[1], Parameters<typeof withUploadedAttachment>[2], Parameters<typeof withUploadedAttachment>[4]?]) =>
+  withUploadedAttachment(endpoint, file, scope, async key => key, options)
 
 const PART = 4
 const KEY = 'staging/u/22222222-2222-4222-8222-222222222222'
