@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { ImportProvider } from '@/components/settings/data-import/import-providers';
 import { codexEnvironmentProviders, withCodexTaskImport } from '@/components/settings/data-import/environment-import-providers';
-import { groupImportProviders, syncCategoryEnabled } from '@/components/settings/data-import/environment-import-view';
+import { categoryHistoryReading, groupImportProviders, syncCategoryEnabled } from '@/components/settings/data-import/environment-import-view';
 
 const calls = vi.hoisted(() => ({ scan: vi.fn(), run: vi.fn(), cancel: vi.fn(), scanTasks: vi.fn(), tasks: vi.fn(), cancelTasks: vi.fn(), preparation: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionImport: {
@@ -121,3 +121,35 @@ it('forwards actual history preparation and stops its poll after completion', as
     expect(vi.getTimerCount()).toBe(0);
   } finally { vi.useRealTimers(); }
 });
+
+
+const completedHistory = { providerId: 'codex:skills', finishedAt: 2, items: [
+  { id: 'skill', title: 'Skill', category: 'skills' as const, status: 'imported' as const },
+] }
+
+it.each(['unknown', 'error'] as const)('keeps %s history visibly unread while retaining current completed imports', state => {
+  const read = categoryHistoryReading([completedHistory], { state }, 'owner')
+  expect(read.state).toBe(state)
+  expect(read.items).toEqual([completedHistory])
+})
+
+it.each(['unknown', 'error'] as const)('keeps the history placeholder for %s even without current imports', state => {
+  const read = categoryHistoryReading([], { state }, 'owner')
+  expect(read.state).not.toBe('value')
+  expect(read.items).toEqual([])
+})
+
+it('only treats a read owner without category results as a confirmed empty history', () => {
+  const read = categoryHistoryReading([], { state: 'value', value: { owners: { owner: { automatic: false, sources: [] } } } }, 'owner')
+  expect(read).toEqual({ state: 'value', items: [] })
+  expect(categoryHistoryReading([], { state: 'value', value: { owners: {} } }, 'owner')).toEqual(read)
+})
+
+it('merges history when a background read recovers and prefers current completed results for duplicates', () => {
+  const earlier = { ...completedHistory, finishedAt: 1 }
+  const read = categoryHistoryReading([completedHistory], { state: 'value', value: { owners: { owner: {
+    automatic: false, sources: [], categoryResults: [completedHistory, earlier],
+  } } } }, 'owner')
+  expect(read.state).toBe('value')
+  expect(read.items).toEqual([completedHistory, earlier])
+})
