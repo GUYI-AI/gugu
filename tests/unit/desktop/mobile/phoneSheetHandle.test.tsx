@@ -23,9 +23,10 @@ async function render(disabled = false) {
   if (button) button.setPointerCapture = vi.fn()
   return { close, popup, button, h, view }
 }
-async function pointer(target: HTMLElement, type: string, x: number, y: number, id = 1) {
+async function pointer(target: HTMLElement, type: string, x: number, y: number, id = 1, at?: number) {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperties(event, Object.fromEntries(Object.entries({ pointerId: id, isPrimary: id === 1, pointerType: 'touch', clientX: x, clientY: y }).map(([k,v]) => [k, { value: v }])))
+  if (at !== undefined) Object.defineProperty(event, 'timeStamp', { value: at })
   await act(async () => { target.dispatchEvent(event) })
 }
 async function click(target: HTMLElement, detail = 1) { await act(async () => { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail })) }) }
@@ -48,6 +49,29 @@ describe('phone sheet handle', () => {
     expect(close).not.toHaveBeenCalled()
     await click(button,0)
     expect(close).toHaveBeenCalledTimes(1) // keyboard activation remains available after a cancelled drag
+  })
+  it('dismisses a short quick downward flick but not a slow drag or a drag held before release', async () => {
+    const { button, close } = await render()
+    await pointer(button, 'pointerdown', 40, 20, 1, 0)
+    await pointer(button, 'pointermove', 40, 50, 1, 30)
+    await pointer(button, 'pointerup', 40, 65, 1, 45)
+    expect(close).toHaveBeenCalledTimes(1)
+    close.mockClear()
+    for (const releaseAt of [400, 800]) {
+      await pointer(button, 'pointerdown', 40, 20, 1, 0)
+      await pointer(button, 'pointermove', 40, 65, 1, releaseAt === 400 ? 350 : 40)
+      await pointer(button, 'pointerup', 40, 65, 1, releaseAt)
+    }
+    expect(close).not.toHaveBeenCalled()
+  })
+  it('does not turn a fast cancelled, horizontal or upward stroke into a dismissal', async () => {
+    const { button, close } = await render()
+    for (const [x, y, end] of [[40,65,'pointercancel'],[100,65,'pointerup'],[40,-30,'pointerup']] as const) {
+      await pointer(button, 'pointerdown', 40, 20, 1, 0)
+      await pointer(button, 'pointermove', x, y, 1, 30)
+      await pointer(button, end, x, y, 1, 40)
+    }
+    expect(close).not.toHaveBeenCalled()
   })
   it('leaves body scrolling and draft edits alone and ignores a second pointer', async () => {
     const { popup, button, close } = await render()

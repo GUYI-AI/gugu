@@ -10,6 +10,7 @@ import android.app.AlertDialog;
 import java.util.concurrent.CompletableFuture;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.BackEventCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -72,6 +73,21 @@ public class MainActivity extends BridgeActivity {
         // @@@native-back-bridge - Android owns the hardware back button; the web shell answers
         // "handled" for every in-app navigation layer. Only an unhandled root-level back exits.
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackStarted(BackEventCompat event) {
+                dispatchBackProgress("started", event);
+            }
+
+            @Override
+            public void handleOnBackProgressed(BackEventCompat event) {
+                dispatchBackProgress("progressed", event);
+            }
+
+            @Override
+            public void handleOnBackCancelled() {
+                dispatchBackProgress("cancelled", null);
+            }
+
             @Override
             public void handleOnBackPressed() {
                 dispatchBackToWeb();
@@ -144,5 +160,16 @@ public class MainActivity extends BridgeActivity {
             if ("true".equals(handled)) return;
             runOnUiThread(this::finish);
         });
+    }
+
+    private void dispatchBackProgress(String phase, BackEventCompat event) {
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        float progress = event == null ? 0 : event.getProgress();
+        if (Float.isNaN(progress) || Float.isInfinite(progress)) return;
+        int edge = event == null ? 0 : event.getSwipeEdge();
+        String detail = "{\"phase\":\"" + phase + "\",\"progress\":"
+                + Math.max(0, Math.min(1, progress)) + ",\"edge\":" + edge + "}";
+        getBridge().eval("window.dispatchEvent(new CustomEvent('gugu:native-back-progress',{detail:"
+                + detail + "}))", ignored -> {});
     }
 }
