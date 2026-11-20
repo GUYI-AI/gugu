@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AppFileEntry } from './app-runtime-protocol';
 
 /**
- * API 60 `gugu.files.pick`: the files the person picks for a page open for it as the file the host handed it (`ctx.file`)
+ * API 61 `gugu.files.pick`: the files the person picks for a page open for it as the file the host handed it (`ctx.file`)
  * does — no capability — and the ones they did not pick stay closed to an App without `files:read`.
  */
 

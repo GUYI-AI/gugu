@@ -228,7 +228,7 @@ export type DispatchPicked =
 export interface AgentPickWords { title: string; subject: string; body: string; action: string; search: string; empty: string }
 
 /**
- * API 60 `pickAgent({ include })`: whom the sheet offers — `agents` (the default) the person's own agents; `people` the agents
+ * API 61 `pickAgent({ include })`: whom the sheet offers — `agents` (the default) the person's own agents; `people` the agents
  * and people of the chat the page is drawn in; `all` both.
  */
 export type AgentPickInclude = 'agents' | 'people' | 'all';

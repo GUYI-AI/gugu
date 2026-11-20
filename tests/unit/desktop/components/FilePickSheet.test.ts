@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 /**
- * API 60 `gugu.files.pick`: the shell's file sheet (on ChatPickSheet) draws the files main listed, newest first, each as a
+ * API 61 `gugu.files.pick`: the shell's file sheet (on ChatPickSheet) draws the files main listed, newest first, each as a
  * file in a message reads; a search keeps the files whose path has it. One file: a tap answers it. Several: ticked, then
  * the button. 「从电脑添加…」 only when main offers it. Cancelling answers null.
  */

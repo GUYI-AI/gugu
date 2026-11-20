@@ -467,7 +467,7 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
   },
-  /** API 60 `gugu.files.pick`: the person picks chat files main listed, in the shell's sheet (FilePickSheet). */
+  /** API 61 `gugu.files.pick`: the person picks chat files main listed, in the shell's sheet (FilePickSheet). */
   [EXTENSION_PICK_CHAT_FILES_METHOD]: async (params: unknown) => {
     const { pickChatFiles } = await import('@/components/chat/filePickAsk');
     return pickChatFiles(params as FilePickAsk);

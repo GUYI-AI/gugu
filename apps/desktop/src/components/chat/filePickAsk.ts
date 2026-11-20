@@ -5,7 +5,7 @@ export type FilePickAsked = FilePickAsk & { answer: (picked: FilePicked) => void
 let take: ((asked: FilePickAsked) => void) | null = null
 
 /**
- * API 60 `gugu.files.pick`, on the desktop (main asks the window) and the phone (its page asks) alike: the person picks
+ * API 61 `gugu.files.pick`, on the desktop (main asks the window) and the phone (its page asks) alike: the person picks
  * files of the chat in the shell's sheet (FilePickSheet) — null when they cancel or let it run out. The rows are the files
  * the host listed; the sheet answers only which of them were picked, or that one is to be added from this device.
  */

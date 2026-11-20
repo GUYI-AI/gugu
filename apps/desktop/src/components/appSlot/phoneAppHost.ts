@@ -450,7 +450,7 @@ export function hostAppFrame(
   const cloudApp = () => ({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
   const event = (hostEvent: ExtensionHostEvent) => send({ m: APP_FRAME_MARKER, t: 'event', event: hostEvent })
   /** The page, and the one chat file the host handed it (`ctx.file`): every call names its own target (真源原则 13). */
-  /** API 60: the chat files the person picked for this page (`files.pick`): as handed as `ctx.file`, while the page lives. */
+  /** API 61: the chat files the person picked for this page (`files.pick`): as handed as `ctx.file`, while the page lives. */
   const pickedFiles = new Set<string>()
   const surface = (): FileSurface => ({
     pageId,
@@ -752,14 +752,14 @@ export function hostAppFrame(
         return Promise.resolve(undefined)
       }
       case 'pickAgent': {
-        // API 60 `include`: the page's chat and who is in it, as dispatch's sheet has them; the default reads none.
+        // API 61 `include`: the page's chat and who is in it, as dispatch's sheet has them; the default reads none.
         if (pickAgentInclude(args) !== 'agents' && chat === undefined) await readMembers()
         const here = pickAgentInclude(args) !== 'agents' && chat ? { id: chat.id, name: chat.name, members: contextHasMembers() ? members ?? [] : await files.members(chat.id) } : null
         const ask = pickAgentAsk(args, here)
         return pickDispatchTarget(ask).then((picked) => answerAgentPick(args, ask, picked, (name, given) => cloudForApp.write(cloudApp(), name, given)))
       }
       case 'filesPick': {
-        // API 60: the chat's files as the person, in the shell's sheet (FilePickSheet); only the ids it was handed count.
+        // API 61: the chat's files as the person, in the shell's sheet (FilePickSheet); only the ids it was handed count.
         const call = filePickCallOf(args)
         const ask: FilePickAsk = {
           files: pickableFiles(await files.groupFiles(call.chat), call.suffixes),

@@ -249,7 +249,7 @@ export function createGugu(
         options.signal?.removeEventListener('abort', stop);
       });
     }) } : {}),
-    // API 60: the person picks files of a chat in the host's sheet → the entries picked (`[]`: cancelled). Those open for
+    // API 61: the person picks files of a chat in the host's sheet → the entries picked (`[]`: cancelled). Those open for
     // this page with no capability: the pick is the consent.
     ...(pick ? { pick: (place: unknown, options?: { suffixes?: string[]; multiple?: boolean; title?: string; action?: string; upload?: boolean }) =>
       withPlace(place, (where) => pick({ ...options, place: where })) } : {}),

@@ -522,7 +522,7 @@ function cloudAppOf(caller: BridgeCaller) {
 
 /** The pages that listed or read a working copy: they hold its tree's folders and the versions they read (working-copy-files.ts) until they go. */
 const workingCopyPages = new Set<number>();
-/** API 60: the chat files the person picked for a page (`files.pick`), open to it with no capability until its document goes. */
+/** API 61: the chat files the person picked for a page (`files.pick`), open to it with no capability until its document goes. */
 const pickedFiles = new Map<number, Set<string>>();
 
 export function stopPageWatches(pageId: number): void {
@@ -2346,7 +2346,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const [{ pickDispatchTarget }, { pickAgentAsk, pickAgentInclude, answerAgentPick }, { cloudForApp: cloud }] = await Promise.all([
         import('@main/core/extensions/extension-bridge-relay'), import('@shared/extensions/app-dispatch-core'), import('@main/core/extensions/extension-send'),
       ]);
-      // API 60 `include`: the page's chat and who is in it, as dispatch's sheet has them; the default reads none.
+      // API 61 `include`: the page's chat and who is in it, as dispatch's sheet has them; the default reads none.
       const page = caller.binding;
       // Its chat not read yet (asked before `getContext`): read as `getContext` reads it.
       if (pickAgentInclude(args) !== 'agents' && page?.conversation && !chatIsRead(page)) await chatRead(page.conversation, contextHasMembers(page));
@@ -2539,7 +2539,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     }
 
     case 'filesPick': {
-      // API 60: the chat's files listed here, as whoever works the page (on a page an agent works the door has already
+      // API 61: the chat's files listed here, as whoever works the page (on a page an agent works the door has already
       // answered `[]`); the window's sheet draws them and says which were picked — only ids it was handed count.
       const [files, { filePickCallOf, pickableFiles, pickedEntries }, { invokeInEmbedder }] = await Promise.all([
         import('@main/core/extensions/app-files'), import('@shared/extensions/app-file-pick-core'), import('@main/core/extensions/extension-bridge-relay'),

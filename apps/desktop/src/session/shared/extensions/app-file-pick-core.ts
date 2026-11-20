@@ -1,7 +1,7 @@
 import { placeOf, type AppFileEntry } from './app-runtime-protocol';
 
 /**
- * `gugu.files.pick(place, { suffixes, multiple, title, action, upload })` (API 60): the person picks files of the page's chat
+ * `gugu.files.pick(place, { suffixes, multiple, title, action, upload })` (API 61): the person picks files of the page's chat
  * in the host's own sheet (FilePickSheet). Main (the phone's host there) lists the chat's files as the person and hands them
  * to the sheet; the sheet only draws them and says which were picked. The picked files are the page's to open from then
  * on, with no capability: the person's pick is the consent, as a file the host handed the page (`ctx.file`) is.

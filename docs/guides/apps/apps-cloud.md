@@ -19,7 +19,7 @@ Free:
 - `pickAgent({ title, subject, body, action, search, empty, preselect?, write? })`: from a click, gugu's sheet in your words offers
   the person's own agents (no capability: you never list them); → `{ agent, written? }` | `{ cancelled: true }`. Their press was in the
   sheet, not your page, so `write: { name, args, agent }` goes with the ask: that press does `cloud.write(name, { ...args, [agent]: <bare id> })`.
-  API 60 `include`: `'agents'` (default) as above; `'people'` the agents and people of the chat the page is in; `'all'` both. A person
+  API 61 `include`: `'agents'` (default) as above; `'people'` the agents and people of the chat the page is in; `'all'` both. A person
   picked → `{ member }` (`user:` id), an agent (yours or the chat's) → `{ agent }`. ❌ Your own member `<select>`.
 
 Your agents, woken from the cloud (`agent.deliver` with `source` = your App's id): a `tools.js` (`apps-programs`) that exports
