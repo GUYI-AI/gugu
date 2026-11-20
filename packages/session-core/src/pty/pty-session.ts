@@ -70,7 +70,7 @@ export class PtySession {
   }
 }
 
-function normalizeExitInfo(info: PtyExitInfo): PtyExitInfo {
+function normalizeExitInfo(info: Partial<PtyExitInfo>): PtyExitInfo {
   return {
     exitCode: info.exitCode ?? null,
     signal: info.signal ?? null,

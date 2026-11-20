@@ -110,8 +110,8 @@ importers:
         specifier: ^4.0.3
         version: 4.0.3
       node-pty:
-        specifier: 1.1.0
-        version: 1.1.0
+        specifier: 1.2.0-beta.18
+        version: 1.2.0-beta.18
       npm:
         specifier: 10.9.4
         version: 10.9.4
@@ -862,8 +862,8 @@ importers:
         specifier: ^10.1.1
         version: 10.2.0
       node-pty:
-        specifier: 1.1.0
-        version: 1.1.0
+        specifier: 1.2.0-beta.18
+        version: 1.2.0-beta.18
       picomatch:
         specifier: ^4.0.4
         version: 4.0.5
@@ -975,8 +975,8 @@ importers:
         specifier: workspace:*
         version: link:../session-wire
       node-pty:
-        specifier: 1.1.0
-        version: 1.1.0
+        specifier: 1.2.0-beta.18
+        version: 1.2.0-beta.18
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -10013,8 +10013,8 @@ packages:
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
 
-  node-pty@1.1.0:
-    resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
+  node-pty@1.2.0-beta.18:
+    resolution: {integrity: sha512-3Rej3788OnasAwoSmTZhlCeUraJ9CQldtL5b571b9+3Nv47+PaxA5VPIGOOs+16OYQePTrC1Lrs8a9/df5WPRg==}
 
   node-readable-to-web-readable-stream@0.4.2:
     resolution: {integrity: sha512-/cMZNI34v//jUTrI+UIo4ieHAB5EZRY/+7OmXZgBxaWBMcW2tGdceIw06RFxWxrKZ5Jp3sI2i5TsRo+CBhtVLQ==}
@@ -22388,7 +22388,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.1.0:
+  node-pty@1.2.0-beta.18:
     dependencies:
       node-addon-api: 7.1.1
 

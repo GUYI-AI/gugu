@@ -15,7 +15,8 @@ export interface PtyProcess {
   resize(cols: number, rows: number): void;
   kill(): void;
   onData(handler: (data: string) => void): void;
-  onExit(handler: (info: PtyExitInfo) => void): void;
+  /** A process may leave either field out; PtySession normalizes it into PtyExitInfo. */
+  onExit(handler: (info: Partial<PtyExitInfo>) => void): void;
   getPid?(): number;
 }
 
