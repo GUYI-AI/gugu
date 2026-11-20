@@ -38,20 +38,33 @@ function state(connection: Database.Database): State {
 }
 export const turnPayloadFiles = (connection: Database.Database): TurnPayloadFiles => state(connection).files;
 
-function prepareStatements(connection: Database.Database) {
+function prepareStatements() {
   return {
-    put: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind) VALUES (?,?,?)'),
-    body: connection.prepare('INSERT INTO session_turn_payload_inline(hash,data) VALUES (?,?)'),
-    size: connection.prepare(`SELECT o.bytes,o.kind,b.hash IS NOT NULL AS inlined FROM session_turn_payload_objects o
-      LEFT JOIN session_turn_payload_inline b ON b.hash=o.hash WHERE o.hash=?`),
-    chunk: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES (?,?,?)'),
-    children: connection.prepare('SELECT child_hash FROM session_turn_payload_edges WHERE parent_hash=?'),
+    // One statement per batch width; at most 64 hashes per native call (see runTurnRows).
+    sizes: new Map<number, Database.Statement>(),
+    children: new Map<number, Database.Statement>(),
   };
+}
+
+const HASHES_PER_QUERY = 64;
+type StoredSize = { bytes: number; kind: number; inlined: number };
+
+/** Registry rows for these hashes in this transaction, at most 64 per native call. */
+function selectByHash<T extends { hash: string }>(cache: Map<number, Database.Statement>, prepare: (placeholders: string) => Database.Statement,
+  hashes: readonly string[]): T[] {
+  const rows: T[] = [];
+  for (let at = 0; at < hashes.length; at += HASHES_PER_QUERY) {
+    const batch = hashes.slice(at, at + HASHES_PER_QUERY);
+    let statement = cache.get(batch.length);
+    if (!statement) { statement = prepare(batch.map(() => '?').join(',')); cache.set(batch.length, statement); }
+    rows.push(...statement.all(...batch) as T[]);
+  }
+  return rows;
 }
 
 function statements(connection: Database.Database) {
   const value = state(connection);
-  return value.statements ??= prepareStatements(connection);
+  return value.statements ??= prepareStatements();
 }
 
 /** May be repeated after a rollback. Keep staging until the outer writer has settled. */
@@ -59,26 +72,35 @@ export function registerTurnPayloads(connection: Database.Database): void {
   if (!connection.inTransaction) throw new Error('Payload objects need a registry transaction');
   const files = state(connection).files;
   files.durable();
-  const query = statements(connection), inserted = new Set<string>();
-  for (const [hash, object] of files.staged) {
-    let stored = query.size.get(hash) as { bytes: number; kind: number; inlined: number } | undefined;
-    if (!stored) {
-      query.put.run(hash, object.bytes, object.kind);
-      if (object.bytes <= INLINE_PAYLOAD_BYTES) query.body.run(hash, object.data);
-      stored = query.size.get(hash) as { bytes: number; kind: number; inlined: number };
-      for (let ordinal = 0; ordinal < object.chunks.length; ordinal++) query.chunk.run(hash, ordinal, object.chunks[ordinal]);
-      inserted.add(hash);
-    }
-    if (stored.bytes !== object.bytes || stored.kind !== object.kind || Boolean(stored.inlined) !== (object.bytes <= INLINE_PAYLOAD_BYTES))
+  const query = statements(connection), staged = [...files.staged];
+  if (!staged.length) return;
+  // Consult the transaction, rather than optimistic JS flags: an earlier registration may have rolled back.
+  // Batched: one turn stages thousands of objects, and a native call per object dominated the write.
+  const sizes = (hashes: readonly string[]) => new Map(selectByHash<StoredSize & { hash: string }>(query.sizes,
+    placeholders => connection.prepare(`SELECT o.hash,o.bytes,o.kind,b.hash IS NOT NULL AS inlined FROM session_turn_payload_objects o
+      LEFT JOIN session_turn_payload_inline b ON b.hash=o.hash WHERE o.hash IN (${placeholders})`), hashes).map(row => [row.hash, row]));
+  const existing = sizes(staged.map(([hash]) => hash));
+  const missing = staged.filter(([hash]) => !existing.has(hash));
+  runTurnRows(connection, 'INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind) VALUES',
+    missing.map(([hash, object]) => [hash, object.bytes, object.kind]));
+  runTurnRows(connection, 'INSERT INTO session_turn_payload_inline(hash,data) VALUES',
+    missing.filter(([, object]) => object.bytes <= INLINE_PAYLOAD_BYTES).map(([hash, object]) => [hash, object.data]));
+  runTurnRows(connection, 'INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES',
+    missing.flatMap(([hash, object]) => object.chunks.map((digest, ordinal) => [hash, ordinal, digest])));
+  const inserted = new Set(missing.map(([hash]) => hash));
+  const registered = inserted.size ? sizes([...inserted]) : new Map<string, StoredSize>();
+  for (const [hash, object] of staged) {
+    const stored = existing.get(hash) ?? registered.get(hash);
+    if (!stored || stored.bytes !== object.bytes || stored.kind !== object.kind || Boolean(stored.inlined) !== (object.bytes <= INLINE_PAYLOAD_BYTES))
       throw new Error('Payload registry size or storage mismatch');
   }
-  // Consult the transaction, rather than optimistic JS flags: an earlier registration may have rolled back.
+  const parents = staged.filter(([hash, object]) => object.children.size && !inserted.has(hash)).map(([hash]) => hash);
+  const known = new Set(selectByHash<{ hash: string; child_hash: string }>(query.children,
+    placeholders => connection.prepare(`SELECT parent_hash AS hash,child_hash FROM session_turn_payload_edges WHERE parent_hash IN (${placeholders})`), parents)
+    .map(row => `${row.hash}\n${row.child_hash}`));
   const edges: string[][] = [];
-  for (const [hash, object] of files.staged) if (object.children.size) {
-    const existing = inserted.has(hash) ? new Set<string>()
-      : new Set((query.children.all(hash) as { child_hash: string }[]).map(row => row.child_hash));
-    for (const child of object.children.values()) if (!existing.has(child.hash)) edges.push([hash, child.hash]);
-  }
+  for (const [hash, object] of staged) for (const child of object.children.values())
+    if (!known.has(`${hash}\n${child.hash}`)) edges.push([hash, child.hash]);
   runTurnRows(connection, 'INSERT OR IGNORE INTO session_turn_payload_edges(parent_hash,child_hash) VALUES', edges);
 }
 

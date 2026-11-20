@@ -184,6 +184,35 @@ describe('versioned session turn storage', () => {
     expect(fixture.sqlite.prepare('SELECT data FROM session_turns WHERE id=?').get(row.id)).toEqual({ data: row.data });
   });
 
+  it('registers a mix of existing and new bodies across query batches without duplicating or losing owners', async () => {
+    const output = (index: number) => `shared output ${index}: ${'body'.repeat(400)}`;
+    const tool = (prefix: string, index: number, text: string) => ({ kind: 'execute-tool-call' as const, id: `${prefix}-${index}`, seq: index + 3,
+      toolCallId: `${prefix}-${index}`, title: 'execute', status: 'done' as const, outputText: text });
+    const first = turn(), second: TranscriptTurn = { ...turn(), id: 's:turn:s1', seq: 1 };
+    first.items.push(...Array.from({ length: 100 }, (_, index) => tool('first', index, output(index))));
+    // 70 bodies the registry already holds and 70 new ones: both sides cross the 64-hash query boundary.
+    second.items.push(...Array.from({ length: 140 }, (_, index) => tool('second', index, index < 70 ? output(index) : output(1000 + index))));
+    const write = async (id: string, seq: number, value: TranscriptTurn) => {
+      const prepared = prepareSessionTurn(fixture.sqlite, { id, data: JSON.stringify(value), revision: 0 }, value, true);
+      await withTurnPayloadWrite(fixture.sqlite, () => fixture.sqlite.transaction(() => {
+        fixture.sqlite.prepare("INSERT INTO session_turns(id,session_id,seq,turn_id,data) VALUES (?,'s',?,?,?)").run(id, seq, `runtime:${seq}`, prepared.marker);
+        prepared.commit();
+      })());
+      return { id, data: prepared.marker };
+    };
+    const firstRow = await write('s:0', 0, first), secondRow = await write('s:1', 1, second);
+    expect(readSessionTurn(fixture.sqlite, firstRow)).toEqual(JSON.parse(JSON.stringify(first)));
+    expect(readSessionTurn(fixture.sqlite, secondRow)).toEqual(JSON.parse(JSON.stringify(second)));
+    const shared = (fixture.sqlite.prepare(`SELECT count(DISTINCT hash) n FROM session_turn_payload_fields WHERE row_id='s:1'
+      AND hash IN (SELECT hash FROM session_turn_payload_fields WHERE row_id='s:0')`).get() as { n: number }).n;
+    expect(shared).toBeGreaterThanOrEqual(70);
+    expect(fixture.sqlite.prepare(`SELECT count(*) n FROM session_turn_payload_objects o WHERE refs !=
+      (SELECT count(*) FROM session_turn_payload_fields WHERE hash=o.hash)+
+      (SELECT count(*) FROM session_turn_payload_edges WHERE child_hash=o.hash)+
+      (SELECT count(*) FROM session_turn_payload_sources WHERE hash=o.hash)`).get()).toEqual({ n: 0 });
+    expect(fixture.sqlite.pragma('foreign_key_check')).toEqual([]);
+  });
+
   it('collects replaced bodies and rolled-back writes while keeping bodies shared by surviving fields', async () => {
     const original = turn();
     original.items.push({ ...original.items[2], id: 'shared-picture', seq: 3 });
