@@ -96,18 +96,18 @@ it('restores Codex terminal B once, then retries managed A from its existing vau
   expect(await readFile(join(terminalRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('terminal', 'renewed'));
 });
 
-it('carries the Codex sign-in into an existing installation exactly once and isolates later refreshes', async () => {
+it('requires a fresh Codex OAuth sign-in during upgrade and preserves later independent sign-ins', async () => {
   const terminal = process.env.CODEX_HOME!;
   const terminalAuth = join(terminal, 'auth.json');
   const managedAuth = join(state.codexRoot, 'auth.json');
   const former = chatgptAuth('person', 'old');
   await writeAuthAt(terminal, former);
-  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'copied' });
+  await expect(migrateOwnedHarnessAccounts('codex', process.env, true)).resolves.toMatchObject({ upgradeSignIn: 'relogin' });
   expect(await readFile(terminalAuth, 'utf8')).toBe(former);
-  expect(await readFile(managedAuth, 'utf8')).toBe(former);
+  await expect(readFile(managedAuth)).rejects.toMatchObject({ code: 'ENOENT' });
 
   await writeAuthAt(terminal, chatgptAuth('person', 'terminal-refresh'));
-  expect(await readFile(managedAuth, 'utf8')).toBe(former);
+  await expect(readFile(managedAuth)).rejects.toMatchObject({ code: 'ENOENT' });
   await writeAuthAt(state.codexRoot, chatgptAuth('person', 'managed-refresh'));
   await migrateOwnedHarnessAccounts('codex', process.env, true);
   expect(await readFile(managedAuth, 'utf8')).toBe(chatgptAuth('person', 'managed-refresh'));

@@ -14,6 +14,26 @@ export async function readAgentHomeUpgradeResults(): Promise<AgentHomeScan[]> {
 }
 
 export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): void {
+  const codex = homes.find(home => home.providerId === 'codex' && home.upgraded
+    && (home.upgradeSignIn === 'copied' || home.upgradeSignIn === 'relogin'))
+  if (codex) {
+    // Reach people who already dismissed the former "sign-in copied" notice.
+    const key = `gugu.codexUpgradeRelogin:${codex.importedAt}`
+    if (!shown.has(key)) {
+      shown.add(key)
+      let dismissed = false
+      try { dismissed = !!localStorage.getItem(key) } catch { /* Use the window-local guard. */ }
+      if (!dismissed) {
+        const t = i18n.getFixedT(null, 'main')
+        notify({ key, title: t('agentHome.codexUpgradeReloginTitle', { name: codex.name }), tier: 'info', ongoing: true,
+          description: t('agentHome.codexUpgradeRelogin'),
+          action: { label: t('agentHome.signInSettings'), onClick: () => openShellSettings('subscriptions') },
+          onDismiss: () => { try { localStorage.setItem(key, '1') } catch { /* The in-memory guard remains. */ } },
+        })
+      }
+    }
+    homes = homes.filter(home => home !== codex || (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0) > 0)
+  }
   const blocked = homes.filter(({ migrationSpace }) => migrationSpace)
   if (blocked.length) {
     const key = 'gugu.agentHomeMigration.space:' + JSON.stringify(blocked.map((home) => [home.providerId, home.migrationSpace]))

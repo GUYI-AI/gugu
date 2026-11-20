@@ -1,7 +1,7 @@
 import type { IAcpBehavior } from '@gugu/session-core/agents/plugins';
 import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
-import { isAcpAuthRequired } from '@gugu/session-core/acp';
+import { isAcpAuthRequired, isCodexRefreshTokenRevoked } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
 import { findToolImage, trimItemsForTransport, type ToolImageLookup } from '@gugu/session-core/session-record';
 import { randomUUID } from 'node:crypto';
@@ -3228,7 +3228,7 @@ const LATE_MODEL_DIMENSION_WAIT_MS = 30_000;
 function isAuthRequiredError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const value = error as { code?: unknown; data?: unknown; cause?: unknown };
-  if (isAcpAuthRequired(value)) return true;
+  if (isAcpAuthRequired(value) || isCodexRefreshTokenRevoked(toSerializedError(error))) return true;
   return isAuthRequiredError(value.cause);
 }
 

@@ -285,10 +285,10 @@ export async function restoreCodexTerminalForMigration(paths: CodexAuthSlotPaths
   return { terminalNeedsSignIn: restored.identity === '', relogin: null, moved: recorded };
 }
 
-/** A one-time snapshot of the sign-in used before an upgrade. It never changes the source slot. */
+/** Copy API-key sign-ins only. An OAuth refresh token must have one owner. */
 export async function copyCodexUpgradeSignIn(
   previous: CodexAuthSlotPaths, managed: CodexAuthSlotPaths, connectionId: string, vaultIdentity?: string,
-): Promise<'oauth' | 'api-key' | false | undefined> {
+): Promise<'api-key' | false | undefined> {
   await assertCodexFileCredentialStore(previous.nativeRoot);
   await assertCodexFileCredentialStore(managed.nativeRoot);
   const state = await readLiveState(previous.liveStateFile);
@@ -297,11 +297,12 @@ export async function copyCodexUpgradeSignIn(
   if (!live?.identity) return false;
   if (vaultIdentity ? live.identity !== vaultIdentity
     : connectionId !== 'native' && (state?.connectionId !== connectionId || state.identity !== live.identity)) return false;
+  if (live.identity.startsWith('chatgpt:')) return false;
   const target = await readAuth(managed.nativeRoot);
   if (target && target.identity !== live.identity) return false;
   if (!target) await writeAuth(managed.nativeRoot, live.text);
   await recordLiveState(managed.liveStateFile, { connectionId, identity: live.identity });
-  return live.identity.startsWith('chatgpt:') ? 'oauth' : 'api-key';
+  return 'api-key';
 }
 
 /** 这个连接的保管目录里有没有一份能换进来的登录(切换前先问,免得白白停掉在跑的会话)。 */
