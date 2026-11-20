@@ -270,7 +270,7 @@ async function sendToMember(
 }
 
 /**
- * `dispatch(text, { widget, to: { chat } })` (61): the App view as a message of that chat, written as the person — the
+ * `dispatch(text, { widget, to: { chat } })` (62): the App view as a message of that chat, written as the person — the
  * message `widget_send` makes for an agent, through the same `chat.send_widget`. Written as whoever works the page, as
  * every dispatch to a chat is (`as`: the person's agent; else the person). The database is its only bound (`can_act_as`).
  */
