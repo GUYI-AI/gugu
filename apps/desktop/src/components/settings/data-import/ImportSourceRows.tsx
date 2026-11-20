@@ -1,3 +1,5 @@
+import { ENVIRONMENT_IMPORT_CATEGORIES } from '@shared/core/session-import/environment-import'
+import { categoryLabelKey, groupImportProviders } from './environment-import-view'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ChevronRight, Clock, X } from '@/lib/icons'
@@ -67,7 +69,8 @@ function findJob(jobs: readonly ImportJob[], providerId: string, deviceId: strin
 }
 
 function sourceCount(reading?: SourceReading): number | undefined {
-  return reading?.state === 'value' && reading.value && !reading.value.pending ? reading.value.count : undefined
+  const count = reading?.state === 'value' && reading.value && !reading.value.pending ? reading.value.count : undefined
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : undefined
 }
 
 function sourceDescription(t: ReturnType<typeof useTranslation<'main'>>['t'], reading?: SourceReading) {
@@ -147,22 +150,46 @@ function ImportRow({ label, job, children, summary }: { label: ReactNode; job?: 
 
 export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
   const { t } = useTranslation('main')
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>('codex')
   const sources = useSources(providers, null, true)
+  const groups = groupImportProviders(providers)
   return (
     <div className="gg-import-stack">
-      {sources.map(({ provider, reading }) => {
-        if (reading?.state === 'value' && reading.value === null) return null
-        const job = findJob(jobs, provider.id, null)
-        const count = sourceCount(reading)
+      {groups.map(group => {
+        const rows = group.providers.map(provider => sources.find(source => source.provider.id === provider.id)!)
+        if (rows.every(({ reading }) => reading?.state === 'value' && reading.value === null)) return null
+        const ready = rows.every(({ reading }) => sourceCount(reading) !== undefined)
+        const total = ready ? rows.reduce((sum, { reading }) => sum + sourceCount(reading)!, 0) : undefined
+        const active = jobs.some(job => isActiveImport(job) && group.providers.some(provider => provider.id === job.provider.id))
+        const first = group.providers[0]!
         return (
-          <ImportCard key={provider.id} name={provider.label} description={sourceDescription(t, reading)}
-            icon={<ImportSourceIcon provider={provider} />}
-            open={open === provider.id} onToggle={() => setOpen(open === provider.id ? null : provider.id)}>
-            <ImportRow label={count === undefined ? t('settings.dataImport.sessions') : t('settings.dataImport.sessionCount', { count })} job={job}>
-              <SourceAction provider={provider} reading={reading} ownerId={ownerId} deviceId={null}
-                deviceName={t('settings.dataImport.thisComputer')} job={job} />
+          <ImportCard key={group.id} name={group.label}
+            description={total === undefined ? t('settings.dataImport.reading') : t('settings.dataImport.environmentAvailable', { count: total })}
+            icon={<ImportSourceIcon provider={first} />} open={open === group.id}
+            onToggle={() => setOpen(open === group.id ? null : group.id)}>
+            <ImportRow summary label={total === undefined ? t('settings.dataImport.scopeAll') : t('settings.dataImport.allCount', { count: total })}>
+              <Button variant="secondary" size="sm" disabled={!ready || !total || active}
+                onClick={() => rows.forEach(({ provider, reading }) => {
+                  const count = sourceCount(reading)
+                  if (count) enqueueImport(ownerId, { devices: [{ deviceId: null, deviceName: t('settings.dataImport.thisComputer'), count }], provider }, t)
+                })}>{t('settings.dataImport.importAll')}</Button>
             </ImportRow>
+            {ENVIRONMENT_IMPORT_CATEGORIES.map(category => {
+              const source = rows.find(({ provider }) => (provider.category ?? 'tasks') === category)
+              const job = source ? findJob(jobs, source.provider.id, null) : undefined
+              const count = sourceCount(source?.reading)
+              return (
+                <ImportRow key={category} label={<>{t(categoryLabelKey(category))} {count === undefined ? '' : `(${count})`}</>} job={job}>
+                  {source ? source.reading?.state === 'error' ? (
+                    <Button variant="secondary" size="sm" title={t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
+                      {t('settings.dataImport.refresh')}
+                    </Button>
+                  ) : <SourceAction provider={source.provider} reading={source.reading} ownerId={ownerId} deviceId={null}
+                    deviceName={t('settings.dataImport.thisComputer')} job={job} />
+                    : <span className="gg-import-meta">{t('settings.dataImport.categoryUnavailable')}</span>}
+                </ImportRow>
+              )
+            })}
           </ImportCard>
         )
       })}

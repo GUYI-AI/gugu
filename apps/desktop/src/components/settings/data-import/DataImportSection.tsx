@@ -1,3 +1,5 @@
+import { outcomeLabelKey } from './environment-import-view'
+import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useEffect, useId, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
@@ -82,6 +84,8 @@ export const DataImportSection = observer(function DataImportSection({
 }: { onClose: () => void; extraProviders?: readonly ImportProvider[]; localDetails?: ReactNode }) {
   const { t } = useTranslation('main')
   const { user } = useAuth()
+  const importSettings = useAppSettingsKey('dataImport').settings
+  const categoryHistory = user && importSettings.state === 'value' ? importSettings.value.value.owners[user.id]?.categoryResults ?? [] : []
   const [tab, setTab] = useState<ImportTab>('apps')
   const panelId = useId()
   const jobs = useSyncExternalStore(importJobs.subscribe, importJobs.getSnapshot)
@@ -145,6 +149,18 @@ export const DataImportSection = observer(function DataImportSection({
             <RemoteImportSources machines={machines} providers={providers.filter((provider) => !provider.localOnly)} ownerId={user.id} jobs={ownerJobs} />
           </>
         ))}
+        {local && categoryHistory.length > 0 && <section className="gg-import-history">
+          <h3>{t('settings.dataImport.categoryResults')}</h3>
+          <div className="gg-import-history-list">
+            {categoryHistory.map(group => <div className="gg-import-history-entry" key={`${group.providerId}:${group.finishedAt}`}>
+              <details className="p-3">
+                <summary>{t('settings.dataImport.categoryResultSummary', { count: group.items.filter(item => item.status === 'imported').length, existing: group.items.filter(item => item.status === 'existing').length, failed: group.items.filter(item => item.status && !['imported', 'existing'].includes(item.status)).length })}</summary>
+                <ul>{group.items.map(item => <li key={item.id}>{item.title}<span className="gg-import-meta"> {t(outcomeLabelKey(item.status, item.reason))}</span></li>)}</ul>
+                {group.items.some(item => item.category === 'connectors') && <p className="gg-import-meta">{t('settings.dataImport.configurationOnly')}</p>}
+              </details>
+            </div>)}
+          </div>
+        </section>}
         {history.length > 0 && (
           <section className="gg-import-history">
             <h3>{t('settings.dataImport.history')}</h3>
