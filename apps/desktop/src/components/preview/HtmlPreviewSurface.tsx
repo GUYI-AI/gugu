@@ -84,7 +84,10 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anch
           src={source}
           // Keep the existing opaque sandbox; scroll/link messages never grant same-origin access.
           sandbox="allow-scripts"
-          className={`absolute inset-0 h-full w-full border-0 bg-[var(--bg-primary)] ${source === visible ? 'visible' : 'invisible'}`}
+          // Canvas like a browser tab (#3322): a page's own canvas is transparent when its color-scheme matches the frame's,
+          // so the frame paints the system Canvas of the app's scheme behind it. A page that declares nothing is light:
+          // in the dark theme the schemes differ and the page paints its own white canvas; a page that declares dark gets dark.
+          className={`absolute inset-0 h-full w-full border-0 [color-scheme:light] [background-color:Canvas] dark:[color-scheme:dark] ${source === visible ? 'visible' : 'invisible'}`}
           onLoad={(event) => {
             if (source !== url) return;
             scripted.current.delete(event.currentTarget);
