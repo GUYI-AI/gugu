@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveSessionRuntimeCompatible, SessionRuntimeCompatibilityError } from './session-runtime-compatibility';
+import { harnessSupportedFloor, resolveSessionRuntimeCompatible, SessionRuntimeCompatibilityError } from './session-runtime-compatibility';
 import type { IExecutionContext } from '../../exec';
 import type { SessionBundleDescriptor } from './capabilities/session-bundle';
 
@@ -381,5 +381,19 @@ describe('resolveSessionRuntimeCompatible — POSIX 上咕咕自己的 sh 启动
     }).then(() => null, (error: unknown) => error as SessionRuntimeCompatibilityError);
 
     expect(thrown!.code).toBe('runtime-entry-unresolved');
+  });
+});
+
+describe('harnessSupportedFloor', () => {
+  it('is the highest harness floor across surfaces, ignoring interpreter floors and ranges', () => {
+    expect(harnessSupportedFloor({ runtimeCompatibility: {
+      'acp': { kind: 'semver-supported-floor', supportedFloor: '0.136.0', versionArgs: ['--version'] },
+      'app-server': [
+        { kind: 'semver-supported-floor', supportedFloor: '0.153.0', versionArgs: ['--version'] },
+        { kind: 'semver-supported-floor', supportedFloor: '99.0.0', versionArgs: ['--version'], runtime: 'node' },
+      ],
+    } })).toBe('0.153.0');
+    expect(harnessSupportedFloor({})).toBeNull();
+    expect(harnessSupportedFloor(undefined)).toBeNull();
   });
 });

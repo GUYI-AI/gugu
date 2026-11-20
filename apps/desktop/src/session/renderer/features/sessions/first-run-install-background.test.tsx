@@ -5,13 +5,13 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { FirstRunInstallProvider } from '@/components/firstRun/FirstRunInstallProvider';
 import { useFirstRunInstaller } from '@/components/firstRun/first-run-install-context';
 
-const f = vi.hoisted(() => ({ install: vi.fn(), status: vi.fn() }));
+const f = vi.hoisted(() => ({ install: vi.fn(), status: vi.fn(), probe: vi.fn() }));
 vi.mock('react-i18next', async (importOriginal) => ({ ...(await importOriginal<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useAgentInstallationStatuses: () => ({ installAsync: f.install }), useAgentInstallProgress: () => null,
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
-vi.mock('@renderer/lib/ipc', () => ({ rpc: { agents: { getAgentInstallationStatus: f.status, cancelInstall: vi.fn() } } }));
+vi.mock('@renderer/lib/ipc', () => ({ rpc: { agents: { probe: f.probe, getAgentInstallationStatus: f.status, cancelInstall: vi.fn() } } }));
 
 function Flow() {
   const queue = useFirstRunInstaller(); const [page, setPage] = useState('choose');
@@ -21,7 +21,7 @@ let host: HTMLDivElement; let root: Root;
 const deferred = () => { let resolve!: (x: { success: boolean }) => void; const promise = new Promise<{ success: boolean }>(r => { resolve = r; }); return { promise, resolve }; };
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  f.install.mockReset(); f.status.mockReset().mockResolvedValue({ used: { kind: 'method', method: 'mise' }, installations: [{ provenance: { ours: true, kind: 'mise' }, status: 'available' }] });
+  f.install.mockReset(); f.probe.mockReset().mockResolvedValue(undefined); f.status.mockReset().mockResolvedValue({ used: { kind: 'method', method: 'mise' }, installations: [{ provenance: { ours: true, kind: 'mise' }, status: 'available' }] });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
@@ -61,5 +61,32 @@ describe('managed installations survive leaving the selection step (#7582)', () 
     await act(async () => host.querySelector<HTMLButtonElement>('[data-k="b"]')!.click());
     expect(f.install.mock.calls.map(([x]) => x.id)).toEqual(['codex', 'claude']);
     await act(async () => codex.resolve({ success: true }));
+  });
+});
+
+describe('first run uses a copy already on this computer when it is new enough', () => {
+  const copy = (status: string, version: string | null, met: boolean | null) => ({ status, version, supportedFloor: { version: '0.153.0', met },
+    used: { kind: 'auto' }, installations: [{ provenance: { ours: false, kind: 'path' }, status }] });
+  function One() { const queue = useFirstRunInstaller(); return <button onClick={() => queue(['codex'])}>Continue</button>; }
+  it('does not install when the local copy meets the floor', async () => {
+    f.status.mockResolvedValue(copy('available', '0.160.0', true));
+    await act(async () => root.render(<FirstRunInstallProvider><One /></FirstRunInstallProvider>));
+    await act(async () => host.querySelector('button')!.click());
+    expect(f.probe).toHaveBeenCalledWith('codex');
+    expect(f.install).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('firstRun.harnessInstalled');
+  });
+  it.each([
+    ['too old', copy('available', '0.145.0', false), 'firstRun.installLocalOutdated'],
+    ['failing to run', copy('error', null, null), 'firstRun.installLocalBroken'],
+    ['running without a readable version', copy('available', null, null), 'firstRun.installLocalBroken'],
+    ['missing', { status: 'missing', version: null, used: { kind: 'auto' }, installations: [] }, 'firstRun.installLocalMissing'],
+  ] as const)('installs its own copy without asking when the local one is %s, and says why', async (_label, status, reason) => {
+    f.install.mockReturnValue(new Promise(() => {}));
+    f.status.mockResolvedValue(status);
+    await act(async () => root.render(<FirstRunInstallProvider><One /></FirstRunInstallProvider>));
+    await act(async () => host.querySelector('button')!.click());
+    expect(f.install.mock.calls.map(([x]) => x)).toEqual([{ id: 'codex', method: 'mise' }]);
+    expect(host.querySelector('[data-testid="install-progress-heading"]')?.textContent).toBe(reason);
   });
 });

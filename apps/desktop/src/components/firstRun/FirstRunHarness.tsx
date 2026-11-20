@@ -1,7 +1,10 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import type { FirstRunHarness as FirstRunHarnessId } from '@gugu/core/shared/firstRun'
 import { invalidateAppSettingsKey } from '@renderer/features/settings/app-settings-client'
 import { PREFERRED_SESSION_PROVIDERS } from '@shared/core/sessions/new-session-defaults'
 import { AppIcon } from '@renderer/lib/components/app-icon'
@@ -11,9 +14,10 @@ import { Chip } from '../ui/Chip'
 import { Check } from '@/lib/icons'
 import { writeFirstRunHarness } from '../../lib/firstRun'
 import { useFirstRunInstaller } from './first-run-install-context'
+import { readLocalCopy, type LocalCopy } from './local-copy'
 import './first-run-harness.css'
 
-/** 多选推荐；统一交给咕咕自己的托管安装，外部副本不参与首次安装判断。 */
+/** 多选推荐；本机已有且够新的副本直接用，没有或太旧才装咕咕托管的一份（见 FirstRunInstallProvider）。 */
 export function FirstRunHarness({ userId, initial, onBack, onDone }: {
   userId: string
   /** 从下一页退回来时:上次选的(账号上记着的那份),❌ 又回到默认只勾 Codex。 */
@@ -81,10 +85,12 @@ export function FirstRunHarness({ userId, initial, onBack, onDone }: {
 }
 
 function HarnessChoice({ id, selected, disabled, onToggle }: {
-  id: string; selected: boolean; disabled: boolean; onToggle: () => void
+  id: FirstRunHarnessId; selected: boolean; disabled: boolean; onToggle: () => void
 }) {
   const { t } = useTranslation('main')
   const name = id === 'codex' ? 'Codex' : 'Claude'
+  // What is on this computer, read when the tile appears; Continue reads it again before acting on it.
+  const local = useQuery({ queryKey: ['first-run-local-copy', id], queryFn: () => readLocalCopy(id) })
   return (
     <label className="first-run-harness-choice" data-selected={selected} data-testid={`first-run-harness-${id}`}>
       <input type="checkbox" className="first-run-harness-input" checked={selected} disabled={disabled} onChange={onToggle}
@@ -92,7 +98,17 @@ function HarnessChoice({ id, selected, disabled, onToggle }: {
       {id === 'codex' ? <Chip appearance="filled" className="first-run-harness-badge">{t('firstRun.harnessRecommended')}</Chip> : null}
       <span className="first-run-harness-check" aria-hidden>{selected ? <Check size={12} /> : null}</span>
       <AppIcon id={id} size={52} />
-      <h2>{name}</h2>
+      <div className="first-run-harness-name">
+        <h2>{name}</h2>
+        <p data-testid={`first-run-harness-${id}-local`}>{local.data ? localLine(t, id, local.data) : null}</p>
+      </div>
     </label>
   )
+}
+
+function localLine(t: TFunction<'main'>, id: string, local: LocalCopy): string {
+  if (local.kind === 'usable') return t('firstRun.harnessLocalUsable', { version: local.version })
+  if (local.kind === 'outdated') return t('firstRun.harnessLocalOutdated', { version: local.version })
+  if (local.kind === 'broken') return t('firstRun.harnessLocalBroken', { command: id })
+  return t('firstRun.harnessLocalMissing')
 }

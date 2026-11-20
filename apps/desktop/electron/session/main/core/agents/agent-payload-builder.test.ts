@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
-import { buildAgentMetadataList } from './agent-payload-builder';
+import { buildAgentMetadataList, toAgentInstallationStatus } from './agent-payload-builder';
 
 /**
  * 直通判据(spec: harness-auth-surface):payload 的 auth 就是插件声明的那一份。
@@ -52,5 +52,19 @@ describe('the declared acp injection timing reaches the renderer payload', () =>
     expect(steers('codex')).toBe(true);
     // acp 没声明注入档位 ⇒ 插不了(阴控:判据不是恒真)。
     expect(steers('mimocode')).toBe(false);
+  });
+});
+
+/** First run reuses the copy in use only when it meets the floor the session start enforces. */
+describe('the supported floor reaches the installation status', () => {
+  const status = (id: string, version: string | null) =>
+    toAgentInstallationStatus(id, { id, status: 'available', version } as Parameters<typeof toAgentInstallationStatus>[1], undefined);
+  it('reads the declared codex and claude floors against the copy in use', () => {
+    expect(status('codex', '0.160.0').supportedFloor).toEqual({ version: '0.153.0', met: true });
+    expect(status('codex', '0.145.0').supportedFloor).toEqual({ version: '0.153.0', met: false });
+    expect(status('codex', null).supportedFloor).toEqual({ version: '0.153.0', met: null });
+    expect(status('claude', '2.1.69').supportedFloor).toEqual({ version: '2.1.69', met: true });
+    // Negative control: a harness without a declared floor carries no reading.
+    expect(status('cursor', '1.0.0').supportedFloor).toBeUndefined();
   });
 });

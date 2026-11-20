@@ -17,11 +17,14 @@ import { installProgressLine } from './install-progress-line'
 export function InstallProgressRow({
   progress,
   onCancel,
-  compact = false
+  compact = false,
+  label
 }: {
   progress: AgentInstallProgress | null
   onCancel: () => void
   compact?: boolean
+  /** The caller's own line in place of the measured progress text (first run says why Gugu installs its own copy). */
+  label?: string
 }) {
   const { translate } = useSessionMessages()
   const [cancelRequested, setCancelRequested] = useState(false)
@@ -49,7 +52,7 @@ export function InstallProgressRow({
                 {line?.ratio != null && `${metadataSeparator()}${Math.round(line.ratio * 100)}%`}
               </>
             ) : (
-              (line?.text ?? translate('agentsPage.installingToGuguHome'))
+              (label ?? line?.text ?? translate('agentsPage.installingToGuguHome'))
             )}
           </p>
           {compact && line?.detail && <p className="m-0">{line.detail}</p>}
