@@ -73,7 +73,8 @@ function issueReason(snapshot: AgentHomeDirectorySnapshot): CodexSkillReason | u
 function stale(): Error { return Object.assign(new Error('Skill source changed'), { code: 'ESTALE' }); }
 
 /** Bounded metadata read, checked against the shared migration reader's complete-file hash. */
-async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
+async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const manifest = snapshot.files.find(({ path }) => path === 'SKILL.md');
   if (!manifest || manifest.linkTarget !== undefined) return null;
   const handle = await disk.open(join(root, 'SKILL.md'), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
@@ -84,6 +85,7 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
     const bytes = Buffer.alloc(Math.min(stat.size + 1, FRONTMATTER_LIMIT));
     let read = 0;
     while (read < bytes.length) {
+      signal?.throwIfAborted();
       const result = await handle.read(bytes, read, bytes.length - read, null);
       if (!result.bytesRead) break;
       read += result.bytesRead;
@@ -92,7 +94,7 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
     if (stat.size < FRONTMATTER_LIMIT) {
       if (hash(content) !== manifest.hash) throw stale();
     } else {
-      await streamImportFile(join(root, 'SKILL.md'), undefined, manifest.hash, root);
+      await streamImportFile(join(root, 'SKILL.md'), undefined, manifest.hash, root, signal);
       const after = await handle.stat();
       if (after.ino !== stat.ino || after.dev !== stat.dev || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) throw stale();
     }
@@ -149,7 +151,7 @@ async function inspect({ home, signal }: Options) {
       } else {
         const snapshot = await snapshotAgentHomeDirectory(home, canonical, { signal });
         const issue = issueReason(snapshot);
-        const fields = issue ? null : await metadata(canonical, snapshot);
+        const fields = issue ? null : await metadata(canonical, snapshot, signal);
         if (!fields) { item.status = 'skipped'; item.reason = issue ?? 'invalid-skill'; }
         else {
           Object.assign(item, fields);
@@ -180,7 +182,7 @@ async function inspect({ home, signal }: Options) {
     const path = join(targetRoot, folder);
     try {
       const root = await disk.realpath(path);
-      const fields = await metadata(root, await snapshotAgentHomeDirectory(home, root, { signal }));
+      const fields = await metadata(root, await snapshotAgentHomeDirectory(home, root, { signal }), signal);
       if (fields) targetNames.set(fields.name, [...(targetNames.get(fields.name) ?? []), path]);
     } catch { signal?.throwIfAborted(); }
   }
