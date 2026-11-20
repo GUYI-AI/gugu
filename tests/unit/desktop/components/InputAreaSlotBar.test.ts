@@ -55,7 +55,7 @@ describe('ChatMessageComposer uses the shared composer bar', () => {
     expect((await render(false)).composer.className.includes(sessionComposerDockedWidthClassName)).toBe(false)
   })
   it('names the project in a project group box', async () => {
-    expect((await render(true, 'website')).placeholder).toBe('Message website… @ an agent to call it')
+    expect((await render(true, 'website')).placeholder).toBe('Message website… @ to mention an agent')
     expect((await render(true)).placeholder).toBe('Write a message…')
   })
 })

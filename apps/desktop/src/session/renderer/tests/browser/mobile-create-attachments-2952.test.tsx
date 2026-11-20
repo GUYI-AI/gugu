@@ -90,7 +90,7 @@ async function mount(theme: 'light' | 'dark') {
   root = createRoot(host); render(theme)
   await until('real empty creation input and attachment control', () => !!host?.querySelector('[contenteditable]') && !!host?.querySelector('[data-phone-attachment]'))
   expect(host!.textContent).toContain('创建智能体')
-  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('随心输入')
+  expect(host!.querySelector('[contenteditable]')?.getAttribute('aria-label')).toBe('输入任务内容')
   expect(host!.textContent).not.toContain('agentWatch.')
 }
 async function choose(file: File) {

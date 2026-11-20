@@ -132,7 +132,7 @@ describe('task card face is unchanged by the extraction (#709)', () => {
           "用一句话介绍你自己",
           "交给",
           "Codex 1",
-          "等群主同意它进群",
+          "等待群主同意其入群",
         ],
       }
     `)

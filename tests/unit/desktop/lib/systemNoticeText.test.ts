@@ -13,16 +13,16 @@ const ROWS = [
   [row('migration-placeholder:120-135', '这条消息没有迁移'), 'This message was not migrated.', '这条消息没有迁移'],
   [row('agent-flood:m1', '这个群里 agent 较多,已把它们都转为被动模式,@ 它们才会回。'),
     'This group has many agents, so they now reply only when @-mentioned.',
-    '这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。'],
+    '此群 agent 数量较多，已全部切换为被动模式，仅在被 @ 时回复。'],
   [row('agent-flood:m1', '这条话题里 agent 较多,已把它们都转为被动模式,@ 它们才会回。'),
     'This topic has many agents, so they now reply only when @-mentioned.',
-    '这条话题里 agent 较多，已把它们都转为被动模式，@ 它们才会回。'],
+    '此话题 agent 数量较多，已全部切换为被动模式，仅在被 @ 时回复。'],
   [row('member-joined:m1:u1,u2', 'Leo Park、小林 加入了群聊'), 'Leo Park, 小林 joined the group', 'Leo Park、小林 加入了群聊'],
   [row('member-managed:m1:u1,u1', 'Leo Park 退出了群聊'), 'Leo Park left the group', 'Leo Park 退出了群聊'],
   [row('member-managed:m1:u1,u2', 'Ann 将 Leo Park 移出了群聊'), 'Ann removed Leo Park from the group', 'Ann 将 Leo Park 移出了群聊'],
   [row('member-managed:m1:u1,u2', 'Ann 将 Leo Park 设为管理员'), 'Ann made Leo Park an admin', 'Ann 将 Leo Park 设为管理员'],
   [row('member-managed:m1:u1,u2', 'Ann 撤销了 Leo Park 的管理员身份'), 'Ann removed Leo Park as an admin', 'Ann 撤销了 Leo Park 的管理员身份'],
-  [row('topic-opened:t1', 'Claude 开了话题:Launch plan', 'u1'), 'Claude opened a topic: Launch plan', 'Claude 开了话题：Launch plan'],
+  [row('topic-opened:t1', 'Claude 开了话题:Launch plan', 'u1'), 'Claude opened a topic: Launch plan', 'Claude 创建了话题：Launch plan'],
 ] as const
 
 describe('system rows in the reader language', () => {
