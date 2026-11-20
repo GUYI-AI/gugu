@@ -18,6 +18,7 @@ import { openMediaProcess } from '../../../../../../native/projection-media/node
 import { ProjectionSignals } from '../../../../../../native/projection-media/node/signaling.mjs';
 import { withFixtureCleanup } from '../../test-support/fixture-failure';
 import { untilObserved } from './fixture-wait';
+import { solidFrame } from './projection-solid-frame';
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Pipeline fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
@@ -35,8 +36,6 @@ void app.whenReady().then(async () => {
   service.installFromDirectory(bundle, service.inspectDirectory(bundle).manifestDigest, 'folder');
   const source = new BrowserWindow({ show: false, frame: false, useContentSize: true, width: 128, height: 96,
     webPreferences: { backgroundThrottling: false } });
-  // loadURL may finish before Chromium has painted a capture surface (Electron 45).
-  const firstPaint = new Promise<void>(resolve => source.once('ready-to-show', () => resolve()));
   const appPage = new BrowserWindow({ show: false });
   let hear: Parameters<NonNullable<ProjectionHost['onProjectionSource']>>[0] = () => {};
   const program = { kind: 'program', extensionId: id, pageId: -91, callingSession: 'fixture-task', binding: null,
@@ -58,17 +57,15 @@ void app.whenReady().then(async () => {
   let disconnected = 0, viewerGeneration = "";
   const encoded = new Map<number, number>();
   await source.loadURL('data:text/html,' + encodeURIComponent('<body style="margin:0;background:rgb(26,96,190)"><textarea style="width:60px;height:20px"></textarea><script>document.querySelector("textarea").focus()</script>'));
-  await firstPaint;
   const publisher = await runtime.create({
     input: async (input, { signal }) => { signal.throwIfAborted(); assert.equal(input.kind, 'text');
       if (input.kind === 'text') { inputCalls++; await source.webContents.insertText(input.text); } },
     disconnect: async () => { disconnected++; }, close: () => { stopped = true; },
     refresh: async () => { await capture(); },
   });
+  let shown = [26, 96, 190];
   async function capture() {
-    const picture = await source.webContents.capturePage();
-    assert.deepEqual(picture.getSize(), { width: 128, height: 96 });
-    return publisher.publish({ width: 128, height: 96, mime: 'image/png', data: picture.toPNG().toString('base64') });
+    return publisher.publish({ width: 128, height: 96, mime: 'image/png', data: solidFrame(shown) });
   }
   const feeds = new Map<unknown, ReturnType<typeof bridge.mediaFeed>>();
   const signals = new ProjectionSignals({
@@ -139,8 +136,7 @@ void app.whenReady().then(async () => {
     assert.deepEqual(outcomes[0], { type: 'input-result', generation: viewerGeneration, sequence: 1, status: 'applied' });
     assert.equal(inputCalls, 1);
     assert.equal(await source.webContents.executeJavaScript('document.querySelector("textarea").value'), '整链中文🙂');
-    // JS completion can precede compositor capture; witness the new paint first.
-    await source.webContents.executeJavaScript('document.body.style.background="rgb(190,40,26)"; new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    shown = [190, 40, 26];
     assert.equal(await capture(), 2);
     phase = 'second-paint';
     await until(() => paints.some(paint => paint.sequence === 2));
@@ -148,9 +144,7 @@ void app.whenReady().then(async () => {
     for (const [channel, wanted] of [190, 40, 26].entries()) assert.ok(Math.abs(second.rgb[channel]! - wanted) < 12, JSON.stringify({ second, decoded }));
     assert.equal(second.rtpTimestamp, encoded.get(2));
     assert.equal(pixels.length, 2); assert.equal(pixels[0], pixels[1]);
-    const ownershipPicture = await source.webContents.capturePage();
-    const ownership = await probeFeedOwnership(runtime, page, context,
-      { width: 128, height: 96, mime: 'image/png', data: ownershipPicture.toPNG().toString('base64') },
+    const ownership = await probeFeedOwnership(runtime, page, context, { width: 128, height: 96, mime: 'image/png', data: solidFrame(shown) },
       () => openMediaProcess({ executable: process.env.GUGU_TEST_MEDIA_HELPER!, ffmpeg: process.env.GUGU_PROJECTION_FFMPEG!,
         width: 128, height: 96, fps: 10, bitrate: 500000, signal: new AbortController().signal }));
     phase = 'device-projection';
