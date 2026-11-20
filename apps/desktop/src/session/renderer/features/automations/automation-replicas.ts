@@ -1,4 +1,4 @@
-import { refreshTag, replica } from '@/lib/replica';
+import { replica } from '@/lib/replica';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import type { Automation } from '@shared/core/automations/automation';
 import type { AutomationRun } from '@shared/core/automations/automation-run';
@@ -31,8 +31,8 @@ function machineFeed(events: readonly (keyof typeof CHANNELS)[], refresh: (machi
   };
 }
 
-/** The models of an automation's runs: `refreshAutomationRuns` reads them all again. */
-const RUNS = 'automation-runs';
+/** The models of an automation's runs: `refreshTag(RUNS, machine, automationId?)` reads them all again. */
+export const RUNS = 'automation-runs';
 
 export const RUN_PAGE_SIZE = 25;
 export type RunStatusFilter = 'done' | 'failed' | 'skipped' | 'all';
@@ -101,6 +101,3 @@ export const sessionSchedules = replica({
   watch: machineFeed(['changed', 'run'], (machine) => { void sessionSchedules.refresh(machine); }),
 });
 
-export function refreshAutomationRuns(machine: AutomationMachine, automationId?: string): void {
-  void refreshTag(RUNS, machine, automationId);
-}

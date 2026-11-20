@@ -3,6 +3,9 @@ import type { AgentAuthStatus, SubscriptionPlanReading, SubscriptionUsageReading
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { replica, useReplica } from '@/lib/replica';
 
+/** Every subscription reading of a machine (or one provider on it): `refreshTag(SUBSCRIPTIONS, machine?, providerId?)`. */
+export const SUBSCRIPTIONS = 'subscriptions';
+
 /**
  * 套餐、用量、连接与登录读数 —— 一份读数一个读模型(这台设备上、按机器和那一家):「订阅」页、资源库「账号」那一行、
  * 新建任务里的面板读的是同一份(product spec「在哪」),❌ 各问各的。机器 null = 这台。
@@ -26,6 +29,7 @@ export async function readUsage(machine: string | null, providerId: string, forc
 export const subscriptionPlan = replica({
   name: 'subscriptionPlan',
   scope: 'device',
+  tags: [SUBSCRIPTIONS],
   read: (_device: string, machine: Machine, providerId: string, connectionId: string | null) => readPlan(machine, providerId, connectionId ?? undefined),
   fresh: SUBSCRIPTION_STALE_MS,
   persist: { maxBytes: 1024, maxEntries: 4 },
@@ -34,6 +38,7 @@ export const subscriptionPlan = replica({
 export const subscriptionUsage = replica({
   name: 'subscriptionUsage',
   scope: 'device',
+  tags: [SUBSCRIPTIONS],
   read: (_device: string, machine: Machine, providerId: string, connectionId: string | null) => readUsage(machine, providerId, false, connectionId ?? undefined),
   fresh: SUBSCRIPTION_STALE_MS,
 });
@@ -42,6 +47,7 @@ export const subscriptionUsage = replica({
 export const harnessConnections = replica({
   name: 'harnessConnections',
   scope: 'device',
+  tags: [SUBSCRIPTIONS],
   read: async (_device: string, machine: Machine, providerId: string): Promise<HarnessConnection[]> => {
     const result = await (await getAgentConfigRuntimeClient(machine)).listConnections({ providerId });
     if (!result.success) throw new Error(errorText(result.error));
@@ -55,6 +61,7 @@ export const harnessConnections = replica({
 export const connectionDetails = replica({
   name: 'connectionDetails',
   scope: 'device',
+  tags: [SUBSCRIPTIONS],
   read: async (_device: string, machine: Machine, providerId: string, connectionId: string) => {
     const client = await getAgentConfigRuntimeClient(machine);
     const input = { providerId, connectionId };
@@ -70,6 +77,7 @@ export const connectionDetails = replica({
 export const connectionAvailability = replica({
   name: 'connectionAvailability',
   scope: 'device',
+  tags: [SUBSCRIPTIONS],
   read: async (_device: string, machine: Machine, providerId: string): Promise<AgentAuthStatus> => {
     const result = await (await getAgentConfigRuntimeClient(machine)).refreshAuthStatus({ providerId });
     if (!result.success) throw new Error('message' in result.error ? result.error.message : result.error.type);
@@ -77,15 +85,6 @@ export const connectionAvailability = replica({
   },
   fresh: SUBSCRIPTION_STALE_MS,
 });
-
-/**
- * Read again every subscription reading — of one machine, or of one provider on it (after a sign-in, a switch, an
- * event); without arguments, all of them (the page's refresh button).
- */
-export function refreshSubscriptionReadings(machine?: Machine, providerId?: string): Promise<void> {
-  const models = [subscriptionPlan, subscriptionUsage, harnessConnections, connectionDetails, connectionAvailability] as const;
-  return Promise.all(models.map((model) => model.refresh(machine, providerId))).then(() => undefined);
-}
 
 /** Explicit refresh retains original figures and their timestamp if a vendor request fails. */
 export async function refreshConnectionUsage(machine: Machine, providerId: string, connectionId: string): Promise<void> {

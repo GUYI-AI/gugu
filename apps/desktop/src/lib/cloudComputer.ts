@@ -106,10 +106,6 @@ export function useCloudComputer(): Reading<CloudComputerState> {
 }
 
 /** For logic outside React (a link's reachability). */
-export function subscribeCloudComputer(listener: () => void): () => void {
-  return cloudComputer.subscribe([], () => listener())
-}
-
 /** 读到的那份管家快照;还没读到、读不到、或没有云电脑这项服务 = null(调用方据此不补「收回着 / 醒着」)。 */
 export function cloudSnapshotOf(reading: Reading<CloudComputerState>): CloudComputerSnapshot | null {
   return reading.state === 'value' && reading.value.available ? reading.value.snapshot : null

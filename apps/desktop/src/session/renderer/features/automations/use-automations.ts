@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { queryClient, useReplica, type Reading, type Replica } from '@/lib/replica';
+import { queryClient, refreshTag, useReplica, type Reading, type Replica } from '@/lib/replica';
 import type {
   CreateAutomationParams,
   UpdateAutomationSettingsPatch,
@@ -11,7 +11,7 @@ import {
   automationRunCounts,
   automationRunPage,
   automations as automationsModel,
-  refreshAutomationRuns,
+  RUNS,
   type AutomationMachine,
   type RunStatusFilter,
 } from './automation-replicas';
@@ -64,12 +64,12 @@ export function useAutomations() {
 
   const runNow = useMutation({
     mutationFn: (id: string) => api.runAutomation(id),
-    onSuccess: (_run, id) => refreshAutomationRuns(machine, id),
+    onSuccess: (_run, id) => void refreshTag(RUNS, machine, id),
   }, queryClient);
 
   const stop = useMutation({
     mutationFn: (runId: string) => api.stopRun(runId),
-    onSuccess: () => refreshAutomationRuns(machine),
+    onSuccess: () => void refreshTag(RUNS, machine),
   }, queryClient);
 
   const destroy = useMutation({
@@ -113,5 +113,5 @@ export function useAutomationRunCounts(automationId: string) {
 
 export function useRetryAutomationRuns(automationId: string) {
   const machine = machineOf(useAutomationsHost());
-  return () => refreshAutomationRuns(machine, automationId);
+  return () => void refreshTag(RUNS, machine, automationId);
 }

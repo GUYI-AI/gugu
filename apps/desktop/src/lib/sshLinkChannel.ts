@@ -76,10 +76,6 @@ export function subscribeSshMachineIds(listener: (ids: ReadonlySet<string>) => v
   })
 }
 
-/** 测试用:换一份清单(并通知订阅者)。 */
-export function _setSshMachineIdsForTesting(ids: readonly string[]): void {
-  sshMachineAddresses.set([], ids.map((id) => [id, id]))
-}
 
 // ── 远程隧道:经中转连通了的机器(主进程 electron/server/tunnel-machines.ts) ─────────────────
 //

@@ -49,7 +49,8 @@ describe('task-host tunnel event wait', () => {
     const { channel, emit } = await fixture()
     channel.wantTunnels([{ deviceId: 'direct', label: 'Direct' }, { deviceId: 'failed', label: 'Failed' }])
     await channel.sshMachinesReady()
-    channel._setSshMachineIdsForTesting(['direct'])
+    // The machine list says 'direct' is an SSH machine (the replica entry routing reads).
+    ;(await import('@/lib/sshMachineAddresses')).sshMachineAddresses.set([], [['direct', 'direct']])
     emit({ ready: [], problems: { failed: 'visitorFailed' } })
     await channel.waitForTunnel('direct')
     await channel.waitForTunnel('failed')

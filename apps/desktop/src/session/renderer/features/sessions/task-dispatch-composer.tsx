@@ -139,7 +139,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
       {/* The remembered project shown, its re-read failed: said with a retry (❌ the project read before as if current). */}
-      {selection.known ? <RefreshFailed error={refreshFailure(memory)} onRetry={retryMemory} /> : null}
+      {selection.known ? <RefreshFailed reading={memory} /> : null}
       {!selection.known ? (
         selection.failed ? (
           <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">

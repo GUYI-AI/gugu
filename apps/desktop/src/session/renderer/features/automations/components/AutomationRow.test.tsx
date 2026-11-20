@@ -50,7 +50,7 @@ describe('automation runs read before, their read again failing', () => {
   });
 
   it('the banner keeps the next run and says the failure with a retry', () => {
-    io.next = failedOver({ scheduledAt: '2026-11-17T09:00:00Z' });
+    io.next = { ...failedOver({ scheduledAt: '2026-11-17T09:00:00Z' }), retry: io.retry };
     act(() => root.render(<NextRunBanner automationId="a-1" />));
     expect(container.textContent).toContain('2026-11-17T09:00:00Z');
     expect(container.querySelector('[data-refresh-failed]')).not.toBeNull();

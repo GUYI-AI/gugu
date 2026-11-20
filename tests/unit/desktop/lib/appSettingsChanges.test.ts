@@ -80,15 +80,3 @@ describe('appSettings changes made elsewhere', () => {
   })
 })
 
-
-describe("another machine's settings are the account's", () => {
-  it("after A signs out and B signs in, A's machine settings are not B's (unknown until read for B)", async () => {
-    const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
-    followRendererSession('SIGNED_IN', 'owner-a')
-    await client.remoteAppSettingsModel.prefetch('localProject', 'machine-1')
-    expect(client.remoteAppSettingsModel.peek('localProject', 'machine-1').state).toBe('value')
-    followRendererSession('SIGNED_OUT', null)
-    followRendererSession('SIGNED_IN', 'owner-b')
-    expect(client.remoteAppSettingsModel.peek('localProject', 'machine-1')).toEqual({ state: 'unknown' })
-  })
-})

@@ -1,7 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { useMutation, useMutationState } from '@tanstack/react-query';
-import { refreshFailure, useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica, refreshTag } from '@/lib/replica';
 import { createElement, type ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -15,7 +15,7 @@ import {
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useLibraryHost, type LibraryAgentsRpc } from '@renderer/features/library/library-host';
-import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { SUBSCRIPTIONS } from '@renderer/features/settings/subscriptions/subscription-queries';
 import type {
   AgentInstallationStatus,
   AgentInstallError,
@@ -204,7 +204,7 @@ export function useAgentInstallationStatuses() {
     void refreshAgentReadings(machine);
     // Auth/connection readings are the subscription replicas: re-read them on the host that completed the
     // operation, including when the library has since switched hosts.
-    void refreshSubscriptionReadings(machine, providerId);
+    void refreshTag(SUBSCRIPTIONS, machine, providerId);
   };
 
   /**

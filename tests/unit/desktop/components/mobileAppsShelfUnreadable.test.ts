@@ -24,7 +24,6 @@ vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () =
   phoneSearchRows: (items: unknown[]) => items,
   useOfferedVersions: () => ({ state: 'value', stale: false, error: null, value: { offered: {}, gone: [] } }),
   usePhoneMarketPage: () => ({ state: 'value', stale: false, error: null, value: { entries: [] } }),
-  refreshPhoneMarketPage: async () => {},
   phoneMarketRows: () => [],
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/AppsSection', () => ({

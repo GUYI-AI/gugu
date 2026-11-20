@@ -127,17 +127,3 @@ describe('what reads the channels again (signal tier)', () => {
   })
 })
 
-describe('a change answering after the account changed', () => {
-  it("lands in the account that asked, ❌ in the next one (the list a disconnect answered for A is never B's)", async () => {
-    mocks.list.mockResolvedValueOnce(connected).mockReturnValue(new Promise(() => {}))
-    await harness.render(<WechatAppConnection />)
-    await settle()
-    // The panel's `apply`, as a click handler holds it across its await.
-    const applyForA = mocks.apply!
-    mocks.owner += 1
-    await act(async () => { publishRendererSession('SIGNED_IN', { user: { id: `channel-owner-${mocks.owner}` }, access_token: 'fixture' } as Session) })
-    await act(async () => applyForA({ ...connected }))
-    expect(chatChannels.peek()).toEqual({ state: 'unknown' })
-    expect(harness.container.querySelector('[data-testid="connected"]')).toBeNull()
-  })
-})

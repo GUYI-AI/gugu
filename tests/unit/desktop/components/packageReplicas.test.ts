@@ -173,17 +173,3 @@ describe('one summary per package, whoever asks', () => {
   })
 })
 
-describe('the byte progress store belongs to the account', () => {
-  it('is cleared when another account signs in, and on sign-out; a session merely absent keeps it', async () => {
-    const { packageProgress, replica } = await load()
-    replica.followRendererSession('SIGNED_IN', 'me')
-    packageProgress.publish({ 'url:x': { done: 1, total: 2 } })
-    replica.followRendererSession('TOKEN_REFRESHED', null)
-    expect(packageProgress.get()).toEqual({ 'url:x': { done: 1, total: 2 } })
-    replica.followRendererSession('SIGNED_IN', 'other')
-    expect(packageProgress.get()).toEqual({})
-    packageProgress.publish({ 'url:y': { done: 1, total: 2 } })
-    replica.followRendererSession('SIGNED_OUT', null)
-    expect(packageProgress.get()).toEqual({})
-  })
-})

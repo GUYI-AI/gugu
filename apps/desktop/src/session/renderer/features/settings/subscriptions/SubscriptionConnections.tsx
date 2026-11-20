@@ -43,12 +43,13 @@ import { resolveSignInMethod } from '../agents-page/agent-account'
 import { useAgentSignIn } from '../agents-page/use-agent-sign-in'
 import { dropIfNeverSignedIn } from './drop-unsigned-connection'
 import { rendererLogger } from '@/lib/log'
+import { refreshTag } from '@/lib/replica'
 import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
 import {
   ConnectionActionError,
   errorText,
-  refreshSubscriptionReadings,
   sessionsBusyOf,
+  SUBSCRIPTIONS,
   useSubscriptionUsage
 } from './subscription-queries'
 import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
@@ -164,7 +165,7 @@ export function SubscriptionConnections({
   const vendorKeyMethod = form?.vendorKey === true
   const canAdd = accountMethod !== null || vendorKeyMethod
   const refresh = () => {
-    refreshSubscriptionReadings(machine, agent.id)
+    refreshTag(SUBSCRIPTIONS, machine, agent.id)
     void harnessModelCredential.refresh(agent.id)
   }
   const action = useMutation({
@@ -206,7 +207,7 @@ export function SubscriptionConnections({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       const result = await (await getAgentConfigRuntimeClient(machine)).renameConnection({ providerId: agent.id, connectionId: id, name });
       if (!result.success) throw new Error(errorText(result.error));
-      await refreshSubscriptionReadings(machine, agent.id);
+      await refreshTag(SUBSCRIPTIONS, machine, agent.id);
     },
   });
   // 没有连接可管的家只有它 CLI 自己那一份:列着的就是正在用的,选它没有可切的。

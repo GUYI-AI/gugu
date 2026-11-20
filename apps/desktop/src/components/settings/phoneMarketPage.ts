@@ -39,9 +39,6 @@ export function usePhoneMarketPage(platform: AppPlatform = 'phone'): Reading<{ e
   return useReplica(phoneMarketCatalog, [platform])
 }
 
-export function refreshPhoneMarketPage(platform: AppPlatform = 'phone'): Promise<void> {
-  return phoneMarketCatalog.refresh(platform)
-}
 
 export function phoneMarketRows(entries: Awaited<ReturnType<typeof phoneApps.market.entries>>, query: string): MarketListItem[] {
   const byId = new Map(entries.map((entry) => [entry.manifest.id, entry]))

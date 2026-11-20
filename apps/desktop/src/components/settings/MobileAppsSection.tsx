@@ -26,7 +26,7 @@ import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from './SettingsPrimitives'
 import { AppsSection } from './AppsSection'
 import { PhoneAppManage } from './PhoneAppManage'
-import { PHONE_HOST, phoneMarketRows, refreshPhoneMarketPage, useOfferedVersions, usePhoneMarketPage } from './phoneMarketPage'
+import { PHONE_HOST, phoneMarketRows, useOfferedVersions, usePhoneMarketPage } from './phoneMarketPage'
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
@@ -128,7 +128,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
         {!rows.length && <SettingsNote role="status">{t('phoneMarket.noResults')}</SettingsNote>}
       </div> : catalog.state === 'unknown' ? <ShelfSkeleton label={translate('extensions.loading')} /> : (
         <SettingsNote role="alert">{translate('extensions.marketUnavailable')}
-          <Button onClick={() => void refreshPhoneMarketPage(platform)}>{translate('extensions.retry')}</Button>
+          {catalog.state === 'error' && catalog.retry && <Button onClick={() => void catalog.retry?.()}>{translate('extensions.retry')}</Button>}
         </SettingsNote>
       )}
     </div>}

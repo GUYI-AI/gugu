@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLibraryHost, type LibraryRemoteDevice } from '@renderer/features/library/library-host';
-import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { SUBSCRIPTIONS } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { refreshTag } from '@/lib/replica';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { harnessModelCredential, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
@@ -67,7 +68,7 @@ export function useAgentSignIn(
       const refresh = () => {
         void refreshAuth();
         void refreshAgentReadings(machine);
-        refreshSubscriptionReadings(machine, agent.id);
+        refreshTag(SUBSCRIPTIONS, machine, agent.id);
       };
       const main = row?.steps.find((step) => step.program === undefined) ?? row?.steps[0];
       const method = main?.method;
@@ -103,7 +104,7 @@ export function useAgentSignIn(
     const touchesMain = (row?.steps ?? []).some((step) => step.program === undefined);
     const refreshAfterLogin = () => {
       void refreshAuth();
-      refreshSubscriptionReadings(machine, agent.id);
+      refreshTag(SUBSCRIPTIONS, machine, agent.id);
       if (!touchesMain) return;
       void forceRefreshHarnessModelCatalog(agent.id);
       void harnessModelCredential.refresh(agent.id);

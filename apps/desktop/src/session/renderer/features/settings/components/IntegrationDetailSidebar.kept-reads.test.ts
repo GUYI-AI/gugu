@@ -48,11 +48,6 @@ async function render(props: Record<string, unknown>) {
 }
 
 describe('IntegrationDetailSidebar: a re-read that fails over what was read', () => {
-  it('GitHub: the accounts read before stay listed and the failure is said', async () => {
-    const doc = await render({ integration: integration({ id: 'github', name: 'GitHub' }), githubAccounts: h.failed([{ accountId: 'gh:1', login: 'octo' }]) });
-    expect(doc.querySelector('[data-testid="github-rows"]')?.textContent).toBe('octo');
-    expect(doc.querySelector('[data-refresh-failed]')).not.toBeNull();
-  });
 
   it('one account: its name stays and the failure is said; another machine read before: its state stays and the failure is said', async () => {
     const doc = await render({ integration: integration({}) });

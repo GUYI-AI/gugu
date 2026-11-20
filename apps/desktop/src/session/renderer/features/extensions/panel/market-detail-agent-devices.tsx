@@ -1,10 +1,11 @@
 import { observer } from 'mobx-react-lite';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { SUBSCRIPTIONS } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { marketAgentInstallPlan, type MarketAgentInstallPlan } from './market-agent-install-plan';
 import { MarketDevicePicker, useMarketDevicePicker } from './market-detail-devices';
+import { refreshTag } from '@/lib/replica';
 
 export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId }: { agentId: string }) {
   const { translate } = useSessionMessages();
@@ -29,7 +30,7 @@ export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId
     },
     refresh: async ({ device }) => {
       await refreshAgentReadings(device.id);
-      void refreshSubscriptionReadings(device.id, agentId);
+      void refreshTag(SUBSCRIPTIONS, device.id, agentId);
     },
   });
   return <MarketDevicePicker {...picker} />;

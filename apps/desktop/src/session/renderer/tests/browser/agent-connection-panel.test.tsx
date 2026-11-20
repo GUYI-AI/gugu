@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '@/lib/replica'
+import { followRendererSession, queryClient, refreshTag } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { useState } from 'react'
 import { ComposerModelMenu } from '@gugu/session-ui/react/components'
@@ -9,7 +9,7 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal'
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel'
-import { refreshSubscriptionReadings, subscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries'
+import { SUBSCRIPTIONS, subscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries'
 // A provider's subscription readings on this machine (the replicas' keys: [model, device, machine, provider, …]).
 const readingsOf = (id: string) => ({ predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[2] === null && q.queryKey[3] === id })
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
@@ -261,7 +261,7 @@ it.each([1440, 390])(
         control.hold = new Promise<void>((resolve) => {
           finish = resolve
         })
-        const pending = refreshSubscriptionReadings(null, id)
+        const pending = refreshTag(SUBSCRIPTIONS, null, id)
         await until(
           'background readings start',
           () => client.isFetching(readingsOf(id)) > 0

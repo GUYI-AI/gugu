@@ -255,7 +255,7 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
       </div>
       {failed && <p className="px-1 text-xs text-foreground-muted">{failed}</p>}
       {/* The account read before, its re-read failed: said with a retry (❌ its name shown as current). */}
-      {accounts.state === 'value' ? <RefreshFailed error={accounts.error} onRetry={retry} /> : null}
+      {accounts.state === 'value' ? <RefreshFailed reading={accounts} /> : null}
       {!integration.readOnly && (
         <div className="flex justify-end gap-2">
           {integration.onEditAccount && account && (

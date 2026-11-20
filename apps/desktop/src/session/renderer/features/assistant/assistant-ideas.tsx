@@ -130,7 +130,7 @@ function IdeasBody({ today, retry, name, fill }: { today: Reading<TodayRead>; re
   // Its last refresh failed: the ideas read before stay, and the failure is said above them (❌ old ideas as if current).
   return (
     <>
-      <RefreshFailed error={today.error} onRetry={retry} />
+      <RefreshFailed reading={today} />
       <IdeasRead read={today.value} name={name} fill={fill} />
     </>
   );

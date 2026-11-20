@@ -23,7 +23,6 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () => ({
   PHONE_HOST: 'phone',
   usePhoneMarketPage: () => ({ state: 'value', stale: false, error: null, value: market }),
-  refreshPhoneMarketPage: async () => {},
   phoneProductApi: {},
   phoneMarketRows: (entries: unknown[]) => entries,
   useOfferedVersions: () => ({ state: 'value', stale: false, error: null, value: { offered: {}, gone: [] } }),

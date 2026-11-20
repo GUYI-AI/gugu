@@ -1,10 +1,9 @@
 import { Clock } from '@/lib/icons'
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { Unknown } from '@/components/ui/Unknown';
-import { refreshFailure } from '@/lib/replica';
 import { AbsoluteTime } from '@renderer/lib/ui/absolute-time';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { useRetryAutomationRuns, useScheduledAutomationRun } from '../use-automations';
+import { useScheduledAutomationRun } from '../use-automations';
 
 interface NextRunBannerProps {
   automationId: string;
@@ -13,10 +12,9 @@ interface NextRunBannerProps {
 export function NextRunBanner({ automationId }: NextRunBannerProps) {
   const { translate } = useSessionMessages();
   const next = useScheduledAutomationRun(automationId);
-  const retry = useRetryAutomationRuns(automationId);
   if (next.state === 'unknown') return <Unknown className="h-8 w-full rounded-lg" />;
-  // A failed read, or a refresh failing over what was read (that stays drawn): said with a retry.
-  const failed = <RefreshFailed error={refreshFailure(next)} onRetry={retry} />;
+  // A failed read, or a refresh failing over what was read (that stays drawn): said with the reading's own retry.
+  const failed = <RefreshFailed reading={next} />;
   const scheduledAt = next.state === 'value' ? next.value?.scheduledAt : null;
   if (!scheduledAt) return failed;
 
