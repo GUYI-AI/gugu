@@ -85,7 +85,7 @@ it('uses the existing native task importer locally and preserves remote transcri
   expect(previous.scan).toHaveBeenCalledWith('remote'); expect(previous.importAll).toHaveBeenCalledOnce();
 });
 
-it('a missing native index is a read failure rather than an apparently empty task list', async () => {
+it('an unsupported or unexplained native failure remains a read failure', async () => {
   calls.scanTasks.mockResolvedValue({ status: 'unavailable', rows: [], blocked: [] });
   await expect(withCodexTaskImport(transcript()).scan(null)).rejects.toThrow();
 });
@@ -153,3 +153,12 @@ it('merges history when a background read recovers and prefers current completed
   expect(read.state).toBe('value')
   expect(read.items).toEqual([completedHistory, earlier])
 })
+
+it('counts a genuinely absent Codex index as zero without starting an import', async () => {
+  calls.scanTasks.mockResolvedValue({ status: 'unavailable', reason: 'missing-index', rows: [], blocked: [] });
+  const provider = withCodexTaskImport(transcript());
+  expect(await provider.scan(null)).toEqual({ count: 0, pending: false });
+  expect(calls.tasks).not.toHaveBeenCalled();
+  calls.scanTasks.mockResolvedValue({ status: 'unavailable', reason: 'unsupported-index', rows: [], blocked: [] });
+  await expect(provider.scan(null)).rejects.toThrow('unsupported-index');
+});
