@@ -72,3 +72,14 @@ it('keeps an unknown spawn outcome pending without a TTL-based retry', async () 
   await expect(withCodexNativeAuthLease(f.root, f.key, async () => {}, { isAlive: () => false, waitMs: 0 })).rejects.toThrow('unknown outcome');
   expect(JSON.parse(await readFile(join(f.lock, 'owner.json'), 'utf8')).nonce).toBe(nonce);
 });
+
+it('shutdown cancels a waiting caller without taking or deleting the live owner’s lease', async () => {
+  const f = await fixture(); await oldOwner(f, 'running', 9911);
+  const controller = new AbortController();
+  const work = withCodexNativeAuthLease(f.root, f.key, async () => { throw new Error('must not enter'); }, {
+    isAlive: () => true, signal: controller.signal,
+  });
+  controller.abort(new Error('shutdown'));
+  await expect(work).rejects.toThrow('shutdown');
+  expect(JSON.parse(await readFile(join(f.lock, 'owner.json'), 'utf8')).nonce).toBe(nonce);
+});

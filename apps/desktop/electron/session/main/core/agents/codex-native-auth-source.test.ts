@@ -92,3 +92,21 @@ it('revocation remains invalid despite the auth file, and a new native login rec
   await writeFile(join(native, 'auth.json'), JSON.stringify(auth(3600)));
   expect(await requestNativeCodexAccess(env!)).not.toBeNull();
 });
+
+it('shutdown joins the renewal process before completing credential-service cleanup', async () => {
+  let entered!: () => void; let closed = false;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  state.run.mockImplementation(async (_ctx, _work, options) => {
+    await options.processObserver.beforeSpawn(); await options.processObserver.spawned(process.pid); entered();
+    try { await new Promise<void>((_resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })); }
+    finally { await options.processObserver.closed(); closed = true; }
+  });
+  const env = await source.nativeCodexAuthEnvironment(native, {});
+  const pending = requestNativeCodexAccess(env!, { useToken: true });
+  void pending.catch(() => undefined);
+  await started;
+  expect(closed).toBe(false);
+  await source.releaseNativeCodexAuthSources();
+  expect(closed).toBe(true);
+  await expect(pending).rejects.toThrow();
+});

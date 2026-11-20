@@ -108,15 +108,22 @@ export async function nativeCodexAuthEnvironment(root: string, userEnv: Record<s
     const lockRoot = join(dirname(app.getPath('userData')), 'gugu-codex-native-auth-operations');
     const context = { env };
     let admitted: CodexAuthProcessObserver | undefined;
+    let admittedSignal: AbortSignal | undefined;
     const coordinated = createCodexNativeAuthAuthority({
       identity, read: () => readNativeCodexOAuth(source),
       serialize: async work => {
-        const credential = await realpath(join(source, 'auth.json'));
-        return withCodexNativeAuthLease(lockRoot, credential, async observer => {
-          if (await realpath(join(source, 'auth.json')) !== credential) throw new Error('Native Codex credential authority changed while waiting');
-          admitted = observer;
-          try { return await work(); } finally { admitted = undefined; }
-        });
+        if (stopping) throw new Error('Native Codex credential service is stopping');
+        const controller = new AbortController();
+        const job = (async () => {
+          const credential = await realpath(join(source, 'auth.json'));
+          return withCodexNativeAuthLease(lockRoot, credential, async observer => {
+            if (await realpath(join(source, 'auth.json')) !== credential) throw new Error('Native Codex credential authority changed while waiting');
+            admitted = observer; admittedSignal = controller.signal;
+            try { return await work(); } finally { admitted = undefined; admittedSignal = undefined; }
+          }, { signal: controller.signal });
+        })();
+        refreshing.set(controller, job);
+        try { return await job; } finally { refreshing.delete(controller); }
       },
       refresh: async ({ accessToken }) => {
         if (!admitted) throw new Error('Native Codex refresh has no process admission');
@@ -125,16 +132,14 @@ export async function nativeCodexAuthEnvironment(root: string, userEnv: Record<s
         let revoked = false;
         let failed = false;
         if (stopping) throw new Error('Native Codex credential service is stopping');
-        const controller = new AbortController();
         const work = refreshNativeCodexThroughCli(callback => withCodexAppServer({ cli, env: context.env }, async server => {
           if (revoked) throw new Error('Codex refresh token was revoked; run codex login');
           if (failed) throw new Error('Codex could not renew its native sign-in; retry when the connection recovers');
           return callback(server);
         }, { processObserver: admitted, requestTimeoutMs: 60_000, onAuthRevoked: () => { revoked = true; },
-          onAuthRefreshFailure: () => { failed = true; }, signal: controller.signal }),
+          onAuthRefreshFailure: () => { failed = true; }, signal: admittedSignal }),
         { read: () => readNativeCodexOAuth(source), identity, accessToken });
-        refreshing.set(controller, work);
-        try { await work; } finally { refreshing.delete(controller); }
+        await work;
         if (revoked) throw new Error('Codex refresh token was revoked; run codex login');
       },
     });

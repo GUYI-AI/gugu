@@ -31,7 +31,7 @@ export async function withCodexNativeAuthLease<T>(
   root: string,
   sourceKey: string,
   work: (observer: CodexAuthProcessObserver) => Promise<T>,
-  options: { isAlive?: (pid: number) => boolean; waitMs?: number } = {},
+  options: { isAlive?: (pid: number) => boolean; waitMs?: number; signal?: AbortSignal } = {},
 ): Promise<T> {
   const isAlive = options.isAlive ?? alive;
   await mkdir(root, { recursive: true, mode: 0o700 });
@@ -40,6 +40,7 @@ export async function withCodexNativeAuthLease<T>(
   const deadline = Date.now() + (options.waitMs ?? 60_000);
   const owner: Owner = { version: 1, nonce: randomUUID(), ownerPid: process.pid, phase: 'held', childPid: null };
   for (;;) {
+    options.signal?.throwIfAborted();
     try { await mkdir(lock, { mode: 0o700 }); break; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     let previous: Owner | null = null;
@@ -80,7 +81,7 @@ export async function withCodexNativeAuthLease<T>(
     },
     closed: async () => { owner.phase = 'held'; owner.childPid = null; await persist(); },
   };
-  try { return await work(observer); }
+  try { options.signal?.throwIfAborted(); return await work(observer); }
   finally {
     // Only closed/never-spawned work can release. Stop failure leaves the exact owner/child receipt.
     if (owner.phase === 'held') {
