@@ -63,6 +63,7 @@ export function createWindowCommitReceipts(connection: WindowReceiptDatabase) {
   const joined = `FROM session_window_commit_positions p JOIN session_window_commit_receipts r ON r.source_id=p.source_id
     AND r.row_id=p.row_id AND r.session_id=p.session_id AND r.reference_id=p.reference_id`;
   const byRow = connection.prepare(`SELECT ${columns} ${joined} WHERE p.row_id=?`);
+  const bySource = connection.prepare(`SELECT ${columns} FROM session_window_commit_receipts r WHERE source_id=?`);
   return {
     byRow(rowId: string) { if (!scalar(rowId)) throw new Error('Invalid row id'); return decode(byRow.get(rowId)); },
     byReference(sessionId: string, referenceId: string) {
@@ -71,7 +72,7 @@ export function createWindowCommitReceipts(connection: WindowReceiptDatabase) {
     },
     bySource(sourceId: string) {
       if (!scalar(sourceId)) throw new Error('Invalid source id');
-      return decode(connection.prepare(`SELECT ${columns} FROM session_window_commit_receipts r WHERE source_id=?`).get(sourceId));
+      return decode(bySource.get(sourceId));
     },
     put(input: WindowCommitReceipt) {
       if (!connection.inTransaction) throw new Error('Commit receipt must share the canonical transaction');

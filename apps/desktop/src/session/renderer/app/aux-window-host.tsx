@@ -7,7 +7,7 @@ import { ArrowLeft } from '@/lib/icons';
 import { readRendererPlatform } from '@/lib/window-chrome';
 import { AUX_WINDOW_NAME_PREFIX } from '@shared/aux-window';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { ExtensionTabToolbar } from '@renderer/features/extensions/extension-tab-toolbar';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
@@ -250,7 +250,7 @@ const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowI
             isFocusedPane={focused}
             label={label}
             title={tooltip}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={label}
             onClose={() => windowClosed(windowId)}
           />

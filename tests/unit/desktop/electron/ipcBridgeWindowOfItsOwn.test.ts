@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { EXTENSION_FILE_ANNOTATION_METHOD } from '../../../../apps/desktop/src/session/shared/extensions/file-annotation-draft'
+import { EXTENSION_PICK_DISPATCH_TARGET_METHOD } from '../../../../apps/desktop/src/session/shared/extensions/host-actions'
 
 // An App's host action is served by the renderer that draws the App's window: the main window, or a window the main
 // window opened and draws into (an App or a tab opened in a window of its own, aux-window.ts). Anything else is refused.
@@ -34,7 +34,7 @@ function emitIpc(channel: string, sender: unknown, payload?: unknown): void {
 }
 
 describe('extension host actions reach the renderer that draws the App’s window', () => {
-  it('keeps a file comment open beyond the process deadline and still bounds ordinary host commands', async () => {
+  it('keeps the person’s pick open beyond the process deadline and still bounds ordinary host commands', async () => {
     vi.useFakeTimers()
     const events = new EventEmitter()
     try {
@@ -43,11 +43,11 @@ describe('extension host actions reach the renderer that draws the App’s windo
       const webContents = Object.assign(new EventEmitter(), { id: MAIN, send: vi.fn() })
       bridge.setMainWindow({ webContents, isDestroyed: () => false, once: events.once.bind(events), on: events.on.bind(events), isFullScreen: () => false } as never)
       emitIpc('extensions:cmd:ready', webContents)
-      const pending = bridge.invokeRendererExtensions(EXTENSION_FILE_ANNOTATION_METHOD, {}, MAIN)
+      const pending = bridge.invokeRendererExtensions(EXTENSION_PICK_DISPATCH_TARGET_METHOD, {}, MAIN)
       let settled = false
       void pending.then(() => { settled = true }, () => { settled = true })
       await vi.advanceTimersByTimeAsync(31_000)
-      expect(settled, 'the person is still writing their comment').toBe(false)
+      expect(settled, 'the person is still picking').toBe(false)
       const request = webContents.send.mock.calls[0][1] as { reqId: string }
       emitIpc('extensions:cmd:result', webContents, { reqId: request.reqId, result: true })
       await expect(pending).resolves.toBe(true)

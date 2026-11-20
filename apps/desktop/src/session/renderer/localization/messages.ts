@@ -761,6 +761,7 @@ const enUSCoreMessages = {
   'chat.turnInProgress': 'Reply in progress',
   'chat.cancelAndSendDescription': 'Cancel the reply in progress and send this queued prompt first? Queued entries that can merge with it go in the same message.',
   'chat.cancelAndSend': 'Send now',
+  'chat.cancelAndSendAlwaysAllow': 'Always allow',
   'chat.cancelAndSendDontAskAgain': "Don't ask again",
   'chat.cancelAndSendDontAskAgainFailed': "Failed to save “Don't ask again”",
   'chat.cancelAndSendDontAskAgainFailedHint':
@@ -1999,6 +2000,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'chat.turnInProgress': '回复仍在进行',
   'chat.cancelAndSendDescription': '取消正在进行的回复并优先发送这条排队提示吗？队列里能与它合并的条目会随它同发。',
   'chat.cancelAndSend': '直接发送',
+  'chat.cancelAndSendAlwaysAllow': '始终允许',
   'chat.cancelAndSendDontAskAgain': '不再询问',
   'chat.cancelAndSendDontAskAgainFailed': '保存「不再询问」失败',
   'chat.cancelAndSendDontAskAgainFailedHint': '仍可在「设置 → 界面」里关掉这项确认。',

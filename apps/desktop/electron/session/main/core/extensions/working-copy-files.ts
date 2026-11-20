@@ -50,7 +50,7 @@ async function openView(place: WorkspacePlace): Promise<View> {
     import('@main/core/files/file-tree/projector'),
   ]);
   const unreadable = () => new AppFileError('not-found', 'This folder cannot be read on its computer');
-  const runtime = await acquireWorkspaceRuntime({ manager: runtimeManager }, root, true).catch(() => { throw unreadable(); });
+  const runtime = await acquireWorkspaceRuntime({ manager: runtimeManager }, root).catch(() => { throw unreadable(); });
   const projector = new Projector(runtime.fileTree, () => undefined);
   // The tree opens without git (a folder need not be a repository); what git says of its files, where it is one, is read beside it.
   const git = await openGit(runtimeManager, root);

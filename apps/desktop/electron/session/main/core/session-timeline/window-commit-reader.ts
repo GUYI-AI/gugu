@@ -21,7 +21,7 @@ export function createWindowCommitReader(directory: string, binding: Parameters<
   async function span(start: number, length: number) {
     if (![start, length, start + length].every(Number.isSafeInteger) || start < 0 || length < 1 || length > CHUNK || start + length > source.bytes)
       throw new RangeError('Invalid commit reader span');
-    controller.signal.throwIfAborted(); await validate();
+    controller.signal.throwIfAborted();
     const first = Math.floor(start / CHUNK), last = Math.floor((start + length - 1) / CHUNK), output = new Uint8Array(length);
     let used = 0;
     for (let ordinal = first; ordinal <= last; ordinal++) {
@@ -36,6 +36,8 @@ export function createWindowCommitReader(directory: string, binding: Parameters<
       output.set(part, used); used += part.length;
     }
     if (used !== length) throw new Error('Incomplete commit reader span');
+    // One proof per span, after its last read: ctime only moves forward, so it
+    // also covers the time before the read and a cache hit.
     await validate();
     return output;
   }
