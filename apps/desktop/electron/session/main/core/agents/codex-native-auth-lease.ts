@@ -81,8 +81,10 @@ export async function withCodexNativeAuthLease<T>(
     },
     closed: async () => { owner.phase = 'held'; owner.childPid = null; await persist(); },
   };
-  try { options.signal?.throwIfAborted(); return await work(observer); }
-  finally {
+  let outcome: { value: T } | { error: unknown };
+  try { options.signal?.throwIfAborted(); outcome = { value: await work(observer) }; }
+  catch (error) { outcome = { error }; }
+  try {
     // Only closed/never-spawned work can release. Stop failure leaves the exact owner/child receipt.
     if (owner.phase === 'held') {
       const current = ownerFrom(JSON.parse(await readFile(ownerFile, 'utf8')));
@@ -91,5 +93,15 @@ export async function withCodexNativeAuthLease<T>(
       await rename(lock, settled);
       await rm(settled, { recursive: true });
     }
+  } catch (releaseError) {
+    if ('error' in outcome) {
+      // Keep the operation as the primary cause (including revoked-auth classification),
+      // while retaining the cleanup failure instead of replacing or silently dropping either.
+      throw new AggregateError([outcome.error, releaseError],
+        outcome.error instanceof Error ? outcome.error.message : 'Native Codex auth operation failed', { cause: outcome.error });
+    }
+    throw releaseError;
   }
+  if ('error' in outcome) throw outcome.error;
+  return outcome.value;
 }

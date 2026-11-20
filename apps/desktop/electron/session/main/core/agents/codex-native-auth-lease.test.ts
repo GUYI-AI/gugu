@@ -48,6 +48,38 @@ it('an unconfirmed child stop retains ownership instead of releasing', async () 
   expect(JSON.parse(await readFile(join(f.lock, 'owner.json'), 'utf8'))).toMatchObject({ phase: 'running', childPid: 9911 });
 });
 
+it('preserves the original work error when lease cleanup succeeds', async () => {
+  const f = await fixture(); const failure = new Error('original operation failure');
+  await expect(withCodexNativeAuthLease(f.root, f.key, async () => { throw failure; })).rejects.toBe(failure);
+  expect(await readdir(f.root)).toEqual([]);
+});
+
+async function replaceOwner(f: Awaited<ReturnType<typeof fixture>>) {
+  const path = join(f.lock, 'owner.json');
+  const current = JSON.parse(await readFile(path, 'utf8'));
+  await writeFile(path, JSON.stringify({ ...current, nonce: '00000000-0000-0000-0000-000000000002' }));
+}
+
+it('reports a cleanup-only failure and leaves the changed lease intact', async () => {
+  const f = await fixture();
+  await expect(withCodexNativeAuthLease(f.root, f.key, async () => { await replaceOwner(f); return 'completed'; }))
+    .rejects.toThrow('ownership changed before release');
+  expect(JSON.parse(await readFile(join(f.lock, 'owner.json'), 'utf8')).nonce).toBe('00000000-0000-0000-0000-000000000002');
+});
+
+it('retains both errors with the work failure as cause when operation and cleanup fail', async () => {
+  const f = await fixture(); const failure = new Error('Codex refresh token was revoked');
+  const error = await withCodexNativeAuthLease(f.root, f.key, async () => { await replaceOwner(f); throw failure; })
+    .catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(AggregateError);
+  const combined = error as AggregateError;
+  expect(combined.cause).toBe(failure);
+  expect(combined.message).toBe(failure.message);
+  expect(combined.errors[0]).toBe(failure);
+  expect(combined.errors[1]).toMatchObject({ message: 'Codex native refresh ownership changed before release' });
+  expect(JSON.parse(await readFile(join(f.lock, 'owner.json'), 'utf8')).nonce).toBe('00000000-0000-0000-0000-000000000002');
+});
+
 const nonce = '00000000-0000-0000-0000-000000000001';
 async function oldOwner(f: Awaited<ReturnType<typeof fixture>>, phase: 'held' | 'starting' | 'running', childPid: number | null) {
   await mkdir(f.lock);

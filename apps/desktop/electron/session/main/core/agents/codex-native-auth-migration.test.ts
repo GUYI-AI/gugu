@@ -23,7 +23,7 @@ async function fixture() {
   const commit = vi.fn(async (value: CodexReferenceCommit) => {
     if (rows.find(row => row.accountId === 'native')?.meta?.harnessConnection?.nativeOAuth?.operationId === value.operationId) return;
     rows = rows.map(row => ({ ...row, isDefault: row.accountId === value.defaultId,
-      meta: { ...row.meta, harnessConnection: { ...row.meta?.harnessConnection!,
+      meta: { ...row.meta, harnessConnection: { ...(row.meta?.harnessConnection ?? { kind: 'native' as const }),
         ...(row.accountId === 'native' ? { nativeOAuth: { root: value.root, identity: value.identity, operationId: value.operationId } }
           : value.aliases.includes(row.accountId) ? { removed: true, migratedTo: 'native' } : {}) } } }));
     rows.push(...value.retained.filter(item => !rows.some(row => row.accountId === item.id)).map(item => ({ accountId: item.id,

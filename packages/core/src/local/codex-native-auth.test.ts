@@ -58,8 +58,7 @@ it('status reads and construction do not proactively refresh, even when close to
 
 it('an external CLI already refreshed: reread after admission skips our refresh', async () => {
   const fresh = auth();
-  let a: ReturnType<typeof authority>;
-  a = authority(auth('alice', 'work', 30), async work => { a.set(fresh); return work(); });
+  const a = authority(auth('alice', 'work', 30), async work => { a.set(fresh); return work(); });
   expect((await a.access({ useToken: true }))!.accessToken).toBe(fresh.tokens.access_token);
   expect(a.refresh).not.toHaveBeenCalled();
 });
