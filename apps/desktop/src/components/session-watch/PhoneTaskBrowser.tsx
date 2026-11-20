@@ -54,7 +54,7 @@ export const PhoneTaskBrowser = observer(function PhoneTaskBrowser({ deviceId, s
     const timer = setTimeout(() => control({ action: 'resize', width: Math.round(size.width), height: Math.round(size.height), scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)) }), 120);
     return () => clearTimeout(timer);
   }, [state, size.width, size.height, control, visibility.shown]);
-  const annotations = useBrowserAnnotations({ browserId: `task-page:${deviceId}:${sessionId}`, sessionId, visible: visibility.shown, available: visibility.shown && state === 'live',
+  const annotations = useBrowserAnnotations({ browserId: `task-page:${deviceId}:${sessionId}`, conversation: { kind: 'session', sessionId }, visible: visibility.shown, available: visibility.shown && state === 'live',
     inspect: async (query, capture) => {
       const result = await transport.control({ action: 'annotate', query, capture });
       if (!result) throw new Error('The page selection is unavailable');
@@ -64,7 +64,7 @@ export const PhoneTaskBrowser = observer(function PhoneTaskBrowser({ deviceId, s
     {resource.session && <PhoneBrowserToolbar session={resource.session} adapter={null} remote annotationAction={annotations.toolbar}
       onNavigate={url => { control({ action: 'navigate', url }); return true; }} onGoBack={() => control({ action: 'back' })}
       onGoForward={() => control({ action: 'forward' })} onReload={() => control({ action: resource.page?.isLoading ? 'stop' : 'reload' })} />}
-    <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+    <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background text-foreground">
       <BrowserPictureFrame viewport={size} frame={frame}>
         <div ref={picture} className="absolute inset-0" />{annotations.overlay}
       </BrowserPictureFrame>

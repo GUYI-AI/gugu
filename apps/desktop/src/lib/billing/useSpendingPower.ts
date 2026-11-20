@@ -138,8 +138,8 @@ export function onPlanChange(listener: () => void): () => void {
 }
 
 /** 手动催一次(充值回来、用户点刷新)。 */
-export function refreshSpendingPower(): void {
-  refreshAll()
+export function refreshSpendingPower(): Promise<void> {
+  return officialServicesEnabled() ? creditAccount.refresh() : Promise.resolve()
 }
 
 export function useSpendingPower(user: { id: string } | null): SpendingSnapshot {

@@ -1,4 +1,30 @@
 export default {
+  "usagePopover": {
+    "title": "用量",
+    "refresh": "刷新用量",
+    "remaining": "剩余 {{amount}}%",
+    "reset": "{{date}} 重置",
+    "updated": "{{time}} 更新",
+    "windowMissing": "官方未返回可用窗口",
+    "fiveHours": "5 小时限额",
+    "weekly": "周限",
+    "readFailed": "暂时读不到用量，请重试。",
+    "expired": "登录已失效",
+    "signedOut": "尚未登录",
+    "refreshFailed": "刷新失败，显示上次读数。",
+    "guguSubscription": "咕咕订阅",
+    "credits": "剩余积分",
+    "fullUsage": "查看完整用量",
+    "reason": {
+      "vendor-console": "请到供应商后台查看用量。",
+      "not-reported": "供应商未提供用量读数。",
+      "not-signed-in": "尚未登录",
+      "custom-endpoint": "用量由接入的服务记录。",
+      "other-login": "需要供应商另一份登录，暂时无法读取。",
+      "not-read-yet": "尚未读取，点击刷新查看。",
+      "error": "暂时读不到用量，请重试。"
+    }
+  },
   "referrals": {
     "accountCount": "已邀请 {{count}} 人",
     "invite": "邀请",
@@ -567,6 +593,16 @@ export default {
     "subtitle": "登录你的账号，开始与 AI 协作",
     "brandSubtitle": "你想做的，咕咕帮你做到。",
     "emailLabel": "邮箱",
+    "signup": {
+      "start": "新用户注册",
+      "back": "返回登录",
+      "agree": "同意并继续",
+      "disagree": "不同意",
+      "declined": "不同意就没法使用咕咕。你的邮箱不会发给我们。",
+      "saveFailed": "未能保存本次同意，请重试。",
+      "consentRequired": "请升级到新版咕咕再注册。",
+      "notRegistered": "这个邮箱还没有注册。点「换邮箱」回去，再点「新用户注册」。"
+    },
     "otpLabel": "验证码",
     "or": "或",
     "invalidEmail": "邮箱地址格式不正确",
@@ -765,6 +801,7 @@ export default {
       "permissions": "本机控制",
       "prompts": "提示词",
       "sessions": "项目",
+      "team": "团队",
       "subscriptions": "订阅",
       "usage": "用量"
     },

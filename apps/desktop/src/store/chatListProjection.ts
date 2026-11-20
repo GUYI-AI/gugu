@@ -225,11 +225,21 @@ export function useChatProjectionBinding(deps: {
     const serviceById = new Map(fetched.map(row => [row.id, row]))
     const currentById = new Map(current.map(row => [row.id, row]))
     const rebased = published.flatMap(row => {
+      if (isConversationDeleted?.(row.id)) return []
       const source = serviceById.get(row.id) ?? currentById.get(row.id)
       return source ? [source] : []
     })
-    const merged = mergeFetchedChatsPreservingActiveLocal(rebased, current, activeChatIdRef.current,
-      { preserveMissingActive: false })
+    // A repository wait can outlive a new selection. Decide against that selection
+    // at publication time; absence from the captured list is not a removal fact.
+    // Keep the original revocation when applyFetchedChatList already retired its
+    // ledger entry, while still consulting the live membership/deletion facts.
+    const selectedChatId = activeChatIdRef.current
+    const revokeSelected = !!selectedChatId && (!!isConversationDeleted?.(selectedChatId)
+      || ((selectedChatId === activeChatId && revokeMissingActive) || ledger.shouldRevokeActive({
+        activeChatId: selectedChatId, fetched, requestSeq: options.requestSeq, preserveMissingActive: options.preserveMissingActive,
+      })) && (!options.revokedMembership || options.revokedMembership(selectedChatId)))
+    const merged = mergeFetchedChatsPreservingActiveLocal(rebased, current, selectedChatId,
+      { preserveMissingActive: !revokeSelected })
     const pendingReads: Array<() => void> = []
     const acknowledged = acknowledgeOnScreenChatRows(merged, {
       current, onScreen: isChatOnScreen, canAcknowledge, visibleSeqOf,
@@ -248,7 +258,8 @@ export function useChatProjectionBinding(deps: {
         }
       })
     for (const persist of pendingReads) persist()
-    if (revokeMissingActive && activeChatId) onActiveRevoked(activeChatId)
+    if (revokeMissingActive && activeChatId && activeChatId !== selectedChatId) onActiveRevoked(activeChatId)
+    if (revokeSelected && selectedChatId) onActiveRevoked(selectedChatId)
   }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef, requestSeqRef])
 
   /** 冷启快照:一次「哪些会话属于我」的读 + 与增量同一套族读 ⇒ 2 波(spec I7,没有第二条拉取路)。 */

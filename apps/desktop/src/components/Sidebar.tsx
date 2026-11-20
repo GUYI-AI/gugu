@@ -16,6 +16,7 @@ import { returnToScreen } from '../session/renderer/app/screen-layout-actions'
 import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
+import { SidebarUsage } from './usage/SidebarUsage'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
 import { MoreHorizontal, Settings } from '@/lib/icons'
 import { SidebarAppDock } from './sidebar/SidebarAppDock'
@@ -362,6 +363,7 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
 
       <div className="gg-sidebar-bottom">
         <UpdateBanner placement="rail" />
+        {platform.kind === 'electron' && <SidebarUsage />}
         {/* 设置在栏底,一点就开(product spec「入口」;owner 10-15 推翻 #7046 里「设置收进头像菜单」那一半)。
             摆法照 VS Code 活动栏栏底的「管理」齿轮;owner 10-16 移除了本人账户按钮。⌘,、应用菜单「设置…」、
             命令面板开的是同一个弹窗,弹窗开着(不管从哪开的)这枚就亮着。 */}

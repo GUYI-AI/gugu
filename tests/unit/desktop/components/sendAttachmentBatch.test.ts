@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { collapseSendGroups } from '../../../../apps/desktop/src/components/chat/messageAlbum'
 import { sendAttachmentBatch } from '../../../../apps/desktop/src/components/chat/sendAttachmentBatch'
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
@@ -142,6 +143,28 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     expect(first!.commit.send_group_id).toEqual(expect.any(String))
     expect([first!.commit.send_group_id, first!.commit.send_group_size]).toEqual([second!.commit.send_group_id, 2])
     expect([first!.row.send_group_id, second!.row.send_group_id]).toEqual([first!.commit.send_group_id, first!.commit.send_group_id])
+  })
+  it.each(['cloud', 'native'] as const)('#2581 four screenshots plus text keep one album after %s publication', async route => {
+    const f = fixture()
+    const files = Array.from({ length: 4 }, (_, index) => new File(['png'], `screen-${index}.png`, { type: 'image/png' }))
+    prepare.mockImplementation(async (_endpoint, file: File) => route === 'native' ? { local: file } : declared(file.name))
+    await sendAttachmentBatch({ ...f.args, files, caption: '你看看' })
+    await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(4))
+    type Commit = { send_group_id?: string; send_group_size?: number; caption?: string }
+    const calls = f.commitAttachment.mock.calls as unknown as Array<[MessageItem, unknown, Commit]>
+    const commits = calls.map(([, , commit]) => commit)
+    const id = commits[0]!.send_group_id
+    expect(id).toEqual(expect.any(String))
+    expect(commits.map(commit => [commit.send_group_id, commit.send_group_size])).toEqual(Array(4).fill([id, 4]))
+    expect(commits.map(commit => commit.caption)).toEqual([undefined, undefined, undefined, '你看看'])
+    // A new reader has only authoritative rows. The SQL publication test separately proves these fields persist.
+    const delivered = calls.map(([placeholder, , commit], index) => ({ type: 'message' as const, message: {
+      ...placeholder, seq: index + 1, local_send_state: undefined,
+      send_group_id: commit.send_group_id, send_group_size: commit.send_group_size,
+    } }))
+    const album = collapseSendGroups(delivered)
+    expect(album.rows).toHaveLength(1)
+    expect(album.albums.get(delivered[0]!.message.id)?.map(row => row.id)).toEqual(delivered.map(row => row.message.id))
   })
   it('more files than one send holds go as consecutive sends of at most ten, the text on the very last file', async () => {
     const f = fixture()

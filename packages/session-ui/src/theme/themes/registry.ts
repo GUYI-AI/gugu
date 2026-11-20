@@ -1,9 +1,8 @@
 /**
  * Theme registry — the canonical list of available themes.
  *
- * Lightweight metadata only: no ResolvedTheme objects, no palette generation,
- * no colorjs.io. Safe to import from renderer, Storybook, and CSS-in-JS files
- * without pulling in the full theme creation pipeline.
+ * Metadata only. The token values for each theme live in
+ * `theme/__generated__/theme.css` and `semantic.css`, keyed by `selector`.
  */
 
 export type ThemeManifestEntry = {

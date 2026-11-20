@@ -1,12 +1,13 @@
 import { Eye, EyeOff, MessageSquare, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
-import type { BrowserAnnotationInspection, BrowserAnnotationQuery, BrowserAnnotationTarget } from '@shared/browser-annotation';
+import { annotationConversationKey, type AnnotationConversation, type BrowserAnnotationInspection, type BrowserAnnotationQuery, type BrowserAnnotationTarget } from '@shared/browser-annotation';
 import { browserAnnotationSpaceChannel } from '@shared/events/browserEvents';
 import { events, rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { rendererLogger } from '@/lib/log';
+import { useAuth } from '@/store/auth';
 import { AnnotationEditor, AnnotationMarker } from '../sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 import { markedAnnotationScreenshot } from './annotation-screenshot';
@@ -16,28 +17,29 @@ export type InspectAnnotation = (query: BrowserAnnotationQuery, capture: boolean
 type Point = { x: number; y: number };
 type SubscribeSpaceRelease = (released: () => void) => () => void;
 
-export function useBrowserAnnotations({ sessionId, browserId, visible, available, inspect, filePath, subscribeSpaceRelease }: {
-  sessionId: string | undefined; browserId: string; visible: boolean; available: boolean; inspect: InspectAnnotation;
+export function useBrowserAnnotations({ conversation, browserId, visible, available, inspect, filePath, subscribeSpaceRelease }: {
+  conversation: AnnotationConversation | undefined; browserId: string; visible: boolean; available: boolean; inspect: InspectAnnotation;
   filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const [active, setActive] = useState(false);
   const exit = useCallback(() => setActive(false), []);
   const { translate } = useSessionMessages();
+  const accountId = useAuth().user?.id;
   return {
-    toolbar: sessionId && available ? <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 gap-2 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
+    toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-7 shrink-0 gap-2 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
-      onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button> : null,
-    overlay: active && visible && available && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
+      onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button>,
+    overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}:${accountId ?? ''}`} conversation={conversation} accountId={accountId} browserId={browserId}
       inspect={inspect} onExit={exit} filePath={filePath} subscribeSpaceRelease={subscribeSpaceRelease} /> : null,
   };
 }
 
-const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ sessionId, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
-  sessionId: string; browserId: string; inspect: InspectAnnotation; onExit: () => void;
+const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ conversation, accountId, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
+  conversation: AnnotationConversation; accountId?: string; browserId: string; inspect: InspectAnnotation; onExit: () => void;
   filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const { translate } = useSessionMessages();
-  const draft = sessionAnnotations.forSession(sessionId);
+  const draft = sessionAnnotations.forConversation(conversation, accountId);
   const root = useRef<HTMLDivElement>(null);
   const [browsing, setBrowsing] = useState(false);
   const [hover, setHover] = useState<BrowserAnnotationTarget | null>(null);

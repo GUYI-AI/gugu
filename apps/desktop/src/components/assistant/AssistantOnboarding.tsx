@@ -1,4 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { useAuth } from '@/store/auth'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
 import './assistant-onboarding.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -74,7 +76,8 @@ export function AssistantOnboarding({
   localDeviceId: string | null
 }) {
   const { t } = useTranslation('assistant')
-  const cloudEnabled = cloudComputerEnabled()
+  const { user } = useAuth()
+  const cloudEnabled = cloudComputerEnabled() && !hasTeamAccountMarker(user)
   const [navigation] = useState(() => readAssistantOnboardingNavigation(ownerUserId))
   const [step, setStep] = useState<Step>(() => navigation?.step ?? (takeAssistantStartAtHome(ownerUserId) ? 'name' : 'intro'))
   const [draft, setDraft] = useState<AssistantSetupDraft>(() => navigation?.draft ?? ({

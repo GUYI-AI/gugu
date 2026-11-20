@@ -54,8 +54,11 @@
  *              映到 --muted 让行内代码与围栏代码落在同一表面家族。
  *              ⚠️ 只补 --color-sidebar 一个：shadcn 的 sidebar-foreground/-primary/-accent/-border/-ring
  *              目前无人消费，补了也无从验证；真有人用了会被 streamdownThemeKeys 那条守卫照出来。
+ *
+ * 必须是 inline：工具类直接写 var(--bg)，在用到它的元素上解析。不 inline 时 bg-background 读的是
+ * :root 上算好的 --color-background，局部换主题的子树（浏览器网页区固定浅色）里底色、字色就还是外层主题的。
  */
-@theme {
+@theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);
   --color-card: var(--card);

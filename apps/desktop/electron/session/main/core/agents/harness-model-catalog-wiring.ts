@@ -176,6 +176,7 @@ export async function resolveHarnessModelCatalogSpawn(
   if (pluginId === 'codex') await scrubCodexProbeTrustOnce(agentEnv);
   const spawn = acp.buildSpawn({
     cwd,
+    programs: runContext.programs,
     env: agentEnv,
     cli,
     ...(probePlatform ? { platform: probePlatform } : {}),
@@ -205,6 +206,7 @@ export async function resolveHarnessModelCatalogSpawn(
     }),
     ...(acp.catalogProbeSessionMeta ? { sessionMeta: acp.catalogProbeSessionMeta } : {}),
     ...(acp.catalogModelsInConfigUpdate ? { modelsInConfigUpdate: true } : {}),
+    ...(acp.catalogModelSource ? { modelSource: acp.catalogModelSource } : {}),
     ...(acp.authenticateWhenAdvertised ? { authenticateWhenAdvertised: acp.authenticateWhenAdvertised } : {}),
     ...(acp.catalogNeedsSignIn ? { readSignIn: () => readSignIn(pluginId) } : {}),
   };

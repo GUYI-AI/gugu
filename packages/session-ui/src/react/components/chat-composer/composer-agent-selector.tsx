@@ -171,8 +171,7 @@ export function ComposerAgentSelector({
         />
         <Combobox.List>
           {(group: AgentGroup) => (
-            <Combobox.Group key={group.label} items={group.items}>
-              {group.label && <Combobox.Label>{group.label}</Combobox.Label>}
+            <Combobox.Group key={group.label} items={group.items} label={group.label}>
               <Combobox.Collection>
                 {(item: ComposerAgentOption) => (
                   <Combobox.Item

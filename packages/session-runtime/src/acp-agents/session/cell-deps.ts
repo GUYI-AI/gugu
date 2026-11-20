@@ -1,6 +1,7 @@
 import type { AttachmentRef, PromptAttachment, ProviderPermissionModeMap } from '@gugu/session-core/acp';
 import type {
   AcpAgentApi,
+  AcpRevert,
   IAcpBehavior,
   LiveSettingCapability,
   LiveSettingsCapability,
@@ -98,6 +99,8 @@ export interface SessionCellDeps {
   assistantOwnerId?: string;
   /** Synchronous queue persistence must have succeeded before cancelling a replied continuation. */
   queuedPromptsPersisted?: () => boolean;
+  /** How this harness steps a conversation back (plugin `acp.revert`); absent = it cannot. */
+  revert?: AcpRevert;
   /** 这一家「失败报成正常结束」的识别(插件 `acp.turnFailure`,语义见那里)。 */
   turnFailure?: {
     fromAgentMessage?: (text: string) => string | null;

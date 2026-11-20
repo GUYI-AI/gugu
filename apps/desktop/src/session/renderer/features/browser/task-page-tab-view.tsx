@@ -95,7 +95,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
   }, [watchId]);
 
-  const annotations = useBrowserAnnotations({ sessionId: resource.sessionId, browserId: `task-page:${resource.deviceId}:${resource.sessionId}`, visible, available: !!watchId && state === 'live',
+  const annotations = useBrowserAnnotations({ conversation: { kind: 'session', sessionId: resource.sessionId }, browserId: `task-page:${resource.deviceId}:${resource.sessionId}`, visible, available: !!watchId && state === 'live',
     inspect: async (query, capture) => {
       if (!watchId) throw new Error('This page is not watched');
       const result = await rpc.browser.controlTaskPage({ watchId, control: { action: 'annotate', query, capture } });
@@ -118,7 +118,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
           onForceReload={() => control({ action: 'reload' })}
         />
       )}
-      <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+      <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background text-foreground">
         <BrowserPictureFrame viewport={pictureSize} frame={frame}>
           <div ref={root} className="absolute inset-0" />
           {annotations.overlay}

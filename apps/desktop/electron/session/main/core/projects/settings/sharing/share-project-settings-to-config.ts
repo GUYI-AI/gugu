@@ -1,9 +1,8 @@
-import { ok, type Result } from '@gugu/session-shared';
+import { err, ok, type Result } from '@gugu/session-shared';
 import { log } from '@main/lib/logger';
 import type { WriteProjectConfigRequest } from '@shared/core/project-settings/project-settings';
 import type { UpdateProjectSettingsError } from '@shared/projects';
 import type { ProjectProvider } from '../../project-provider';
-import { errorMessage, writeConfigFailed } from './config-migration-utils';
 import {
   resolveProjectSettingsTarget,
   type ProjectSettingsResolvedTarget,
@@ -13,6 +12,14 @@ import {
   parseWorkspaceConfigObject,
   patchShareableProjectSettingsFields,
 } from './workspace-config-file';
+
+function writeConfigFailed<T = never>(message: string): Result<T, UpdateProjectSettingsError> {
+  return err({ type: 'write-config-failed', message });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function shareProjectSettingsToConfig(
   project: ProjectProvider,

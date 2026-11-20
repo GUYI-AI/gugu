@@ -23,6 +23,9 @@ import { registeredViews } from '@/session/renderer/lib/layout/registered-views'
 import { UpdateBanner } from '../components/UpdateBanner'
 import { WindowControls } from '../components/WindowControls'
 import { MOBILE_TABS, SIDEBAR_TABS, type SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
+import { useTeamSession } from '@/features/team/context'
+import { useTeamNavigation } from '@/features/team/navigation'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
 import { AgentWatchPage, AgentWatchRoot } from '@/mobile/agent-watch/AgentWatchPage'
 import { PhoneDeviceRoot } from '@/mobile/phone-device/PhoneDeviceRoot'
 import { useAppShowSession } from '@/mobile/agent-watch/useAppShowSession'
@@ -191,7 +194,7 @@ function InnerLayout({
   // @@@1507 设置面板初始 section;侧栏「额度」直接开到 quota,齿轮入口回 account。
   const [settingsSection, setSettingsSection] = useState<ActiveSection>('account')
   const [addCustomModel, setAddCustomModel] = useState(false)
-  useBackgroundUsageSync(user?.id ?? null, effectsActive)
+  useBackgroundUsageSync(hasTeamAccountMarker(user) ? null : user?.id ?? null, effectsActive)
   // 手机上「我的」是推进来的一层(owner 10-26:页头左上角自己的头像进),nav / detail 两层都没有底栏;桌面走设置弹窗。
   const [settingsPane, setSettingsPane] = useState<'nav' | 'detail'>('nav')
   // 手机上从别处直达设置的某一格(openSettingsSection):进来的是那一格,返回就退出「我的」,❌ 先落到没进过的设置首页。
@@ -345,6 +348,7 @@ function InnerLayout({
   })
   // 手机底栏的格子:「消息 / 伙伴」(owner 10-26,#446);桌面壳不变。
   // 引用要稳:分页器按它定位(useLayoutEffect 依赖 tabs),每次渲染换一个新数组就会在滑动 / 吸附途中被未读数一类的更新拽回当前页。
+  const team = useTeamSession()
   const tabs = mobile ? MOBILE_TABS : SIDEBAR_TABS
   // 手机上 'assistant' / 'tasks' / 'settings' 是推在列表首页上的一层(PhoneLayer,没有底栏);底下的分页器停在推它之前那一格,返回回到那里。
   const phoneLayerOpen = mobile && !MOBILE_TABS.includes(activeTab)
@@ -600,6 +604,9 @@ function InnerLayout({
     if (MOBILE_TABS.includes(tab)) shellTab.setChatFrom(null)
     if (tab === 'chats' && activeChatId) focusComposerForUserEntry('tab-return')
   }, [setActiveTab, shellTab, activeChatId, focusComposerForUserEntry, mobile])
+  useTeamNavigation(useCallback((section) => {
+    if (team.status === 'ready') openSettingsSection(section === 'usage' ? 'usage' : 'team')
+  }, [team.status, openSettingsSection]))
 
   // #7199 手机上和个人助理的那条私聊就是底栏「助理」那一格(owner 10-16「点进去成两个 app 了」):对话列表、通知、联系人「发消息」
   // 打开它都切到那一格的聊天,❌ 在对话页里另开一屏。在画出来之前换过去,对话页 ❌ 先闪一帧那条私聊。

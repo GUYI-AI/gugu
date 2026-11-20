@@ -25,6 +25,8 @@ export default {
       "signed-out": "咕咕的登录已失效，重新登录后再重试。",
       "membership-required": "转写语音笔记需要开通会员。",
       "model-unavailable": "转写服务暂时不可用，请稍后重试。",
+      "team-monthly-cap-reached": "你本月的团队积分用完了，只影响你，其他人照常用。找管理员调高上限。",
+      "team-credits-exhausted": "团队积分用完了，所有成员暂时无法使用 AI。找管理员充值。",
       "unreachable": "无法连接咕咕模型服务，请检查网络。",
       "service-unavailable": "咕咕这边出错了，请稍后重试。"
     }

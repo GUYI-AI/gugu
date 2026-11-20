@@ -615,10 +615,9 @@ export function ComposerModelMenu({
                 {(group: ComposerModelGroup) => (
                   // key 用首条的模型 id,不用 label:同一个 label 可以出现在两段不相邻
                   // 的条目上(宿主的顺序说了算),用 label 当 key 就会撞。
-                  <Combobox.Group key={group.items[0]?.id} items={group.items}>
-                    {/* 组头 = 一级分类(这条是谁的)。与上游一样是一行纯文字。
-                        厂商不在这里 —— 它在顶部那排筛选药丸和每行左边那枚 logo 上。 */}
-                    {group.label && <Combobox.Label>{group.label}</Combobox.Label>}
+                  // 组头(label)= 一级分类(这条是谁的)。与上游一样是一行纯文字。
+                  // 厂商不在这里 —— 它在顶部那排筛选药丸和每行左边那枚 logo 上。
+                  <Combobox.Group key={group.items[0]?.id} items={group.items} label={group.label}>
                     <Combobox.Collection>
                       {(m: ComposerModelItem) => (
                         <Combobox.Item

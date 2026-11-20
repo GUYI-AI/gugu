@@ -21,7 +21,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuTrigger
 } from '@renderer/lib/ui/dropdown-menu';
 import { BoundShortcut } from '@renderer/lib/ui/shortcut';
@@ -164,18 +163,13 @@ function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }
 
 /**
  * 「App」那一段,两处同一份:列能在这里打开的 App,最后一行去「App」页装更多。
- * 标题与它下面的项必须在同一个 DropdownMenuGroup 里:DropdownMenuLabel 是 Base UI 的 Menu.GroupLabel,
- * 没有 Menu.Group 在上面就抛错,整页会被错误边界拿下(装着一个 App 时打开这个菜单就是这样)。
  */
 function AppsSection({ apps, error }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] | null; error: Error | null }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   return (
-    <DropdownMenuGroup>
-      {/* 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。 */}
-      <DropdownMenuLabel className="text-foreground-passive text-xs font-normal">
-        {translate('extensions.appsSection')}
-      </DropdownMenuLabel>
+    // 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。
+    <DropdownMenuGroup label={translate('extensions.appsSection')} labelClassName="text-foreground-passive text-xs font-normal">
       {apps === null ? <NotReadMenuItem error={error} /> : apps.map((app) => (
         <DropdownMenuItem key={app.key} onClick={app.open}>
           <ExtensionMark iconDataUrl={app.iconDataUrl} /> {app.title}

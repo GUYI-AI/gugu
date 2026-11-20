@@ -16,12 +16,12 @@ describe('host-owned structured questions', () => {
     await copyFile(fileURLToPath(new URL('./__fixtures__/claude-session.jsonl', import.meta.url)), join(project, `${providerSessionId}.jsonl`))
     const timeline = await createSessionTimeline(createClaudeJsonlSource({ harness: 'claude', providerSessionId, roots: [root] }), { sessionId: 'host-question', answerableQuestions: false })
     try {
-      const request = { itemId: 'host-question:one', kind: 'question' as const, title: '预算？', askedAt: 123,
+      const request = { itemId: 'host-question:one', kind: 'question' as const, title: '预算？', askedAt: 123, skippable: true as const, canDiscuss: true as const,
         questions: [{ question: '预算？', options: [{ optionId: '300', name: '300 元' }], multiSelect: false }],
         options: [], origin: { source: 'agent-question' as const, payload: {} } }
       timeline.syncPendingRequests([request])
       const one = () => timeline.getSnapshot().settlements.find((entry) => entry.itemId === request.itemId)
-      expect(one()).toMatchObject({ questions: request.questions, askedAt: 123, state: 'pending', host: { kind: 'agent-question', payload: {} } })
+      expect(one()).toMatchObject({ questions: request.questions, askedAt: 123, skippable: true, canDiscuss: true, state: 'pending', host: { kind: 'agent-question', payload: {} } })
       expect(timeline.settle({ itemId: request.itemId, optionId: '300', by: 'desktop' }).ok).toBe(true)
       timeline.syncPendingRequests([request])
       expect(one()?.state).toBe('resolved')

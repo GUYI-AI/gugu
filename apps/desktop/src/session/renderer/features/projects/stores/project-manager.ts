@@ -1,6 +1,6 @@
 import { ensureProjectHostReady } from '@renderer/features/remote-hosts/ensure-cloud-host-ready';
 import { forgetProjectOnScreen, revalidateScreenSessions } from '@renderer/app/screen-layout-actions';
-import { err, ok, type Result } from '@gugu/session-shared';
+import { err, ok } from '@gugu/session-shared';
 import { makeObservable, observable, runInAction } from 'mobx';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -11,7 +11,6 @@ import { log } from '@renderer/utils/logger';
 import { projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import { type LocalProject } from '@shared/projects';
-import { splitNameWithOwner } from '@shared/repository-ref';
 import type { ProjectViewSnapshot } from '@shared/view-state';
 import {
   createUnmountedProject,
@@ -20,7 +19,6 @@ import {
   isUnmountedProject,
   isUnregisteredProject,
   type ProjectStore,
-  type UnregisteredProjectPhase,
 } from './project';
 import type {
   ModeData,
@@ -195,7 +193,7 @@ export class ProjectManagerStore {
     const machine = projectType.machine ?? null;
     if (machine) machineRegistry.register(machine, [projectId]);
     else machineRegistry.claimLocal([projectId]);
-    const targetPath = data.mode === 'pick' ? data.path : `${data.path}/${data.name}`;
+    const targetPath = data.path;
     const inspection = await rpcOn(machine).projects.inspectProjectPath({ type: 'local', path: targetPath });
     if (inspection.existingProject) {
       if (machine) machineRegistry.register(machine, [inspection.existingProject.id]);
@@ -203,7 +201,7 @@ export class ProjectManagerStore {
       // Explicitly adding a known directory claims a workspace or reopens its
       // archived project through the host, retaining the original project id.
       if ((inspection.existingProject.kind === 'workspace' || inspection.existingProject.archivedAt)
-        && !(data.mode === 'pick' && data.automatic)) {
+        && !data.automatic) {
         const claimed = await rpcOn(machine).projects.createProject({ type: 'local', path: targetPath, name: data.name, allowNonGit: true });
         if (!claimed.success) throw new Error(claimed.error.type);
         if (inspection.existingProject.archivedAt) await this.ensureProjectLoaded(inspection.existingProject.id);
@@ -223,7 +221,7 @@ export class ProjectManagerStore {
       this.pendingCreationIds.add(projectId);
       this.projects.set(
         projectId,
-        createUnregisteredProject(projectId, data.name, initialCreationPhase(data.mode), data.mode)
+        createUnregisteredProject(projectId, data.name, 'registering')
       );
     });
 
@@ -247,101 +245,25 @@ export class ProjectManagerStore {
 
     let result: ProjectCreationCompletion;
     try {
-      switch (data.mode) {
-        case 'pick': {
-          const projectResult = await rpc.projects.createProject({
-            type: 'local',
-            id: projectId,
-            path: targetPath,
-            name: data.name,
-            createDirectory: data.createDirectory,
-            initGitRepository: data.initGitRepository,
-            allowNonGit: data.allowNonGit,
-            automatic: data.automatic,
-          });
-          if (!projectResult.success) {
-            result = err(projectResult.error);
-            break;
-          }
-
-          const project = projectResult.data;
-          if (data.initGitRepository) {
-            await this._saveInitialGitHubAccountSetting(project.id, data.githubAccountId);
-          }
-          this._setAndOpenProject(projectId, project);
-          result = ok();
-          break;
-        }
-
-        case 'clone': {
-          const cloneResult = await rpc.projectSetup.cloneRepository(data.repositoryUrl, targetPath);
-          if (!cloneResult.success) {
-            result = err({
-              type: 'clone-failed',
-              message: cloneResult.error?.trim() || 'Clone failed',
-            });
-            break;
-          }
-
-          this._updatePhase(projectId, 'registering');
-          const projectResult = await rpc.projects.createProject({
-            type: 'local',
-            id: projectId,
-            path: targetPath,
-            name: data.name,
-          });
-          if (!projectResult.success) {
-            result = err(projectResult.error);
-            break;
-          }
-
-          this._setAndOpenProject(projectId, projectResult.data);
-          result = ok();
-          break;
-        }
-
-        case 'new': {
-          const repoResult = await rpc.github.createRepository({
-            name: data.repositoryName,
-            owner: data.repositoryOwner,
-            isPrivate: data.repositoryVisibility === 'private',
-            accountId: data.githubAccountId ?? undefined,
-          });
-          if (!repoResult.success) {
-            result = err({
-              type: 'repository-create-failed',
-              message: repoResult.error?.trim() || 'Repository creation failed',
-            });
-            break;
-          }
-          if (!repoResult.nameWithOwner || !repoResult.cloneUrl) {
-            result = err({
-              type: 'repository-response-incomplete',
-              message: 'Repository creation response was incomplete',
-            });
-            break;
-          }
-
-          const projectResult = await this._cloneInitializeAndCreateGitHubProject({
-            projectType,
-            projectId,
-            targetPath,
-            name: data.name,
-            cloneUrl: repoResult.cloneUrl,
-            repositoryNameWithOwner: repoResult.nameWithOwner,
-            githubAccountId: data.githubAccountId,
-          });
-          if (!projectResult.success) {
-            result = err(projectResult.error);
-            break;
-          }
-
-          const project = projectResult.data;
+      const projectResult = await rpc.projects.createProject({
+        type: 'local',
+        id: projectId,
+        path: targetPath,
+        name: data.name,
+        createDirectory: data.createDirectory,
+        initGitRepository: data.initGitRepository,
+        allowNonGit: data.allowNonGit,
+        automatic: data.automatic,
+      });
+      if (!projectResult.success) {
+        result = err(projectResult.error);
+      } else {
+        const project = projectResult.data;
+        if (data.initGitRepository) {
           await this._saveInitialGitHubAccountSetting(project.id, data.githubAccountId);
-          this._setAndOpenProject(projectId, project);
-          result = ok();
-          break;
         }
+        this._setAndOpenProject(projectId, project);
+        result = ok();
       }
     } catch (error) {
       this._markUnexpectedCreationError(projectId, error);
@@ -592,94 +514,6 @@ export class ProjectManagerStore {
     }
   }
 
-  private async _rollbackCreatedGitHubRepository(
-    nameWithOwner: string,
-    githubAccountId?: string
-  ): Promise<void> {
-    try {
-      const { owner, repo } = splitNameWithOwner(nameWithOwner);
-      const result = await rpc.github.deleteRepository({
-        owner,
-        name: repo,
-        accountId: githubAccountId ?? undefined,
-      });
-      if (!result.success) {
-        log.error('Failed to delete GitHub repository after project creation failure', {
-          nameWithOwner,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      log.error('Failed to delete GitHub repository after project creation failure', {
-        nameWithOwner,
-        error,
-      });
-    }
-  }
-
-  private async _cloneInitializeAndCreateGitHubProject(opts: {
-    projectType: ProjectType;
-    projectId: string;
-    targetPath: string;
-    name: string;
-    cloneUrl: string;
-    repositoryNameWithOwner: string;
-    githubAccountId?: string;
-  }): Promise<Result<LocalProject, ProjectCreationError>> {
-    const rpc = rpcOn(opts.projectType.machine ?? null);
-    let result: Result<LocalProject, ProjectCreationError>;
-    try {
-      this._updatePhase(opts.projectId, 'cloning');
-      const cloneResult = await rpc.projectSetup.cloneRepository(opts.cloneUrl, opts.targetPath);
-      if (!cloneResult.success) {
-        result = err({
-          type: 'clone-failed',
-          message: cloneResult.error?.trim() || 'Clone failed',
-        });
-      } else {
-        const initResult = await rpc.projectSetup.initializeRepository({
-          targetPath: opts.targetPath,
-          name: opts.name,
-        });
-        if (!initResult.success) {
-          result = err({
-            type: 'initialize-failed',
-            message: initResult.error?.trim() || 'Project initialization failed',
-          });
-        } else {
-          this._updatePhase(opts.projectId, 'registering');
-          result = await rpc.projects.createProject({
-            type: 'local',
-            id: opts.projectId,
-            path: opts.targetPath,
-            name: opts.name,
-          });
-        }
-      }
-    } catch (error) {
-      await this._rollbackCreatedGitHubRepository(
-        opts.repositoryNameWithOwner,
-        opts.githubAccountId
-      );
-      throw error;
-    }
-
-    if (!result.success) {
-      await this._rollbackCreatedGitHubRepository(
-        opts.repositoryNameWithOwner,
-        opts.githubAccountId
-      );
-    }
-    return result;
-  }
-
-  private _updatePhase(id: string, phase: UnregisteredProjectPhase): void {
-    runInAction(() => {
-      const store = this.projects.get(id);
-      if (store && isUnregisteredProject(store)) store.phase = phase;
-    });
-  }
-
   private _markCreationError(id: string, error: ProjectCreationError): void {
     runInAction(() => {
       const store = this.projects.get(id);
@@ -703,16 +537,5 @@ export class ProjectManagerStore {
         store.error = error instanceof Error ? error.message : String(error);
       }
     });
-  }
-}
-
-function initialCreationPhase(mode: ModeData['mode']): UnregisteredProjectPhase {
-  switch (mode) {
-    case 'pick':
-      return 'registering';
-    case 'clone':
-      return 'cloning';
-    case 'new':
-      return 'creating-repo';
   }
 }

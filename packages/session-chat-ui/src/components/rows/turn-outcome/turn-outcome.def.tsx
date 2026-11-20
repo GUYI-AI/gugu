@@ -19,7 +19,7 @@
  * discard 也画了 —— 见 ⑤。只有 retry 依旧不画，理由在下面 ①–④，是查出来的证据链，
  * 不是「handler 的名字看着不像」：
  *
- * ① **协议层没有。** ACP 客户端接口的方法全集是
+ * ① **协议层没有**（标准 ACP 至今没有，SDK 2.7.0 亦然；咕咕的 `_session/revert` 与各家扩展见下面 #3529 那段）。ACP 客户端接口的方法全集是
  *    `initialize / newSession / loadSession / prompt / cancel / setSessionConfigOption /
  *    setSessionMode / closeSession`（`session-core/src/agents/plugins/capabilities/acp.ts:52-67`）。
  *    没有 retry、没有 rewind、没有 truncate、没有 resume-turn。
@@ -48,8 +48,12 @@
  *    from your own list」）⇒ 不是降级，是这个动作在本仓的真实落点。
  *    ⚠️ 差的那一格写在按钮的无障碍名字里（「agent 那边仍然记得」），❌ 不许让用户以为自己撤销了什么。
  *
- * ⇒ 只剩 retry 那一个缺口，连同「要做的话需要先有什么」记在 **#3529**：它要的是 turn 级的 rewind，
- * 那是协议侧的事。❌ 不要因为「上游有」就把它补上。
+ * ⇒ 缺的是 turn 级的 rewind（#3529）。它后来有了，但**只在 agent 自己支持的地方**有：插件的 `acp.revert`
+ * 钩子（咕咕自己的桥走 `_session/revert`，厂商走自己的 ACP 扩展）把 agent 那边的上下文截到这一轮之前；
+ * 没有这个钩子的那一家，消息上就没有退回点。⇒ 失败行上，这一轮的用户消息
+ * 能退回时（`canRevertMessage`），动作换成「退回重新编辑」：打开那条消息的编辑框，发送时先退回、
+ * 再发改过的话 —— 那才是真的重试，因为模型已经看不到失败的那一轮。不能退回时仍是「取回指令」。
+ * ①–④ 说的是不能退回的那些 agent，对它们依旧成立。
  *
  * # 那么这一行**能**真做的是什么
  *
@@ -122,6 +126,7 @@ import {
 } from '@session-chat/components/primitives/icons';
 import { defineUnit } from '@session-chat/core/units';
 import { turnDiscardedId, turnOutcomeDetailId } from '@session-chat/state/flatten';
+import type { ChatCommands } from '@session-chat/commands';
 import type { TranscriptTurnOutcome, TurnOutcomeItem } from '@session-chat/model';
 import { vars } from '@session-chat/styles/theme.css';
 import { Show, createSignal } from 'solid-js';
@@ -199,7 +204,7 @@ function outcomeLabel(outcome: TranscriptTurnOutcome, translate: ChatTranslator)
       if (outcome.phoneInterruption) return translate('transcript.interrupted');
       return translate('transcript.turnFailed', { reason: '' });
     case 'done':
-      return translate('transcript.turnCompleted', { reason: '' });
+      return outcome.reason === 'refusal' ? translate('transcript.turnRefused') : translate('transcript.turnCompleted', { reason: '' });
     default:
       return translate('transcript.turnFinished', { reason: '' });
   }
@@ -250,6 +255,17 @@ function badgeParts(
   return { label: outcomeLabel(outcome, translate), reason };
 }
 
+/** A failed or refused turn: the ones that leave a person stuck, and the only ones this row offers to step back from. */
+function isStuckOutcome(outcome: TranscriptTurnOutcome): boolean {
+  return outcome.kind === 'error' || (outcome.kind === 'done' && outcome.reason === 'refusal');
+}
+
+/** The failed turn's own message, when the agent can step back to before it. Shared by DOM and measurement. */
+function rewindItemId(data: TurnOutcomeItem, commands: ChatCommands | undefined): string | null {
+  const itemId = data.promptItemId;
+  return isStuckOutcome(data.outcome) && itemId && commands?.onEditMessage && commands.canRevertMessage?.(itemId) ? itemId : null;
+}
+
 /** The host still owns an unsent input: restoring it would create a second send. Shared by DOM and measurement. */
 function hasRestorablePrompt(data: TurnOutcomeItem): boolean {
   return Boolean(data.prompt) && data.outcome.kind !== 'cancelled'
@@ -277,7 +293,8 @@ function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/cor
   if (outcome.kind === 'cancelled' && outcome.reason !== 'interrupted_for_message') {
     if (commands?.onContinueTurn) actions.push(actionWidth(t('transcript.continueTurn'), true));
     actions.push(actionWidth(t('transcript.discardTurn')));
-  } else if (hasRestorablePrompt(data) && !refused?.action && commands?.onRestorePrompt) actions.push(actionWidth(t('transcript.restorePrompt'), true));
+  } else if (rewindItemId(data, commands)) actions.push(actionWidth(t('transcript.rewindTurn')));
+  else if (hasRestorablePrompt(data) && !refused?.action && commands?.onRestorePrompt) actions.push(actionWidth(t('transcript.restorePrompt'), true));
   const rule = outcome.kind !== 'cancelled' ? [{ width: 8, height: 1 }] : [];
   const wrapped = badgeWidth + actions.reduce((sum, value) => sum + value + 8, 0) + (rule.length ? 16 : 0) > ctx.width;
   const height = wrappedRowHeight([{ width: badgeWidth, height: badgeHeight }, ...rule, ...actions.map(width => ({ width, height: 28 }))], ctx.width, 8, 4);
@@ -299,7 +316,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
    * 量高度与画内容各读各的开关,行就会长成一个高度与内容对不上的框。
    */
   measure(data, ctx) {
-    if (isCreditExhaustion(data.outcome)) return creditExhaustionLayout(ctx, ctx.commands).height;
+    if (isCreditExhaustion(data.outcome)) return creditExhaustionLayout(ctx, ctx.commands, data.outcome).height;
     const detail = outcomeDetail(data.outcome);
     if (!detail || !ctx.expanded(turnOutcomeDetailId(data.turnId))) return outcomeLaneLayout(data, ctx).height;
     return outcomeLaneLayout(data, ctx).height + detailBandHeight(detail);
@@ -309,7 +326,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
     const translate = useChatTranslator();
     const lane = () => outcomeLaneLayout(props.data, props.ctx.measureCtx!());
     const commands = useCommands();
-    const isError = () => props.data.outcome.kind === 'error';
+    const isError = () => isStuckOutcome(props.data.outcome);
     const isCancelled = () => props.data.outcome.kind === 'cancelled';
     // 为插话停下的一轮:下一轮就是接着干(那条消息),所以❌ 没有「继续 / 丢弃」可言。
     const isUserStopped = () =>
@@ -350,7 +367,10 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
       return { go };
     };
 
+    const rewindable = () => rewindItemId(props.data, commands());
+
     const restorable = () => {
+      if (rewindable()) return null;
       // ⚠️ 被停止那一支**不出这颗**。上游 stopped-run 的 lane 上只有 Continue 与 Discard，
       // 而「取回指令」是本仓给 error-state 那一族做的东西 —— 把它塞进 stopped-run 的位置，
       // 就是拿自家控件顶掉上游的设计。owner 连下四次「严格遵循人家的设计」，指的正是这里。
@@ -517,6 +537,20 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             >
               {translate('transcript.discardTurn')}
             </button>
+          </Show>
+          <Show when={rewindable()}>
+            {(itemId) => (
+              <button
+                type="button"
+                data-slot="turn-outcome-rewind"
+                class={outcomeActionPrimary}
+                aria-label={translate('transcript.rewindTurnHint')}
+                title={translate('transcript.rewindTurnHint')}
+                onClick={() => commands().onEditMessage?.({ itemId: itemId() })}
+              >
+                {translate('transcript.rewindTurn')}
+              </button>
+            )}
           </Show>
           <Show when={restorable()}>
             {(target) => (

@@ -142,6 +142,12 @@ export type AcpSpawnContext = {
   env: Record<string, string>;
   /** Absolute path to the resolved host CLI binary (mirrors prompt's CommandContext.cli). */
   cli: string;
+  /** Selected once at session open (`IAcpBehavior.sessionProgram`). Null/absent means the default ACP program. */
+  sessionProgram?: string | null;
+  /** Other programs resolved by the host, preserving the user's selected installations. */
+  programs?: Readonly<Record<string, string>>;
+  /** Login only: null selects the primary program; a string selects a declared companion. */
+  authProgram?: string | null;
   /** Main-process-issued platform credentials. Present only on the private ACP worker path. */
   platform?: AcpPlatformInjection;
   /**
@@ -304,6 +310,7 @@ export interface AcpCommandDiscoveryContext {
 
 /** `IAcpBehavior.prepareSession` 的入参 —— env 与启动这一家时同一份。 */
 export interface AcpSessionPrepareContext {
+  sessionProgram?: string | null;
   cwd: string;
   env: Readonly<Record<string, string>>;
   homeDir: string;
@@ -311,6 +318,7 @@ export interface AcpSessionPrepareContext {
 
 /** `IAcpBehavior.onTurnEnded` 的入参。 */
 export interface AcpTurnEndContext {
+  sessionProgram?: string | null;
   /** 这一家的会话 id。 */
   providerSessionId: string;
   cwd: string;
@@ -322,6 +330,7 @@ export interface AcpTurnEndContext {
 
 /** `IAcpBehavior.forkSessionInStorage` 的入参 —— env 与启动这一家时同一份,存档位置要跟着它挪。 */
 export interface AcpStorageForkContext {
+  sessionProgram?: string | null;
   sourceProviderSessionId: string;
   cwd: string;
   env: Readonly<Record<string, string>>;
@@ -329,6 +338,19 @@ export interface AcpStorageForkContext {
 }
 
 export interface IAcpBehavior {
+  /**
+   * Called once when a stored conversation opens: names the host-resolved program (`AgentRunContext.programs`) that
+   * owns its native store; undefined = the default ACP program. A conversation absent from every store throws
+   * `MissingProviderSessionError`, so the runtime's provider-session-missing recovery applies.
+   */
+  sessionProgram?(ctx: { env: Readonly<Record<string, string>>; providerSessionId: string }): string | undefined;
+  /**
+   * Reuse vendor metadata from a real new/load/fork response. Called before that request is sent; the returned
+   * observer receives its response. Facts that depend on who is signed in (the account's plan) are bound to the
+   * credentials as they were when the request left, so a response that arrives after the account changed is not
+   * filed under the new one. Failure must not prevent the conversation opening.
+   */
+  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'sessionProgram'>): Promise<(response: unknown) => Promise<void>>;
   explainError?(cause: SerializedError): string | undefined;
   /** Provider-owned record/replay contract; the runtime does not infer it from the provider id. */
   historyRecovery?: {
@@ -462,6 +484,14 @@ export interface IAcpBehavior {
   forkViaNewSessionMeta?(sourceProviderSessionId: string): Record<string, unknown> | undefined;
 
   /**
+   * @@@revert - step the conversation back to before one of its turns, in place (same session id). ACP itself has no
+   * such method; a plugin that sets this says how its harness does it. Unset = this harness has no revert, and its
+   * messages never get a revert entry. Gugu's own bridges share `guguBridgeRevert` (`_session/revert`); a vendor-native
+   * ACP server gets its own (an extension method of its own).
+   */
+  revert?: AcpRevert;
+
+  /**
    * 模型目录探针那一条 `session/new` 带的 `_meta`:让这一家开一条**不装用户 MCP** 的会话。
    * 不声明 = 照常开(这一家的 `session/new` 会把用户的 MCP 全起一遍 —— 那是探针的副作用,不是它要的)。
    *
@@ -483,6 +513,12 @@ export interface IAcpBehavior {
    * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
    */
   catalogModelsInConfigUpdate?: boolean;
+
+  /**
+   * Only the model config option contains ids selectable through set_config_option. The legacy models list may
+   * encode a separate thinking level in each id (agy acp 1.5.10), whose read-back normalizes to the family id.
+   */
+  catalogModelSource?: 'config-options';
 
   /**
    * Lists its own models signed out, none of them runnable. The catalog probe's own-route read then asks
@@ -516,6 +552,37 @@ export interface IAcpBehavior {
   connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): AcpAgentApi;
 
 }
+
+/** Where a revert steps back to: `before` is the harness's own id for a turn, opaque to Gugu; `files` = it can also restore files. */
+export type AcpRevertPoint = { before: string; files?: true };
+
+export type AcpRevert = {
+  /**
+   * After a foreground turn settles: the point that steps back to before it, or null when it has none.
+   * `response` is how the turn ended as the agent sent it (its `_meta`, or vendor fields at the top level).
+   * Answer synchronously when the point is in `response`: the turn then settles at its idle like any other; a point
+   * that needs a request (a Promise) holds the turn's settlement until it answers.
+   */
+  point(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, response: Readonly<Record<string, unknown>>): AcpRevertPoint | null | Promise<AcpRevertPoint | null>;
+  /** Step back to before `before`, in place. `restoreFiles: false` must leave files untouched. Throws when it cannot. */
+  revert(agent: Pick<AcpAgentApi, 'extMethod'>, sessionId: string, before: string, restoreFiles: boolean): Promise<void>;
+};
+
+/** The point a Gugu bridge puts on a receipt, a turn's end, or a replayed prompt: `_meta.guguRevert`. */
+export function guguRevertPoint(meta: unknown): AcpRevertPoint | null {
+  const value = (meta as { guguRevert?: { before?: unknown; files?: unknown } } | undefined)?.guguRevert;
+  if (typeof value?.before !== 'string' || !value.before) return null;
+  return { before: value.before, ...(value.files === true ? { files: true as const } : {}) };
+}
+
+/** Gugu's own bridges (claude-agent-acp, the Codex app-server bridge): `_meta.guguRevert` and `_session/revert`. */
+export const guguBridgeRevert: AcpRevert = {
+  point(_agent, _sessionId, response) { return guguRevertPoint(response._meta); },
+  async revert(agent, sessionId, before, restoreFiles) {
+    const result = await agent.extMethod!('_session/revert', { sessionId, before, ...(restoreFiles ? { restoreFiles } : {}) });
+    if (result?.sessionId !== sessionId) throw new Error('Revert changed the provider session ID.');
+  },
+};
 
 /**
  * Describes whether a provider supports the Agent Client Protocol (ACP) transport.

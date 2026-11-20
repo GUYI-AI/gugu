@@ -26,7 +26,6 @@ import { hostDependencyStore } from '../dependencies/host-dependency-store';
 import { providerOverrideSettings } from '../settings/provider-settings-service';
 import {
   buildAgentIconMap,
-  buildAgentMetadataList,
   buildManagementAgentPayloads,
   buildAgentPayload,
   buildAgentPayloads,
@@ -398,10 +397,6 @@ export const agentsController = createRPCController({
   probeAll: async (options?: DependencyProbeOptions) => {
     const mgr = await getDependencyManager();
     return mgr.probeAll(options);
-  },
-
-  listMetadata: async () => {
-    return buildAgentMetadataList();
   },
 
   /**

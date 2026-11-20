@@ -1560,7 +1560,7 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachmentExtra={annotationDraft.items.length ? <AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
+        attachmentExtra={annotationDraft.items.length ? <AnnotationTray conversation={{ kind: 'session', sessionId: store.sessionId }} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}
@@ -2131,7 +2131,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onEditMessage: ({ itemId }) => store?.beginMessageEdit(itemId),
       onRetrySend: (itemId) => store?.retryPendingInput(itemId),
       editingMessage: messageEdit ? {
-        ...messageEdit,
+        itemId: messageEdit.itemId,
+        text: messageEdit.text,
         pending: messageEditPending,
         canSubmit: (historyActionsEnabled || !!store?.isRejectedInput(messageEdit.itemId)) && !messageEditPending && messageEdit.text.trim().length > 0,
         // A rejected input has no reply yet: sending it removes nothing.
@@ -2139,6 +2140,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         onChange: (text) => store?.changeMessageEdit(messageEdit.itemId, text),
         onCancel: () => store?.cancelMessageEdit(messageEdit.itemId),
         onSubmit: () => void store?.sendMessageEdit(messageEdit.itemId),
+        ...(store?.canRestoreFiles(messageEdit.itemId) ? { restoreFiles: {
+          checked: messageEdit.restoreFiles === true,
+          onChange: (checked: boolean) => store.changeMessageEditRestoreFiles(messageEdit.itemId, checked),
+        } } : {}),
       } : undefined,
       onStop: () => {
         if (!store) return;

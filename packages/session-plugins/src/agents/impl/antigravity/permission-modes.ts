@@ -22,6 +22,6 @@ export const ANTIGRAVITY_PERMISSION_MODES = {
   // 只读只在聊天面板腿(ACP `default`)。终端腿的 agy 1.4.0 `--mode` 只认 accept-edits / auto / plan,
   // `--mode default` 只打一行 warning 就照常起(落到用户自己存的档);shell 另由 toolPermission 管 ⇒ 终端腿兑现不了只读。
   'read-only': { id: 'default', legs: ['acp'] },
-  edit: { id: 'auto_edit' },
+  edit: { id: 'auto_edit', aliases: ['accept-edits'] },
   'full-access': { id: 'yolo' },
 } satisfies ProviderPermissionModeMap;

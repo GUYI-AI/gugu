@@ -36,6 +36,7 @@ import { AssistantMoveDialog } from './AssistantMoveDialog'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantPageInApp } from '../../lib/assistantEntry'
 import { useAuth } from '../../store/auth'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
@@ -69,7 +70,7 @@ export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snaps
       ownerName={user.nickname ?? null}
       snapshot={snapshot}
       device={device}
-      cloudAvailable={canSetUpCloudAssistant(cloud)}
+      cloudAvailable={!hasTeamAccountMarker(user) && canSetUpCloudAssistant(cloud)}
       localDeviceId={localDeviceId}
     />
   )
@@ -132,6 +133,7 @@ export function AssistantStatusGroups({
  */
 export function AssistantShellHost() {
   const { user } = useAuth()
+  const teamAccount = hasTeamAccountMarker(user)
   const { contacts, contactsStatus, updateAgentProfile } = useContactsStore()
   const { devices, phones } = useDevicesStore()
   const cloud = useCloudComputer()
@@ -178,7 +180,7 @@ export function AssistantShellHost() {
   const assistantState = assistantIdentityState(contact !== null, mine.reading, contactsStatus)
   // 会员档:最左栏入口在「还没有咕咕」时按它写提示;没读到、读不到 = null(不当成非会员)。
   const spending = useSpendingPower(user)
-  const member = spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
+  const member = teamAccount ? null : spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
   // 本机正在给它安家:那一次的恢复记录在(建好或失败才清);云上正在开 = 管家说 provisioning。
   const [localPreparing, setLocalPreparing] = useState(false)
   useEffect(() => {
@@ -228,7 +230,7 @@ export function AssistantShellHost() {
   useEffect(() => {
     publishAssistantShell({
       deviceCount,
-      cloudAvailable: cloud.state === 'value' && cloud.value.available,
+      cloudAvailable: !teamAccount && cloud.state === 'value' && cloud.value.available,
       canHostHere: !!localDeviceId,
       cloud: snapshot,
       loadError: cloudFailureOf(cloud),
@@ -241,11 +243,11 @@ export function AssistantShellHost() {
       chatReadFailed: !!dm.failed,
       home,
       setup,
-      member,
+      member: teamAccount ? true : member,
       preparing,
       rulesPending: rules.state === 'value' && rules.value.pending,
     })
-  }, [deviceCount, cloud, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules])
+  }, [deviceCount, cloud, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, teamAccount, preparing, rules])
 
   return (
     <>

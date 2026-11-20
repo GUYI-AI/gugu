@@ -16,9 +16,9 @@ const agentHome = replica({
   refreshEvery: (home) => (home?.migrationPreparation ? 1000 : false),
 })
 
-export function AgentHomeRow({ providerId, machine }: { providerId: string; machine: string | null }) {
+export function AgentHomeRow({ providerId, machine, disabled = false }: { providerId: string; machine: string | null; disabled?: boolean }) {
   const { t, i18n } = useTranslation('main')
-  const reading = useReplica(agentHome, [machine, providerId])
+  const reading = useReplica(agentHome, [machine, providerId], { read: !disabled })
   const home = reading.state === 'value' ? reading.value : undefined
   const readError = refreshFailure(reading)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -39,5 +39,5 @@ export function AgentHomeRow({ providerId, machine }: { providerId: string; mach
         {home.sourceUpdated && t('agentHome.updated')}
       </> : t('agentHome.upgradeRelogin', { name: home?.name ?? providerId })}
         {error && <span role="alert" className="block text-destructive">{error}</span>}</>}
-      control={home?.needsImport ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
+      control={home?.needsImport ? undefined : <Button variant="secondary" size="sm" onClick={() => void open()} disabled={disabled || busy || !home} data-testid={`agent-home-reimport-${providerId}`}>{t('agentHome.reimport')}</Button>} />
 }

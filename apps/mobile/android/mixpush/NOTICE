@@ -1,0 +1,5 @@
+MixPush — https://github.com/taoweiji/MixPush
+Source revision: 7df94d89e44b7c3d65e2d62da47011b6d5914e11
+Apache License 2.0; see LICENSE.
+
+Gugu modifications (2026): explicit single-provider selection; remove default Xiaomi and data-only fallback, registration polling and token/payload logging; replace obsolete/incomplete FirebaseInstanceId implementation with FirebaseMessaging, awaitable registration/revocation and token rotation callbacks; opt-in SDK initialization; update Android Gradle namespaces and SDK dependency. Only core and FCM are included in this stage.
