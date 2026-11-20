@@ -53,6 +53,7 @@ export interface CreateAcpConnectionSourceDeps {
 
 export interface AcquireAcpConnectionInput {
   providerId: string;
+  sessionProgram?: string | null;
   workspaceId: string;
   cwd: string;
   behavior: IAcpBehavior;
@@ -131,6 +132,7 @@ async function provisionAcpConnection(
   );
   const spawn = await deps.agentHost.buildAcpSpawn(input.providerId, {
     cwd: input.cwd,
+    sessionProgram: input.sessionProgram,
     runContext: input.runContext,
     platform: input.platform,
     capabilitySpawnEnv: input.capabilitySpawnEnv,
