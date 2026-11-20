@@ -159,13 +159,11 @@ vi.mock('../../../../apps/desktop/src/components/ChatListPanel', async () => {
   return {
     ChatListPanel: ({
       onChatSelected,
-      onNewProject,
       onOpenSessionCreate,
       lead,
       headerLeading,
     }: {
       onChatSelected?: () => void
-      onNewProject?: () => void
       onOpenSessionCreate?: () => void
       lead?: React.ReactNode
       headerLeading?: React.ReactNode
@@ -174,10 +172,7 @@ vi.mock('../../../../apps/desktop/src/components/ChatListPanel', async () => {
         headerLeading,
         lead,
         React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-row', onClick: onChatSelected }, 'chat-list-panel'),
-        onOpenSessionCreate ? React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-create-agent', onClick: onOpenSessionCreate }, 'create agent') : null,
-        onNewProject
-          ? React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-new-project', onClick: onNewProject }, 'new project')
-          : null)
+        onOpenSessionCreate ? React.createElement('button', { type: 'button', 'data-testid': 'mock-chat-create-agent', onClick: onOpenSessionCreate }, 'create agent') : null)
     )
   }
 })
