@@ -407,3 +407,32 @@ it('repairs a legacy unfinished record only after proving the engine is gone, wi
   expect(ended.endedAt).toBeUndefined();
   expect(ended.hostEnd?.at).toEqual(expect.any(Number));
 });
+
+
+it('observes a later lost engine after a previous end without reopening the earlier turn (#3374)', async () => {
+  fixture.sqlite.prepare("UPDATE sessions SET provider='codex', provider_session_id=? WHERE id='c1'").run(THREAD);
+  await writeRecord([...qa(0), ...qa(1, false)]);
+  const { recordPtyEngineEnd, readPtyTurnEnds } = await import('./pty-turn-ends');
+  const firstEnd = Date.parse('2026-06-18T07:14:00Z');
+  recordPtyEngineEnd('c1', firstEnd);
+  expect(await sync()).toEqual({ inserted: 2, status: 'complete' });
+  const earlier = JSON.parse(rows()[1].data) as TranscriptTurn;
+  const nextStart = firstEnd + 60_000;
+  await appendRecord(qa(2, false).map(value => JSON.stringify({ ...JSON.parse(value), timestamp: new Date(nextStart).toISOString() })));
+  state.process = { home: 'host', start: 'fresh' };
+  expect(await sync()).toEqual({ inserted: 1, status: 'settling' });
+  expect(outcomes()).toEqual(['done', 'cancelled', undefined]);
+  state.process = null;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(nextStart + 60_000);
+  try {
+    expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+    const later = JSON.parse(rows()[2].data) as TranscriptTurn;
+    expect(later.outcome?.kind).toBe('cancelled');
+    expect(later.endedAt).toBeUndefined();
+    expect(later.hostEnd?.at).toBe(nextStart + 60_000);
+    expect(JSON.parse(rows()[1].data)).toEqual(earlier);
+    expect(readPtyTurnEnds('c1', THREAD)).toHaveLength(2);
+    expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+    expect(readPtyTurnEnds('c1', THREAD)).toHaveLength(2);
+  } finally { clock.mockRestore(); }
+});

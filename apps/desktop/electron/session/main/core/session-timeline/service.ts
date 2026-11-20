@@ -177,20 +177,28 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
   const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
   const row = readSessionRow(sessionId, { includeArchived: true });
   const pty = row && row.runtime !== 'acp';
-  // Confirm the engine is gone. An unreadable tmux or a detached survivor must not be converted to a turn end.
-  if (pty && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
-    const latest = readSessionRow(sessionId, { includeArchived: true });
-    if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
-      && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
-      recordPtyEngineEnd(sessionId, Date.now(), true);
-    }
-  }
-  return createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
+  const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
     sessionId,
     ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });
+  try {
+    // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
+    const last = timeline.getSnapshot().turns.at(-1);
+    if (pty && last && !last.outcome && last.startedAt !== undefined
+      && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
+      const latest = readSessionRow(sessionId, { includeArchived: true });
+      if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
+        && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
+        recordPtyEngineEnd(sessionId, Date.now(), true, last.startedAt);
+      }
+    }
+    return timeline;
+  } catch (error) {
+    timeline.dispose();
+    throw error;
+  }
 };
 
 let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;

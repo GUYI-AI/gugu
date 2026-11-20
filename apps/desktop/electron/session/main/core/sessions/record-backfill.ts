@@ -105,7 +105,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         if (await sessionEngine(sessionId) !== 'gone') return result('settling', inserted);
         if (!current()) return result('runtime-changed', inserted);
         if (active()) return result('active', inserted);
-        recordPtyEngineEnd(sessionId, Date.now(), true);
+        recordPtyEngineEnd(sessionId, Date.now(), true, lastStartedAt);
       }
       if (row.runtime !== 'acp') {
         const ends = readPtyTurnEnds(sessionId, row.providerSessionId!);

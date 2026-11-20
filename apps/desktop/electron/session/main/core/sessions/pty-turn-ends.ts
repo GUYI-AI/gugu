@@ -22,13 +22,13 @@ export function readPtyTurnEnds(sessionId: string, providerSessionId: string): r
 }
 
 /** Call only after actual transport death, never on idle hooks, detach, or silence. Persist before publishing idle. */
-export function recordPtyEngineEnd(sessionId: string, cutoff: number, observedOnly = false): void {
+export function recordPtyEngineEnd(sessionId: string, cutoff: number, observedOnly = false, turnStartedAt?: number): void {
   const row = db.select({ runtime: sessions.runtime, providerSessionId: sessions.providerSessionId })
     .from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!row || row.runtime === 'acp' || !row.providerSessionId) return;
   const ends = readPtyTurnEnds(sessionId, row.providerSessionId);
-  // A cold observation only repairs pre-existing records with no end fact; it must not invent an elapsed duration.
-  if (observedOnly && ends.length) return;
+  // Reopening an already ended turn is not a new death; a later unclosed turn still needs its own observation.
+  if (observedOnly && turnStartedAt !== undefined && ends.some(end => end.cutoff >= turnStartedAt)) return;
   if (ends.some(one => one.cutoff === cutoff)) return;
   const record: Record = { providerSessionId: row.providerSessionId,
     ends: [...ends, { cutoff, ...(observedOnly ? {} : { endedAt: cutoff }) }].sort((a, b) => a.cutoff - b.cutoff) };
