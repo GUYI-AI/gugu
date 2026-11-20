@@ -14,6 +14,7 @@ import { TaskPageViewport } from './task-page-viewport';
 import { CHROME_ERROR_PAGE_URL, READ_CHROME_ERROR_SCRIPT, taskPageLoadFailure } from './task-page-load-error';
 import { READ_FAVICONS_SCRIPT } from './task-page-favicons';
 import { TaskPopupClosed, TaskPopups } from './task-popups';
+import { windowPauser, WINDOW_DECISION_MS, type WindowOwner } from './task-window-pause';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -53,7 +54,9 @@ export interface TaskPageContents {
    * for it). Such a page waits a few seconds to be adopted by the tab opened for it, which names it by that id (`pageFor`), or is closed.
    */
   reportNewWindows?(): void;
-  /** Closes a window Chrome created for this page that no Gugu tab will show (see `reportNewWindows`). */
+  /** A window Chrome created for this page that a Gugu tab will show: it may start loading (see `reportNewWindows`). */
+  keepWindow?(popup: string): void;
+  /** A window Chrome created for this page that no Gugu tab will show: it is closed without having asked for its address. */
   closeWindow?(popup: string): void;
   /** This page is a window another page opened, shown in a tab: it was adopted, not loaded by Gugu. */
   readonly adoptedWindow?: boolean;
@@ -134,12 +137,14 @@ export class PipeConnection extends EventEmitter {
 
 /** Chrome announces the page of a window a few milliseconds after `Page.windowOpen`; past this it will not come. */
 const WINDOW_PAGE_WAIT_MS = 1_000;
+/** A window Chrome never held (holding is off, or it was made before holding began) is closed this long after Gugu decided against it. */
+const WINDOW_NOT_HELD_MS = 300;
 /** A window that opens empty may be pointed somewhere later by the page that opened it. */
 const windowAddress = (url: string | undefined) => url ? url : 'about:blank';
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 /** @internal exported for tests */
-export class PageTarget extends EventEmitter implements TaskPageContents {
+export class PageTarget extends EventEmitter implements TaskPageContents, WindowOwner {
   async hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
     await this.viewport.ready();
     if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
@@ -175,6 +180,11 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
   private readonly openings: { url: string; features?: string[]; timer: ReturnType<typeof setTimeout> }[] = [];
   /** Set when a tab adopted this page as the window another page opened for it. */
   adoptedWindow = false;
+  /** Windows Chrome holds (see task-window-pause.ts) until Gugu says what becomes of them. */
+  private readonly heldWindows = new Map<string, { session: string; timer: ReturnType<typeof setTimeout> }>();
+  /** What Gugu decided for a window Chrome has not yet held, and the address of each window, which the decision needs. */
+  private readonly windowFates = new Map<string, { fate: 'keep' | 'discard'; timer: ReturnType<typeof setTimeout> }>();
+  private readonly windowAddresses = new Map<string, string>();
   /** Gugu is closing this page itself, so Chrome closing it is not the page's doing. */
   private closing = false;
   private favicons: string[] = [];
@@ -209,6 +219,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
         const opening = this.openings.shift();
         if (opening) clearTimeout(opening.timer);
         // `opener`: the window can reach the page that opened it (not noopener); a link's target=_blank cannot.
+        this.windowAddresses.set(info.targetId, windowAddress(opening?.url ?? info.url));
         this.emit('window-open', { url: windowAddress(opening?.url ?? info.url), popup: info.targetId, ...(opening?.features && { features: opening.features }), opener: info.canAccessOpener !== false });
       }
       return;
@@ -359,11 +370,106 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
     this.emit('did-fail-load', { ...taskPageLoadFailure(line), validatedURL });
   }
 
-  reportNewWindows(): void { this.windowsReported = true; }
+  reportNewWindows(): void {
+    this.windowsReported = true;
+    windowPauser(this.connection).register(this);
+  }
 
-  /** Closes a window Chrome created for this page that no tab will show. Already gone is fine. */
-  closeWindow(popup: string): void {
+  /** Chrome holds a window this page opened, before it has asked for its address. */
+  windowPaused(popup: string, session: string): void {
+    const decided = this.windowFates.get(popup);
+    if (decided) {
+      clearTimeout(decided.timer);
+      this.windowFates.delete(popup);
+      void this.settleWindow(popup, session, decided.fate);
+      return;
+    }
+    // Nobody said yet: it goes on as Chrome made it, not stuck.
+    const timer = setTimeout(() => {
+      this.heldWindows.delete(popup);
+      windowPauser(this.connection).log.warn('No decision for a window a page opened; it was let go as Chrome made it', { popup });
+      void this.settleWindow(popup, session, 'keep');
+    }, WINDOW_DECISION_MS);
+    timer.unref?.();
+    this.heldWindows.set(popup, { session, timer });
+  }
+
+  /** A tab will show this window: it may start loading. */
+  keepWindow(popup: string): void { this.decideWindow(popup, 'keep'); }
+
+  /** No tab will show this window: it is closed, without having asked for its address when Chrome still held it. Already gone is fine. */
+  closeWindow(popup: string): void { this.decideWindow(popup, 'discard'); }
+
+  private decideWindow(popup: string, fate: 'keep' | 'discard'): void {
+    const held = this.heldWindows.get(popup);
+    if (held) {
+      clearTimeout(held.timer);
+      this.heldWindows.delete(popup);
+      void this.settleWindow(popup, held.session, fate);
+      return;
+    }
+    // Chrome has not said it holds the window (yet, or at all): settle it when it does, or close it outright when it never does.
+    const timer = setTimeout(() => {
+      this.windowFates.delete(popup);
+      this.windowAddresses.delete(popup);
+      if (fate === 'discard') this.closeWindowNow(popup);
+    }, WINDOW_NOT_HELD_MS);
+    timer.unref?.();
+    this.windowFates.set(popup, { fate, timer });
+  }
+
+  private closeWindowNow(popup: string): void {
     void this.connection.send('Target.closeTarget', { targetId: popup }).catch(() => {});
+  }
+
+  private async settleWindow(popup: string, session: string, fate: 'keep' | 'discard'): Promise<void> {
+    const pauser = windowPauser(this.connection);
+    const address = this.windowAddresses.get(popup) ?? '';
+    this.windowAddresses.delete(popup);
+    try {
+      if (fate === 'keep') { await pauser.resume(session); return; }
+      // An address Chrome requests from the network is stopped at its request; anything else (an empty window) has nothing to stop.
+      if (!/^https?:/i.test(address)) { await pauser.resume(session); this.closeWindowNow(popup); return; }
+      await this.discardHeldRequest(popup, session);
+    } catch (error) {
+      pauser.log.warn('Could not settle a window a page opened', { popup, fate, error: String(error) });
+      await pauser.resume(session);
+      if (fate === 'discard') this.closeWindowNow(popup);
+    }
+  }
+
+  /** Lets the window start with its request stopped before it reaches the site, then closes it: the site never sees the request. */
+  private discardHeldRequest(popup: string, session: string): Promise<void> {
+    const pauser = windowPauser(this.connection);
+    return new Promise<void>((resolve, reject) => {
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        this.connection.off('event', onEvent);
+        this.closeWindowNow(popup);
+        resolve();
+      };
+      const onEvent = (message: CdpMessage) => {
+        if (message.method !== 'Fetch.requestPaused' || message.sessionId !== session) return;
+        void this.connection.send('Fetch.failRequest', { requestId: message.params?.requestId, errorReason: 'Aborted' }, session).catch(() => {}).then(finish);
+      };
+      const timer = setTimeout(() => {
+        pauser.log.warn('A window a page opened did not stop at its request; it was closed', { popup });
+        finish();
+      }, WINDOW_DECISION_MS);
+      timer.unref?.();
+      this.connection.on('event', onEvent);
+      this.connection.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, session)
+        .then(() => this.connection.send('Runtime.runIfWaitingForDebugger', {}, session))
+        .catch((error: unknown) => {
+          finished = true;
+          clearTimeout(timer);
+          this.connection.off('event', onEvent);
+          reject(error);
+        });
+    });
   }
 
   /** Gugu is about to close this page: Chrome reporting it closed is no news. */
@@ -542,6 +648,13 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
     this.capture.stop();
     this.screening = false;
     for (const opening of this.openings.splice(0)) clearTimeout(opening.timer);
+    // Windows still held for this page are let go, never left waiting for a decision nobody will make.
+    const pauser = windowPauser(this.connection);
+    pauser.unregister(this);
+    for (const [popup, held] of this.heldWindows) { clearTimeout(held.timer); void pauser.resume(held.session); this.windowAddresses.delete(popup); }
+    this.heldWindows.clear();
+    for (const decided of this.windowFates.values()) clearTimeout(decided.timer);
+    this.windowFates.clear();
     this.connection.off('event', this.onEvent);
     this.emit('destroyed');
   }
@@ -645,6 +758,7 @@ export function createServerTaskBrowser(options: {
 
   async function launch() {
     const { process: child, connection, userAgent } = options.spawn ? { ...options.spawn(), userAgent: undefined } : await spawnChrome();
+    windowPauser(connection, options.log); // Before any page asks: this is the log a held window's trouble goes to.
     connection.on('event', (message: CdpMessage) => {
       if (message.method === 'Target.targetDestroyed') popups.forget(String(message.params?.targetId));
     });

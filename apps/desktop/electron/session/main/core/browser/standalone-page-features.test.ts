@@ -5,6 +5,7 @@ import { wireStandalonePageFeatures, type FeatureHost } from './standalone-page-
 function fixture(options: { chosen?: string[] | null; interceptFails?: boolean; adoptedWindow?: boolean } = {}) {
   const page = Object.assign(new EventEmitter(), {
     reportNewWindows: vi.fn(),
+    keepWindow: vi.fn(),
     closeWindow: vi.fn(),
     adoptedWindow: options.adoptedWindow ?? false,
     announceFavicons: vi.fn(async () => undefined),
@@ -44,6 +45,7 @@ describe('a standalone page in the Gugu window', () => {
     f.page.emit('window-open', { url: 'https://accounts.google.com/o/oauth2/v2/auth', popup: 'P1', features: asPopup, opener: true });
     f.page.emit('window-open', { url: 'https://github.com/login/oauth/authorize', popup: 'P2', features: asPopup, opener: true });
     expect(f.host.openInNewTab.mock.calls).toEqual([['https://accounts.google.com/o/oauth2/v2/auth', 'P1'], ['https://github.com/login/oauth/authorize', 'P2']]);
+    expect(f.page.keepWindow.mock.calls).toEqual([['P1'], ['P2']]); // Chrome may start loading them: the tab takes them over.
     expect(f.page.closeWindow).not.toHaveBeenCalled();
   });
 
@@ -54,6 +56,7 @@ describe('a standalone page in the Gugu window', () => {
     f.page.emit('window-open', { url: 'https://accounts.google.com/o/oauth2/v2/auth', popup: 'P2', features: asTab, opener: true }); // a sign-in address, but not a popup
     expect(f.host.openInNewTab.mock.calls).toEqual([['http://localhost:3000/p/auth'], ['https://accounts.google.com/o/oauth2/v2/auth']]); // No window named: the tab loads it itself.
     expect(f.page.closeWindow.mock.calls).toEqual([['P1'], ['P2']]);
+    expect(f.page.keepWindow).not.toHaveBeenCalled();
   });
 
   it('lets a tab take the window of a link that has no window.opener anyway: the address loads once', async () => {
@@ -61,6 +64,7 @@ describe('a standalone page in the Gugu window', () => {
     await f.ready;
     f.page.emit('window-open', { url: 'https://site.test/link', popup: 'P1', features: [...asTab, 'noopener'], opener: false });
     expect(f.host.openInNewTab.mock.calls).toEqual([['https://site.test/link', 'P1']]);
+    expect(f.page.keepWindow.mock.calls).toEqual([['P1']]);
     expect(f.page.closeWindow).not.toHaveBeenCalled();
   });
 

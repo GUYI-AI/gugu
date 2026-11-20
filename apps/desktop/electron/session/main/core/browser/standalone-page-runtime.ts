@@ -46,11 +46,14 @@ function dialogPage(page: TaskPageContents): DialogPage | null {
 }
 
 function featurePage(page: TaskPageContents): FeaturePage | null {
-  const { reportNewWindows, announceFavicons, interceptFileChoosers, setFileInputFiles } = page;
-  if (!reportNewWindows || !announceFavicons || !interceptFileChoosers || !setFileInputFiles) return null;
+  const { reportNewWindows, keepWindow, closeWindow, announceFavicons, interceptFileChoosers, setFileInputFiles } = page;
+  if (!reportNewWindows || !keepWindow || !closeWindow || !announceFavicons || !interceptFileChoosers || !setFileInputFiles) return null;
   return {
     on: (event, listener) => page.on(event, listener),
     reportNewWindows: () => reportNewWindows.call(page),
+    keepWindow: popup => keepWindow.call(page, popup),
+    closeWindow: popup => closeWindow.call(page, popup),
+    get adoptedWindow() { return page.adoptedWindow === true; },
     announceFavicons: () => announceFavicons.call(page),
     interceptFileChoosers: () => interceptFileChoosers.call(page),
     setFileInputFiles: (backendNodeId, files) => setFileInputFiles.call(page, backendNodeId, files),

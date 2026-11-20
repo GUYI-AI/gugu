@@ -4,7 +4,9 @@ import { decideWindowOpen, windowOpenDisposition } from './browser-window-open';
 export type FeaturePage = {
   on(event: 'window-open' | 'file-chooser' | 'did-fail-load' | 'closed-by-page' | 'page-favicon-updated', listener: (...args: unknown[]) => void): unknown;
   reportNewWindows(): void;
-  /** Closes a window Chrome created for this page that no Gugu tab will show. */
+  /** A Gugu tab will show a window Chrome created for this page: it may start loading. */
+  keepWindow(popup: string): void;
+  /** No Gugu tab will show a window Chrome created for this page: it is closed, if possible before it asks for its address. */
   closeWindow(popup: string): void;
   /** This page is itself a window another page opened. */
   readonly adoptedWindow?: boolean;
@@ -42,7 +44,10 @@ export async function wireStandalonePageFeatures(page: FeaturePage, host: Featur
     const decision = decideWindowOpen({ url, disposition: windowOpenDisposition(features), fromPopup: page.adoptedWindow === true });
     const window = typeof popup === 'string' ? popup : undefined;
     // A window of its own, or one that has no window.opener to give anyway (a link): the tab takes Chrome's window and the address loads once.
-    if (decision === 'window' || (decision === 'tab' && opener === false)) return host.openInNewTab(url, window);
+    if (decision === 'window' || (decision === 'tab' && opener === false)) {
+      if (window) page.keepWindow(window);
+      return host.openInNewTab(url, window);
+    }
     // The built-in browser gives a tab no window.opener, which a window Chrome already created cannot be taken without: it goes, the tab loads the address itself.
     if (window) page.closeWindow(window);
     if (decision === 'tab') host.openInNewTab(url);

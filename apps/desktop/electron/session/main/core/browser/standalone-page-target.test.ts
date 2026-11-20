@@ -91,16 +91,25 @@ describe('a standalone page: windows it opens', () => {
     expect(opened).toEqual([{ url: 'http://ads.test/', features: ['resizable'] }]);
   });
 
-  it('closes a window Chrome created when Gugu has no tab to show it in, at once rather than after the wait', async () => {
-    const f = await fixture();
-    f.target.closeWindow('P1');
-    expect(f.sentMethods('Target.closeTarget').map(call => call.params)).toEqual([{ targetId: 'P1' }]);
+  it('closes a window Chrome created when Gugu has no tab to show it in, once it is clear that Chrome is not holding it for a decision', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = await fixture();
+      f.target.closeWindow('P1');
+      expect(f.sentMethods('Target.closeTarget')).toEqual([]);
+      await vi.advanceTimersByTimeAsync(400);
+      expect(f.sentMethods('Target.closeTarget').map(call => call.params)).toEqual([{ targetId: 'P1' }]);
+    } finally { vi.useRealTimers(); }
   });
 
   it('does not mind that a window it was told to close is already gone', async () => {
-    const f = await fixture({ 'Target.closeTarget': () => { throw new Error('No target with given id found'); } });
-    expect(() => f.target.closeWindow('P1')).not.toThrow();
-    await f.settle();
+    vi.useFakeTimers();
+    try {
+      const f = await fixture({ 'Target.closeTarget': () => { throw new Error('No target with given id found'); } });
+      f.target.closeWindow('P1');
+      await vi.advanceTimersByTimeAsync(400);
+      expect(f.sentMethods('Target.closeTarget')).toHaveLength(1);
+    } finally { vi.useRealTimers(); }
   });
 
   it('reports at once, by address only, a window Chrome blocked because no one clicked: no page exists to adopt', async () => {
