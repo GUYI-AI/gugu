@@ -32,8 +32,7 @@ const INLINE_MAX = 280
 
 // @@@inline-image-decision - 画不画成图只看「浏览器能不能画」(mime ∪ 扩展名,shared/imageMime.mjs),
 // 不看写进正文的 [Kind]:历史上 agent 不带 mime_type 发的 PNG 被记成 file,这里让它们自愈。
-// 字节一律经 lib/attachmentBytes(签名链接 + Cache Storage);临时故障由共享读取层静默重试,
-// 条目删了说「文件已删除」。
+// 字节经 lib/attachmentBytes，设备读取宿主负责续传和临时故障重试。
 export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, senderName, chatId, onDownload }: { meta: ParsedAttachment; messageId: string; isMine: boolean; onOpenFile?: (meta: ParsedAttachment) => void; senderName?: string; chatId?: string; onDownload?: () => void }) {
   const { t } = useTranslation('messaging')
   const { user } = useAuth()
@@ -49,7 +48,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const upload = useAttachmentUploadProgress(messageId)
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
   if (metadata.data?.status === 'pending' || metadata.data?.status === 'failed') return <div ref={box} className={FIT_BUBBLE} data-attachment-pending={metadata.data.status === 'pending' || undefined}>
-    <FileAttachmentCard file={meta} isMine={isMine} onOpen={upload?.failed ? upload.retry : undefined}
+    <FileAttachmentCard file={meta} isMine={isMine} onOpen={upload?.failed ? upload.retry : metadata.data.status === 'pending' && onOpenFile ? () => onOpenFile(meta) : undefined}
       details={(upload?.failed ? upload.reason : undefined) ?? t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
@@ -96,9 +95,9 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
     return registerAttachmentImage(img.current, meta.source, { name: meta.fileName, contentType: meta.mimeType },
-      chatId ? { chatId, messageId } : undefined, size?.width && size.height ? { width: size.width, height: size.height } : undefined)
+      chatId ? { chatId, messageId } : undefined, size?.width && size.height ? { width: size.width, height: size.height } : undefined, meta.fileMetadata)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
-  }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId, size?.width, size?.height])
+  }, [ready, sourceKey, meta.fileName, meta.mimeType, meta.fileMetadata?.status, chatId, messageId, size?.width, size?.height])
 
   if (view.status === 'gone') return <span className="contents" data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} /></span>
   if (view.status === 'missing') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />

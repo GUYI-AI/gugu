@@ -830,6 +830,7 @@ if (SERVER_MODE) {
     supabaseUrl: getSupabaseUrl(),
     anonKey: getSupabaseAnonKey(),
     onAuthExpired: (message) => {
+      desktopFiles.ownerChanged(null)
       projectionDeviceRuntime.invalidate()
       // 登录态已清掉;这个账号的进程退出,守护进程看到它没有登录态就不再拉起(重新登录即恢复)。
       createLogger('server/auth').error({ message }, `登录已失效,需要重新登录:${SERVER_LOGIN_ACTION}`)
@@ -2523,7 +2524,10 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
-function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
+function drainProjectFiles() {
+  desktopFiles.reads.nudge()
+  void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed'))
+}
 const attachmentUploads = createAttachmentUploadHost({
   account: async () => {
     const auth = await desktopAuthProvider().getAuth()
@@ -2544,7 +2548,7 @@ const resumeDeclaredUploads = () => { void attachmentUploads.resume().catch(erro
 const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments: attachmentUploads,
   owner: async () => (await desktopAuthProvider().getAuth())?.userId ?? null,
   alive: scope => !!webContents.fromId(scope) && !webContents.fromId(scope)!.isDestroyed(),
-  local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
+  reads: desktopFiles.reads, metadata: desktopFiles.metadata, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
 })
@@ -2555,6 +2559,7 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
 function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction']): BuildSocialBridgeDeps {
   return {
     host,
+    requestFile: desktopFiles.request,
     resolveFile: desktopFiles.resolve,
     publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
     attachments: attachmentUploads,
@@ -2758,6 +2763,7 @@ function onHumanAuthSessionChanged(): void {
   void emdashBridgeModule?.setTaskNameOwner(signedInAccountId())
     .then(() => adoptCloudTaskNames?.())
     .catch(error => createLogger('sessionpage/names').error({ error: String(error) }, 'Task name owner change failed'))
+  desktopFiles.ownerChanged(signedInAccountId())
   void nativeFiles.ownerChanged(signedInAccountId()).catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed'))
   void refreshElectronSupabaseAuth().catch((error: unknown) => {
     createLogger('device-runtime/auth').warn({ error: String(error) }, 'Realtime account auth update failed')

@@ -99,10 +99,11 @@ beforeEach(() => {
 })
 
 describe('host-scoped task runtime credentials (#1755 slice 1)', () => {
-  it('every ACP and PTY bridge receives the same device attachment host: one builder, used by all three', () => {
+  it('every ACP and PTY bridge receives the same device attachment and read hosts: one builder, used by all three', () => {
     const source = readFileSync(new URL('../../../../apps/desktop/electron/main.ts', import.meta.url), 'utf8')
     const builder = source.match(/function sessionSocialBridge\([\s\S]*?\n}\n/)?.[0]
     expect(builder).toMatch(/attachments:\s*attachmentUploads\b/)
+    expect(builder).toMatch(/requestFile:\s*desktopFiles\.request\b/)
     // The chat session, its side-chat fork and the terminal session: each bridge is the builder's, none a copy of its own.
     expect([...source.matchAll(/socialBridgeDeps:\s*\{\s*\.\.\.sessionSocialBridge\(/g)]).toHaveLength(2)
     expect(source).toMatch(/socialBridge\(info, host\)\s*\{[^}]*return sessionSocialBridge\(/)

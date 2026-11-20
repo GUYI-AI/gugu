@@ -1,3 +1,4 @@
+import type { FileReadFailure, FileReadHooks } from './fileReads'
 import { anySignal } from './anySignal'
 import { copyVerifiedFile, fileSha256, type FileSink } from './fileCipher'
 
@@ -52,7 +53,10 @@ export interface FileRevision {
  * come, or were not the declared file). Its state is the file's alone; the message was delivered with its index.
  */
 export type FileMetadata = { status: 'ready'; revision: FileRevision } | { status: 'gone' | 'expired' | 'missing' | 'failed'; sha256: string | null }
-  | { status: 'pending'; sha256: null; width?: number; height?: number }
+  | { status: 'pending'; sha256: null; width?: number; height?: number; host_label?: string | null; host_online?: boolean }
+export class FileReadError extends Error {
+  constructor(readonly code: FileReadFailure, message: string, cause?: unknown) { super(message, { cause }) }
+}
 /** The authenticated server explicitly identified a physically missing object. */
 export class MissingFileObjectError extends Error {
   constructor() { super('missing') }
@@ -61,20 +65,12 @@ export class MissingFileObjectError extends Error {
 export class FileReadRevokedError extends Error {
   constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
 }
-/** How long an agent's read waits for bytes their sender is still uploading before saying so. */
-export const ATTACHMENT_PENDING_WAIT_MS = 8_000
 const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])
 /** A relay request ended with a reason (read-contract §2.8): the holder's own words, or the server's code for a refusal. */
 export function relayRefusedError(reason: string) {
   return RELAY_QUOTA_FULL.has(reason)
-    ? Object.assign(new Error(`The computer that keeps this file could not send it: its account's storage is full (quota_full). Free storage on that account, then read the file again.`), { code: 'quota_full' })
-    : Object.assign(new Error(`The computer that keeps this file could not send it (upload_failed: ${reason}). Ask the sender to send it again.`), { code: 'upload_failed' })
-}
-
-/** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
-export class AttachmentUploadPendingError extends Error {
-  readonly code = 'upload_pending'
-  constructor(fileName: string) { super(`${fileName}：发送方仍在上传，稍后用 message_download_file 再读`) }
+    ? new FileReadError('quota_full', `The computer that keeps this file could not send it: its account's storage is full (quota_full). Free storage on that account, then read the file again.`)
+    : new FileReadError('upload_failed', `The computer that keeps this file could not send it (upload_failed: ${reason}). Ask the sender to send it again.`)
 }
 export interface FileBytes {
   /** An authorized immutable snapshot with exact length; stored digests are verified when present. */
@@ -92,6 +88,7 @@ export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   read(offset: number, length: number): Promise<Uint8Array>
   stream(): AsyncIterable<Uint8Array>
   /** Opened with `showFirst`: rejects (FileReadRevokedError) when what was read must be taken down. Otherwise already settled by the first read. */
+  open?(): Promise<void>
   acknowledgement?(): Promise<void>
   dispose(): Promise<void>
   /** `store`: into the shared file store (`fileStoreDirectory`): read-only, one sha once. */
@@ -106,13 +103,20 @@ export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' }> | {
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
 /** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: (done: number, total: number) => void }
+/** `admitted`: the download capability whose signing was this read's step-1 authorization (`FileProviders.admit`); its read reuses it. */
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; admitted?: unknown; backend?: string; reads?: FileReadHooks; openedBytes?: () => Promise<FileBytes>; progress?: (done: number, total: number) => void }
 export interface FileProviders {
+  backend?(context: FileContext): Promise<string>
   saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string, store?: boolean): Promise<SavedFile>
   download?(revision: FileRevision, context: FileContext, sink: import('./fileCipher').FileSink): Promise<FileBytes>
   /** Must check the current account, device and project binding locally, before any cloud lookup. */
   local(context: FileContext): Promise<{ revision: FileRevision; open(): Promise<FileBytes> } | null>
   metadata(context: FileContext): Promise<FileMetadata>
+  /**
+   * Step 1 for a managed object read over the network (contract §2.1, amended): the read's own signed download, as this
+   * actor, authorizes it and pins the revision. Refuses (before any byte request) a revision other than the projected one.
+   */
+  admit?(projected: FileRevision, context: FileContext): Promise<FileMetadata>
   managed(revision: FileRevision, context: FileContext): Promise<FileBytes>
   /** Only an already-held owner SSH link. Null means unavailable; ACL/integrity failures must throw. */
   ssh(revision: FileRevision, context: FileContext): Promise<FileBytes | null>
@@ -142,7 +146,7 @@ export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
   if (!value || typeof value !== 'object') throw new Error('Invalid file metadata')
   const row = value as FileRevision & { status: string; code?: string; bucket_id?: string; object_name?: string; message_id?: string; upload?: string }
   // A declared file whose bytes have not arrived reads, for released clients, as an object not found; `upload` says which.
-  if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'pending') return { status: 'pending', sha256: null, ...(row.width! > 0 && row.height! > 0 ? { width: row.width!, height: row.height! } : {}) }
+  if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'pending') return { status: 'pending', sha256: null, ...(typeof row.host_online === 'boolean' ? { host_online: row.host_online, host_label: row.host_label } : {}), ...(row.width! > 0 && row.height! > 0 ? { width: row.width!, height: row.height! } : {}) }
   if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'failed') return { status: 'failed', sha256: null }
   if (row.status === 'missing' && row.code === 'object_not_found') return { status: 'missing', sha256: row.sha256 ?? null }
   if (row.status === 'gone' || row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null }
@@ -158,7 +162,7 @@ export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
 }
 
 /** Resolving metadata never signs or reads. The first byte read opens exactly one authorized snapshot. */
-const sameRevision = (a: FileRevision, b: FileRevision) => a.item_id === b.item_id && a.version === b.version && a.sha256 === b.sha256 && a.size_bytes === b.size_bytes
+export const sameRevision = (a: FileRevision, b: FileRevision) => a.item_id === b.item_id && a.version === b.version && a.sha256 === b.sha256 && a.size_bytes === b.size_bytes
 
 /** Authorization is already resolved; this is the sole local / held SSH / object-store byte selection. */
 export async function openFileBytes(providers: FileProviders, revision: FileRevision, context: FileContext,
@@ -169,14 +173,18 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
     try { await source.acknowledged; return await copyVerifiedFile(revision, source, destination, context.signal) }
     finally { await source.dispose() }
   }
-  if (local) return consume(await local.open())
+  const localBytes = async (open: () => Promise<FileBytes>) => {
+    context.reads?.state({ status: 'transferring', route: 'local' })
+    return consume(await open())
+  }
+  if (local) return localBytes(local.open)
   if (revision.source !== 'managed-object' && context.actor.accountId === revision.host_account_id) {
     // The file's own id, however it was asked for (a message, an attachment): this device keeps versions by item. Without it
     // an agent's read of a file on this very disk would miss, and go up to the cloud and back as a temporary transfer.
     const ref = revision.item_id ? Object.freeze({ item_id: revision.item_id, version: revision.version! }) : context.ref
     const own = { ...context, ref, actor: Object.freeze({ accountId: context.actor.accountId, actorId: context.actor.accountId }) }
     const here = await providers.local(own)
-    if (here && sameRevision(here.revision, revision)) return consume(await here.open())
+    if (here && sameRevision(here.revision, revision)) return localBytes(here.open)
     context.signal?.throwIfAborted()
     const ssh = await providers.ssh(revision, own)
     if (ssh) return consume(ssh)
@@ -186,16 +194,17 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
   return consume(await (revision.source === 'managed-object' ? providers.managed(revision, context) : providers.temporary(revision, context)))
 }
 
-export function createFileResolver(providers: FileProviders) {
+export function createFileResolver(providers: FileProviders, readHooks?: () => FileReadHooks) {
   function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile | null>
   function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
-  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
-  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; admit?: FileMetadata; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
+  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; admit?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
-    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: options.signal, ...(options.progress ? { progress: options.progress } : {}) }
+    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: readHooks ? anySignal([options.signal, cancellation.signal]) : options.signal, reads: readHooks?.(), ...(options.progress ? { progress: options.progress } : {}) }
     context.signal?.throwIfAborted()
+    if (context.reads && providers.backend) context.backend = await providers.backend(context)
     const local = await providers.local(context)
     if (options.localOnly && !local) return null
     if (local && (local.revision.source !== 'local' || local.revision.host_account_id !== context.actor.accountId)) throw new Error('Local file is not owned by this account')
@@ -204,19 +213,48 @@ export function createFileResolver(providers: FileProviders) {
     if (projected && projected.status !== 'ready') return projected
     if (projected?.status === 'ready' && 'item_id' in ref && (projected.revision.item_id !== ref.item_id ||
       ref.version !== undefined && projected.revision.version !== ref.version)) throw new Error('File preview reference changed')
-    const metadata = local ? { status: 'ready' as const, revision: local.revision } : projected ?? await providers.metadata(context)
+    // @@@signed-admission - a managed object this request must fetch is admitted by its own signed download (no separate
+    // file-resolve). A verified local copy, or a fetch already running that this request would join, is handed out only
+    // after this request's own pure file-resolve.
+    const admit = !local && options.purpose !== 'preview' && options.admit?.status === 'ready' ? options.admit.revision : undefined
+    const signs = admit && providers.admit && context.reads && context.backend !== undefined && admit.source === 'managed-object' && admit.sha256 !== null &&
+      !await context.reads.served(context.backend, admit, context)
+    const metadata = local ? { status: 'ready' as const, revision: local.revision } : projected ?? (signs ? await providers.admit!(admit, context) : context.reads?.waitDeclared
+      ? await context.reads.waits.until(() => providers.metadata(context), row => {
+        if (row.status !== 'pending') return
+        if (row.host_online === false) throw new FileReadError('holder_offline', `${row.host_label || 'The computer that keeps this file'} is offline.`)
+        return { status: 'waiting_sender', reason: 'declared' }
+      }, context.signal, context.reads.state)
+      : await providers.metadata(context))
     if (metadata.status !== 'ready') return metadata
     const revision = Object.freeze({ ...metadata.revision })
     requireFileRevision(revision)
+    if ('item_id' in ref && (ref.version !== undefined && revision.version !== ref.version || revision.item_id !== undefined && revision.item_id !== ref.item_id)) throw new FileReadRevokedError('revision')
     if (revision.legacy_object && (!('message_id' in context.ref) || context.ref.message_id !== revision.legacy_object.message_id)) throw new Error('Historical file reference changed')
-    context.signal = anySignal([options.signal, cancellation.signal])
+    if (!context.reads) context.signal = anySignal([options.signal, cancellation.signal])
     let disposed = false
     let opened: Promise<FileBytes> | undefined
     const check = () => {
       context.signal?.throwIfAborted()
       if (disposed) throw new Error('File handle is disposed')
     }
-    const open = () => openFileBytes(providers, revision, context, local);
+    const open = async () => {
+      const bytes = await openFileBytes(providers, revision, context, local)
+      // A message or agent may resolve in the cloud and then read the owner's local or SSH copy.
+      // That snapshot has no cloud acknowledgement of its own.
+      if (context.reads && revision.source === 'local' && revision.host_account_id === context.actor.accountId && !bytes.acknowledged) {
+        try {
+          const pinned = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
+          const final = { ...context, ref: pinned }
+          if (providers.backend && context.backend !== await providers.backend(final)) throw new FileReadRevokedError('access')
+          const current = local ? await providers.local(final).then(copy => copy && { status: 'ready' as const, revision: copy.revision }) : await providers.metadata(final)
+          if (!current) throw new FileReadRevokedError('access')
+          if (current.status !== 'ready') throw new FileReadRevokedError(current.status === 'gone' || current.status === 'expired' ? current.status : 'access')
+          if (!sameRevision(current.revision, revision)) throw new FileReadRevokedError('revision')
+        } catch (error) { await bytes.dispose(); throw error }
+      }
+      return bytes
+    }
     const get = () => opened ??= open().then(async file => {
       try {
         check()
@@ -251,10 +289,16 @@ export function createFileResolver(providers: FileProviders) {
         return revision.source === 'managed-object' && revision.content_type.startsWith('video/') ? load() : image ??= load()
       } }
     }
-    return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose, acknowledgement: async () => { await (await get()).acknowledged },
+    return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose, open: async () => { await get() }, acknowledgement: async () => { await (await get()).acknowledged },
       ...(providers.saveTo ? { saveTo: async (directory: string, name: string, store?: boolean) => {
         check()
-        try { return await providers.saveTo!(revision, context, directory, name, store) }
+        try {
+          if (!context.reads) return await providers.saveTo!(revision, context, directory, name, store)
+          const file = await get()
+          await file.acknowledged
+          check()
+          return await providers.saveTo!(revision, { ...context, openedBytes: async () => file }, directory, name, store)
+        }
         finally { await dispose() }
       } } : {}),
       async *stream() {

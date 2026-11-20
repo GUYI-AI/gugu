@@ -19,6 +19,7 @@ export const AUTOMATION_TEST_IDS = {
   // App 引用 pill: a pill the composer holds, in the row above the input with the files.
   messageAttachmentImage: 'message-attachment-image',
   imagePreviewOverlay: 'image-preview-overlay',
+  imagePreviewReading: 'image-preview-reading',
   imagePreviewImage: 'image-preview-image',
   imagePreviewClose: 'image-preview-close',
   imagePreviewDownload: 'image-preview-download',

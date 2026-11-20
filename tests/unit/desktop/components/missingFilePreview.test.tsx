@@ -3,14 +3,14 @@ import { act, createElement } from 'react'
 import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageFilePreview, type PreviewFile } from '../../../../apps/desktop/src/components/chat/MessageFilePreview'
-import { FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/fileResolver'
+import { FileReadError, FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/fileResolver'
+import type { FileReadState } from '@gugu/core/shared/fileReads'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { queryClient } from '@/lib/replica'
 
 const io = vi.hoisted(() => ({ bytes: vi.fn(), preview: vi.fn(), image: vi.fn(), external: vi.fn(), download: vi.fn() }))
-vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
-vi.mock('@/lib/download', () => ({ downloadBlob: io.download }))
+vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, downloadAttachment: io.download, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
 
 const file: PreviewFile = { kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, source: { kind: 'message', messageId: 'missing-preview' } }
 const translate = i18n.getFixedT('zh-CN', 'messaging')
@@ -23,6 +23,7 @@ describe('file preview missing-object actions', () => {
     vi.stubGlobal('Blob', NodeBlob)
     Object.values(io).forEach(mock => mock.mockReset())
     io.external.mockResolvedValue(undefined)
+    io.download.mockResolvedValue(undefined)
     io.bytes.mockResolvedValue({ status: 'ready', blob: new Blob(['notes']) })
     harness = createReactHarness()
   })
@@ -40,15 +41,23 @@ describe('file preview missing-object actions', () => {
     expect(download()?.disabled ?? true).toBe(true)
     expect(external()?.disabled ?? true).toBe(true)
   }
+  it.each([['gone', 'attachmentView.fileGone'], ['expired', 'attachmentView.fileExpired']] as const)('uses the localized %s reason from the reader', async (code, key) => {
+    io.bytes.mockRejectedValue(new FileReadError(code, 'Unavailable'))
+    await render()
+    await settled(translate(key))
+    expect(io.bytes).toHaveBeenCalledTimes(1)
+  })
   it('draws how far the bytes have come while they are read', async () => {
-    let finish!: () => void, report!: (done: number, total: number) => void
-    io.bytes.mockImplementation((_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, progress: typeof report) => {
-      report = progress
+    let finish!: () => void, report!: (state: FileReadState) => void
+    io.bytes.mockImplementation((_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, options: { onState: typeof report }) => {
+      report = options.onState
       return new Promise(resolve => { finish = () => resolve({ status: 'ready', blob: new Blob(['notes']) }) })
     })
     await render()
     expect(harness.container.querySelector('progress')).toBeNull()
-    await act(async () => { report(1_048_576, 4_194_304) })
+    await act(async () => { report({ status: 'waiting_sender', reason: 'declared' }) })
+    expect(harness.container.textContent).toContain(translate('attachmentView.senderUploading'))
+    await act(async () => { report({ status: 'transferring', route: 'oss', done: 1_048_576, total: 4_194_304 }) })
     expect(harness.container.querySelector('progress')?.value).toBe(0.25)
     await act(async () => { finish() })
     await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
@@ -71,7 +80,7 @@ describe('file preview missing-object actions', () => {
     expect(download()?.disabled).toBe(false)
     expect(external()?.disabled).toBe(false)
     await act(async () => { download()!.click() })
-    expect(io.bytes).toHaveBeenCalledTimes(5)
+    expect(io.bytes).toHaveBeenCalledTimes(4)
     expect(io.download).toHaveBeenCalledTimes(1)
     expect(harness.container.textContent).not.toContain(translate('attachmentView.fileMissing'))
   })
@@ -86,7 +95,7 @@ describe('file preview missing-object actions', () => {
   it.each(['download', 'external'] as const)('remembers a late missing result from the %s action', async action => {
     await render()
     await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
-    if (action === 'download') io.bytes.mockResolvedValueOnce({ status: 'missing' })
+    if (action === 'download') io.download.mockRejectedValueOnce(new MissingFileObjectError())
     else io.external.mockRejectedValueOnce(new MissingFileObjectError())
     await act(async () => { (action === 'download' ? download() : external())!.click() })
     await settled(translate('attachmentView.fileMissing'))
@@ -109,7 +118,7 @@ describe('file preview missing-object actions', () => {
     else {
       expect(download()?.disabled).toBe(false)
       await act(async () => { download()!.click() })
-      expect(io.bytes).toHaveBeenCalledTimes(1); expect(io.download).toHaveBeenCalledTimes(1)
+      expect(io.bytes).not.toHaveBeenCalled(); expect(io.download).toHaveBeenCalledTimes(1)
     }
   })
   // Shown before the server acknowledged the read: a refusal behind it takes the preview down and says why.

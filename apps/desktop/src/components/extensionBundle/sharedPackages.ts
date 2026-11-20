@@ -58,7 +58,12 @@ export function summaryOf(card: PackageCard, sha256?: string | null): Promise<Ex
   if (!pending) {
     pending = (async (): Promise<ExtensionBundleSummary> => {
       const kept = await cachedAttachmentCopy(sha256 ?? null).catch(() => null)
-      const bytes = kept ? null : await attachmentBytes(card.source, 'full', undefined, undefined, (done, total) => readers.get(key)?.forEach((listener) => listener(done, total)))
+      const bytes = kept ? null : await attachmentBytes(card.source, 'full', undefined, undefined, { onState(state) {
+        if (state.status === 'transferring' && state.done !== undefined && state.total !== undefined) {
+          const { done, total } = state
+          readers.get(key)?.forEach((listener) => listener(done, total))
+        }
+      } })
       if (bytes && bytes.status !== 'ready') throw new Error('the package was deleted from the group folder')
       return summarizeExtensionBundle(new Uint8Array(await (kept ?? bytes!.blob).arrayBuffer()), __APP_VERSION__)
     })()

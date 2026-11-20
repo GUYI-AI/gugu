@@ -121,7 +121,7 @@ describe('chat link pills, drawn in place', () => {
     await render(`[old notes](${groupFileLink(GONE)}) [elsewhere](${conversationLink(CHAT, MESSAGE)})`)
     await settle(() => expect(pills().map(pill => pill.dataset.unavailable)).toEqual(['true', 'true']))
     expect(pills().map(pill => pill.textContent)).toEqual(['old notes', '消息不可用'])
-    expect(pills()[0]?.title).toBe('文件已删除')
+    expect(pills()[0]?.title).toBe('这个文件已删除，或者你已没有读取权限。')
     expect(pills()[1]?.title).toBe('不可用：已删除，或你无权查看')
   })
 

@@ -2,13 +2,14 @@ import { requireAgentFileAccess, requireAgentFileTreeAccess } from '../state/age
 import { openAsBlob, createReadStream } from 'node:fs'
 import { chmod, link, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type { FileSink } from '../../shared/fileCipher'
+import { copyVerifiedFile, type FileSink } from '../../shared/fileCipher'
 import { FILE_CHUNK_BYTES, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
 import type { FileChunkCache } from '../../shared/fileCache'
 import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
 import { cloudFileProviders } from '../../cloud/fileProviders'
 import { createFileResolver, openFileBytes, type FileProviders, type FileContext, type FileHandle, type SavedFile } from '../../shared/fileResolver'
+import { createFileReads, type FileReadStore } from '../../shared/fileReads'
 import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
@@ -129,11 +130,39 @@ export async function createFileSink(tempRoot: string, size: number, destination
   }
 }
 
-/** All Node hosts configure the same resolver; desktop adds its existing local and held-SSH providers. */
-export function createNodeFileResolver(root: string, endpoint: (context: FileContext) => Promise<AttachmentsEndpoint>) {
+type NodeFileEndpoint = (context: FileContext) => Promise<AttachmentsEndpoint>
+function nodeFileProviders(root: string, endpoint: NodeFileEndpoint) {
   const providers: FileProviders = { ...cloudFileProviders({ endpoint, cache: createFileChunkCache(root), sink: size => createFileSink(root, size) }), local: async () => null, ssh: async () => null }
   providers.saveTo = createFileSaver(providers)
-  return createFileResolver(providers)
+  return providers
+}
+
+export function createNodeFileResolver(root: string, endpoint: NodeFileEndpoint) {
+  return createFileResolver(nodeFileProviders(root, endpoint))
+}
+
+export function createNodeFileReads(root: string, endpoint: NodeFileEndpoint, store?: FileReadStore) {
+  return createFileReads(nodeFileProviders(root, endpoint), store)
+}
+
+const readReceipt = (directory: string, backend: string, account: string, sha: string) =>
+  join(directory, '.read-scopes', createHash('sha256').update(JSON.stringify([backend, account])).digest('hex'), sha)
+
+/** Only files saved under this authenticated backend and account are original-byte cache candidates. */
+export function nodeFileReadStore(home: string | (() => Promise<string>)): FileReadStore {
+  return { async cachedCopy(backend, revision, context) {
+    if (!revision.sha256) return null
+    const root = fileStoreDirectory(typeof home === 'string' ? home : await home())
+    const receipt = await requireAgentFileAccess(readReceipt(root, backend, context.actor.accountId, revision.sha256))
+    const recorded = await stat(receipt).catch(error => { if (error.code === 'ENOENT') return null; throw error })
+    if (!recorded?.isFile()) return null
+    const blob = await verifiedStoreBlob(root, revision.sha256, context.signal)
+    if (!blob) return null
+    return { size: blob.size, async read(offset, length) {
+      requireFileRange(blob.size, offset, length)
+      return new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer())
+    }, async dispose() {} }
+  } }
 }
 
 /** Downloads consume the authorized source into one final file. Random-read consumers keep snapshots. */
@@ -142,6 +171,15 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
     const path = join(directory, revision.sha256 ?? `legacy-${randomUUID()}`, attachmentDownloadName(name))
     await requireAgentFileAccess(path)
     const saved: SavedFile = { file_path: path, file_name: name, size_bytes: revision.size_bytes, sha256: revision.sha256!, content_type: revision.content_type, ...(store ? { read_only: true as const } : {}) }
+    // The returned filename stays stable. Only a save which acquired this snapshot in this scope records reuse.
+    const published = async () => {
+      if (store && context.openedBytes && context.backend && revision.sha256) {
+        const receipt = await requireAgentFileAccess(readReceipt(directory, context.backend, context.actor.accountId, revision.sha256))
+        await mkdir(dirname(receipt), { recursive: true, mode: 0o700 })
+        await writeFile(receipt, '', { mode: 0o600 })
+      }
+      return saved
+    }
     const target = dirname(path)
     const holds = async (file: string) => {
       if (!revision.sha256) return false
@@ -162,7 +200,7 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
     }
     if (await holds(path)) {
       if (store) await chmod(path, STORED_FILE_MODE)
-      return saved
+      return published()
     }
     if (store && revision.sha256) {
       // Under this sha, every name that no longer holds it (someone cleared the flag and edited it; hard-linked names change
@@ -181,7 +219,7 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
       // A filesystem without hard links (exFAT, some network drives) stores this name as its own copy, below.
       if (good && await link(await requireAgentFileAccess(good), path).then(() => true, error => error.code === 'EEXIST')) {
         await chmod(path, STORED_FILE_MODE)
-        return saved
+        return published()
       }
     }
     await mkdir(target, { recursive: true, mode: 0o700 })
@@ -190,7 +228,9 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
     const written = store ? await requireAgentFileAccess(`${path}.${randomUUID()}.part`) : path
     const sink = await createFileSink(target, revision.size_bytes, written)
     try {
-      const bytes = await openFileBytes(providers, revision, { ...context, download: true }, undefined, sink)
+      const bytes = context.openedBytes
+        ? await copyVerifiedFile(revision, await context.openedBytes(), sink, context.signal)
+        : await openFileBytes(providers, revision, { ...context, download: true }, undefined, sink)
       await bytes.dispose()
       if (store) {
         await chmod(written, STORED_FILE_MODE)
@@ -212,7 +252,7 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
         for await (const bytes of createReadStream(path)) hash.update(bytes)
         saved.sha256 = hash.digest('hex')
       }
-      return saved
+      return published()
     } catch (error) {
       await sink.abort()
       if (store) await rm(written, { force: true })
@@ -266,14 +306,17 @@ export async function writeFileHandle(file: FileHandle, path: string) {
 
 /** A verified original already held by this device; partial or changed files cannot resume an upload. */
 export async function storedCopy(guguHome: string, sha256: string): Promise<Blob | null> {
+  return verifiedStoreBlob(fileStoreDirectory(guguHome), sha256)
+}
+async function verifiedStoreBlob(root: string, sha256: string, signal?: AbortSignal): Promise<Blob | null> {
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
-  const directory = await requireAgentFileAccess(join(fileStoreDirectory(guguHome), sha256))
+  const directory = await requireAgentFileAccess(join(root, sha256))
   for (const name of await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })) {
     if (name.endsWith('.part')) continue
     const path = await requireAgentFileAccess(join(directory, name))
     if (!(await stat(path)).isFile()) continue
     const blob = await openAsBlob(path), hash = createHash('sha256')
-    for await (const chunk of blob.stream()) hash.update(chunk)
+    for await (const chunk of blob.stream()) { signal?.throwIfAborted(); hash.update(chunk) }
     if (hash.digest('hex') === sha256) return blob
   }
   return null

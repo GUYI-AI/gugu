@@ -20,7 +20,8 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
+import { FileReadError } from '@gugu/core/shared/fileReads'
+import { fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
@@ -56,6 +57,7 @@ const log = createLogger('gugu-mcp-host')
  * @property {string|null} threadRootId
  * @property {string} guguHome
  * @property {(signal?: AbortSignal) => Promise<string>} getAccessToken
+ * @property {((ref: import('@gugu/core/shared/fileResolver').FileRef, actorId: string, options: import('@gugu/core/shared/fileReads').FileReadOptions) => import('@gugu/core/shared/fileReads').FileReadRequest)=} requestFile
  * @property {((action: object, signal?: AbortSignal) => Promise<unknown>)=} runHostAction
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -561,9 +563,13 @@ function createDeps(context, injected = {}, state = createSessionState()) {
     },
     attachmentsEndpoint: () => attachmentsEndpoint(context, fetchImpl),
     attachments: context.attachments,
-    resolveFile: (ref, actor = context.agentId, options) => {
+    resolveFile: (ref, actor = context.agentId) => {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
-      return context.resolveFile(ref, actor, options)
+      return context.resolveFile(ref, actor)
+    },
+    requestFile: (ref, actor, options) => {
+      if (!context.requestFile) throw new Error('Device file read host is not installed')
+      return context.requestFile(ref, actor, options)
     },
     ...injected,
     context,
@@ -2441,62 +2447,60 @@ async function downloadSourceOf(args, deps) {
   return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
 }
 
-// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:一次调用最多等 DOWNLOAD_CALL_BUDGET_MS,
-// 到了就正常返回「还在传」,下载照跑;再调一次就接上。没人等着时失败了,失败留给下一次调用报一次,再下一次重新读。
-const downloading = new Map()
+// @@@unclaimed - 一次调用最多等 DOWNLOAD_CALL_BUDGET_MS,到了就正常返回「还在传」,读取照跑;再调一次由 FileReads 的
+// flight 接上同一次传输(§2.5)。没人等着时失败了,失败留给下一次调用报一次,再下一次重新读。
+const waiting = new Map()
+const unclaimed = new Map()
 /** One call's wait, not the download's: about a harness tool timeout, so an agent turn is never held by a long read. */
 export const DOWNLOAD_CALL_BUDGET_MS = 60_000
 
-/** message_download_file:唯一取字节的门。判读者 → resolver(字节从哪来由它定)→ 本机 file-store 的只读副本。 */
+/** Each tool call authorizes its reader through the device host, then saves the pinned file as a read-only copy. */
 async function downloadFile(args, deps) {
+  const signal = deps.signal
+  signal?.throwIfAborted()
   const source = await downloadSourceOf(args, deps)
+  signal?.throwIfAborted()
+  const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
+  if (!home) throw new Error('gugu MCP context has no guguHome; cannot save the file')
   const key = `${source.reader}\n${fileRefKey(source.ref)}`
-  let flight = downloading.get(key)
-  if (flight?.failure) {
-    downloading.delete(key)
-    throw flight.failure
+  const failure = unclaimed.get(key)
+  if (failure) {
+    unclaimed.delete(key)
+    throw failure
   }
-  if (!flight) {
-    const started = Date.now()
-    flight = { started, state: 'waiting_sender', waiters: 0, failure: null }
-    const read = flight
-    read.saving = (async () => {
-      // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
-      const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
-      const progress = () => { read.state = 'transferring' }
-      let file = await deps.resolveFile(source.ref, source.reader, { progress })
-      while (file.status === 'pending' && Date.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
-        file = await deps.resolveFile(source.ref, source.reader, { progress })
-      }
-      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
-      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
-      if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
-      const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
-      if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
+  const started = Date.now()
+  const read = deps.requestFile(source.ref, source.reader, { purpose: 'save', signal })
+  let state = 'waiting_sender'
+  const unsubscribe = read.state$((next) => { if (next.status !== 'failed' && next.status !== 'done') state = next.status })
+  const saving = read.result.then(async ({ file, route, reused, waited_ms }) => {
+    try {
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
       const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
-      return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
-    })()
-    // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
-    // nobody waits for is kept (never an unhandled rejection) for the next call. A finished read leaves its copy in the
-    // file store, where the next call's own read finds it.
-    read.saving.then(() => { downloading.delete(key) }, (error) => {
-      if (read.waiters > 0) downloading.delete(key)
-      else read.failure = error
-    })
-    downloading.set(key, read)
-  }
-  flight.waiters += 1
+      return {
+        ...source.echo, ...saved, route, reused, waited_ms,
+        ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}),
+        ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}),
+      }
+    } finally {
+      await file.dispose()
+    }
+  }).finally(unsubscribe)
+  // Registered before this call's wait: a failure while any call of this reader and file waits goes to that call; one
+  // nobody waits for is kept (never an unhandled rejection) for the next call.
+  saving.catch((error) => { if (!waiting.get(key)) unclaimed.set(key, error) })
+  waiting.set(key, (waiting.get(key) ?? 0) + 1)
   let budget
   try {
-    const result = await Promise.race([flight.saving, new Promise((resolve) => { budget = setTimeout(resolve, DOWNLOAD_CALL_BUDGET_MS, null) })])
-    if (result) return JSON.stringify({ ...source.echo, ...result })
-    return JSON.stringify({ ...source.echo, status: 'transferring', state: flight.state, waited_ms: Date.now() - flight.started,
+    const result = await Promise.race([saving, new Promise((resolve) => { budget = setTimeout(resolve, DOWNLOAD_CALL_BUDGET_MS, null) })])
+    signal?.throwIfAborted()
+    if (result) return JSON.stringify(result)
+    return JSON.stringify({ ...source.echo, status: 'transferring', state, waited_ms: Date.now() - started,
       next: 'call message_download_file again with the same arguments' })
   } finally {
     clearTimeout(budget)
-    flight.waiters -= 1
+    const left = waiting.get(key) - 1
+    if (left) waiting.set(key, left)
+    else waiting.delete(key)
   }
 }
 
@@ -3199,11 +3203,17 @@ export function createGuguImServer(getContext, deps = {}) {
           : {}),
       }
       const fetchImpl = deps.fetch ?? fetch
-      const out = await dispatchTool(context, def.name, toolArgs, {
-        ...deps,
-        fetch: (input, init) => fetchImpl(input, { ...init, signal }),
-      }, state)
-      return { content: [{ type: 'text', text: String(out) }] }
+      try {
+        const out = await dispatchTool(context, def.name, toolArgs, {
+          ...deps,
+          signal,
+          fetch: (input, init) => fetchImpl(input, { ...init, signal }),
+        }, state)
+        return { content: [{ type: 'text', text: String(out) }] }
+      } catch (error) {
+        if (error instanceof FileReadError) throw new Error(`${error.code}: ${error.message}`, { cause: error })
+        throw error
+      }
     }, deps.trackRequest)
   }
   // tools/list 由组装这台 server 的宿主装一次(acp-engine-utils:session_* / app_* 等域注册完之后),❌ 在这里先装一个

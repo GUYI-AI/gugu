@@ -1,12 +1,14 @@
-import type { RuntimeAuth } from '@gugu/core'
+import { resolveGuguHome, type RuntimeAuth } from '@gugu/core'
+import { anySignal } from '@gugu/core/shared/anySignal'
+import { createFileReads, type FileReads } from '@gugu/core/shared/fileReads'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
 import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
 import { attachmentRequest, configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
-import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileChunkCache, createFileSink, createFileSaver, nodeFileReadStore } from '@gugu/core/local/files/fileSnapshots'
+import { DEVICE_STORE, snapshotBlob, type FileActor, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
@@ -74,15 +76,28 @@ export function createDesktopFileAccess(deps: {
   }
   const read = createProjectFileReader({ identity, root, env: deps.env, later })
   const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
-  const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
+  const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot),
+    image: (file, revision) => snapshotBlob(file, revision.content_type), sink: size => createFileSink(deps.tempRoot, size) }),
     local: localProjectFileProvider({ identity, read, tempRoot: deps.tempRoot, env: deps.env, later }),
     ssh: async (...args: Parameters<ReturnType<typeof ownSshFileProvider>>) => {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null
     },
   }
-  const resolve = createFileResolver({ ...providers, saveTo: createFileSaver(providers) })
+  const reads = createFileReads({ ...providers, saveTo: createFileSaver(providers) }, nodeFileReadStore(resolveGuguHome(deps.env)))
+  let lifetime = new AbortController()
+  let owner: string | null | undefined
+  function ownerChanged(current: string | null) {
+    if (owner === current) return
+    owner = current
+    lifetime.abort(new Error('File reader account changed'))
+    lifetime = new AbortController()
+  }
+  const request: FileReads['request'] = (ref, actor, options) =>
+    reads.request(ref, actor, { ...options, signal: anySignal([options.signal, lifetime.signal]) })
+  const resolve = (ref: FileRef, actor: FileActor) => reads.resolve(ref, actor, { signal: lifetime.signal })
   const drain = createProjectTransferHost({ identity, endpoint, read: async request => read(request, (await identity()).accountId), tempRoot: deps.tempRoot, env: deps.env, later })
   const resolveAccount: Parameters<typeof setAccountFileResolver>[0] = async (ref, actor, options) => {
+    const signal = anySignal([options?.signal, lifetime.signal])
     const { accountId, deviceId } = await identity()
     if ('name' in ref) {
       const local = await findProjectFileByName(ref.chat, ref.name, accountId, deviceId, deps.env)
@@ -91,7 +106,7 @@ export function createDesktopFileAccess(deps: {
     }
     const fileRef: FileRef = 'id' in ref ? { item_id: ref.id, ...(options?.version ? { version: options.version } : {}) } : ref
     const reader = { accountId, actorId: actor ?? accountId }
-    return resolve(fileRef, reader, { ...(options?.localOnly ? { localOnly: true } : {}), ...(options?.signal ? { signal: options.signal } : {}) })
+    return options?.localOnly ? reads.resolve(fileRef, reader, { localOnly: true, signal }) : reads.resolve(fileRef, reader, { signal })
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
   const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
@@ -106,7 +121,7 @@ export function createDesktopFileAccess(deps: {
       return data
     },
   })
-  return { providers, resolve, resolveAccount, read, drain, publish,
+  return { reads, metadata: providers.metadata, ownerChanged, request, resolve, resolveAccount, read, drain, publish,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

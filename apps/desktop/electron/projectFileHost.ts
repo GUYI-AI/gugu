@@ -105,6 +105,14 @@ export function localProjectFileProvider(deps: {
     const identity = await deps.identity()
     if (context.actor.actorId !== identity.accountId || context.actor.accountId !== identity.accountId) return null
     const revision = await readProjectFile(context.ref, identity.accountId, identity.deviceId, deps.env, deps.later)
-    return revision ? { revision, open: () => context.download ? openProjectFileSource(revision, request => deps.read(request, context.actor.actorId)) : snapshotProjectFile(revision, request => deps.read(request, context.actor.actorId), deps.tempRoot, context.signal, context.progress) } : null
+    if (!revision) return null
+    const read: ProjectFileReader = request => deps.read(request, context.actor.actorId)
+    return { revision, async open() {
+      if (context.download) return openProjectFileSource(revision, read)
+      const snapshot = (transfer: FileContext) => snapshotProjectFile(revision, read, deps.tempRoot, transfer.signal, transfer.progress)
+      if (!context.backend || !context.reads) return snapshot(context)
+      await (await openProjectFileSource(revision, read)).dispose()
+      return context.reads.acquire(context.backend, 'local', revision, context, snapshot)
+    } }
   }
 }

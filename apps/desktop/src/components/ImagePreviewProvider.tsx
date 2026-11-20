@@ -21,6 +21,8 @@ import { fetchBlob, downloadBlob } from '../lib/download'
 import { canWriteImageToClipboard, writeImageBlobToClipboard } from '../lib/imageClipboard'
 import { rendererLogger } from '../lib/log'
 import { holderOfflineText, offlineHolder } from '../lib/fileHost'
+import { fileReadFailure, fileReadProgress, type ReadProgress } from '../lib/fileReadStatus'
+import { FileReadError, type FileReadState } from '@gugu/core/shared/fileReads'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
@@ -86,7 +88,9 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   })
 }
 
-type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean }
+type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: Promise<string>
+  /** Set once the original is on screen: its read refused afterwards takes it down. */
+  takeDown?: (state: Extract<FileReadState, { status: 'failed' }>) => void }
 
 function slideFor(item: ImageViewerItem): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
@@ -157,10 +161,25 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
   }
 }
 
-function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
+/** One original being read for the viewer: `follow` hears its states, `end` is called once it settles either way. */
+interface OriginalReads { follow: (item: ImageViewerItem) => (state: FileReadState) => void; end: (item: ImageViewerItem) => void }
+
+function wireViewer(pswp: PhotoSwipe, dialogLabel: string, reads: OriginalReads, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
   wireReadingZoom(pswp)
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
-  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点。
+  // The clicked one's original is asked for as the viewer opens, so its read overlaps the opening animation; it is put in
+  // only once the animation has ended — 换图会改掉它飞行的起点和终点。
+  const startOriginal = (data: ViewerSlide): Promise<string> | undefined => {
+    const { item } = data, full = item.full
+    if (!full) return undefined
+    if (!data.original) {
+      const follow = reads.follow(item)
+      // Shown before its read is acknowledged; a refusal that follows takes it down.
+      data.original = full((state) => { follow(state); if (state.status === 'failed') data.takeDown?.(state) }, true)
+      void data.original.then(() => reads.end(item), () => reads.end(item))
+    }
+    return data.original
+  }
   // Its neighbours are warmed with their thumbnails only (`current` false), so paging to one shows pixels at once, never
   // an original nobody looks at (an item whose only bytes are its original is not warmed); what fails there is said once
   // it is the one looked at.
@@ -180,25 +199,40 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
       pswp.contentLoader.getContentByIndex(index)?.loadImage(false)
     }
     void (async () => {
+      const original = current ? startOriginal(data) : undefined
       if (data.item.preview) {
-        try { replace(await data.item.preview()) }
-        catch (error) {
+        // The preview is shown only while the original has not come: an original that wins is never covered by it.
+        const preview = data.item.preview()
+        try {
+          const first = await Promise.race([preview, ...(original ? [original.then(() => null, () => preview)] : [])])
+          if (first) replace(first)
+        } catch (error) {
           if (!data.item.full) throw error
           log.warn({ error: String(error) }, 'image preview unavailable')
         }
         if (pswp.isDestroying || !pswp.isOpen) return
       }
-      if (current && data.item.full) replace(await data.item.full())
-    })().catch((error: unknown) => {
-      if (!current || pswp.isDestroying || !pswp.isOpen) return
-      log.warn({ error: String(error) }, 'image bytes unavailable')
-      if (data.item.preview) {
-        if (!data.src) {
+      if (!original) return
+      const shownPreview = data.src
+      replace(await original)
+      data.takeDown = (state) => {
+        data.takeDown = undefined
+        if (shownPreview) replace(shownPreview)
+        else {
           const content = pswp.contentLoader.getContentByIndex(index)
           if (content) { content.state = 'error'; content.displayError() }
         }
-        onFileError(data.item, error)
+        onFileError(data.item, new FileReadError(state.code, state.message))
       }
+    })().catch((error: unknown) => {
+      if (!current || pswp.isDestroying || !pswp.isOpen) return
+      log.warn({ error: String(error) }, 'image bytes unavailable')
+      if (!data.src) {
+        const content = pswp.contentLoader.getContentByIndex(index)
+        if (content) { content.state = 'error'; content.displayError() }
+      }
+      // A slide still showing its thumbnail says why its original did not come.
+      onFileError(data.item, error)
     })
   }
   const upgradeAround = () => {
@@ -302,6 +336,10 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     root.setAttribute('aria-label', dialogLabel)
     root.classList.add('window-no-drag-region')
     markCurrentImage()
+    const slides = pswp.options.dataSource
+    const clicked = (Array.isArray(slides) ? slides[pswp.currIndex] : undefined) as ViewerSlide | undefined
+    // The clicked one's original is read from the moment it opens, beside any preview it shows meanwhile.
+    if (clicked) startOriginal(clicked)
   })
 }
 
@@ -327,7 +365,7 @@ function ViewerButton({ label, testId, className, side, onClick, children }: {
   )
 }
 
-function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mobile: boolean; onEdit: () => void }) {
+function ImageViewerChrome({ viewer, mobile, reading, onEdit }: { viewer: OpenViewer; mobile: boolean; reading?: ReadProgress; onEdit: () => void }) {
   const { t } = useTranslation('main')
   const { toast } = useToast()
   const [copying, setCopying] = useState(false)
@@ -395,6 +433,10 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
           <ChevronRight />
         </ViewerButton>
       ) : null}
+      {reading ? <div className="gg-image-viewer__reading" role="status" data-testid={AUTOMATION_TEST_IDS.imagePreviewReading}>
+        <span>{reading.label}</span>
+        {reading.fraction !== undefined ? <progress className="gg-progress" aria-label={reading.label} value={reading.fraction} max={1} /> : null}
+      </div> : null}
       {items.length > 1 ? <div className="gg-image-viewer__counter">{index + 1} / {items.length}</div> : null}
     </div>
   )
@@ -402,10 +444,13 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
 
 export function ImagePreviewProvider({ children }: { children: ReactNode }) {
   const { t, i18n } = useTranslation('main')
+  const { t: tm } = useTranslation('messaging')
   const mobile = useMobileShell()
   const { toast } = useToast()
   const [viewer, setViewer] = useState<OpenViewer | null>(null)
   const [editing, setEditing] = useState<ImageViewerItem | null>(null)
+  // How far each slide's original is, while it is read; the chrome shows the current slide's.
+  const [reading, setReading] = useState<ReadonlyMap<ImageViewerItem, ReadProgress>>(new Map())
   const annotating = editing !== null
   useLayoutEffect(() => {
     if (!annotating) return
@@ -414,8 +459,8 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
     return () => commandRegistry.setShortcutsPaused(paused)
   }, [annotating])
   // 宿主只登记一次,打开时读最新的形态与文案
-  const latest = useRef({ t, i18n, mobile, toast })
-  latest.current = { t, i18n, mobile, toast }
+  const latest = useRef({ t, tm, i18n, mobile, toast })
+  latest.current = { t, tm, i18n, mobile, toast }
 
   useEffect(() => {
     let active: PhotoSwipe | null = null
@@ -434,13 +479,17 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           const { t: translate, mobile: isMobile } = latest.current
           const pswp = new PhotoSwipeCtor(viewerOptions(request, isMobile, translate('shell.imagePreview.loadFailed')))
           if (usesPhoneFlight(isMobile, request.items[request.index])) wirePhoneFlight(pswp, request.items, request.index)
-          wireViewer(pswp, translate('shell.imagePreview.dialog'), (item, error) => {
+          const live = () => !pswp.isDestroying && pswp.isOpen
+          wireViewer(pswp, translate('shell.imagePreview.dialog'), {
+            follow: (item) => fileReadProgress(latest.current.tm, (progress) => { if (live()) setReading((now) => new Map(now).set(item, progress)) }),
+            end: (item) => setReading((now) => { if (!now.has(item)) return now; const next = new Map(now); next.delete(item); return next }),
+          }, (item, error) => {
             const target = item.resource?.target
             void (async () => {
               const offline = target?.kind === 'file' ? await offlineHolder(target.itemId, target.version) : null
-              if (pswp.isDestroying || !pswp.isOpen) return
-              const { t, toast } = latest.current
-              toast(offline ? holderOfflineText(offline) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : messageForUser(error))
+              if (!live()) return
+              const { t, tm, toast } = latest.current
+              toast(offline ? holderOfflineText(offline) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : fileReadFailure(error, tm).error)
             })()
           })
           let unbindMenu: (() => void) | undefined
@@ -468,6 +517,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
             request.items.forEach(item => item.release?.())
             active = null
             holding = false
+            setReading(new Map())
             setViewer((open) => (open?.pswp === pswp ? null : open))
             setEditing(null)
             if (focused?.isConnected) focused.focus({ preventScroll: true })
@@ -544,7 +594,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
       {children}
       {viewer ? createPortal(editing ? <Suspense fallback={<div role="status">{t('imageAnnotate.loading')}</div>}>
         <UiPortalContainerProvider value={viewer.root}><AnnotateEditor item={editing} imageBounds={imageBounds} mobile={mobile} onCancel={() => setEditing(null)} onDone={() => viewer.pswp.close()} /></UiPortalContainerProvider>
-      </Suspense> : <ImageViewerChrome viewer={viewer} mobile={mobile} onEdit={() => setEditing(viewer.items[viewer.index])} />, viewer.root) : null}
+      </Suspense> : <ImageViewerChrome viewer={viewer} mobile={mobile} reading={reading.get(viewer.items[viewer.index])} onEdit={() => setEditing(viewer.items[viewer.index])} />, viewer.root) : null}
     </>
   )
 }

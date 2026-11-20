@@ -3,19 +3,19 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { attachmentBytes } from '@/lib/attachmentBytes'
 
-const io = vi.hoisted(() => ({ resolve: vi.fn(), shown: vi.fn(), put: vi.fn(), remove: vi.fn() }))
+const io = vi.hoisted(() => ({ request: vi.fn(), shown: vi.fn(), put: vi.fn(), remove: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
-  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
-  attachmentCache: async () => ({ put: io.put, delete: io.remove }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
+  requestFile: io.request, fileReader: () => ({ accountId: 'account', actorId: 'account' }),
+  attachmentCopyKey: (account: string, sha: string) => `${account}/${sha}`, putAttachment: io.put, forgetAttachmentCopy: io.remove,
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), shownFileBlob: io.shown }))
 
 const source = { kind: 'item' as const, itemId: 'file', version: 2 }
 const revision = { source: 'local', item_id: 'file', version: 2, file_name: 'page.html', content_type: 'text/html', size_bytes: 4, sha256: 'a'.repeat(64) }
-const kept = `https://attachments.test/account/account/sha256/${'a'.repeat(64)}`
+const kept = `account/${revision.sha256}`
 beforeEach(() => {
   vi.clearAllMocks()
-  io.resolve.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' } })
+  io.request.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' } })
 })
 
 it('shows the bytes before the acknowledgement and keeps the plaintext only once it is acknowledged', async () => {
@@ -23,7 +23,7 @@ it('shows the bytes before the acknowledgement and keeps the plaintext only once
   io.shown.mockResolvedValue({ blob: new Blob(['page']), acknowledged: new Promise<void>(resolve => { acknowledge = resolve }) })
   const bytes = await attachmentBytes(source, 'shown')
   if (bytes.status !== 'ready' || !bytes.acknowledged) throw Error('shown bytes expected')
-  expect(io.resolve.mock.calls[0]![2]).toMatchObject({ showFirst: true })
+  expect(io.request.mock.calls[0]![2]).toMatchObject({ purpose: 'show' })
   expect(await bytes.blob.text()).toBe('page')
   expect(io.put).not.toHaveBeenCalled()
   acknowledge(); await bytes.acknowledged
@@ -35,7 +35,7 @@ it.each(['access', 'revision'] as const)('a revoked read (%s) keeps nothing and 
   const bytes = await attachmentBytes(source, 'shown')
   if (bytes.status !== 'ready' || !bytes.acknowledged) throw Error('shown bytes expected')
   await expect(bytes.acknowledged).rejects.toMatchObject({ reason })
-  expect(io.put).not.toHaveBeenCalled(); expect(io.remove).toHaveBeenCalledWith(kept)
+  expect(io.put).not.toHaveBeenCalled(); expect(io.remove).toHaveBeenCalledWith('account', revision.sha256)
 })
 
 it('a read that could not be acknowledged for another reason keeps nothing and leaves an earlier copy', async () => {

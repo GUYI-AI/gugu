@@ -159,7 +159,8 @@ it('keeps another backend and CDN independent of a remembered outage', async () 
   value(await finish(f.cloud.managed(revision, context)))
   const other = fixture({ origin: true, session: f.session })
   other.endpoint.supabaseUrl = 'https://other-signer.invalid'
-  other.api.mockImplementation(async (_url, init) => {
+  other.api.mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/file-resolve')) return Response.json({ ...revision, status: 'ready' })
     const body = JSON.parse(String(init?.body)); other.requests.push(body)
     return Response.json({ status: 'ready', url: 'https://other-cdn.invalid/file', download_id: body.request_id,
       size_bytes: bytes.length, sha256: revision.sha256, origin_available: true })
@@ -522,4 +523,17 @@ it.each(['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetc
   const f = fixture(); f.api.mockRejectedValueOnce(new TypeError(message))
   value(await finish(f.cloud.managed(revision, context)))
   expect(f.committed).toHaveBeenCalledTimes(1)
+})
+it('reports arrived bytes every 64 KiB read, not only per 512 KiB chunk, ending at the full size', async () => {
+  const f = fixture()
+  f.object.mockImplementation(async () => new Response(new ReadableStream({ start(stream) {
+    for (let at = 0; at < bytes.length; at += 16 * 1024) stream.enqueue(bytes.slice(at, at + 16 * 1024))
+    stream.close()
+  } }), { status: 200 }))
+  const progress = vi.fn()
+  const file = value(await finish(f.cloud.managed(revision, { ...context, progress })))
+  expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
+  const step = 64 * 1024
+  expect(progress.mock.calls.map(([done]) => done)).toEqual([...Array.from({ length: 7 }, (_, i) => (i + 1) * step), 524288, 524288 + step, bytes.length])
+  expect(progress.mock.calls.every(([, total]) => total === bytes.length)).toBe(true)
 })

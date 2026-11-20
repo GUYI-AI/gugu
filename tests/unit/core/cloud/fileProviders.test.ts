@@ -182,6 +182,12 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(a.calls.map(call => call.route)).toEqual(['file-download'])
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect([...images.keys()][0]).not.toContain('lease=')
+    // The same bytes reached through another reference (the message that carried them) are the same cached picture.
+    const viaMessage = await createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })({ message_id: 'carrier' }, context.actor, { purpose: 'preview', metadata })
+    if (viaMessage.status !== 'ready') throw Error('ready expected')
+    expect(await (await viaMessage.content() as Blob).text()).toBe('cached pixels')
+    await viaMessage.dispose()
+    expect(a.calls.map(call => call.route)).toEqual(['file-download'])
     a.fetcher.mockRejectedValue(new Error('current access denied'))
     const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
     const options = { purpose: 'file' as const, metadata }
@@ -201,6 +207,8 @@ describe('one cloud provider and verified raw chunk cache', () => {
       expect(blob.type).toBe(contentType)
       expect(digest(new Uint8Array(await blob.arrayBuffer()))).toBe(row.sha256)
       expect(fetcher.mock.calls.map(call => call[0])).toEqual(['https://objects.invalid/file'])
+      // The preview's own signature carries the original: one reservation, not one for the preview and one for the bytes.
+      expect(a.calls.filter(call => call.route === 'file-download')).toHaveLength(1)
       expect(image).not.toHaveBeenCalled()
     } finally { await preview.dispose() }
   })
@@ -364,7 +372,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
   it.each([['same', 1], ['flaky', 2], ['down', 2], ['revision', 1], ['access', 1], ['gone', 1]] as const)('a combined server shows an encrypted copy after one call and settles the read ACK behind it (%s)', async (outcome, acks) => {
     const { local, a, c, cloud, answer } = await combined(outcome)
     const decoded = await cloud.temporary(local, context)
-    expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete'])
+    await vi.waitFor(() => expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete']))
     expect(digest(Buffer.concat([await decoded.read(0, 524288), await decoded.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
     // The bytes are in the sink once shown: the read drops its chunks before the acknowledgement settles.
     expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
@@ -412,6 +420,39 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const { blob, acknowledged } = await shownFileBlob(shown)
     expect(blob.size).toBe(plain.length)
     await expect(acknowledged).rejects.toMatchObject({ reason: 'access' })
+  })
+  it('a managed read hands its verified bytes out with the hand-out recheck as their acknowledgement: only showFirst reads before it', async () => {
+    let refuse = false, release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const a = api(), c = cache(), fetcher = vi.fn(async () => new Response(plain))
+    const resolveCalls = () => a.calls.filter(row => row.route === 'file-resolve').length
+    const endpoint = async () => ({ ...(await a.endpoint()), fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('file-resolve') && resolveCalls() >= 1) {
+        a.calls.push({ route: 'file-resolve', body: JSON.parse(init!.body as string) })
+        await gate
+        return refuse ? Response.json({ code: 'file_transfer_denied' }, { status: 403 }) : Response.json({ ...revision, status: 'ready' })
+      }
+      return a.fetcher(input, init)
+    }) as typeof fetch })
+    const cloud = cloudFileProviders({ endpoint, cache: c.store, sink: async () => sink(), fetch: fetcher as typeof fetch })
+    const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
+    // showFirst: the bytes before the recheck answers; a refusal then takes them down and keeps no chunk.
+    refuse = true
+    const shown = await resolve(context.ref, context.actor, { showFirst: true })
+    if (shown.status !== 'ready') throw Error('ready expected')
+    const { blob, acknowledged } = await shownFileBlob(shown)
+    expect(blob.size).toBe(plain.length)
+    expect(a.calls.map(row => row.route)).toEqual(['file-resolve', 'file-download', 'file-resolve'])
+    release()
+    await expect(acknowledged).rejects.toBeInstanceOf(Error)
+    expect(c.chunks.size).toBe(0)
+    // Without showFirst, nothing is read until the recheck has answered.
+    refuse = false
+    const waiting = await resolve(context.ref, context.actor)
+    if (waiting.status !== 'ready') throw Error('ready expected')
+    expect(await waiting.read(0, 1)).toEqual(new Uint8Array([73]))
+    expect(a.calls.filter(row => row.route === 'file-resolve').length).toBe(4)
+    await waiting.dispose()
   })
   it('a download into a sink still waits for the ACK and commits nothing when it is refused', async () => {
     const { local, cloud, answer } = await combined('revision')
@@ -483,7 +524,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), fetch: vi.fn() as typeof fetch })
     const error = await cloud.temporary(local, context).then(() => null, (failure: unknown) => failure as Error & { code?: string })
     expect(error!.message).toBe('File transfer is no longer available')
-    expect(error!.code).toBeUndefined()
+    expect(error!.code).toBe('gone')
   })
   it('refuses a download denied after metadata without touching the object provider', async () => {
     const a = api(), c = cache(), fetcher = vi.fn()

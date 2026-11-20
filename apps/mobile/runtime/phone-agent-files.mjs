@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { openAsBlob } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { receivePhoneDeviceFile } from '../../desktop/electron/phone-device-file.ts'
 import { commitAttachment, declareAttachment, finishDeclaredAttachment } from '../../../packages/core/src/cloud/attachmentsApi.ts'
 import { parseAttachmentContent } from '../../../packages/core/src/shared/ui/attachmentModels.ts'
 import { parseGroupFileLink } from '../../../packages/core/src/shared/ui/guguLink.ts'
 import { turnAttachmentText } from '../../../packages/core/src/shared/attachmentFolderLine.ts'
-import { createNodeFileResolver, saveFileHandle } from '../../../packages/core/src/local/files/fileSnapshots.ts'
+import { createNodeFileReads, saveFileHandle } from '../../../packages/core/src/local/files/fileSnapshots.ts'
 import { resolveAttachmentMimeType } from '../../../packages/core/src/shared/imageMime.mjs'
 import { phoneArtifactListTool, phoneTextFileTool } from './phone-agent-file-read.mjs'
 import { phoneTextWriteTool } from './phone-agent-file-write.mjs'
@@ -16,14 +17,68 @@ import { stableId, uuid } from './phone-agent-store.mjs'
 const result = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data) }], details: data })
 const asResult = (data, id) => data?.ok === false ? { v: 1, call_id: id, ...data } : { v: 1, call_id: id, ok: true, data }
 
-export async function registerArtifact({ store, agent, file, groups }) {
+export async function registerArtifact({ store, agent, file, groups, downloadBackend }) {
   file = { ...file, file_path: await realpath(file.file_path) }
   const id = stableId('phone-artifact', store.state.ownerId, agent.agentUserId, file.file_path, file.sha256)
   store.state.artifacts ??= {}
-  store.state.artifacts[id] = { ...file, artifact_id: id, ownerId: store.state.ownerId, agentUserId: agent.agentUserId, sessionId: agent.sessionId, groups, createdAt: new Date().toISOString() }
+  store.state.artifacts[id] = { ...file, artifact_id: id, ownerId: store.state.ownerId, agentUserId: agent.agentUserId, sessionId: agent.sessionId, groups,
+    ...(downloadBackend ? { downloadBackend } : {}), createdAt: new Date().toISOString() }
   await store.save()
   const { permissionRequirements: _privateProof, ...shown } = file
   return { ...shown, artifact_id: id }
+}
+
+/** One reader per phone host, with a separate saved file for each task. */
+export function createPhoneFileDownloads({ store, cloud }) {
+  const reads = createNodeFileReads(join(store.directory, 'file-cache'), () => cloud.attachmentEndpoint(), {
+    async cachedCopy(backend, revision, { actor, signal }) {
+      const agent = store.state.agents[actor.actorId]
+      if (!agent || actor.accountId !== store.state.ownerId || !revision.sha256) return null
+      const directory = join(await realpath(store.directory), 'downloads', agent.sessionId, revision.sha256)
+      for (const row of Object.values(store.state.artifacts ?? {})) {
+        if (row.downloadBackend !== backend || row.ownerId !== actor.accountId || row.agentUserId !== actor.actorId ||
+          row.sessionId !== agent.sessionId || row.sha256 !== revision.sha256 || row.size !== revision.size_bytes ||
+          dirname(row.file_path) !== directory) continue
+        signal?.throwIfAborted()
+        try {
+          if (await realpath(row.file_path) !== row.file_path || !(await stat(row.file_path)).isFile()) continue
+          const blob = await openAsBlob(row.file_path)
+          if (blob.size !== revision.size_bytes) continue
+          const hash = createHash('sha256')
+          for await (const chunk of blob.stream()) { signal?.throwIfAborted(); hash.update(chunk) }
+          signal?.throwIfAborted()
+          if (hash.digest('hex') === revision.sha256) return {
+            size: blob.size,
+            read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
+            dispose: async () => {},
+          }
+        } catch (error) {
+          if (!['ENOENT', 'ENOTDIR'].includes(error.code) && error.name !== 'NotReadableError') throw error
+        }
+      }
+      return null
+    },
+  })
+  return async (agent, ref, signal, { name, placement } = {}) => {
+    const actor = { accountId: store.state.ownerId, actorId: agent.agentUserId }
+    const { file, ...transfer } = placement
+      ? { file: await reads.resolve(ref, actor, { signal }) }
+      : await reads.request(ref, actor, { purpose: 'save', signal }).result
+    if (file.status !== 'ready') throw new Error('The placed file is not available yet')
+    try {
+      const { revision } = file
+      if (placement && (revision.chat_id !== agent.chatId || revision.item_id !== ref.item_id || revision.version !== ref.version)) {
+        throw new Error('The placed file does not belong to this task DM/version')
+      }
+      const saved = await saveFileHandle(file, join(store.directory, 'downloads', agent.sessionId), name)
+      signal?.throwIfAborted()
+      const artifact = await registerArtifact({ store, agent, groups: [], downloadBackend: cloud.root, file: {
+        file_path: saved.file_path, name: saved.file_name, size: saved.size_bytes, sha256: saved.sha256, mime_type: saved.content_type,
+      } })
+      signal?.throwIfAborted()
+      return { artifact, revision, transfer }
+    } finally { await file.dispose() }
+  }
 }
 
 /**
@@ -31,22 +86,9 @@ export async function registerArtifact({ store, agent, file, groups }) {
  * the owner — read as the agent (like any file it reads), fetched into this agent's downloads, registered as its artifacts, and read in the same lines
  * as a desktop agent reads them (`attachmentLocationLines`). The phone's prompt is text: an image is its path.
  */
-export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
-  const files = createNodeFileResolver(join(store.directory, 'file-cache'), () => cloud.attachmentEndpoint())
-  const cached = new Map()
-  const keyOf = (agent, ref) => JSON.stringify([agent.sessionId, ref.itemId, ref.version])
-  const localPathOf = async (agent, ref, signal) => {
-    const key = keyOf(agent, ref)
-    const saved = cached.get(key)
-    if (saved && (await stat(saved).catch(() => null))?.isFile()) return saved
-    cached.delete(key)
-    const full = await files({ item_id: ref.itemId, version: ref.version }, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
-    if (full.status !== 'ready') throw new Error('File is no longer available')
-    const file = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), ref.name)
-    const artifact = await registerArtifact({ store, agent, groups: [], file: { file_path: file.file_path, name: file.file_name, size: file.size_bytes, sha256: file.sha256, mime_type: file.content_type } })
-    cached.set(key, artifact.file_path)
-    return artifact.file_path
-  }
+export function phoneTurnFiles({ download, warn = console.warn }) {
+  const save = (agent, ref, signal, placement = false) =>
+    download(agent, { item_id: ref.itemId, version: ref.version }, signal, { name: ref.name, placement })
   const turn = async (agent, refs, signal, options = {}) => {
     const parts = []
     for (const ref of refs) {
@@ -55,10 +97,12 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
         if (options.requireComplete) {
           const expected = options.expectedFileDigests?.find(value => value.itemId === ref.itemId && value.version === ref.version)
           if (!expected) throw new Error('The original first-input file digest is missing')
-          const actual = await turn.placementFact(agent, ref, signal)
-          if (actual.sha256 !== expected.sha256 || actual.sizeBytes !== expected.sizeBytes) throw new Error('The first-input attachment bytes changed')
+          const { artifact } = await save(agent, ref, signal, true)
+          if (artifact.sha256 !== expected.sha256 || artifact.size !== expected.sizeBytes) throw new Error('The first-input attachment bytes changed')
+          localPath = artifact.file_path
+        } else {
+          localPath = (await save(agent, ref, signal)).artifact.file_path
         }
-        localPath = await localPathOf(agent, ref, signal)
       } catch (error) {
         if (options.requireComplete) throw error
         warn(`Task attachment could not be saved: sessionId=${agent.sessionId} itemId=${ref.itemId} reason=${error instanceof Error ? error.message : String(error)}`)
@@ -68,24 +112,13 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
     return { text: parts.join('\n\n') }
   }
   turn.prefetch = (agent, refs, signal) => Promise.all(refs.map(async ref => {
-    try { await localPathOf(agent, ref, signal); return { itemId: ref.itemId, ok: true } }
+    try { await save(agent, ref, signal); return { itemId: ref.itemId, ok: true } }
     catch (error) { return { itemId: ref.itemId, ok: false, error: error instanceof Error ? error.message : String(error), code: error?.code } }
   }))
   turn.placementFact = async (agent, ref, signal) => {
-    const full = await files({ item_id: ref.itemId, version: ref.version }, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
-    if (full.status !== 'ready') throw new Error('The placed file is not available yet')
-    try {
-      const revision = full.revision
-      if (full.reader.accountId !== store.state.ownerId || full.reader.actorId !== agent.agentUserId
-        || revision.chat_id !== agent.chatId || revision.item_id !== ref.itemId || revision.version !== ref.version) throw new Error('The placed file does not belong to this task DM/version')
-      const saved = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), ref.name)
-      const artifact = await registerArtifact({ store, agent, groups: [], file: {
-        file_path: saved.file_path, name: saved.file_name, size: saved.size_bytes, sha256: saved.sha256, mime_type: saved.content_type,
-      } })
-      cached.set(keyOf(agent, ref), artifact.file_path)
-      return { agentUserId: agent.agentUserId, chatId: revision.chat_id, itemId: revision.item_id, version: revision.version,
-        sizeBytes: saved.size_bytes, sha256: saved.sha256 }
-    } finally { await full.dispose() }
+    const { revision, artifact } = await save(agent, ref, signal, true)
+    return { agentUserId: agent.agentUserId, chatId: revision.chat_id, itemId: revision.item_id, version: revision.version,
+      sizeBytes: artifact.size, sha256: artifact.sha256 }
   }
   return turn
 }
@@ -117,9 +150,8 @@ export async function authorizedPhoneArtifact({ agent, job, store, authorize }, 
     return { file, bytes }
 }
 
-export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit }) {
+export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit, download }) {
   const access = createPhoneChatAccess({ agent, cloud, store, env })
-  const files = createNodeFileResolver(join(store.directory, 'file-cache'), () => cloud.attachmentEndpoint())
   const artifact = (path) => authorizedPhoneArtifact({ agent, job, store, authorize }, path)
   return [
     phoneArtifactListTool({ agent, job, store, authorize }),
@@ -172,6 +204,7 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
       name: 'message_download_file', label: '读取聊天附件', description: '把一个文件存到这台手机的 App 私有目录，回 file_path 和 sha256；字节不进文字上下文。',
       parameters: { type: 'object', properties: { source_message_id: { type: 'string' }, source_attachment_id: { type: 'string' }, file: { type: 'string', description: 'gugu-file://<item_id>?v=<n>' } } },
       execute: async (_callId, args, signal) => {
+        signal?.throwIfAborted()
         if ([args.source_message_id, args.source_attachment_id, args.file].filter(Boolean).length !== 1) throw new Error('Provide exactly one of source_message_id, source_attachment_id, file')
         let ref, name
         if (args.source_message_id) {
@@ -189,10 +222,8 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
           if (!link) throw new Error(`file 要写成 gugu-file://<item_id>?v=<n>，不是 ${JSON.stringify(args.file)}`)
           ref = { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }
         }
-        const full = await files(ref, { accountId: store.state.ownerId, actorId: agent.agentUserId }, { signal })
-        if (full.status !== 'ready') throw new Error('这个文件已删除或不可见')
-        const file = await saveFileHandle(full, join(store.directory, 'downloads', agent.sessionId), name)
-        return result(await registerArtifact({ store, agent, groups: [], file: { file_path: file.file_path, name: file.file_name, size: file.size_bytes, sha256: file.sha256, mime_type: file.content_type } }))
+        const { artifact, transfer } = await download(agent, ref, signal, { name })
+        return result({ ...artifact, route: transfer.route, reused: transfer.reused, waited_ms: transfer.waited_ms })
       },
     },
   ]

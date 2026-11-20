@@ -21,9 +21,9 @@ vi.mock('./summarizeExtensionBundle', () => ({
 // A copy this device keeps is found by the bytes' sha256.
 const kept = new Map<string, Blob>()
 const download = vi.fn(async (source: { url: string }, ...rest: unknown[]) => {
-  const progress = rest[3] as ((done: number, total: number) => void) | undefined
-  progress?.(1, 2)
-  progress?.(2, 2)
+  const options = rest[3] as { onState?: (state: import('@gugu/core/shared/fileReads').FileReadState) => void } | undefined
+  options?.onState?.({ status: 'transferring', route: 'oss', done: 1, total: 2 })
+  options?.onState?.({ status: 'transferring', route: 'oss', done: 2, total: 2 })
   return { status: 'ready', blob: new Blob([source.url]) }
 })
 vi.mock('../../lib/attachmentBytes', () => ({

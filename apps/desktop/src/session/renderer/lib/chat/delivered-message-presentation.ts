@@ -52,8 +52,7 @@ export async function resolveDeliveredAttachment(id: string): Promise<string | n
   const source = messageId ? { kind: 'message' as const, messageId }
     : file?.version !== undefined ? { kind: 'item' as const, itemId: file.itemId, version: file.version } : null;
   if (!source) return null;
-  const { attachmentBytes } = await import('@/lib/attachmentBytes');
-  const result = await attachmentBytes(source, 'thumb');
+  const result = await (await import('@/lib/attachmentBytes')).sessionThumb(source);
   if (result.status !== 'ready') return null;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

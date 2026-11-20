@@ -11,6 +11,7 @@ import type { FileMetadata } from '@gugu/core/shared/fileResolver'
 const f = vi.hoisted(() => ({ resolve: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   resolveFile: f.resolve,
+  cachedDisplayAttachment: async () => null,
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
   fileReadSignal: () => undefined,
   attachmentCache: async () => ({ match: async () => undefined, put: async () => undefined }),

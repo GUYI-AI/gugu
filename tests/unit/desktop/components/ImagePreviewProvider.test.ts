@@ -9,6 +9,7 @@ import { CommandShortcutBinder } from '../../../../apps/desktop/src/session/rend
 import { commandRegistry } from '../../../../apps/desktop/src/session/renderer/lib/commands/registry'
 import { ImagePreviewProvider } from '../../../../apps/desktop/src/components/ImagePreviewProvider'
 import { openImageViewer } from '../../../../apps/desktop/src/lib/imageViewer'
+import type { FileReadState } from '@gugu/core/shared/fileReads'
 import { isSheetOpen } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { Dialog } from '../../../../apps/desktop/src/components/ui/Dialog'
@@ -171,7 +172,7 @@ describe('ImagePreviewProvider', () => {
     localStorage.removeItem('gugu.file-content-zoom.image')
   })
 
-  it('waits for the opening zoom before fetching the original, which lands in the box its recorded size already set', async () => {
+  it('reads the original while the opening zoom runs, puts it in only after, in the box its recorded size already set', async () => {
     let finish!: (url: string) => void
     const full = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
     writeFileZoom('image', 1)
@@ -185,12 +186,15 @@ describe('ImagePreviewProvider', () => {
     const pswp = instances[0]
     expect(pswp.opener.isOpening).toBe(true)
     expect(pswp.currSlide!.width).toBe(3000)
-    expect(full).not.toHaveBeenCalled()
-    await act(async () => {
-      await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
-    })
+    expect(full).toHaveBeenCalledTimes(1)
     const slide = pswp.currSlide!
     await act(async () => finish('blob:original'))
+    expect(pswp.opener.isOpening).toBe(true)
+    expect(document.querySelector('img.pswp__img[src="blob:original"]')).toBeNull()
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'the opening zoom never ended')
+    })
+    expect(full).toHaveBeenCalledTimes(1)
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
     const image = slide.content.element as HTMLImageElement
     Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
@@ -286,14 +290,15 @@ describe('ImagePreviewProvider', () => {
     expect(pswp.isDestroying).toBe(true)
   })
 
-  it('shows the viewer before thumbnail bytes, then upgrades through the existing original loader', async () => {
+  it('shows the viewer before thumbnail bytes, reads the original from the moment it opens, then upgrades to it', async () => {
     let showThumbnail!: (url: string) => void, showOriginal!: (url: string) => void
     const thumbnail = new Promise<string>(resolve => { showThumbnail = resolve })
     const original = new Promise<string>(resolve => { showOriginal = resolve })
     const full = vi.fn(() => original), release = vi.fn()
     await openViewer({ images: [{ url: '', alt: 'pending', preview: () => thumbnail, full, release }] })
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).not.toBeNull()
-    expect(full).not.toHaveBeenCalled()
+    await waitForCondition(() => full.mock.calls.length === 1, 'the original did not start as the viewer opened')
+    expect(full.mock.calls[0]).toEqual([expect.any(Function), true])
     await act(async () => showThumbnail('blob:thumbnail'))
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:thumbnail"]') !== null, 'thumbnail was not displayed')
     expect(full).toHaveBeenCalledTimes(1)
@@ -311,15 +316,16 @@ describe('ImagePreviewProvider', () => {
     expect(toast).not.toHaveBeenCalled()
   })
 
-  it('does not start the original when the thumbnail fails after closing', async () => {
+  it('a thumbnail that fails after closing says nothing and starts nothing more', async () => {
     let failThumbnail!: (error: Error) => void
     const thumbnail = new Promise<string>((_resolve, reject) => { failThumbnail = reject })
     const full = vi.fn(async () => 'blob:original'), toast = vi.fn()
     await openViewer({ toast, images: [{ url: '', alt: 'closed', preview: () => thumbnail, full }] })
     await clickElement(byTestId(AUTOMATION_TEST_IDS.imagePreviewClose)!)
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'viewer did not close')
+    const started = full.mock.calls.length
     await act(async () => failThumbnail(new Error('File preview HTTP 503')))
-    expect(full).not.toHaveBeenCalled()
+    expect(full).toHaveBeenCalledTimes(started)
     expect(toast).not.toHaveBeenCalled()
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
   })
@@ -332,14 +338,38 @@ describe('ImagePreviewProvider', () => {
     expect(document.querySelector('.pswp__error-msg')).not.toBeNull()
   })
 
-  it('closing while the thumbnail is pending never loads the original or reopens the viewer', async () => {
+  it('says how far the original is while it is read, and nothing once it has arrived', async () => {
+    let report!: (state: FileReadState) => void, showOriginal!: (url: string) => void
+    const original = new Promise<string>(resolve => { showOriginal = resolve })
+    const full = vi.fn((onState?: (state: FileReadState) => void) => { report = onState!; return original })
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'large', full, size: { width: 2560, height: 3241 } }] })
+    await waitForCondition(() => full.mock.calls.length === 1, 'the original never started')
+    await act(async () => report({ status: 'transferring', route: 'oss', done: 524_288, total: 1_048_576 }))
+    const reading = byTestId(AUTOMATION_TEST_IDS.imagePreviewReading)
+    expect(reading?.textContent).toBe('正在加载 · 512.0 KB / 1.0 MB')
+    expect(reading?.querySelector('progress')?.value).toBe(0.5)
+    await act(async () => showOriginal('blob:original'))
+    await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewReading) === null, 'the reading line stayed after the original arrived')
+  })
+
+  it('a slide kept on its thumbnail says why its original did not come', async () => {
+    const full = vi.fn(async () => { throw new Error('gone') }), toast = vi.fn()
+    await openViewer({ toast, images: [{ url: 'blob:thumbnail', alt: 'deleted', full }] })
+    await waitForCondition(() => toast.mock.calls.length > 0, 'the failed original was not reported')
+    expect(toast).toHaveBeenCalledWith('图片加载失败', 'error', '这个文件已删除，或者你已没有读取权限。')
+    expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewReading)).toBeNull()
+    expect(document.querySelector('img.pswp__img[src="blob:thumbnail"]')).not.toBeNull()
+  })
+
+  it('closing while the thumbnail is pending never reads the original again or reopens the viewer', async () => {
     let finish!: (url: string) => void
-    const thumbnail = new Promise<string>(resolve => { finish = resolve }), full = vi.fn()
+    const thumbnail = new Promise<string>(resolve => { finish = resolve }), full = vi.fn(async () => 'blob:original')
     await openViewer({ images: [{ url: '', alt: 'pending', preview: () => thumbnail, full }] })
     await clickElement(byTestId(AUTOMATION_TEST_IDS.imagePreviewClose)!)
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'viewer did not close')
+    const started = full.mock.calls.length
     await act(async () => finish('blob:late-thumbnail'))
-    expect(full).not.toHaveBeenCalled()
+    expect(full).toHaveBeenCalledTimes(started)
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
   })
 

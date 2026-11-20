@@ -239,6 +239,8 @@ describe('chat stored files reuse verified, pinned range reads', () => {
       for (const offset of [0, 12, 28]) await f.files.read(again, { ref, offset, length: 4 });
       // One resolve of its own for the new page (a check: its handle is let go unread), then the same held read, chunk after chunk.
       expect(f.resolveFile).toHaveBeenCalledTimes(2);
+      // The check is a pure resolve: never a signed admission (b2 `admit`), so it signs no download and holds no reservation.
+      expect(f.resolveFile.mock.calls.map(([, , options]) => 'admit' in (options ?? {}))).toEqual([false, false]);
       expect(f.files.readHandleCount()).toBe(1);
       expect(f.dispose).toHaveBeenCalledTimes(1);
       f.release(8);

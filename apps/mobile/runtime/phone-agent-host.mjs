@@ -28,7 +28,7 @@ import { startPhoneAgentRpc } from './phone-agent-rpc.mjs'
 import { phoneCommunicationTools, deliverPhoneOutbox } from './phone-agent-tools.mjs'
 import { phoneCalendarEventView } from '../../desktop/src/mobile/phone-device/phoneCalendarView.ts'
 import { phoneChatReadTools } from './phone-agent-chat.mjs'
-import { phoneFileTools, phoneTurnFiles } from './phone-agent-files.mjs'
+import { createPhoneFileDownloads, phoneFileTools, phoneTurnFiles } from './phone-agent-files.mjs'
 import { phoneWebTool } from './phone-agent-web.mjs'
 import { cleanupStaleRemoteFileDirectories } from '../../desktop/electron/remoteFileOpen.ts'
 import { phoneMemoryTools } from './phone-agent-memory.mjs'
@@ -131,6 +131,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     emit({ type: 'auth_session', ownerId, session, accessToken: session.access_token, refreshToken: session.refresh_token, expiresAt: session.expires_at })
     authenticated = true; healthErrors.auth = null; updateReadiness()
   }, undefined, { onRequestFailure: recordRequestFailure })
+  const download = createPhoneFileDownloads({ store, cloud })
   conversationPublisher = createPhoneConversationPublisher({ store, cloud, isReady: () => authenticated && !stopped && !signingOut, authorize: (...args) => authorizeReply(...args), published: async receipt => {
     if (!store.state.personalAccountRevision || BigInt(receipt.account_revision) > BigInt(store.state.personalAccountRevision)) { store.state.personalAccountRevision = receipt.account_revision; await store.save(); publish() }
   }, warn: ({ code }) => warn(`personal conversation publication: ${code}`) })
@@ -465,7 +466,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       const tools = [
         ...phoneCommunicationTools({ agent, job, cloud, store, env, deviceId, sendSession, emit, publicationQueued: () => { void conversationPublisher.kick() }, authorize: authorizeReply }).filter((tool) => tool.name !== 'session_message'),
         ...phoneChatReadTools({ agent, cloud, store, env }),
-        ...phoneFileTools({ agent, job, cloud, store, env, authorize: authorizeReply, emit }),
+        ...phoneFileTools({ agent, job, cloud, store, env, authorize: authorizeReply, emit, download }),
         phoneWebTool({ agent, job, authorize: authorizeReply }),
         ...phoneMemoryTools({ agent, job, store, authorize: authorizeReply }),
         ...skillTurn.tools,
@@ -629,7 +630,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     const inputs = Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => job.inputDataProof).filter(Boolean)
     await authorizeReply([...new Set([...proof.groups, ...(current?.usedGroups ?? []), ...inputs.flatMap((input) => input.groups)])], { sessionId: agent.sessionId, permissionRequirements: uniqueProofs(proof.permissionRequirements, current?.permissionRequirements, ...inputs.map((input) => input.permissionRequirements)) })
   } })
-  const turnFiles = phoneTurnFiles({ store, cloud, warn })
+  const turnFiles = phoneTurnFiles({ download, warn })
   const taskApi = createPhoneTaskApi({ ownerId, store, models, timelines, actions: () => actions, findSession, verifyAgent, admit, publish: () => { publish(); void drain().catch(error => warn(error.message)) }, interrupt: async agent => { if (activeJob?.agentUserId === agent.agentUserId) await cancel(agent, { jobId: activeJob.id }) }, turnFiles })
   const attachmentCreations = createPhoneAttachmentCreation({ ownerId, deviceId, store,
     isReady: () => ready && !stopped && !signingOut,

@@ -6,6 +6,8 @@ declare const __GUGU_CLOUD_COMPUTER_URL__: string
 
 interface Window {
   electronAPI?: {
+    fileRead: import('../electron/nativeFileHost').NativeFileReadIpc['fileRead']
+    onFileReadState: import('../electron/nativeFileHost').NativeFileReadIpc['onFileReadState']
     // @@@task-fusion (#2802) — 任务页渲染层用的那几个成员。preload 早就暴露了它们
     // (contextBridge 里的 invoke / eventSend / eventOn / getPathForFile / requestWirePort),
     // 这里是它们的**唯一**声明。
