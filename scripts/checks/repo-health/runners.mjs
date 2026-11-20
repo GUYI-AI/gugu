@@ -2,7 +2,7 @@
 //   { dimension, version, scope, metrics, findings: [{file, line?, rule, message}], ...extra }
 // and leaves the tool's own output in <out>/<tool>.raw.*. Paths in findings are repo-relative.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { ensureVenv, pinOf } from './venv.mjs'
 
@@ -250,7 +250,20 @@ async function stryker(ctx) {
   const files = ctx.strykerFiles.length ? ctx.strykerFiles : [...new Set((ctx.hotspots ?? []).map((row) => row.file))]
   if (files.length === 0) throw new Error('stryker: no files to mutate (pass --stryker-files or run crapper and repowise first)')
   const report = resolve(ctx.root, 'reports/mutation/mutation.json')
-  run(ctx, bin(ctx, 'stryker'), ['run', 'stryker.config.mjs', '--mutate', files.join(',')], { allowExit: [0, 1] })
+  rmSync(report, { force: true })
+  // Stryker's in-place restore rewrites files without their executable bit; put tracked modes back afterwards.
+  const executables = execFileSync('git', ['ls-files', '-s'], { cwd: ctx.root, encoding: 'utf8' })
+    .split('\n').filter((line) => line.startsWith('100755 ')).map((line) => line.split('\t')[1])
+  let result
+  try {
+    result = run(ctx, bin(ctx, 'stryker'), ['run', 'stryker.config.mjs', '--mutate', files.join(',')], { allowExit: [0, 1] })
+  } finally {
+    for (const file of executables) {
+      const path = resolve(ctx.root, file)
+      if (existsSync(path) && !(statSync(path).mode & 0o111)) chmodSync(path, 0o755)
+    }
+  }
+  if (!existsSync(report)) throw new Error(`stryker wrote no report (exit ${result.status})\n${(result.stdout + result.stderr).slice(-4000)}`)
   writeFileSync(raw(ctx, 'stryker.raw.json'), readFileSync(report))
   const counts = {}
   const findings = []
