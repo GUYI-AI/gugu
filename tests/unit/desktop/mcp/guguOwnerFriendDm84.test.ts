@@ -92,7 +92,7 @@ function fakeDb({ staleOnce }: { staleOnce?: string } = {}) {
   // Preserve the reader boundary: owner-friend DMs resolve as the owner; the agent's own chats as the agent.
   const requestFile = (_ref: unknown, asUserId: string) => {
     signedAs.push(asUserId)
-    return { result: verifiedFileHandle(Buffer.from('bytes')).then(file => ({
+    return { state$: () => () => {}, result: verifiedFileHandle(Buffer.from('bytes')).then(file => ({
       file, route: 'oss', reused: null, sha256: file.revision.sha256, waited_ms: 0,
     })) }
   }
