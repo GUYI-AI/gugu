@@ -16,10 +16,9 @@ vi.mock('@/components/appSlot/appsHere', () => ({
   },
 }))
 
-const { GroupAppsPicker } = await import('@/components/chat/GroupAppsPicker')
+const { ChatAppsPicker } = await import('@/components/chat/ChatAppsPicker')
 const { installedExtensionsStore } = await import('@/session/renderer/features/extensions/installed-extensions-store')
 const { EXTENSION_API_VERSION, parseExtensionManifest } = await import('@/session/shared/extensions/manifest')
-const { UI_EVENTS } = await import('@/lib/uiEvents')
 
 const manifest = (id: string, tab: Record<string, unknown>) =>
   parseExtensionManifest({ id, name: id, version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: id, ...tab }] } })
@@ -43,8 +42,10 @@ afterEach(() => {
   runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = []; installedExtensionsStore.isLoaded = false })
 })
 
-async function picker(chatId = 'g1') {
-  await renderWithAppProviders(harness, createNode(GroupAppsPicker, { chatId, mobile: true, anchor: createRef<HTMLButtonElement>(), onClose: vi.fn() }))
+const onOpen = vi.fn()
+async function picker(chatId: string | null = 'g1') {
+  onOpen.mockClear()
+  await renderWithAppProviders(harness, createNode(ChatAppsPicker, { chatId, onOpen, mobile: true, anchor: createRef<HTMLButtonElement>(), onClose: vi.fn() }))
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   return [...document.querySelectorAll<HTMLElement>('[data-app-id]')].map((row) => row.dataset.appId)
 }
@@ -60,13 +61,16 @@ describe('the group\'s App list holds the group game an agent installed', () => 
     expect(await picker()).toEqual(['board'])
   })
 
-  it('opens it in this group the way its card\'s Open does', async () => {
+  it('hands the picked App to its caller, who opens it where it belongs (beside the chat, or as a task tab)', async () => {
     await picker()
-    const opened = vi.fn()
-    window.addEventListener(UI_EVENTS.openApp, opened)
-    await clickElement(document.querySelector('[data-app-id="tictactoe"] [data-testid="group-apps-open"]')!)
-    window.removeEventListener(UI_EVENTS.openApp, opened)
-    expect((opened.mock.calls[0]![0] as CustomEvent).detail).toEqual({ extensionId: 'tictactoe', chatId: 'g1' })
+    await clickElement(document.querySelector('[data-app-id="tictactoe"] [data-testid="chat-apps-open"]')!)
+    expect(onOpen.mock.calls[0]![0]).toMatchObject({ extensionId: 'tictactoe' })
+  })
+
+  it('[control] a task (no chat folder) lists only the Apps with a page of their own and reads no folder', async () => {
+    files.asked = []
+    expect(await picker(null)).toEqual(['board'])
+    expect(files.asked).toEqual([])
   })
 
   it('a switched-off game is not listed', async () => {
