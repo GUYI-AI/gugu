@@ -87,6 +87,41 @@ export function refreshSubscriptionReadings(machine?: Machine, providerId?: stri
   return Promise.all(models.map((model) => model.refresh(machine, providerId))).then(() => undefined);
 }
 
+/** Explicit refresh retains original figures and their timestamp if a vendor request fails. */
+export async function refreshConnectionUsage(machine: Machine, providerId: string, connectionId: string): Promise<void> {
+  const target = subscriptionUsage.at(machine, providerId, connectionId);
+  const previous = subscriptionUsage.peek(machine, providerId, connectionId);
+  try { target.set(await readUsage(machine, providerId, true, connectionId)); }
+  catch (error) {
+    const message = errorText(error);
+    target.set(previous.state === 'value' && previous.value.kind === 'windows'
+      ? { ...previous.value, refreshError: message }
+      : { kind: 'unavailable', reason: 'error', message, readAt: Date.now() });
+    throw error;
+  }
+}
+
+/** Refresh each account on the captured device, including accounts that are not selected. */
+export async function refreshModelSubscriptions(machine: Machine, providers: readonly string[]): Promise<void> {
+  const outcomes = await Promise.allSettled(providers.map(async providerId => {
+    await harnessConnections.refresh(machine, providerId);
+    const accounts = harnessConnections.peek(machine, providerId);
+    if (accounts.state !== 'value') throw new Error('Could not read connections');
+    const details = await Promise.allSettled(accounts.value.map(async ({ id }) => {
+      await connectionDetails.refresh(machine, providerId, id);
+      const detail = connectionDetails.peek(machine, providerId, id);
+      if (detail.state !== 'value') throw new Error('Could not read account status');
+      if (detail.value.status.kind === 'authenticated' && detail.value.plan?.payer === 'subscription') {
+        await refreshConnectionUsage(machine, providerId, id);
+      }
+    }));
+    const failed = details.find((item): item is PromiseRejectedResult => item.status === 'rejected');
+    if (failed) throw failed.reason;
+  }));
+  const failed = outcomes.find((item): item is PromiseRejectedResult => item.status === 'rejected');
+  if (failed) throw failed.reason;
+}
+
 /** The fields these pages read, projected from a reading: `data` while read, the failed read's `error`, `isPending` while unknown. */
 export function queryView<V>(reading: Reading<V>) {
   return {

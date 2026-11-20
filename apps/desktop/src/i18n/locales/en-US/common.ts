@@ -3,7 +3,7 @@ export default {
     "slogan": "Don't do it yourself. Let AI."
   },
   "staleRead": {
-    "failed": "Couldn't read the latest; showing what was read last.",
+    "failed": "Could not load the latest content. Showing the last loaded version.",
     "retry": "Retry"
   },
   "menu": {
@@ -11,7 +11,7 @@ export default {
     "noResults": "No results"
   },
   "agentName": {
-    "naming": "Naming the agent…"
+    "naming": "Generating name…"
   },
   "needsYou": {
     "title": "Needs you",
@@ -29,28 +29,28 @@ export default {
   },
   "cloudComputer": {
     "reason": {
-      "plan_required": "Gugu comes with Plus and above.",
-      "credits_exhausted": "You're out of credits.",
-      "membership_expired": "Your membership has expired, so its cloud resources are paused. Renew, or move it back to your own computer.",
-      "timeout": "It didn't connect within two minutes.",
-      "network": "Can't reach Gugu service. Check your network.",
-      "signed_out": "You've been signed out. Sign in again and retry.",
-      "gone": "your Gugu has been closed.",
-      "failed": "Something went wrong on Gugu's side.",
-      "server_install_failed": "The cloud service didn't install. Try again.",
-      "server_start_failed": "The cloud service couldn't start. Try again.",
-      "account_offline": "The cloud account didn't come online. Try again.",
+      "plan_required": "Your Gugu requires Plus or above.",
+      "credits_exhausted": "You are out of credits.",
+      "membership_expired": "Your membership has expired, so its cloud resources are paused. Renew, or migrate it to your own computer.",
+      "timeout": "Could not connect within two minutes.",
+      "network": "Could not reach the Gugu service. Check your network and try again.",
+      "signed_out": "You have been signed out. Sign in again, then retry.",
+      "gone": "Your Gugu has been closed.",
+      "failed": "Your Gugu encountered an error.",
+      "server_install_failed": "Could not install the cloud service. Try again.",
+      "server_start_failed": "Could not start the cloud service. Try again.",
+      "account_offline": "The cloud account could not come online. Try again.",
       "package_update_pending": "An update is waiting for the current task to finish. Try again later.",
-      "home_restore_failed": "Your earlier data couldn't be restored. Try again later.",
-      "host_unconfirmed": "The cloud machine's status can't be confirmed right now. Try again later.",
-      "assistant_create_failed": "Your assistant couldn't be created. Try again.",
+      "home_restore_failed": "Could not restore your earlier data. Try again later.",
+      "host_unconfirmed": "Could not confirm the cloud machine's status. Try again later.",
+      "assistant_create_failed": "Could not create your assistant. Try again.",
       "assistant_busy": "Your assistant is busy. Try again later.",
       "login_expired": "The cloud sign-in has expired and needs to be authorized again.",
       "device_removed": "The cloud device was removed. Confirm to restore it.",
-      "provision_incomplete": "Setup didn't finish. Try again.",
-      "wake_incomplete": "It didn't finish getting ready. Try again later.",
-      "sleep_incomplete": "That didn't finish. Try again later.",
-      "close_incomplete": "Closing didn't finish. Try again."
+      "provision_incomplete": "Setup did not finish. Try again.",
+      "wake_incomplete": "Preparation did not finish. Try again later.",
+      "sleep_incomplete": "The operation did not finish. Try again later.",
+      "close_incomplete": "Closing did not finish. Try again."
     }
   },
   "connection": {
@@ -102,7 +102,7 @@ export default {
   },
   "errors": {
     "offline": "Could not connect. Check your network and try again.",
-    "operationFailed": "Something went wrong. Try again.",
+    "operationFailed": "The operation failed. Try again later.",
     "permissionDenied": "You do not have permission to do this."
   },
   "locale": {

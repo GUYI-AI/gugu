@@ -12,6 +12,9 @@ import { chatService } from '../../../../apps/desktop/src/lib/chat'
 import type { ManagedGroupJoinRequest } from '../../../../apps/desktop/src/lib/groupJoinRequests'
 import { clickElement, createNode, createReactHarness, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
 
+// 页签是手机整页的版式(传 onBack = 手机);桌面是分节 + 抽屉,见 NewFriendsPanelDesktop.test.tsx。
+const phone = () => {}
+
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
 afterEach(() => { harness.cleanup() })
@@ -32,7 +35,7 @@ function joinRequest(overrides: Partial<ManagedGroupJoinRequest> = {}): ManagedG
 }
 
 async function renderPanel(contacts: Record<string, unknown>, refreshChats?: () => Promise<void>) {
-  await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), {
+  await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onBack: phone }), {
     chat: { identitiesById: { 'applicant-1': displayIdentity('applicant-1', { display_name: '申请人甲' }) }, ...(refreshChats ? { refreshChats } : {}) },
     contacts,
   })
@@ -113,7 +116,7 @@ describe('#6418 通讯录「新的请求」里的入群申请', () => {
   })
 
   it('替别人拉 Agent 的申请:说明行写的是谁要把 Agent 拉进哪个群', async () => {
-    await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), {
+    await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onBack: phone }), {
       chat: { identitiesById: {
         'agent-1': displayIdentity('agent-1', { type: 'agent', display_name: '写代码的' }),
         'member-1': displayIdentity('member-1', { display_name: '成员乙' }),

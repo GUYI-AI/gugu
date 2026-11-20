@@ -60,11 +60,9 @@ export function PhoneChatTabs({ topics, messages, current, onPick, dense = false
     const chat = chats.find((row) => row.id === topic.chat_id)
     return chat ? chatAttention(chat).askingYou : 0
   }
-  // 手机上话题都摆在这一排:叫到你的排最前。桌面这一排是你置顶的顺序,不动。
-  const ordered = dense ? topics : [...topics.filter((topic) => callsOf(topic) > 0), ...topics.filter((topic) => callsOf(topic) === 0)]
   const items = [
     { value: MAIN, label: t('topic.phoneTabs.group'), testId: 'phone-chat-tab-main' },
-    ...ordered.map((topic) => {
+    ...topics.map((topic) => {
       const calls = callsOf(topic)
       const agent = agentOf.get(topic.source_message_id)
       const status = agent ? statuses[agent] : undefined

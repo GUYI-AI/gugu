@@ -111,11 +111,13 @@ export const transcriptTurnOutcomeSchema = z.discriminatedUnion('kind', [
     /**
      * 这一轮失败是因为这家 harness 在这台机器上的登录不能用了(#6264):过期、被撤销、要重新登录。
      *
-     * 只由 session-runtime 的 `classifyTurnFailure` 按**结构化信号**判(ACP `authRequired` 的 -32000、
-     * codex 的 `codexErrorInfo: unauthorized` / HTTP 401),❌ 不按那句话的字面猜。
+     * 只由 session-runtime 的 `classifyTurnFailure` 判(ACP -32000、unauthorized / HTTP 401,
+     * 或 codex 明确的 refresh token revoked);不泛猜登录指令。
      * 老版本不认这一格会把它剥掉,照旧显示成一次普通的失败 —— 不会读坏。
      */
     signInRequired: z.boolean().optional(),
+    /** A refresh token explicitly revoked by the provider; older readers ignore this optional reason. */
+    signInReason: z.literal('revoked').optional(),
     /**
      * 这一轮是咕咕拒的:跑咕咕平台模型时,这一轮来要票、宿主签不出(#7103「谁拒绝谁说话」)。装的是原因
      * (session-core `GuguCatalogReason`,如 `membership-required`),界面按原因表说那一句、给那个按钮;

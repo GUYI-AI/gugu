@@ -11,19 +11,18 @@
  * `pasted-text.txt`(见 composer-attachment-file.ts)是我们自己造出来的东西,
  * 用户发出去之前没有第二条路能看见里面是什么。
  *
- * 判据落在**手上已经有的内容**上,而不是文件类型上:图片要有 `previewUrl`、文本要有
- * `previewText`。宿主入列时读不到就没有,chip 相应地退回不可点 —— ❌ 不要让 chip 点开
- * 一个空对话框,那比不可点更糟(用户以为坏了)。取不到内容的类型(.zip / .pdf 之类)
- * 同样落在这里:不可点,与上游一致。
+ * 图片缩略图、文本预览和宿主持有的本地文件都可以点开。
+ * 手上没有内容的 chip 保持不可点，避免打开空对话框。
  */
 import type { ComposerAttachment } from './composer-options';
 
-export type AttachmentPreviewKind = 'image' | 'text';
+export type AttachmentPreviewKind = 'image' | 'text' | 'file';
 
 /** 这枚 chip 点开能看到什么;`null` = 手上没有可看的内容,chip 渲染成不可点。 */
 export function attachmentPreviewKind(att: ComposerAttachment): AttachmentPreviewKind | null {
   if (att.kind === 'image' && att.previewUrl) return 'image';
   if (typeof att.previewText === 'string') return 'text';
+  if (att.hasLocalPreview) return 'file';
   return null;
 }
 

@@ -1,3 +1,5 @@
+// @@@engine-floor - first, so the App page's own code finds the APIs it calls on engines below them.
+import '../../lib/engine-polyfills';
 import { applyThemeColors } from './theme-colors';
 import {
   APP_RUNTIME_CODEMIRROR_MODULE,

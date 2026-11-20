@@ -6,9 +6,9 @@ import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
 import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, type LeanPage, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
-import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { keepHistoryReverted, markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
-import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision } from './session-turn-storage';
+import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision, type StoredTurnInput } from './session-turn-storage';
 import { turnPayloadFiles, withTurnPayloadWrite } from './session-turn-payload-owners';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
@@ -20,6 +20,7 @@ import { publishNativeConversationInbox, queueNativeConversationInbox } from './
 import { mayFillReplay, didFillReplay, stopFillingReplay, readableParsedRows, readableStoredRows } from './session-turn-replay';
 import { ownerNotificationEpoch, rewindOwnerNotificationState, publishOwnerNotificationState } from './owner-notification-state';
 import { persistWithTurnSettlement } from './turn-settlement';
+import { noteSwitchedModelReply } from './switched-model-memory';
 import { events } from '@main/lib/events';
 import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
 import { commitWindowReceipt, prepareWindowCommitWrite, type WindowCommitCapture } from '../session-timeline/window-commit-write';
@@ -78,6 +79,7 @@ export function persistCommittedTurn(input: PersistInput): Promise<void> {
       if (input.windowCapture) await recoverWindowCommitIntent(sqlite, { ...input.windowCapture, sessionId: input.sessionId }, input.windowCapture.intentBudget!);
     }
     if (phaseFailed) throw phaseError;
+    if (input.source === 'live') noteSwitchedModelReply(input.sessionId, input.turn.outcome);
     return captured;
   });
   const completed = beginCanonicalQueueTask(input.sessionId);
@@ -109,8 +111,10 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
       .limit(1);
     if (!row) throw new Error(`Cannot revise missing stored turn: sessionId=${input.sessionId} turnId=${input.turn.id} source=${input.source}`);
     // Preserve the stored identity; revisions update normalized fields, never the legacy data blob.
+    // A revision may change the outcome (process exit rewrites prompt_failed) or the content (a late tail, #6191);
+    // either way the stored rewound notice stays, since only the stored history has it.
     const previous = readSessionTurn(db.connection, row, { headerOnly: true });
-    const turn = { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId };
+    const turn = keepHistoryReverted(storedNotices(row, previous), { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId });
     const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
     const revised = prepared.turn, normalized = prepareSessionTurn(db.connection, row, revised, false);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
@@ -259,13 +263,24 @@ export async function readUnfinishedRecordTurnsNow(sessionId: string): Promise<T
   return rows.map(row => readSessionTurn(db.connection, row));
 }
 
+/**
+ * What keepHistoryReverted needs from a stored turn: its session notices. A full read decodes images and tool bodies,
+ * so it happens only for a turn that has a notice; any other turn answers with its header (no items).
+ */
+function storedNotices(row: StoredTurnInput, header?: TranscriptTurn): TranscriptTurn {
+  const notice = db.connection.prepare(`SELECT 1 FROM session_turn_nodes WHERE row_id=? AND removed=0 AND collection='items' AND kind='session-notice'
+    UNION ALL SELECT 1 FROM session_turns, json_each(session_turns.data,'$.items') WHERE session_turns.id=? AND json_extract(value,'$.kind')='session-notice'
+    LIMIT 1`).get(row.id, row.id);
+  return notice ? readSessionTurn(db.connection, row) : header ?? readSessionTurn(db.connection, row, { headerOnly: true });
+}
+
 /** The record matcher has proved this unfinished row's native identity; keep its stored sequence/references. */
 export function reviseRecordTurnNow(sessionId: string, seq: number, turn: TranscriptTurn): void {
   // Synchronous: a fill writes each turn as the record streams (resume-tail), inside the reader's callback.
   const stored = db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data, revision: sessionTurns.revision })
     .from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq), like(sessionTurns.turnId, 'record:%'))).limit(1).get();
   if (!stored) throw new Error(`Cannot revise missing record turn: sessionId=${sessionId} seq=${seq}`);
-  const revised = renumberStoredTurn(turn, sessionId, stored.seq);
+  const revised = renumberStoredTurn(keepHistoryReverted(storedNotices(stored), turn), sessionId, stored.seq);
   const normalized = prepareSessionTurn(db.connection, stored, revised, false);
   if (normalized.changed) {
     turnPayloadFiles(db.connection).durable();
@@ -372,7 +387,8 @@ export async function getStoredHistory(params: {
   const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : older ? REMOTE_OLDER_PAGE_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
   const lean: LeanPage = !params.lean || reader.local || params.fromSeq !== undefined ? false
     : params.lean === 'folded' && older ? 'folded' : true;
-  for (;;) {
+  // A constantly rewound conversation must not keep a read alive indefinitely.
+  for (let attempt = 0; attempt < 3; attempt++) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
       before: params.before,
@@ -384,11 +400,16 @@ export async function getStoredHistory(params: {
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
-    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, await nativeConversationHistoryFloor(params.sessionId));
+    const floor = await nativeConversationHistoryFloor(params.sessionId);
+    // Resolving the clear-history boundary can yield too. A rewind during that
+    // wait invalidates the rows just as one during readStoredTurns does.
+    if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
+    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, floor);
     return params.fromSeq === undefined
       ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget, lean)
       : { ...snapshot, turns: trimTurnsForTransport(snapshot.turns) };
   }
+  throw Object.assign(new Error('会话历史正在变化，请稍后重新读取'), { code: 'history_epoch_unstable' });
 }
 
 export async function getStoredToolImage(params: {
@@ -537,9 +558,21 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
   if (fromSeq === null) return;
   return withStoredTurns(sessionId, async () => {
     stopFillingReplay(sessionId);
+    // The last kept turn says how many turns were removed after it (one faint line; the turns themselves are gone).
+    // Count and prepare it before the transaction, while the removed rows' normalized fields still exist; everything
+    // from here to the commit is synchronous, so no other writer interleaves with the staged payload files.
+    const removedTurns = db.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).all()
+      .filter(row => readSessionTurn(db.connection, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.role === 'user')).length;
+    const kept = removedTurns > 0 ? db.select({ id: sessionTurns.id, data: sessionTurns.data, revision: sessionTurns.revision }).from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, fromSeq), notLike(sessionTurns.turnId, 'owner-notify:%')))
+      .orderBy(desc(sessionTurns.seq)).limit(1).get() : undefined;
+    const marked = kept ? prepareSessionTurn(db.connection, kept, markHistoryReverted(readSessionTurn(db.connection, kept), removedTurns, Date.now()), false) : undefined;
+    if (marked?.changed) turnPayloadFiles(db.connection).durable();
     const removed = db.transaction(tx => {
       const result = tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).returning({ seq: sessionTurns.seq, turnId: sessionTurns.turnId }).all();
       const origins = new Set(result.map(row => row.turnId));
+      marked?.commit();
       // A notification commits before its calling provider turn; deleting that turn must remove its earlier notice too.
       const attached = tx.select({ id: sessionTurns.id, seq: sessionTurns.seq, turnId: sessionTurns.turnId }).from(sessionTurns)
         .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all()

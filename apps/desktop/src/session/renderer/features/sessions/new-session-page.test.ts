@@ -180,7 +180,6 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
     leftAnimatedWidth: motionValue(260),
-    leftLayoutWidth: motionValue(260),
     setCollapsed: vi.fn(),
   })
 }));
@@ -255,7 +254,6 @@ vi.mock('@renderer/lib/ui/dropdown-menu', () => ({
   DropdownMenuCheckboxItem: ({ children, checked, disabled, onCheckedChange }: { children: React.ReactNode; checked: boolean; disabled?: boolean; onCheckedChange: (checked: boolean) => void }) => React.createElement('button', { role: 'menuitemcheckbox', 'aria-checked': checked, disabled, onClick: () => onCheckedChange(!checked) }, children),
   DropdownMenu: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuSeparator: () => null,
-  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuItem: ({
     children,

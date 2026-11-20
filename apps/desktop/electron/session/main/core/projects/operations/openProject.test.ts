@@ -26,7 +26,7 @@ function arrange(platform: NodeJS.Platform, probe: { kind: 'ok' } | { kind: 'blo
   Object.defineProperty(process, 'platform', { value: platform });
   mocks.getProjectById.mockResolvedValue({ id: 'p1', type: 'local', path: '/root/work', baseRef: 'main' });
   mocks.probePathAccess.mockResolvedValue(probe);
-  mocks.openProject.mockResolvedValue({ success: true, data: { resolveGitless: async () => false } });
+  mocks.openProject.mockResolvedValue({ success: true, data: { git: { open: async () => ({}) } } });
 }
 
 afterEach(() => {

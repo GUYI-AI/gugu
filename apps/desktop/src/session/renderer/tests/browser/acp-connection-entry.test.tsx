@@ -86,7 +86,10 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
 
 // 「重新登录」/「去登录」打开的都是这一家的连接面板(#2507);一个连接都没有(没登上的「现有 CLI 配置」不列)
 // 就直接是「添加连接」表单 —— ❌ 先弹一个只有占位的菜单(owner 2026-11-12)。关掉回到原会话、原草稿。
-it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }, { provider: 'opencode', declared: false }].map(item => ({ ...item, expired: false })).concat([{ provider: 'claude', declared: true, expired: true }, { provider: 'codex', declared: true, expired: true }]))('the real $provider declared=$declared expired=$expired login action keeps the same unsent draft', async ({ provider, declared, expired }) => {
+it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }, { provider: 'opencode', declared: false }].map(item => ({ ...item, expired: false })).concat([{ provider: 'claude', declared: true, expired: true }, { provider: 'codex', declared: true, expired: true }]).map(item => ({ ...item, revoked: false, startup: false })).concat([
+  { provider: 'codex', declared: true, expired: true, revoked: true, startup: false },
+  { provider: 'codex', declared: true, expired: true, revoked: true, startup: true },
+]))('the real $provider declared=$declared expired=$expired revoked=$revoked startup=$startup login action keeps the same unsent draft', async ({ provider, declared, expired, revoked, startup }) => {
   registerSessionLocaleResources()
   setLocalePreference('en-US')
   await page.viewport(1100, 740)
@@ -101,7 +104,7 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   const submit = vi.spyOn(current, 'submitPrompt').mockResolvedValue()
   current.chatState.transcript.history.seed([{
     id: 'old-turn', seq: 0, initiator: 'user',
-    ...(expired ? { outcome: { kind: 'error' as const, signInRequired: true } } : {}),
+    ...(expired && !startup ? { outcome: { kind: 'error' as const, signInRequired: true, ...(revoked ? { signInReason: 'revoked' as const } : {}) } } : {}),
     items: [{ kind: 'message', id: 'old-user', seq: 0, role: 'user', text: 'Original task' }],
   }])
   const internals = current as unknown as { _bootstrapped: boolean }
@@ -109,7 +112,8 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
     internals._bootstrapped = true
     current.historyLoading = false
     current.messageCount = 1
-    current.loadError = expired ? null : { kind: 'auth_required', message: 'Configure the provider connection' }
+    current.loadError = startup ? { kind: 'auth_required', message: 'Refresh token was revoked', signInReason: 'revoked' }
+      : expired ? null : { kind: 'auth_required', message: 'Configure the provider connection' }
     current.setDraftText('Unsent session draft')
   })
   host = document.createElement('div')
@@ -124,6 +128,7 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   const signIn = page.getByRole('button', { name: translateSessionMessage(expired ? 'chat.signInAgain' : 'transcript.condition.signIn'), exact: true })
   await until('session sign-in is visible or its real tree failed', () => errors.length > 0 || signIn.query() !== null)
   expect(errors).toEqual([])
+  if (revoked) expect(host.textContent).toContain('sign-in was replaced by another client')
   await userEvent.click(signIn)
   if (expired) {
     await until('the saved account opens the existing login dialog directly', () => modalStore.activeModalId === 'agentSignInModal')

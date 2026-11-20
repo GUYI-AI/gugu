@@ -14,7 +14,7 @@ export function observeCodexForegroundCompletion(onLine: (line: string) => void)
       receipts.delete(messageId);
       const { stopReason, error, _meta } = outcome;
       onLine(JSON.stringify(stopReason === 'error'
-        ? { jsonrpc: '2.0', id: receipt.id, error }
+        ? { jsonrpc: '2.0', id: receipt.id, error, ...(_meta ? { _meta } : {}) }
         : { jsonrpc: '2.0', id: receipt.id, result: { stopReason, ...(_meta ? { _meta } : {}) } }));
     }
   };

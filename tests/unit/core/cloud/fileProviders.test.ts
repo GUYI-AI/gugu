@@ -274,7 +274,8 @@ describe('one cloud provider and verified raw chunk cache', () => {
     await file.dispose()
     const hit = await cloud.managed(revision, context)
     expect(await hit.read(0, 1)).toEqual(new Uint8Array([73])); await hit.dispose()
-    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(1)
+    // A finished read dropped its chunks (they only serve a resume), so a new read signs and downloads again.
+    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(2); expect(c.chunks.size).toBe(0)
   })
   it('recovers a real interrupted HTTP GET in the same read without fetching its verified prefix again', async () => {
     const c = cache(), requests: (string | undefined)[] = []
@@ -295,7 +296,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const deps = { endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch }
     try {
       const resumed = await cloudFileProviders(deps).managed(revision, context)
-      expect(c.chunks.size).toBe(2); expect(c.store.clear).not.toHaveBeenCalled()
+      expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
       const chunks = [await resumed.read(0, 524288), await resumed.read(524288, plain.length - 524288)]
       expect(digest(Buffer.concat(chunks))).toBe(revision.sha256)
       expect(requests).toEqual([undefined, 'bytes=524288-'])
@@ -365,14 +366,13 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const decoded = await cloud.temporary(local, context)
     expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete'])
     expect(digest(Buffer.concat([await decoded.read(0, 524288), await decoded.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
-    expect(c.chunks.size).toBeGreaterThan(0)
+    // The bytes are in the sink once shown: the read drops its chunks before the acknowledgement settles.
+    expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
     answer()
-    if (outcome === 'same' || outcome === 'flaky') { await decoded.acknowledged; expect(c.store.clear).not.toHaveBeenCalled() }
-    else if (outcome === 'down') { await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 }); expect(c.store.clear).not.toHaveBeenCalled() }
-    else {
-      await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
-      expect(c.store.clear).toHaveBeenCalledTimes(1); expect(c.chunks.size).toBe(0)
-    }
+    if (outcome === 'same' || outcome === 'flaky') await decoded.acknowledged
+    else if (outcome === 'down') await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 })
+    else await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
+    expect(c.store.clear).toHaveBeenCalledTimes(1)
     expect(a.calls.filter(row => row.route === 'file-read-complete')).toHaveLength(acks)
     expect(a.calls[0]!.body.download_request_id).toMatch(/^[0-9a-f-]{36}$/)
     expect(a.calls[1]!.body).toMatchObject({ download_id: 'download', ref: { item_id: 'file', version: 2 }, expect: { sha256: local.sha256, size_bytes: local.size_bytes } })
@@ -450,6 +450,40 @@ describe('one cloud provider and verified raw chunk cache', () => {
     await expect(cloud.temporary(local, context)).rejects.toThrow('Studio Mac is offline. This file opens when it is back online.')
     expect(a.calls.map(row => row.route)).toEqual(['file-request'])
     expect(objectFetch).not.toHaveBeenCalled()
+  })
+  // A relay copy the keeping machine was refused (its account's storage is full) ends the read at once, with the
+  // server's reason; the reader does not wait out its bound for a copy that cannot come.
+  it.each([
+    ['account_storage_full', 'quota_full', "its account's storage is full (quota_full)"],
+    ['group_storage_full', 'quota_full', '(quota_full)'],
+    ['global_storage_full', 'quota_full', '(quota_full)'],
+    ['upload_changed', 'upload_failed', '(upload_failed: upload_changed)'],
+    ['too_large', 'upload_failed', '(upload_failed: too_large)'],
+    ['The file moved on this computer', 'upload_failed', '(upload_failed: The file moved on this computer)'],
+    ['account_storage_full_extra', 'upload_failed', '(upload_failed: account_storage_full_extra)'],
+  ])('stops on a relay request retired with a reason (%s → %s)', async (failure, code, text) => {
+    const local = { ...revision, source: 'local' as const, host_account_id: 'host', host_device_id: 'device', host_project_id: 'project', relative_path: 'file.bin', temporary_transfer: true }
+    const a = api(local), objectFetch = vi.fn()
+    a.fetcher.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      a.calls.push({ route: String(input).split('/').at(-1)!, body: JSON.parse(init!.body as string) })
+      return Response.json({ status: 'ready', transfer_status: 'retired', transfer_declined: failure, host_label: 'Studio Mac', host_online: true })
+    })
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), fetch: objectFetch as typeof fetch })
+    const error = await cloud.temporary(local, context).then(() => null, (failure: unknown) => failure as Error & { code?: string })
+    expect(error).toBeInstanceOf(Error)
+    expect(error!.code).toBe(code)
+    expect(error!.message).toContain(text)
+    expect(a.calls.map(row => row.route)).toEqual(['file-request'])
+    expect(objectFetch).not.toHaveBeenCalled()
+  })
+  it('keeps a retired request without a reason as no longer available', async () => {
+    const local = { ...revision, source: 'local' as const, host_account_id: 'host', host_device_id: 'device', host_project_id: 'project', relative_path: 'file.bin', temporary_transfer: true }
+    const a = api(local)
+    a.fetcher.mockImplementation(async () => Response.json({ status: 'ready', transfer_status: 'retired', transfer_declined: null }))
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), fetch: vi.fn() as typeof fetch })
+    const error = await cloud.temporary(local, context).then(() => null, (failure: unknown) => failure as Error & { code?: string })
+    expect(error!.message).toBe('File transfer is no longer available')
+    expect(error!.code).toBeUndefined()
   })
   it('refuses a download denied after metadata without touching the object provider', async () => {
     const a = api(), c = cache(), fetcher = vi.fn()

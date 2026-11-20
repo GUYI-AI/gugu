@@ -257,8 +257,7 @@ async function enrichAgentMetadata(users: ContactUser[], currentUserId: string):
   if (ownedAgentIds.size === 0) return users
 
   const profileById = new Map(
-    (await readAgentProfileTypes(currentUserId) as AgentProfileRow[])
-      .filter((profile) => ownedAgentIds.has(profile.id))
+    (await readAgentProfileTypes(currentUserId, [...ownedAgentIds]) as AgentProfileRow[])
       .map((profile) => [profile.id, profile]),
   )
 

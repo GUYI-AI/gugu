@@ -24,7 +24,6 @@ import { hostDependencyStore } from '../dependencies/host-dependency-store';
 import { providerOverrideSettings } from '../settings/provider-settings-service';
 import {
   buildAgentIconMap,
-  buildAgentMetadataList,
   buildManagementAgentPayloads,
   buildAgentPayload,
   buildAgentPayloads,
@@ -44,6 +43,7 @@ import { partsToInstall, partsToUpdate } from './agent-programs';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import { lookupHarnessModelCatalog, probeHarnessModelCatalog } from './harness-model-catalog';
 import { wireHarnessModelCatalog } from './harness-model-catalog-wiring';
+import { managedVersionActions } from './managed-versions-controller';
 
 /** Enrich a manager HostDependency snapshot with latestVersion/updateAvailable from the coordinator. */
 const enrichHostDep = (
@@ -243,15 +243,6 @@ export const agentsController = createRPCController({
         const partRegistry = dependencyId === id ? registry : undefined;
         result = await finishInstall(dependencyId, method, partRegistry, await mgr.install(dependencyId, method, {
           registry: partRegistry,
-          /**
-           * 用户没指定源时,按测速排出来的顺序试(#6157)。
-           *
-           * 那趟计时来自面板一打开就发的「查各源最新版本」—— ❌ 不为选源另发一趟请求。
-           * 还没测过就是空数组,安装照旧走 descriptor 的推荐源。
-           */
-          ...(partRegistry === undefined
-            ? { registries: agentUpdateService.installSourceOrder(dependencyId) }
-            : {}),
           signal: controller.signal,
           onProgress: (report) => reportInstallProgress(id, { ...report, ...partTag(index, parts) }),
         }));
@@ -377,6 +368,7 @@ export const agentsController = createRPCController({
     const target = { platform: process.platform as string, arch: process.arch as string };
     return agentUpdateService.fetchInstallSourceVersions(id, mgr.getInstallOptions(id), target);
   },
+  ...managedVersionActions,
 
   probe: async (id: DependencyId) => {
     const mgr = await getDependencyManager();
@@ -394,10 +386,6 @@ export const agentsController = createRPCController({
   probeAll: async (options?: DependencyProbeOptions) => {
     const mgr = await getDependencyManager();
     return mgr.probeAll(options);
-  },
-
-  listMetadata: async () => {
-    return buildAgentMetadataList();
   },
 
   /**

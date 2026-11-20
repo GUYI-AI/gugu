@@ -1,3 +1,4 @@
+import { serverNow } from '../shared/serverClock'
 import { bindBackendProbe, noteBackendAnswer } from './backendReachability'
 import {
   createAgentRuntimeStateReporter,
@@ -596,6 +597,26 @@ export function createDeviceRuntimeHostLoop(
   let deviceRemovedNotified = false
   let machineLimitWarned = false
 
+  function noteDeviceRegistrationFailure(error: unknown): void {
+    // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
+    // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
+    if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
+      deviceRemovedNotified = true
+      try {
+        options.onDeviceRemoved?.((error as Error).message)
+      } catch (callbackError) {
+        options.warn?.(`[device-runtime] onDeviceRemoved threw: ${(callbackError as Error).message}`)
+      }
+    }
+    // #6264 这个账号的咕咕 server 数到上限了(库拒收这台的第一次心跳,DEVICE_LIMIT_REACHED)。
+    // 说成人话打一次,❌ 每 30 秒刷一遍同一句;心跳照旧按失败处理,移除一台 / 升级后下一拍自然接上。
+    const refusal = machineLimitRefusalFromError(error)
+    if (refusal && !machineLimitWarned) {
+      machineLimitWarned = true
+      options.warn?.(`[device-runtime] 这台机器没能加入账号:${machineLimitMessage(refusal)}${MACHINE_LIMIT_NEXT_STEP}`)
+    }
+  }
+
   function noteHeartbeatLanded(): void {
     const at = nowMs()
     if (lastHeartbeatLandedAt !== null && at - lastHeartbeatLandedAt > HEARTBEAT_LANDED_GAP_WARN_MS) {
@@ -614,23 +635,7 @@ export function createDeviceRuntimeHostLoop(
     const active = heartbeatFlights.get(heartbeatOptions.userId)
     if (active) return active
     const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).then(noteHeartbeatLanded).catch((error: unknown) => {
-      // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
-      // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
-      if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
-        deviceRemovedNotified = true
-        try {
-          options.onDeviceRemoved?.((error as Error).message)
-        } catch (callbackError) {
-          options.warn?.(`[device-runtime] onDeviceRemoved threw: ${(callbackError as Error).message}`)
-        }
-      }
-      // #6264 这个账号的咕咕 server 数到上限了(库拒收这台的第一次心跳,DEVICE_LIMIT_REACHED)。
-      // 说成人话打一次,❌ 每 30 秒刷一遍同一句;心跳照旧按失败处理,移除一台 / 升级后下一拍自然接上。
-      const refusal = machineLimitRefusalFromError(error)
-      if (refusal && !machineLimitWarned) {
-        machineLimitWarned = true
-        options.warn?.(`[device-runtime] 这台机器没能加入账号:${machineLimitMessage(refusal)}${MACHINE_LIMIT_NEXT_STEP}`)
-      }
+      noteDeviceRegistrationFailure(error)
       throw error
     }).finally(() => {
       if (heartbeatFlights.get(heartbeatOptions.userId) === flight) {
@@ -933,6 +938,7 @@ export function createDeviceRuntimeHostLoop(
       if (signal.aborted && generation !== lifecycleGeneration) {
         return { skipped: true }
       }
+      noteDeviceRegistrationFailure(err)
       // PERMANENT auth loss: drop subscriptions, raise the distinct one-time signal, and end the tick
       // cleanly (skipped) instead of re-throwing a spin-y error every interval.
       if (handleAuthExpired(err)) {
@@ -1079,14 +1085,15 @@ export function createDeviceRuntimeHostLoop(
       const { nextDueAtMs } = await options.runScheduledTasks!({
         ownerUserId: auth.userId,
         accessToken: auth.accessToken,
-        nowMs: nowMs(),
+        // `next_run_at` is written on the server's clock, by whichever device scheduled it (`@@@server-clock`).
+        nowMs: serverNow(),
         deviceId: lastDeviceId,
       })
       if (generation !== lifecycleGeneration || stopped) return
       clearScheduledTasksTimer()
       if (nextDueAtMs === null || superviseTimer === null) return
       // setTimeout 的上限约 24.8 天;更远的到期时刻由监督 tick 的重排逐步逼近。
-      const delayMs = Math.min(Math.max(0, nextDueAtMs - nowMs()), 2 ** 31 - 1)
+      const delayMs = Math.min(Math.max(0, nextDueAtMs - serverNow()), 2 ** 31 - 1)
       scheduledTasksTimer = setTimeout(() => {
         scheduledTasksTimer = null
         scheduleScheduledTasksRun()
@@ -1548,7 +1555,8 @@ export function createDeviceRuntimeHostLoop(
       await retireRuntimeInstance(client, instanceId, options.operationTimeouts)
       // 同账号同机的别的实例共用这一行(#5041):它还活着,这台机器就没走 ——
       // ❌ 替它说离线(要等它下一拍心跳才写回在线,中间别的设备都读成离线)。
-      const live = await readLiveDeviceRuntimeInstanceIds(client, deviceId, nowMs(), options.operationTimeouts)
+      // `last_heartbeat_at` is the database's clock (`@@@server-clock`).
+      const live = await readLiveDeviceRuntimeInstanceIds(client, deviceId, serverNow(), options.operationTimeouts)
       live.delete(instanceId)
       if (live.size > 0) return
       await markDeviceOffline(client, deviceId, {

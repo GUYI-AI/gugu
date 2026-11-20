@@ -11,7 +11,7 @@ const ref = { id: item, version: 1 };
 
 function fixture(contentType = 'application/octet-stream', size = 32) {
   let capability = false, account = owner;
-  let released: ((id: number) => void) | undefined;
+  let released: Parameters<NonNullable<FilesPlatform['sync']['onPageRelease']>>[0] | undefined;
   const dispose = vi.fn(async () => undefined);
   const read = vi.fn(async (offset: number, length: number) => Uint8Array.from({ length }, (_, i) => (offset + i) % 251));
   const resolveFile = vi.fn(async (_ref, actor, options) => ({
@@ -27,12 +27,13 @@ function fixture(contentType = 'application/octet-stream', size = 32) {
     hasCapability: () => capability, identities: async () => [], faces: async () => ({}),
     filesUrl: () => 'https://files.invalid', warn: vi.fn(),
     sync: { ensureFor: () => undefined, pageFor: vi.fn(() => ({}) as never), grant: vi.fn(), ungrant: vi.fn(), revoke: vi.fn(),
-      onPageRelease: (listener: (id: number) => void) => { released = listener; return () => undefined; } },
+      onPageRelease: (listener) => { released = listener; return () => undefined; } },
   };
   const files = createAppFiles(platform);
   return { files, read, dispose, resolveFile, platform,
     capability: (value: boolean) => { capability = value; }, account: (value: string) => { account = value; },
-    release: () => released?.(surface.pageId) };
+    // The page went away (its tab torn down) vs. the page lost access (revoked: a grant filter, all of it here).
+    release: (pageId = surface.pageId) => released?.(pageId), revoke: (pageId = surface.pageId) => released?.(pageId, () => true) };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -118,7 +119,7 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     await f.files.read(surface, { ref, offset: 0, length: 2 });
     await f.files.close(surface, { ref });
     expect(f.dispose).toHaveBeenCalledTimes(1);
-    await f.files.read(surface, { ref, offset: 0, length: 2 }); f.release();
+    await f.files.read(surface, { ref, offset: 0, length: 2 }); f.revoke();
     await Promise.resolve(); expect(f.dispose).toHaveBeenCalledTimes(2);
     await f.files.read(surface, { ref, offset: 0, length: 2 });
     await vi.advanceTimersByTimeAsync(5 * 60_000);
@@ -184,7 +185,7 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     f.read.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const pending = f.files.read(surface, { ref, offset: 0, length: 2 });
     await vi.waitFor(() => expect(f.read).toHaveBeenCalled());
-    f.release(); finish(new Uint8Array([1, 2]));
+    f.revoke(); finish(new Uint8Array([1, 2]));
     await expect(pending).rejects.toMatchObject({ code: 'failed' });
     expect(f.files.readHandleCount()).toBe(0);
     expect(f.dispose).toHaveBeenCalledTimes(1);
@@ -225,5 +226,61 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     await f.files.read(surface, { ref, offset: 0, length: 2 });
     f.account('22222222-2222-4222-8222-222222222222');
     await expect(f.files.read(surface, { ref, offset: 2, length: 2 })).rejects.toMatchObject({ code: 'denied' });
+  });
+
+  it('a page torn down and mounted again in the same run keeps its one read after one resolve of its own; five idle minutes later it is read once more', async () => {
+    vi.useFakeTimers();
+    for (const contentType of ['application/octet-stream', 'text/plain']) {
+      const f = fixture(contentType);
+      await f.files.read(surface, { ref, offset: 0, length: 4 });
+      expect(f.resolveFile).toHaveBeenCalledTimes(1);
+      f.release();
+      const again = { ...surface, pageId: 8 };
+      for (const offset of [0, 12, 28]) await f.files.read(again, { ref, offset, length: 4 });
+      // One resolve of its own for the new page (a check: its handle is let go unread), then the same held read, chunk after chunk.
+      expect(f.resolveFile).toHaveBeenCalledTimes(2);
+      expect(f.files.readHandleCount()).toBe(1);
+      expect(f.dispose).toHaveBeenCalledTimes(1);
+      f.release(8);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(f.files.readHandleCount()).toBe(0);
+      await f.files.read({ ...surface, pageId: 9 }, { ref, offset: 0, length: 4 });
+      expect(f.resolveFile).toHaveBeenCalledTimes(3);
+      expect(f.files.readHandleCount()).toBe(1);
+      f.release(9);
+    }
+  });
+  it('access lost while the page was gone: reading again within five minutes is refused and the held read released', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    await f.files.read(surface, { ref, offset: 0, length: 4 });
+    f.release();
+    // Removed from the group meanwhile, with no revocation reaching this page: the service now says gone.
+    f.resolveFile.mockResolvedValue({ status: 'gone', sha256: null } as never);
+    await expect(f.files.read({ ...surface, pageId: 8 }, { ref, offset: 0, length: 4 })).rejects.toMatchObject({ code: 'stale-version' });
+    expect(f.files.readHandleCount()).toBe(0);
+    expect(f.dispose).toHaveBeenCalledTimes(1);
+  });
+  it('a revoked page releases at once, and a read that fails (its acknowledgement refused) is not kept', async () => {
+    const f = fixture('text/plain');
+    await f.files.open(surface, { ref: { id: item } });
+    f.revoke();
+    await vi.waitFor(() => expect(f.dispose).toHaveBeenCalledTimes(1));
+    f.read.mockRejectedValueOnce(Object.assign(new Error('refused'), { name: 'FileReadRevokedError' }));
+    await expect(f.files.open(surface, { ref: { id: item } })).rejects.toThrow('refused');
+    await vi.waitFor(() => expect(f.dispose).toHaveBeenCalledTimes(2));
+    const resolves = f.resolveFile.mock.calls.length;
+    await f.files.open(surface, { ref: { id: item } });
+    expect(f.resolveFile.mock.calls.length).toBeGreaterThan(resolves);
+    f.release();
+  });
+  it('another reader of the same App never takes this reader\'s read', async () => {
+    const f = fixture('text/plain');
+    await f.files.open(surface, { ref: { id: item } });
+    await f.files.open({ ...surface, pageId: 8, asAgent: '22222222-2222-4222-8222-222222222222' }, { ref: { id: item } });
+    // The agent acquires its own read, as itself; the person's held read is not handed to it.
+    expect(f.resolveFile.mock.calls.some(([, actor]) => actor === '22222222-2222-4222-8222-222222222222')).toBe(true);
+    expect(f.files.readHandleCount()).toBe(2);
+    f.release(); f.release(8);
   });
 });

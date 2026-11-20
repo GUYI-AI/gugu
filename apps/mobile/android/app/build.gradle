@@ -90,6 +90,14 @@ if (!(guguDbHost ==~ /^[A-Za-z0-9.-]+(:\d+)?$/)) {
 def guguMarketOverride = System.getenv("GUGU_MARKET_BASE")?.trim()
 def guguDebugMarketRoot = guguMarketOverride ? (guguMarketOverride.endsWith("/") ? guguMarketOverride : guguMarketOverride + "/") : guguMarketRoot
 
+def guguFcmEnabled = file('google-services.json').exists()
+if (guguFcmEnabled) {
+    def config = new JsonSlurper().parse(file('google-services.json'))
+    if (!config.client?.any { it.client_info?.android_client_info?.package_name == guguApplicationId }) {
+        throw new GradleException("FCM configuration does not match the selected Android package")
+    }
+}
+
 android {
     namespace = "app.gugu.chat"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -102,6 +110,7 @@ android {
 
     defaultConfig {
         applicationId guguApplicationId
+        buildConfigField "boolean", "GUGU_FCM_ENABLED", guguFcmEnabled ? "true" : "false"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode guguVersionCode
@@ -174,6 +183,8 @@ dependencies {
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation project(':mixpush-core')
+    if (guguFcmEnabled) implementation project(':mixpush-fcm')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
@@ -182,11 +193,4 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}
+if (guguFcmEnabled) apply plugin: 'com.google.gms.google-services'

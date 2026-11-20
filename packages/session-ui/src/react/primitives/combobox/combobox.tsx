@@ -178,22 +178,22 @@ function ComboboxItem({
   );
 }
 
-function ComboboxGroup({ className, ...props }: FixedDataSlotProps<ComboboxPrimitive.Group.Props>) {
-  return (
-    <ComboboxPrimitive.Group data-slot="combobox-group" className={cx(className)} {...props} />
-  );
-}
-
-function ComboboxLabel({
+/** A titled group; the title is a prop because Combobox.GroupLabel throws outside a Combobox.Group. */
+function ComboboxGroup({
   className,
+  label,
+  children,
   ...props
-}: FixedDataSlotProps<ComboboxPrimitive.GroupLabel.Props>) {
+}: FixedDataSlotProps<ComboboxPrimitive.Group.Props> & { label?: React.ReactNode }) {
   return (
-    <ComboboxPrimitive.GroupLabel
-      data-slot="combobox-label"
-      className={cx(styles.comboboxLabel, className)}
-      {...props}
-    />
+    <ComboboxPrimitive.Group data-slot="combobox-group" className={cx(className)} {...props}>
+      {label ? (
+        <ComboboxPrimitive.GroupLabel data-slot="combobox-label" className={styles.comboboxLabel}>
+          {label}
+        </ComboboxPrimitive.GroupLabel>
+      ) : null}
+      {children}
+    </ComboboxPrimitive.Group>
   );
 }
 
@@ -295,7 +295,6 @@ export const Combobox = {
   List: ComboboxList,
   Item: ComboboxItem,
   Group: ComboboxGroup,
-  Label: ComboboxLabel,
   Collection: ComboboxCollection,
   Empty: ComboboxEmpty,
   Separator: ComboboxSeparator,

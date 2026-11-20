@@ -55,6 +55,8 @@ const upload = vi.fn(async (_place: unknown): Promise<FolderEntry[]> => [picture
 const replace = vi.fn(async (_entry: unknown, _blob: unknown, _options: unknown) => {});
 const remove = vi.fn(async (entry: { id: string }) => { folderEntries = folderEntries.filter((item) => item.id !== entry.id); });
 const dispatch = vi.fn(async (_text: string, _options: unknown) => ({}));
+// The page's selection as it tells the host (API 60): the host draws its menu there.
+const reported = vi.fn((_selection: unknown) => {});
 const verbs = {
   openLink: async () => {}, openBrowserTab: async () => {}, reportError: async (message: string) => { throw new Error(message); },
   clipboard: { writeText: async (text: string) => { copied.push(text); } },
@@ -66,7 +68,7 @@ const verbs = {
       if (!found) throw new Error(`Unknown test file: ${id}`);
       return { type: 'binary', entry: found, blob: async () => image, close: () => {} };
     },
-    readVersion: async () => file, onChanged: () => () => {}, upload, replace, remove,
+    readVersion: async () => file, onChanged: () => () => {}, upload, replace, remove, showSelection: reported,
     list: async () => folderEntries,
   },
 };
@@ -307,7 +309,7 @@ it('inserts a 3×3 table after the paragraph, focuses its first cell in the sour
 
 it('uses the existing picker/upload into this document’s folder and renders the uploaded image and file link', async () => {
   await insertAtFirst('Image…');
-  const imageSource = `![image \\[one\\].svg](gugu-file://${pictureId})`;
+  const imageSource = `![image &#91;one&#93;.svg](gugu-file://${pictureId})`;
   await until('the uploaded image is written through the bound source', () => file.text.includes(imageSource));
   expect(upload).toHaveBeenCalledExactlyOnceWith({ chat: 'group', folder: 'notes' });
   const at = text.indexOf('\n\nSecond paragraph');
@@ -324,7 +326,7 @@ it('uses the existing picker/upload into this document’s folder and renders th
 it('inserts a file as a folder link, including an image chosen through File', async () => {
   await insertAtFirst('File…');
   await until('the returned folder entries reach the source', () => file.text.includes(`gugu-file://${attachment.id}`));
-  expect(file.text).toContain(`[image \\[one\\].svg](gugu-file://${pictureId})`);
+  expect(file.text).toContain(`[image &#91;one&#93;.svg](gugu-file://${pictureId})`);
   expect(file.text).not.toContain('![');
   await until('both file links are in the preview', () => !!byId('preview').querySelector(`a[href="gugu-file://${attachment.id}"]`));
   expect(byId('preview').querySelector('img.gg-md-img')).toBeNull();
@@ -622,7 +624,7 @@ it('keeps an insertion attached to its paragraph while another editor changes Y.
   ydoc.transact(() => ytext.insert(0, 'Remote paragraph.\n\n'));
   finish([picture]);
   await until('the picker inserts after the shifted block', () => file.text.includes(`gugu-file://${pictureId}`));
-  expect(file.text).toContain('Remote paragraph.\n\n# Reading\n\nFirst paragraph keeps its own actions.\n\n![image \\[one\\].svg]');
+  expect(file.text).toContain('Remote paragraph.\n\n# Reading\n\nFirst paragraph keeps its own actions.\n\n![image &#91;one&#93;.svg]');
   expect(editor().state.doc.toString()).toBe(ytext.toString());
   await until('the collaborative insertion also reaches the preview', () => !!byId('preview').querySelector('img.gg-md-img'));
 });
@@ -638,18 +640,20 @@ it('keeps reading clean and offers block links on right-click', async () => {
   expect(file.text).toBe(text);
 });
 
-it('leaves a reading selection with its own bar when it is pressed for a menu', async () => {
+it('keeps a reading selection told to the host when it is pressed for a menu', async () => {
   await toMode('preview');
   const box = byId('preview').querySelector('p[data-line="3-3"]')!.getBoundingClientRect();
   const [x, y] = [box.left + 30, box.top + box.height / 2];
   await pointer(x, y, 'mousePressed', { clickCount: 2 });
   await pointer(x, y, 'mouseReleased', { clickCount: 2 });
-  await until('the pressed word is selected with its bar', () => !byId('sel-bar').hidden && !!document.getSelection()?.toString());
+  await until('the pressed word is selected and told to the host', () => !!document.getSelection()?.toString() && !!reported.mock.calls.at(-1)?.[0]);
+  // The page's own bar is the source's marks only: a reading selection has none.
+  expect(byId('sel-bar').hidden).toBe(true);
   await pointer(x, y, 'mousePressed', { button: 'right', buttons: 2 });
   await pointer(x, y, 'mouseReleased', { button: 'right' });
   await new Promise((resolve) => requestAnimationFrame(resolve));
   expect(menuOpen()).toBe(false);
-  expect([...byId('sel-bar').querySelectorAll('button:not(.fmt)')].map((item) => item.textContent)).toEqual(['Copy', 'Cite', 'Send']);
+  expect(reported.mock.calls.at(-1)?.[0]).toMatchObject({ file: entry, places: [{ at: { lines: '3' } }], rect: expect.objectContaining({ x: expect.any(Number) }) });
 });
 
 it('keeps every side control hidden for a read-only document, with reading links still usable', async () => {

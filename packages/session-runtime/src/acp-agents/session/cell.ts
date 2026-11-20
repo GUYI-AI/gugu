@@ -1,4 +1,4 @@
-import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
+import { guguRevertPoint, type AcpPermissionParams, type AcpRevertPoint } from '@gugu/session-core/agents/plugins';
 import type {
   RequestPermissionResponse,
   SessionConfigOption,
@@ -927,19 +927,19 @@ export class SessionCell {
     this.deps.callbacks?.onSessionStateChanged?.();
   }
 
-  async revertSession(anchor: string): Promise<Result<{ providerSessionId: string }, AcpSendPromptError>> {
+  async revertSession(anchor: string, restoreFiles = false): Promise<Result<{ providerSessionId: string }, AcpSendPromptError>> {
     if (this.reverting || this.machine.isWorking || this.activeTurnCompletion
       || this.machine.queuedPrompts.length || this.settingsInFlight
       || this.lastRunningAgentCount || this.lastRunningCommandTaskIds.length) {
       return acpErr.sessionBusy('Wait for the current work and queued messages to finish before reverting.');
     }
     if (this.machine.phase.kind !== 'ready') return acpErr.invalidState('Wait for the session to become ready before reverting.');
-    if (!this.agent.extMethod) return acpErr.invalidState('This agent does not support conversation revert.');
+    const revert = this.deps.revert;
+    if (!revert || !this.agent.extMethod) return acpErr.invalidState('This agent does not support conversation revert.');
     this.reverting = true;
     this.deps.callbacks?.onSessionStateChanged?.();
     try {
-      const result = await this.agent.extMethod('_session/revert', { sessionId: this.acpSessionId, before: anchor });
-      if (result.sessionId !== this.acpSessionId) throw new Error('Revert changed the provider session ID.');
+      await revert.revert(this.agent, this.acpSessionId, anchor, restoreFiles);
       this.transcript.revertBefore(anchor);
       this.emitTranscriptChanged();
       return ok({ providerSessionId: this.acpSessionId });
@@ -1587,10 +1587,10 @@ export class SessionCell {
       return;
     }
     const cycle = this.activeTurnCompletion;
-    const finish = () => {
+    const finish = (point: AcpRevertPoint | null = null) => {
       if (this.activeTurnCompletion !== cycle) return;
-      const anchor = (event._meta?.guguRevert as { before?: unknown } | undefined)?.before;
-      if (typeof anchor === 'string' && anchor) this.transcript.setActiveRevertAnchor(anchor);
+      // A turn that made no point of its own may report the newest one, which an earlier message already carries.
+      if (point && point.before !== this.transcript.lastRevertAnchor()) this.transcript.setActiveRevertAnchor(point.before, point.files === true);
       this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId,
         stopReason: event.stopReason, ...(event.error ? { error: toSerializedError(Object.assign(new Error(event.error.message), event.error)) } : {}) });
       if (event.error || event.stopReason === 'error') {
@@ -1612,18 +1612,33 @@ export class SessionCell {
           ? this.settledOutcome(reason) : { kind: 'done', reason: 'cycle_end' }, { foreground: event });
       }
     };
+    // The turn settles once its revert point is known, so the point lands on this turn's own user message.
+    // A lookup that fails or does not answer in time only means this turn has no revert entry.
+    const revert = this.deps.revert;
+    const lookupFailed = (error: unknown) => {
+      this.deps.logger.warn('SessionCell: revert point lookup failed', { sessionId: this.sessionId, providerId: this.deps.providerId, error: toSerializedError(error) });
+      finish();
+    };
+    const settle = revert ? () => {
+      let point: ReturnType<typeof revert.point>;
+      try { point = revert.point(this.agent, this.acpSessionId, event as unknown as Readonly<Record<string, unknown>>); }
+      catch (error) { lookupFailed(error); return; }
+      if (point instanceof Promise) void withTimeout(point, REVERT_POINT_TIMEOUT_MS).then(finish, lookupFailed);
+      else finish(point);
+    } : () => finish();
     // Some providers report a swallowed failure on stderr, independently of their result pipe.
     if (event.stopReason === 'end_turn' && this.deps.turnFailure?.watchesStderr
       && !this.turnHadAgentOutput && !this.providerTurnFailure && !this.providerStderrFailure) {
-      void new Promise(resolve => setTimeout(resolve, STDERR_FAILURE_GRACE_MS)).then(finish);
-    } else finish();
+      void new Promise(resolve => setTimeout(resolve, STDERR_FAILURE_GRACE_MS)).then(settle);
+    } else settle();
   }
 
   private applyReceiptMetadata(requestId: string, meta: SessionPromptReceipt['_meta']): void {
     const request = this.requests.get(requestId);
-    const anchor = (meta?.guguRevert as { before?: unknown } | undefined)?.before;
-    if (request && typeof anchor === 'string' && anchor) {
-      this.transcript.setRevertAnchor(request.messageId, anchor);
+    // Only a harness that can revert gets revert points: no hook, no entry.
+    const point = this.deps.revert ? guguRevertPoint(meta) : null;
+    if (request && point) {
+      this.transcript.setRevertAnchor(request.messageId, point.before, point.files === true);
       this.emitTranscriptChanged();
     }
   }
@@ -2821,6 +2836,14 @@ const PROMPT_ADMISSION_TIMEOUT_MS = 60_000;
 
 /** 「一个字都没回就正常结束」时,等 stderr 那行失败说明的最长时间。 */
 const STDERR_FAILURE_GRACE_MS = 300;
+/** A harness that does not name a turn's revert point in this long leaves that turn without one. */
+const REVERT_POINT_TIMEOUT_MS = 5_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * 「主人亲手发的」只有一种:会话页输入框打的(`manual`)。插不插队、这一轮算不算主人开的、`trigger` 记不记 owner

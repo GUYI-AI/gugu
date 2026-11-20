@@ -35,8 +35,6 @@ vi.mock('@main/lib/logger', () => ({
 
 vi.mock('./pr-query-service', () => ({
   prQueryService: {
-    listPullRequests: vi.fn(),
-    getFilterOptions: vi.fn(),
     getSessionPullRequests: vi.fn(),
   },
 }));
@@ -46,11 +44,9 @@ vi.mock('./pr-sync-engine', () => ({
     createPullRequest: vi.fn(),
     mergePullRequest: vi.fn(),
     markReadyForReview: vi.fn(),
-    getPullRequestFiles: vi.fn(),
     getPullRequestComments: vi.fn(),
     syncSingle: vi.fn(),
     syncChecks: vi.fn(),
-    forceFullSync: vi.fn(),
     sync: vi.fn(),
     cancel: vi.fn(),
   },
@@ -123,7 +119,6 @@ describe('pullRequestController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dbMocks.select.mockReset();
-    mockPrSyncEngine.forceFullSync.mockResolvedValue(ok());
     mockPrSyncEngine.sync.mockResolvedValue(ok());
   });
 
@@ -292,39 +287,6 @@ describe('pullRequestController', () => {
     );
   });
 
-  it('forwards force-full PR sync auth failures', async () => {
-    mockProjectGithubContext();
-    mockPrSyncEngine.forceFullSync.mockResolvedValue(
-      err({
-        type: 'auth_required',
-        host: 'github.com',
-        message: 'GitHub auth required',
-      })
-    );
-
-    await expect(pullRequestController.forceFullSyncPullRequests('project-1')).resolves.toEqual(
-      err({
-        type: 'github_auth_required',
-        host: 'github.com',
-        hint: 'Connect GitHub from account settings.',
-      })
-    );
-  });
-
-  it('maps cancelled force-full PR syncs to sync failures', async () => {
-    mockProjectGithubContext();
-    mockPrSyncEngine.forceFullSync.mockResolvedValue(
-      err({
-        type: 'sync_cancelled',
-        message: 'Pull request sync was cancelled.',
-      })
-    );
-
-    await expect(pullRequestController.forceFullSyncPullRequests('project-1')).resolves.toEqual(
-      err({ type: 'sync_failed', message: 'Pull request sync was cancelled.' })
-    );
-  });
-
   it('looks up task pull requests from the cached current workspace branch', async () => {
     mockProviderRepositoryUrl('https://github.com/acme/repo');
     queueDbSelectResult([{ workspaceId: 'workspace-1' }]);
@@ -423,7 +385,6 @@ describe('pullRequestController', () => {
     mockProjectGithubContext();
     mockPrSyncEngine.syncSingle.mockResolvedValue(ok(null));
     mockPrSyncEngine.syncChecks.mockResolvedValue(ok(true));
-    mockPrSyncEngine.getPullRequestFiles.mockResolvedValue(ok([]));
     mockPrSyncEngine.getPullRequestComments.mockResolvedValue(ok([]));
 
     await expect(
@@ -432,9 +393,6 @@ describe('pullRequestController', () => {
     await expect(
       pullRequestController.syncChecks('project-1', 'https://github.com/acme/repo/pull/12', 'abc')
     ).resolves.toEqual(ok({ hasRunning: true }));
-    await expect(
-      pullRequestController.getPullRequestFiles('project-1', 'https://github.com/acme/repo', 12)
-    ).resolves.toEqual(ok({ files: [] }));
     await expect(
       pullRequestController.getPullRequestComments('project-1', 'https://github.com/acme/repo', 12)
     ).resolves.toEqual(ok({ comments: [] }));

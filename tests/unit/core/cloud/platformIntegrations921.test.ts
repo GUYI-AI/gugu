@@ -13,6 +13,7 @@ import {
   PlatformProviderUnavailableError,
   PlatformIntegrationNotConnectedError,
 } from '@gugu/core/cloud/platformIntegrations'
+import { serverNow } from '@gugu/core/shared/serverClock'
 
 const BASE = 'https://db.test/functions/v1/cloud-computer'
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
@@ -263,14 +264,17 @@ describe('reading the list on a slow network (#921)', () => {
   })
 })
 
-it('the list read also tells the platform’s clock (its Date header), and null when it sends none', async () => {
+it('every answer tunes this runtime’s server clock (its Date header); an answer without one leaves it alone', async () => {
   const listed = { providers: [] }
+  const platformNow = Date.now() - 3 * 60 * 60_000
   const dated = createPlatformIntegrationsClient({
     baseUrl: BASE,
     accessToken: async () => 'jwt',
-    fetch: (async () => new Response(JSON.stringify(listed), { headers: { date: 'Thu, 29 Oct 2026 02:10:00 GMT' } })) as typeof fetch,
+    fetch: (async () => new Response(JSON.stringify(listed), { headers: { date: new Date(platformNow).toUTCString() } })) as typeof fetch,
   })
-  await expect(dated.listWithClock()).resolves.toEqual({ providers: [], platformNow: Date.UTC(2026, 9, 29, 2, 10, 0) })
+  await expect(dated.list()).resolves.toEqual([])
+  expect(Math.abs(serverNow() - platformNow)).toBeLessThan(2_000)
   const undated = createPlatformIntegrationsClient({ baseUrl: BASE, accessToken: async () => 'jwt', fetch: (async () => json(listed)) as typeof fetch })
-  await expect(undated.listWithClock()).resolves.toEqual({ providers: [], platformNow: null })
+  await expect(undated.list()).resolves.toEqual([])
+  expect(Math.abs(serverNow() - platformNow)).toBeLessThan(2_000)
 })

@@ -260,6 +260,24 @@ export default {
     "summary_other": "Group ID {{number}}, {{count}} members",
     "title": "Join a group"
   },
+  "requestsPane": {
+    "empty": "No new requests",
+    "nonePending": "Nothing waiting for you",
+    "pending_one": "{{count}} waiting for you",
+    "pending_other": "{{count}} waiting for you"
+  },
+  "searchPane": {
+    "count_one": "{{count}} result",
+    "count_other": "{{count}} results",
+    "empty": "Nothing found for “{{query}}”",
+    "title": "Search “{{query}}”"
+  },
+  "sectionPane": {
+    "agents": "Agents",
+    "count_one": "{{count}} contact",
+    "count_other": "{{count}} contacts",
+    "groups": "Groups"
+  },
   "panel": {
     "addContact": "Add contact",
     "agentSectionTitle": "Agents",

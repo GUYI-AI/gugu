@@ -1,12 +1,13 @@
 /* global gugu */ // An App program's gugu: the page's, for the page's own verbs (guide apps-programs).
-// The Files App's tools for an agent's chat files (moved into the App 2026-10-11): list, read,
-// create, edit, delete — the agent works on a chat's files the way it works on local ones: read, edit(old, new), create.
+// The Files App's tools for an agent's chat files (moved into the App 2026-10-11): list, create, edit, delete. A file's
+// bytes come and go through the host alone: message_download_file saves one here, message_send's file_path sends one.
 // Every one acts as the agent that calls it: a chat it hands (`gugu-chat`) or a file it hands (`gugu-file`) is checked as
 // that agent at the gateway, and what the tool reads and writes there is the agent's, by its own membership.
 // Only the public API: gugu.files, and Node's own modules for the files on this computer.
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, extname, isAbsolute, join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
+import { markdownLiteral } from './markdown-literal.js'
 
 const CHAT = {
   type: 'string',
@@ -53,15 +54,13 @@ function chatOf(chatId) {
   throw new Error(`chat_id is a chat's id or the number people see (its 咕咕号), not ${typeof chatId === 'number' ? chatId : JSON.stringify(chatId)}`)
 }
 
-/** One answer's bytes at most: Codex cuts the middle of a longer one (the guides' budget, apps-programs). */
-const PAGE_BYTES = 8000
 /** A live text file's limit (the file service's), the same as a text file put there from this computer. */
 const TEXT_MAX_BYTES = 1024 * 1024
 const STORED_MAX_BYTES = 25 * 1024 * 1024
 const bytesOf = (text) => Buffer.byteLength(text, 'utf8')
 
 /** The file as a link, handed over whole: in a message it shows as that file and opens it (never assembled by the agent). */
-const linkOf = async (entry) => `[${entry.name.replace(/[[\]\\]/g, (c) => `\\${c}`)}](${await gugu.linkTo({ kind: 'file', file: entry.id })})`
+const linkOf = async (entry) => `[${markdownLiteral(entry.name)}](${await gugu.linkTo({ kind: 'file', file: entry.id })})`
 /** A file's link — a folder has none: it is listed and entered, never opened (子文件夹). */
 const linked = async (entry) => (entry.type === 'folder' ? {} : { link: await linkOf(entry) })
 const byOf = (entry) => (entry.createdBy?.id ? { id: entry.createdBy.id, name: entry.createdBy.name, kind: entry.createdBy.kind } : null)
@@ -110,7 +109,7 @@ function said(error, itemId) {
   // 子文件夹: a folder is listed, never read or changed as a file.
   if (error?.code === 'invalid' && reason === 'folder') return new Error(`${itemId} is a folder: list it (folder: its path or id) to see what is in it`)
   if (error?.code === 'content-changed' && reason === 'old-not-found') {
-    return new Error('old is not in the file: it changed since you read it, or old does not match it exactly. Read it again and retry.')
+    return new Error('old is not in the file: it changed since you downloaded it, or old does not match it exactly. Download it again (message_download_file) and retry.')
   }
   if (error?.code === 'ambiguous' && reason === 'old-matches-many') {
     return new Error('old matches several places: include more of the text around it, so it matches exactly one.')
@@ -132,86 +131,15 @@ async function withFile(itemId, options, work) {
   }
 }
 
-/**
- * One page of a text file: a one-line JSON header, a blank line, then whole lines from `offset` verbatim — no line
- * numbers, no escaping, so `old` is copied from it exactly. At least one line per page: a line past the budget alone is
- * given whole, marked `over_budget`.
- */
-export function pageOf(text, head, { offset, limit } = {}) {
-  const starts = [0]
-  for (let at = text.indexOf('\n'); at !== -1 && at + 1 < text.length; at = text.indexOf('\n', at + 1)) starts.push(at + 1)
-  const total = text.length ? starts.length : 0
-  const endOf = (line) => (line < total ? starts[line] : text.length)
-  const from = offset ?? 1
-  if (!Number.isInteger(from) || from < 1) throw new Error(`offset is a line counted from 1, not ${offset}`)
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new Error(`limit is a number of lines, not ${limit}`)
-  const header = (lines, next, over) => JSON.stringify({ ...head, total_lines: total, lines, next_offset: next, ...(over ? { over_budget: true } : {}) })
-  if (total === 0) {
-    if (from !== 1) throw new Error(`offset ${from} is past the end: the file is empty`)
-    return `${header(null, null, false)}\n\n`
-  }
-  if (from > total) throw new Error(`offset ${from} is past the end: the file has ${total} lines`)
-  const last = limit === undefined ? total : Math.min(total, from + limit - 1)
-  const room = PAGE_BYTES - bytesOf(header(`${total}-${total}`, total, true)) - 2
-  const lineBytes = (line) => bytesOf(text.slice(starts[line - 1], endOf(line)))
-  let to = from
-  let used = lineBytes(from)
-  while (to < last && used + lineBytes(to + 1) <= room) {
-    to += 1
-    used += lineBytes(to)
-  }
-  const next = to < total ? to + 1 : null
-  return `${header(`${from}-${to}`, next, used > room)}\n\n${text.slice(starts[from - 1], endOf(to))}`
-}
-
-/**
- * A file's name on this computer (review 10-13) — its own name as far as a disk takes it, letters and digits of any script
- * kept (`中文报表.xlsx` stays so). Replaced: path separators, `: * ? " < > |` and control characters. Nothing but dots or
- * spaces (`.`, `..`) would name the folder itself: `file`. A Windows device name (CON, NUL, COM1, LPT1, CONIN$… with any
- * extension) swallows what is written: `_` before it. At most LOCAL_NAME_MAX_BYTES (a disk's name limit is 255), cut from
- * the stem at a character's edge so the extension stays. A dot or space at the very end becomes `_`: Node writes `report.`
- * as it is on Windows, and Explorer and PowerShell cannot open it.
- */
-const LOCAL_NAME_MAX_BYTES = 200
-export function localFileName(name) {
-  let safe = String(name ?? '').replace(/[\\/:*?"<>|\p{Cc}]/gu, '_')
-  if (/^[.\s]*$/.test(safe)) return 'file'
-  if (/^(con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])$/i.test(safe.split('.')[0].trimEnd())) safe = `_${safe}`
-  if (Buffer.byteLength(safe) > LOCAL_NAME_MAX_BYTES) {
-    const dot = safe.lastIndexOf('.')
-    const ext = dot > 0 && safe.length - dot <= 16 ? safe.slice(dot) : ''
-    const stem = [...safe.slice(0, safe.length - ext.length)]
-    while (stem.length > 1 && Buffer.byteLength(stem.join('') + ext) > LOCAL_NAME_MAX_BYTES) stem.pop()
-    safe = stem.join('') + ext
-  }
-  return safe.replace(/[. ]+$/, (end) => '_'.repeat(end.length))
-}
-
-/**
- * A whole file saved on this computer, under the system's temp folder (never gugu's own data folder, F56). One folder per
- * agent, file and version (10-13): two agents on one machine (the owner's Claude and Codex) never write one copy — else
- * one's read wipes the other's change before it is stored, and the version check cannot see that; and an agent refused
- * for starting from a version gone by reads the new one beside the copy it changed, never over it. The same version read
- * again overwrites that version's copy. A call with no agent of its own is refused: never a folder every caller shares.
- */
+/** list's saved rows on this computer: one folder per agent, never one every caller shares. */
 function agentFolder(agent, what) {
   const who = String(agent ?? '').replace(/^user:/, '')
   if (!/^[A-Za-z0-9-]+$/.test(who)) throw new Error(`${what}: only an agent saves into a folder of its own on this computer, and this call names no agent`)
   return join(tmpdir(), 'gugu-workspace', who)
 }
-async function saveLocally(entry, data, agent) {
-  const version = Number(entry.version)
-  if (!Number.isInteger(version)) throw new Error(`read: ${entry.name} came back with no version`)
-  const dir = join(agentFolder(agent, 'read'), entry.id, `v${version}`)
-  await mkdir(dir, { recursive: true })
-  const path = join(dir, localFileName(entry.savedName))
-  await writeFile(path, data)
-  return { path, version }
-}
-
 export const list = {
   description:
-    'Chat files (聊天文件 in the Files App), shared by a source group or private chat, newest first: id, name, path (from the top: 合同/2026/甲方.pdf), type (folder for a subfolder), size, version, who made it, link; the header counts its text files, stored files and folders. folder lists only what is directly in that folder.',
+    'Chat files (聊天文件 in the Files App), shared by a source group or private chat, newest first: id, name, path (from the top: 合同/2026/甲方.pdf), type (folder for a subfolder), size, version, who made it, link (its gugu-file:// target is what message_download_file saves on this computer and message_send\'s file sends); the header counts its text files, stored files and folders. folder lists only what is directly in that folder.',
   inputSchema: {
     type: 'object',
     required: ['chat_id'],
@@ -222,7 +150,7 @@ export const list = {
       kind: {
         type: 'string',
         enum: ['document', 'file', 'folder'],
-        description: 'document = a text or JSON file (read and edit it); file = stored bytes (an image, a PDF, a .pptx…); folder = a subfolder.',
+        description: 'document = a text or JSON file (edit it with old and new); file = stored bytes (an image, a PDF, a .pptx…); folder = a subfolder.',
       },
       rows: { type: 'string', description: 'Which rows: "20" the first 20 (default), "21-40" the next.' },
       save: { type: 'boolean', description: 'Save every row that matches (no rows window) as JSON on this computer and answer with its path and count: pick ids there (by, updated_at, path) for item_ids.' },
@@ -263,100 +191,47 @@ export const list = {
   },
 }
 
-export const read = {
-  description:
-    'Read a file of a chat\'s folder. A text or JSON file comes a page at a time: a one-line JSON header, a blank line, then its lines verbatim — copy old for edit from them; next_offset reads on. Stored UTF-8 text also comes as read-only pages; to edit it, use save: true, then edit with the saved path and version. Other stored files (an image, a PDF, a .pptx…), or save: true, are saved whole on this computer in a folder of their own for that version; the version edit\'s expected_version names when you store your change. A link\'s #lines=12-14 is the lines a person picked: read from offset 12 and change those, not the same words elsewhere. To point someone at a place, add #lines=12-14 or #find=<words> (URL-encoded) to the file\'s link: it opens there, marked.',
-  inputSchema: {
-    type: 'object',
-    required: ['item_id'],
-    properties: {
-      item_id: ITEM,
-      offset: { type: 'integer', minimum: 1, description: 'First line, counted from 1 (default 1): the last page\'s next_offset.' },
-      limit: { type: 'integer', minimum: 1, description: 'At most this many lines (default: as many as fit in one page).' },
-      save: { type: 'boolean', description: 'Save the whole file on this computer and answer with its path, instead of a page.' },
-    },
-  },
-  annotations: { readOnlyHint: true },
-  async run({ item_id, offset, limit, save }, { agent } = {}) {
-    return withFile(item_id, { readOnly: true }, async (f) => {
-      const entry = f.entry
-      const head = { id: entry.id, name: entry.name, type: entry.type, by: byOf(entry), updated_at: entry.updatedAt, link: await linkOf(entry) }
-      if (f.readOnlyReason === 'stored-bytes' && save !== true) {
-        return pageOf(f.text, {
-          ...head,
-          read_only: true,
-          edit: 'Stored text is read-only here. Call workspace__read with save: true, then workspace__edit with the saved path and expected_version to store a new version.',
-        }, { offset, limit })
-      }
-      if (f.type === 'binary' || save === true) {
-        const data = f.type === 'binary' || f.readOnlyReason === 'stored-bytes' ? Buffer.from(await (await f.blob()).arrayBuffer()) : f.text
-        const saved = await saveLocally(entry, data, agent)
-        return { ...head, size: entry.size, version: saved.version, saved_to: saved.path }
-      }
-      return pageOf(f.text, head, { offset, limit })
-    })
-  },
-}
-
 export const create = {
   description:
-    'Put a new file in a chat\'s folder: content makes a text file (markdown; JSON when the content is a JSON object), path puts a file from this computer there; folder puts it in that subfolder (made when it is not there), and folder alone makes the subfolder. A name already in that folder gets " (2)", " (3)": the answer says the name it got. Its link, in a message, opens it. A file made from a topic is in its source group or private chat\'s shared folder.',
+    'Put a new text file in a chat\'s folder: content makes it (markdown; JSON when the content is a JSON object); a file from this computer goes there with message_send\'s file_path. folder puts it in that subfolder (made when it is not there), and folder alone makes the subfolder. A name already in that folder gets " (2)", " (3)": the answer says the name it got. Its link, in a message, opens it. A file made from a topic is in its source group or private chat\'s shared folder.',
   inputSchema: {
     type: 'object',
     required: ['chat_id'],
     properties: {
       chat_id: CHAT,
       folder: FOLDER,
-      title: { type: 'string', description: 'The file\'s name. With content, needed; with path, the file\'s own name if left out.' },
+      title: { type: 'string', description: 'The file\'s name; needed with content.' },
       content: { type: 'string', description: 'The text of a new text file (up to 1 MiB): markdown, or a JSON object.' },
-      path: { type: 'string', description: 'Absolute path of a file on this computer (up to 25 MiB). UTF-8 text up to 1 MiB goes in as a text file people edit together; anything else as stored bytes.' },
       source_message_ids: { type: 'array', items: { type: 'string' }, description: 'The messages it came from, by id: shown under the file.' },
-      keep: { type: 'string', enum: ['temporary', 'permanent'], description: 'For path (stored bytes): temporary = scratch whose cloud copy expires (screenshots, drafts); permanent = kept. Default: the chat\'s rule.' },
     },
   },
-  async run({ chat_id: given, folder, title, content, path, source_message_ids, keep }) {
+  async run({ chat_id: given, folder, title, content, source_message_ids }) {
     const chat_id = chatOf(given)
     if (folder !== undefined && typeof folder !== 'string') throw new Error('folder is a folder\'s path from the top (合同/2026) or its id')
-    // 子文件夹: folder alone (no content, no path) makes that folder, all the way down.
-    if (content === undefined && path === undefined && typeof folder === 'string' && folder.trim()) {
+    // 子文件夹: folder alone (no content) makes that folder, all the way down.
+    if (content === undefined && typeof folder === 'string' && folder.trim()) {
       if (title !== undefined) throw new Error('create with folder alone makes that folder: name it in folder (合同/2026), without title')
       const made = await gugu.files.mkdir({ chat: chat_id, path: folder })
       return { created: { id: made.id, name: made.name, path: made.path, type: made.type } }
     }
-    if ((content === undefined) === (path === undefined)) {
-      throw new Error('create takes content (a new text file) or path (a file on this computer), one of them — or folder alone, to make that folder')
-    }
-    let file
-    if (content !== undefined) {
-      if (typeof title !== 'string' || !title.trim()) throw new Error('create with content needs a title')
-      if (bytesOf(content) > TEXT_MAX_BYTES) throw new Error('content is over the 1 MiB of a text file: write it to a file and give its path')
-      let json = false
-      try {
-        const parsed = JSON.parse(content)
-        json = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      } catch {}
-      if (!json && /\.json$/i.test(title)) throw new Error(`${title} is a .json file: its content must be a JSON object at the top`)
-      // A title without a type of its own is markdown, as a new text file always was; one that says .html or .csv keeps it.
-      const type = json ? 'application/json' : /\.[A-Za-z0-9]+$/.test(title.trim()) ? '' : 'text/markdown'
-      file = new File([content], title.trim(), { type })
-    } else {
-      const bytes = await localFile(path, 'create')
-      let name = basename(path)
-      if (typeof title === 'string' && title.trim()) {
-        name = title.trim()
-        if (!/\.[A-Za-z0-9]{1,8}$/.test(name)) name += extname(path)
-      }
-      file = new File([bytes], name)
-    }
+    if (content === undefined) throw new Error('create takes content (a new text file), or folder alone to make that folder; a file from this computer goes with message_send\'s file_path')
+    if (typeof title !== 'string' || !title.trim()) throw new Error('create with content needs a title')
+    if (bytesOf(content) > TEXT_MAX_BYTES) throw new Error('content is over the 1 MiB of a text file: write it to a file and send it with message_send\'s file_path')
+    let json = false
+    try {
+      const parsed = JSON.parse(content)
+      json = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    } catch {}
+    if (!json && /\.json$/i.test(title)) throw new Error(`${title} is a .json file: its content must be a JSON object at the top`)
+    // A title without a type of its own is markdown, as a new text file always was; one that says .html or .csv keeps it.
+    const type = json ? 'application/json' : /\.[A-Za-z0-9]+$/.test(title.trim()) ? '' : 'text/markdown'
+    const file = new File([content], title.trim(), { type })
     const sourceMessageIds = (source_message_ids ?? []).map((id) => String(id).replace(/^msg:/, ''))
-    const [entry] = await gugu.files.upload(folder === undefined ? { chat: chat_id } : { chat: chat_id, folder }, file, { sourceMessageIds, ...(keep === undefined ? {} : { keep }) })
+    const [entry] = await gugu.files.upload(folder === undefined ? { chat: chat_id } : { chat: chat_id, folder }, file, { sourceMessageIds })
     return {
       created: { id: entry.id, name: entry.name, path: entry.path, type: entry.type, size: entry.size },
       link: await linkOf(entry),
-      stored_as:
-        entry.type === 'binary'
-          ? `stored bytes (${entry.contentType}): read saves it on this computer; edit with path and the version read gave stores its next version`
-          : 'a text file people and agents edit together: change it with edit (old, new)',
+      stored_as: 'a text file people and agents edit together: change it with edit (old, new)',
     }
   },
 }
@@ -369,10 +244,10 @@ export const edit = {
     properties: {
       item_id: ITEM,
       item_ids: ITEMS,
-      old: { type: 'string', description: 'The text to replace, copied exactly from read (without its header line). It must match one place.' },
+      old: { type: 'string', description: 'The text to replace, copied exactly from the file as message_download_file saved it. It must match one place.' },
       new: { type: 'string', description: 'What goes in its place. A JSON file must still be a JSON object afterwards.' },
       path: { type: 'string', description: 'Absolute path of a file on this computer: the stored file\'s next version, with expected_version.' },
-      expected_version: { type: 'integer', description: 'With path: the version you started from, as read gave it. If the file is no longer that version, nothing is written: read it again.' },
+      expected_version: { type: 'integer', description: 'With path: the version you started from, as message_download_file gave it. If the file is no longer that version, nothing is written: download it again.' },
       name: {
         type: 'string',
         description: 'The file\'s new name: only its name changes. With /, its new place too: 合同/2026/甲方.pdf moves it into that folder (made when it is not there), /甲方.pdf to the top; ending in / (合同/2026/, / the top) keeps its name.',
@@ -426,18 +301,18 @@ export const edit = {
         }
         if (error?.code === 'invalid' && reason === 'expected-version') {
           throw new Error(expectedVersion === undefined
-            ? 'edit with path needs expected_version: the version read gave when it saved the file you changed'
-            : `expected_version is the version read gave, a whole number, not ${JSON.stringify(expected_version)}`)
+            ? 'edit with path needs expected_version: the version message_download_file gave for the file you changed'
+            : `expected_version is the version message_download_file gave, a whole number, not ${JSON.stringify(expected_version)}`)
         }
         if (error?.code === 'content-changed' && reason === 'replaced-since') {
           const { name, now, expected } = error.detail
-          throw new Error(`${name}: you started from version ${expected}, it is version ${now} now — someone stored a newer one since you read it, and nothing was written. Read it again (it saves into that version's own folder, beside your copy), make your change there, and edit with that version.`)
+          throw new Error(`${name}: you started from version ${expected}, it is version ${now} now — someone stored a newer one since you downloaded it, and nothing was written. Download it again, make your change there, and edit with that version.`)
         }
         throw said(error, item_id)
       })
       return { replaced: replaced.id, version: replaced.version, link: await linkOf(replaced) }
     }
-    if (typeof old !== 'string' || !old) throw new Error('old must not be empty: copy the text to replace from read')
+    if (typeof old !== 'string' || !old) throw new Error('old must not be empty: copy the text to replace from the downloaded file')
     if (typeof next !== 'string') throw new Error('new is the text that goes in old\'s place (an empty string removes it)')
     if (old === next) throw new Error('old and new are the same: nothing to change')
     return withFile(item_id, {}, async (f) => {

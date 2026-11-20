@@ -5,6 +5,7 @@ import { customModelConnectionSchema, customModelProtocolProbeSchema, detectCust
 import {
   connectionModelListSchema,
   createHarnessConnectionSchema,
+  renameHarnessConnectionSchema,
   harnessConnectionSchema,
   harnessConnectionSelectSchema,
 } from './connections';
@@ -49,6 +50,7 @@ const commonAgentConfigContract = defineContract({
   detectCustomModelProtocols: fallible({ input: detectCustomModelProtocolsSchema, data: customModelProtocolProbeSchema, error: agentConfigAuthErrorSchema }),
   listConnections: fallible({ input: provider, data: z.array(harnessConnectionSchema), error: agentConfigAuthErrorSchema }),
   createConnection: fallible({ input: createHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
+  renameConnection: fallible({ input: renameHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
   selectConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
   removeConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
   agents: liveModel({
@@ -175,7 +177,7 @@ export const subscriptionUsageRuntimeCommandSchema = subscriptionUsageCommandSch
 
 export const agentConfigContract = defineContract({
   ...commonAgentConfigContract,
-  scanAgentHomes: fallible({ input: z.object({ providerIds: z.array(z.string()).optional(), upgradedOnly: z.boolean().optional() }), data: z.array(agentHomeScanSchema), error: agentConfigAuthErrorSchema }),
+  scanAgentHomes: fallible({ input: z.object({ providerIds: z.array(z.string()).optional(), upgradedOnly: z.boolean().optional(), firstInstallOnly: z.boolean().optional() }), data: z.array(agentHomeScanSchema), error: agentConfigAuthErrorSchema }),
   importAgentHome: fallible({ input: provider.extend({ groups: z.array(agentHomeGroupIdSchema), skip: z.boolean().optional() }), data: agentHomeImportResultSchema, error: agentConfigAuthErrorSchema }),
   diffAgentHome: fallible({ input: provider, data: agentHomeDiffSchema, error: agentConfigAuthErrorSchema }),
   reimportAgentHome: fallible({ input: provider.extend({ decisions: z.array(z.object({ id: z.string(), revision: z.string() })) }), data: z.object({ imported: z.number(), issues: z.array(agentHomeIssueSchema) }), error: agentConfigAuthErrorSchema }),

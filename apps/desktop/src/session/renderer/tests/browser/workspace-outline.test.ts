@@ -130,7 +130,24 @@ it('folds to a rail in the margin where the room beside the column is too narrow
   await userEvent.hover(byId('preview').querySelector('.gg-md > p')!);
   await until('the outline is a rail', () => outline().getBoundingClientRect().width <= 28);
   expect(outline().getBoundingClientRect().right).toBeLessThanOrEqual(column().left);
+  const filled = (color: string) => !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(color) && !/\/ 0\)$/.test(color);
+  // Each folded row is a line, drawn as its own mark: the button's fill is its state, which the host fades.
+  expect(items().every((item) => filled(getComputedStyle(item, '::before').backgroundColor))).toBe(true);
+  await until('no folded row has a fill of its own (a hover left behind fades out)', () => !items().some((item) => filled(getComputedStyle(item).backgroundColor)));
+  // Opening, frame by frame: no row but the one under the pointer is ever filled (the folded lines' fill used to fade
+  // out over every row, each looking picked).
+  const others: string[] = [];
+  const frames = new Promise<void>((resolve) => {
+    let left = 20;
+    const look = () => {
+      others.push(...items().filter((item) => !item.matches(':hover') && filled(getComputedStyle(item).backgroundColor)).map((item) => item.textContent!));
+      if (--left) requestAnimationFrame(look); else resolve();
+    };
+    requestAnimationFrame(look);
+  });
   await userEvent.hover(items()[1]!);
+  await frames;
+  expect(others).toEqual([]);
   await until('its list opens over the text', () => outline().getBoundingClientRect().width >= 200 && items()[1]!.textContent!.length > 0);
   expect(items()[1]!.getBoundingClientRect().height).toBeGreaterThan(10);
   await userEvent.click(items()[1]!);

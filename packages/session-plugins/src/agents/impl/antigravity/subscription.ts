@@ -15,8 +15,8 @@ import {
   usageUnavailable,
   usageWindows,
 } from '../../helpers/subscription';
-import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus } from './auth';
-import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
+import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus, execAntigravityCli } from './auth';
+import { readAgyAcpTier, readCachedAgyTier } from './acp-tier';
 
 /**
  * Antigravity 的「订阅」读数(product spec)。读的是终端版 `agy` 那条登录(能力里声明
@@ -28,7 +28,8 @@ import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
  * ⚠️ 没登录时 `agy -p` 会自己起 Google 登录流程并在约 60 秒后打开浏览器(2026-10-13 调研时实撞)⇒
  *    只在 `agy models` 已经答「登着」之后才问，而且 30 秒必停 —— 赶在它可能弹浏览器之前。
  *
- * 套餐:agy 本地不存档位;Antigravity 桌面版(IDE)把服务端答的用户状态缓存在
+ * 套餐:优先读同一登录的 `agy acp` 的 `session/new._meta.antigravity.tier.name`(ACP 1.4+官方扩展),
+ * 只握手、不开推理、不触发登录。旧 CLI 不提供此字段时，Antigravity 桌面版(IDE)的旧缓存仍作后备:
  * `User/globalStorage/state.vscdb` 的 `antigravityUnifiedStateSync.userStatus`(两层 base64 包着 protobuf,
  * 里面是 `g1-pro-tier` + 「Google AI Pro」,本机实测)。它只和 IDE 上一次运行一样新 ⇒ 随读数给 `planAsOf`。
  * 没装 IDE / 读不出 ⇒ 档位读不出。Ultra 的 5x / 20x 只能按内部编号分，对应关系没验证 ⇒ Ultra 一律 `tierUnknown`。
@@ -44,15 +45,22 @@ export function antigravitySubscriptionBehavior(): ISubscriptionBehavior {
 }
 
 export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<SubscriptionPlanReading> {
-  if (process.platform === 'win32') return { payer: 'unknown', message: 'Windows 上没有 agy 终端版，它的套餐读不到。' };
   const settings = await readJsonObject(ctx, ANTIGRAVITY_CLI_SETTINGS_PATH);
   if (settings?.modelProvider === 'gemini') return { payer: 'api-key' };
+
+  const cachedTier = await readCachedAgyTier(ctx);
+  if (cachedTier?.kind === 'tier') return { payer: 'subscription', plan: cachedTier.name, planAsOf: cachedTier.asOf };
 
   const auth = await antigravityCliAuthStatus(ctx);
   if (auth.kind === 'unauthenticated') return { payer: 'not-signed-in' };
   if (auth.kind === 'unknown') return { payer: 'unknown', ...(auth.message ? { message: auth.message } : {}) };
 
-  const cached = await readIdeTier(ctx);
+  const tier = await readAgyAcpTier(ctx);
+  if (tier?.kind === 'not-signed-in') return { payer: 'not-signed-in' };
+  if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name, ...(tier.asOf !== undefined ? { planAsOf: tier.asOf } : {}) };
+
+  // On Linux the IDE cache cannot establish identity with the CLI's current keyring account either.
+  const cached = process.platform === 'darwin' ? await readIdeTier(ctx) : null;
   if (!cached) return { payer: 'subscription', plan: 'Google AI', tierUnknown: true };
   return {
     payer: 'subscription',
@@ -68,10 +76,7 @@ type IdeTier = { id: string; name: string; tierUnknown: boolean; asOf?: number }
 async function readIdeTier(ctx: AgentAuthContext): Promise<IdeTier | null> {
   const home = ctx.env.HOME?.trim();
   if (!home) return null;
-  const db =
-    process.platform === 'darwin'
-      ? join(home, 'Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb')
-      : join(home, '.config/Antigravity IDE/User/globalStorage/state.vscdb');
+  const db = join(home, 'Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb');
   const modified = await stat(db).then((info) => info.mtimeMs, () => null);
   if (modified === null) return null;
   try {
@@ -116,23 +121,13 @@ export async function readAntigravityUsage(
   if (plan.payer !== 'subscription') return usageUnavailable('not-reported');
   const geminiHome = ctx.env[ANTIGRAVITY_HOME_ENV]?.trim();
   if (!geminiHome) return usageUnavailable('error', { message: `宿主没给 ${ANTIGRAVITY_HOME_ENV},找不到 agy 的托管根。` });
+  // A cached plan is not proof that credentials are still valid. Guard -p /usage so it cannot start login.
+  const auth = await antigravityCliAuthStatus(ctx);
+  if (auth.kind === 'unauthenticated') return usageUnavailable('not-signed-in');
+  if (auth.kind === 'unknown') return usageUnavailable('error', { message: auth.message ?? 'Antigravity sign-in could not be confirmed.' });
   try {
     // 与登录读数同一个启动器(只换 agy 这一个进程的 HOME,mac 上接好钥匙串软链)。
-    const { stdout } = await ctx.exec(
-      '/usr/bin/env',
-      [
-        `${ANTIGRAVITY_HOME_ENV}=${geminiHome}`,
-        '/bin/sh',
-        '-c',
-        ANTIGRAVITY_PROBE_LAUNCH_SCRIPT,
-        ctx.cli,
-        '-p',
-        '/usage',
-        '--output-format',
-        'json',
-      ],
-      { timeout: AGY_USAGE_TIMEOUT_MS }
-    );
+    const { stdout } = await execAntigravityCli(ctx, ['-p', '/usage', '--output-format', 'json'], AGY_USAGE_TIMEOUT_MS);
     const windows = windowsFromAgyUsage(stdout);
     return windows.length > 0
       ? usageWindows(windows)

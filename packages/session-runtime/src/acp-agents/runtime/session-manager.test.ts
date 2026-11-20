@@ -832,6 +832,15 @@ describe('AcpRuntime session manager', () => {
     if (!result.success) expect(result.error.type).toBe('auth_required');
   });
 
+  it('maps an explicit revoked refresh token at startup to auth_required and preserves its cause', async () => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    const message = 'Your refresh token was revoked. Please log out and sign in again.';
+    h.agent.newSession.mockRejectedValueOnce({ code: -32603, message, data: { message, codexErrorInfo: 'other' } });
+    const result = await rt.startSession(makeStartInput({ sessionId: 'revoked-at-start' }));
+    expect(result).toMatchObject({ success: false, error: { type: 'auth_required', cause: { message } } });
+  });
+
   it('gives each conversation its own process and releases it on stop', async () => {
     const h = makeAcpHarness();
     const rt = new AcpRuntime(h.deps);

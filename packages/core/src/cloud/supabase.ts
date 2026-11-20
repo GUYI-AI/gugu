@@ -1,5 +1,6 @@
 import { createClient, processLock } from '@supabase/supabase-js'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
+import { withServerClock } from '../shared/serverClock'
 
 type SupabaseCreateOptions = NonNullable<Parameters<typeof createClient>[2]>
 
@@ -36,13 +37,12 @@ export function createGuguSupabaseClient(options: GuguSupabaseClientOptions = {}
     )
   }
 
-  const global =
-    options.headers || options.fetch
-      ? {
-          headers: options.headers,
-          fetch: options.fetch
-        }
-      : undefined
+  // Every client of our backend tunes this runtime's server clock (`@@@server-clock`).
+  const baseFetch = options.fetch
+  const global = {
+    ...(options.headers ? { headers: options.headers } : {}),
+    fetch: withServerClock((input: RequestInfo | URL, init?: RequestInit) => (baseFetch ?? fetch)(input, init))
+  }
 
   // @@@access-token-client — accessToken 与自有 auth 互斥(supabase-js 约束):令牌客户端
   // 不建 GoTrue 会话,auth 相关选项一概不传。

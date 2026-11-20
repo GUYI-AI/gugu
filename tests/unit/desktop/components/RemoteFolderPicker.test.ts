@@ -210,7 +210,7 @@ describe('RemoteFolderPicker', () => {
     await flush()
     await typePath('/nope')
     await flush()
-    expect(container.querySelector('[role="alert"]')?.textContent ?? '').toContain('那台机器上没有 /nope')
+    expect(container.querySelector('[role="alert"]')?.textContent ?? '').toContain('该设备上不存在 /nope')
     // 不自己跳走:列表还是 /home/bob 那份,没有第三次读取。
     expect(listMock).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('code')
@@ -229,7 +229,7 @@ describe('RemoteFolderPicker', () => {
     expect(entryLabels()).toEqual(['alpha'])
     await setValue(filter, 'zzz')
     expect(entryLabels()).toEqual([])
-    expect(container.textContent).toContain('这里没有名字里带「zzz」的项')
+    expect(container.textContent).toContain('没有名称包含「zzz」的项')
   })
 
   it('地址栏补全:Tab 补成那台机器上真实存在的子文件夹', async () => {
@@ -278,7 +278,7 @@ describe('RemoteFolderPicker', () => {
     await setValue(name, 'app')
     await pressEnter(name)
     await flush()
-    expect(container.textContent).toContain('版本太旧')
+    expect(container.textContent).toContain('版本过旧')
     expect(container.textContent).not.toContain('unknown device RPC type')
     await pressEnter(container.querySelector('[data-testid="remote-folder-new-name"]') as HTMLInputElement)
     await flush()
