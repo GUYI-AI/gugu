@@ -396,6 +396,7 @@ import { createStageLedger, type StageLedger } from '@main/lib/stage-ledger'
 import { openProject } from '@main/core/projects/operations/openProject'
 import { withRpcLogging } from '@main/lib/rpc-logging'
 import { pluginIdForAgentType } from '@gugu/core/agentTypes'
+import { lastModelSource } from '@main/core/usage/model-source-recorder'
 
 // The full router, re-exported so the host's renderer IPC bridge can type the surface.
 export const emdashRpcRouter = rpcRouter
@@ -1297,7 +1298,7 @@ export async function reloadEmdashSession(input: {
     const nextEffort = typeof input.effort === 'string' && input.effort.trim() ? input.effort.trim() : null
     let configBeforePatch: typeof sessions.$inferSelect.config | null = null
     const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
-    const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
+    const sourceChanged = crossesBillingSource(sessionId, nextModel, input)
     const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
     const forkProviderSession = sourceChanged && sourceChangeSession === 'fork'
     let platformWritten = false
@@ -1487,7 +1488,7 @@ export async function reloadEmdashSession(input: {
    */
   const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
   // 原生会话续接还是换新,由 descriptor 的 `sourceChangeSession` 按腿回答。
-  const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
+  const sourceChanged = crossesBillingSource(sessionId, nextModel, input)
   let platformWritten = false
   if (nextModel) {
     await recordSessionPlatformModel(
@@ -1667,23 +1668,18 @@ async function dropRecordedModel(
 }
 
 /**
- * 这次重开把会话放到哪条计费路上。清模型 = 回到自己那条路(harness 自家默认 + 用户自己的凭据),
- * 所以从平台清回「你自己的模型(默认)」与换成一个自己的模型一样,是一次换计费路(#6210)。
+ * 这次重开换没换计费路:与这条会话**上一次启动实际走的那条路**比(用量底账,见 `lastModelSource`),❌ 与 composer
+ * 那份记录比 —— 没经过 composer 的会话(派生、自动化、导入)没有那份记录,走的是 agent 级默认。清模型 = 回到自己
+ * 那条路(harness 自家默认 + 用户自己的凭据),与换成一个自己的模型一样是一次换路(#6210)。底账出现之后还没启动过 = 说不出,按没换。
  */
-function reloadTargetSource(
+function crossesBillingSource(
+  sessionId: string,
   nextModel: string | null,
   input: { modelSource?: 'platform' | 'own'; resetModel?: boolean },
-): 'platform' | 'own' | null {
-  if (nextModel) return input.modelSource ?? null
-  return input.resetModel ? 'own' : null
-}
-
-/** `undefined` = 存量会话没有平台记录,说不出换没换路 —— 按没换处理(与改动前一致)。 */
-function crossesBillingSource(
-  platformBefore: SessionPlatformModel | null | undefined,
-  target: 'platform' | 'own' | null,
 ): boolean {
-  return target !== null && platformBefore !== undefined && (platformBefore !== null) !== (target === 'platform')
+  const target = nextModel ? input.modelSource : input.resetModel ? 'own' : undefined
+  const before = lastModelSource(sessionId)
+  return !!target && !!before && (before === 'gugu') !== (target === 'platform')
 }
 
 /**
