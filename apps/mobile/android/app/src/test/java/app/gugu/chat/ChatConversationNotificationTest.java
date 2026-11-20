@@ -62,14 +62,15 @@ public class ChatConversationNotificationTest {
         assertFalse(ChatConversationNotification.ownsTag("13226587-813a-4e58-a023-dc419aeab890", "account-1"));
     }
 
-    @Test public void eachAuthorIsAPersonOfTheirOwnAndAnUnknownOneIsNeverInvented() {
+    @Test public void eachAuthorIsAPersonOfTheirOwnAndADeletedOneIsNeverTheConversation() {
         assertNotEquals(group("ann", "Ann").personKey(), group("bob", "Bob").personKey());
         assertEquals(group("ann", "Ann").personKey(), group("ann", "Ann (renamed)").personKey());
-        // Unknown or deleted author: the conversation's own name stands in; nothing is made up.
-        assertEquals("Team", group("ghost", "").shownAuthorName());
-        assertEquals("Team", group(null, "").shownAuthorName());
-        assertEquals("Ann", group("ann", "Ann").shownAuthorName());
-        assertNotEquals(group("ghost", "").personKey(), group(null, "").personKey());
+        assertNotEquals(group("ghost", "Unknown member").personKey(), group(null, "Unknown member").personKey());
+        // The renderer names an author it cannot name with the chat's own label; that name is what the person is shown as,
+        // and the group's own name ("Team") is never lent to an author, or the group would seem to speak.
+        assertEquals("Unknown member", group(null, "Unknown member").authorName);
+        assertEquals("Ann", group("ann", "Ann").authorName);
+        assertNotEquals(group(null, "Unknown member").title, group(null, "Unknown member").authorName);
     }
 
     @Test public void onlyADrawnImageIsAcceptedAndAnythingElseCountsAsUnavailable() {

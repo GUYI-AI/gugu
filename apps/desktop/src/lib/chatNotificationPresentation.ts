@@ -43,11 +43,18 @@ async function guarded<T>(what: string, read: () => Promise<T>, fallback: T): Pr
 }
 
 export async function presentChatMessage(
-  input: { accountId: string; chat: ChatItem; message: MessageItem; title: string },
+  input: {
+    accountId: string
+    chat: ChatItem
+    message: MessageItem
+    title: string
+    /** What the chat calls a member it cannot name (memberFallbackName.ts); never the conversation's own name. */
+    unknownAuthorName: string
+  },
   sources: PresentationSources,
   budgetMs: number,
 ): Promise<PresentedMessage> {
-  const { accountId, chat, message, title } = input
+  const { accountId, chat, message, title, unknownAuthorName } = input
   const room = isRoomChat(chat.kind)
   const authorId = message.sender_user_id
   const identityOf = (id: string | null | undefined) =>
@@ -64,9 +71,9 @@ export async function presentChatMessage(
     : (chat.peer_user_id === authorId ? authorFace : identityOf(chat.peer_user_id).then(faceOf))
 
   // Each part lands in `known` as it arrives, so what was ready at the budget goes out and only the rest is refreshed.
-  const known: Settled = { conversationFace: null, authorName: '', authorFace: null }
+  const known: Settled = { conversationFace: null, authorName: unknownAuthorName, authorFace: null }
   const settled = Promise.all([
-    author.then((identity) => { known.authorName = identity?.display_name ?? '' }),
+    author.then((identity) => { known.authorName = identity?.display_name || unknownAuthorName }),
     authorFace.then((face) => { known.authorFace = face }),
     conversationFace.then((face) => { known.conversationFace = face }),
   ])
@@ -84,6 +91,7 @@ export async function presentChatMessage(
   const inTime = await Promise.race([settled.then(() => true as const), timedOut])
   clearTimeout(timer)
   if (inTime) return { presentation: present(known, false), refresh: null }
-  // Nothing is claimed that was not read: a face still being drawn is `null`, the unavailable state, until the refresh.
+  // Nothing is claimed that was not read: a face still being drawn is `null`, the unavailable state, and a name still
+  // being looked up is the generic unknown-member label, until the refresh.
   return { presentation: present({ ...known }, false), refresh: settled.then(() => present({ ...known }, true)) }
 }

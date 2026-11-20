@@ -66,7 +66,7 @@ final class ChatConversationNotifications {
             .setKey("gugu-self-" + n.ownerKey())
             .build();
         Person author = new Person.Builder()
-            .setName(n.shownAuthorName())
+            .setName(n.authorName)
             .setKey(n.personKey())
             .setIcon(authorIcon)
             .build();

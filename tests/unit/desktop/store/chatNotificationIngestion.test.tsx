@@ -11,6 +11,9 @@ import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } fro
 import type { AccountRevisionSource, AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { createChatListProjectionLedger, useChatProjectionBinding } from '../../../../apps/desktop/src/store/chatListProjection'
 import * as notifications from '../../../../apps/desktop/src/store/chatListProjection'
+import { unknownMemberName } from '../../../../apps/desktop/src/lib/memberFallbackName'
+import enMessaging from '../../../../apps/desktop/src/i18n/locales/en-US/messaging'
+import zhMessaging from '../../../../apps/desktop/src/i18n/locales/zh-CN/messaging'
 
 const native = vi.hoisted(() => ({
   show: vi.fn(),
@@ -142,11 +145,11 @@ afterEach(() => {
 })
 
 describe('chat notification ingestion', () => {
-  const publish = async (row = nextRow(), requestSeq = 1) => {
+  const publish = async (row = nextRow(), requestSeq = 1, sender: { sender_user_id?: string | null } = {}) => {
     await act(async () => {
       const id = row.unread_locator?.message_id ?? MESSAGE
       pending.push({ revision: String(pending.length + 1), event: 'message_created', payload: {
-        chat_id: GROUP, entity_id: id, message: { ...messageRow, id, seq: row.unread_locator?.message_seq ?? 1 },
+        chat_id: GROUP, entity_id: id, message: { ...messageRow, ...sender, id, seq: row.unread_locator?.message_seq ?? 1 },
       } })
       wake(String(pending.length))
       await coordinator!.whenIdle()
@@ -159,14 +162,24 @@ describe('chat notification ingestion', () => {
     await publish()
     expect(native.show).toHaveBeenCalledExactlyOnceWith({
       title: 'Fixture group', body: 'controlled addressed message', chatId: GROUP, silent: true,
-      // No identity directory in this window: the group and its author are named by what the chat row knows, with no
-      // picture, and the notification still goes out at once.
+      // No identity directory in this window: the group is named by what the chat row knows and its author, not being
+      // known, by the chat's own unknown-member label; no picture, and the notification still goes out at once.
       presentation: {
         accountId: ACCOUNT, messageId: MESSAGE, sentAt: Date.parse(AT),
         conversation: { id: GROUP, kind: 'group', name: 'Fixture group', avatar: null },
-        author: { id: 'notify-sender', name: '', avatar: null },
+        author: { id: 'notify-sender', name: unknownMemberName(), avatar: null },
       },
     })
+  })
+
+  it('names the author of a deleted account with the label the chat shows for a member it cannot name, not the group', async () => {
+    native.faces = () => ({ identity: async (id: string) => displayIdentity(id), groupFace: async () => null, userFace: async () => null })
+    await publish(nextRow(), 1, { sender_user_id: null })
+    const { author, conversation } = native.show.mock.calls[0]![0].presentation
+    expect(author).toEqual({ id: null, name: unknownMemberName(), avatar: null })
+    // The catalog's own wording (whichever language this window runs in), not a made-up one.
+    expect([zhMessaging.group.memberFallback.unknown, enMessaging.group.memberFallback.unknown]).toContain(author.name)
+    expect(author.name).not.toBe(conversation.name)
   })
 
   it('does not notify again when the same message is replayed after publication settles', async () => {

@@ -21,6 +21,7 @@ import {
 } from '../lib/chatProjection'
 import { shareRows } from '../lib/chatProjectionAlgebra'
 import { presentChatMessage } from '../lib/chatNotificationPresentation'
+import { unknownMemberName } from '../lib/memberFallbackName'
 import { rendererLogger } from '@/lib/log'
 import type { ChatWindowCache } from './chatWindowCache'
 
@@ -121,7 +122,8 @@ export async function notifyForIngestedMessage(
   const presented = platform.capabilities.conversationNotifications
     ? await import('../lib/chatNotificationFaces')
       .then(({ createNotificationFaceSources }) =>
-        presentChatMessage({ accountId, chat, message, title: payload.title }, createNotificationFaceSources(), PRESENTATION_BUDGET_MS))
+        presentChatMessage({ accountId, chat, message, title: payload.title, unknownAuthorName: unknownMemberName() },
+          createNotificationFaceSources(), PRESENTATION_BUDGET_MS))
       // The banner is what matters: without its pictures it still goes out as before.
       .catch((error: unknown) => { log.error({ error: error instanceof Error ? error.name : 'unknown' }, 'chat notification presentation failed'); return null })
     : null

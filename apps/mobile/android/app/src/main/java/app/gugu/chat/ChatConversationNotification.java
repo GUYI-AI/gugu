@@ -31,7 +31,7 @@ final class ChatConversationNotification {
     final String body;
     /** Null for a deleted account. */
     final String authorId;
-    /** Empty when the renderer did not know the author. */
+    /** As the renderer named the author: the chat's own unknown-member label when it is not known. Never the conversation. */
     final String authorName;
     private final String conversationImage;
     private final String authorImage;
@@ -117,9 +117,6 @@ final class ChatConversationNotification {
     String personKey() {
         return "gugu-person-" + ownerKey() + "-" + (authorId == null ? "deleted" : hash(authorId, 16));
     }
-
-    /** The author's name; when it is not known, the conversation's own name — no author is made up. */
-    String shownAuthorName() { return authorName.isEmpty() ? title : authorName; }
 
     private static String hash(String value, int hexChars) {
         try {

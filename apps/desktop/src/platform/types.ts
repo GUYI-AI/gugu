@@ -103,7 +103,7 @@ export type ChatNotificationPresentation = {
   /** The message's own time, epoch ms. */
   sentAt: number
   conversation: { id: string; kind: 'dm' | 'group'; name: string; avatar: string | null }
-  /** The message's real author; `id` is null for a deleted account, `name` empty when the identity is not known. */
+  /** The message's real author; `id` is null for a deleted account; `name` is the chat's own unknown-member label when the identity is not known. */
   author: { id: string | null; name: string; avatar: string | null }
   /** Refresh of a notification already showing for this message (faces drawn late): same message, no new alert. */
   update?: true
