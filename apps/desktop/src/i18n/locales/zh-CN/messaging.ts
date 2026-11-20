@@ -958,10 +958,6 @@ export default {
       "openedBy": "{{name}}开的",
       "quiet": "还没有人说话"
     },
-    "breadcrumb": {
-      "sourceDeleted": "来源消息已被删除，这条话题继续存在",
-      "sourcePreview": "引自：{{preview}}"
-    },
     "openFailed": "话题没开出来。稍等一下再试；一直不行就换一条消息开。",
     "pane": {
       "attachments": "附件",

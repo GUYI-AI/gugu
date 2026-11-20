@@ -39,7 +39,6 @@ vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/
 vi.mock('../../../../apps/desktop/src/lib/topics', () => ({
   topicService: {
     listTopicsOfChat: vi.fn(async () => []),
-    getSourceState: vi.fn(async () => ({ kind: 'gone' as const })),
     getAgentFloodAdjustment: vi.fn(async () => null),
   },
 }))

@@ -24,7 +24,6 @@ const baseProps = {
   memberProfiles: {},
   memberReadSeqs: {},
   visibleChats: [],
-  sourceMessagePreview: 'pending',
   onSend: vi.fn(async () => {}),
   onSendAttachments: vi.fn(async () => {}),
   onClose: vi.fn(),

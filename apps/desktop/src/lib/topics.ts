@@ -46,16 +46,6 @@ export type AgentFloodAdjustment = {
   undone_at: string | null
 }
 
-/**
- * 面包屑要区分的三种来源状态。'unreadable' 是 @@@5856 找茬第八轮补上的第三态:
- * 行还在、只是这个人读不到 —— 它既不是 'readable' 也不是 'gone',
- * 把它并进任何一边都会在界面上说一句假话。
- */
-export type TopicSourceState =
-  | { kind: 'readable'; preview: string }
-  | { kind: 'unreadable' }
-  | { kind: 'gone' }
-
 export const topicService = {
   /** Archive as the signed-in human; the backend checks source-conversation authority. */
   async archiveTopic(chatId: string): Promise<void> {
@@ -123,23 +113,6 @@ export const topicService = {
       })
     }
     return rows
-  },
-
-  /**
-   * 话题来源的状态(面包屑用)。@@@5856 找茬第八轮:这里原先走 message_reply_preview,
-   * 而它返回 0 行有**两种**原因 —— 「真没了」和「行还在、你读不到」。客户端只有两态,
-   * 于是把后者显示成「来源消息已被删除」,那是一句假话(消息没被删,别人都看得见)。
-   * 现在由服务端把两件事分开(chat.topic_source_state),客户端如实转述。
-   */
-  async getSourceState(topicChatId: string): Promise<TopicSourceState> {
-    const { data, error } = await chatDb.rpc('topic_source_state', { p_topic_chat_id: topicChatId })
-    if (error) throw new Error(error.message)
-    const row = (Array.isArray(data) ? data[0] : data) as { state?: unknown; preview?: unknown } | undefined
-    const state = text(row?.state)
-    // 读不到这条话题本身 ⇒ 一行都不回。那时 ❌ 不许下「来源没了」的结论。
-    if (state === 'readable') return { kind: 'readable', preview: text(row?.preview) ?? '' }
-    if (state === 'gone') return { kind: 'gone' }
-    return { kind: 'unreadable' }
   },
 
   /** 一条群里目前那条「自动转 passive」系统消息对应的台账(没有就是 null)。 */

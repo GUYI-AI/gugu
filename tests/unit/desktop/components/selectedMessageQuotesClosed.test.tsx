@@ -63,7 +63,7 @@ it.each([
   const onSend = vi.fn(async () => {})
   await renderWithAppProviders(h, createElement(TopicSplitPane, {
     topic: { chatId: 'topic-1', name: 'Topic' }, messages: [message({ id: 'source', chat_id: 'topic-1', content })], loading: false,
-    memberProfiles: {}, memberReadSeqs: {}, visibleChats: [], sourceMessagePreview: null, onSend,
+    memberProfiles: {}, memberReadSeqs: {}, visibleChats: [], onSend,
     onSendAttachments: async () => {}, onClose: () => {}, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], mobile: true,
   }))
   await fireContextMenu(h.container.querySelector<HTMLElement>('[data-msg-id="source"] [data-testid="message-bubble-action-target"]')!)
