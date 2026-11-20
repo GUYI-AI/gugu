@@ -152,7 +152,7 @@ import { createUpdateState, type VersionedUpdateState } from '../shared/update-s
 import { createBuiltRendererRootResolver } from './rendererRoot'
 import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
 import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
-import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity, watchHostResumeGap } from './server/account-resume-wiring'
+import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
 import { runDueScheduledTasksForOwner } from './scheduled-tasks-runner'
 import { handOffLegacyWechat } from './wechat/handoff'
@@ -231,6 +231,7 @@ import {
   type AgentRosterRemovalReason,
 } from '@gugu/core/local/agent/deviceCommandRuntime'
 import {
+  agentsWithInbox,
   discloseInboxRowsFailed,
   DisclosedFailure,
   kickAgentInboxPull,
@@ -3964,6 +3965,11 @@ if (inheritedOwnerTimeZone) applyOwnerTimeZoneContext(inheritedOwnerTimeZone)
 
 const resumeAccountMessaging = createAccountResumeHandler({
   kickInbox: kickInboxForAgent,
+  agentsWithInbox: async (agentUserIds) => {
+    const auth = await authProvider?.getAuth()
+    if (!auth?.accessToken) throw new Error('host-resume: the roster inbox cannot be read while signed out')
+    return agentsWithInbox(agentUserIds, auth.accessToken)
+  },
   reconnect: resumeElectronSupabaseRealtime,
   reconcile: async () => { await reconcileSessionpagePlatformOnResume?.() },
   notifyCommands: () => deviceRuntimeHost?.notifyCommandsChanged(),
@@ -6553,8 +6559,6 @@ app.whenReady().then(async () => {
             (server) => createLogger('server').info({ socket: server.socketPath }, '账号进程套接字已开(设备连接 link 与 open-url 走它)'),
             (err: unknown) => createLogger('server').error({ err }, '账号进程套接字开不出来 —— 设备连接(link)与 open-url 不可用'),
           )
-          const stopResumeGapWatch = watchHostResumeGap(resumeAccountMessaging)
-          app.once('will-quit', stopResumeGapWatch)
           // 远程隧道:别的电脑经中转连到这里的终端 / 浏览器 / 端口(不挡启动,失败原因留给 tunnel.open 答)。
           ensureServerTunnelEndpoint()
         }
