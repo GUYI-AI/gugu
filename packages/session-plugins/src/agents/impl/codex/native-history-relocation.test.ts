@@ -18,6 +18,7 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', async importOriginal => {
 const FAKE = `#!/usr/bin/env node
 const fs = require('node:fs'), p = require('node:path'), z = require('node:zlib');
 const home = process.env.CODEX_HOME, native = home === process.env.TEST_NATIVE;
+const resumed = new Set();
 const emit = value => process.stdout.write(JSON.stringify(value) + '\\n');
 const scan = () => {
  const out = [];
@@ -44,12 +45,14 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   if(!process.argv.some(a=>a==='model_provider=gugu_platform'))throw Error('provider missing');
   if(!thread)throw Error('thread not found');
   if(m.params.model!==thread.meta.model)throw Error('model changed');
+  if(!thread.meta.source?.subagent?.thread_spawn||m.params.excludeTurns!==true)resumed.add(thread.meta.id);
   if(!thread.path.endsWith('.zst'))fs.appendFileSync(thread.path,JSON.stringify({type:'thread_settings',payload:{model:m.params.model}})+'\\n');
   result={thread:{id:thread.meta.id,path:process.env.TEST_ESCAPE_PATH||thread.path},modelProvider:thread.meta.model_provider};
  } else if(m.method==='thread/read') { if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable'); if(!thread)throw Error('thread not found'); result={thread:{id:thread.meta.id,model:thread.meta.model,path:thread.path,title:thread.meta.title}}; }
  else if(m.method==='thread/turns/list') {
   if(native&&process.env.TEST_NATIVE_READ_FAIL==='1')throw Error('native history no longer readable');
   if(!thread)throw Error('thread not found'); let turns=thread.meta.turns||[];
+  if(!native&&!resumed.has(thread.meta.id))turns=[];
   if(!native&&process.env.TEST_TURNS_DIFFER==='1')turns=[...turns,'extra'];
   const from=Number(m.params.cursor||0),end=from+m.params.limit;
   result={data:turns.slice(from,end).map(id=>({id})),nextCursor:end<turns.length?String(end):null};
@@ -117,6 +120,29 @@ describe('native Codex history relocation', () => {
     const result = await relocateNativeCodexHistory(r.options);
     expect(result.counts.removed).toBe(1); expect(result.counts.unowned).toBe(0); expect(result.entries[root.id]!.members.sort()).toEqual([root.id, child.id].sort());
     expect(await exists(join(r.native, child.path))).toBe(false); expect(await exists(join(r.native, onlyParent.path))).toBe(true);
+  });
+  it('resumes every spawned member with its own model before verifying its turns', async () => {
+    const r = await rig(), root = await r.add();
+    const child = await r.add('gugu_platform', false, {
+      model: 'child-model', turns: ['child-turn'],
+      source: { subagent: { thread_spawn: { parent_thread_id: root.id } } },
+    });
+    const result = await relocateNativeCodexHistory(r.options);
+    expect(result.counts).toEqual({ removed: 1, retained: 0, pending: 0, unowned: 0 });
+    expect(await exists(join(r.native, root.path))).toBe(false);
+    expect(await exists(join(r.native, child.path))).toBe(false);
+    const calls = await r.calls();
+    expect(calls.filter(call => call.method === 'thread/resume').map(call => call.params)).toEqual([
+      { threadId: root.id, excludeTurns: true, model: 'original-model' },
+      { threadId: child.id, excludeTurns: false, model: 'child-model' },
+    ]);
+    for (const member of [root, child]) {
+      const resume = calls.findIndex(call => !call.native && call.method === 'thread/resume' && call.params.threadId === member.id);
+      const turns = calls.findIndex(call => !call.native && call.method === 'thread/turns/list' && call.params.threadId === member.id);
+      expect(resume).toBeGreaterThanOrEqual(0); expect(turns).toBeGreaterThan(resume);
+      const copy = await readFile(join(r.managed, member.path));
+      expect(copy.subarray(0, member.content.length)).toEqual(member.content);
+    }
   });
   it('accepts app-server replies containing Unicode line separators in metadata', async () => {
     const r = await rig(); await r.add('gugu_platform', true, { title: 'before\u2028middle\u2029after' });

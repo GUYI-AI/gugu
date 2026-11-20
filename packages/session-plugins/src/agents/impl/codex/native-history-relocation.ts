@@ -316,13 +316,16 @@ export async function relocateNativeCodexHistory(options: NativeHistoryOptions):
             const readable = await managed.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { id?: string } };
             if (readable.thread?.id !== root) throw new Error('Managed history is unavailable before continuing deletion');
           } else {
-            const original = await native.request('thread/read', { threadId: root, includeTurns: false }) as { thread?: { model?: string } };
-            if (typeof original.thread?.model !== 'string' || !original.thread.model) throw new Error('Native thread has no model');
-            entry.model = original.thread.model; await save();
-            const resumed = await managed.request('thread/resume', { threadId: root, excludeTurns: true, model: entry.model }) as { modelProvider?: string; thread?: { id: string; path: string } };
-            if (resumed.modelProvider !== PLATFORM || resumed.thread?.id !== root || !resumed.thread.path
-              || !inside(await fs.realpath(home.configRoot), await fs.realpath(resumed.thread.path))) throw new Error('Managed resume did not prove the relocated thread');
             for (const id of members) {
+              const originalThread = await native.request('thread/read', { threadId: id, includeTurns: false }) as { thread?: { model?: string } };
+              const model = originalThread.thread?.model;
+              if (typeof model !== 'string' || !model) throw new Error('Native thread has no model');
+              if (id === root) { entry.model = model; await save(); }
+              // 0.167 leaves copied descendants' turn index empty when resume excludes turns.
+              // Load each descendant's history before the independent paginated comparison.
+              const resumed = await managed.request('thread/resume', { threadId: id, excludeTurns: id === root, model }) as { modelProvider?: string; thread?: { id: string; path: string } };
+              if (resumed.modelProvider !== PLATFORM || resumed.thread?.id !== id || !resumed.thread.path
+                || !inside(await fs.realpath(home.configRoot), await fs.realpath(resumed.thread.path))) throw new Error('Managed resume did not prove the relocated thread');
               const original = await turnIds(native, id, pageSize), copy = await turnIds(managed, id, pageSize);
               if (JSON.stringify(original) !== JSON.stringify(copy)) throw new Error('Managed turn sequence differs');
             }
