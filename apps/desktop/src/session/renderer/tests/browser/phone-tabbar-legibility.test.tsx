@@ -5,7 +5,7 @@
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, afterEach, expect, it } from 'vitest'
-import { cdp, page, userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { LocalizationProvider, getLocaleSnapshot, setLocalePreference } from '@/i18n'
 import { PhoneTabBar } from '@/mobile/PhoneTabBar'
 import { commandRegistry } from '@renderer/lib/commands/registry'
@@ -205,18 +205,35 @@ it('tapping the other tab mid-animation carries on from where the capsule is, wi
 // 胶囊拉长时叠出两截颜色。触屏(hover: none)上底栏格子不留悬停底;有鼠标的照旧。
 it('a tab left hovered by a finger tap paints no surface of its own, only on touch screens', async () => {
   const { items } = await mountBar('dark')
-  await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
-  try {
-    expect(matchMedia('(hover: none)').matches, 'touch emulation reports a touch-only screen').toBe(true)
-    await userEvent.hover(items[1]!)
-    expect(items[1]!.matches(':hover')).toBe(true)
-    expect(getComputedStyle(items[1]!).backgroundColor).toBe('rgba(0, 0, 0, 0)')
-  } finally {
-    await cdp().send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  // 底色有 150ms 的颜色过渡:先跑完再读,读透明度不读字符串(过渡中途是 oklab(0 0 0 / 0) 这类写法)
+  const surfaceAlpha = (el: HTMLElement) => {
+    el.getAnimations().forEach((animation) => animation.finish())
+    const color = getComputedStyle(el).backgroundColor
+    const slash = color.match(/\/\s*([\d.]+)(%?)\s*\)$/)
+    if (slash) return Number(slash[1]) / (slash[2] ? 100 : 1)
+    const rgba = color.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/)
+    return rgba ? Number(rgba[1]) : color === 'transparent' ? 0 : 1
   }
-  expect(matchMedia('(hover: hover)').matches).toBe(true)
-  await userEvent.hover(items[0]!)
-  expect(getComputedStyle(items[0]!).backgroundColor, 'a mouse still gets its hover surface').not.toBe('rgba(0, 0, 0, 0)')
+  await userEvent.hover(items[1]!)
+  expect(items[1]!.matches(':hover')).toBe(true)
+  expect(surfaceAlpha(items[1]!), 'a mouse still gets its hover surface').toBeGreaterThan(0)
+  // Not via CDP touch emulation: switching it off makes Chromium re-detect the real input devices, and a Linux CI
+  // runner has no mouse, so every later test file in this tab would be left on a hover-less screen. Instead the
+  // touch-only rule is lifted out of its media query and applied directly.
+  const rulesOf = (list: CSSRuleList): CSSRule[] => [...list].flatMap((rule) => ('cssRules' in rule ? [rule, ...rulesOf((rule as CSSGroupingRule).cssRules)] : [rule]))
+  const sheetRules = [...document.styleSheets].flatMap((sheet) => { try { return rulesOf(sheet.cssRules) } catch { return [] } })
+  const touchOnly = sheetRules
+    .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && rule.conditionText === '(hover: none)')
+    .flatMap((rule) => [...rule.cssRules])
+    .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && items[1]!.matches(rule.selectorText))
+  expect(touchOnly.length, 'a touch-only rule targets the hovered tab').toBeGreaterThan(0)
+  const lifted = document.head.appendChild(document.createElement('style'))
+  try {
+    lifted.textContent = touchOnly.map((rule) => rule.cssText).join('\n')
+    expect(surfaceAlpha(items[1]!), 'a finger-hovered tab paints nothing').toBe(0)
+  } finally {
+    lifted.remove()
+  }
 })
 
 it.each(['light', 'dark'] as const)('%s: pressing search preserves the glyph as well as the glass surface', async (theme) => {
