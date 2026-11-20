@@ -126,18 +126,36 @@ it('icon and label sit in the vertical middle of each tab', async () => {
   await page.screenshot({ path: 'phone-tabbar-chats.png' })
 })
 
-it('tapping a tab slides the selection over a short transition, never while swiping, and not under reduced motion', async () => {
+it('tapping a tab runs the liquid capsule animation (#3310), never while swiping, and not under reduced motion', async () => {
   const { barRef, items } = await mountBar('dark')
   const pill = () => getComputedStyle(document.querySelector('.gg-phone-nav-destinations')!, '::before')
   expect(Number.parseFloat(pill().transitionDuration), 'a swipe writes the position every frame: no transition to lag the finger').toBe(0)
+  expect(pill().animationName, 'nothing animates on top of a swipe either').toBe('none')
   items[1]!.click()
   await until('the second tab is current', () => items[1]!.getAttribute('aria-current') === 'page')
-  expect(barRef.current!.hasAttribute('data-tab-switching')).toBe(true)
-  expect(pill().transitionProperty).toContain('transform')
-  expect(Number.parseFloat(pill().transitionDuration)).toBeGreaterThan(0)
+  expect(barRef.current!.getAttribute('data-tab-switching')).toBe('forward')
+  expect(pill().animationName).toBe('gg-phone-nav-liquid-forward')
+  const duration = Number.parseFloat(pill().animationDuration) * 1000
+  expect(duration).toBeGreaterThan(0)
   expect(getComputedStyle(items[1]!).transitionProperty).toContain('color')
-  await until('the transition window closes', () => !barRef.current!.hasAttribute('data-tab-switching'))
+  // 动画到四成:朝目标那条边已到目标格,另一条边还没走,胶囊横跨两格、略压扁。
+  const liquid = document.getAnimations().find((a): a is CSSAnimation => a instanceof CSSAnimation && a.animationName === 'gg-phone-nav-liquid-forward')
+  expect(liquid, 'the capsule animation is running').toBeDefined()
+  liquid!.pause()
+  liquid!.currentTime = duration * 0.4
+  const [stretchX, stretchY] = pill().scale.split(' ').map(Number.parseFloat)
+  expect(stretchX, 'halfway the capsule covers both tabs').toBeGreaterThan(1.8)
+  expect(stretchY, 'and gets a little flatter').toBeLessThan(1)
+  liquid!.play()
+  await until('the animation window closes', () => !barRef.current!.hasAttribute('data-tab-switching'))
+  expect(pill().animationName).toBe('none')
   await page.screenshot({ path: 'phone-tabbar-contacts.png' })
+
+  items[0]!.click()
+  await until('the first tab is current again', () => items[0]!.getAttribute('aria-current') === 'page')
+  expect(barRef.current!.getAttribute('data-tab-switching')).toBe('back')
+  expect(pill().animationName).toBe('gg-phone-nav-liquid-back')
+  await until('the animation window closes', () => !barRef.current!.hasAttribute('data-tab-switching'))
 
   const motionRules = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
     .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && [...rule.cssRules].some((inner) => inner.cssText.includes('data-tab-switching')))

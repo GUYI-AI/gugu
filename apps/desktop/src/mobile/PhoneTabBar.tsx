@@ -8,8 +8,10 @@ import { openGlobalSearch } from '@renderer/features/global-search/search-sessio
 import { tabItemStyle } from './settledTab'
 import { PhoneViewportContext, type PhoneViewport } from './usePhoneViewport'
 
-/** 点按切换时挂在栏上的过渡窗口:比 --dur-med(200ms)多留一点,过渡跑完就摘,❌ 拖动时还挂着(那会拖在手指后面)。 */
-const TAB_SWITCH_MS = 320
+/** 点按切换时挂在栏上的动画窗口:比胶囊那段 400ms 的液态动画多留一点,跑完就摘,❌ 拖动时还挂着(那会拖在手指后面)。 */
+const TAB_SWITCH_MS = 460
+/** 点按跨过几格(胶囊半路要拉长盖住的格数);CSS 的液态关键帧读它。 */
+const TAB_SPAN_VAR = '--gg-tab-span'
 
 const anchorStyle = (height: number, index: number): CSSProperties => ({ '--phone-nav-viewport-height': `${height}px`, '--phone-nav-selected-index': index }) as CSSProperties
 
@@ -43,8 +45,13 @@ export function PhoneTabBar({ activeTab, onTabChange, pendingContactsCount, barR
   useEffect(() => () => window.clearTimeout(switchTimer.current), [])
   const tapTab = (tab: SidebarTab) => {
     const bar = barRef.current
+    const from = tabs.indexOf(activeTab), to = tabs.indexOf(tab)
     if (bar && tab !== activeTab) {
-      bar.setAttribute('data-tab-switching', '')
+      // 方向决定胶囊哪条边先冲过去(phone-look.css 的液态关键帧,#3310);连点时先摘再挂,让动画从头放。
+      bar.removeAttribute('data-tab-switching')
+      bar.style.setProperty(TAB_SPAN_VAR, String(from >= 0 && to >= 0 ? Math.abs(to - from) : 1))
+      bar.getBoundingClientRect()
+      bar.setAttribute('data-tab-switching', to < from ? 'back' : 'forward')
       window.clearTimeout(switchTimer.current)
       switchTimer.current = window.setTimeout(() => bar.removeAttribute('data-tab-switching'), TAB_SWITCH_MS)
     }

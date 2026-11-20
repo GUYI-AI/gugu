@@ -72,6 +72,9 @@
   background: var(--phone-nav-selected-bg);
   box-shadow: var(--phone-nav-selected-fx);
   transform: translateX(calc(var(--gg-tab-position, var(--phone-nav-selected-index, 0)) * 100%));
+  /* 液态动画的 translate/scale 叠在 transform 之外;原点放在胶囊此刻停的那一格的左沿,
+     关键帧里的百分比就都是「相对目标格」,与停在第几格无关。 */
+  transform-origin: calc(var(--gg-tab-position, var(--phone-nav-selected-index, 0)) * 100%) 50%;
   pointer-events: none;
 }
 [data-phone-shell] .gg-phone-nav-item {
@@ -92,9 +95,29 @@
 /* 字的行盒收紧到字号本身:12px 字配 18px 行高时,行盒上下的空白不对称(中文字体在安卓上尤其偏下),
    图标 + 字这一摞看着不在胶囊正中(owner 10-28)。 */
 [data-phone-shell] .gg-phone-nav-label { line-height: 1; }
-/* 点按切换:胶囊滑过去、两格颜色渐变;只在点按那一下挂(data-tab-switching),横滑跟手时不挂。 */
+/* 点按切换(#3310):胶囊像一滴水流过去 —— 朝目标那条边先冲到目标格,另一条边晚一拍跟上,
+   半路拉长盖住两格,再缩回目标格、轻轻回弹;拉长时略压扁,看着体积不变。两格颜色同时渐变。
+   只在点按那一下挂(data-tab-switching = forward / back),横滑跟手时不挂:跟手时再加形变会拖在手指后面。
+   这时 --gg-tab-position 已是目标格,关键帧里的值都相对目标格算:
+   左沿 L、右沿 R 以一格宽为单位,translate = L、scale = R - L(原点在目标格左沿,见上面 transform-origin)。
+   --gg-tab-span 是跨过的格数(PhoneTabBar 点按时写)。 */
+@keyframes gg-phone-nav-liquid-forward {
+  0% { translate: calc(var(--gg-tab-span, 1) * -100%) 0; scale: 1 1; animation-timing-function: var(--ease); }
+  40% { translate: calc((0.08 - var(--gg-tab-span, 1)) * 100%) 0; scale: calc(0.92 + var(--gg-tab-span, 1)) 0.88; animation-timing-function: var(--ease); }
+  68% { translate: -12% 0; scale: 1.15 0.95; animation-timing-function: ease-in-out; }
+  84% { translate: 2% 0; scale: 0.97 1.01; animation-timing-function: ease-out; }
+  100% { translate: 0 0; scale: 1 1; }
+}
+@keyframes gg-phone-nav-liquid-back {
+  0% { translate: calc(var(--gg-tab-span, 1) * 100%) 0; scale: 1 1; animation-timing-function: var(--ease); }
+  40% { translate: 0 0; scale: calc(0.92 + var(--gg-tab-span, 1)) 0.88; animation-timing-function: var(--ease); }
+  68% { translate: -3% 0; scale: 1.15 0.95; animation-timing-function: ease-in-out; }
+  84% { translate: 1% 0; scale: 0.97 1.01; animation-timing-function: ease-out; }
+  100% { translate: 0 0; scale: 1 1; }
+}
 @media (prefers-reduced-motion: no-preference) {
-  [data-phone-shell] [data-phone-tabbar][data-tab-switching] .gg-phone-nav-destinations::before { transition: transform var(--dur-med) var(--ease); }
+  [data-phone-shell] [data-phone-tabbar][data-tab-switching='forward'] .gg-phone-nav-destinations::before { animation: gg-phone-nav-liquid-forward calc(var(--dur-slow) + var(--dur-med) / 2) linear; }
+  [data-phone-shell] [data-phone-tabbar][data-tab-switching='back'] .gg-phone-nav-destinations::before { animation: gg-phone-nav-liquid-back calc(var(--dur-slow) + var(--dur-med) / 2) linear; }
   [data-phone-shell] [data-phone-tabbar][data-tab-switching] .gg-phone-nav-item { transition: color var(--dur-med) var(--ease); }
 }
 [data-phone-shell] .gg-phone-nav-icon > svg { width: var(--icon-rail); height: var(--icon-rail); }
