@@ -4,11 +4,12 @@ import type { StoredTurnValue } from './session-turn-codec';
 
 /** A virtual JSON byte stream. Bodies are the canonical payload objects, never copied into a window source. */
 export type TurnJsonRef = { ref: TurnPayloadRef; bytes: number };
-type Piece = { kind: 'literal'; ref: TurnPayloadRef }
+type Leaf = { kind: 'literal'; ref: TurnPayloadRef }
   | { kind: 'text'; ref: TurnPayloadRef; start: number; end: number; escape: number }
-  | { kind: 'image'; ref: TurnPayloadRef; start: number; end: number }
-  | { kind: 'concat'; parts: TurnJsonRef[] };
-type Fragment = string | Exclude<Piece, { kind: 'literal' | 'concat' }>;
+  | { kind: 'image'; ref: TurnPayloadRef; start: number; end: number };
+type Piece = Leaf | { kind: 'concat'; parts: TurnJsonRef[] }
+  | { kind: 'page'; parts: Array<{ piece: Leaf; bytes: number }> };
+type Fragment = string | Exclude<Leaf, { kind: 'literal' }>;
 const escape = (text: string, layers: number) => {
   for (let at = 0; at < layers; at++) text = JSON.stringify(text).slice(1, -1);
   return text;
@@ -53,7 +54,8 @@ function escapedText(input: Uint8Array, layers: number, range?: { start: number;
 
 export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnValue): TurnJsonRef {
   const node = (piece: Piece, bytes: number): TurnJsonRef => ({ ref: files.putText(JSON.stringify(piece),
-    piece.kind === 'concat' ? piece.parts.map(part => part.ref) : [piece.ref]), bytes });
+    piece.kind === 'concat' ? piece.parts.map(part => part.ref)
+      : piece.kind === 'page' ? piece.parts.map(part => part.piece.ref) : [piece.ref]), bytes });
   function* render(input: StoredTurnValue, indent = 0, depth = 0, layers = 0): Generator<Fragment> {
     const literal = (text: string) => escape(text, layers);
     switch (input.t) {
@@ -90,12 +92,29 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
     }
   }
   const parts: TurnJsonRef[] = [];
+  let page: Array<{ piece: Leaf; bytes: number }> = [], pageBytes = 40;
+  const flushPage = () => {
+    if (page.length) parts.push(node({ kind: 'page', parts: page }, page.reduce((sum, part) => sum + part.bytes, 0)));
+    page = []; pageBytes = 40;
+  };
+  const add = (piece: Leaf, bytes: number) => {
+    const part = { piece, bytes }, size = Buffer.byteLength(JSON.stringify(JSON.stringify(part))) + 1;
+    // Pages only contain bounded descriptors. Bodies keep their separate source-I/O accounting.
+    if (page.length === 32 || pageBytes + size > 8192) flushPage();
+    page.push(part); pageBytes += size;
+  };
   let text = '', textBytes = 0;
   const flush = () => {
-    if (text) { parts.push(node({ kind: 'literal', ref: files.putBytes(Buffer.from(text)) }, textBytes)); text = ''; textBytes = 0; }
+    if (text) { add({ kind: 'literal', ref: files.putBytes(Buffer.from(text)) }, textBytes); text = ''; textBytes = 0; }
   };
   for (const fragment of render(value)) {
     if (typeof fragment === 'string') {
+      const length = Buffer.byteLength(fragment);
+      if (length <= 2048) {
+        if (textBytes + length > 2048) flush();
+        text += fragment; textBytes += length;
+        continue;
+      }
       for (const character of fragment) {
         text += character; textBytes += Buffer.byteLength(character);
         if (textBytes >= 2048) flush();
@@ -103,11 +122,13 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
     } else {
       flush();
       const bytes = fragment.kind === 'image' ? 4 * Math.ceil((fragment.end - fragment.start) / 3)
-        : escapedText(files.readEncodedTextRange(fragment.ref, fragment.start, fragment.end), fragment.escape).bytes;
-      parts.push(node(fragment, bytes));
+        : !fragment.escape ? fragment.end - fragment.start
+          : escapedText(files.readEncodedTextRange(fragment.ref, fragment.start, fragment.end), fragment.escape).bytes;
+      add(fragment, bytes);
     }
   }
   flush();
+  flushPage();
   let level = parts;
   if (!level.length) throw new Error('Empty canonical turn JSON');
   while (level.length > 1) {
@@ -133,7 +154,6 @@ export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: n
     if (!valid(ref) || from < 0 || to < from || to > ref.bytes || lineage.has(ref.ref.hash)) throw new Error('Invalid canonical JSON range');
     let piece = cache.get(ref.ref.hash);
     if (!piece) { piece = JSON.parse(files.readText(ref.ref)) as Piece; if (cache.size < 64) cache.set(ref.ref.hash, piece); }
-    let bytes: Buffer;
     if (piece.kind === 'concat') {
       if (!Array.isArray(piece.parts) || piece.parts.length < 1 || piece.parts.length > 32
         || piece.parts.some(part => !valid(part)) || piece.parts.reduce((n, part) => n + part.bytes, 0) !== ref.bytes) throw new Error('Invalid canonical JSON branch');
@@ -146,22 +166,40 @@ export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: n
       }
       return Buffer.concat(parts, to - from);
     }
+    if (piece.kind === 'page') {
+      if (!Array.isArray(piece.parts) || piece.parts.length < 1 || piece.parts.length > 32
+        || piece.parts.some(part => !part.piece || !['literal', 'text', 'image'].includes(part.piece.kind)
+          || !Number.isSafeInteger(part.bytes) || part.bytes < 0)
+        || piece.parts.reduce((sum, part) => sum + part.bytes, 0) !== ref.bytes) throw new Error('Invalid canonical JSON page');
+      let at = 0;
+      const parts: Buffer[] = [];
+      for (const part of piece.parts) {
+        const next = at + part.bytes;
+        if (next > from && at < to) parts.push(readLeaf(part.piece, part.bytes, Math.max(0, from - at), Math.min(part.bytes, to - at)));
+        at = next;
+      }
+      return Buffer.concat(parts, to - from);
+    }
+    return readLeaf(piece, ref.bytes, from, to);
+  }
+  function readLeaf(piece: Leaf, length: number, from: number, to: number): Buffer {
+    let bytes: Buffer;
     if (piece.kind === 'literal') {
-      if (piece.ref.bytes !== ref.bytes) throw new Error('Canonical JSON literal length mismatch');
+      if (piece.ref.bytes !== length) throw new Error('Canonical JSON literal length mismatch');
       return withBody(() => files.readBytesRange(piece.ref, from, to));
     }
     else if (piece.kind === 'text') {
       if (!Number.isSafeInteger(piece.start) || !Number.isSafeInteger(piece.end) || piece.start < 1
         || piece.end < piece.start || piece.end - piece.start > 12 * 1024 || piece.end >= piece.ref.bytes) throw new Error('Invalid canonical text range');
       const result = withBody(() => escapedText(files.readEncodedTextRange(piece.ref, piece.start, piece.end), piece.escape, { start: from, end: to }));
-      if (result.bytes !== ref.bytes) throw new Error('Canonical JSON text length mismatch');
+      if (result.bytes !== length) throw new Error('Canonical JSON text length mismatch');
       return result.value!;
     } else if (piece.kind === 'image') {
       if (!Number.isSafeInteger(piece.start) || !Number.isSafeInteger(piece.end) || piece.start % (12 * 1024) !== 0
         || piece.end < piece.start || piece.end - piece.start > 12 * 1024) throw new Error('Invalid canonical image range');
       bytes = withBody(() => Buffer.from(files.readBytesRange(piece.ref, piece.start, piece.end).toString('base64')));
     } else throw new Error('Unknown canonical JSON source node');
-    if (bytes.length !== ref.bytes) throw new Error('Canonical JSON source length mismatch');
+    if (bytes.length !== length) throw new Error('Canonical JSON source length mismatch');
     return bytes.subarray(from, to);
   }
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) throw new Error('Invalid canonical JSON offsets');
