@@ -966,10 +966,6 @@ export default {
       "openedBy": "by {{name}}",
       "quiet": "No one has spoken yet"
     },
-    "breadcrumb": {
-      "sourceDeleted": "The source message was deleted, but this topic remains",
-      "sourcePreview": "From: {{preview}}"
-    },
     "openFailed": "The topic did not open. That message may have just been deleted — try another one.",
     "pane": {
       "attachments": "Attachments",

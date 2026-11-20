@@ -18,7 +18,6 @@ import { IconButton } from '../ui/IconButton'
 import { useBackLayer } from '../ui/sheetStack'
 import { ChatMessageComposer } from './ChatMessageComposer'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
-import { TopicBreadcrumb } from './TopicBreadcrumb'
 import { TopicToolWorkspace } from './TopicToolWorkspace'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
 import { useToast } from '../toastContext'
@@ -70,12 +69,6 @@ export type TopicSplitPaneProps = {
   loading: boolean
   memberProfiles: Record<string, MemberProfileCardModel>
   visibleChats: readonly (Pick<ChatItem, 'id' | 'unread_locator'> & { name: string; member_user_ids?: string[] })[]
-  /**
-   * 这条话题引自哪一句。四种值分开(见 TopicBreadcrumb):'pending' 还没读到 / 'unreadable' 读到了
-   * 但这个人看不到 / null 来源消息确实被删了 / 有字 = 预览。从会话列表点进来的人,
-   * 光看话题名说不出它从哪条消息长出来的 —— 这是「双向连接」上行的那一半。
-   */
-  sourceMessagePreview: string | null | 'pending' | 'unreadable'
   /**
    * 这个号一变就把焦点交给**这一栏**的输入框(用鼠标点话题进来的那条路)。
    * ❌ 不走 lib/focusComposer 那条全局契约:分栏这份 composer 是 surface="aside",
@@ -175,6 +168,10 @@ const TOPIC_SPLIT_HEADER_STYLE: React.CSSProperties = {
   padding: '12px 12px 0',
   flexShrink: 0,
 }
+const TOPIC_SPLIT_TITLE_STYLE: React.CSSProperties = {
+  minWidth: 0, fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 'var(--font-weight-semibold)',
+  color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+}
 const TOPIC_SPLIT_HEADER_ACTIONS_STYLE: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, marginTop: 'calc((var(--lh-title) - var(--control-h-sm)) / 2)' }
 const TOPIC_SPLIT_MESSAGES_STYLE: React.CSSProperties = {
   flex: 1,
@@ -201,7 +198,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   loading,
   memberProfiles,
   visibleChats,
-  sourceMessagePreview,
   focusComposerToken,
   memberReadSeqs,
   onSend,
@@ -340,7 +336,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
 
   // Phone topic navigation stays in its source room; Back first returns to the main conversation.
   useBackLayer(onClose, mobile && visible !== false)
-  const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
   const page = (
     // @@@2234 同 history/workspace/群 thread 面板:进场保留、**退场不保留占位**。
     // ⇒ ❌ 不要给它套 AnimatePresence / 加 exit。
@@ -363,7 +358,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
             (找茬第十轮)。嵌进来的那两个面板自带的头由 tokens.css 收掉,所以不会两条头叠着摆。 */}
         {mobile || embedded ? null : (
         <div style={TOPIC_SPLIT_HEADER_STYLE}>
-          {headerTitle}
+          <span data-testid="topic-split-title" style={TOPIC_SPLIT_TITLE_STYLE}>{topic.name}</span>
           <div style={TOPIC_SPLIT_HEADER_ACTIONS_STYLE}>
               <IconButton
                 size="sm"
@@ -464,7 +459,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   )
   if (mobile) return page
   if (embedded) {
-    return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} title={headerTitle} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
+    return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
   }
   return (
     <>
