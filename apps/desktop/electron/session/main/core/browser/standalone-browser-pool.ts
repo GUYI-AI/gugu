@@ -58,6 +58,17 @@ export class StandaloneBrowserPool {
     return path.join(this.options.profilesRoot, createHash('sha256').update(partition).digest('hex'));
   }
 
+  /** Origins of the web pages open in one profile right now. */
+  async openOrigins(partition: string): Promise<string[]> {
+    const entry = this.profiles.get(partition);
+    const origins = new Set<string>();
+    for (const browserId of entry?.tabs ?? []) {
+      const url = (await entry!.browser.existingPage(browserId))?.state().url;
+      if (url && /^https?:\/\//i.test(url)) origins.add(new URL(url).origin);
+    }
+    return [...origins];
+  }
+
   /** Partitions whose Chrome process is running now. */
   get livePartitions(): readonly string[] { return [...this.profiles.keys()]; }
 

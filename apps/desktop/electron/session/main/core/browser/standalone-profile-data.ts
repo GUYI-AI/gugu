@@ -14,6 +14,8 @@ export type ImportedCookie = {
 };
 
 type CdpCookie = Record<string, unknown>;
+/** What the built-in engine's "site data" covers; cookies and the HTTP cache are separate categories. */
+const SITE_DATA_STORAGE_TYPES = 'file_systems,indexeddb,local_storage,websql,service_workers,cache_storage';
 const SAME_SITE = { no_restriction: 'None', lax: 'Lax', strict: 'Strict' } as const;
 
 export function toCdpCookie(cookie: ImportedCookie): CdpCookie {
@@ -66,7 +68,8 @@ export class StandaloneProfileData {
     switch (kind) {
       case 'cookies': return this.host(partition, command => command('Network.clearBrowserCookies'));
       case 'cache': return this.host(partition, command => command('Network.clearBrowserCache'));
-      case 'siteData': return this.reset(partition, true);
+      // A running profile keeps its tabs: Chrome clears one origin at a time, so only a dormant one can be emptied whole.
+      case 'siteData': return this.options.pool.livePartitions.includes(partition) ? this.clearSiteDataInPlace(partition) : this.reset(partition, true);
       case 'all': return this.reset(partition, false);
     }
   }
@@ -87,7 +90,29 @@ export class StandaloneProfileData {
     try { await operation(host.command); } finally { await host.close(); }
   }
 
-  /** Chrome offers no "clear all site data" command, so the profile is emptied while idle; cookies may be carried over. */
+  /**
+   * `Storage.clearDataForOrigin` takes one origin and nothing lists the origins holding data, so this covers the sites
+   * that are open or hold cookies. A site with stored data, no cookie and no open tab is left until its profile is idle.
+   */
+  private async clearSiteDataInPlace(partition: string): Promise<void> {
+    const origins = new Set(await this.options.pool.openOrigins(partition));
+    await this.host(partition, async command => {
+      const { cookies = [] } = await command('Network.getAllCookies') as { cookies?: { domain?: string; secure?: boolean }[] };
+      for (const { domain, secure } of cookies) {
+        const host = domain?.replace(/^\./, '');
+        if (!host) continue;
+        origins.add(`https://${host}`);
+        if (!secure) origins.add(`http://${host}`);
+      }
+      let failed = 0;
+      for (const origin of origins) {
+        await command('Storage.clearDataForOrigin', { origin, storageTypes: SITE_DATA_STORAGE_TYPES }).catch(() => { failed += 1; });
+      }
+      if (failed) throw new Error(`Chrome could not clear the data of ${failed} site${failed === 1 ? '' : 's'}`);
+    });
+  }
+
+  /** Chrome offers no "clear all site data" command, so an idle profile is emptied; cookies may be carried over. */
   private async reset(partition: string, keepCookies: boolean): Promise<void> {
     let cookies: CdpCookie[] = [];
     if (keepCookies) {
