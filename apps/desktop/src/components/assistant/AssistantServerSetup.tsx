@@ -18,7 +18,7 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '../ui/Button'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
 import { devicesModel } from '../../store/devicesCache'
 import { assistantServerTargets } from '../../lib/assistantServerTargets'
 
@@ -124,7 +124,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
       {devices.state === 'unknown' ? <Unknown className="h-10 w-full" />
         : devices.state === 'error' || !targets ? <>
           <p className="ta-onb-error" role="alert">{t('server.listFailed')}</p>
-          <Button onClick={() => void devicesModel.refresh()}>{t('setup.retry')}</Button>
+          <Button onClick={retryOf(devices)}>{t('setup.retry')}</Button>
         </> : <>
           {targets.length ? <div className="ta-onb-list ta-server-targets" aria-label={t('server.choose')}>
             {targets.map(target => <Button key={target.deviceId} variant="option" size="option" disabled={!target.selectable}
@@ -138,7 +138,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
           <RefreshFailed error={devices.error} />
           <div className="ta-onb-row">
             <Button onClick={openDevices} data-testid="assistant-server-add">{t('server.add')}</Button>
-            <Button variant="ghost" onClick={() => void devicesModel.refresh()}>{t('server.refresh')}</Button>
+            <Button variant="ghost" onClick={retryOf(devices)}>{t('server.refresh')}</Button>
           </div>
         </>}
     </div>}

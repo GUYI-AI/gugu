@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { retryOf } from '@/lib/replica'
 import { AssistantOnboarding } from '@/components/assistant/AssistantOnboarding'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
@@ -6,7 +7,7 @@ import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { PaneHeader } from '@/components/ui/Pane'
 import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar'
 import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look'
-import { canSetUpCloudAssistant, cloudComputer, useCloudComputer } from '@/lib/cloudComputer'
+import { canSetUpCloudAssistant, useCloudComputer } from '@/lib/cloudComputer'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { refreshMyAssistant } from '@/lib/myAssistant'
 import { ChevronLeft } from '@/lib/icons'
@@ -39,7 +40,7 @@ export function MobileAssistantGate({ stage, name, ownerName, onExit }: { stage:
         return (
           <>
             <p className="ta-intro-body" role="alert">{t('cloud.unreadable')}</p>
-            <Button variant="ghost" className="ta-pill-btn" onClick={() => void cloudComputer.refresh()} data-testid="mobile-assistant-cloud-retry">
+            <Button variant="ghost" className="ta-pill-btn" onClick={retryOf(cloud)} data-testid="mobile-assistant-cloud-retry">
               {t('machine.retry')}
             </Button>
           </>

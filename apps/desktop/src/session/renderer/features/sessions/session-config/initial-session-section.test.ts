@@ -2204,7 +2204,7 @@ describe('InitialSessionField', () => {
     try {
       keptReadErrors.agents = new Error('machine unreachable');
       await renderField();
-      expect(noticeText()).toMatch(/Couldn't read the latest|没读到最新的/);
+      expect(noticeText()).toMatch(/Could not load the latest content|无法获取最新内容/);
       expect(chatComposerProps().agentOptions?.length).toBeGreaterThan(0);
       keptReadErrors.agents = null;
       await renderField();
@@ -2212,7 +2212,7 @@ describe('InitialSessionField', () => {
       mocks.notify.mockClear();
       keptReadErrors.catalog = new Error('harness gone');
       await renderField();
-      expect(noticeText()).toMatch(/Couldn't read the latest|没读到最新的/);
+      expect(noticeText()).toMatch(/Could not load the latest content|无法获取最新内容/);
       expect(Object.keys(chatComposerProps().modelOptions ?? {})).toContain('opus');
     } finally {
       keptReadErrors.agents = null;

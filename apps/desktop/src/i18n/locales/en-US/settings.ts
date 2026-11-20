@@ -490,7 +490,6 @@ export default {
       "provisionFailed": "Couldn't open it: ",
       "provisionFailedShort": "Couldn't open",
       "wakeFailed": "Can't reach it: ",
-      "stateFailed": "Couldn't read Gugu's status: ",
       "or": ", or ",
       "cancelProvision": "cancel",
       "steps": {

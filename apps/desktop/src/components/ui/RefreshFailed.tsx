@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { refreshFailure, type Reading } from '../../lib/replica'
+import { refreshFailure, retryOf, type Reading } from '../../lib/replica'
 import { Button } from './Button'
 
 /**
@@ -11,12 +11,12 @@ import { Button } from './Button'
 export function RefreshFailed(props: { reading: Reading<unknown> } | { error: Error | null; onRetry?: () => void }) {
   const { t } = useTranslation('common')
   const error = 'reading' in props ? refreshFailure(props.reading) : props.error
-  const retry = 'reading' in props ? (props.reading.state === 'unknown' ? undefined : props.reading.retry) : props.onRetry
+  const retry = 'reading' in props ? retryOf(props.reading) : props.onRetry
   if (!error) return null
   return (
     <p role="alert" data-refresh-failed="" className="!m-0 flex items-center gap-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]">
       <span>{t('staleRead.failed')}</span>
-      {retry ? <Button variant="ghost" size="sm" onClick={() => void retry()}>{t('staleRead.retry')}</Button> : null}
+      {retry ? <Button variant="ghost" size="sm" onClick={() => retry()}>{t('staleRead.retry')}</Button> : null}
     </p>
   )
 }

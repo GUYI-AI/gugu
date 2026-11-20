@@ -8,8 +8,8 @@ import { membershipSettingsSection } from '../../lib/billing/settingsDestination
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import { moveRecovery, type MoveEnv } from '@renderer/features/assistant/assistant-move-wire'
-import { useReplica, type Reading, refreshFailure } from '../../lib/replica'
-import { canSetUpCloudAssistant, cloudComputer, type CloudComputerState } from '../../lib/cloudComputer'
+import { useReplica, type Reading, refreshFailure, retryOf } from '../../lib/replica'
+import { canSetUpCloudAssistant, type CloudComputerState } from '../../lib/cloudComputer'
 import { Unknown } from '../ui/Unknown'
 import '../../i18n/registerAssistantCatalog'
 import { billingLinksAvailable } from '../../lib/appLinks'
@@ -80,7 +80,7 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
         control={<span className="gg-settings-row-value">{t('move.currentHome')}</span>}
         data-testid="assistant-move-current-home"
       /> : null}
-      {recoveryFailed ? <SettingsRow title={t('move.recoveryUnreadable')} control={<Button size="sm" onClick={() => void moveRecovery.refresh(assistantId)}>{t('setup.retry')}</Button>} /> : null}
+      {recoveryFailed ? <SettingsRow title={t('move.recoveryUnreadable')} control={<Button size="sm" onClick={retryOf(recovery)}>{t('setup.retry')}</Button>} /> : null}
       {membershipFailed ? <SettingsRow title={t('setup.membershipUnreadable')} description={membershipFailed} control={<Button size="sm" onClick={refreshSpendingPower}>{t('setup.retry')}</Button>} /> : null}
       {pending && env ? (
         <SettingsRow
@@ -131,7 +131,7 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
                 {t('move.memberLink')}
               </Button>
             ) : null) : cloudFailed ? (
-              <Button size="sm" onClick={() => void cloudComputer.refresh()} data-testid="assistant-move-cloud-retry">{t('setup.retry')}</Button>
+              <Button size="sm" onClick={retryOf(cloud)} data-testid="assistant-move-cloud-retry">{t('setup.retry')}</Button>
             ) : (
               <Button
                 size="sm"

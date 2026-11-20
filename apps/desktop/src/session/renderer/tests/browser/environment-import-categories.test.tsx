@@ -27,8 +27,8 @@ vi.mock('@renderer/lib/ipc', async load => ({
   rpc: { agents: { listIcons: state.listIcons } },
 }))
 vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/replica')>(),
-  useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id]) => state.counts[id] === 'error'
-    ? { state: 'error', error: new Error('fixture') }
+  useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id, deviceId]) => state.counts[id] === 'error'
+    ? { state: 'error', error: new Error('fixture'), retry: async () => { state.refresh(id, deviceId) } }
     : state.counts[id] === 'unknown' ? { state: 'unknown' }
     : { state: 'value', value: { count: typeof state.counts[id] === 'number' ? state.counts[id] : 0, pending: state.counts[id] === 'pending', needsSource: state.counts[id] === 'needs-source' } }),
 }))

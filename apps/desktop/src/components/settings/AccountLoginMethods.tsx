@@ -104,7 +104,7 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
       {methods && reading.state === 'value' ? <RefreshFailed reading={reading} /> : null}
     </>}>
     {!methods ? (reading.state === 'error'
-      ? <SettingsRow title={t('loginMethods.email')} control={button(t('loginMethods.retry'), () => { void loginMethodsModel.refresh() })} />
+      ? <SettingsRow title={t('loginMethods.email')} control={button(t('loginMethods.retry'), () => void reading.retry?.())} />
       : <>
         <SettingsRow title={t('loginMethods.email')} description={<Unknown className="w-40" />} />
         <SettingsRow title="Google" description={<Unknown className="w-40" />} />

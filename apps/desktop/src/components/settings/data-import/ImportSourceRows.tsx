@@ -4,7 +4,7 @@ import { categoryLabelKey, groupImportProviders } from './environment-import-vie
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ChevronRight, Clock, FileText, X } from '@/lib/icons'
-import { useReplicas } from '@/lib/replica'
+import { useReplicas, retryOf } from '@/lib/replica'
 import { importSourceCounts } from './import-replicas'
 import { notify } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
@@ -189,7 +189,7 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
               return (
                 <ImportRow key={category} label={<>{t(first.historyOnly ? 'settings.dataImport.sessions' : categoryLabelKey(category))} {count === undefined ? '' : `(${count})`}</>} job={job}>
                   {source ? source.reading?.state === 'error' ? (
-                    <Button variant="secondary" size="sm" title={t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
+                    <Button variant="secondary" size="sm" title={t('settings.dataImport.readFailed')} onClick={retryOf(source.reading)}>
                       {t('settings.dataImport.refresh')}
                     </Button>
                   ) : <SourceAction provider={source.provider} reading={source.reading} ownerId={ownerId} deviceId={null}

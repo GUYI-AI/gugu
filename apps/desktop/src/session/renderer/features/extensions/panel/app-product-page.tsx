@@ -38,7 +38,6 @@ import {
   type DeclaredPermission,
 } from '@shared/extensions/catalog';
 import { claimedSuffixes, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
-import type { MarketListing } from '@shared/extensions/market-entries';
 import {
   marketSourceLabel,
   marketSourceUrl,
@@ -51,13 +50,12 @@ import type { ExtensionsApi } from '../extensions-host';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { useReplica } from '@/lib/replica';
 import { LOCAL_HOST } from '../extensions-api';
-import { marketListing } from '../market-replicas';
+import { marketListing, marketVersionHistory } from '../market-replicas';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppShelfRow } from './app-shelf';
-import { VersionHistorySection, shortDate, type Loadable } from './app-version-history';
+import { VersionHistorySection, shortDate } from './app-version-history';
 import { AppProductBack, AppProductHeader } from './app-product-header';
-import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 
@@ -151,7 +149,7 @@ export function AppProductPage({
   const textLocale = languages.find((option) => option.locale === picked)?.locale ?? languages[0]!.locale;
   const text = localizedManifestText(manifest, textLocale);
   const { compat, deprecated } = cloud;
-  const { state: history, retry: readHistoryAgain } = useVersionHistory(hostKey, manifest.id);
+  const history = useReplica(marketVersionHistory, [hostKey, manifest.id]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutClamped, setAboutClamped] = useState(false);
@@ -160,14 +158,12 @@ export function AppProductPage({
   // 只有市场上的版本有产品页内容(`store/` 不进安装包);读不到就照实说,❌ 改读别处。
   const listedVersion = cloud.version;
   const listingReading = useReplica(marketListing, [hostKey, manifest.id, listedVersion]);
-  const listing: Loadable<MarketListing> | { status: 'outdated' } = listingReading.state === 'unknown' ? { status: 'loading' }
-    : listingReading.state === 'error' ? { status: 'error' }
-    : 'outdated' in listingReading.value ? { status: 'outdated' } : { status: 'ready', data: listingReading.value.listing };
+  const listing = listingReading.state === 'value' && !('outdated' in listingReading.value) ? listingReading.value.listing : null;
 
   const publishedAt = cloud.publishedAt;
   const permissions = declaredPermissions(manifest);
-  const shots = listing.status === 'ready' ? listing.data.screenshots : [];
-  const aboutText = listing.status === 'ready' ? listing.data.about[textLocale] : undefined;
+  const shots = listing ? listing.screenshots : [];
+  const aboutText = listing ? listing.about[textLocale] : undefined;
   // 折叠到四行放不下才给「展开」:量的是画出来的高度,换语言、换 App 都重量。
   useLayoutEffect(() => {
     const box = aboutRef.current;
@@ -252,11 +248,11 @@ export function AppProductPage({
           ) : null}
         </>
       ) : (
-        <p className="mk-note" role={listing.status === 'loading' ? undefined : 'alert'}>
+        <p className="mk-note" role={listingReading.state === 'unknown' ? undefined : 'alert'}>
           {translate(
-            listing.status === 'loading'
+            listingReading.state === 'unknown'
               ? 'extensions.loading'
-              : listing.status === 'outdated'
+              : listingReading.state === 'value' && 'outdated' in listingReading.value
                 ? 'extensions.listingPeerOutdated'
                 : 'extensions.listingUnavailable'
           )}
@@ -267,8 +263,8 @@ export function AppProductPage({
 
   // ── 新功能 + 版本历史 ──
   let news: ReactNode = null;
-  if (cloud.releaseNotes || (history.status === 'ready' && history.data.length > 0)) {
-    const latest = history.status === 'ready' ? history.data[0] : undefined;
+  if (cloud.releaseNotes || (history.state === 'value' && history.value.length > 0)) {
+    const latest = history.state === 'value' ? history.value[0] : undefined;
     const notes = cloud.releaseNotes || latest?.releaseNotes || '';
     const notesVersion = cloud.version;
     const notesDate = cloud.publishedAt;
@@ -293,8 +289,7 @@ export function AppProductPage({
           <fieldset disabled={readOnly} className="contents">
             <div className="mk-vers">
               <VersionHistorySection
-                state={history}
-                onReadAgain={readHistoryAgain}
+                reading={history}
                 extensionId={manifest.id}
                 installedVersion={installedVersion}
                 offeredVersion={null}

@@ -7,7 +7,6 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { cn } from '../../lib/cn'
 import { rendererLogger } from '../../lib/log'
 import {
-  cloudComputer,
   destroyCloudComputer,
   provisionCloudComputer,
   readCloudSnapshotNow,
@@ -389,17 +388,5 @@ export function CloudComputerCloseDialog({
         </div>
       </div>
     </Sheet>
-  )
-}
-
-/** 读不到管家时页头下面那一句 + 「重试」(❌ 当成没有云电脑、把「开一台」摆出来)。 */
-export function CloudComputerLoadError({ kind }: { kind: CloudComputerFailureKind }) {
-  const { t } = useTranslation('settings')
-  const { t: tc } = useTranslation('common')
-  return (
-    <div className={cn(caption, 'text-[var(--danger-fg)]')} data-testid="settings-cloud-computer-load-error" data-kind={kind}>
-      {t('devices.cloud.stateFailed')}{tc(`cloudComputer.reason.${kind}`)}{' '}
-      <InlineAction onClick={() => void cloudComputer.refresh()}>{t('devices.retry')}</InlineAction>
-    </div>
   )
 }

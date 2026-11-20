@@ -6,7 +6,8 @@ import { observer } from 'mobx-react-lite';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
-import { installedExtensions, LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { retryOf, type Reading } from '@/lib/replica';
 import { messageForUser } from '@/lib/userFacingError';
 import { Unknown } from '@/components/ui/Unknown';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -85,11 +86,10 @@ const TaskAddItems = observer(function TaskAddItems() {
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
   const installed = useInstalledApps(LOCAL_HOST);
   const apps = installed.state === 'value' ? installed.value : null;
-  const failed = installed.state === 'error' ? installed.error : null;
   const folder = apps?.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (
     <>
-      {!apps ? <NotReadMenuItem error={failed} /> : folder && <FolderMenuItem label={apps.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
+      {!apps ? <NotReadMenuItem reading={installed} /> : folder && <FolderMenuItem label={apps.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
       {getSessionWorkspaceActionOrder(projectId, terminalEnabled).map((actionId) =>
         renderWorkspaceActionMenuItem(actionId, translate, {
           blocked: sessionWorkspaceActionBlocked(projectId, actionId) !== null,
@@ -108,7 +108,7 @@ const TaskAddItems = observer(function TaskAddItems() {
           这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。只列启用的:停用的不出现(owner 10-20「灰掉也占位置」),
           启用在「App」页 —— 最后一行就去那里。 */}
       <AppsSection
-        error={failed}
+        reading={installed}
         apps={apps && apps.enabledTabContributions.filter((entry) => entry.kind !== WORKSPACE_APP_KIND).map((contribution) => ({
           key: contribution.kind,
           title: contribution.title,
@@ -138,7 +138,7 @@ function ChatAddItems({ chatId }: { chatId: string }) {
     <>
       <FolderMenuItem label={folderName} onOpen={() => openPanelItem(chatId, folderItem())} />
       <AppsSection
-        error={installed.state === 'error' ? installed.error : null}
+        reading={installed}
         apps={installed.state !== 'value' ? null : installed.value.openableApps.map((app) => ({
           key: app.extensionId,
           title: app.name,
@@ -150,10 +150,10 @@ function ChatAddItems({ chatId }: { chatId: string }) {
   );
 }
 
-function NotReadMenuItem({ error }: { error: Error | null }) {
+function NotReadMenuItem({ reading }: { reading: Reading<unknown> }) {
   const { translate } = useSessionMessages();
-  if (!error) return <DropdownMenuItem disabled><Unknown className="w-24" /></DropdownMenuItem>;
-  return <DropdownMenuItem data-read-failed="" onClick={() => void installedExtensions.refresh(LOCAL_HOST)}>{messageForUser(error)} · {translate('extensions.retry')}</DropdownMenuItem>;
+  if (reading.state !== 'error') return <DropdownMenuItem disabled><Unknown className="w-24" /></DropdownMenuItem>;
+  return <DropdownMenuItem data-read-failed="" onClick={retryOf(reading)}>{messageForUser(reading.error)} · {translate('extensions.retry')}</DropdownMenuItem>;
 }
 
 /** One built-in folder entry; its context supplies the name and the page to open. */
@@ -164,13 +164,13 @@ function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }
 /**
  * 「App」那一段,两处同一份:列能在这里打开的 App,最后一行去「App」页装更多。
  */
-function AppsSection({ apps, error }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] | null; error: Error | null }) {
+function AppsSection({ apps, reading }: { apps: { key: string; title: string; iconDataUrl: string | null; open: () => void }[] | null; reading: Reading<unknown> }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   return (
     // 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。
     <DropdownMenuGroup label={translate('extensions.appsSection')} labelClassName="text-foreground-passive text-xs font-normal">
-      {apps === null ? <NotReadMenuItem error={error} /> : apps.map((app) => (
+      {apps === null ? <NotReadMenuItem reading={reading} /> : apps.map((app) => (
         <DropdownMenuItem key={app.key} onClick={app.open}>
           <ExtensionMark iconDataUrl={app.iconDataUrl} /> {app.title}
         </DropdownMenuItem>

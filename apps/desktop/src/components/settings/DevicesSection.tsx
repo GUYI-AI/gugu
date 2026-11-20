@@ -1,6 +1,6 @@
 import { notifyCopied } from '@/lib/copyFeedback'
 import { billingLinksAvailable } from '../../lib/appLinks'
-import { useReplica, type Reading } from '../../lib/replica'
+import { useReplica, type Reading, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -222,7 +222,7 @@ export function DevicesSection({
       {sshMachines.state !== 'unknown' && sshMachines.error && (
         <SettingsNote tone="danger">
           {t('devices.sshListFailed')}
-          <Button variant="ghost" size="sm" onClick={() => void sshMachineAddresses.refresh()} className="ml-2">{t('devices.retry')}</Button>
+          <Button variant="ghost" size="sm" onClick={retryOf(sshMachines)} className="ml-2">{t('devices.retry')}</Button>
         </SettingsNote>
       )}
 

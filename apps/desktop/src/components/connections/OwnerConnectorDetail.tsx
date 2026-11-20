@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { retryOf } from '@/lib/replica'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
@@ -17,7 +18,7 @@ import type { ConnectionMetadataItem } from './connection-metadata'
 import { notify } from '@/lib/notices'
 import { connectionActionNoticeScope,reportConnectionActionFailure } from './connection-action-notice'
 import { connectionMetadataCollection } from './connection-metadata'
-import { ownerConnections, useOwnerConnectionsReading } from './connection-replicas'
+import { useOwnerConnectionsReading } from './connection-replicas'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -64,7 +65,7 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,market 
       onConnect={connect} disabled={!allowed || connected} /> : null}
     {app.id === 'wechat' ? <fieldset className="contents" disabled={!allowed}><WechatAppConnection connectOnly={connectOnly} /></fieldset> : null}
     {app.connectionStatus ? <p role="status">{app.name} : {app.connectionStatus}</p> : null}
-    {!connectOnly && snapshot.state === 'error' && !accounts ? <p role="alert">{copy('readUnavailable')} <Button size="sm" variant="ghost" onClick={() => void ownerConnections.refresh()}>{t('machine.retry')}</Button></p> : null}
+    {!connectOnly && snapshot.state === 'error' && !accounts ? <p role="alert">{copy('readUnavailable')} <Button size="sm" variant="ghost" onClick={retryOf(snapshot)}>{t('machine.retry')}</Button></p> : null}
     {!connectOnly && !accounts && snapshot.state !== 'error' ? <AppConnectionListPlaceholder /> : null}
     {/* Read before, its read again failing: the accounts read stay, the failure said with a retry (❌ drawn as current). */}
     {!connectOnly && snapshot.state === 'value' ? <RefreshFailed reading={snapshot} /> : null}

@@ -47,7 +47,7 @@ type Translate = ReturnType<typeof useSessionMessages>['translate'];
 export function BrowserSettingsCard() {
   const api = useAppSettingsKey('browser');
   return (
-    <SettingValue reading={api.settings} placeholder="h-64 w-full" onReadAgain={() => void api.refresh()}
+    <SettingValue reading={api.settings} placeholder="h-64 w-full"
       errorText={api.settings.state === 'error' ? messageForUser(api.settings.error) : undefined}>
       {({ value }) => <BrowserSettingsForm browserSettings={value} api={api} />}
     </SettingValue>

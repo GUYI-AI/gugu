@@ -1,4 +1,5 @@
 import type { AgentAppDetailLink, ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import { retryOf } from '@/lib/replica';
 import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
@@ -13,7 +14,7 @@ import { AppConversationFrame } from './app-conversation-frame';
 import { AppHostLayerFrame } from './app-host-layer';
 import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
-import { installedExtensions, LOCAL_HOST, useInstalledApps, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { LOCAL_HOST, useInstalledApps, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { Unknown } from '@/components/ui/Unknown';
 import { reloadAppPage } from '@renderer/features/extensions/app-page-unsaved';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
@@ -269,7 +270,7 @@ const AppMainPanel = observer(function AppMainPanel() {
       ) : installed.state === 'error' ? (
         <div className="flex flex-col items-start gap-2 text-sm text-foreground-muted" style={{ padding: 24 }} data-testid="app-page-unreadable">
           <p>{translate('extensions.loadFailed')}</p>
-          <Button variant="outline" size="sm" onClick={() => void installedExtensions.refresh(LOCAL_HOST)}>{translate('common.retry')}</Button>
+          <Button variant="outline" size="sm" onClick={retryOf(installed)}>{translate('common.retry')}</Button>
         </div>
       ) : !main?.enabled ? (
         <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate(assistantNotHere ? 'extensions.assistantPreparing' : 'extensions.turnOnInSettings')}</p>

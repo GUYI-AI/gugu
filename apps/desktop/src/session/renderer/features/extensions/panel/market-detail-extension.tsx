@@ -18,8 +18,7 @@ import { pendingLabel, type ExtensionPendingAction } from './extension-pending';
 import { MarketDetailCard, useMarketDetailConfirmation } from './market-detail-dialog';
 import { MarketExtensionDevices } from './market-detail-extension-devices';
 import { type ConfirmMarketInstall, useConfirmMarketInstall } from './market-detail-install';
-import { useVersionHistory } from './use-version-history';
-import { marketListing } from '../market-replicas';
+import { marketListing, marketVersionHistory } from '../market-replicas';
 import type { ReactNode } from 'react';
 
 export function MarketExtensionDetail({
@@ -43,7 +42,7 @@ export function MarketExtensionDetail({
   const permissions = declaredPermissions(manifest);
   const confirm = useMarketDetailConfirmation();
   const confirmInstall = useConfirmMarketInstall(cloud.version);
-  const { state: history, retry: retryHistory } = useVersionHistory(hostKey, manifest.id);
+  const history = useReplica(marketVersionHistory, [hostKey, manifest.id]);
   // Its pictures and about text are drawn once read; not read (yet, or at all) they are left out, as before.
   const reading = useReplica(marketListing, [hostKey, manifest.id, cloud.version]);
   const listing = reading.state === 'value' && 'listing' in reading.value ? reading.value.listing : null;
@@ -119,8 +118,7 @@ export function MarketExtensionDetail({
       <DetailSection title={translate('extensions.detailVersionHistory')} icon={<History />}>
         <div className="mk-vers overflow-hidden rounded-2xl border border-border px-2">
           <VersionHistorySection
-            state={history}
-            onReadAgain={retryHistory}
+            reading={history}
             extensionId={manifest.id}
             installedVersion={installedVersion}
             offeredVersion={cloud.version}

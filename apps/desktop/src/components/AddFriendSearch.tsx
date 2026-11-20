@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useContactsStore } from '../store/contactsContext'
 import { userSearch } from '../lib/contactsReplicas'
-import { useReplica, refreshFailure } from '../lib/replica'
+import { useReplica, refreshFailure, retryOf } from '../lib/replica'
 import { parseGuguQrPayload } from '@gugu/core/shared/qrPayload'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { Avatar } from './Avatar'
@@ -240,7 +240,7 @@ export function AddFriendSearch({
         {submitted && refreshFailure(found) && (
           <div role="alert" data-testid="friend-search-failed" className="flex items-center justify-center gap-3 p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">
             <span>{t('friendSearch.searchFailed', { detail: messageOf(refreshFailure(found)!) })}</span>
-            <Button variant="secondary" size="sm" onClick={() => void userSearch.refresh(submitted.query)}>{t('common.retry')}</Button>
+            <Button variant="secondary" size="sm" onClick={retryOf(found)}>{t('common.retry')}</Button>
           </div>
         )}
         {submitted && found.state === 'value' && found.value.length === 0 && (

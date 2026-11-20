@@ -153,14 +153,19 @@ describe('exemption markers (coordinator 2026-11-16: a fixed list of categories)
 
 describe('a reading\'s retry written by hand (what counts)', () => {
   const at = (body: string) => handRetryLines('a.tsx', body)
-  it('a RefreshFailed / ReadFailedLine whose onRetry only refreshes a model', () => {
+  it('a retry prop that only refreshes a model, on any element', () => {
     expect(at('const a = <RefreshFailed error={e} onRetry={() => void model.refresh(1)} />')).toEqual([1])
-    expect(at('const a = <ReadFailedLine message="x"\n  onRetry={() => { void model.refresh() }} />')).toEqual([1])
+    expect(at('const a = <ReadFailedLine message="x"\n  onRetry={() => { void model.refresh() }} />')).toEqual([2])
   })
-  it('not the reading\'s own retry, a retry doing several things, or another element', () => {
+  it('a click that only refreshes one entry of a model', () => {
+    expect(at('const a = <Button onClick={() => void search.refresh(query)}>Retry</Button>')).toEqual([1])
+  })
+  it('not the reading\'s own retry, a handler doing several things, or a whole model refreshed by a click', () => {
     expect(at('const a = <RefreshFailed reading={r} />')).toEqual([])
     expect(at('const a = <ReadFailedLine message="x" onRetry={r.retry} />')).toEqual([])
+    expect(at('const a = <Button onClick={retryOf(r)} />')).toEqual([])
+    expect(at('const a = <RefreshFailed error={e} onRetry={vm.refresh} />')).toEqual([])
     expect(at('const a = <RefreshFailed error={e} onRetry={() => { void one.refresh(); void two.refresh() }} />')).toEqual([])
-    expect(at('const a = <Button onRetry={() => void model.refresh()} />')).toEqual([])
+    expect(at('const a = <IconButton onClick={() => { void counts.refresh() }} />')).toEqual([])
   })
 })

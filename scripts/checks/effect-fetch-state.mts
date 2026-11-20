@@ -15,8 +15,9 @@
 // A hard rule (there is no baseline): no source file has the shape, no reading is collapsed to a
 // literal default (`--defaults`), and nothing outside lib/replica.ts reaches react-query directly — its read hooks, the
 // fetch-state hooks, or the client's own methods (`queryClient.…`); writes may still use `useMutation` with the client;
-// and no surface hands a reading's failure a retry it wrote itself (`onRetry={() => model.refresh(…)}` on `RefreshFailed` /
-// `ReadFailedLine`): a reading carries its own (`reading.retry`, `<RefreshFailed reading={r} />`, `<ReadingSlot>`).
+// and no surface hands a reading's failure a retry it wrote itself (`onRetry={() => model.refresh(…)}`,
+// `onClick={() => model.refresh(args)}`): a reading carries its own (`retryOf(reading)`, `<RefreshFailed reading={r} />`,
+// `<ReadingSlot>`).
 // `node scripts/checks/effect-fetch-state.mts` prints every finding and exits 1 if there is one. Real AST, not regex
 // (the same reason as subject-scoped-hooks.mts).
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -478,7 +479,8 @@ export function scanReactQuery(root = '.'): Record<string, number[]> {
   return out
 }
 
-const RETRY_HOLDERS = new Set(['RefreshFailed', 'ReadFailedLine'])
+/** Props that hand a component its retry: whatever refresh they wrap, it is a retry. */
+const RETRY_PROPS = new Set(['onRetry', 'onReadAgain'])
 
 /** The one call an arrow / function body makes, when that is all it does (`void` and a block of one statement unwrapped). */
 function soleCall(body: ts.Node): ts.CallExpression | null {
@@ -491,25 +493,26 @@ function soleCall(body: ts.Node): ts.CallExpression | null {
   return ts.isCallExpression(node) ? node : null
 }
 
+const isRefresh = (node: ts.Expression) => ts.isPropertyAccessExpression(node) && node.name.text === 'refresh'
+
 /**
- * The 1-based lines of a `RefreshFailed` / `ReadFailedLine` whose `onRetry` is a function that only calls `….refresh(…)`:
- * a retry written by hand for one reading (it carries its own). A retry that does several things is not this shape.
+ * The 1-based lines of a JSX handler written as a hand retry for one reading (it carries its own, `retryOf(reading)`):
+ * - `onRetry` / `onReadAgain` given a function that only calls `model.refresh(…)`;
+ * - any other handler (`onClick`, …) that only calls `model.refresh(…)` with the reading's arguments.
+ * Not this shape: a handler that does several things (two readings, a write then a read), and a click that refreshes a
+ * whole model (`model.refresh()`, no arguments: a page's refresh command over every entry it shows).
  */
 export function handRetryLines(path: string, text: string): number[] {
   if (!path.endsWith('.tsx')) return []
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const lines: number[] = []
   const visit = (node: ts.Node): void => {
-    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && RETRY_HOLDERS.has(node.tagName.getText(source))) {
-      for (const attribute of node.attributes.properties) {
-        if (!ts.isJsxAttribute(attribute) || attribute.name.getText(source) !== 'onRetry') continue
-        const value = attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined
-        if (!value || !(ts.isArrowFunction(value) || ts.isFunctionExpression(value))) continue
-        const call = soleCall(value.body)
-        if (call && ts.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'refresh') {
-          lines.push(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)
-        }
-      }
+    if (ts.isJsxAttribute(node) && node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+      const name = node.name.getText(source), value = node.initializer.expression
+      const retryProp = RETRY_PROPS.has(name)
+      const call = ts.isArrowFunction(value) || ts.isFunctionExpression(value) ? soleCall(value.body) : null
+      const hand = call !== null && isRefresh(call.expression) && (retryProp || call.arguments.length > 0)
+      if (hand) lines.push(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)
     }
     ts.forEachChild(node, visit)
   }

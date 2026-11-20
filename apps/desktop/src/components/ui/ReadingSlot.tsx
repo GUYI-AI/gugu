@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { messageForUser } from '../../lib/userFacingError'
-import type { Reading } from '../../lib/replica'
+import { retryOf, type Reading } from '../../lib/replica'
 import { ReadFailedLine } from '../../session/renderer/lib/ui/read-failed-line'
 import { RefreshFailed } from './RefreshFailed'
 import { Unknown } from './Unknown'
@@ -20,8 +20,7 @@ export function ReadingSlot<V>({ reading, placeholder, failed, children }: {
 }) {
   if (reading.state === 'unknown') return <Unknown className={placeholder} />
   if (reading.state === 'error') {
-    const retry = reading.retry
-    return <ReadFailedLine message={failed ? failed(reading.error) : messageForUser(reading.error)} onRetry={retry ? () => void retry() : undefined} />
+    return <ReadFailedLine message={failed ? failed(reading.error) : messageForUser(reading.error)} onRetry={retryOf(reading)} />
   }
   return <>{children(reading.value)}<RefreshFailed reading={reading} /></>
 }

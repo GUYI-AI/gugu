@@ -29,7 +29,7 @@ import { useTranslation } from 'react-i18next'
 import { GroupInviteCode } from '../chat/GroupInviteShare'
 import { groupSettings } from '../chat/useGroupChatSettings'
 import { groupRoster } from '../../hooks/useRoomCollab'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { publicGroupInvite } from '../../lib/publicGroupInvite'
 
@@ -249,7 +249,7 @@ export function GroupInviteJoinModal({
         ) : reading.state === 'error' ? (
           <div style={{ padding: 16, color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>
             {t('groupInvite.lookupFailed')}{' '}
-            <Button variant="ghost" size="sm" onClick={() => void publicGroupInvite.refresh(publicId)}>{t('common.retry')}</Button>
+            <Button variant="ghost" size="sm" onClick={retryOf(reading)}>{t('common.retry')}</Button>
           </div>
         ) : (
           <>

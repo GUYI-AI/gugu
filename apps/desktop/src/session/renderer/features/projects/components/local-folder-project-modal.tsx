@@ -4,7 +4,7 @@
 // ❌ 别接到旧的 AddProjectModal(Pick/New/Clone 页签 + 名称输入):那套已删。
 import { useState } from 'react';
 import { messageForUser } from '@/lib/userFacingError';
-import { refreshFailure, useReplica } from '@/lib/replica';
+import { refreshFailure, useReplica, retryOf } from '@/lib/replica';
 import { homeDirectory, projectPathInspection } from '@renderer/lib/machine-paths';
 import { Button } from '@renderer/lib/ui/button';
 import { DirectoryTree } from '@renderer/features/projects/components/add-project-modal/directory-browser/directory-tree';
@@ -80,7 +80,7 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
           {home.state === 'error' && (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-foreground-destructive">
               {messageForUser(home.error)}
-              <Button size="xs" variant="outline" onClick={() => void homeDirectory.refresh('local')}>
+              <Button size="xs" variant="outline" onClick={retryOf(home)}>
                 {translate('common.retry')}
               </Button>
             </div>

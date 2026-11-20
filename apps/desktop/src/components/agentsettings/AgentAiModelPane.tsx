@@ -22,7 +22,7 @@ import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
 import { agentModelSelection, sessionCreateModels, useDetailedPlatformCatalog } from '../../lib/agentModelReplicas'
-import { refreshFailure, useReplica } from '../../lib/replica'
+import { refreshFailure, useReplica, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
@@ -225,7 +225,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
           : { source: 'platform', protocol: protocol!, modelId: chosen.modelId })
         if (next !== value) void save(next)
       }} />}
-      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={() => { void sessionCreateModels.refresh() }}>{t('settings.model.retryCatalog')}</Button></div>
+      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={retryOf(harnessReading)}>{t('settings.model.retryCatalog')}</Button></div>
         : harness?.harnessState === 'auth-required' ? <div className={asClass.aiModelArd}>{t('settings.model.deviceSubscriptionMissing')}</div> : null)}
       <div className={asClass.aiModelArd} role="status">
         {saving ? t('settings.model.applying') : value === null && selection.state !== 'error' ? <Unknown className="w-48" /> : error

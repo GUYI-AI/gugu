@@ -490,7 +490,6 @@ export default {
       "provisionFailed": "没开成：",
       "provisionFailedShort": "没开成",
       "wakeFailed": "连不上：",
-      "stateFailed": "读不到你的咕咕的状态：",
       "or": "，或",
       "cancelProvision": "取消开通",
       "steps": {

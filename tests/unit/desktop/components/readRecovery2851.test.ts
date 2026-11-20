@@ -5,7 +5,7 @@ import { createNode, createReactHarness } from '../../../support/testHarness'
 import { queryClient, replica, useReplica } from '@/lib/replica'
 import { HtmlPreviewFrame, type HtmlPreviewRegistration } from '@/components/preview/HtmlPreviewFrame'
 import { VersionHistorySection } from '@/session/renderer/features/extensions/panel/app-version-history'
-import { useVersionHistory } from '@/session/renderer/features/extensions/panel/use-version-history'
+import { marketVersionHistory } from '@/session/renderer/features/extensions/market-replicas'
 import { remoteHostKey } from '@/session/renderer/features/extensions/extensions-api'
 import { routeMachine } from '@/session/renderer/lib/ipc'
 import { SettingValue } from '@/session/renderer/features/settings/components/SettingControls'
@@ -74,10 +74,10 @@ function hostOf(api: HistoryApi): string {
 let refreshHistory: () => void
 function History({ api }: { api: HistoryApi }) {
   const hostKey = useMemo(() => hostOf(api), [api])
-  const history = useVersionHistory(hostKey, 'sample-app')
-  refreshHistory = history.retry
-  return createNode(VersionHistorySection, { state: history.state, extensionId: 'sample-app', installedVersion: undefined,
-    offeredVersion: null, locale: 'en-US', translate: translateSessionMessage, onReadAgain: history.retry, onOpenExternal: vi.fn() })
+  const history = useReplica(marketVersionHistory, [hostKey, 'sample-app'])
+  refreshHistory = () => void marketVersionHistory.refresh(hostKey, 'sample-app')
+  return createNode(VersionHistorySection, { reading: history, extensionId: 'sample-app', installedVersion: undefined,
+    offeredVersion: null, locale: 'en-US', translate: translateSessionMessage, onOpenExternal: vi.fn() })
 }
 
 describe('App version history read recovery', () => {
@@ -123,7 +123,7 @@ it('uses replica read recovery without replacing a stored setting or changing un
   const model = replica({ name: 'read-recovery-2851', scope: 'device', read, retry: 3 })
   function BrowserSetting() {
     const reading = useReplica(model, [])
-    return createNode(SettingValue, { reading, onReadAgain: () => { void model.refresh() }, children: (value: unknown) => createNode('span', null, String(value)) })
+    return createNode(SettingValue, { reading, children: (value: unknown) => createNode('span', null, String(value)) })
   }
   await harness.render(createNode(BrowserSetting))
   await settled(() => expect(harness.container.textContent).toBe('stored browser profile'))

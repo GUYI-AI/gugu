@@ -46,6 +46,12 @@ export function refreshFailure(reading: Reading<unknown>): Error | null {
   return reading.state === 'unknown' ? null : reading.error
 }
 
+/** The reading's own retry, for a 「重试」 drawn by hand beside its failure (none before the first answer). */
+export function retryOf(reading: Reading<unknown>): (() => void) | undefined {
+  const retry = reading.state === 'unknown' ? undefined : reading.retry
+  return retry ? () => void retry() : undefined
+}
+
 type Scope = 'account' | 'device'
 
 type Later<A extends unknown[]> = A extends unknown[] ? A : never
@@ -588,7 +594,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     queryKey: key,
     staleTime: definition.fresh ?? 0,
     gcTime: definition.keep ?? Infinity,
-    retry: typeof definition.retry === 'function' ? retryOf(definition.retry, key) : definition.retry ?? false,
+    retry: typeof definition.retry === 'function' ? retryPolicyOf(definition.retry, key) : definition.retry ?? false,
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery, key) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ? (definition.fresh === Infinity ? 'always' as const : true) : false,
@@ -681,7 +687,7 @@ function refetchIntervalOf<A extends unknown[], V>(every: number | ((value: V | 
   return typeof every === 'number' ? every
     : (query: { state: { data: unknown; error: Error | null } }) => every(query.state.data as V | undefined, query.state.error, ...(key.slice(2) as A))
 }
-function retryOf<A extends unknown[]>(retry: (failures: number, error: Error, ...args: A) => boolean, key: QueryKey) {
+function retryPolicyOf<A extends unknown[]>(retry: (failures: number, error: Error, ...args: A) => boolean, key: QueryKey) {
   return (failures: number, error: Error) => retry(failures, error, ...(key.slice(2) as A))
 }
 

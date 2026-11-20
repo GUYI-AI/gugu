@@ -26,7 +26,7 @@ export function AuxiliaryModelsGroup() {
     <SessionTitleModelRow auxiliary />
     <SettingsRow title={<span className="flex items-center gap-2">{translate('customModels.reviewerModel')}
       <InfoTooltip label={translate('customModels.reviewerModel')} content={translate('customModels.auxiliaryFallback')} />
-    </span>} control={<SettingValue reading={reviewer.settings} placeholder="h-8 w-[355px]" onReadAgain={reviewer.refresh}>
+    </span>} control={<SettingValue reading={reviewer.settings} placeholder="h-8 w-[355px]">
       {({ value }) => {
         if (options === null) return <Unknown className="h-8 w-[355px]" />;
         const selected = value && options.find(option => option.connectionId === value.connectionId && option.modelId === value.modelId);

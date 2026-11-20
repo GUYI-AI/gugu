@@ -23,7 +23,7 @@ import { AppSettingsForm } from '../app-settings-form';
 import { useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
-import { extensionAgentSkills, extensionAgentTools, extensionDataBytes } from '../market-replicas';
+import { extensionAgentSkills, extensionAgentTools, extensionDataBytes, marketVersionHistory } from '../market-replicas';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
 import type { ExtensionDisclosureLevel } from '../installed-extensions';
@@ -33,7 +33,6 @@ import { AppMoreMenu } from './app-more-menu';
 import { PermissionIcon, formatSize, listOf } from './app-product-page';
 import { AppVariantList, type AppVariantRow } from './app-variant-list';
 import { VersionHistorySection } from './app-version-history';
-import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 import { AppUnreadBindingSection, type UnreadBindingApi } from './app-unread-binding-section';
@@ -155,7 +154,7 @@ export function AppManagePage({
   const programs = (manifest.contributes.mcpServers ?? []).map((server) => ('name' in server ? server.name : server.tools));
 
   const [historyOpen, setHistoryOpen] = useState(false);
-  const { state: history, retry: readHistoryAgain } = useVersionHistory(hostKey, manifest.id, historyOpen);
+  const history = useReplica(marketVersionHistory, historyOpen ? [hostKey, manifest.id] : null);
 
   const toolsLive = enabled && givesAgentTools(manifest) && !revoked.includes('agents:tools');
   const tools = useReplica(extensionAgentTools, toolsLive && api.agentTools ? [hostKey, manifest.id, manifest.version] : null);
@@ -247,8 +246,7 @@ export function AppManagePage({
           <fieldset disabled={readOnly} className="contents">
             <div className="mk-vers">
               <VersionHistorySection
-                state={history}
-                onReadAgain={readHistoryAgain}
+                reading={history}
                 extensionId={manifest.id}
                 installedVersion={manifest.version}
                 offeredVersion={autoUpdate?.on ? (notice?.kind === 'update' ? notice.version : manifest.version) : null}

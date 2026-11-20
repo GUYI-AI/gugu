@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
 import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
 import { clearViewState, useViewState } from '../../lib/viewStateTable'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
@@ -227,7 +227,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           control={occupation.kind !== 'ready' ? (
             occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
               <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}
-                <Button variant="secondary" size="sm" onClick={() => { void ownSettings.refresh('user') }}>{t('staleRead.retry', { ns: 'common' })}</Button></span>
+                <Button variant="secondary" size="sm" onClick={retryOf(settingsRow)}>{t('staleRead.retry', { ns: 'common' })}</Button></span>
             )
           ) : (
             <span className="flex w-full flex-col gap-2">

@@ -8,7 +8,7 @@ import { SettingsNote } from '../SettingsPrimitives'
 import type { ChatChannelList } from '@gugu/core/cloud/chatChannels'
 import { ConnectedChannels } from './ChatChannelsPanel'
 import { rendererChatChannelsClient } from '@/lib/chatChannels'
-import { useReplica } from '@/lib/replica'
+import { useReplica, retryOf } from '@/lib/replica'
 import { chatChannels } from '@/components/connections/connection-replicas'
 import { WechatConnectDialog } from './WechatConnectDialog'
 import { ChannelBrandIcon } from './ChannelBrandIcon'
@@ -35,7 +35,7 @@ export function WechatAppConnection({ connectOnly = false }: { connectOnly?: boo
     <AppConnectionHero icon={<ChannelBrandIcon kind="wechat" size={56} />} description={t('connectors.wechatDescription')}
       loading={reading.state === 'unknown'} disabled={!available || (connectOnly && connected)} label={t(connected ? (connectOnly ? 'connectors.connected' : 'connectors.manage') : 'connectors.connect')}
       onConnect={() => setConnecting(true)} />
-    {failed ? <SettingsNote role="alert">{t('connectors.loadFailed')}<Button variant="ghost" size="sm" onClick={() => void refresh()}>{t('machine.retry')}</Button></SettingsNote> : null}
+    {failed ? <SettingsNote role="alert">{t('connectors.loadFailed')}<Button variant="ghost" size="sm" onClick={retryOf(reading)}>{t('machine.retry')}</Button></SettingsNote> : null}
     {!connectOnly && connected && client && list ? <ConnectedChannels client={client} list={list} apply={apply} /> : null}
     {connecting && client && list ? <WechatConnectDialog client={client} list={list} refresh={refresh} apply={apply} onClose={() => setConnecting(false)} /> : null}
   </>

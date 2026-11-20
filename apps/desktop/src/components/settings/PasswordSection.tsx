@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { passwordSaveDraft, passwordVault } from '@/lib/passwordBetaNotifications'
-import { useReplica, type Reading } from '@/lib/replica'
+import { useReplica, type Reading, retryOf } from '@/lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, Trash, X } from '@/lib/icons'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
@@ -113,7 +113,7 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
     </SettingsGroup>
     {(vault.state === 'error' || (vault.state === 'value' && vault.error)) && <div className="flex items-center gap-2" data-testid="password-vault-failed">
       <SettingsNote tone="danger" role="alert">{vault.error?.message}</SettingsNote>
-      <Button variant="secondary" size="sm" onClick={() => { void passwordVault.refresh() }}>重试</Button>
+      <Button variant="secondary" size="sm" onClick={retryOf(vault)}>重试</Button>
     </div>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
     {offer}
@@ -132,7 +132,7 @@ function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: strin
   return <RequestWaiting requestId={requestId} go={props.go}>
     {draft.state === 'error' ? <>
       <SettingsNote tone="danger" role="alert">{draft.error.message}</SettingsNote>
-      <Button variant="secondary" onClick={() => { void passwordSaveDraft.refresh(requestId) }}>重试</Button>
+      <Button variant="secondary" onClick={retryOf(draft)}>重试</Button>
     </> : draft.state === 'value' && !draft.value ? <SettingsNote>这条保存请求已经处理过或已过期。</SettingsNote>
       : <Unknown className="h-40 w-full" />}
   </RequestWaiting>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { retryOf } from '@/lib/replica'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
@@ -11,7 +12,7 @@ import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
 import { localizedManifestText } from '@shared/extensions/catalog'
 import { PhoneMarketRow } from './PhoneMarketList'
 import { marketDeviceHost } from './marketDeviceHost'
-import { installedExtensions, useInstalledApps } from '@renderer/features/extensions/installed-extensions'
+import { useInstalledApps } from '@renderer/features/extensions/installed-extensions'
 
 export function PhoneMarketRemoteApps({ device, devices, assistant = false }: {
   device: Device
@@ -31,7 +32,7 @@ export function PhoneMarketRemoteApps({ device, devices, assistant = false }: {
   return <>
     {!device.is_online ? <SettingsNote role="status">{t('phoneMarket.deviceOffline')}</SettingsNote>
       : failed ? <SettingsNote tone="danger" role="alert">{translate('extensions.loadFailed')}
-        <Button size="sm" onClick={() => void installedExtensions.refresh(hostKey)}>{translate('extensions.retry')}</Button>
+        <Button size="sm" onClick={retryOf(inventory)}>{translate('extensions.retry')}</Button>
       </SettingsNote>
         : !installed ? <AppConnectionListPlaceholder /> : null}
     {apps.map(app => {
