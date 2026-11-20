@@ -71,7 +71,18 @@ for (const name of selected) {
   }
 }
 
-writeFileSync(summaryFile, `${JSON.stringify(summary, null, 2)}\n`)
-const failed = Object.entries(summary.tools).filter(([, tool]) => !tool.ok).map(([name]) => name)
+// Several invocations may share one out dir (e.g. --only knip while --only type-coverage runs): re-read and
+// merge only this run's tools, so a slow run does not write back a summary it read an hour ago.
+const latest = existsSync(summaryFile) ? JSON.parse(readFileSync(summaryFile, 'utf8')) : undefined
+const merged = latest?.sha === sha && latest.schemaVersion === 1 ? latest : { ...summary, tools: {}, dimensions: {} }
+for (const name of selected) {
+  merged.tools[name] = summary.tools[name]
+  const dimension = ctx.results[name]?.dimension
+  if (dimension) merged.dimensions[dimension] = summary.dimensions[dimension]
+}
+if (selected.includes('crapper') || selected.includes('repowise')) merged.hotspots = summary.hotspots
+merged.generatedAt = summary.generatedAt
+writeFileSync(summaryFile, `${JSON.stringify(merged, null, 2)}\n`)
+const failed = Object.entries(merged.tools).filter(([, tool]) => !tool.ok).map(([name]) => name)
 process.stderr.write(`[repo-health] wrote ${summaryFile}${failed.length ? ` — FAILED: ${failed.join(', ')}` : ''}\n`)
 process.exitCode = failed.length ? 1 : 0
