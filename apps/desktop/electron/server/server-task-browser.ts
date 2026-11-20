@@ -35,6 +35,15 @@ export interface TaskPageContents {
   hostCommand?(method: string, params: Record<string, unknown>): Promise<unknown>;
   /** Host layout zoom, never part of the restricted page protocol. */
   setZoomFactor?(factor: number): Promise<void>;
+  /**
+   * A page in a headless Chrome stays blocked by alert / confirm until the host answers. Events 'javascript-dialog' (type, message) and
+   * 'javascript-dialog-closed', 'screening' (watched or not), 'agent-detached' tell the host; these answer and report.
+   */
+  answerJavaScriptDialog?(accept: boolean): Promise<void>;
+  /** Someone is watching this page's picture right now. */
+  isScreening?(): boolean;
+  /** An agent holds the page with Page events on, so it receives dialogs and may answer them. */
+  agentListening?(): boolean;
   readonly debugger: {
     attach(protocolVersion?: string): void;
     detach(): void;
@@ -122,6 +131,9 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   private readonly children = new Set<string>();
   private readonly native = new EventEmitter();
   private destroyed = false;
+  private screening = false;
+  /** The agent's session asked for Page events: Chrome tells it about dialogs too. */
+  private agentPage = false;
   /** The host's own session: navigation and loading state for the shared navigation guard, never lent. */
   private watchSession: string | null = null;
   private mainFrame: string | null = null;
@@ -150,6 +162,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
     if (message.method === 'Target.detachedFromTarget' && message.params?.sessionId === this.session) {
       this.session = null;
       this.children.clear();
+      this.agentLetGo();
       this.native.emit('detach', {}, 'target closed');
       return;
     }
@@ -177,6 +190,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       const session = this.session;
       this.session = null;
       this.children.clear();
+      this.agentLetGo();
       if (session && session !== 'attaching') void this.connection.send('Target.detachFromTarget', { sessionId: session }).catch(() => {});
     },
     isAttached: (): boolean => this.session !== null,
@@ -184,6 +198,8 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       await this.attaching;
       if (!this.session || this.session === 'attaching') throw new Error('the task page debugger is not attached');
       if (sessionId && !this.children.has(sessionId)) throw new Error('unknown session');
+      if (!sessionId && method === 'Page.enable') this.agentPage = true;
+      if (!sessionId && method === 'Page.disable') this.agentPage = false;
       return this.connection.send(method, params, sessionId || this.session);
     },
     on: (event: 'message' | 'detach', listener: (...args: never[]) => void) => this.native.on(event, listener as (...args: unknown[]) => void),
@@ -220,8 +236,29 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       case 'Page.navigatedWithinDocument':
         if (main(params.frameId)) { this.url = String(params.url); void this.readHistory(); }
         break;
+      case 'Page.javascriptDialogOpening':
+        this.emit('javascript-dialog', { type: String(params.type), message: String(params.message ?? '') });
+        break;
+      case 'Page.javascriptDialogClosed':
+        this.emit('javascript-dialog-closed');
+        break;
     }
   }
+
+  private agentLetGo() {
+    if (!this.agentPage) return;
+    this.agentPage = false;
+    this.emit('agent-detached');
+  }
+
+  /** Answers the dialog Chrome is showing, whoever it was meant for; nothing to answer is not an error. */
+  async answerJavaScriptDialog(accept: boolean): Promise<void> {
+    if (!this.watchSession || this.destroyed) return;
+    await this.connection.send('Page.handleJavaScriptDialog', { accept }, this.watchSession).catch(() => undefined);
+  }
+
+  isScreening() { return this.screening; }
+  agentListening() { return this.agentPage && this.session !== null; }
 
   /**
    * The page as the person on another computer sees it (#1607 node 5): requested JPEG frames in its CSS pixel space.
@@ -229,11 +266,20 @@ class PageTarget extends EventEmitter implements TaskPageContents {
    */
   async startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void> {
     if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
-    await this.capture.start(onFrame);
+    // Watched from now on, before the first picture: a dialog may be what keeps the picture from coming.
+    this.watching(true);
+    try { await this.capture.start(onFrame); } catch (error) { this.watching(false); throw error; }
   }
 
   async stopScreen(): Promise<void> {
     this.capture.stop();
+    this.watching(false);
+  }
+
+  private watching(on: boolean) {
+    if (this.screening === on) return;
+    this.screening = on;
+    this.emit('screening');
   }
 
   /** The person's own input on this page: they act on it directly, as on a page in their own window. */
@@ -333,6 +379,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
     if (this.destroyed) return;
     this.destroyed = true;
     this.capture.stop();
+    this.screening = false;
     this.connection.off('event', this.onEvent);
     this.emit('destroyed');
   }

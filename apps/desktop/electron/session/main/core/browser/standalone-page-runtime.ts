@@ -1,4 +1,5 @@
-import { clipboard, ClipboardItem } from 'electron';
+import { clipboard, ClipboardItem, dialog } from 'electron';
+import { getMainWindow } from '@main/app/window';
 import { events } from '@main/lib/events';
 import { browserPageEventChannel, browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout } from '@shared/browser-page-layout';
@@ -11,9 +12,32 @@ import { standaloneKernelService } from './standalone-kernel-service';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { connectTaskPageScreen } from './task-page-screen';
 import { watchTaskPageConnection } from './remote-task-page';
+import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
 
 export const browserKernelBindings = new BrowserKernelBindings();
 const contents = new Map<string, TaskPageContents>();
+
+/** The same message box the built-in browser puts over the Gugu window for a page's alert and confirm. */
+const askPerson: AskPerson = ({ type, message, signal }) => {
+  const window = getMainWindow();
+  if (!window || window.isDestroyed()) return null;
+  return dialog.showMessageBox(window, {
+    message,
+    signal,
+    ...(type === 'confirm' ? { buttons: ['OK', 'Cancel'], defaultId: 0, cancelId: 1 } : { buttons: ['OK'], defaultId: -1, cancelId: 0 }),
+  }).then(({ response }) => response === 0);
+};
+
+function dialogPage(page: TaskPageContents): DialogPage | null {
+  const { answerJavaScriptDialog, isScreening, agentListening } = page;
+  if (!answerJavaScriptDialog || !isScreening || !agentListening) return null;
+  return {
+    on: (event, listener) => page.on(event, listener),
+    answerJavaScriptDialog: accept => answerJavaScriptDialog.call(page, accept),
+    isScreening: () => isScreening.call(page),
+    agentListening: () => agentListening.call(page),
+  };
+}
 
 export function registerBrowserKernel(input: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string }) {
   return browserKernelBindings.run(input.browserId, async () => {
@@ -48,6 +72,8 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
   const page = await standaloneKernelService().pool.pageFor({ ...binding, url, signal });
   if (contents.get(browserId) !== page) {
     contents.set(browserId, page);
+    const dialogs = dialogPage(page);
+    if (dialogs) wireStandalonePageDialogs(dialogs, askPerson);
     const screen = await standaloneKernelService().pool.existingPage(browserId);
     if (!screen) throw new Error('The standalone browser page closed');
     let loading = false;
