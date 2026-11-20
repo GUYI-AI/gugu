@@ -167,10 +167,13 @@ it('retries a failed original read and shares the successful retry', async () =>
   await expect(item.full!()).rejects.toThrow('released')
 })
 
-it('retries working-copy image reads instead of remembering a failed promise', async () => {
+it('reads a working-copy image again on the next look after a failure, never retrying by itself', async () => {
   const read = vi.fn().mockRejectedValueOnce(new Error('disconnected')).mockResolvedValue(new Blob(['original']))
   const item = workingCopyImageItem('plot.png', read)
   await expect(item.preview!()).rejects.toThrow('disconnected')
+  // A failed read is dropped, never retried by itself: only the next look reads again, with its own authorization.
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(read).toHaveBeenCalledTimes(1)
   const retry = item.preview!()
   expect(item.preview!()).toBe(retry)
   await expect(retry).resolves.toBe('blob:full')
