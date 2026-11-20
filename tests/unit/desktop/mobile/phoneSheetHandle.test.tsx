@@ -11,7 +11,8 @@ vi.mock('../../../../apps/desktop/src/components/ui/IconButton', () => ({
 import { PhoneSheetHandle } from '../../../../apps/desktop/src/mobile/PhoneSheetHandle'
 
 const active: Array<ReturnType<typeof createReactHarness>> = []
-afterEach(async () => { for (const h of active.splice(0)) await h.cleanup(); shell.mobile = true })
+let pointerTime = 0
+afterEach(async () => { for (const h of active.splice(0)) await h.cleanup(); shell.mobile = true; pointerTime = 0 })
 
 async function render(disabled = false) {
   const close = vi.fn(), h = createReactHarness(); active.push(h)
@@ -26,7 +27,8 @@ async function render(disabled = false) {
 async function pointer(target: HTMLElement, type: string, x: number, y: number, id = 1, at?: number) {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperties(event, Object.fromEntries(Object.entries({ pointerId: id, isPrimary: id === 1, pointerType: 'touch', clientX: x, clientY: y }).map(([k,v]) => [k, { value: v }])))
-  if (at !== undefined) Object.defineProperty(event, 'timeStamp', { value: at })
+  // Ordinary routing/distance cases use slow motion; velocity cases specify their own real intervals.
+  Object.defineProperty(event, 'timeStamp', { value: at ?? (pointerTime += 200) })
   await act(async () => { target.dispatchEvent(event) })
 }
 async function click(target: HTMLElement, detail = 1) { await act(async () => { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail })) }) }
