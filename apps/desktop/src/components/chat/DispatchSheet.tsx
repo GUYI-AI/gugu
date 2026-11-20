@@ -8,6 +8,8 @@ import { RESOURCE_TEMPLATES, type ResourceTemplate } from '@/session/shared/reso
 import { Button } from '../ui/Button'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
+import { rankMentionCandidates } from '@/lib/mentionRanking'
+import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
 import { sendableConversations, sendablePickRows } from './forwardMessageUtils'
 import { useAuth } from '../../store/auth'
@@ -27,7 +29,8 @@ const NEW_AGENT = 'new:agent'
  */
 export const DispatchSheet = observer(function DispatchSheet() {
   const { t } = useTranslation('messaging')
-  const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
+  const { chats, identitiesById, activeChatId, messages } = useChatStore('chats', 'identitiesById', 'activeChatId', 'messages')
+  const projectMembers = useProjectGroupMembers()
   const owned = useOwnedAgents()
   const { user } = useAuth()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -64,11 +67,12 @@ export const DispatchSheet = observer(function DispatchSheet() {
 
   if (!asked) return null
   const needle = query.trim().toLocaleLowerCase()
-  const found = (name: string) => !needle || name.toLocaleLowerCase().includes(needle)
   const offers = new Set(asked.offers)
-  const members = (asked.chat?.members ?? []).filter((member) => found(member.name))
-  const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => members
-    .filter((member) => member.kind === kind)
+  // Ranked as the chat's @ is: history counts only when the sheet is over that chat (or its topic).
+  const here = chats.some((chat) => chat.id === activeChatId && (chat.id === asked.chat?.id || chat.source_chat_id === asked.chat?.id))
+  const rank = <T extends { id: string; name: string; type: 'human' | 'agent' }>(rows: T[]) => rankMentionCandidates(rows, query, { chatId: here ? activeChatId : asked.chat?.id, currentUserId: user?.id, messages: here ? messages : [],
+    participantIds: chats.find((chat) => chat.id === asked.chat?.id)?.member_user_ids, projectMemberIds: projectMembers.get(asked.chat?.id ?? ''), now: Date.now() })
+  const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => rank((asked.chat?.members ?? []).filter((member) => member.kind === kind).map((member) => ({ ...member, type: member.kind })))
     .map((member) => ({
       id: `member:${member.id}`,
       name: member.name,
@@ -76,9 +80,9 @@ export const DispatchSheet = observer(function DispatchSheet() {
     }))
   // The person's own agents: the one preselected first; a draft only into one whose session is here (its composer).
   const local = asked.local ? new Set(asked.local) : null
-  const agentRows = !offers.has('my-agent') ? [] : owned
-    .map((agent) => ({ ...agent, id: `user:${agent.id.replace(/^user:/, '')}` }))
-    .filter((agent) => found(agent.display_name) && (!asked.draft || !local || local.has(agent.id)))
+  const agentRows = !offers.has('my-agent') ? [] : rank(owned
+    .map((agent) => ({ ...agent, id: `user:${agent.id.replace(/^user:/, '')}`, name: agent.display_name, type: 'agent' as const }))
+    .filter((agent) => !asked.draft || !local || local.has(agent.id)))
     .sort((a, b) => Number(b.id === asked.preselect) - Number(a.id === asked.preselect))
     .map((agent): ChatPickRow => ({
       id: `agent:${agent.id}`,
@@ -88,7 +92,7 @@ export const DispatchSheet = observer(function DispatchSheet() {
   const nameOf = (chat: (typeof chats)[number]) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name)
   const chatRows = !offers.has('chat') ? [] : sendablePickRows(sendableConversations(chats, { ownerId: user?.id, query, displayName: nameOf, identitiesById }),
     nameOf, identitiesById, { expanded, searching: needle !== '', idOf: (id) => `chat:${id}` })
-  const newRows: ChatPickRow[] = offers.has('new-agent') && found(t('dispatchPick.newAgent'))
+  const newRows: ChatPickRow[] = offers.has('new-agent') && (!needle || t('dispatchPick.newAgent').toLocaleLowerCase().includes(needle))
     ? [{ id: NEW_AGENT, name: t('dispatchPick.newAgent'), avatar: { name: '+', seed: NEW_AGENT, isAgent: true } }]
     : []
   const sections: ChatPickSection[] = [

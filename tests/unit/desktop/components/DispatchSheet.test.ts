@@ -19,9 +19,9 @@ const chats: ChatItem[] = [
   status: 'active', created_at: '2026-01-01T00:00:00.000Z', last_message_at: null, last_message_preview: null, unread_count: 0,
   pinned_message_id: null, last_read_seq: 0, next_message_seq: 1, ...overrides,
 }) as ChatItem)
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
-  useChatStore: () => ({ chats, identitiesById: { 'u-alpha': { display_name: 'Alpha', avatar: null, type: 'human' } } }),
-}))
+// The chat on screen and its messages: what the @ order reads (who spoke there lately).
+const store = { chats, identitiesById: { 'u-alpha': { display_name: 'Alpha', avatar: null, type: 'human' } }, activeChatId: null as string | null, messages: [] as unknown[] }
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => store }))
 // The person's own agents (contacts they own), wherever they run.
 const agent = (id: string, display_name: string) => ({ id, display_name, avatar: null, type: 'agent', owner_user_id: 'me', created_at: '2026-11-02T08:00:00.000Z' })
 vi.mock('../../../../apps/desktop/src/components/settings/channels/channelAgents', () => ({
@@ -169,6 +169,19 @@ describe('DispatchSheet', () => {
     await type(text, 'Host this round, hard mode')
     await click(button('发送'))
     await expect(picked).resolves.toEqual({ to: { chat: 'c-group', member: 'user:a' }, visible: true, text: 'Host this round, hard mode' })
+  })
+
+  it('the chat\'s members come in the chat\'s @ order: who spoke there lately first, and a search matches as @ does', async () => {
+    store.activeChatId = 'c-group'
+    store.messages = [{ id: 'm1', chat_id: 'c-group', seq: 1, sender_user_id: 'user:lin', to_user_ids: [], content_type: 'text', created_at: new Date().toISOString() }]
+    await act(async () => {
+      void ask({ draft: false, offers: ['agent-in-chat'], chat: { id: 'c-group', name: 'Reading group', members: [{ id: 'user:kip', name: 'Kip', kind: 'agent' }, { id: 'user:lin', name: 'Lin', kind: 'agent' }] } })
+    })
+    expect(rowIds()).toEqual(['member:user:lin', 'member:user:kip'])
+    await type(document.body.querySelector('input') as HTMLInputElement, 'ki')
+    expect(rowIds()).toEqual(['member:user:kip'])
+    store.activeChatId = null
+    store.messages = []
   })
 
   it('a pick: the App\'s words, what it is about read only, the person\'s own agents; the pick is the agent', async () => {
