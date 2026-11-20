@@ -835,13 +835,15 @@ export async function copyAgentHomeHistory(home: ResolvedAgentHome, paths: reado
   for (const path of paths) await visit(localPath(path), 0);
   return issues;
 }
-export async function diffAgentHome(home: ResolvedAgentHome): Promise<{ entries: AgentHomeDiffEntry[]; issues: AgentHomeImportIssue[] }> {
+export async function diffAgentHome(home: ResolvedAgentHome, signal?: AbortSignal): Promise<{ entries: AgentHomeDiffEntry[]; issues: AgentHomeImportIssue[] }> {
+  signal?.throwIfAborted();
   const marker = await readAgentHomeMarker(home);
   if (!marker) throw new AgentHomeNotImported(home.providerId);
-  const { items, issues } = await collect(home), source = new Map(items.map((item) => [item.id, item]));
+  const { items, issues } = await collect(home, { signal }), source = new Map(items.map((item) => [item.id, item]));
   const entries: AgentHomeDiffEntry[] = [];
   const declarations = importDeclarations(home);
   for (const id of new Set([...Object.keys(marker.files), ...source.keys()])) {
+    signal?.throwIfAborted();
     const item = source.get(id), path = item?.path ?? id.split('#')[0]!;
     const declaration = item ?? declarations.find((entry) => matchesPath(path, entry.path) && itemId(path, entry.spec) === id);
     // Older markers can reference files which are outside the current import allowlist.
@@ -865,38 +867,54 @@ export async function diffAgentHome(home: ResolvedAgentHome): Promise<{ entries:
   }
   return { entries, issues };
 }
-export async function reimportAgentHome(home: ResolvedAgentHome, decisions: ReadonlySet<string>, expected?: ReadonlyMap<string, string>) {
+export async function reimportAgentHome(home: ResolvedAgentHome, decisions: ReadonlySet<string>, expected?: ReadonlyMap<string, string>, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const marker = await readAgentHomeMarker(home);
   if (!marker) throw new AgentHomeNotImported(home.providerId);
-  const diff = await diffAgentHome(home);
+  const diff = await diffAgentHome(home, signal);
   if (expected && diff.entries.some((entry) => decisions.has(entry.id) && expected.get(entry.id) !== entry.revision)) {
     throw new Error('Configuration changed; review the differences again before importing');
   }
   const allowed = new Set(diff.entries.filter((entry) => decisions.has(entry.id)
     && ['userChanged', 'userAdded', 'bothChanged'].includes(entry.state)).map((entry) => entry.id));
   const revisions = expected ?? new Map(diff.entries.map((entry) => [entry.id, entry.revision]));
-  const { items, issues } = await collect(home, {
-    strict: ({ id }) => allowed.has(id),
-    consume: async (snapshots) => {
-      for (const entries of byTarget(snapshots.filter((item) => allowed.has(item.id)))) {
-        await writeItem(home, entries, 'reimport', (current, currentHash) => {
-          for (const item of entries) {
-            const managed =
-                currentHash ??
-                (current ? hash(project(current, item.spec, item.group)) : undefined);
-            if (revisions.get(item.id) !== hash(stable({ base: marker.files[item.id], user: item.hash, managed }))) {
-              throw new Error('Configuration changed; review the differences again before importing');
+  const committed: Pick<Item, 'id' | 'hash' | 'group'>[] = [];
+  const commitMarker = async (selected: readonly Pick<Item, 'id' | 'hash' | 'group'>[]) => {
+    for (const item of selected) marker.files[item.id] = item.hash;
+    marker.groups = [...new Set([...marker.groups, ...selected.map((item) => item.group)])];
+    if (selected.length) delete marker.skipped;
+    await writeMarker(home, marker);
+  };
+  let collected: Awaited<ReturnType<typeof collect>>;
+  try {
+    collected = await collect(home, {
+      signal,
+      strict: ({ id }) => allowed.has(id),
+      consume: async (snapshots) => {
+        for (const entries of byTarget(snapshots.filter((item) => allowed.has(item.id)))) {
+          await writeItem(home, entries, 'reimport', (current, currentHash) => {
+            for (const item of entries) {
+              const managed = currentHash ?? (current ? hash(project(current, item.spec, item.group)) : undefined);
+              if (revisions.get(item.id) !== hash(stable({ base: marker.files[item.id], user: item.hash, managed }))) {
+                throw new Error('Configuration changed; review the differences again before importing');
+              }
             }
-          }
-        });
+          }, signal);
+          committed.push(...entries.map(({ id, hash, group }) => ({ id, hash, group })));
+        }
       }
-    }
-    }), selected = items.filter((item) => allowed.has(item.id));
+    });
+  } catch (error) {
+    // A cancelled collection may already have published complete files. Keep
+    // their existing marker baselines in step; unpublished temporary files are
+    // cleaned by writeItem. A retry can then resume without inventing conflicts.
+    if (signal?.aborted && committed.length) await commitMarker(committed);
+    throw error;
+  }
+  const { items, issues } = collected;
+  const selected = items.filter((item) => allowed.has(item.id));
   if (selected.length !== allowed.size) throw new Error('Configuration changed; review the differences again before importing');
-  for (const item of selected) marker.files[item.id] = item.hash;
-  marker.groups = [...new Set([...marker.groups, ...selected.map((item) => item.group)])];
-  if (selected.length) delete marker.skipped;
-  await writeMarker(home, marker);
+  await commitMarker(selected);
   return { issues: [...diff.issues, ...issues], imported: selected.length };
 }
 
