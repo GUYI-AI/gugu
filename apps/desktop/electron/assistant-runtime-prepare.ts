@@ -1,6 +1,6 @@
 import { link, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { agentProgramsOf, type DependencyId } from '@gugu/session-core/deps/runtime'
+import { agentProgramsOf, installSourceIntent, type DependencyId } from '@gugu/session-core/deps/runtime'
 import { getDependencyManager } from './session/main/core/dependencies/dependency-managers'
 import { getPlugin } from './session/main/core/agents/plugin-registry'
 import { managedAgentPrefix, managedMiseBinDir } from './session/main/core/dependencies/managed-agent-home'
@@ -42,7 +42,7 @@ export async function prepareAssistantRuntime(id: string, signal: AbortSignal, e
       const choices = manager.getInstallOptions(dependency)
       const option = choices.find(choice => choice.recommended) ?? choices[0]
       if (option?.target?.kind !== 'mise') throw new Error('The assistant runtime has no supported installer on this computer')
-      const result = await runMiseOperation({ mise: { target: option.target, operation: 'install', registry: option.registry }, signal },
+      const result = await runMiseOperation({ mise: { target: option.target, operation: 'install', source: installSourceIntent(option, choices) }, signal },
         { root: path.join(root, 'runtime'), launcherDir })
       if (!result.success) throw new AgentInstallFailedError(engine, result.error)
       prepared.push({ dependency, launcher: option.target.binary + (process.platform === 'win32' ? '.cmd' : '') })
