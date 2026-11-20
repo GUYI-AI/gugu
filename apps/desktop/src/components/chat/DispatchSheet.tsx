@@ -1,11 +1,12 @@
 import { observer } from 'mobx-react-lite'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { INSTALL_CONSENT_HUMAN_WINDOW_MS } from '@/session/shared/extensions/host-actions'
 import type { DispatchPicked } from '@/session/shared/extensions/app-dispatch-core'
 import { RESOURCE_TEMPLATES, type ResourceTemplate } from '@/session/shared/resource-actions'
 import { Button } from '../ui/Button'
+import { cn } from '@/lib/cn'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
@@ -13,7 +14,10 @@ import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
 import { sendableConversations, sendablePickRows } from './forwardMessageUtils'
 import { useAuth } from '../../store/auth'
+import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 import { ChatPickSheet, type ChatPickRow, type ChatPickSection } from './ChatPickSheet'
+import { NoteEditor } from './NoteEditor'
+import { useGroupMentionProvider } from './useGroupMentionProvider'
 import { DispatchMachine } from './DispatchMachine'
 import { takeDispatchAsks, type DispatchAsked } from './dispatchAsk'
 
@@ -41,6 +45,21 @@ export const DispatchSheet = observer(function DispatchSheet() {
   const [visible, setVisible] = useState(false)
   const [spawnDevice, setSpawnDevice] = useState<string | null>(null)
   const open = useRef<DispatchAsked | null>(null)
+  // What goes is written in the composer's own editor (NoteEditor): it starts with the App's words, theirs to change.
+  // The editor comes up after the sheet does (and its handle again once TipTap is ready): it is started once per ask, when it can take the words.
+  const editor = useRef<PromptEditorRef | null>(null)
+  const started = useRef<DispatchAsked | null>(null)
+  const start = useCallback(() => {
+    const ask = open.current
+    if (!ask || ask.pick || started.current === ask || !editor.current) return
+    editor.current.setText(ask.text)
+    if (!ask.text || !editor.current.isEmpty()) started.current = ask
+  }, [])
+  const editorRef = useCallback((handle: PromptEditorRef | null) => { editor.current = handle; start() }, [start])
+  useEffect(start, [asked, start])
+  const roster = useMemo(() => (asked?.chat?.members ?? []).map((member) => ({ id: member.id, name: member.name, type: member.kind })), [asked])
+  const { mentionProvider, renderMentionIcon } = useGroupMentionProvider({ chatId: asked?.chat?.id, isGroupChat: roster.length > 0, groupMembers: roster,
+    currentUserId: user?.id ?? null, messages, enabled: !asked?.pick })
 
   // Answered once: by the person, by running out, or by the next ask taking the sheet.
   const finish = useCallback((picked: DispatchPicked) => {
@@ -103,6 +122,7 @@ export const DispatchSheet = observer(function DispatchSheet() {
     { id: 'chats', title: t('composePick.chats'), rows: chatRows },
   ]
   const [picked] = selected
+  const listHidden = !asked.pick && !!picked && !query.trim()
   const toMember = picked?.startsWith('member:') === true
   const said = text.trim()
   const pickedTarget = (): NonNullable<DispatchPicked>['to'] | null => {
@@ -122,18 +142,14 @@ export const DispatchSheet = observer(function DispatchSheet() {
       <p className="m-0 mt-1 text-[var(--text-secondary)]">{pick.body}</p>
     </div>
   ) : (
-    <div className="flex flex-col gap-[var(--spacing-xs)]" data-testid="dispatch-preview">
-      <textarea
-        className="min-h-[64px] w-full resize-y rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 text-[length:var(--font-body)] text-[var(--text-primary)]"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        placeholder={t('dispatchPick.textPlaceholder')}
-        aria-label={t('dispatchPick.text')}
-        data-testid="dispatch-text"
-      />
+    <div className={cn('flex flex-col gap-[var(--spacing-xs)] border-t border-[var(--border-subtle)] !px-5 !py-3', listHidden ? 'min-h-0 flex-1' : 'shrink-0')} data-testid="dispatch-preview">
+      <div className={cn('max-h-[60vh] min-h-[96px] overflow-y-auto rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1', listHidden && 'flex-1')} data-testid="dispatch-text">
+        <NoteEditor editorRef={editorRef} onChange={setText} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
+          placeholder={t('dispatchPick.textPlaceholder')} inputTestId="dispatch-text-input" />
+      </div>
       {asked.resource && <div className="flex flex-wrap gap-1" data-testid="dispatch-templates">
         {(RESOURCE_TEMPLATES[asked.resource.kind] as readonly ResourceTemplate[]).filter(template => template.requires?.every(fact => asked.resource?.facts?.includes(fact)) ?? true).map(template => (
-          <Button key={template.id} size="sm" variant="ghost" onClick={() => setText(current => appendToDraft(current, t(template.textKey)))}>{t(template.labelKey)}</Button>
+          <Button key={template.id} size="sm" variant="ghost" onClick={() => editor.current?.setText(appendToDraft(editor.current.getText(), t(template.textKey)))}>{t(template.labelKey)}</Button>
         ))}
       </div>}
       {asked.pills.map((pill, index) => (
@@ -155,7 +171,10 @@ export const DispatchSheet = observer(function DispatchSheet() {
       testId="dispatch-sheet"
       rows={[]}
       sections={sections}
-      above={preview}
+      above={pick ? preview : undefined}
+      // Hand to: whom it goes to on top, what goes below in the composer's editor; once picked, the rows give it their room.
+      below={pick ? undefined : preview}
+      listHidden={listHidden}
       selected={selected}
       // One at a time: another row replaces the pick, the picked row (or its chip's ×) takes it back.
       onToggle={(id) => setSelected((current) => (current.has(id) ? new Set() : new Set([id])))}

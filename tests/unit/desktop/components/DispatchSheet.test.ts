@@ -36,6 +36,18 @@ const computers = [
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({
   useDevicesStore: () => ({ devices: computers, phones: [{ ...computers[0], device_id: 'phone', capabilities: { host_kind: 'phone', host_runtime_capability: 1, terminals: [], runtimes: ['pi'] } }], loading: false, error: null }),
 }))
+// The composer's editor (NoteEditor, a TipTap PromptEditor) stands in as a textarea with the same handle: the sheet
+// starts it with the App's words (setText) and reads what the person left (onChange); its @ list is the chat's own.
+vi.mock('../../../../apps/desktop/src/components/chat/NoteEditor', async () => {
+  const { createElement, useImperativeHandle, useState } = await import('react')
+  return { NoteEditor: ({ editorRef, onChange, inputTestId }: { editorRef: never; onChange: (text: string) => void; inputTestId: string }) => {
+    const [value, setValue] = useState('')
+    const write = (next: string) => { setValue(next); onChange(next) }
+    useImperativeHandle(editorRef, () => ({ setText: write, getText: () => value, isEmpty: () => false }) as never)
+    return createElement('textarea', { 'data-testid': inputTestId, value, onChange: (event: { target: { value: string } }) => write(event.target.value) })
+  } }
+})
+vi.mock('../../../../apps/desktop/src/components/chat/useGroupMentionProvider', () => ({ useGroupMentionProvider: () => ({}) }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: null }) }))
 
 const { DispatchSheet } = await import('../../../../apps/desktop/src/components/chat/DispatchSheet')
@@ -86,7 +98,7 @@ describe('DispatchSheet', () => {
     expect(chips.textContent).toContain('删除 fork')
     expect(chips.textContent).not.toContain('合并上游')
     await click([...chips.querySelectorAll('button')].find(button => button.textContent === '删除 fork'))
-    expect(document.querySelector<HTMLTextAreaElement>('[data-testid="dispatch-text"]')!.value).toContain('keep this URL\n先征求我的确认')
+    expect(document.querySelector<HTMLTextAreaElement>('[data-testid="dispatch-text-input"]')!.value).toContain('keep this URL\n先征求我的确认')
     expect(chips.compareDocumentPosition(document.querySelector('[data-testid="dispatch-pill"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(answered).toBe(false)
     expect(ticked()).toEqual([])
@@ -156,7 +168,7 @@ describe('DispatchSheet', () => {
     })
     expect([...document.body.querySelectorAll('[data-pick-section]')].map((s) => s.getAttribute('data-pick-section'))).toEqual(['chat-agents', 'chat-people', 'agents', 'new'])
     expect(rowIds()).toEqual(['member:user:a', 'member:user:p', 'agent:user:a-other', 'agent:user:a-sibling', 'agent:user:a-here', 'new:agent'])
-    const text = document.body.querySelector('[data-testid="dispatch-text"]') as HTMLTextAreaElement
+    const text = document.body.querySelector('[data-testid="dispatch-text-input"]') as HTMLTextAreaElement
     expect(text.value).toBe('Host this round')
     expect([...document.body.querySelectorAll('[data-testid="dispatch-pill"]')].map((p) => p.textContent)).toEqual(['@round.soup.json'])
     // Nothing picked: nothing to send.
@@ -165,6 +177,12 @@ describe('DispatchSheet', () => {
     await click(document.body.querySelector('[data-pick-row="agent:user:a-here"]'))
     expect(document.body.querySelector('[data-testid="dispatch-visible"]')).toBeNull()
     await click(document.body.querySelector('[data-pick-row="member:user:a"]'))
+    // Picked: the rows give the composer their room; typing a name brings them back.
+    const listbox = document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    expect(listbox.hidden).toBe(true)
+    await type(document.body.querySelector('input') as HTMLInputElement, 'k')
+    expect(listbox.hidden).toBe(false)
+    await type(document.body.querySelector('input') as HTMLInputElement, '')
     await click(document.body.querySelector('[data-testid="dispatch-visible"]'))
     await type(text, 'Host this round, hard mode')
     await click(button('发送'))
