@@ -12,6 +12,8 @@ import { browserPageFeedback } from '@shared/browser-page-feedback';
 import { TaskPageCapture } from './server-task-page-capture';
 import { TaskPageViewport } from './task-page-viewport';
 import { CHROME_ERROR_PAGE_URL, READ_CHROME_ERROR_SCRIPT, taskPageLoadFailure } from './task-page-load-error';
+import { READ_FAVICONS_SCRIPT } from './task-page-favicons';
+import { TaskPopups } from './task-popups';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -45,11 +47,16 @@ export interface TaskPageContents {
   isScreening?(): boolean;
   /** An agent holds the page with Page events on, so it receives dialogs and may answer them. */
   agentListening?(): boolean;
-  /** Windows this page opens (window.open, target=_blank) are closed in Chrome and reported as 'window-open' (url) instead of staying where nobody sees them. */
-  denyNewWindows?(): void;
+  /**
+   * Windows this page opens (window.open, target=_blank) are reported as 'window-open' ({ url }, plus `popup` when Chrome created a page
+   * for it). Such a page waits a few seconds to be adopted by the tab that opens `url` (`pageFor`), or is closed.
+   */
+  reportNewWindows?(): void;
   /** Chrome hands file choosers over: 'file-chooser' (multiple, backendNodeId) is reported, `setFileInputFiles` fills the input. */
   interceptFileChoosers?(): Promise<void>;
   setFileInputFiles?(backendNodeId: number, files: string[]): Promise<void>;
+  /** Reports the page's icons now ('page-favicon-updated'), also for a page that loaded before anyone listened. */
+  announceFavicons?(): Promise<void>;
   readonly debugger: {
     attach(protocolVersion?: string): void;
     detach(): void;
@@ -120,6 +127,11 @@ export class PipeConnection extends EventEmitter {
   }
 }
 
+/** Chrome announces the page of a window a few milliseconds after `Page.windowOpen`; past this it will not come. */
+const WINDOW_PAGE_WAIT_MS = 1_000;
+/** A window that opens empty may be pointed somewhere later by the page that opened it. */
+const windowAddress = (url: string | undefined) => url ? url : 'about:blank';
+
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 /** @internal exported for tests */
 export class PageTarget extends EventEmitter implements TaskPageContents {
@@ -143,7 +155,12 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
   private agentPage = false;
   /** The agent's session took the file chooser over, so the person is not asked as well. */
   private agentIntercept = false;
-  private windowsDenied = false;
+  private windowsReported = false;
+  /** `Page.windowOpen` events whose Chrome page has not been announced yet, oldest first. */
+  private readonly openings: { url: string; timer: ReturnType<typeof setTimeout> }[] = [];
+  /** Gugu is closing this page itself, so Chrome closing it is not the page's doing. */
+  private closing = false;
+  private favicons: string[] = [];
   /** The host's own session: navigation and loading state for the shared navigation guard, never lent. */
   private watchSession: string | null = null;
   private mainFrame: string | null = null;
@@ -164,16 +181,25 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
 
   private readonly onEvent = (message: CdpMessage) => {
     if (message.method === 'Target.targetCreated') {
-      const info = message.params?.targetInfo as { targetId?: string; type?: string; openerId?: string } | undefined;
-      if (this.windowsDenied && info?.type === 'page' && info.openerId === this.targetId && info.targetId) {
-        void this.connection.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+      const info = message.params?.targetInfo as { targetId?: string; type?: string; openerId?: string; url?: string } | undefined;
+      if (this.windowsReported && info?.type === 'page' && info.openerId === this.targetId && info.targetId) {
+        const opening = this.openings.shift();
+        if (opening) clearTimeout(opening.timer);
+        this.emit('window-open', { url: windowAddress(opening?.url ?? info.url), popup: info.targetId });
       }
       return;
     }
-    if (message.method === 'Target.targetDestroyed' && message.params?.targetId === this.targetId) return this.destroy();
+    if (message.method === 'Target.targetDestroyed' && message.params?.targetId === this.targetId) {
+      if (!this.closing) this.emit('closed-by-page');
+      return this.destroy();
+    }
     if (message.method === 'Target.targetInfoChanged') {
       const info = message.params?.targetInfo as { targetId?: string; title?: string; url?: string } | undefined;
-      if (info?.targetId === this.targetId) { this.title = info.title ?? this.title; this.url = info.url ?? this.url; this.changed(); }
+      if (info?.targetId === this.targetId) {
+        const retitled = info.title !== undefined && info.title !== this.title;
+        this.title = info.title ?? this.title; this.url = info.url ?? this.url; this.changed();
+        if (retitled) void this.readFavicons();
+      }
       return;
     }
     if (message.method === 'Target.detachedFromTarget' && message.params?.sessionId === this.session) {
@@ -240,7 +266,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
         if (main(params.frameId)) { this.loading = true; this.changed(); }
         break;
       case 'Page.frameStoppedLoading':
-        if (main(params.frameId)) { this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); }
+        if (main(params.frameId)) { this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); void this.readFavicons(); }
         break;
       case 'Page.frameNavigated': {
         const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string; unreachableUrl?: string } | undefined;
@@ -248,6 +274,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
         // Chrome's error page stands in for a page that did not load; the address stays what was asked for.
         const failed = frame.url === CHROME_ERROR_PAGE_URL;
         this.url = failed ? frame.unreachableUrl ?? this.url : `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
+        this.favicons = []; // A new document declares its own.
         this.feedback.invalidate();
         this.emit('did-navigate', {}, this.url);
         void this.readHistory();
@@ -255,11 +282,21 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
         break;
       }
       case 'Page.navigatedWithinDocument':
-        if (main(params.frameId)) { this.url = String(params.url); void this.readHistory(); }
+        if (main(params.frameId)) { this.url = String(params.url); void this.readHistory(); void this.readFavicons(); }
         break;
-      case 'Page.windowOpen':
-        this.emit('window-open', { url: String(params.url ?? '') });
+      case 'Page.windowOpen': {
+        if (!this.windowsReported) break;
+        const url = String(params.url ?? '');
+        // Chrome blocks a window nobody clicked for and creates no page: only the address is left.
+        if (params.userGesture === false) { this.emit('window-open', { url: windowAddress(url) }); break; }
+        const opening = { url, timer: setTimeout(() => {
+          this.openings.splice(this.openings.indexOf(opening), 1);
+          this.emit('window-open', { url: windowAddress(url) });
+        }, WINDOW_PAGE_WAIT_MS) };
+        opening.timer.unref?.();
+        this.openings.push(opening);
         break;
+      }
       case 'Page.fileChooserOpened':
         if (!this.agentIntercept) this.emit('file-chooser', { multiple: params.mode === 'selectMultiple', backendNodeId: Number(params.backendNodeId) });
         break;
@@ -288,7 +325,43 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
     this.emit('did-fail-load', { ...taskPageLoadFailure(line), validatedURL });
   }
 
-  denyNewWindows(): void { this.windowsDenied = true; }
+  reportNewWindows(): void { this.windowsReported = true; }
+
+  /** Gugu is about to close this page: Chrome reporting it closed is no news. */
+  expectClose(): void { this.closing = true; }
+
+  /** Reports the icons the page declares now, though they were reported before: for a tab that started listening after the page loaded. */
+  async announceFavicons(): Promise<void> {
+    this.favicons = [];
+    await this.readFavicons();
+  }
+
+  /** The icons the page declares now; reported when they differ from what was last reported for this document. */
+  private async readFavicons() {
+    if (!this.watchSession || this.destroyed) return;
+    const read = await this.connection.send('Runtime.evaluate', { expression: READ_FAVICONS_SCRIPT, returnByValue: true }, this.watchSession)
+      .catch(() => null) as { result?: { value?: unknown } } | null;
+    if (this.destroyed) return;
+    const value = read?.result?.value;
+    const favicons = Array.isArray(value) ? value.filter((icon): icon is string => typeof icon === 'string') : [];
+    if (!favicons.length || (favicons.length === this.favicons.length && favicons.every((icon, index) => icon === this.favicons[index]))) return;
+    this.favicons = favicons;
+    this.emit('page-favicon-updated', { favicons });
+  }
+
+  /**
+   * A window the page opened, taken over by a tab: what it shows now (the page may be loading already, or have moved past the address
+   * it was opened with). Everything after is the same as for a page Gugu created.
+   */
+  async adopted(): Promise<void> {
+    const info = await this.connection.send('Target.getTargetInfo', { targetId: this.targetId }).catch(() => null) as { targetInfo?: { url?: string; title?: string } } | null;
+    if (info?.targetInfo?.url) this.url = info.targetInfo.url;
+    this.title = info?.targetInfo?.title ?? '';
+    const ready = await this.connection.send('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true }, this.watchSession ?? undefined).catch(() => null) as { result?: { value?: unknown } } | null;
+    this.loading = ready?.result?.value === 'loading';
+    await this.readHistory();
+    void this.readFavicons();
+  }
 
   async interceptFileChoosers(): Promise<void> {
     if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
@@ -429,6 +502,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents {
     this.destroyed = true;
     this.capture.stop();
     this.screening = false;
+    for (const opening of this.openings.splice(0)) clearTimeout(opening.timer);
     this.connection.off('event', this.onEvent);
     this.emit('destroyed');
   }
@@ -442,10 +516,14 @@ export function taskBrowserUserAgent(versionOutput: string, platform: NodeJS.Pla
   return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
 }
 
-export function taskBrowserArguments(profile: string, userAgent: string, root: boolean, credentialStore: 'basic' | 'system' = 'basic'): string[] {
+export function taskBrowserArguments(
+  profile: string, userAgent: string, root: boolean, credentialStore: 'basic' | 'system' = 'basic',
+  options: { /** `false`: pages see `navigator.webdriver === false`, as in the built-in browser. The server keeps Chrome's default. */ automationControlled?: boolean } = {},
+): string[] {
   return [
     '--headless=new', '--remote-debugging-pipe', `--user-data-dir=${profile}`, `--user-agent=${userAgent}`,
     '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-sync',
+    ...(options.automationControlled === false ? ['--disable-blink-features=AutomationControlled'] : []),
     ...(credentialStore === 'basic' ? ['--password-store=basic', '--use-mock-keychain'] : []),
     ...(root ? ['--no-sandbox'] : []),
     'about:blank',
@@ -483,12 +561,18 @@ export function createServerTaskBrowser(options: {
   profile: string;
   /** Desktop profiles retain Chrome's system credential storage; the display-free server keeps its existing basic store. */
   credentialStore?: 'basic' | 'system';
+  /** See `taskBrowserArguments`: the desktop's standalone browser asks for `false`. */
+  automationControlled?: boolean;
   /** Runs once the browser is up and before any page is opened, for host-side setup such as download handling. A failure stops the browser. */
   connected?: (connection: PipeConnection) => Promise<void>;
   log: { info(message: string, fields?: object): void; warn(message: string, fields?: object): void };
 }): ServerTaskBrowser {
   let starting: Promise<{ process: ChildProcess; connection: PipeConnection }> | null = null;
   const pages = new Map<string, Promise<PageTarget>>();
+  /** Windows pages opened, waiting for the tab that will adopt them (see `TaskPopups`). */
+  const popups = new TaskPopups(targetId => {
+    void starting?.then(running => running.connection.send('Target.closeTarget', { targetId }), () => {}).catch(() => {});
+  });
 
   async function launch() {
     const binary = options.binary();
@@ -496,7 +580,7 @@ export function createServerTaskBrowser(options: {
     const { stdout } = await promisify(execFile)(binary, [`--user-data-dir=${options.profile}`, '--version'], { timeout: 15_000 });
     const userAgent = taskBrowserUserAgent(stdout);
     await mkdir(options.profile, { recursive: true });
-    const child = spawn(binary, taskBrowserArguments(options.profile, userAgent, process.getuid?.() === 0, options.credentialStore), {
+    const child = spawn(binary, taskBrowserArguments(options.profile, userAgent, process.getuid?.() === 0, options.credentialStore, { automationControlled: options.automationControlled }), {
       stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
     });
     let stderr = '';
@@ -511,7 +595,11 @@ export function createServerTaskBrowser(options: {
       connection.fail(new Error(`the task browser exited (${signal ?? code})`));
       options.log.warn('Task browser exited', { code, signal, stderr: stderr.trim().slice(-500) });
     });
+    connection.on('event', (message: CdpMessage) => {
+      if (message.method === 'Target.targetDestroyed') popups.forget(String(message.params?.targetId));
+    });
     connection.once('closed', () => {
+      popups.dispose();
       if (starting) starting = null;
       for (const page of pages.values()) void page.then((target) => target.destroy(), () => {});
       pages.clear();
@@ -527,17 +615,38 @@ export function createServerTaskBrowser(options: {
     return starting;
   }
 
+  /** The window a page opened for this address, if one is waiting and still there. */
+  async function adopt(connection: PipeConnection, url: string | undefined): Promise<PageTarget | null> {
+    const targetId = popups.take(url);
+    if (!targetId) return null;
+    const target = new PageTarget(connection, targetId);
+    try {
+      await target.watch();
+      await target.adopted();
+      return target;
+    } catch {
+      target.destroy();
+      return null; // Gone meanwhile: the tab gets a page of its own.
+    }
+  }
+
   async function open(sessionId: string, url: string | undefined): Promise<PageTarget> {
     const { connection } = await browser();
-    const { targetId } = await connection.send('Target.createTarget', { url: url ?? 'about:blank' }) as { targetId: string };
-    const target = new PageTarget(connection, targetId);
-    target.on('screen-error', error => options.log.warn('Could not capture the task browser page', { error: String(error) }));
-    target.url = url ?? 'about:blank';
-    await target.watch();
-    target.once('destroyed', () => {
-      void pages.get(sessionId)?.then((current) => { if (current === target) pages.delete(sessionId); }, () => {});
+    let target = await adopt(connection, url);
+    if (!target) {
+      const { targetId } = await connection.send('Target.createTarget', { url: url ?? 'about:blank' }) as { targetId: string };
+      target = new PageTarget(connection, targetId);
+      target.url = url ?? 'about:blank';
+      await target.watch();
+    }
+    const opened = target;
+    opened.on('screen-error', error => options.log.warn('Could not capture the task browser page', { error: String(error) }));
+    // Registered before anything can ask for a new tab, so the window is waiting by the time the tab looks for it.
+    opened.on('window-open', (window: { url: string; popup?: string }) => { if (window.popup) popups.hold(window.url, window.popup); });
+    opened.once('destroyed', () => {
+      void pages.get(sessionId)?.then((current) => { if (current === opened) pages.delete(sessionId); }, () => {});
     });
-    return target;
+    return opened;
   }
 
   return {
@@ -567,6 +676,7 @@ export function createServerTaskBrowser(options: {
       const target = await page?.catch(() => null);
       if (!target || target.isDestroyed()) return;
       const running = await starting?.catch(() => null);
+      target.expectClose();
       await running?.connection.send('Target.closeTarget', { targetId: target.targetId }).catch(() => {});
       target.destroy();
     },

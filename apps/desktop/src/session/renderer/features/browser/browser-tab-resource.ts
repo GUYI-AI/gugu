@@ -4,7 +4,7 @@ import { browserSessionStore } from '@renderer/features/browser/browser-session-
 import type { TabEntry, TabHandle, TabResource } from '@renderer/features/tabs/core/tab-provider';
 import { events, rpc } from '@renderer/lib/ipc';
 import type { BrowserSessionSnapshot } from '@shared/browser';
-import { browserOpenInNewTabChannel, browserPageEventChannel } from '@shared/events/browserEvents';
+import { browserCloseTabChannel, browserOpenInNewTabChannel, browserPageEventChannel } from '@shared/events/browserEvents';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { fileUrlToMachinePath } from '@shared/preview/remote-page-url';
 import { touchesPageAssets } from '@renderer/lib/editor/page-assets';
@@ -30,6 +30,7 @@ export class BrowserTabResource implements TabResource {
   readonly browserId: string;
   readonly workspaceStart: boolean;
   private readonly _unsubscribeOpenInNewTab: () => void;
+  private readonly _unsubscribeCloseTab: () => void;
   private readonly _disposeSessionSync: () => void;
   private readonly _unsubscribePageState: () => void;
   private readonly _stopLiveReload: () => void;
@@ -75,6 +76,11 @@ export class BrowserTabResource implements TabResource {
         handle.open('browser', { initialUrl: url }, { intent: 'newTab' });
       }
     );
+
+    // 网页自己关了(登录弹窗 `window.close()`):这个页签跟着关,❌ 留一块没有网页的页签。
+    this._unsubscribeCloseTab = events.on(browserCloseTabChannel, ({ browserId }: { browserId: string }) => {
+      if (browserId === this.browserId) void handle.close({ force: true });
+    });
 
     // 开着会话目录里的 `file:` 网页时:那一页或它旁边的资源在盘上变了 ⇒ 重载(照 VS Code Live Preview 存盘即刷新)。
     // 这台电脑与别的机器同一条:变化都从这个工作区的 `files:changes` 来,地址栏里显示的都是那台机器上的 `file:` 地址。
@@ -126,6 +132,7 @@ export class BrowserTabResource implements TabResource {
     this._stopPageDirectoryWatch();
     this._releasePageDirectory();
     this._unsubscribeOpenInNewTab();
+    this._unsubscribeCloseTab();
     this._disposeSessionSync();
     this._unsubscribePageState();
     browserDiagnosticsStore.clearBrowser(this.browserId);

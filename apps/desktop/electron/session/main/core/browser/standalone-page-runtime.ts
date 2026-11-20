@@ -1,7 +1,7 @@
 import { clipboard, ClipboardItem, dialog } from 'electron';
 import { getMainWindow } from '@main/app/window';
 import { events } from '@main/lib/events';
-import { browserOpenInNewTabChannel, browserPageEventChannel, browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
+import { browserCloseTabChannel, browserOpenInNewTabChannel, browserPageEventChannel, browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout } from '@shared/browser-page-layout';
 import type { AnnotationConversation } from '@shared/browser-annotation';
 import type { BrowserKernelKind } from '@shared/browser-kernel';
@@ -45,11 +45,12 @@ function dialogPage(page: TaskPageContents): DialogPage | null {
 }
 
 function featurePage(page: TaskPageContents): FeaturePage | null {
-  const { denyNewWindows, interceptFileChoosers, setFileInputFiles } = page;
-  if (!denyNewWindows || !interceptFileChoosers || !setFileInputFiles) return null;
+  const { reportNewWindows, announceFavicons, interceptFileChoosers, setFileInputFiles } = page;
+  if (!reportNewWindows || !announceFavicons || !interceptFileChoosers || !setFileInputFiles) return null;
   return {
     on: (event, listener) => page.on(event, listener),
-    denyNewWindows: () => denyNewWindows.call(page),
+    reportNewWindows: () => reportNewWindows.call(page),
+    announceFavicons: () => announceFavicons.call(page),
     interceptFileChoosers: () => interceptFileChoosers.call(page),
     setFileInputFiles: (backendNodeId, files) => setFileInputFiles.call(page, backendNodeId, files),
   };
@@ -109,6 +110,8 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
       const host: FeatureHost = {
         openInNewTab: url => events.emit(browserOpenInNewTabChannel, { sourceBrowserId: browserId, url }),
         chooseFiles,
+        closeTab: () => { if (contents.get(browserId) === page) events.emit(browserCloseTabChannel, { browserId }); },
+        faviconsUpdated: favicons => events.emit(browserPageEventChannel, { browserId, type: 'page-favicon-updated', state: screen.state(), detail: { favicons } }),
         loadFailed: failure => events.emit(browserPageEventChannel, { browserId, type: 'did-fail-load', state: screen.state(), detail: { ...failure, isMainFrame: true } }),
         report: (message, error) => log.warn(message, { browserId, error: String(error) }),
       };

@@ -4,13 +4,16 @@ import { wireStandalonePageFeatures, type FeatureHost } from './standalone-page-
 
 function fixture(options: { chosen?: string[] | null; interceptFails?: boolean } = {}) {
   const page = Object.assign(new EventEmitter(), {
-    denyNewWindows: vi.fn(),
+    reportNewWindows: vi.fn(),
+    announceFavicons: vi.fn(async () => undefined),
     interceptFileChoosers: vi.fn(async () => { if (options.interceptFails) throw new Error('page closed'); }),
     setFileInputFiles: vi.fn(async (_backendNodeId: number, _files: string[]) => undefined),
   });
   const host = {
     openInNewTab: vi.fn(),
     chooseFiles: vi.fn(async (_options: { multiple: boolean }) => options.chosen === undefined ? ['/tmp/a.txt'] : options.chosen),
+    closeTab: vi.fn(),
+    faviconsUpdated: vi.fn(),
     loadFailed: vi.fn(),
     report: vi.fn(),
   } satisfies FeatureHost;
@@ -23,10 +26,34 @@ describe('a standalone page in the Gugu window', () => {
   it('opens a new Gugu tab for a web address the page opened a window for, and for nothing else', async () => {
     const f = fixture();
     await f.ready;
-    expect(f.page.denyNewWindows).toHaveBeenCalledOnce();
+    expect(f.page.reportNewWindows).toHaveBeenCalledOnce();
     for (const url of ['https://site.test/a', 'http://localhost:3000/b']) f.page.emit('window-open', { url });
     for (const url of ['javascript:alert(1)', 'about:blank', 'file:///etc/passwd', 'chrome://settings', 'not a url', 'https://site.test/\u0000x', '']) f.page.emit('window-open', { url });
     expect(f.host.openInNewTab.mock.calls.map(call => call[0])).toEqual(['https://site.test/a', 'http://localhost:3000/b']);
+  });
+
+  it('opens a tab for a window Chrome already created, including one that opens empty, so the tab can take it over', async () => {
+    const f = fixture();
+    await f.ready;
+    f.page.emit('window-open', { url: 'https://auth.test/login', popup: 'P1' });
+    f.page.emit('window-open', { url: 'about:blank', popup: 'P2' });
+    f.page.emit('window-open', { url: 'javascript:void(0)', popup: 'P3' }); // Not an address a tab can open: Chrome's window is closed unclaimed.
+    expect(f.host.openInNewTab.mock.calls.map(call => call[0])).toEqual(['https://auth.test/login', 'about:blank']);
+  });
+
+  it('closes the tab when the page it shows closes itself, as a window does after sign-in', async () => {
+    const f = fixture();
+    await f.ready;
+    f.page.emit('closed-by-page');
+    expect(f.host.closeTab).toHaveBeenCalledOnce();
+  });
+
+  it('shows the icon the page declares in the tab, including one it declared before the tab was listening', async () => {
+    const f = fixture();
+    await f.ready;
+    expect(f.page.announceFavicons).toHaveBeenCalledOnce();
+    f.page.emit('page-favicon-updated', { favicons: ['https://site.test/fav.png'] });
+    expect(f.host.faviconsUpdated).toHaveBeenCalledExactlyOnceWith(['https://site.test/fav.png']);
   });
 
   it('asks the person for the files an input wants and puts them in that input', async () => {

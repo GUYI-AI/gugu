@@ -11,6 +11,9 @@ export const browserOpenInNewTabChannel = defineEvent<{
   url: string;
 }>('browser:open-in-new-tab');
 
+/** 页签里的网页自己关了(窗口里的 `window.close()`,登录弹窗收尾就是这样):页签跟着关。 */
+export const browserCloseTabChannel = defineEvent<{ browserId: string }>('browser:close-tab');
+
 /**
  * 用户点进了这个网页。点进网页的按下、聚焦都发生在网页自己的进程里,咕咕的界面收不到,
  * 只有主进程看得见 —— 两个网页并排时靠它让页签的焦点跟到点的那一边(spec session-page「并排」)。

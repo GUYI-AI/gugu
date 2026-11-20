@@ -155,6 +155,16 @@ describe('a standalone page: the icon in the tab', () => {
     expect(updated).toEqual([{ favicons: ['http://site.test/a.png'] }, { favicons: ['http://site.test/b.png'] }, { favicons: ['http://site.test/b.png'] }]);
   });
 
+  it('announces the icons on request even when it already reported them, for a tab that started listening after the page loaded', async () => {
+    const f = await fixture(icons(['http://site.test/fav.png']));
+    f.event('Page.frameStoppedLoading', { frameId: 'main' }, WATCH);
+    await f.settle();
+    const updated: unknown[] = [];
+    f.target.on('page-favicon-updated', (detail: unknown) => updated.push(detail));
+    await f.target.announceFavicons();
+    expect(updated).toEqual([{ favicons: ['http://site.test/fav.png'] }]);
+  });
+
   it('says nothing for a page without icons or one that cannot be read', async () => {
     for (const replies of [icons([]), icons(undefined), { 'Runtime.evaluate': () => { throw new Error('gone'); } }]) {
       const f = await fixture(replies);

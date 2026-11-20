@@ -2,8 +2,9 @@ import { isSupportedBrowserNavigationUrl } from './browser-navigation';
 
 /** The page as these host features see it (what `PageTarget` offers a desktop tab). */
 export type FeaturePage = {
-  on(event: 'window-open' | 'file-chooser' | 'did-fail-load', listener: (...args: unknown[]) => void): unknown;
-  denyNewWindows(): void;
+  on(event: 'window-open' | 'file-chooser' | 'did-fail-load' | 'closed-by-page' | 'page-favicon-updated', listener: (...args: unknown[]) => void): unknown;
+  reportNewWindows(): void;
+  announceFavicons(): Promise<void>;
   interceptFileChoosers(): Promise<void>;
   setFileInputFiles(backendNodeId: number, files: string[]): Promise<void>;
 };
@@ -15,6 +16,9 @@ export type FeatureHost = {
   openInNewTab(url: string): void;
   /** The files the person picks for an `<input type=file>`; `null` when they cancel. */
   chooseFiles(options: { multiple: boolean }): Promise<string[] | null>;
+  /** The page this tab shows closed itself (window.close()): the tab goes with it. */
+  closeTab(): void;
+  faviconsUpdated(favicons: string[]): void;
   loadFailed(failure: LoadFailure): void;
   report(message: string, error: unknown): void;
 };
@@ -32,14 +36,21 @@ function isWebAddress(url: string): boolean {
 
 /**
  * What the built-in browser does for a page in the Gugu window, on a page that lives in a headless Chrome where nothing happens
- * unless Gugu does it: a window the page opens becomes a Gugu tab, an `<input type=file>` asks the person for files over the Gugu
- * window, and a main frame that failed to load is reported as Electron's did-fail-load so Gugu's own "can't open" page covers it.
+ * unless Gugu does it: a window the page opens becomes a Gugu tab (the tab adopts Chrome's window when there is one, so it keeps
+ * `window.opener`; the page's own `window.close()` closes the tab), an `<input type=file>` asks the person for files over the Gugu
+ * window, a main frame that failed to load is reported as Electron's did-fail-load so Gugu's own "can't open" page covers it, and
+ * the page's icon is shown in the tab.
  */
 export async function wireStandalonePageFeatures(page: FeaturePage, host: FeatureHost): Promise<void> {
   page.on('window-open', (...args: unknown[]) => {
-    const { url } = args[0] as { url?: unknown };
-    if (typeof url === 'string' && isWebAddress(url)) host.openInNewTab(url);
+    const { url, popup } = args[0] as { url?: unknown; popup?: unknown };
+    if (typeof url !== 'string') return;
+    // A window Chrome created can start empty and be pointed somewhere by the page that opened it.
+    if (isWebAddress(url) || (popup !== undefined && url === 'about:blank')) host.openInNewTab(url);
   });
+
+  page.on('closed-by-page', () => host.closeTab());
+  page.on('page-favicon-updated', (...args: unknown[]) => host.faviconsUpdated((args[0] as { favicons: string[] }).favicons));
 
   page.on('file-chooser', (...args: unknown[]) => {
     const { multiple, backendNodeId } = args[0] as { multiple: boolean; backendNodeId: number };
@@ -52,7 +63,8 @@ export async function wireStandalonePageFeatures(page: FeaturePage, host: Featur
 
   page.on('did-fail-load', (...args: unknown[]) => host.loadFailed(args[0] as LoadFailure));
 
-  page.denyNewWindows();
+  page.reportNewWindows();
+  void page.announceFavicons().catch(() => undefined);
   try {
     await page.interceptFileChoosers();
   } catch (error) {
