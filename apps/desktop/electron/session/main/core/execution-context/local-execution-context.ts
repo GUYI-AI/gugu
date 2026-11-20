@@ -1,3 +1,4 @@
+import { realpath as fsRealpath } from 'node:fs/promises';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
 import {
@@ -38,6 +39,10 @@ export class LocalExecutionContext implements IExecutionContext {
 
   private resolveCommand(command: string): string {
     return command === 'git' ? getGitExecutable() : command;
+  }
+
+  realpath(path: string): Promise<string> {
+    return fsRealpath(path);
   }
 
   async findWindowsCommandPaths(command: string, env?: Record<string, string>): Promise<string[] | null> {

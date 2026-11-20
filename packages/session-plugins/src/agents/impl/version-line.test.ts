@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IExecutionContext } from '@gugu/session-core/exec';
 import { resolveSessionRuntimeCompatible, type SessionBundleDescriptor } from '@gugu/session-core/agents/plugins';
-import { HostDependencyManager, parseHarnessRuntimeVersion } from '@gugu/session-core/deps/runtime';
+import { HostDependencyManager, parseHarnessRuntimeVersion, versionProbeArgs } from '@gugu/session-core/deps/runtime';
 import type { DependencyDescriptor } from '@gugu/session-core/deps/runtime/types';
 import { pluginRegistry } from '../registry';
 
@@ -97,11 +97,11 @@ describe('the version is read off the harness\'s own line, a wrapper\'s banner b
     expect((await libraryReads('claude', BANNER + '2.1.212 (Claude Code)', versionLine, 1)).status).toBe('available');
   });
 
-  it('more than one line looks like its own (the wrapper says "(Claude Code)" too): no line is picked, the old reading stands', async () => {
+  it('more than one line looks like its own (the wrapper says "(Claude Code)" too): no version is read, no first number is taken', async () => {
     const versionLine = pluginRegistry.get('claude')!.capabilities.hostDependency.versionLine;
     const twice = 'wcc 1.2.74 (Claude Code)\n2.1.212 (Claude Code)';
-    expect(await gateReads('claude', twice, versionLine)).toBe(await gateReads('claude', twice, undefined));
-    expect(await libraryReads('claude', twice, versionLine)).toEqual(await libraryReads('claude', twice, undefined));
+    await expect(gateReads('claude', twice, versionLine)).rejects.toThrow('which printed "wcc 1.2.74 (Claude Code) 2.1.212 (Claude Code)"');
+    expect(await libraryReads('claude', twice, versionLine)).toEqual({ version: null, status: 'available' });
   });
 
   it('a bare version line with trailing spaces or a Windows \\r is still its own', async () => {
@@ -126,5 +126,58 @@ describe('the version is read off the harness\'s own line, a wrapper\'s banner b
   it('declares its line, and a wrapper puts a version on a line that is not it: no version, the first line is not taken', async () => {
     const versionLine = pluginRegistry.get('claude')!.capabilities.hostDependency.versionLine;
     expect(await libraryReads('claude', BANNER, versionLine)).toEqual({ version: null, status: 'available' });
+  });
+});
+
+/**
+ * reclaude (an account router installed as `claude`) answers `--version` with its own version only and passes
+ * `cli <args>` to the Claude Code it runs. Verbatim on 2026-11-20: `claude --version` → `v1.7.4`,
+ * `claude cli --version` → `2.1.322 (Claude Code)`. The start gate used to read 1.7.4 and refuse to start.
+ */
+describe('a reclaude-installed claude is asked through `cli --version`', () => {
+  const RECLAUDE = '/home/person/.local/bin/reclaude';
+  function reclaude(): IExecutionContext {
+    return {
+      root: undefined,
+      supportsLocalSpawn: false,
+      exec: vi.fn().mockImplementation(async (command: string, args: string[] = []) => {
+        if (command === 'which') return { stdout: `${BIN}\n`, stderr: '' };
+        if (command === 'realpath') return { stdout: `${RECLAUDE}\n`, stderr: '' };
+        if (command === BIN) return { stdout: args[0] === 'cli' ? '2.1.322 (Claude Code)\n' : 'v1.7.4\n', stderr: '' };
+        throw new Error(`missing ${command}`);
+      }),
+      refreshShellEnv: undefined,
+      execStreaming: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as IExecutionContext;
+  }
+  const versionLine = () => pluginRegistry.get('claude')!.capabilities.hostDependency.versionLine;
+
+  it('the start gate, the library and the bridge argv all read 2.1.322', async () => {
+    const ctx = reclaude();
+    const gate = await resolveSessionRuntimeCompatible({
+      providerId: 'claude', surface: 'acp', descriptor: gateDescriptor, executable: BIN, versionLine: versionLine(), executionContext: ctx,
+    });
+    expect(gate.harnessVersion).toBe('2.1.322');
+    const descriptor = { id: 'claude', name: 'claude', category: 'agent', commands: ['harness'], versionArgs: ['--version'], versionLine: versionLine(),
+      installCommands: {}, updates: { kind: 'none' } } as unknown as DependencyDescriptor;
+    const state = await new HostDependencyManager(reclaude(), { dependencies: [descriptor], platform: 'linux' }).probe('claude');
+    expect(state).toMatchObject({ version: '2.1.322', status: 'available' });
+    expect(await versionProbeArgs(BIN, ['--version'], reclaude())).toEqual(['cli', '--version']);
+  });
+
+  it('a local context resolves the link in-process and asks the same way, with no `realpath` process', async () => {
+    const ctx = { ...context('v1.7.4'), realpath: async () => RECLAUDE } as unknown as IExecutionContext;
+    expect(await versionProbeArgs(BIN, ['--version'], ctx)).toEqual(['cli', '--version']);
+    expect(vi.mocked(ctx.exec)).not.toHaveBeenCalled();
+  });
+
+  it('[control] any other file keeps `--version`', async () => {
+    expect(await versionProbeArgs(BIN, ['--version'], context('2.1.322 (Claude Code)'))).toEqual(['--version']);
+  });
+
+  it('a wrapper that prints only its own version reads as no version, and the start gate reports what it printed', async () => {
+    await expect(gateReads('claude', 'v1.7.4', versionLine())).rejects.toThrow('which printed "v1.7.4"');
+    expect(await libraryReads('claude', 'v1.7.4', versionLine())).toEqual({ version: null, status: 'available' });
   });
 });

@@ -37,6 +37,8 @@ function recordingContext(stdout: string): {
   const options: Record<string, unknown>[] = [];
   const context = {
     supportsLocalSpawn: true,
+    // A local context resolves symlinks in-process (LocalExecutionContext); the probe adds no `realpath` call.
+    realpath: async (path: string) => path,
     exec: async (command: string, args: string[] = [], opts: Record<string, unknown> = {}) => {
       calls.push({ command, args });
       options.push(opts);
@@ -103,6 +105,7 @@ describe('resolveSessionRuntimeCompatible', () => {
     const envs: (Record<string, string> | undefined)[] = [];
     const context = {
       supportsLocalSpawn: true,
+      realpath: async (path: string) => path,
       exec: async (_command: string, _args: string[] = [], opts: { env?: Record<string, string> } = {}) => {
         envs.push(opts.env);
         return { stdout: 'codex-cli 0.145.0', stderr: '' } as never;

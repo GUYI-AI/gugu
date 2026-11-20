@@ -282,6 +282,7 @@ export const plugin = definePlugin(
       presence: { sinceVersion: CLAUDE_PRESENCE_SINCE },
     },
     // `versionLine`:`--version` 里它自己那一行,实测原样「2.1.212 (Claude Code)」(包装器的 banner 在它前面)。
+    // 认不出这一行就是没读到版本;reclaude 只打它自己的版本,探针改问 `cli --version`(`versionProbeArgs`)。
     hostDependency: { ...miseDependency({
       id: 'claude',
       package: '@anthropic-ai/claude-code',
