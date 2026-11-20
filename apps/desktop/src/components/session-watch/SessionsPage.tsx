@@ -188,7 +188,7 @@ export const SessionRow = observer(function SessionRow({
    */
   /*
    * owner 10-09:一行里塞「状态 · harness · 时间」,手机宽度放不下,处处省略号。
-   *   · 状态不写成字:左边的图标已经是它(StatusGlyph,同一份 presentation);
+   *   · 状态不写成字:左边头像的角标已经是它(SessionAvatar,同一份 presentation);
    *   · 任务名就是 agent 名(一个任务一个名字),标题行说过,❌ 再说一遍。
    * 打不开 / 没起来的行照旧写它自己的那句话(下面 rowMeta)。
    */
