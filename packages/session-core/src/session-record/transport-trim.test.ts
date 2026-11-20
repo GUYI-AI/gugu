@@ -440,8 +440,8 @@ describe('a lean page leaves out output the conversation view does not show', ()
     const page = { turns: [turn('t', kept)], nextCursor: null };
     // Nothing was left out, so nothing is rebuilt.
     expect(trimCursorPageForTransport(page, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true)).toBe(page);
-    // A Gugu call whose answer the view does not read is like any other.
-    expect((lean([gugu('message_history', { outputText: long })]).items[0] as unknown as Record<string, unknown>).outputText).toHaveLength(HELD_PREVIEW_CHARS);
+    // MCP rows disclose results even when they are not conversation sends.
+    expect((lean([gugu('message_history', { outputText: long })]).items[0] as unknown as Record<string, unknown>).outputText).toBe(long);
   });
 
   it('leaves a reader that did not ask as before', () => {
@@ -484,9 +484,6 @@ describe('a lean page carries what a call\'s step line shows, not its raw input'
     node({ kind: 'read-tool-call' }),
     node({ kind: 'search-tool-call', query: 'needle' }),
     node({ kind: 'web-fetch-tool-call', url: 'https://example.com' }),
-    node({ kind: 'mcp-tool-call', server: 'github', tool: 'search' }),
-    node({ kind: 'mcp-tool-call', server: 'github', tool: 'search', inputSummary: '' }),
-    node({ kind: 'mcp-tool-call', server: 'gugu', tool: 'message_history' }),
     node({ kind: 'unknown-tool-call', toolName: 'Skill', rawInput: 'not json  at all' }),
     node({ kind: 'unknown-tool-call', toolName: 'Skill', rawInput: '{}' }),
   ];
@@ -501,7 +498,7 @@ describe('a lean page carries what a call\'s step line shows, not its raw input'
     // Derived only where the view would have derived it; a call that names its own detail is not given another.
     expect(sent.map(call => call.inputSummary)).toEqual([
       undefined, 'make test', deriveToolInputSummary(input), undefined, undefined, undefined, undefined, undefined,
-      deriveToolInputSummary(input), '', deriveToolInputSummary(input), 'not json at all', undefined,
+      'not json at all', undefined,
     ]);
     expect(sent[2]!.trimmedChars).toBe(input.length);
   });
@@ -523,6 +520,7 @@ describe('a lean page carries what a call\'s step line shows, not its raw input'
       node({ kind: 'unknown-tool-call', toolName: 'AskUserQuestion', ...more }),
       node({ kind: 'mcp-tool-call', server: 'gugu', tool: 'message_send', ...more }),
       node({ kind: 'mcp-tool-call', server: 'gugu', tool: 'session_open_in_tab', ...more }),
+      node({ kind: 'mcp-tool-call', server: 'github', tool: 'search', ...more }),
       // A sub-agent's own call (the roster lists it with its title and whole detail), a call that left a background
       // task (the task list names it), and the notice that the task ended (its line is its title).
       node({ kind: 'execute-tool-call', parentToolCallId: 'agent-1', ...more }),
@@ -538,6 +536,28 @@ describe('a lean page carries what a call\'s step line shows, not its raw input'
     const sent = trimCursorPageForTransport({ turns: [turn('t', calls)], nextCursor: null }).turns[0]!.items as unknown as Array<Record<string, unknown>>;
     expect(sent.map(call => call.rawInput)).toEqual((calls as unknown as Array<Record<string, unknown>>).map(call => call.rawInput));
     expect(sent.every(call => call.title === 'run' && Array.isArray(call.locations))).toBe(true);
+  });
+});
+
+describe('expandable MCP calls over a remote history link (#3327)', () => {
+  it.each([true, 'folded'] as const)('keeps the request and result in a %s page instead of a step-only projection', lean => {
+    const request = JSON.stringify({ query: 'a real argument', limit: 20 });
+    const result = 'result detail beyond the old preview '.repeat(30);
+    const calls: ToolNode[] = ['done', 'running', 'error'].map((status, seq) => ({
+      kind: 'mcp-tool-call', id: `mcp-${status}`, seq, toolCallId: `mcp-${status}`, title: 'mcp__fixture__lookup',
+      server: 'fixture', tool: 'lookup', status, rawInput: request, outputText: result,
+    } as ToolNode));
+    const page = trimCursorPageForTransport({ turns: [turn('mcp', calls)], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, lean);
+    expect(page.turns[0]!.items).toEqual(calls);
+    expect(turnHeld(page.turns[0]!)).toBe(false);
+  });
+
+  it('retains the normal payload budget and omission notice for an oversized MCP result', () => {
+    const output = 'r'.repeat(TRANSPORT_TEXT_LIMIT + 37);
+    const call: ToolNode = { kind: 'mcp-tool-call', id: 'mcp', seq: 1, toolCallId: 'mcp', title: 'mcp__fixture__lookup',
+      server: 'fixture', tool: 'lookup', status: 'done', rawInput: '{}', outputText: output };
+    const sent = trimCursorPageForTransport({ turns: [turn('mcp', [call])], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true).turns[0]!.items[0];
+    expect(sent).toMatchObject({ rawInput: '{}', outputText: output.slice(0, TRANSPORT_TEXT_LIMIT), trimmedChars: 37 });
   });
 });
 
