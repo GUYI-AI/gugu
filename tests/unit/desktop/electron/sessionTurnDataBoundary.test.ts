@@ -13,10 +13,6 @@ const CODEC = new Set([
   'apps/desktop/electron/session/main/core/sessions/session-turn-codec.ts',
   'apps/desktop/electron/session/main/db/initialize.ts', // migrations
 ])
-/** Direct readers outside the codec, each with why it is not ported yet. May only shrink: a fixed entry fails until removed. */
-const DEBT = new Map([
-  ['scripts/dev/freeze-sample-project.mjs', "offline node:sqlite script; decoding needs the app's better-sqlite3 payload reader"],
-])
 const HINT = 'Read stored turns through readSessionTurn, and filter in SQL with sessionTurnHeaderSql or sessionTurnRootObjectSql '
   + '(session-turn-storage.ts). Write through prepareSessionTurn and store its marker. Only the codec and migrations touch session_turns.data.'
 
@@ -109,17 +105,9 @@ describe('session_turns.data stays behind the stored-turn codec', () => {
 
   it('keeps every source file outside the codec and migrations off the column', () => {
     // A file that never names the table or its schema export cannot reach the column; only those are parsed.
-    const failures = scanned().filter(path => !DEBT.has(path)).map(path => [path, readFileSync(path, 'utf8')] as const)
+    const failures = scanned().map(path => [path, readFileSync(path, 'utf8')] as const)
       .filter(([, source]) => /session_turns|sessionTurns/.test(source))
       .flatMap(([path, source]) => turnDataAccesses(source, path).map(found => `${path}:${found}`))
     expect(failures, HINT).toEqual([])
-  })
-
-  it('lists only debt that is still there', () => {
-    const files = new Set(scanned())
-    for (const [path, reason] of DEBT) {
-      expect(reason).not.toBe('')
-      expect(files.has(path) && turnDataAccesses(readFileSync(path, 'utf8'), path).length > 0, `${path} no longer reads session_turns.data: remove it from DEBT`).toBe(true)
-    }
   })
 })
