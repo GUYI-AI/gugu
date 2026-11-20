@@ -181,7 +181,7 @@ describe('启动时先对本地的账 —— 「下好了、等你按」重开�
     fakeNative({ version: '0.2.47-beta.10.1' })
     const update = await load()
     expect((await update.updateState()).status).not.toBe('downloaded')
-    await expect(update.installUpdate()).rejects.toThrow(/没有下好的更新/)
+    await expect(update.installUpdate()).rejects.toThrow(/No downloaded update is available/)
   })
 })
 

@@ -237,7 +237,7 @@ describe('isHarnessRuntimeMissing / describeHarnessRuntimeMissing(#6264 server �
   it('人话:中英两句、说下一步,不带原文', () => {
     const text = describeHarnessRuntimeMissing('claude');
     expect(text).toContain('更新到最新版本');
-    expect(text).toContain('update Gugu on that machine');
+    expect(text).toContain('Update Gugu on the device');
     expect(text).not.toMatch(/module|stack/i);
   });
 });

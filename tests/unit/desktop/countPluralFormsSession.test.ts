@@ -44,8 +44,8 @@ const single: ReadonlyArray<{
       "Open the card to view its 2 folders, then choose where to start the new task.",
     ],
     zh: [
-      "点卡片展开 1 个文件夹，选择新任务的工作目录。",
-      "点卡片展开 2 个文件夹，选择新任务的工作目录。",
+      "点击卡片展开 1 个文件夹，选择新任务的工作目录。",
+      "点击卡片展开 2 个文件夹，选择新任务的工作目录。",
     ],
   },
   {
@@ -57,8 +57,8 @@ const single: ReadonlyArray<{
       'gugu on MBP already has 2 sessions. Their agents will join the Home project group; its old group stays as history.',
     ],
     zh: [
-      'MBP 上的项目「gugu」已经有 1 个会话。并进来以后，这些会话的 agent 会进「Home」的项目群；它原来的群不删，留作历史。',
-      'MBP 上的项目「gugu」已经有 2 个会话。并进来以后，这些会话的 agent 会进「Home」的项目群；它原来的群不删，留作历史。',
+      'MBP 上的项目「gugu」已有 1 个会话。合并后，这些会话的 agent 将加入「Home」的项目群；原有群聊保留为历史记录。',
+      'MBP 上的项目「gugu」已有 2 个会话。合并后，这些会话的 agent 将加入「Home」的项目群；原有群聊保留为历史记录。',
     ],
   },
   {
@@ -78,7 +78,7 @@ const single: ReadonlyArray<{
       '1 could not be imported and was skipped.',
       '2 could not be imported and were skipped.',
     ],
-    zh: ['另有 1 条导不进来，已跳过。', '另有 2 条导不进来，已跳过。'],
+    zh: ['另有 1 条无法导入，已跳过。', '另有 2 条无法导入，已跳过。'],
   },
   { key: 'mcpLibrary.tools', en: ['0 tools', '1 tool', '2 tools'], zh: ['1 个工具', '2 个工具'] },
   { key: 'integrations.accountCount', en: ['0 accounts', '1 account', '2 accounts'], zh: ['1 个账号', '2 个账号'] },
@@ -93,7 +93,7 @@ const single: ReadonlyArray<{
     key: 'extensions.permissionsWithdrawn',
     extra: { revoked: 1 },
     en: ['1 of 0 permissions withdrawn', '1 of 1 permission withdrawn', '1 of 2 permissions withdrawn'],
-    zh: ['1 项里收回了 1 项', '2 项里收回了 1 项'],
+    zh: ['1 项中已收回 1 项', '2 项中已收回 1 项'],
   },
   {
     key: 'extensions.forkBehind',
@@ -108,7 +108,7 @@ const single: ReadonlyArray<{
   {
     key: 'extensions.rowRevoked',
     en: ['0 permissions taken back', '1 permission taken back', '2 permissions taken back'],
-    zh: ['收回了 1 项权限', '收回了 2 项权限'],
+    zh: ['已收回 1 项权限', '已收回 2 项权限'],
   },
   {
     key: 'task.closeSessionWithTabsDescription',

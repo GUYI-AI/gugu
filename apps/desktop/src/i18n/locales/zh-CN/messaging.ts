@@ -429,6 +429,12 @@ export default {
     "action": "放入输入框"
   },
   "composer": {
+    "sessionInput": {
+      "attachmentsKept": "附件草稿已保留，连接恢复后可继续发送",
+      "composerNotReady": "会话输入框尚未就绪，草稿已保留",
+      "accountNotReady": "当前账号的会话输入尚未就绪",
+      "notConfirmed": "会话尚未确认接收这条消息，稍后自动重试"
+    },
     "phoneTask": {
       "attachFolder": "附加文件夹",
       "attachFailed": "无法附加文件夹，请重试",
@@ -930,6 +936,7 @@ export default {
     "title": "发送到"
   },
   "topic": {
+    "untitled": "话题",
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
     "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
@@ -985,6 +992,23 @@ export default {
     "helpSend": "选择 agent",
     "helpAsk": "补充要做的事",
     "helpConfirm": "改动前先确认",
+  },
+  "projectRecovery": {
+    "unavailable": "失效",
+    "folderMissing": "本机找不到文件夹",
+    "restore": "恢复",
+    "clean": "清理",
+    "cancel": "取消",
+    "cleanLabel": "清理失效项目",
+    "cleanTitle": "清理 {{count}} 个失效项目？",
+    "cleanBody": "这些项目的群将被收起，之后仍可恢复。",
+    "checkFailed": "无法核对项目状态，请稍后重试。",
+    "incompleteHistory": "恢复记录不完整，请联系维护者核对。",
+    "invalidDirectory": "请选择一个可用的文件夹。",
+    "inspectFailed": "无法读取此文件夹，请检查访问权限。",
+    "pathConflict": "此文件夹已属于其他项目，请选择其他文件夹。",
+    "stateChanged": "项目状态已变化，请重新确认。",
+    "failed": "操作未完成，请检查文件夹访问权限和项目群权限后重试。"
   },
   "filePill": {
     "picked": "选自第 {{version}} 版"

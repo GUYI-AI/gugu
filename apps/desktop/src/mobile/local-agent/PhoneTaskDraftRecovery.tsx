@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/components/session-watch/task-flow-catalog'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/store/auth'
 import { phoneTaskSendKey, readPhoneTaskSend, restorePhoneTaskDraft, retryPhoneTaskSend, subscribePhoneTaskSend, type PhoneTaskComposer, type StoredPhoneTaskSend } from './phoneTaskSend'
@@ -10,6 +12,7 @@ export function PhoneTaskDraftRecovery({ deviceId, sessionId, composer, sending 
   composer: PhoneTaskComposer
   sending: boolean
 }) {
+  const { t } = useTranslation('mobileTaskFlow')
   const ownerId = useAuth().user?.id
   const key = ownerId ? phoneTaskSendKey(ownerId, deviceId, sessionId) : null
   const [saved, setSaved] = useState<{ key: string; pending: StoredPhoneTaskSend | null; error: string | null } | null>(null)
@@ -33,14 +36,14 @@ export function PhoneTaskDraftRecovery({ deviceId, sessionId, composer, sending 
     if (!ownerId || !key) return
     const refresh = () => {
       try { setSaved({ key, pending: readPhoneTaskSend(ownerId, deviceId, sessionId), error: null }) }
-      catch { setSaved({ key, pending: null, error: '读取上次发送的原稿失败，未重新发送。请保留本机记录后重试。' }) }
+      catch { setSaved({ key, pending: null, error: t('draftRecovery.readFailed') }) }
     }
     refresh()
     const stop = subscribePhoneTaskSend((changed) => { if (changed === key) refresh() })
     const onStorage = (event: StorageEvent) => { if (event.key === key || event.key === null) refresh() }
     window.addEventListener('storage', onStorage)
     return () => { stop(); window.removeEventListener('storage', onStorage) }
-  }, [ownerId, deviceId, sessionId, key])
+  }, [ownerId, deviceId, sessionId, key, t])
 
   useEffect(() => {
     if (pending && key && !sending && !retrying && restorePhoneTaskDraft(composer, pending.text)) restored.current = { key, text: pending.text }
@@ -56,7 +59,7 @@ export function PhoneTaskDraftRecovery({ deviceId, sessionId, composer, sending 
       const current = composer.getState()
       if (current.text === pending.text && !current.attachments?.length) composer.setText('')
     } catch (cause) {
-      if (currentKey.current === startedFor) setRetryState({ key: startedFor, busy: false, error: cause instanceof Error ? cause.message : '尚未确认接收，请重试原消息。' })
+      if (currentKey.current === startedFor) setRetryState({ key: startedFor, busy: false, error: cause instanceof Error ? cause.message : t('draftRecovery.retryFailed') })
     } finally {
       if (currentKey.current === startedFor) setRetryState((current) => current?.key === startedFor ? { ...current, busy: false } : current)
     }
@@ -67,12 +70,12 @@ export function PhoneTaskDraftRecovery({ deviceId, sessionId, composer, sending 
     <div className="gg-aw-action-error" data-testid="phone-task-draft-recovery">
       {error ? <p role="alert">{error}</p> : (
         <>
-          <p role="status">上次发送尚未确认，先重试原消息。已有的新输入会保留。</p>
+          <p role="status">{t('draftRecovery.pending')}</p>
           <details>
-            <summary>查看原消息</summary>
+            <summary>{t('draftRecovery.viewOriginal')}</summary>
             <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words" data-testid="phone-task-recovered-text">{pending!.text}</div>
           </details>
-          <Button size="sm" disabled={sending || retrying} data-testid="phone-task-retry-original" onClick={() => void retry()}>{retrying ? '正在重试' : '重试原消息'}</Button>
+          <Button size="sm" disabled={sending || retrying} data-testid="phone-task-retry-original" onClick={() => void retry()}>{retrying ? t('draftRecovery.retrying') : t('draftRecovery.retryOriginal')}</Button>
           {retryError && <p role="alert">{retryError}</p>}
         </>
       )}

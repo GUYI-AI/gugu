@@ -105,7 +105,7 @@ it('does not present an unread roster as an empty group',async()=>{
  await mount('dark','loading');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByRole('heading',{name:'智能体',exact:true})).toBeVisible()
  await expect.element(page.getByRole('status')).toHaveTextContent('正在读取智能体')
- expect(document.body.textContent).not.toContain('群里还没有智能体')
+ expect(document.body.textContent).not.toContain('群里暂无智能体')
 })
 
 

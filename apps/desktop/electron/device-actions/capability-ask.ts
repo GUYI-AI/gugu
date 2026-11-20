@@ -41,7 +41,7 @@ export async function askForCapability(input: CapabilityAskInput): Promise<{ cod
     title: `${input.requester.name} wants to use "${name}" on this computer`,
     options: [
       { optionId: DEVICE_CAPABILITY_ALLOW, name: 'Allow', kind: 'allow_always' },
-      { optionId: DEVICE_CAPABILITY_DECLINE, name: "Don't allow", kind: 'reject_once' },
+      { optionId: DEVICE_CAPABILITY_DECLINE, name: 'Do not allow', kind: 'reject_once' },
     ],
     origin: { source: 'device-capability', payload },
   }, { ...(input.signal ? { signal: input.signal } : {}) })

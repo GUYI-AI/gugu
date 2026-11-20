@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 export type PhoneAgentSetupStep = 'host' | 'notifications' | 'background' | 'tools'
 export interface PhoneAgentSetupProgress { step: PhoneAgentSetupStep; dismissed: boolean; completed: boolean }
 
@@ -7,7 +8,7 @@ const requests = new Map<string, number>()
 const listeners = new Set<() => void>()
 
 function key(ownerId: string, installId: string): string {
-  if (!ownerId || !installId) throw new Error('手机设置缺少账号或安装标识。')
+  if (!ownerId || !installId) throw new Error(mobileWorkspaceText('setup.missingIdentity'))
   return PREFIX + encodeURIComponent(ownerId) + ':' + encodeURIComponent(installId)
 }
 
@@ -16,9 +17,9 @@ export function readPhoneAgentSetup(ownerId: string, installId: string): PhoneAg
   const raw = localStorage.getItem(key(ownerId, installId))
   if (!raw) return { step: 'host', dismissed: false, completed: false }
   const parsed: unknown = JSON.parse(raw)
-  if (!parsed || typeof parsed !== 'object') throw new Error('手机设置进度损坏，请重新设置。')
+  if (!parsed || typeof parsed !== 'object') throw new Error(mobileWorkspaceText('setup.progressCorrupt'))
   const saved = parsed as Partial<PhoneAgentSetupProgress>
-  if (!steps.includes(saved.step as PhoneAgentSetupStep)) throw new Error('手机设置进度损坏，请重新设置。')
+  if (!steps.includes(saved.step as PhoneAgentSetupStep)) throw new Error(mobileWorkspaceText('setup.progressCorrupt'))
   return { step: saved.step as PhoneAgentSetupStep, dismissed: saved.dismissed === true, completed: saved.completed === true }
 }
 

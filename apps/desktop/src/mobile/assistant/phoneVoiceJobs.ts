@@ -137,11 +137,11 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
         await work?.()
         await ports.backlog.saveJob(toBacklog(job))
       })
-      .catch((error: unknown) => ports.warn({ err: error, id: job.id }, '语音笔记的记录没能存在手机上'))
+      .catch((error: unknown) => ports.warn({ err: error, id: job.id }, 'voice note record could not be saved on the phone'))
   }
 
   function drop(job: Job) {
-    job.persisting = job.persisting.then(() => ports.backlog.dropJob(job.id)).catch((error: unknown) => ports.warn({ err: error, id: job.id }, '语音笔记的记录没能从手机上清掉'))
+    job.persisting = job.persisting.then(() => ports.backlog.dropJob(job.id)).catch((error: unknown) => ports.warn({ err: error, id: job.id }, 'voice note record could not be removed from the phone'))
   }
 
   // ── 它家里的文件夹 ──────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
           persist(job)
           job.persisting = job.persisting
             .then(() => ports.backlog.dropSegment(job.id, toUpload.file))
-            .catch((error: unknown) => ports.warn({ err: error, id: job.id }, '传完的语音笔记片段没能从手机上清掉'))
+            .catch((error: unknown) => ports.warn({ err: error, id: job.id }, 'uploaded voice note segment could not be removed from the phone'))
           continue
         }
 
@@ -238,7 +238,7 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
       if (job.forgotten) return
       const failure: VoiceNoteFailure = { stage: 'upload', message: error instanceof Error ? error.message : String(error), retryable: true }
       // 界面只说「无法上传」;原因(哪一步、那台机器答的什么)进日志,❌ 画给用户。
-      ports.warn({ id: job.id, err: error instanceof Error ? error.message : String(error), segments: job.segments.length }, '语音笔记没能传上去')
+      ports.warn({ id: job.id, err: error instanceof Error ? error.message : String(error), segments: job.segments.length }, 'voice note upload failed')
       // 先放开「在跑」:失败记进它家里那一下可能要等很久(多半正是它连不上),这期间点「重试」要立刻生效。
       job.running = false
       setView(job, { phase: 'failed', failure, dismissed: false, held: null })
@@ -356,9 +356,9 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
     publish()
     job.persisting = job.persisting
       .then(() => ports.backlog.dropJob(id))
-      .catch((error: unknown) => ports.warn({ err: error, id }, '语音笔记的记录没能从手机上清掉'))
+      .catch((error: unknown) => ports.warn({ err: error, id }, 'voice note record could not be removed from the phone'))
     const machine = ports.context()?.machine() ?? null
-    if (machine && job.created) void removePath(machine, noteDir(machine, id), true).catch((error: unknown) => ports.warn({ err: error, id }, '放弃的语音笔记没能从它家里删掉'))
+    if (machine && job.created) void removePath(machine, noteDir(machine, id), true).catch((error: unknown) => ports.warn({ err: error, id }, 'discarded voice note could not be removed from its runtime device'))
   }
 
   /** 进程重新起来:把手机上还留着的(没传完的)按记录接着传。没录完就被杀的当作录到那儿为止。 */
@@ -367,7 +367,7 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
     try {
       stored = await ports.backlog.list()
     } catch (error) {
-      ports.warn({ err: error }, '读不出手机上留的语音笔记记录')
+      ports.warn({ err: error }, 'could not read the voice note records stored on the phone')
       return
     }
     for (const record of stored) {
@@ -380,7 +380,7 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
           blob = await ports.backlog.readSegment(record.id, s.file).catch(() => null)
           // 没传上去、手机上的字节也没了:这一段救不回来,❌ 留着让上传卡在读不到的文件上。
           if (!blob) {
-            ports.warn({ id: record.id, file: s.file }, '语音笔记有一段手机上的字节没了,跳过它')
+            ports.warn({ id: record.id, file: s.file }, 'a voice note segment is missing on the phone; skipped')
             continue
           }
         }

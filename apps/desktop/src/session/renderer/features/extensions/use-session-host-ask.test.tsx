@@ -80,7 +80,7 @@ describe('session approval band response feedback', () => {
   it.each([
     ['en-US', null, 'This computer no longer has this task'],
     ['en-US', 'remote-machine', 'Build desktop no longer has this task'],
-    ['zh-CN', null, '这台电脑 上已经没有这个会话了'],
+    ['zh-CN', null, '本机 上已不存在此会话'],
   ])('uses the viewing locale %s and device %s for a missing session', async (locale, machineId, title) => {
     await i18n.changeLanguage(locale);
     mocks.machineId = machineId;
@@ -101,7 +101,7 @@ describe('session approval band response feedback', () => {
   it('keeps the no-longer-waiting notice for a withdrawn ask', async () => {
     mocks.respond.mockResolvedValue({ ok: true, value: { accepted: false, settlement: { ...ask, state: 'cancelled' } } });
     await act(async () => band!.resolve('decline'));
-    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: 'No longer waiting: this ask is over, nothing was installed.' });
+    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: 'This request has ended. Nothing was installed.' });
   });
 
   it('keeps transport errors on the same destructive toast path', async () => {

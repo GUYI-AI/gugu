@@ -262,9 +262,9 @@ export default {
   },
   "requestsPane": {
     "empty": "No new requests",
-    "nonePending": "Nothing waiting for you",
-    "pending_one": "{{count}} waiting for you",
-    "pending_other": "{{count}} waiting for you"
+    "nonePending": "No pending requests",
+    "pending_one": "{{count}} pending",
+    "pending_other": "{{count}} pending"
   },
   "searchPane": {
     "count_one": "{{count}} result",
@@ -285,6 +285,7 @@ export default {
     "allContacts": "All contacts",
     "backToContactList": "Back to contact list",
     "backToContacts": "Back to contacts",
+    "jumpToLetter": "Jump to letter",
     "backToGroupList": "Back to group chat list",
     "contactCountSummary": "{{count}} contacts total",
     "contactCountSummary_one": "{{count}} contact total",

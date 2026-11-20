@@ -262,7 +262,7 @@ export default {
   },
   "requestsPane": {
     "empty": "没有新的请求",
-    "nonePending": "没有待处理的",
+    "nonePending": "暂无待处理的请求",
     "pending_one": "{{count}} 个待处理",
     "pending_other": "{{count}} 个待处理"
   },
@@ -285,6 +285,7 @@ export default {
     "allContacts": "全部联系人",
     "backToContactList": "返回联系人列表",
     "backToContacts": "返回联系人",
+    "jumpToLetter": "按首字母跳转",
     "backToGroupList": "返回群聊列表",
     "contactCountSummary": "共 {{count}} 位联系人",
     "contactCountSummary_one": "共 {{count}} 位联系人",

@@ -151,8 +151,8 @@ export default {
   "migrationSkipped_other": "View {{count}} skipped items",
   "migrationResults": "Configuration migration results",
   "migrationRelogin": "Sign in to {{name}} again to use your account in Gugu.",
-  "codexUpgradeReloginTitle": "Sign in to {{name}} once more",
-  "codexUpgradeRelogin": "Gugu and other clients cannot share a ChatGPT sign-in. Sign in once more in Gugu so another client does not invalidate it.",
+  "codexUpgradeReloginTitle": "Sign in to {{name}} again",
+  "codexUpgradeRelogin": "Gugu and other clients cannot share a ChatGPT sign-in. Sign in again in Gugu so that another client does not invalidate the sign-in.",
   "signInSettings": "Sign-in settings",
   "configurationImportFailed": "Could not import the configuration. Try again.",
   "migrationReadFailed": "Could not read the configuration migration results.",
@@ -593,6 +593,7 @@ export default {
     }
   },
   "auth": {
+    "phoneHostSignOutUnconfirmed": "The phone host did not confirm sign-out.",
     "loadingMethods": "Loading sign-in methods",
     "google": {
       "signIn": "Sign in with Google",
@@ -889,6 +890,7 @@ export default {
       "thisComputer": "This computer",
       "devices": "Source devices",
       "refresh": "Refresh import sources",
+      "refreshFirst": "Refresh the import sources first.",
       "available_one": "{{count}} session available",
       "available_other": "{{count}} sessions available",
       "action": "Import",

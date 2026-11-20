@@ -158,7 +158,7 @@ it('does not dispatch an engine default when the catalogue read fails', async ()
   await send()
   expect(rpc.createSession).not.toHaveBeenCalled()
   expect(readComposer(input())).toBe('Keep this task draft')
-  expect(sheet()?.textContent).toContain('读不到这台设备的模型')
+  expect(sheet()?.textContent).toContain('无法读取此设备的模型')
 })
 
 it('carries an explicitly chosen Work model through the project task send', async () => {

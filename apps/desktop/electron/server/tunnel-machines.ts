@@ -260,7 +260,7 @@ export function createTunnelMachines(deps: {
       const open: TunnelOpenResponse | null = response.error ? null : parseTunnelOpenResponse(response.result)
       if (!open) return fail(tunnel, classifyOpenFailure(response), response.error?.message ?? 'tunnel.open 的应答形状不对')
       // 那台机器登的必须是此刻这个人(换号那一瞬的应答 ❌ 拿来连)。
-      if (open.relay.user !== userId) return fail(tunnel, 'unsupported', '那台机器登的不是这个账号')
+      if (open.relay.user !== userId) return fail(tunnel, 'unsupported', '该设备登录的不是当前账号')
       if (!current(tunnel)) return
 
       const dir = deps.stateDir()

@@ -230,7 +230,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     await render(React.createElement(MachinePicker, { machines: [...machines, signInFirst], selectedId: 'local', onSelect, size: 'compact' }));
     const row = container.querySelector('[data-device-id="ssh1"]') as HTMLButtonElement;
     expect(row.disabled).toBe(false);
-    expect(row.textContent).toContain('要先登录');
+    expect(row.textContent).toContain('需要登录');
     await act(async () => row.click());
     expect(mocks.signIn).toHaveBeenCalledWith('ssh1');
     expect(onSelect).toHaveBeenCalledWith('ssh1');

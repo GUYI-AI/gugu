@@ -44,11 +44,11 @@ it('手机账户页复用会员行，无需桌面设置的 QueryClientProvider �
     expect(row?.textContent).toContain('176')
     expect(row?.querySelector('a')?.getAttribute('href')).toMatch(/^https:/)
     expect(row?.textContent).not.toContain('每 30 天为一个周期')
-    expect(row?.textContent).not.toContain('最多能花')
+    expect(row?.textContent).not.toContain('最多可用')
     expect(row?.querySelector('[data-testid="subscription-credits-balance"]')?.textContent?.trim()).toBe('176')
     expect(row?.querySelector('[data-testid="subscription-period-credits"]')?.textContent).toBe('176')
     expect(row?.querySelector('[data-testid="subscription-wallet-credits"]')?.textContent).toBe('0')
-    expect(row?.querySelector('[data-testid="membership-open-web"]')?.textContent).toContain('去网页充值')
+    expect(row?.querySelector('[data-testid="membership-open-web"]')?.textContent).toContain('在网页充值')
     expect(row?.querySelector('[data-testid="membership-open-web"]')?.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/#topup')
     expect(row?.querySelector('a')?.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/')
   } finally { harness.cleanup() }

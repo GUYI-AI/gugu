@@ -77,7 +77,7 @@ type TreeItemLabelProps = HTMLAttributes<HTMLSpanElement> & {
 
 export function TreeItemLabel({ icon, trailing, className, children, ...props }: TreeItemLabelProps) {
   const { folder, expanded } = useContext(TreeContext);
-  if (folder === undefined) throw new Error('TreeItemLabel 必须放在 TreeItem 里');
+  if (folder === undefined) throw new Error('TreeItemLabel must be inside a TreeItem');
   return (
     <span
       data-slot="tree-item-label"

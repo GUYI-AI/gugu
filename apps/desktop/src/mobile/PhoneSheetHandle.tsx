@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, type PointerEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n/registerMobileWorkspaceCatalog'
 import { IconButton } from '@/components/ui/IconButton'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { GestureVelocity, PHONE_FLICK_SPEED } from './gestureVelocity'
@@ -16,6 +18,7 @@ interface Drag {
 /** Drag only the handle: scrolling a form must never dismiss it or discard its draft. */
 export function PhoneSheetHandle({ onDismiss, disabled = false }: { onDismiss: () => void; disabled?: boolean }) {
   const mobile = useMobileShell()
+  const { t } = useTranslation('mobileWorkspace')
   const drag = useRef<Drag | null>(null)
   const suppressClick = useRef(false)
   const reset = useCallback(() => {
@@ -69,7 +72,7 @@ export function PhoneSheetHandle({ onDismiss, disabled = false }: { onDismiss: (
   if (!mobile) return null
   return (
     <IconButton
-      size="lg" className="gg-phone-sheet-drag-handle" aria-label="关闭面板" disabled={disabled}
+      size="lg" className="gg-phone-sheet-drag-handle" aria-label={t('closeSheet')} disabled={disabled}
       onPointerDown={start} onPointerMove={move} onPointerUp={(event) => finish(event)}
       onPointerCancel={(event) => finish(event, true)} onLostPointerCapture={(event) => finish(event, true)}
       onClick={(event) => {
