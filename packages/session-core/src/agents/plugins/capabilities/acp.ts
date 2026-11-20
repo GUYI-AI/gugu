@@ -344,8 +344,13 @@ export interface IAcpBehavior {
    * `MissingProviderSessionError`, so the runtime's provider-session-missing recovery applies.
    */
   sessionProgram?(ctx: { env: Readonly<Record<string, string>>; providerSessionId: string }): string | undefined;
-  /** Reuse vendor metadata from a real new/load/fork response; failure must not prevent the conversation opening. */
-  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'sessionProgram'>, response: unknown): Promise<void>;
+  /**
+   * Reuse vendor metadata from a real new/load/fork response. Called before that request is sent; the returned
+   * observer receives its response. Facts that depend on who is signed in (the account's plan) are bound to the
+   * credentials as they were when the request left, so a response that arrives after the account changed is not
+   * filed under the new one. Failure must not prevent the conversation opening.
+   */
+  observeSessionMetadata?(ctx: Pick<AcpSpawnContext, 'env' | 'cli' | 'sessionProgram'>): Promise<(response: unknown) => Promise<void>>;
   explainError?(cause: SerializedError): string | undefined;
   /** Provider-owned record/replay contract; the runtime does not infer it from the provider id. */
   historyRecovery?: {

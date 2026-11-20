@@ -1,5 +1,8 @@
-import { win32 } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AgentAuthContext, AgentAuthStatus } from '@gugu/session-core/agents/plugins';
+import { createAgyProbeRoot } from './acp-tier';
 import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
 
 /**
@@ -191,15 +194,24 @@ export async function antigravityCliAuthStatus(
   return agyModelsAuthStatus(ctx, platform);
 }
 
-/** Isolate config reads for non-interactive CLI commands that lack --gemini-dir. */
-export function execAntigravityCli(
+/**
+ * Status reads (`agy models`, `/usage`) for commands that lack --gemini-dir. They see the managed account but an empty
+ * MCP configuration, so reading a status never starts the person's MCP servers: POSIX through the probe launcher's
+ * shadow home, Windows through a scratch profile (HOME/USERPROFILE) holding copies of the credentials, removed after.
+ */
+export async function execAntigravityCli(
   ctx: AgentAuthContext, args: string[], timeout: number, platform = process.platform
-): ReturnType<AgentAuthContext['exec']> {
+): Promise<Awaited<ReturnType<AgentAuthContext['exec']>>> {
   const geminiHome = ctx.env[ANTIGRAVITY_HOME_ENV]?.trim();
   if (!geminiHome) throw new Error('Antigravity CLI requires the managed GEMINI_HOME');
   if (platform === 'win32') {
-    const home = win32.dirname(geminiHome);
-    return ctx.exec(ctx.cli, args, { timeout, env: { HOME: home, USERPROFILE: home } });
+    const scratch = await mkdtemp(join(tmpdir(), 'gugu-agy-status-'));
+    try {
+      await createAgyProbeRoot(geminiHome, scratch);
+      return await ctx.exec(ctx.cli, args, { timeout, env: { HOME: scratch, USERPROFILE: scratch } });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
   }
   return ctx.exec(
     '/usr/bin/env',

@@ -8,8 +8,9 @@ import { AcpRuntime } from './runtime';
 
 const antigravitySessionProgram = pluginRegistry.get('antigravity')!.behavior.acp!.sessionProgram!;
 
-it('passes native session metadata and the resolved account context to the provider without another connection', async () => {
-  const observe = vi.fn().mockResolvedValue(undefined);
+it('binds the observer before the native open, then hands it that open\'s metadata without another connection', async () => {
+  const seen = vi.fn().mockResolvedValue(undefined);
+  const observe = vi.fn().mockResolvedValue(seen);
   const spawn = vi.fn(() => ({ command: '/fake/node', args: ['agent.js'], env: {} }));
   const h = makeAcpHarness({ acpBehavior: {
     buildSpawn: spawn,
@@ -22,13 +23,15 @@ it('passes native session metadata and the resolved account context to the provi
   const input = makeStartInput();
   try {
     expect((await rt.startSession(input)).success).toBe(true);
-    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ cli: input.runContext.cli.kind === 'resolved' ? input.runContext.cli.path : undefined }), expect.objectContaining({ _meta: tier }));
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ cli: input.runContext.cli.kind === 'resolved' ? input.runContext.cli.path : undefined }));
+    expect(observe.mock.invocationCallOrder[0]).toBeLessThan(h.agent.newSession.mock.invocationCallOrder[0]!);
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ _meta: tier }));
     expect(spawn).toHaveBeenCalledTimes(1);
   } finally { await rt.stopSession('conv-1'); }
 });
 
 it('a tier-cache write failure does not prevent the actual conversation opening', async () => {
-  const observe = vi.fn().mockRejectedValue(new Error('cache is read-only'));
+  const observe = vi.fn().mockResolvedValue(vi.fn().mockRejectedValue(new Error('cache is read-only')));
   const h = makeAcpHarness({ acpBehavior: {
     buildSpawn: () => ({ command: '/fake/node', args: ['agent.js'], env: {} }),
     connect: (io, client) => h.agent.behavior.connect(io, client),
@@ -78,7 +81,7 @@ it('can resume a native legacy store even when the default new CLI is missing', 
 it('selects the native program once and carries it through startup and provider hooks', async () => {
   const select = vi.fn().mockReturnValueOnce('legacy').mockImplementation(() => { throw new Error('store is no longer visible'); });
   const prepare = vi.fn().mockResolvedValue(undefined);
-  const observe = vi.fn().mockResolvedValue(undefined);
+  const observe = vi.fn().mockResolvedValue(vi.fn().mockResolvedValue(undefined));
   const ended = vi.fn().mockResolvedValue(null);
   const spawn = vi.fn((ctx) => ({ command: ctx.cli, args: [], env: {} }));
   const h = makeAcpHarness({ acpBehavior: {
@@ -98,7 +101,7 @@ it('selects the native program once and carries it through startup and provider 
     expect(select).toHaveBeenCalledOnce();
     expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
-    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }), expect.anything());
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
     expect(ended).toHaveBeenCalledWith(expect.objectContaining({ sessionProgram: 'legacy' }));
   } finally { await rt.stopSession('conv-1'); }
 });

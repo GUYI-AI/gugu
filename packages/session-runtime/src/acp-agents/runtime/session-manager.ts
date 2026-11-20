@@ -727,6 +727,8 @@ export class SessionManager implements InboundRouter {
           }
         : undefined;
       const resolveForkSource = binding.behavior.resolveForkSource;
+      // Bound before any native new/load/fork request leaves (see `IAcpBehavior.observeSessionMetadata`).
+      const observeMetadata = await this.beginSessionMetadata(record, binding.behavior);
       let resolvedFork: { loadProviderSessionId: string } | undefined;
       if (input.forkFromProviderSessionId && input.sourceSessionId && resolveForkSource) {
         if (!input.forkSourceSession) {
@@ -889,7 +891,7 @@ export class SessionManager implements InboundRouter {
         record.cell.setAcpSessionId(response.sessionId);
         // 路由必须在**拿到 sessionId 的那一刻**就登记 —— 见下面 newSession 分支的说明。
         this.registerRoute(connection.key, response.sessionId, input.sessionId);
-        await this.observeSessionMetadata(record, binding.behavior, response);
+        await observeMetadata(response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -948,7 +950,7 @@ export class SessionManager implements InboundRouter {
             });
             return {};
           });
-          await this.observeSessionMetadata(record, binding.behavior, response);
+          await observeMetadata(response);
           if (response.availableCommands) record.providerCommands = response.availableCommands;
           record.cell.applySessionLoaded({
             modes: response.modes,
@@ -1129,7 +1131,7 @@ export class SessionManager implements InboundRouter {
             availableCommands: response.availableCommands,
           },
         });
-        await this.observeSessionMetadata(record, binding.behavior, response);
+        await observeMetadata(response);
         if (response.availableCommands) record.providerCommands = response.availableCommands;
         record.cell.applySessionMeta({
           modes: response.modes,
@@ -2560,18 +2562,21 @@ export class SessionManager implements InboundRouter {
   }
 
 
-  private async observeSessionMetadata(record: SessionRecord, behavior: IAcpBehavior, response: unknown): Promise<void> {
+  private async beginSessionMetadata(record: SessionRecord, behavior: IAcpBehavior): Promise<(response: unknown) => Promise<void>> {
     const { input } = record;
-    if (!behavior.observeSessionMetadata || input.runContext.cli.kind !== 'resolved') return;
+    const ignore = async () => {};
+    if (!behavior.observeSessionMetadata || input.runContext.cli.kind !== 'resolved') return ignore;
+    const warn = (error: unknown) => this.deps.logger.warn('SessionManager: provider metadata cache update failed', {
+      providerId: input.providerId, error: toSerializedError(error),
+    });
     try {
-      await behavior.observeSessionMetadata({
-        env: this.providerEnv(input), cli: input.runContext.cli.path,
-        sessionProgram: record.sessionProgram,
-      }, response);
-    } catch (error) {
-      this.deps.logger.warn('SessionManager: provider metadata cache update failed', {
-        providerId: input.providerId, error: toSerializedError(error),
+      const observe = await behavior.observeSessionMetadata({
+        env: this.providerEnv(input), cli: input.runContext.cli.path, sessionProgram: record.sessionProgram,
       });
+      return async (response) => { try { await observe(response); } catch (error) { warn(error); } };
+    } catch (error) {
+      warn(error);
+      return ignore;
     }
   }
 

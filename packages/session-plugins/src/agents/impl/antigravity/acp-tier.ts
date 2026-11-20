@@ -65,17 +65,22 @@ async function save(ctx: TierContext, fingerprint: string, name: string): Promis
   await rename(staging, target);
 }
 
-/** Each real conversation open refreshes its account's tier without starting another process. */
-export async function observeAgyTier(
+/**
+ * Each real conversation open refreshes its account's tier without starting another process. The account generation
+ * is taken before the open request leaves; a response that arrives after it changed (another account signed in, or
+ * signed out) belongs to no current account and is dropped.
+ */
+export async function bindAgyTierObservation(
   ctx: Pick<AgentAuthContext, 'cli' | 'env'>,
-  response: unknown,
   execute: AgentAuthContext['exec'] = async (command, args, options) => promisify(execFile)(command, args ?? [], { ...options, encoding: 'utf8' }),
-): Promise<void> {
-  const name = tierNameFromAcpResponse(response);
-  if (!name || !ctx.env.GEMINI_HOME?.trim()) return;
+): Promise<(response: unknown) => Promise<void>> {
   const context = { ...ctx, exec: execute };
-  const fingerprint = await accountFingerprint(context);
-  if (fingerprint) await save(context, fingerprint, name);
+  const opened = ctx.env.GEMINI_HOME?.trim() ? await accountFingerprint(context) : null;
+  return async (response) => {
+    const name = tierNameFromAcpResponse(response);
+    if (!opened || !name || await accountFingerprint(context) !== opened) return;
+    await save(context, opened, name);
+  };
 }
 
 /** A probe owns its conversation and cache directories. On POSIX, link the file credential to preserve refresh. */

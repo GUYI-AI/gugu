@@ -28,7 +28,7 @@ import { antigravitySubscriptionBehavior } from './subscription';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
 import { antigravitySessionProgram, buildAntigravityAcpSpawn } from './acp-routing';
-import { observeAgyTier } from './acp-tier';
+import { bindAgyTierObservation } from './acp-tier';
 import {
   ANTIGRAVITY_GATEWAY_AUTH,
   withGatewayAuthentication,
@@ -418,10 +418,8 @@ export const provider = registerPluginBehavior(plugin, {
     ...antigravityAcp,
     sessionProgram: antigravitySessionProgram,
     catalogModelSource: 'config-options',
-    observeSessionMetadata: async (ctx, response) => {
-      if (ctx.sessionProgram === 'antigravity') return;
-      await observeAgyTier(ctx, response);
-    },
+    // The standalone server reports no tier; agy's open responses carry the plan of the account that opened them.
+    observeSessionMetadata: async (ctx) => ctx.sessionProgram === 'antigravity' ? async () => {} : bindAgyTierObservation(ctx),
     // 连接会话(带着网关上线开关起的进程)在开第一条会话前选网关;别的会话原样过(见 ./api-key-connection.ts)。
     connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, toClient)),
     // 模型目录探针照同一份声明认证,否则连接会话的目录读成「需要登录」,输入框列不出连接的模型。
