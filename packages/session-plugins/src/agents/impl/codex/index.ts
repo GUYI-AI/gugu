@@ -40,6 +40,7 @@ import { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './platform-mo
 import { codexPlatformProviderConfigArgs } from './platform-provider-args';
 import { CODEX_PERMISSION_MODES } from './permission-modes';
 import { codexCredentialInfo } from './auth';
+import { CODEX_NATIVE_AUTH_ROOT, requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
 import { codexSubscriptionBehavior } from './subscription';
 import { codexScopedMcpAdapter } from './mcp-scopes';
 import { CODEX_WIRE_API } from './platform';
@@ -491,6 +492,17 @@ export {
 };
 
 async function codexAuthStatus(ctx: AgentAuthContext): Promise<AgentAuthStatus> {
+  if (ctx.env[CODEX_NATIVE_AUTH_ROOT]) {
+    try {
+      const access = await requestNativeCodexAccess(ctx.env);
+      return access ? { kind: 'authenticated', credentialKind: 'subscription', ...(access.account ? { account: access.account } : {}) }
+        : { kind: 'unauthenticated' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Run codex login to sign in again';
+      return /refresh token.*revoked/i.test(message) ? { kind: 'unauthenticated', reason: 'expired', message }
+        : { kind: 'unknown', message };
+    }
+  }
   const envStatus = authenticatedFromEnv(ctx, ['OPENAI_API_KEY']);
   if (envStatus.kind === 'authenticated') return { ...envStatus, credentialKind: 'api-key' };
   const status = await commandAuthStatus({ ...ctx, cli: codexBinaryForSpawn(ctx) }, ['login', 'status'], {

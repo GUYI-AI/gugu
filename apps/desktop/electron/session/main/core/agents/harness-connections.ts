@@ -27,7 +27,6 @@ import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import {
   activateCodexAccount,
   copyCodexUpgradeSignIn,
-  restoreCodexTerminalForMigration,
   assertCodexFileCredentialStore,
   codexCredentialRoot,
   codexSignInSaved,
@@ -41,6 +40,10 @@ import {
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { migrateCustomModelConnections } from './custom-models';
 import { reportAgentHomeMigrationFailure } from '../../../../error-summary-reporting-host';
+import { loginShellEnv } from '@main/utils/userEnv';
+import { nativeCodexAuthEnvironment } from './codex-native-auth-source';
+import { reconcileCodexNativeReference } from './codex-native-auth-migration';
+import { CODEX_NATIVE_AUTH_ROOT } from '@gugu/core/local/codex-native-auth.mjs';
 
 /** Account connections hold sign-ins in Gugu's managed root. Custom models keep their own provider credentials. */
 
@@ -91,6 +94,7 @@ export async function listHarnessConnections(providerId: string): Promise<Harnes
   supported(providerId);
   migrateCustomModelConnections();
   await ensureNative(providerId);
+  if (providerId === 'codex') await reconcileNativeCodex();
   return (await registry.listAccounts(namespace(providerId)))
     .filter((row) => !row.meta?.harnessConnection?.removed && (row.meta?.harnessConnection?.kind !== 'api-key' || row.meta.credentialSource === 'vendor-key'))
     .map(connectionView);
@@ -134,6 +138,7 @@ export async function selectHarnessConnection(
 ): Promise<void> {
   supported(providerId);
   await ensureNative(providerId);
+  if (providerId === 'codex') await reconcileNativeCodex(options.nativeEnv);
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   // 已有会话跟着默认订阅走。账号连接把凭据换进用户根;API 连接靠环境变量起,
@@ -141,7 +146,12 @@ export async function selectHarnessConnection(
   if (isAccountProvider(providerId) && (target.meta?.harnessConnection?.kind ?? 'native') !== 'api-key') {
     const current = await defaultConnectionId(providerId);
     const ids = await accountConnectionIds(providerId);
-    if (providerId === 'codex') await activateCodexAccount(codexSlotPaths(options.nativeEnv), ids, connectionId, current);
+    if (providerId === 'codex') {
+      const native = await registry.getAccount(namespace(providerId), 'native');
+      if (connectionId !== 'native' || !native?.meta?.harnessConnection?.nativeOAuth) {
+        await activateCodexAccount(codexSlotPaths(options.nativeEnv), ids, connectionId, current);
+      }
+    }
     else await activateClaudeAccount(claudeSlotPaths(options.nativeEnv), ids, connectionId, current);
   }
   await registry.setDefaultAccount(namespace(providerId), connectionId);
@@ -158,6 +168,11 @@ export async function assertHarnessConnectionSelectable(
 ): Promise<void> {
   supported(providerId);
   await ensureNative(providerId);
+  if (providerId === 'codex') {
+    await reconcileNativeCodex(options.nativeEnv);
+    const native = await registry.getAccount(namespace(providerId), 'native');
+    if (connectionId === 'native' && native?.meta?.harnessConnection?.nativeOAuth) return;
+  }
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   if (target.meta?.credentialSource === 'vendor-key') return;
@@ -265,7 +280,29 @@ function claudeSlotPaths(_env?: Record<string, string | undefined>): ClaudeAuthS
 async function defaultConnectionId(providerId: Provider): Promise<string> {
   const id = await registry.getDefaultAccountId(namespace(providerId));
   const row = id ? await registry.getAccount(namespace(providerId), id) : null;
-  return row?.meta?.harnessConnection?.migratedTo ? 'native' : id ?? 'native';
+  return row?.meta?.harnessConnection?.migratedTo ?? id ?? 'native';
+}
+
+let nativeReconciliation: Promise<boolean> | undefined;
+function reconcileNativeCodex(nativeEnv?: Record<string, string | undefined>): Promise<boolean> {
+  if (nativeReconciliation) return nativeReconciliation;
+  const env = nativeEnv ?? { ...process.env, ...loginShellEnv() };
+  const paths = codexSlotPaths();
+  const sourceRoot = nativeConfigRoot('codex', env);
+  const work = (async () => {
+    // An unsupported native store is not a file candidate. Explicit native status/login still reports its diagnostic;
+    // it must not prevent using an unrelated Gugu account or merge a stale auth.json from that store.
+    try { await assertCodexFileCredentialStore(sourceRoot); } catch { return false; }
+    return reconcileCodexNativeReference({ sourceRoot, managedRoot: paths.nativeRoot,
+    stateRoot: join(app.getPath('userData'), 'harness-connections', 'codex'), vaultRoot: paths.vaultRoot,
+    rows: () => registry.listAccounts(namespace('codex')),
+    commit: value => registry.commitCodexNativeReference(value),
+    beforeMove: async () => { const { prepareSubscriptionMigration } = await import('../sessions/subscription-switch'); await prepareSubscriptionMigration('codex'); },
+    });
+  })();
+  nativeReconciliation = work;
+  void work.finally(() => { if (nativeReconciliation === work) nativeReconciliation = undefined; }).catch(() => undefined);
+  return work;
 }
 
 /** 能把凭据换进用户根的连接:`native` 与账号连接(含已从列表移除的 —— 它的凭据仍归它)。 */
@@ -311,17 +348,37 @@ export async function resolveHarnessConnection(
     return { connectionId: id, credentialEnv: Object.fromEntries(vendor.envVars.map((name) => [name, secret])), unsetEnv: [...vendor.unsetEnv], vendorKeyAccount: true };
   }
   await ensureNative(providerId);
+  if (providerId === 'codex') await reconcileNativeCodex(input.nativeEnv);
   // 会话(不论哪条、什么时候建的)和不指名的读取跟默认连接走;只有按连接问的(登录、登录状态、用量)才指名。
   const forSession = Boolean(input.sessionId) || !input.connectionId;
-  const id = forSession ? await defaultConnectionId(providerId) : input.connectionId!;
-  const account = await registry.getAccount(namespace(providerId), id);
+  let id = forSession ? await defaultConnectionId(providerId) : input.connectionId!;
+  let account = await registry.getAccount(namespace(providerId), id);
+  if (account?.meta?.harnessConnection?.migratedTo) {
+    id = account.meta.harnessConnection.migratedTo;
+    account = await registry.getAccount(namespace(providerId), id);
+  }
   if (!account) throw new Error('The session’s subscription connection is unavailable');
   const details = account.meta?.harnessConnection ?? { kind: 'native' as const };
   const unsetEnv = providerId === 'codex' ? [...CODEX_CONNECTION_UNSET_ENV] : [...CLAUDE_CONNECTION_UNSET_ENV];
   const unset = details.kind === 'account' ? { unsetEnv } : {};
+  const nativeLogin = providerId === 'codex' && id === 'native'
+    ? { loginConfigRootEnv: { CODEX_HOME: nativeConfigRoot('codex', input.nativeEnv ?? { ...process.env, ...loginShellEnv() }) } } : {};
+  if (providerId === 'codex' && id === 'native') {
+    const userEnv = Object.fromEntries(Object.entries(input.nativeEnv ?? { ...process.env, ...loginShellEnv() })
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+    const root = nativeConfigRoot('codex', userEnv);
+    const nativeAuth = await nativeCodexAuthEnvironment(root, userEnv);
+    if (nativeAuth) return { connectionId: id, credentialEnv: nativeAuth, unsetEnv, ...nativeLogin };
+    // A native login button always invokes the same terminal login, including when no file exists yet.
+    if (details.nativeOAuth) return { connectionId: id, credentialEnv: { [CODEX_NATIVE_AUTH_ROOT]: root }, unsetEnv, ...nativeLogin };
+  }
+  if (providerId === 'codex' && forSession && id !== 'native'
+    && (await registry.getAccount(namespace(providerId), 'native'))?.meta?.harnessConnection?.nativeOAuth) {
+    await activateCodexAccount(codexSlotPaths(), await accountConnectionIds(providerId), id, await defaultConnectionId(providerId));
+  }
   // Sessions use the managed root. An inactive account is read from its own vault.
   if (forSession || (await credentialRoot(providerId, id, input.nativeEnv)) === 'native') {
-    return { connectionId: id, ...unset };
+    return { connectionId: id, ...unset, ...nativeLogin };
   }
   if (providerId === 'codex') await ensureCodexVault(vaultRoot(providerId, id));
   else await ensureClaudeVault(vaultRoot(providerId, id));
@@ -330,6 +387,7 @@ export async function resolveHarnessConnection(
     credentialHome: connectionHome(providerId, id),
     configRootEnv: { [requireNativeHome(providerId).envVar]: vaultRoot(providerId, id) },
     ...unset,
+    ...nativeLogin,
   };
 }
 
@@ -354,7 +412,28 @@ type RestoredTerminal = {
 };
 
 /** Split the old shared slot and use the compatibility copy only for an existing installation. */
-export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Record<string, string | undefined>, automatic = false) {
+export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Record<string, string | undefined>, automatic = false): Promise<{
+  terminalNeedsSignIn: boolean; relogin: { connectionId: string; name: string; methodId: string }[];
+  upgradeSignIn?: 'copied' | 'relogin' | 'reference';
+}> {
+  if (providerId === 'codex') {
+    await ensureNative(providerId);
+    try {
+      await assertCodexFileCredentialStore(nativeConfigRoot('codex', env));
+      if (await reconcileNativeCodex(env)) return { terminalNeedsSignIn: false, relogin: [], upgradeSignIn: 'reference' as const };
+      // OAuth is never copied, restored, or written into the terminal directory. API keys keep the old copy path.
+      if (automatic) {
+        const managed = codexSlotPaths();
+        const copied = await copyCodexUpgradeSignIn({ ...managed, nativeRoot: nativeConfigRoot('codex', env) }, managed, 'native');
+        if (copied === false) return { terminalNeedsSignIn: false, relogin: [], upgradeSignIn: 'relogin' };
+      }
+      return { terminalNeedsSignIn: false, relogin: [] };
+    } catch (error) {
+      if (!automatic) throw error;
+      reportAgentHomeMigrationFailure(error, 'sign-in');
+      return { terminalNeedsSignIn: false, relogin: [], upgradeSignIn: 'relogin' as const };
+    }
+  }
   const ids = await accountConnectionIds(providerId);
   const selected = await defaultConnectionId(providerId);
   const account = await registry.getAccount(namespace(providerId), selected);
@@ -395,14 +474,7 @@ export async function migrateOwnedHarnessAccounts(providerId: Provider, env: Rec
     const notice = await migrationNotice(providerId, result);
     return upgradeSignIn ? { ...notice, upgradeSignIn } : notice;
   };
-  if (providerId === 'codex') {
-    const managed = codexSlotPaths();
-    const previous = { ...managed, nativeRoot: formerRoot, vaultRoot: previousVaultRoot, liveStateFile };
-    return finish(() => restoreCodexTerminalForMigration(previous, ids),
-      () => activateCodexAccount(managed, ids, selected, 'native'),
-      (vaultIdentity) => copyCodexUpgradeSignIn(vaultIdentity ? { ...previous, nativeRoot: previous.vaultRoot(selected) } : previous,
-        managed, selected, vaultIdentity));
-  } else {
+  {
     const managed = claudeSlotPaths();
     const exported = Boolean(env.CLAUDE_CONFIG_DIR?.trim());
     const previous = { ...managed, nativeRoot: formerRoot, nativeSuffixed: exported, vaultRoot: previousVaultRoot,
