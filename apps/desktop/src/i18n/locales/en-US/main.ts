@@ -824,6 +824,9 @@ export default {
       "usage": "Usage"
     },
     "dataImport": {
+      "chatgptExport": "ChatGPT export file",
+      "readOnlyHistory": "{{count}} read-only history entries",
+
       "alreadyImported": "{{count}} items already exist",
       "categoryResultSummary": "{{count}} added, {{existing}} existing, {{failed}} not imported",
       "outcomeImported": "Imported",

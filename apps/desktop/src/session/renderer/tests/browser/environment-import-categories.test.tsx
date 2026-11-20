@@ -13,7 +13,7 @@ import '@/components/settings/data-import/data-import.css'
 
 const state = vi.hoisted(() => ({
   counts: {} as Record<string, number | 'error'>,
-  enqueue: vi.fn(), refresh: vi.fn(), cancel: vi.fn(),
+  enqueue: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), cancelAutomatic: vi.fn(),
   owners: { fixture: { automatic: true, sources: ['codex'], categories: ['tasks'] as string[] } },
   update: vi.fn(),
 }))
@@ -24,7 +24,7 @@ vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/rep
 }))
 vi.mock('@/components/settings/data-import/import-replicas', () => ({ importSourceCounts: { refresh: state.refresh } }))
 vi.mock('@/components/settings/data-import/import-queue', () => ({
-  enqueueImport: state.enqueue, cancelImport: state.cancel, cancelAutomaticImports: vi.fn(),
+  enqueueImport: state.enqueue, cancelImport: state.cancel, cancelAutomaticImports: state.cancelAutomatic,
   isActiveImport: (job: { state: string }) => ['running', 'queued', 'cancelling'].includes(job.state),
 }))
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({
@@ -96,6 +96,7 @@ it('persists selected sync categories and reads the saved range after remount', 
   await clickElement(labels().find(label => label.textContent === '技能')!.querySelector('[role="checkbox"]')!)
   await clickElement([...document.querySelectorAll('button')].find(button => button.textContent === '保存')!)
   await expect.poll(() => state.owners.fixture.categories).toEqual(['tasks', 'skills'])
+  expect(state.cancelAutomatic).toHaveBeenCalledWith('fixture', ['tasks', 'skills'])
   harness.cleanup(); harness = createReactHarness()
   await harness.render(<ImportSyncSettings ownerId="fixture" />)
   expect(harness.container.textContent).toContain('已选择 2 个类别')
@@ -110,4 +111,15 @@ it('renders the actual preparing-history status while a task import is running',
   expect(harness.container.textContent).toContain('已用 42 秒');
   expect(harness.container.textContent).not.toContain('%');
   await page.screenshot({ path: '../../../../../../../test-results/environment-import-preparing-zh.png', element: harness.container });
+});
+
+it('keeps legacy export-file histories distinct from resumable native tasks', async () => {
+  const history = { ...providers[0]!, id: 'chatgpt-json', sourceId: undefined, sourceLabel: undefined,
+    label: 'ChatGPT 导出文件', historyOnly: true };
+  state.counts[history.id] = 2;
+  await harness.render(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />);
+  await clickElement(harness.container.querySelector('.gg-import-card-trigger')!);
+  expect(harness.container.textContent).toContain('只读历史记录');
+  expect(harness.container.querySelectorAll('.gg-import-row')).toHaveLength(2);
+  expect(harness.container.textContent).not.toContain('任务');
 });

@@ -24,6 +24,7 @@ export type ImportProvider = {
   capture?(seen?: Readonly<Record<string, string>>): ImportProvider
   supportsAutomaticSync?: boolean
   localOnly?: boolean
+  historyOnly?: boolean
   scan(deviceId: string | null): Promise<{ count: number; pending: boolean; needsSource?: boolean } | null>
   pickSource?(deviceId: string | null): Promise<void>
   openImportedSession?(session: ImportedSession, deviceId: string | null): Promise<void>

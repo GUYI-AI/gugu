@@ -8,7 +8,7 @@ import { resolveAgentHomeRoot } from '@main/core/agents/agent-home';
 import { loginShellEnv } from '@main/utils/userEnv';
 import {
   isEnvironmentImportCategory,
-  type EnvironmentImportCategory,
+  type EnvironmentImportCategory, type EnvironmentImportItem,
   type EnvironmentImportRequest, type EnvironmentImportScan,
 } from '@shared/core/session-import/environment-import';
 import { scanCodexProjects, importCodexProjects } from './projects';

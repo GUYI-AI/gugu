@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
 import { desktopIpc } from '@/platform/desktopIpc'
 import { useAuth } from '@/store/auth'
@@ -35,6 +36,7 @@ function externalProvider(
     label,
     iconId,
     localOnly: true,
+    historyOnly: true,
     async scan(deviceId) {
       const ipc = localIpc(deviceId)
       if (!ipc) return null
@@ -76,6 +78,7 @@ function externalProvider(
 }
 
 export function useExternalImportProviders() {
+  const { t } = useTranslation('main')
   const { user } = useAuth()
   const ownerId = user?.id
   const [opened, setOpened] = useState<OpenHistory | null>(null)
@@ -88,10 +91,10 @@ export function useExternalImportProviders() {
       setOpened({ ownerId, session, page })
     }
     return [
-      externalProvider('chatgpt', 'ChatGPT', 'codex', open),
+      externalProvider('chatgpt', t('settings.dataImport.chatgptExport'), 'codex', open),
       externalProvider('cursor', 'Cursor', 'cursor', open),
     ]
-  }, [ownerId])
+  }, [ownerId, t])
 
   return {
     providers,

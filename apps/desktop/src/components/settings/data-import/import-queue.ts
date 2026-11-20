@@ -1,3 +1,4 @@
+import type { EnvironmentImportCategory } from '@shared/core/session-import/environment-import'
 import type { TFunction } from 'i18next'
 import { importSourceCounts, importedSourceHistory } from './import-replicas'
 import { updateImportSettings } from './import-sync-preferences'
@@ -70,8 +71,11 @@ export function cancelImport(id: string): void {
   publish(entry!, { state: 'cancelled', finishedAt: Date.now() })
 }
 
-export function cancelAutomaticImports(ownerId: string): void {
-  for (const job of jobs) if (job.ownerId === ownerId && job.automatic && isActiveImport(job)) cancelImport(job.id)
+export function cancelAutomaticImports(ownerId: string, keepCategories?: readonly EnvironmentImportCategory[]): void {
+  for (const job of jobs) {
+    if (job.ownerId === ownerId && job.automatic && isActiveImport(job) &&
+      (!keepCategories || !keepCategories.includes(job.provider.category ?? 'tasks'))) cancelImport(job.id)
+  }
 }
 
 async function runNext(): Promise<void> {
@@ -124,13 +128,14 @@ async function runNext(): Promise<void> {
     const cancelled = controller.signal.aborted
     const count = result.imported.length + result.entities.length
     const failed = result.failed
-    publish(entry, { state: cancelled ? 'cancelled' : 'finished', result, finishedAt: Date.now() })
-    if (ownsImport() && (result.details.length > 0 || Object.keys(result.attempts).length > 0 || result.entities.length > 0 || result.existing > 0 || result.imported.some(({ deviceId }) => deviceId === null))) {
+    const finishedAt = Date.now()
+    publish(entry, { state: cancelled ? 'cancelled' : 'finished', result, finishedAt })
+    if (ownsImport() && job.devices.some(device => device.deviceId === null) && (result.details.length > 0 || Object.keys(result.attempts).length > 0 || result.entities.length > 0 || result.existing > 0 || result.imported.some(({ deviceId }) => deviceId === null))) {
       void updateImportSettings(job.ownerId, (before) => ({
         ...before,
         sources: [...new Set([...before.sources, job.provider.id])],
         categoryAttempts: { ...before.categoryAttempts, [job.provider.id]: { ...before.categoryAttempts?.[job.provider.id], ...result.attempts } },
-        categoryResults: result.details.length ? [{ providerId: job.provider.id, finishedAt: Date.now(), items: result.details }, ...(before.categoryResults ?? [])].slice(0, 50) : before.categoryResults,
+        categoryResults: result.details.length ? [{ providerId: job.provider.id, finishedAt, items: result.details }, ...(before.categoryResults ?? [])].slice(0, 50) : before.categoryResults,
       })).catch(() => notify({ tier: 'error', title: t('settings.dataImport.syncSaveFailed') }))
     }
     if (ownsImport() && (!job.automatic || count > 0 || failed > 0)) {

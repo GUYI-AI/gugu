@@ -87,7 +87,7 @@ function ReadyImportSyncSettings({ ownerId, reading }: {
               <Button variant="secondary" size="sm" onClick={() => setCustomizing(false)}>{t('settings.dataImport.cancel')}</Button>
               <Button variant="primary" size="sm" disabled={!categories.length || saving} onClick={() => {
                 setSaving(true)
-                void updateImportSettings(ownerId, before => ({ ...before, categories })).then(() => setCustomizing(false))
+                void updateImportSettings(ownerId, before => ({ ...before, categories })).then(() => { cancelAutomaticImports(ownerId, categories); setCustomizing(false) })
                   .catch(() => notify({ tier: 'error', title: t('settings.dataImport.syncSaveFailed') })).finally(() => setSaving(false))
               }}>{t('settings.dataImport.save')}</Button>
             </div>

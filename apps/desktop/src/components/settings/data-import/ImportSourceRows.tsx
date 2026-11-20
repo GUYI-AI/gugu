@@ -167,7 +167,7 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
         const first = group.providers[0]!
         return (
           <ImportCard key={group.id} name={group.label}
-            description={total === undefined ? t('settings.dataImport.reading') : t('settings.dataImport.environmentAvailable', { count: total })}
+            description={total === undefined ? t('settings.dataImport.reading') : t(first.historyOnly ? 'settings.dataImport.readOnlyHistory' : 'settings.dataImport.environmentAvailable', { count: total })}
             icon={<ImportSourceIcon provider={first} />} open={open === group.id}
             onToggle={() => setOpen(open === group.id ? null : group.id)}>
             <ImportRow summary label={total === undefined ? t('settings.dataImport.scopeAll') : t('settings.dataImport.allCount', { count: total })}>
@@ -177,12 +177,12 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
                   if (count) enqueueImport(ownerId, { devices: [{ deviceId: null, deviceName: t('settings.dataImport.thisComputer'), count }], provider }, t)
                 })}>{t('settings.dataImport.importAll')}</Button>
             </ImportRow>
-            {ENVIRONMENT_IMPORT_CATEGORIES.map(category => {
+            {(first.historyOnly ? ['tasks'] as const : ENVIRONMENT_IMPORT_CATEGORIES).map(category => {
               const source = rows.find(({ provider }) => (provider.category ?? 'tasks') === category)
               const job = source ? findJob(jobs, source.provider.id, null) : undefined
               const count = sourceCount(source?.reading)
               return (
-                <ImportRow key={category} label={<>{t(categoryLabelKey(category))} {count === undefined ? '' : `(${count})`}</>} job={job}>
+                <ImportRow key={category} label={<>{t(first.historyOnly ? 'settings.dataImport.sessions' : categoryLabelKey(category))} {count === undefined ? '' : `(${count})`}</>} job={job}>
                   {source ? source.reading?.state === 'error' ? (
                     <Button variant="secondary" size="sm" title={t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
                       {t('settings.dataImport.refresh')}

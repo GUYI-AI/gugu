@@ -1,4 +1,4 @@
-import { outcomeLabelKey } from './environment-import-view'
+import { categoryLabelKey, outcomeLabelKey } from './environment-import-view'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useEffect, useId, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
@@ -85,11 +85,15 @@ export const DataImportSection = observer(function DataImportSection({
   const { t } = useTranslation('main')
   const { user } = useAuth()
   const importSettings = useAppSettingsKey('dataImport').settings
-  const categoryHistory = user && importSettings.state === 'value' ? importSettings.value.value.owners[user.id]?.categoryResults ?? [] : []
+  const storedCategoryHistory = user && importSettings.state === 'value' ? importSettings.value.value.owners[user.id]?.categoryResults ?? [] : []
   const [tab, setTab] = useState<ImportTab>('apps')
   const panelId = useId()
   const jobs = useSyncExternalStore(importJobs.subscribe, importJobs.getSnapshot)
   const ownerJobs = jobs.filter(({ ownerId }) => ownerId === user?.id)
+  const completedCategories = ownerJobs.flatMap(job => job.finishedAt && job.result?.details.length
+    ? [{ providerId: job.provider.id, finishedAt: job.finishedAt, items: job.result.details }] : [])
+  const categoryHistory = [...completedCategories, ...storedCategoryHistory.filter(stored => !completedCategories.some(
+    job => job.providerId === stored.providerId && job.finishedAt === stored.finishedAt))]
   useEffect(() => { remoteHostsStore.start() }, [])
   useLayoutEffect(() => {
     const unregister = registerExtraImportProviders(extraProviders)
@@ -101,7 +105,7 @@ export const DataImportSection = observer(function DataImportSection({
   }, [extraProviders])
   const machines = importDeviceChoices(t('settings.dataImport.thisComputer'),
     [...remoteHostsStore.hosts.values()].map(({ device }) => device)).filter((machine) => !machine.isLocal)
-  const providers = [...extraProviders, ...importProviders]
+  const providers = [...importProviders, ...extraProviders]
   const durableProviders = providers.filter((provider) => provider.listHistory)
   const durable = useReplicas(importedSourceHistory, durableProviders.map(({ id }) => [id]))
   const local = tab === 'apps'
@@ -154,7 +158,7 @@ export const DataImportSection = observer(function DataImportSection({
           <div className="gg-import-history-list">
             {categoryHistory.map(group => <div className="gg-import-history-entry" key={`${group.providerId}:${group.finishedAt}`}>
               <details className="p-3">
-                <summary>{t('settings.dataImport.categoryResultSummary', { count: group.items.filter(item => item.status === 'imported').length, existing: group.items.filter(item => item.status === 'existing').length, failed: group.items.filter(item => item.status && !['imported', 'existing'].includes(item.status)).length })}</summary>
+                <summary>{group.items[0] && t(categoryLabelKey(group.items[0].category))} {t('settings.dataImport.categoryResultSummary', { count: group.items.filter(item => item.status === 'imported').length, existing: group.items.filter(item => item.status === 'existing').length, failed: group.items.filter(item => item.status && !['imported', 'existing'].includes(item.status)).length })}</summary>
                 <ul>{group.items.map(item => <li key={item.id}>{item.title}<span className="gg-import-meta"> {t(outcomeLabelKey(item.status, item.reason))}</span></li>)}</ul>
                 {group.items.some(item => item.category === 'connectors') && <p className="gg-import-meta">{t('settings.dataImport.configurationOnly')}</p>}
               </details>

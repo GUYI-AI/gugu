@@ -806,6 +806,9 @@ export default {
       "usage": "用量"
     },
     "dataImport": {
+      "chatgptExport": "ChatGPT 导出文件",
+      "readOnlyHistory": "{{count}} 条只读历史记录",
+
       "alreadyImported": "{{count}} 项已存在，无需重复导入",
       "categoryResultSummary": "新增 {{count}} 项，已存在 {{existing}} 项，未导入 {{failed}} 项",
       "outcomeImported": "已导入",
