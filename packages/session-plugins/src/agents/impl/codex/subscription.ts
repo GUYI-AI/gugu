@@ -1,5 +1,6 @@
+import { resolve } from 'node:path';
+import { createJsonlReader } from '@gugu/core/local/jsonl.mjs';
 import { serverNow } from '@gugu/core/shared/serverClock';
-import { createInterface } from 'node:readline';
 import { retryCodexPreparation, type CodexPreparation } from '@gugu/core/local/codex-initialize.mjs';
 import type {
   AgentAuthContext,
@@ -149,7 +150,7 @@ export function windowsFromUsage(response: unknown, now = Date.now()): Subscript
  * 起一个 `codex app-server`,握手、问一句、拿到回答就停掉整棵进程树。
  * env 用宿主给的那份(代理、CODEX_HOME 都在里面);app-server 的 stderr 只留最后一段做报错原话。
  */
-export type CodexPrepareOptions = { signal?: AbortSignal; onProgress?: (progress: CodexPreparation | null) => void };
+export type CodexPrepareOptions = { verifyThreads?: readonly { id: string; path: string }[]; signal?: AbortSignal; onProgress?: (progress: CodexPreparation | null) => void };
 
 /** Native initialize is also the migration's index preparation entry; it never edits state tables. */
 export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, options: CodexPrepareOptions = {}): Promise<void> {
@@ -157,10 +158,10 @@ export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'e
 }
 
 async function askAppServer(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
-  return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal), options);
+  return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal, options.verifyThreads), options);
 }
 
-async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, signal?: AbortSignal): Promise<unknown> {
+async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, signal?: AbortSignal, verifyThreads: CodexPrepareOptions['verifyThreads'] = []): Promise<unknown> {
   signal?.throwIfAborted();
   const binary = ctx.env.GUGU_CODEX_BIN?.trim() || ctx.cli;
   let failure: Error | null = null;
@@ -169,7 +170,7 @@ async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, m
   let stderrTail = '';
   child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192); });
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-  const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+  const lines = createJsonlReader({ input: child.stdout! });
   lines.on('line', line => {
     let message: { id?: number; result?: unknown; error?: { message?: unknown } };
     try { message = JSON.parse(line); } catch { return; }
@@ -201,8 +202,19 @@ async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, m
   try {
     const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
     clearTimeout(timer);
-    if (method === null) return initialized;
     child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
+    if (method === null) {
+      for (const expected of verifyThreads) {
+        const response = await Promise.race([request('thread/read', { threadId: expected.id, includeTurns: false }), exited, aborted]);
+        const thread = objectAt(response, 'thread');
+        // Native lookup can fall back to rollout files after a completed backfill. Never accept a path back into the user's source home.
+        const path = typeof thread?.path === 'string' ? resolve(thread.path).replace(/\.zst$/, '') : null;
+        if (thread?.id !== expected.id || path !== resolve(expected.path).replace(/\.zst$/, '')) {
+          throw new Error('Codex returned a different imported session or rollout path');
+        }
+      }
+      return initialized;
+    }
     return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]);
   } catch (error) {
     if (error instanceof Error) Object.assign(error, { stderrTail });

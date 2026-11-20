@@ -4,10 +4,8 @@ import { rootFolderOf } from '@main/core/folders/folders';
 import { providerRepositoryService } from '@main/core/repository/provider-repository-service';
 import { log } from '@main/lib/logger';
 import type {
-  ListPrOptions,
   PullRequestComment,
   PullRequestError,
-  PullRequestFile,
   PullRequestMergeOptions,
 } from '@shared/core/pull-requests/pull-requests';
 import { createRPCController } from '@shared/lib/ipc/rpc';
@@ -30,7 +28,6 @@ type PrControllerFailureType =
   | 'create_failed'
   | 'merge_failed'
   | 'mark_ready_failed'
-  | 'files_failed'
   | 'comments_failed'
   | 'refresh_failed'
   | 'checks_failed'
@@ -124,32 +121,6 @@ function mapPrSyncEngineError(
 export const pullRequestController = createRPCController({
   // ── DB-cached reads ────────────────────────────────────────────────────────
 
-  listPullRequests: async (folderId: string, options?: ListPrOptions) => {
-    try {
-      const prs = await prQueryService.listPullRequests(folderId, options);
-      return ok({ prs, totalCount: prs.length });
-    } catch (error) {
-      log.error('Failed to list pull requests:', error);
-      return err<PullRequestError>({
-        type: 'list_failed',
-        message: error instanceof Error ? error.message : 'Unable to list pull requests',
-      });
-    }
-  },
-
-  getFilterOptions: async (folderId: string) => {
-    try {
-      const options = await prQueryService.getFilterOptions(folderId);
-      return ok(options);
-    } catch (error) {
-      log.error('Failed to get PR filter options:', error);
-      return err<PullRequestError>({
-        type: 'filter_options_failed',
-        message: error instanceof Error ? error.message : 'Unable to get filter options',
-      });
-    }
-  },
-
   getPullRequestsForSession: async (sessionId: string) => {
     try {
       const [sessionRow] = await db
@@ -195,28 +166,6 @@ export const pullRequestController = createRPCController({
   },
 
   // ── Sync triggers ──────────────────────────────────────────────────────────
-
-  forceFullSyncPullRequests: async (folderId: string) => {
-    try {
-      const context = await resolveFolderPullRequestContext(folderId);
-      if (!context.success) return err(context.error);
-
-      const result = await prSyncEngine.forceFullSync(
-        context.data.repositoryUrl,
-        context.data.authContext
-      );
-      if (!result.success) {
-        return err<PullRequestError>(mapPrSyncEngineError(result.error, 'sync_failed'));
-      }
-      return ok();
-    } catch (error) {
-      log.error('Failed to force full sync:', error);
-      return err<PullRequestError>({
-        type: 'sync_failed',
-        message: error instanceof Error ? error.message : 'Unable to force sync',
-      });
-    }
-  },
 
   syncPullRequests: async (folderId: string) => {
     try {
@@ -380,30 +329,6 @@ export const pullRequestController = createRPCController({
   },
 
   // ── Pass-through reads ─────────────────────────────────────────────────────
-
-  getPullRequestFiles: async (folderId: string, repositoryUrl: string, prNumber: number) => {
-    try {
-      const authContext = await resolveFolderPullRequestAuthContext(folderId);
-      if (!authContext.success) return err(authContext.error);
-
-      const result = await prSyncEngine.getPullRequestFiles(
-        repositoryUrl,
-        prNumber,
-        authContext.data
-      );
-      if (!result.success) {
-        return err<PullRequestError>(mapPrSyncEngineError(result.error, 'files_failed'));
-      }
-      const files: PullRequestFile[] = result.data;
-      return ok({ files });
-    } catch (error) {
-      log.error('Failed to get pull request files:', error);
-      return err<PullRequestError>({
-        type: 'files_failed',
-        message: error instanceof Error ? error.message : 'Unable to get pull request files',
-      });
-    }
-  },
 
   getPullRequestComments: async (folderId: string, repositoryUrl: string, prNumber: number) => {
     try {

@@ -1,4 +1,5 @@
 import { isAbsolute, join } from 'node:path';
+import { teamCreditReason } from '../team-credits';
 
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 import type { RecordContentBlock as ContentBlock } from './shared';
@@ -96,7 +97,11 @@ function decode(entry: TreeNode): RecordEntry[] {
   const boundary = boundaryOf(message.stopReason, blocks.some((block) => asRecord(block)?.type === 'toolCall'));
   if (boundary) {
     // Keep only the gateway's typed refusal, never Pi's raw provider error text.
-    if (boundary.kind === 'turn_failed' && guguCreditExhausted(message.errorMessage)) boundary.creditExhausted = true;
+    if (boundary.kind === 'turn_failed') {
+      const team = teamCreditReason(message.errorMessage);
+      if (team) { boundary.creditExhausted = true; boundary.teamCreditReason = team; }
+      else if (guguCreditExhausted(message.errorMessage)) boundary.creditExhausted = true;
+    }
     out.push(boundaryEntry(`pi:${entry.id}`, at, boundary));
   }
   return out;

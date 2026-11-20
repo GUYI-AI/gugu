@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { authService } from '../../lib/auth'
 import { userVisibleAuthError } from '../../lib/authErrors'
+import { loginOtpRequestKey, type LoginOtpIntent } from '../../lib/loginOtpTransport'
 
 type SendingState = { phase: 'idle' | 'sending' | 'sent' | 'failed'; email: string; error?: string; retryAt: number }
 const idle: SendingState = { phase: 'idle', email: '', retryAt: 0 }
@@ -25,9 +26,10 @@ export function useLoginOtpSend() {
     flight.current = null
     setState(idle)
   }
-  function send(email: string): Promise<void> {
+  function send(email: string, intent?: LoginOtpIntent): Promise<void> {
     if (flight.current) return flight.current
-    const previous = cooldowns.current.get(email)
+    const requestKey = loginOtpRequestKey(email, intent)
+    const previous = cooldowns.current.get(requestKey)
     const retryAt = previous?.retryAt ?? 0
     const started = Date.now()
     if (retryAt > started) {
@@ -38,13 +40,13 @@ export function useLoginOtpSend() {
     const id = ++attempt.current
     setNow(started)
     setState({ phase: 'sending', email, retryAt: 0 })
-    const request = Promise.resolve().then(() => authService.requestLoginOtp(email)).catch((error: unknown) => ({ success: false, error: userVisibleAuthError(error, 'sendOtp'), retryAfterSeconds: undefined })).then(result => {
+    const request = Promise.resolve().then(() => intent ? authService.requestLoginOtp(email, intent) : authService.requestLoginOtp(email)).catch((error: unknown) => ({ success: false, error: userVisibleAuthError(error, 'sendOtp'), retryAfterSeconds: undefined })).then(result => {
       const finished = Date.now()
       // Keep the established 60-second successful-send cooldown, also across email edits.
       const next = result.success ? finished + 60_000
-        : Math.max(cooldowns.current.get(email)?.retryAt ?? 0, finished + (result.retryAfterSeconds ?? 0) * 1000)
+        : Math.max(cooldowns.current.get(requestKey)?.retryAt ?? 0, finished + (result.retryAfterSeconds ?? 0) * 1000)
       const settled: SendingState = { phase: result.success ? 'sent' : 'failed', email, error: result.error, retryAt: next }
-      cooldowns.current.set(email, settled)
+      cooldowns.current.set(requestKey, settled)
       if (id !== attempt.current) return
       setNow(finished)
       setState(settled)

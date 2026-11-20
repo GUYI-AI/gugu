@@ -73,14 +73,18 @@ it.each([
     // The phone backs the input itself (its composer bar), not the rows above it.
     const bar = card.appendChild(document.createElement('div'));
     bar.dataset.slot = 'composer-bar';
-    bar.style.position = 'relative';
+    bar.style.cssText = 'position:relative;height:56px';
     expect(getComputedStyle(inner, '::before').content).toBe('none');
     const glass = getComputedStyle(bar, '::before');
     expect(glass.content).toBe('""');
     expect(Number.parseFloat(glass.width)).toBe(innerWidth);
-    const fade = getComputedStyle(layer, '::before');
+    // The fade belongs to the card too: the transparent menu row above it must not end the fade at its own top.
+    expect(getComputedStyle(layer, '::before').content).toBe('none');
+    const fade = getComputedStyle(bar, '::after');
     expect(fade.backgroundImage).toContain('linear-gradient');
+    expect(Number.parseFloat(fade.width)).toBe(innerWidth);
     expect(Number.parseFloat(fade.height)).toBe(CHAT_COMPOSER_EDGE_FADE_PX);
+    expect(Number.parseFloat(fade.bottom)).toBe(bar.offsetHeight);
     return;
   }
   expect(getComputedStyle(layer, '::before').content).toBe('none');

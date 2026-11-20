@@ -1,8 +1,6 @@
-import { execFile } from '@gugu/core/local/childProcess';
 import { mkdir } from 'node:fs/promises';
 import { legacySessionHomeDir, migrateLegacySessionHome, sessionHomeDir } from '@main/core/app/session-home-dir';
-import { arch, homedir, release } from 'node:os';
-import { promisify } from 'node:util';
+import { homedir } from 'node:os';
 import { getDiagnosticLogAttachment } from '@main/lib/file-logger';
 import { log } from '@main/lib/logger';
 import { createRPCController } from '@shared/lib/ipc/rpc';
@@ -10,33 +8,6 @@ import type { OpenInAppId } from '@shared/openInApps';
 import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { appService } from './service';
 import { callAssistantApp } from './assistant-app';
-
-const execFileAsync = promisify(execFile);
-
-async function getPlatformDisplayName(): Promise<string> {
-  const architecture = arch();
-
-  if (process.platform === 'darwin') {
-    try {
-      const { stdout } = await execFileAsync('sw_vers', ['-productVersion']);
-      const macOsVersion = stdout.trim();
-      if (macOsVersion) return `macOS ${macOsVersion} (${architecture})`;
-    } catch {
-      // Fall back to the Darwin kernel version when sw_vers is unavailable.
-    }
-    return `macOS ${release()} (${architecture})`;
-  }
-
-  if (process.platform === 'win32') {
-    return `Windows ${release()} (${architecture})`;
-  }
-
-  if (process.platform === 'linux') {
-    return `Linux ${release()} (${architecture})`;
-  }
-
-  return `${process.platform} ${release()} (${architecture})`;
-}
 
 export const appController = createRPCController({
   assistantAppCall: callAssistantApp,
@@ -171,7 +142,6 @@ export const appController = createRPCController({
   getHomeDirectory: (): string => homedir(),
   getElectronVersion: () => process.versions.electron,
   getPlatform: () => process.platform,
-  getPlatformDisplayName,
   // The task composer may be used before the user has opened a repository. Keep
   // its internal execution context in app-owned storage rather than mutating the
   // user's home directory or inventing a visible project selection.

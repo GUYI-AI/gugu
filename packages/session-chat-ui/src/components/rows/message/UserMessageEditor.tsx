@@ -2,7 +2,7 @@
 import { onMount } from 'solid-js';
 import type { ChatCommands } from '@session-chat/commands';
 import { useChatTranslator } from '@session-chat/localization';
-import { messageEditor, messageEditorActions, messageEditorButton, messageEditorNotice, messageEditorSend, messageEditorText } from './message-editor.css';
+import { messageEditor, messageEditorActions, messageEditorButton, messageEditorNotice, messageEditorOption, messageEditorSend, messageEditorText } from './message-editor.css';
 
 export function UserMessageEditor(props: {
   edit: NonNullable<ChatCommands['editingMessage']>;
@@ -26,6 +26,11 @@ export function UserMessageEditor(props: {
       }} />
     {props.edit.notice && <div class={messageEditorNotice}>{props.edit.notice}</div>}
     <div class={messageEditorActions}>
+      {props.edit.restoreFiles && <label data-slot="message-editor-restore-files" class={messageEditorOption}>
+        <input type="checkbox" checked={props.edit.restoreFiles.checked} disabled={props.edit.pending}
+          onChange={(event) => props.edit.restoreFiles?.onChange(event.currentTarget.checked)} />
+        {translate('transcript.restoreFiles')}
+      </label>}
       <button type="button" class={messageEditorButton} disabled={props.edit.pending}
         onClick={() => props.edit.onCancel()}>{translate('transcript.cancelEdit')}</button>
       <button type="button" class={`${messageEditorButton} ${messageEditorSend}`} disabled={!props.edit.canSubmit}

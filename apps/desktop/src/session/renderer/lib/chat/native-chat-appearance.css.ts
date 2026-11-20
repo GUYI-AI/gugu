@@ -78,8 +78,8 @@ const desktopComposerColumn = `${bottomComposer} > :last-child:not([data-phone-s
 // Every visible box at the top of the composer stack draws its own fade, at its own width: the input card's comes
 // from the column, anchored to the card's top edge and covering its top corners; a band above the card (the
 // schedule tray) draws its own. A message behind is never cut into a separate sliver: beside a narrower band it
-// runs on until the card's own fade. Without a band the card's top is the column's top. The phone keeps its
-// layer fade separate from the column's existing full-width glass.
+// runs on until the card's own fade. Without a band the card's top is the column's top. The phone's card spans
+// the screen (phone-look.css lays a full-width solid strip from its top edge), so its fade does too.
 const composerAnchor = '--gugu-session-composer';
 const composerEdgeFade = { content: '""', position: 'absolute', left: 0, right: 0, zIndex: -1, pointerEvents: 'none' } as const;
 
@@ -95,10 +95,24 @@ globalStyle(`${desktopComposerColumn}::before`, {
 globalStyle(`${desktopComposerColumn} > [data-composer-band]`, { position: 'relative' });
 // A band's fade covers only the straight part of its top edge (inset by the band's own corner radius), so beside
 // its rounded corners a message behind wraps around the curve instead of meeting a square tip.
-globalStyle(`${desktopComposerColumn} > [data-composer-band]::before, ${bottomComposer}:is([data-phone-shell] *)::before`, {
+globalStyle(`${desktopComposerColumn} > [data-composer-band]::before`, {
   ...composerEdgeFade,
   left: 'var(--composer-band-radius, 0px)',
   right: 'var(--composer-band-radius, 0px)',
+  bottom: '100%',
+  height: CHAT_COMPOSER_EDGE_FADE_PX,
+  background: 'linear-gradient(to top, var(--chat-bg), transparent)',
+});
+
+// The phone's menu row (Work / Skills / Agents) sits above the card and is transparent: messages run on behind it.
+// Its top is not the card's, so a fade hung off the layer would cut a faded line and then let the rest show again
+// between the menu buttons.
+globalStyle(`${bottomComposer}:is([data-phone-shell] *) [data-slot="composer"]:not([data-phone-expanded]) > [data-slot="composer-bar"]::after`, {
+  ...composerEdgeFade,
+  left: '50%',
+  right: 'auto',
+  width: '100vw',
+  transform: 'translateX(-50%)',
   bottom: '100%',
   height: CHAT_COMPOSER_EDGE_FADE_PX,
   background: 'linear-gradient(to top, var(--chat-bg), transparent)',

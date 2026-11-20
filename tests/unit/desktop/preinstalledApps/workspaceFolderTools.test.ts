@@ -133,7 +133,7 @@ describe('the folder\'s tools as tools.js gives them', () => {
     expect(all).toMatchObject({ chat_id: CHAT, documents: 2, files: 1, total: 3, rows: '1-3', next: null })
     expect(all.items[0]).toEqual({
       id: DOC, name: 'notes [v2].md', path: undefined, metadata: {}, type: 'text', size: 10, version: 1, by, updated_at: '2026-10-11T00:00:00Z',
-      link: `[notes \\[v2\\].md](gugu-file://${DOC})`,
+      link: `[notes &#91;v2&#93;.md](gugu-file://${DOC})`,
     })
     expect(await list!.run({ chat_id: CHAT, rows: '2' })).toMatchObject({ total: 3, rows: '1-2', next: '3-4' })
     expect(await list!.run({ chat_id: CHAT, rows: '3-4' })).toMatchObject({ rows: '3-3', next: null })
@@ -175,7 +175,7 @@ describe('the folder\'s tools as tools.js gives them', () => {
     expect(blank).toBe('')
     expect(JSON.parse(head!)).toEqual({
       id: DOC, name: 'notes [v2].md', type: 'text', by, updated_at: '2026-10-11T00:00:00Z',
-      link: `[notes \\[v2\\].md](gugu-file://${DOC})`, total_lines: 7, lines: '1-3', next_offset: 4,
+      link: `[notes &#91;v2&#93;.md](gugu-file://${DOC})`, total_lines: 7, lines: '1-3', next_offset: 4,
     })
     expect(body.join('\n')).toBe('# Notes\n\n## One\n')
     expect(calls[0]).toEqual(['open', { id: DOC }, { readOnly: true }])

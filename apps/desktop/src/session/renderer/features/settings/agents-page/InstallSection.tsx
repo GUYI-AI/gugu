@@ -40,6 +40,8 @@ export type AgentInstallationHeader = {
   update: (() => void) | undefined;
   uninstall: (() => Promise<void>) | undefined;
   install: (() => void) | undefined;
+  /** Existing cleanup UI for the active managed mise copy, reused by the compact details dialog. */
+  managedVersions?: ReactNode;
 };
 
 export type InstallSectionProps = {
@@ -274,6 +276,8 @@ export const InstallSection = observer(function InstallSection({
 
   const installed = (vm.data?.reading ?? agentPayload?.reading ?? 'not-detected') !== 'not-detected';
   const canUninstall = canUninstallManagedSource(agentPayload, managedCopy, state);
+  const managedVersions = manageOldVersions && inUse === 'managed' && describedInstall?.provenance.kind === 'mise'
+    ? <ManagedVersionsRow key={`${host.key}:${agentId}`} agentId={agentId} name={agentPayload?.name ?? agentId} disabled={vm.isInstalling || vm.isUpdating || vm.isUninstalling || host.remote?.online === false} /> : undefined;
   const sources = (
     <AgentSourceList
         vm={vm}
@@ -291,8 +295,7 @@ export const InstallSection = observer(function InstallSection({
         onUpdate={onManagedUpdate}
         onOpenCustom={openManual}
         customEditor={manualSlot}
-        managedVersions={manageOldVersions && inUse === 'managed' && managedCopy?.provenance.kind === 'mise'
-          ? <ManagedVersionsRow key={`${host.key}:${agentId}`} agentId={agentId} name={agentPayload?.name ?? agentId} disabled={vm.isInstalling || vm.isUpdating || vm.isUninstalling} /> : undefined}
+        managedVersions={managedVersions}
       />
   );
   const runnable = vm.status === 'available' && state !== 'broken';
@@ -318,5 +321,6 @@ export const InstallSection = observer(function InstallSection({
     update: onManagedUpdate,
     uninstall: canUninstall ? vm.uninstall : undefined,
     install: managedInstall ? onInstall : undefined,
+    managedVersions,
   }, settings);
 });

@@ -212,17 +212,18 @@ describe('ChatMessageComposer', () => {
     expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '图片 avatar.png 没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
     expect(sendErrorLog).toHaveBeenCalledWith(expect.objectContaining({ error: 'upload denied /Users/test/private sk-synthetic-secret\nstack detail' }), 'message send failed')
   })
-  it('#2581 files and text sent at once are one send: the text rides on the last file, never a message of its own', async () => {
-    const file = new File(['report'], 'report.txt', { type: 'text/plain' })
-    const onSendAttachments = vi.fn(async (_files: File[], _opts?: unknown) => 'file-row')
+  it.each([false, true])('#2581 four screenshots and text are one composer send (phone=%s)', async mobile => {
+    mobileShellState.enabled = mobile
+    const files = Array.from({ length: 4 }, (_, index) => new File(['png'], `screen-${index}.png`, { type: 'image/png' }))
+    const onSendAttachments = vi.fn(async (_files: File[], _opts?: unknown) => 'last-file-row')
     const onSend = vi.fn(async () => {})
-    await harness.render(createElement(ChatMessageComposer, { onSend, onSendAttachments }))
+    await harness.render(createElement(ChatMessageComposer, { onSend, onSendAttachments, chatId: 'group-1', isGroupChat: true, currentUserId: 'me' }))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
-    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    Object.defineProperty(input, 'files', { configurable: true, value: files })
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
-    await typeInComposer('send this text with the file')
+    await typeInComposer('你看看')
     await clickSend()
-    expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith([file], expect.objectContaining({ caption: 'send this text with the file' }))
+    expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith(files, expect.objectContaining({ caption: '你看看' }))
     expect(onSend, 'no separate text message').not.toHaveBeenCalled()
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('')
     expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(0)

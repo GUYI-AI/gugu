@@ -11,10 +11,6 @@ const mocks = vi.hoisted(() => ({
   getWorkspaceId: vi.fn(),
   randomUUID: vi.fn(),
   readFile: vi.fn(),
-  resolveShell: vi.fn(),
-  resolveSpawn: vi.fn(),
-  spawnLocalPty: vi.fn(),
-  getTerminalColorEnv: vi.fn(),
 }));
 
 vi.mock('node:crypto', async (importActual) => {
@@ -31,22 +27,6 @@ vi.mock('./persist-dropped-blob', () => ({
   cleanupExpiredDroppedBlobs: vi.fn().mockResolvedValue(undefined),
   persistClipboardImagePath: vi.fn(),
   persistDroppedBlobBytes: vi.fn(),
-}));
-
-vi.mock('./local-pty', () => ({
-  spawnLocalPty: mocks.spawnLocalPty,
-}));
-
-vi.mock('./pty-spawn-platform', () => ({
-  resolveLocalPtySpawn: mocks.resolveSpawn,
-}));
-
-vi.mock('./terminal-color-scheme', () => ({
-  getTerminalColorEnv: mocks.getTerminalColorEnv,
-}));
-
-vi.mock('@main/core/terminal-shell/resolver', () => ({
-  resolveTerminalShell: mocks.resolveShell,
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -97,44 +77,7 @@ describe('ptyController', () => {
   beforeEach(() => {
     emitSpy.mockClear();
     vi.clearAllMocks();
-    mocks.resolveShell.mockResolvedValue({ executable: '/bin/zsh', family: 'posix' });
-    mocks.resolveSpawn.mockReturnValue({
-      command: '/bin/zsh',
-      args: ['-il'],
-      cwd: '/tmp/project',
-      warnings: [],
-    });
-    mocks.getTerminalColorEnv.mockResolvedValue({ COLORFGBG: '15;0' });
     mocks.getProject.mockReturnValue({});
-  });
-
-  it('creates an ephemeral draft terminal without a task record', async () => {
-    const pty = makePty();
-    mocks.spawnLocalPty.mockReturnValue(pty);
-
-    const result = await ptyController.createScratch({
-      ptySessionId: 'project-1:draft:terminal-1',
-      cwd: '/tmp/project',
-    });
-
-    expect(result.success).toBe(true);
-    expect(mocks.resolveSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        intent: expect.objectContaining({ kind: 'interactive-shell', cwd: '/tmp/project' }),
-      })
-    );
-    expect(mocks.spawnLocalPty).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'project-1:draft:terminal-1',
-        command: '/bin/zsh',
-        args: ['-il'],
-        cwd: '/tmp/project',
-        cols: 80,
-        rows: 24,
-      })
-    );
-
-    ptySessionRegistry.unregister('project-1:draft:terminal-1');
   });
 
   it('emits input-submitted for agent PTYs on enter', async () => {

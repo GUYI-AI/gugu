@@ -844,14 +844,6 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   color: var(--foreground);
 }
 
-.mk-agent-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: min(100%, 36rem);
-  margin-top: 40px;
-}
-
 /* ── 产品页:下面两栏 ───────────────────────────────────────────────── */
 .mk-dbody {
   display: grid;

@@ -5,7 +5,7 @@ import { useAgentInstallationStatuses, useBusyInstallAgents, useUninstallingAgen
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { compareAgents, isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order';
-import { uninstallAgentWithToast } from '@renderer/features/settings/agents-page/uninstall-agent-with-toast';
+import { useAgentUninstallConfirmation } from '@renderer/features/settings/agents-page/agent-uninstall-confirmation';
 import { AppLifecycleButton } from './app-lifecycle-button';
 import { AppMoreMenu } from './app-more-menu';
 import { installedAgentControl } from '../installed/installed-agent-control';
@@ -45,7 +45,8 @@ export function InstalledAgentRows({
   readOnly: boolean;
 }) {
   const { translate, locale } = useSessionMessages();
-  return rows.map(({ agent, reading }: InstalledAgent) => {
+  const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
+  const items = rows.map(({ agent, reading }: InstalledAgent) => {
     const agentId = agent.id as AgentProviderId;
     const installing = busy.has(agent.id);
     const removing = uninstalling.has(agent.id);
@@ -57,7 +58,7 @@ export function InstalledAgentRows({
       run({ id: agentId, method: update.method, registry: update.registry });
     } : undefined;
     const uninstall = canRemove
-      ? () => uninstallAgentWithToast(agent.name, () => operations.uninstallAsync({ id: agentId }), translate)
+      ? () => requestUninstall(agent.name, () => operations.uninstallAsync({ id: agentId }))
       : undefined;
     let line: string;
     if (removing) line = translate('extensions.uninstalling');
@@ -100,4 +101,5 @@ export function InstalledAgentRows({
       </InstalledAppRowLayout>
     );
   });
+  return <>{items}{confirmation}</>;
 }

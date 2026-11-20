@@ -32,7 +32,6 @@ import type {
   PrSyncProgress,
   PullRequest,
   PullRequestComment,
-  PullRequestFile,
   PullRequestMergeOptions,
   PullRequestStatus,
   PullRequestUser,
@@ -258,19 +257,6 @@ export class PrSyncEngine {
 
     this._inflight.set(key, promise);
     return promise;
-  }
-
-  /** Cancel any in-flight sync, wipe both cursors, and start a fresh full sync. */
-  async forceFullSync(
-    repositoryUrl: string,
-    authContext: PrSyncAuthContext = {}
-  ): Promise<RepositorySyncResult> {
-    this.cancel(repositoryUrl);
-    await Promise.all([
-      this.kv.del(`fullsync:${repositoryUrl}`),
-      this.kv.del(`incrementalsync:${repositoryUrl}`),
-    ]);
-    return this.sync(repositoryUrl, authContext);
   }
 
   /** Abort and discard any in-flight sync for this repository URL. */
@@ -1433,44 +1419,6 @@ export class PrSyncEngine {
         toPrApiError(
           error,
           'Unable to get pull request comments',
-          repository.data.host,
-          repository.data.nameWithOwner
-        )
-      );
-    }
-  }
-
-  async getPullRequestFiles(
-    repositoryUrl: string,
-    prNumber: number,
-    authContext: PrSyncAuthContext = {}
-  ): Promise<Result<PullRequestFile[], PrSyncEngineError>> {
-    const repository = parseRepositoryRefResult(repositoryUrl);
-    if (!repository.success) return err(repository.error);
-    const { owner, repo } = repository.data;
-    const octokit = await this.getOctokit(repository.data.host, authContext);
-    if (!octokit.success) return err(octokit.error);
-    try {
-      const files = await octokit.data.paginate(octokit.data.rest.pulls.listFiles, {
-        owner,
-        repo,
-        pull_number: prNumber,
-        per_page: 100,
-      });
-      return ok(
-        files.map((f) => ({
-          filename: f.filename,
-          status: f.status,
-          additions: f.additions,
-          deletions: f.deletions,
-          patch: f.patch,
-        }))
-      );
-    } catch (error) {
-      return err(
-        toPrApiError(
-          error,
-          'Unable to get pull request files',
           repository.data.host,
           repository.data.nameWithOwner
         )

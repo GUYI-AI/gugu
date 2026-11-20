@@ -48,7 +48,7 @@ import {
 } from './memberProfileModels'
 import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttachAction } from './chat/ChatMessageComposer'
 // @@@5856 消息列表抽成共享组件(话题分栏也用它)——见 MessageList.tsx 头部注释。
-import { MessageList, type MessageListRowProps } from './chat/MessageList'
+import { ChatMessageList, type MessageListRowProps } from './chat/ChatMessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
 import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
@@ -708,7 +708,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       )}
 
       {chatListRows.length > 0 && (
-        <MessageList
+        <ChatMessageList
           resetKey={chatResetKey}
           listRef={listRef}
           scrollerRef={setScrollerRef}

@@ -1,19 +1,13 @@
-import { and, asc, desc, eq, inArray, isNotNull, like, or } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import {
-  workspaceRemotes,
   pullRequestAssignees,
   pullRequestChecks,
   pullRequestLabels,
   pullRequests,
   pullRequestUsers,
 } from '@main/db/schema';
-import type {
-  Label,
-  ListPrOptions,
-  PrFilterOptions,
-  PullRequest,
-} from '@shared/core/pull-requests/pull-requests';
+import type { PullRequest } from '@shared/core/pull-requests/pull-requests';
 import { assemblePullRequest, pullRequestRepositoryScope, type PrRow } from './pr-utils';
 
 async function fetchRelated(rows: PrRow[]): Promise<PullRequest[]> {
@@ -80,83 +74,6 @@ async function fetchRelated(rows: PrRow[]): Promise<PullRequest[]> {
 }
 
 export class PrQueryService {
-  async listPullRequests(folderId: string, options: ListPrOptions = {}): Promise<PullRequest[]> {
-    let repositoryUrls: string[];
-
-    if (options.repositoryUrl) {
-      repositoryUrls = [options.repositoryUrl];
-    } else {
-      const remoteRows = await db
-        .select({ remoteUrl: workspaceRemotes.remoteUrl })
-        .from(workspaceRemotes)
-        .where(eq(workspaceRemotes.workspaceId, folderId));
-
-      if (remoteRows.length === 0) return [];
-      repositoryUrls = remoteRows.map((r) => r.remoteUrl);
-    }
-
-    const conditions = [pullRequestRepositoryScope(repositoryUrls)];
-
-    const filters = options.filters;
-    if (filters?.status && filters.status !== 'all') {
-      if (filters.status === 'not-open') {
-        conditions.push(inArray(pullRequests.status, ['closed', 'merged']));
-      } else {
-        conditions.push(eq(pullRequests.status, filters.status));
-      }
-    }
-
-    if (filters?.authorUserIds && filters.authorUserIds.length > 0) {
-      conditions.push(inArray(pullRequests.authorUserId, filters.authorUserIds));
-    }
-
-    if (filters?.labelNames && filters.labelNames.length > 0) {
-      const labelSub = db
-        .select({ id: pullRequestLabels.pullRequestId })
-        .from(pullRequestLabels)
-        .where(inArray(pullRequestLabels.name, filters.labelNames));
-      conditions.push(inArray(pullRequests.url, labelSub));
-    }
-
-    if (filters?.assigneeUserIds && filters.assigneeUserIds.length > 0) {
-      const assigneeSub = db
-        .select({ id: pullRequestAssignees.pullRequestUrl })
-        .from(pullRequestAssignees)
-        .where(inArray(pullRequestAssignees.userId, filters.assigneeUserIds));
-      conditions.push(inArray(pullRequests.url, assigneeSub));
-    }
-
-    if (options.searchQuery?.trim()) {
-      const pattern = `%${options.searchQuery.trim()}%`;
-      conditions.push(
-        or(
-          like(pullRequests.title, pattern),
-          like(pullRequests.identifier, pattern),
-          like(pullRequests.headRefName, pattern)
-        )!
-      );
-    }
-
-    const orderClause =
-      options.sort === 'oldest'
-        ? asc(pullRequests.pullRequestCreatedAt)
-        : options.sort === 'recently-updated'
-          ? desc(pullRequests.pullRequestUpdatedAt)
-          : desc(pullRequests.pullRequestCreatedAt);
-
-    const query = db
-      .select()
-      .from(pullRequests)
-      .where(and(...conditions))
-      .orderBy(orderClause);
-
-    const limit = options.limit ?? 50;
-    const offset = options.offset ?? 0;
-    const rows = await query.limit(limit).offset(offset);
-
-    return fetchRelated(rows);
-  }
-
   async getSessionPullRequests(sessionBranch: string, repositoryUrl: string): Promise<PullRequest[]> {
     const rows = await db
       .select()
@@ -166,75 +83,6 @@ export class PrQueryService {
       );
 
     return fetchRelated(rows);
-  }
-
-  async getFilterOptions(folderId: string): Promise<PrFilterOptions> {
-    const remoteRows = await db
-      .select({ remoteUrl: workspaceRemotes.remoteUrl })
-      .from(workspaceRemotes)
-      .where(eq(workspaceRemotes.workspaceId, folderId));
-
-    if (remoteRows.length === 0) {
-      return { authors: [], labels: [], assignees: [] };
-    }
-
-    const repositoryUrls = remoteRows.map((r) => r.remoteUrl);
-    const prUrlsSub = db
-      .select({ url: pullRequests.url })
-      .from(pullRequests)
-      .where(pullRequestRepositoryScope(repositoryUrls));
-
-    const authorUserIdsSub = db
-      .select({ userId: pullRequests.authorUserId })
-      .from(pullRequests)
-      .where(and(inArray(pullRequests.url, prUrlsSub), isNotNull(pullRequests.authorUserId)));
-
-    const assigneeUserIdsSub = db
-      .select({ userId: pullRequestAssignees.userId })
-      .from(pullRequestAssignees)
-      .where(inArray(pullRequestAssignees.pullRequestUrl, prUrlsSub));
-
-    const [authorRows, labelRows, assigneeRows] = await Promise.all([
-      db.select().from(pullRequestUsers).where(inArray(pullRequestUsers.userId, authorUserIdsSub)),
-      db
-        .selectDistinct({
-          name: pullRequestLabels.name,
-          color: pullRequestLabels.color,
-        })
-        .from(pullRequestLabels)
-        .where(inArray(pullRequestLabels.pullRequestId, prUrlsSub)),
-      db
-        .select()
-        .from(pullRequestUsers)
-        .where(inArray(pullRequestUsers.userId, assigneeUserIdsSub)),
-    ]);
-
-    const labels: Label[] = labelRows.map((r) => ({
-      name: r.name,
-      color: r.color ?? null,
-    }));
-
-    return {
-      authors: authorRows.map((r) => ({
-        userId: r.userId,
-        userName: r.userName,
-        displayName: r.displayName ?? null,
-        avatarUrl: r.avatarUrl ?? null,
-        url: r.url ?? null,
-        userUpdatedAt: r.userUpdatedAt ?? null,
-        userCreatedAt: r.userCreatedAt ?? null,
-      })),
-      labels,
-      assignees: assigneeRows.map((r) => ({
-        userId: r.userId,
-        userName: r.userName,
-        displayName: r.displayName ?? null,
-        avatarUrl: r.avatarUrl ?? null,
-        url: r.url ?? null,
-        userUpdatedAt: r.userUpdatedAt ?? null,
-        userCreatedAt: r.userCreatedAt ?? null,
-      })),
-    };
   }
 }
 

@@ -12,7 +12,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry'
 import { resetSearchSession, useSearchSession } from '@renderer/features/global-search/search-session'
 import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaPanel'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
-import { chat, createNode, createReactHarness, displayIdentity, message, renderWithAppProviders } from '../../../support/testHarness'
+import { chat, contact, createNode, createReactHarness, displayIdentity, message, renderWithAppProviders } from '../../../support/testHarness'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 
@@ -127,4 +127,31 @@ describe('ChatAreaPanel retained while hidden on another tab (#6158)', () => {
       expect(harness.container.querySelector('input[placeholder="Find..."], input[placeholder="查找…"]'), 'no second, in-page search box').toBeNull()
     } finally { await act(async () => { unregister() }) }
   })
+})
+
+it.each([false, true])('keeps history and the same composer while showing the nonfriend footer (mobile=%s)', async mobile => {
+  const sendRequest = vi.fn(async () => {})
+  const dm = chat({ id: 'chat-1', kind: 'dm', peer_user_id: 'peer-1' })
+  const options = {
+    chat: {
+      getImRepository: getImRepositoryMock, activeChatId: 'chat-1', activeChat: dm,
+      identitiesById: { 'peer-1': displayIdentity('peer-1') }, messages: [PEER_MESSAGE],
+    },
+    contacts: { sendRequest },
+  }
+  const panel = createNode(ChatAreaPanel, { mobile })
+  await renderWithAppProviders(harness, panel, options)
+  const input = composer()
+  expect(input).not.toBeNull()
+  expect(harness.container.textContent).toContain(PEER_MESSAGE.content)
+  const notice = harness.container.querySelector('[data-testid="human-dm-friendship-notice"]')!
+  expect(notice).not.toBeNull()
+  expect(notice.closest('[data-testid="chat-message-list"]')).not.toBeNull()
+  expect(notice.contains(input)).toBe(false)
+  await act(async () => { notice.querySelector('button')!.click() })
+  expect(sendRequest).toHaveBeenCalledExactlyOnceWith('peer-1')
+  await renderWithAppProviders(harness, panel, { ...options, contacts: { sendRequest, contacts: [contact({ id: 'peer-1' })] } })
+  expect(harness.container.querySelector('[data-testid="human-dm-friendship-notice"]')).toBeNull()
+  expect(composer()).toBe(input)
+  expect(harness.container.textContent).toContain(PEER_MESSAGE.content)
 })

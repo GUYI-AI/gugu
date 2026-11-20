@@ -1474,6 +1474,66 @@ test('a runtime ownership refusal stops the local turn and retains its registrat
     assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
   } finally { await fx.close() }
 })
+for (const unavailable of ['missing', 'moved']) for (const restored of [false, true]) {
+  test(`retained ${unavailable} phone identity is revalidated by fresh delivery (restored: ${restored})`, async () => {
+    let nudge, identity
+    const fx = await fixture(async () => assert.fail('empty inbox must not run a model'), {
+      prepare: async context => {
+        await seedInboxAgents(context, [agentId])
+        identity = structuredClone(context.users.find(row => row.id === agentId))
+        if (unavailable === 'missing') context.users.splice(context.users.findIndex(row => row.id === agentId), 1)
+        else context.users.find(row => row.id === agentId).device_id = 'another-phone'
+      },
+      onRpcStart: ({ onCommand }) => { nudge = onCommand },
+    })
+    try {
+      const sessionId = fx.host.state().sessions[0].sessionId
+      assert.match(fx.host.state().sessions[0].lastError, /历史已保留/)
+      if (restored) {
+        if (unavailable === 'missing') fx.users.push(identity)
+        else Object.assign(fx.users.find(row => row.id === agentId), identity)
+      }
+      fx.commands.push({ id: randomUUID(), type: 'agent.deliver', status: 'pending', created_at: new Date().toISOString(), payload: { agent_user_id: agentId } })
+      await nudge()
+      assert.deepEqual(inboxCalls(fx), restored ? [agentId] : [])
+      assert.equal(fx.commands.at(-1).status, restored ? 'done' : 'error')
+      const saved = await openPhoneAgentStore(fx.root, ownerId)
+      assert.equal(saved.state.agents[agentId].sessionId, sessionId)
+      if (restored) {
+        assert.equal(saved.state.agents[agentId].ownershipError, undefined)
+        assert.equal(fx.host.state().sessions[0].lastError, null)
+      } else assert.match(saved.state.agents[agentId].ownershipError, /历史已保留/)
+      assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
+      assert.equal(fx.calls.filter(([name]) => name === 'archive_user').length, 0)
+    } finally { await fx.close() }
+  })
+}
+
+test('fresh delivery keeps a retained phone identity guarded when ownership read fails', async () => {
+  let nudge
+  const fx = await fixture(async () => assert.fail('unreadable identity must not run a model'), {
+    prepare: async context => { await seedInboxAgents(context, [agentId]); context.users.splice(0, 1) },
+    onRpcStart: ({ onCommand }) => { nudge = onCommand },
+  })
+  try {
+    const sessionId = fx.host.state().sessions[0].sessionId
+    const from = fx.cloud.identity.from
+    fx.cloud.identity.from = table => {
+      const query = from(table)
+      if (table === 'active_users') query.maybeSingle = async () => ({ data: null, error: { message: 'identity service unavailable' } })
+      return query
+    }
+    fx.commands.push({ id: randomUUID(), type: 'agent.deliver', status: 'pending', created_at: new Date().toISOString(), payload: { agent_user_id: agentId } })
+    await nudge()
+    assert.deepEqual(inboxCalls(fx), [])
+    assert.equal(fx.commands.at(-1).status, 'error')
+    const saved = await openPhoneAgentStore(fx.root, ownerId)
+    assert.equal(saved.state.agents[agentId].sessionId, sessionId)
+    assert.match(saved.state.agents[agentId].ownershipError, /历史已保留/)
+    assert.equal(fx.calls.filter(([name]) => name === 'model-access').length, 0)
+  } finally { await fx.close() }
+})
+
 const flushInbox = () => new Promise(resolve => setImmediate(resolve))
 const advanceInbox = async (t, ms) => {
   t.mock.timers.tick(ms)

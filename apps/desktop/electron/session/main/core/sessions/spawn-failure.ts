@@ -7,6 +7,7 @@ import { agentHookService } from '@main/core/agent-hooks/agent-hook-service';
 import { log } from '@main/lib/logger';
 import type { Session } from '@shared/core/sessions/sessions';
 import type { RuntimeUpgradeRequirement } from '@shared/core/sessions/runtime-upgrade';
+import { codexStartupKind, isCodexProviderStartupKind, codexProviderFailureCode, tagCodexStartupFailure } from '@gugu/core/local/codex-startup-failure.mjs';
 
 /**
  * 每条会话**最近一次**启动失败是不是「harness 版本低于下界」(#6341)。
@@ -48,6 +49,10 @@ export function findRuntimeVersionUnsupported(error: unknown): SessionRuntimeCom
  * 交出去的一律是普通 Error:Electron 按 `error.toString()` 把错交回渲染层,别的类名会跟着上屏。
  */
 export function startupFailureForUser(error: unknown): unknown {
+  const kind = codexStartupKind(error);
+  if (isCodexProviderStartupKind(kind)) {
+    return tagCodexStartupFailure(new Error(codexProviderFailureCode(kind), { cause: error }), kind);
+  }
   const seen = new Set<unknown>();
   const queue: unknown[] = [error];
   while (queue.length > 0) {

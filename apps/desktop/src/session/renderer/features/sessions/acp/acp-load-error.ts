@@ -1,4 +1,4 @@
-import { codexStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
+import { codexStartupKind, isCodexProviderStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { AcpStartError } from '@renderer/lib/acp/acp-live-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
 
@@ -108,6 +108,10 @@ export function toLoadError(error: unknown, machine: string | null = null): AcpL
   }
   if (error instanceof AcpStartError && error.errorType === 'provider_session_missing') {
     return { kind: 'provider_session_missing', message };
+  }
+  const providerReason = codexStartupKind(error);
+  if (isCodexProviderStartupKind(providerReason)) {
+    return { kind: 'generic', message, startupReason: providerReason };
   }
   if (error instanceof AcpStartError && error.errorType === 'set_config_failed') {
     return { kind: 'model_unavailable', message };

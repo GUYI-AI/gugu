@@ -33,7 +33,7 @@ vi.mock('./host-source', () => ({
   getLocalSessionSource: () => ({ preview: mocks.preview }),
 }));
 
-import { importLocalSession } from './import-local-session';
+import { bindLocalSession, importLocalSession } from './import-local-session';
 
 const CLAUDE_SESSION = '11111111-2222-3333-4444-555555555555';
 const CODEX_SESSION = '019fa62b-9ddb-7373-a1b8-807548106894';
@@ -383,4 +383,21 @@ describe('importLocalSession', () => {
       ).rejects.toThrow('project-not-found');
     });
   });
+});
+
+it('binds only host-validated managed metadata without reading an entire original transcript in the main process', async () => {
+  const fixture = await openFixture('empty'); mocks.db = fixture.db;
+  try {
+    mocks.preview.mockReset();
+    mocks.createSession.mockResolvedValue({ success: true, data: {} });
+    mocks.openProject.mockResolvedValue({ success: true, data: {} });
+    mocks.createLocalProject.mockResolvedValue({ success: true, data: { id: 'project', path: '/work/webapp', repositoryWorkspaceId: 'ws' } });
+    const result = await bindLocalSession({ engine: 'codex', providerSessionId: CODEX_SESSION, filePath: '/managed/session.jsonl',
+      title: 'Task', cwd: '/work/webapp', sessionView: 'general' },
+    { providerSessionId: CODEX_SESSION, title: 'Task', cwd: '/work/webapp' });
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(result.workingDirectory).toBe('/work/webapp');
+    expect(importedProviderSessionId(lastCreateSessionParams())).toBe(CODEX_SESSION);
+    expect(lastCreateSessionParams().sessionConfig.initialSession?.type).toBe('acp');
+  } finally { fixture.close(); mocks.db = undefined; }
 });

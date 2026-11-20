@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const translate = vi.hoisted(() => vi.fn(() => 'The connection to the machine was lost. Try again when it reconnects.'));
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', () => ({ translateSessionMessage: translate }));
-import { messageForUser } from '../../../../apps/desktop/src/lib/userFacingError';
+import { isDmFriendshipRequired, messageForUser } from '../../../../apps/desktop/src/lib/userFacingError';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest';
 beforeEach(() => translate.mockClear());
 
 describe('the shared user-facing failure exit', () => {
   it.each([
+    ['dm_friendship_required', 'humanDm.friendshipRequired'],
     ['conversation_agent_in_use', 'conversationDelete.agentInUse'],
     ['conversation_assistant_in_use', 'conversationDelete.assistantInUse'],
     ['conversation_dm_identity_unverified', 'conversationDelete.identityUnverified'],
@@ -39,4 +40,18 @@ describe('the shared user-facing failure exit', () => {
     const shown = messageForUser(new Error(`Error invoking remote method 'extensions:install': Error: ${(thrown as Error).message}`));
     expect(shown).toMatch(/^Invalid App manifest: subtitle: .*30/);
   });
+});
+
+it.each([
+  { code: '42501', message: 'dm_friendship_required', hint: 'dm_friendship_required' },
+  new Error("Error invoking remote method 'send': Error: dm_friendship_required"),
+  'attachments/commit: dm_friendship_required',
+])('recognizes the stable friendship denial after transport wrappers (%j)', error => {
+  expect(isDmFriendshipRequired(error)).toBe(true);
+  messageForUser(error);
+  expect(translate).toHaveBeenCalledExactlyOnceWith('humanDm.friendshipRequired');
+});
+
+it.each(['not_dm_friendship_required', 'server mentioned dm_friendship_required but failed elsewhere', { code: '42501', message: 'permission denied' }])('does not relabel unrelated failures (%j)', error => {
+  expect(isDmFriendshipRequired(error)).toBe(false);
 });

@@ -23,6 +23,9 @@ export default {
     "fileOpenFailed": "暂时打不开这个文件，请稍后重试"
   },
   "question": {
+    "discuss": "先聊聊",
+    "needsOwner": "需要 {{name}} 确认", "waitingForOwner": "待 {{name}} 回答",
+    "skip": "跳过", "skipped": "已跳过",
     "count": "{{count}} 个问题", "flowHint": "选完后统一提交", "progress": "回答进度",
     "singleSelect": "选一项", "multiSelect": "可多选", "review": "核对回答", "reviewTitle": "提交前核对",
     "reviewHint": "确认后一次提交给智能体", "edit": "修改", "back": "返回", "noSelection": "未选择", "answerSeparator": "、",

@@ -1,4 +1,4 @@
-type RevertInput = { sessionId: string; anchor: string };
+type RevertInput = { sessionId: string; anchor: string; restoreFiles?: boolean };
 
 /** A confirmed native revert must never be repeated just because its display-cache write failed. */
 export function createHistoryReverter<M, R extends { success: boolean }>(deps: {

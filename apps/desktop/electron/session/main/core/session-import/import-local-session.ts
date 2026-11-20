@@ -12,6 +12,7 @@ import {
   type ImportLocalSessionParams,
   type ImportLocalSessionResult,
   type LocalSessionEngine,
+  type LocalSessionPreview,
 } from '@shared/core/session-import/session-import';
 import { buildWorkspaceConfigFromPreset } from '@shared/core/workspaces/build-workspace-config-from-preset';
 import { getLocalSessionSource } from './host-source';
@@ -67,6 +68,14 @@ export async function importLocalSession(
     engine: params.engine,
   });
 
+  return bindLocalSession(params, preview);
+}
+
+/** Host-only binding after a source reader has validated the native metadata. Never accepts an RPC preview. */
+export async function bindLocalSession(
+  params: ImportLocalSessionParams,
+  preview: Pick<LocalSessionPreview, 'providerSessionId' | 'title' | 'cwd'>,
+): Promise<ImportLocalSessionResult> {
   const providerSessionId = preview.providerSessionId.trim();
   if (!providerSessionId) {
     throw new Error('这条会话没有可用的会话 id，无法恢复原会话');

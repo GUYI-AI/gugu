@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ask } from '../asks';
 import { deliverAgentQuestionAnswer, questionDeliveryPayload } from './agent-question-delivery';
+import { agentSettlementQuestions, type AgentQuestionInput } from './agent-question-model';
 
 /**
  * The card outlives its MCP request. Its explicit answer returns through the durable session inbox. The tool returns at
@@ -9,17 +10,14 @@ import { deliverAgentQuestionAnswer, questionDeliveryPayload } from './agent-que
  */
 export async function postAgentQuestion(input: {
   sessionId: string; sourceLink?: string;
-  questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string }>; multi_select?: boolean }>;
+  questions: AgentQuestionInput[];
 }) {
   const itemId = `agent-question:${randomUUID()}`;
   const answerMessageId = randomUUID();
-  const questions = input.questions.map((question) => ({
-    question: question.question, ...(question.header ? { header: question.header } : {}), multiSelect: question.multi_select === true,
-    options: question.options.map((option) => ({ optionId: option.label, name: option.label, ...(option.description ? { description: option.description } : {}) })),
-  }));
+  const questions = agentSettlementQuestions(input.questions);
   if (!questions.length || questions.some((q) => new Set(q.options.map((o) => o.optionId)).size !== q.options.length)) throw new Error('Questions require distinct options');
   const request = {
-    itemId, kind: 'question', title: questions[0].question, questions, options: questions[0].options, askedAt: Date.now(),
+    itemId, kind: 'question', title: questions[0].question, questions, options: questions[0].options, askedAt: Date.now(), skippable: true, canDiscuss: true,
     origin: { source: 'agent-question', payload: questionDeliveryPayload(input.sourceLink, answerMessageId) },
   } as const;
   const answer = ask(input.sessionId, request, { signal: new AbortController().signal });

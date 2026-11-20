@@ -5,24 +5,31 @@ import { SettingsNote, SettingsRow } from './SettingsPrimitives';
 import { Unknown } from '@/components/ui/Unknown';
 import { Button } from '@renderer/lib/ui/button';
 import { AppIcon } from '@renderer/lib/components/app-icon';
+import type { ReactNode } from 'react';
+import { CodingPlanGroup } from './CodingPlanGroup';
+import { InlineConnectionName } from './InlineConnectionName';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useConnectionDetails } from '@renderer/features/settings/subscriptions/listed-connections';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { SubscriptionModelQuota } from './SubscriptionModelQuota';
 
-export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onAddAccount, onRemove, onRetry, error }: {
+export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onAddAccount, onRemove, onSelect, onRename, onRetry, error, notice }: {
   agent: AgentPayload; machine: string | null; connections: HarnessConnection[] | undefined; busy: boolean;
-  onSignIn: (id: string) => void; onAddAccount: () => void; onRemove: (id: string) => void; onRetry: () => void; error?: string | null;
+  onSignIn: (id: string) => void; onAddAccount: () => void; onRemove: (id: string) => void; onSelect: (id: string) => void; onRename: (id: string, name: string) => Promise<void>; onRetry: () => void; error?: string | null; notice?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  return <>
+  const subscriptions = connections;
+  if (subscriptions?.length === 0 && !error) return null;
+  return <CodingPlanGroup id={agent.id === 'codex' ? 'chatgpt-subscription' : 'claude-subscription'} name={agent.id === 'codex' ? 'ChatGPT' : 'Claude'} icon={<AppIcon id={agent.id} size={20} />}>
+    {notice}
     {error && <SettingsRow description={<SettingsNote tone="danger" role="alert">{error}</SettingsNote>} control={<Button size="sm" variant="outline" onClick={onRetry}>{translate('common.retry')}</Button>} />}
     {!error && !connections && <SettingsRow control={<Unknown className="h-4 w-32" />} />}
-    {connections?.map(connection => <SubscriptionModelRow key={connection.id} {...{ agent, machine, connection, busy, onSignIn, onAddAccount, onRemove }} />)}
-  </>;
+    {subscriptions?.map(connection => <SubscriptionModelRow key={connection.id} multiple={(subscriptions?.length ?? 0) > 1} {...{ agent, machine, connection, busy, onSignIn, onAddAccount, onRemove, onSelect, onRename }} />)}
+  </CodingPlanGroup>;
 }
 
-function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAddAccount, onRemove }: Omit<Parameters<typeof SubscriptionModelRows>[0], 'connections' | 'error' | 'onRetry'> & { connection: HarnessConnection }) {
+function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAddAccount, onRemove, onSelect, onRename, multiple }: Omit<Parameters<typeof SubscriptionModelRows>[0], 'connections' | 'error' | 'onRetry' | 'notice'> & { connection: HarnessConnection; multiple: boolean }) {
   const { translate } = useSessionMessages();
   const details = useConnectionDetails(machine, agent.id, connection.id);
   const { auth } = useAgentAuthStatus(agent.id, undefined, { machine, probe: false });
@@ -30,12 +37,17 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAd
   const expired = status?.kind === 'unauthenticated' && status.reason === 'expired';
   const source = translate(agent.id === 'claude' ? 'customModels.claudeAccount' : 'customModels.codexAccount');
   const plan = details.data?.plan?.plan;
-  if (connection.kind === 'native' && (details.data?.plan?.payer === 'api-key' || details.data?.plan?.payer === 'custom-endpoint')) return null;
   const brand = agent.id === 'claude' ? 'Claude' : 'ChatGPT';
-  const name = connection.name || (plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
-  return <SettingsRow data-subscription-model={`${agent.id}:${connection.id}`} leading={<AppIcon id={agent.id} size={20} />}
-    title={name} description={<>{source}{details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : null}</>}
-    control={<div className="flex items-center gap-2">
+  const name = connection.name || (connection.kind === 'native' ? translate('subscriptions.connections.existing') : plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
+  const subscription = status?.kind === 'authenticated' && details.data?.plan?.payer !== 'api-key' && details.data?.plan?.payer !== 'custom-endpoint';
+  return <SubscriptionModelQuota machine={machine} provider={agent.id === 'claude' ? 'claude' : 'codex'} connectionId={connection.id}
+    account={status?.kind === 'authenticated' ? status.account ?? '' : ''} plan={plan} enabled={subscription}>
+  <SettingsRow data-subscription-model={`${agent.id}:${connection.id}`}
+    title={<InlineConnectionName name={name} busy={busy} onRename={name => onRename(connection.id, name)} />} description={details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : undefined}
+    control={<div className="gg-model-subscription-controls">
+      <div className="gg-model-subscription-usage">
+      {(agent.id === 'claude' || agent.id === 'codex') && <SubscriptionModelQuota machine={machine} provider={agent.id} connectionId={connection.id} account={connection.name}
+        enabled={subscription} inlineOnly />}
       {expired && <>
         <span className="gg-model-expired">{translate('subscriptions.connections.expired')}</span>
         {connection.kind === 'native' ? (
@@ -48,8 +60,16 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAd
           </Button>
         )}
       </>}
+      </div>
+      <div className="gg-model-subscription-status">
+        {(multiple || connection.kind === 'native') && (connection.current
+          ? <span className="text-xs text-foreground-muted" data-testid={`model-current-${connection.id}`}>{translate('subscriptions.connections.current')}</span>
+          : <Button size="sm" variant="outline" disabled={busy} data-testid={`model-switch-${connection.id}`} onClick={() => onSelect(connection.id)}>{translate('subscriptions.connections.switchAction')}</Button>)}
+      </div>
+      <div className="gg-model-subscription-remove">
       {connection.kind !== 'native' && <Button className="gg-model-icon-button" size="icon" variant="ghost" disabled={busy} aria-label={translate('customModels.remove')} data-testid={`model-remove-${connection.id}`} onClick={() => onRemove(connection.id)}><Trash2 className="size-4" /></Button>}
-    </div>} />;
+      </div>
+    </div>} /></SubscriptionModelQuota>;
 }
 
 /** This view is rendered by the existing account ConnectionForm and its existing create/login operation. */

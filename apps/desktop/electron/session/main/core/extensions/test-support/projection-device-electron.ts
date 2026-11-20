@@ -11,6 +11,7 @@ import { createSessionpageProjectionDeviceHost } from '../projection-device-fact
 import { extensionProjections as bridge } from '../extension-projection-bridge';
 import type { BridgeCaller } from '../extension-bridge';
 import { projectionSources, type ProjectionHost } from '../../../../../../src/session/app-runtime/projection-source';
+import { untilObserved } from './fixture-wait';
 
 /** Real installed grant/factory/helper/browser. RPC bytes use the real requester/responder over an isolated in-memory pipe, not the cloud. */
 export async function probeDeviceProjection(appId: string) {
@@ -38,6 +39,7 @@ export async function probeDeviceProjection(appId: string) {
   }, onProjectionSource: callback => { hear = callback; return () => {}; } });
   let inputCalls = 0, disconnected = 0;
   const paints: Array<{ sequence: number; rtpTimestamp: number; rgb: number[] }> = [], results: unknown[] = [];
+  let answered = false;
   let client: Awaited<ReturnType<typeof createProjectionDeviceClient>> | undefined;
   let publisher: Awaited<ReturnType<typeof runtime.create>> | undefined;
   let browser: ReturnType<typeof spawn> | undefined, browserExit = Promise.resolve(), exited = false, stderr = '';
@@ -72,7 +74,7 @@ export async function probeDeviceProjection(appId: string) {
         if (request.url === '/offer') { response.end(JSON.stringify(opened.offer)); return; }
         if (request.method !== 'POST') { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(html); return; }
         let raw = ''; for await (const bytes of request) { raw += bytes; if (Buffer.byteLength(raw) > 128 * 1024) throw new Error('Device fixture payload too large'); }
-        if (request.url === '/answer') await connection.answer(opened.id, JSON.parse(raw));
+        if (request.url === '/answer') { await connection.answer(opened.id, JSON.parse(raw)); answered = true; }
         else if (request.url === '/sign') { response.end(connection.sign(opened.id, raw)); return; }
         else if (request.url === '/paint') paints.push(JSON.parse(raw));
         else if (request.url === '/result') results.push(JSON.parse(raw));
@@ -89,14 +91,10 @@ export async function probeDeviceProjection(appId: string) {
     browserExit = new Promise<void>(resolve => {
       browser!.once('error', error => { faults.push(error); }); browser!.once('close', () => { exited = true; resolve(); });
     });
-    const until = async (check: () => boolean) => {
-      const deadline = Date.now() + 12_000;
-      while (!check()) {
-        if (faults.length) throw faults[0]; if (exited) throw new Error('Device fixture browser exited: ' + stderr);
-        if (Date.now() > deadline) throw new Error('Device fixture timed out: ' + stderr);
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
-    };
+    const until = (check: () => boolean) => untilObserved(check, {
+      phase: 'device-projection', fault: () => faults[0], exited: () => exited ? stderr : undefined,
+      arrived: () => ({ answered, paints: paints.map(frame => frame.sequence), results: results.length }),
+    });
     await until(() => paints.length >= 1 && results.length >= 1);
     assert.deepEqual(results[0], { type: 'input-result', generation: (results[0] as { generation: string }).generation, sequence: 1, status: 'applied' });
     assert.equal(inputCalls, 1); assert.equal(await source.webContents.executeJavaScript('document.querySelector("textarea").value'), '设备中文🙂');

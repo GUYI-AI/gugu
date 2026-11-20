@@ -42,6 +42,9 @@ import { LAZY_LANG_MODULES } from './packages/session-chat-ui/src/core/highlight
 import { appPaletteCss } from './apps/desktop/src/session/app-runtime/ui/app-palette.mjs'
 import { startupFirstFrame } from './scripts/build/startup-first-frame.mts'
 import { pdfjsResources } from './scripts/build/pdfjs-resources.mts'
+import { ENGINE_FLOOR_BUILD_TARGET } from './scripts/build/engine-floor.mts'
+import { Features } from 'lightningcss'
+import { colorMixFallback } from './scripts/build/color-mix-fallback.mts'
 
 const require = createRequire(import.meta.url)
 
@@ -631,9 +634,17 @@ export default defineConfig(({ command }) => ({
   // @@@renderer-ascii-output — 渲染层产物只出 ASCII(非 ASCII 字符转义成 \uXXXX,语义不变)。Blink 把每个
   // 脚本的源码常驻在渲染进程里,只要源码里有一个非 Latin-1 字符(中文文案就是),整份就按 UTF-16 存、
   // 内存翻倍。mac1 2026-09-25:登录后渲染进程里脚本源码串 27 MB,全部是双字节(#6484)。
-  // 压缩这一步(vite 的 esbuild renderChunk)与 CSS 压缩都读这里的 charset;esbuild 不转的正则字面量等残留
-  // 由 rendererAsciiOutput()(scripts/build/renderer-chunking.mts)收尾。
+  // JS 压缩这一步(vite 的 esbuild renderChunk)读这里的 charset;esbuild 不转的正则字面量等残留
+  // 由 rendererAsciiOutput()(scripts/build/renderer-chunking.mts)收尾。CSS 由 lightningcss 压缩(build.cssMinify),
+  // 样式表文本不常驻成脚本源码,不在这条约束里。
   esbuild: { charset: 'ascii' },
+  // @@@engine-floor - light-dark() stays as written: lightningcss would rewrite it into variables that only rules declaring
+  // a literal color-scheme set, and our surfaces set color-scheme through var() (inverted user bubbles). See
+  // scripts/build/engine-floor.mts for what an older engine does with it.
+  // errorRecovery: session-ui's tokens.css.ts writes var(var(--em-…)) (32 typography roles; index.css documents and
+  // overrides the font-family ones). Those values never resolve in any engine; lightningcss refuses the whole sheet on
+  // them unless it may drop them, which changes nothing that renders. The build log lists every dropped declaration.
+  css: { lightningcss: { exclude: Features.LightDark, errorRecovery: true } },
   // Resolve .tsx/.ts before .js so any future stray .js (build artefact, etc.)
   // can never shadow the actual TypeScript source again. Vite's default order
   // is .mjs > .js > .mts > .ts > .jsx > .tsx > .json; under that order, stale
@@ -650,6 +661,10 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: '../../dist',
     emptyOutDir: true,
+    // @@@engine-floor - the same floor index.html's first script enforces; see scripts/build/engine-floor.mts.
+    // cssTarget follows target; lightningcss minifies to it, writing an sRGB declaration ahead of every oklch()/lab().
+    target: ENGINE_FLOOR_BUILD_TARGET,
+    cssMinify: 'lightningcss',
     rollupOptions: {
       // @@@task-fusion (#2802) — 会话页是本次 rollup 的第二个入口。
       // ⚠️ HTML 入口必须落在 root(apps/desktop)之内:vite:build-html 拒收路径逃出 root 的 HTML。
@@ -694,6 +709,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     startupFirstFrame(isElectronTarget),
     pdfjsResources(),
+    colorMixFallback(),
     deterministicModuleSideEffects(),
     guguEntryReachabilityPlugin(reachability, isGuguEntry),
     // @@@task-fusion (#2802) — 会话页的 @gugu/session-ui / session-chat-ui 用 vanilla-extract 写样式。

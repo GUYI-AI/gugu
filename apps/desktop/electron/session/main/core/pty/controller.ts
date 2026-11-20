@@ -2,22 +2,17 @@ import { tuiInterruptWrites } from '@gugu/session-core/agents/plugins';
 import { err, ok } from '@gugu/session-shared';
 import { getPlugin, isValidProviderId } from '@main/core/agents/plugin-registry';
 import { sessionEvents } from '@main/core/sessions/session-events';
-import { resolveTerminalShell } from '@main/core/terminal-shell/resolver';
 import { log } from '@main/lib/logger';
 import { parsePtySessionId } from '@shared/core/pty/ptySessionId';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { sessionWorkspaceManager } from '../sessions/session-workspace-manager';
-import { spawnLocalPty } from './local-pty';
 import {
   cleanupExpiredDroppedBlobs,
   persistClipboardImagePath,
   persistDroppedBlobBytes,
 } from './persist-dropped-blob';
-import { buildTerminalEnv } from './pty-env';
 import type { TerminalReportColors } from './pty-screen';
 import { ptySessionRegistry } from './pty-session-registry';
-import { resolveLocalPtySpawn } from './pty-spawn-platform';
-import { getTerminalColorEnv } from './terminal-color-scheme';
 import { writeTerminalInput } from './terminal-input';
 
 void cleanupExpiredDroppedBlobs().catch((error) => {
@@ -26,9 +21,6 @@ void cleanupExpiredDroppedBlobs().catch((error) => {
 
 /** `#rrggbb`,可带 alpha(cssColorToHex 的输出)。 */
 const HEX_COLOR = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i;
-
-/** 临时 shell 起的网格;窗格量好之后渲染层照常发 resize。 */
-const SCRATCH_SIZE = { cols: 80, rows: 24 };
 
 /**
  * 这家 harness 的可见终端要求提交键与前一次写入隔开多久。只有会话 PTY 有 providerId(普通终端没有),
@@ -42,54 +34,6 @@ function submitSeparationMsFor(ptySessionId: string): number {
 }
 
 export const ptyController = createRPCController({
-  /** Create an ephemeral project shell for UI that exists before a task record does. */
-  createScratch: async (args: { ptySessionId: string; cwd: string }) => {
-    const parsed = parsePtySessionId(args.ptySessionId);
-    if (!parsed || parsed.scopeId !== 'draft') {
-      return err({ type: 'invalid_session' as const, message: 'Invalid draft terminal session' });
-    }
-    if (ptySessionRegistry.get(args.ptySessionId)) return ok();
-
-    try {
-      // Scratch terminals deliberately skip the workspace terminal provider: acquiring that provider
-      // also starts Git, file indexing, and a workspace lease.
-      const shellProfile = await resolveTerminalShell({
-        intent: 'system',
-        target: { kind: 'local' },
-      });
-      const resolved = resolveLocalPtySpawn({
-        platform: process.platform,
-        env: process.env,
-        intent: {
-          kind: 'interactive-shell',
-          cwd: args.cwd,
-          shellProfile,
-        },
-      });
-      const pty = spawnLocalPty({
-        id: args.ptySessionId,
-        command: resolved.command,
-        args: resolved.args,
-        cwd: resolved.cwd,
-        env: {
-          ...buildTerminalEnv({ shellProfile }),
-          ...(await getTerminalColorEnv()),
-        },
-        cols: SCRATCH_SIZE.cols,
-        rows: SCRATCH_SIZE.rows,
-      });
-      ptySessionRegistry.register(args.ptySessionId, pty, {
-        size: SCRATCH_SIZE,
-        metadata: { title: '终端' },
-      });
-      return ok();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.error('pty:createScratch failed', { ptySessionId: args.ptySessionId, error: message });
-      return err({ type: 'spawn_failed' as const, message });
-    }
-  },
-
   /**
    * Send raw input data to a PTY session.
    *

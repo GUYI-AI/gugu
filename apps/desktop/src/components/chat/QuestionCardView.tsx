@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { QuestionCard } from '@gugu/core/shared/ui/taskCardModels'
-import type { Settlement } from '@gugu/session-core/session-record/contract'
+import type { Settlement, SettlementQuestion } from '@gugu/session-core/session-record/contract'
 import { parseQuestionAnswers, questionAnswerError } from '@gugu/session-core/session-record/question-answer'
 import { useTimelineSession } from '@/components/session-watch/use-timeline-session'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -9,17 +9,19 @@ import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
 import { questionAnsweredText } from '../../lib/questionCardAnswer'
 import { composerCardCopy } from '../../lib/composerCardCopy'
+import { useAvatarIdentity } from '../../lib/avatarIdentity'
 import { assistantTimelineClient } from '../assistant/assistantTimelineClient'
 import { AgentHarnessIcon } from '../AgentHarnessIdentity'
 import { Button } from '../ui/Button'
 import { openTaskCardSession } from './openTaskCardSession'
 import { AgentQuestionCard } from './AgentQuestionCard'
 import { AgentQuestionAnswers } from './AgentQuestionAnswers'
+import { Markdown } from '../markdown/Markdown'
 import '../../i18n/registerAssistantCatalog'
 
 /**
  * gugu-dev#181 ⑨ 问题卡:agent 在群里问它的主人,引用它正回的那一条。与任务卡同一个面:是什么(右上时刻)、问题、选项、一行状态。
- * 等没等、答了什么,只读那条会话的结算(本机或别的机器,与助理进度同一个读口);这条消息发出去以后没人改它。
+ * 待答时主人读会话结算；结束后宿主更新原消息，让同事及离线回来的设备读取同一份结果。
  * 主人的完整题目沿用同一宿主结算口,统一核对后提交；旧宿主没有完整题目时保留原有引用回答路径。
  * 群里的同事不读取主人的私有会话,仍只展示消息中公开的题目和选项。
  */
@@ -33,28 +35,49 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
 }) {
   const { t } = useTranslation('assistant')
   const { user } = useAuth()
+  const owner = useAvatarIdentity(card.ownerUserId)
+  const ownerName = owner?.display_name || t('group.memberFallback.unknown', { ns: 'messaging' })
   const { devices } = useDevicesStore()
   const device = devices.find((row) => row.device_id === card.deviceId)
-  const mine = user?.id === card.ownerUserId && Boolean(device)
-  const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine)
+  const addressedToMe = user?.id === card.ownerUserId
+  const mine = addressedToMe && Boolean(device)
+  const head = addressedToMe ? t(composerCardCopy.question.head, { ns: 'messaging' }) : t('question.needsOwner', { name: ownerName })
+  const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine && !card.settled)
   const settlement = read.timeline.settlements[card.questionId] ?? null
+  if (card.settled) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
+    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{head}</span><span>{time}</span></div>
+    <div className="question-message-card__receipt" data-testid="agent-question-receipt">
+      {card.settled.state === 'discuss' && card.questions?.length && <p className="question-message-card__state">{t('question.count', { count: card.questions.length })}</p>}
+      <p className="question-message-card__state">{t(card.settled.state === 'answered' ? 'question.answered' : card.settled.state === 'discuss' ? 'question.discuss' : 'question.withdrawn')}</p>
+      {card.settled.state === 'answered' && (card.questions
+        ? <AgentQuestionAnswers questions={card.questions} answers={card.settled.answers} />
+        : <p className="question-message-card__state">{questionAnsweredText(JSON.stringify(card.settled.answers))}</p>)}
+    </div>
+  </div>
   // The authoritative timeline already carries every question, including cards sent by older hosts.
-  // Only the addressee reads that private timeline. Other members retain the existing read-only card.
-  if (mine && settlement?.questions?.length) {
+  // Only the addressee reads that private timeline. Everyone else reads the public question snapshot.
+  if (mine && settlement?.questions?.length && (read.link === 'ok' || settlement.state !== 'pending')) {
     const answers = settlement.state === 'resolved' ? parseQuestionAnswers(settlement.optionId ? safeAnswerJson(settlement.optionId) : null) : null
     const completeAnswers = answers && !questionAnswerError(settlement.questions, answers) ? answers : null
     return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
       <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{t(composerCardCopy.question.head, { ns: 'messaging' })}</span><span>{time}</span></div>
       {settlement.state === 'pending'
         ? <AgentQuestionCard scope={`${card.deviceId}:${card.sessionId}`} settlement={settlement} mobile={mobile} embedded unavailable={read.link !== 'ok'}
+            onDiscuss={() => read.respond({ itemId: card.questionId, kind: 'question', discuss: true })}
             respond={answers => read.respond({ itemId: card.questionId, kind: 'question', answers })} />
         : <div className="question-message-card__receipt" data-testid="agent-question-receipt">
-            <p className="question-message-card__state">{t(settlement.state === 'resolved' ? 'question.answered' : 'question.withdrawn')}</p>
+            {settlement.optionId === 'discuss' && <p className="question-message-card__state">{t('question.count', { count: settlement.questions.length })}</p>}
+            <p className="question-message-card__state">{t(settlement.optionId === 'discuss' ? 'question.discuss' : settlement.state === 'resolved' ? 'question.answered' : 'question.withdrawn')}</p>
             {completeAnswers && <AgentQuestionAnswers questions={settlement.questions} answers={completeAnswers} />}
-            {settlement.state === 'resolved' && !completeAnswers && <p className="question-message-card__state">{t('question.answerUnreadable')}</p>}
+            {settlement.state === 'resolved' && settlement.optionId !== 'discuss' && !completeAnswers && <p className="question-message-card__state">{t('question.answerUnreadable')}</p>}
           </div>}
     </div>
   }
+  if (card.questions?.length) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
+    <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{head}</span><span>{time}</span></div>
+    <ReadonlyAgentQuestions questions={card.questions} mobile={mobile} />
+    <p className="question-message-card__waiting"><span aria-hidden="true" />{t('question.waitingForOwner', { name: ownerName })}</p>
+  </div>
   const openable = mine && device?.is_current_device === true && card.options.length === 0
   const interactiveTime = typeof time !== 'string'
   const Root = openable && !interactiveTime ? 'button' : 'div'
@@ -83,6 +106,24 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
       {mine && <QuestionCardState settlement={settlement} inSession={card.options.length === 0} />}
     </Root>
   )
+}
+
+/** Public wording only: no private timeline, answer controls or inferred end state. */
+function ReadonlyAgentQuestions({ questions, mobile }: { questions: readonly SettlementQuestion[]; mobile: boolean }) {
+  const { t } = useTranslation('assistant')
+  return <div className="agent-question-card" data-embedded="true" data-readonly="true" data-mobile={mobile || undefined} data-testid="question-card-readonly">
+    <div className="agent-question-card__head"><span>{t('question.count', { count: questions.length })}</span></div>
+    {questions.map((question, index) => <div className="agent-question-card__readonly-question" key={index}>
+      <div className="agent-question-card__step"><span>{question.header}</span><span>{t(question.multiSelect ? 'question.multiSelect' : 'question.singleSelect')}</span></div>
+      <div className="agent-question-card__question"><Markdown trust="chat" content={question.question} /></div>
+      <div className="agent-question-card__options">
+        {question.options.map(option => <div className="agent-question-card__option" key={option.optionId}>
+          <span className="agent-question-card__label">{option.name}</span>{option.description && <span className="agent-question-card__detail">{option.description}</span>}
+        </div>)}
+        <div className="agent-question-card__option"><span className="agent-question-card__label">{t('question.other')}</span></div>
+      </div>
+    </div>)}
+  </div>
 }
 
 function QuestionCardOptions({ card, chatId, messageId, answerable }: { card: QuestionCard; chatId: string; messageId: string; answerable: boolean }) {

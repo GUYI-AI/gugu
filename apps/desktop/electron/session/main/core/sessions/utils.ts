@@ -1,4 +1,4 @@
-import { runtimeModelId, customModelRefFromOption } from '@gugu/session-core/models/custom-model';
+import { runtimeModelId, customModelRefFromOption, customModelOptionId } from '@gugu/session-core/models/custom-model';
 import { knownTaskName, taskName } from './task-name';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { type SessionRow } from '@main/db/schema';
@@ -167,4 +167,9 @@ export function mapSessionRowToSession(
     initialMessageId: config?.initialMessageId,
     taskChatId: config?.taskChatId,
   };
+}
+
+/** The stored choice, including the connection identity stripped from the runtime model ID. */
+export function recordedSessionModelOption(session: Pick<Session, 'model' | 'customModel'>): string | undefined {
+  return session.customModel ? customModelOptionId(session.customModel) : session.model;
 }

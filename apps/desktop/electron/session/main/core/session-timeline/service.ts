@@ -1712,6 +1712,7 @@ async function respondQuestion(
   const unavailable = permissionChannelError(target, 'question', current?.questions);
   if (unavailable) return fail(unavailable.code, unavailable.message);
   if (!current?.questions) return fail('question_not_found', '这条会话里没有这道提问');
+  if ('discuss' in input) return fail('answer_invalid', 'Discussion is only available for a host question');
   let prepared: PreparedQuestionAnswer;
   try {
     prepared = prepareQuestionAnswer(target, current.questions, 'decline' in input ? 'decline' : input.answers);

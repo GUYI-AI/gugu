@@ -124,6 +124,10 @@ function adapterExitDetail(exit: AdapterExit): string | undefined {
 /** 咕咕拒了这一轮的票(原因码)⇒ 这一轮的终局;不是原因码 ⇒ null。`settledOutcome` 与 prompt 被拒两条路共用。 */
 export function refusedTurnOutcome(code: string | null | undefined): TranscriptTurnOutcome | null {
   const guguReason = guguReasonInText(code);
+  if (guguReason === 'team-monthly-cap-reached' || guguReason === 'team-credits-exhausted') return {
+    kind: 'error', reason: 'prompt_failed', detail: JSON.stringify({ error: { code: 'credits_exhausted',
+      reason_code: guguReason === 'team-credits-exhausted' ? 'team_credits_exhausted' : 'team_member_monthly_cap_reached' } }),
+  };
   return guguReason ? { kind: 'error', reason: 'prompt_failed', guguReason } : null;
 }
 

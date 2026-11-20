@@ -11,6 +11,7 @@
  */
 
 import type { GuguPermissionMode } from '@gugu/session-core/acp';
+import type { CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 
 /** 渲染层 → 主进程的重开请求(逻辑名 `taskpageSession.reload`)。 */
 export const SESSIONPAGE_SESSION_RELOAD_CHANNEL = 'sessionpage-session:reload';
@@ -79,6 +80,8 @@ export interface SessionReloadResponse {
    * 完全不同的事故,用户的下一步也不同,折了之后界面上说的和什么都没说一样。
    */
   error?: string;
+  /** Bounded startup reason, preserved separately from the private diagnostic. */
+  startupReason?: CodexStartupKind;
   /**
    * `true` = 这条会话从没起来过(#7092):宿主只把新选择落进了记录,没停也没起。
    * 调用方接着走正常首启(终端:hydrate 重试;通用模式:`store.retry()`),

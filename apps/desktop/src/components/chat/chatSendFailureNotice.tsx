@@ -1,10 +1,12 @@
 import type { TFunction } from 'i18next'
 import { resolveFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
+import { isDmFriendshipRequired, messageForUser } from '@/lib/userFacingError'
 import type { Notice } from '@/lib/notices'
 
 /** Diagnostics stay in the send log. Only recognized failures select user copy. */
 export function chatSendFailureReason(error: unknown, t: TFunction<'messaging'>): string {
+  if (isDmFriendshipRequired(error)) return messageForUser(error)
   if (error instanceof AttachmentsError) {
     if (error.code === 'too_large' || error.status === 413) return t('composer.failureReason.tooLarge')
     if (error.status === 401) return t('composer.failureReason.signIn')
