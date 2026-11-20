@@ -109,7 +109,7 @@ describe('expired attachment re-upload', () => {
     expect(geometry(image.closest('button')!)).toEqual(sending)
     expect(image.style.position).toBe('absolute')
     expect(f.registerImage).toHaveBeenCalledExactlyOnceWith(image, committed.source,
-      { name: 'shot.png', contentType: 'image/png' }, undefined, { width: 1200, height: 900 })
+      { name: 'shot.png', contentType: 'image/png' }, undefined, { width: 1200, height: 900 }, committed.fileMetadata)
     expect(f.signed).not.toHaveBeenCalled()
     await harness.render(null)
     expect(f.releaseImage).toHaveBeenCalledOnce()
