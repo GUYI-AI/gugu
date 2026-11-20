@@ -137,18 +137,28 @@ describe('MCP detail reads after a lean page (#3327)', () => {
     store.chatState.transcript.history.seed([held]);
     const bridge = window.electronAPI;
     if (!bridge) throw new Error('test desktop bridge missing');
-    const invoke = vi.spyOn(bridge, 'invoke').mockResolvedValue({ turns: [full], originTurnIds: ['native'], nextCursor: null });
+    let resolveRead!: (page: StoredPage) => void;
+    const pending = new Promise<StoredPage>(resolve => { resolveRead = resolve; });
+    const read = vi.fn((_params: unknown) => pending);
+    // The first store also schedules integrations.list for the shared icon registry. Count only history reads,
+    // and keep that unrelated bridge response in its own shape.
+    vi.spyOn(bridge, 'invoke').mockImplementation((channel, ...args) =>
+      channel === 'sessions.getStoredHistory' ? read(args[0]) : Promise.resolve([]));
     try {
-      expect(invoke).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
       store.fillHeldTurn(itemId);
       store.fillHeldTurn(itemId);
-      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('sessions.getStoredHistory', {
+      await vi.waitFor(() => expect(read).toHaveBeenCalledWith({
         sessionId: store.sessionId, before: 5, limit: 1, lean: false,
       }));
+      store.fillHeldTurn(itemId); // Repeated visibility while the same turn is still in flight.
+      expect(read).toHaveBeenCalledTimes(1);
+      resolveRead({ turns: [full], originTurnIds: ['native'], nextCursor: null });
       await vi.waitFor(() => expect(store.chatState.transcript.state.committedTurns[0]!.items[0]).toMatchObject({
         rawInput: '{"query":"needle"}', outputText: 'complete result',
       }));
-      expect(invoke).toHaveBeenCalledTimes(1);
+      store.fillHeldTurn(itemId); // A filled row no longer needs a read.
+      expect(read).toHaveBeenCalledTimes(1);
       expect(internals.session).toBeNull();
     } finally { store.dispose(); }
   });
