@@ -37,7 +37,7 @@ export function createWindowCommitReader(directory: string, binding: Parameters<
     }
     if (used !== length) throw new Error('Incomplete commit reader span');
     // One proof per span, after its last read: ctime only moves forward, so it
-    // covers a cache hit and every chunk; the string decode after it is synchronous.
+    // also covers the time before the read and a cache hit.
     await validate();
     return output;
   }
@@ -61,7 +61,7 @@ export function createWindowCommitReader(directory: string, binding: Parameters<
         const bytes = await span(position.rawOffset, Math.min(CHUNK, range.end - position.rawOffset));
         const page = decodeJsonStringBodyBytes(bytes, { position, end: range.end, maxBytes, budget, signal: controller.signal });
         if (page.complete && page.next.rawOffset !== range.end) throw new Error('Commit string range mismatch');
-        return page;
+        await validate(); return page;
       });
     },
     close() {

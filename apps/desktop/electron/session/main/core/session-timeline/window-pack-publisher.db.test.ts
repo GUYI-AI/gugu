@@ -19,7 +19,7 @@ vi.mock('@main/db/client',()=>({get db(){return state.db;},get sqlite(){return s
 vi.mock('@main/lib/events',()=>({events:{emit:vi.fn()}}));
 import { persistCommittedTurn } from '../sessions/session-turn-store';
 
-const READS_PER_ENTITY=13,PROOFS_PER_ENTITY=31;
+const READS_PER_ENTITY=13,PROOFS_PER_ENTITY=47;
 describe('actual publisher with canonical idle group commit',()=>{
   let fixture:Awaited<ReturnType<typeof openFixture>>,directory:string,publisher:ReturnType<typeof createWindowPackPublisher>|undefined;
   const receipts:WindowCommitReceipt[]=[];

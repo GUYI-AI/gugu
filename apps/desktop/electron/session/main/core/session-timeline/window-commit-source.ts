@@ -131,6 +131,9 @@ export async function readWindowCommitSourceChunk(directory: string, binding: Bi
   const path = sourcePath(directory, binding), position = ordinal * source.stride;
   const length = Math.min(source.stride, fileBytes(source) - position), file = await open(path, 'r');
   try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size !== BigInt(fileBytes(source)) || !same(physical(before), source.physical))
+      throw new Error('Immutable commit source changed');
     let packet: Uint8Array = new Uint8Array(0), used = 0, failed = false, failure: unknown;
     await budget.read('indexBytes', length, async () => {
       packet = new Uint8Array(length);
@@ -147,8 +150,7 @@ export async function readWindowCommitSourceChunk(directory: string, binding: Bi
     if (failed) throw failure;
     signal?.throwIfAborted();
     const after = await file.stat({ bigint: true }), named = await stat(path, { bigint: true });
-    // ctime only moves forward: the published identity after the read proves the file was unchanged throughout.
-    if (used !== length || !after.isFile() || after.size !== BigInt(fileBytes(source)) || !same(physical(after), source.physical) || !same(physical(named), source.physical))
+    if (used !== length || after.size !== before.size || !same(physical(after), source.physical) || !same(physical(named), source.physical))
       throw new Error('Immutable commit source changed during read');
     const decoded = decodeWindowFrame(key(binding, ordinal), packet);
     const expected = Math.min(CHUNK, source.bytes - ordinal * CHUNK);
