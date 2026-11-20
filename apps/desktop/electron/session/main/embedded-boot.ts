@@ -560,6 +560,13 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await initializeDatabase()
   const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
   migrateCustomModelConnections()
+  // #3428:先前删掉的连接只打了「已删除」,key 还留在加密存储里。幂等,失败不拦启动。
+  try {
+    const { providerAccountRegistry } = await import('./core/provider-accounts/provider-account-registry-instance')
+    await providerAccountRegistry.dropRetiredSecrets()
+  } catch (e: unknown) {
+    log.warn('failed to drop the keys of removed connections', e)
+  }
   await runPendingAssistantProjectCleanup(true)
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {

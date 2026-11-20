@@ -139,6 +139,20 @@ it('a removal record never holds the default; the first connection really used t
   expect(Object.fromEntries(rows().map(row => [row.accountId, row.isDefault]))).toEqual({ [acme.id]: false, [openai.id]: true });
 });
 
+it('removing a connection drops its key from encrypted storage, saved by hand or first used from a discovery, and bound sessions stop at unavailable', async () => {
+  await twoFound();
+  const manual = await saveCustomModel({ name: 'By hand', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://hand.example.test/v1' }], models: [{ id: 'm' }], apiKey: 'sk-live-handhandhandhandhand' });
+  const acme = await named('Acme Gateway');
+  await saveCustomModel({ id: acme.id, name: acme.name, preset: null, endpoints: acme.endpoints, models: [{ id: 'acme-large' }] });
+  expect(state.fixture!.secretStore.secrets.size).toBe(2);
+  session('bound', 'codex', customModelOptionId({ connectionId: manual.id, modelId: 'm' }));
+  await removeCustomModel(manual.id);
+  await removeCustomModel(acme.id);
+  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  expect(rows().map(row => row.meta?.customModel?.removed)).toEqual([true, true]);
+  await expect(resolveCustomModel('codex', 'bound')).rejects.toThrow('Custom model unavailable');
+});
+
 it('editing a discovered connection saves it as that connection and keeps its discovery identity', async () => {
   await twoFound();
   const acme = await named('Acme Gateway');

@@ -209,12 +209,9 @@ export async function removeHarnessConnection(
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   if (target.isDefault) await selectHarnessConnection(providerId, 'native', options);
-  // 只从列表里拿掉:保管目录里的登录仍归它,用户根里要是正好是它的账号,换走时还得写回去。
-  await registry.upsertAccount({
-    providerId: namespace(providerId),
-    accountId: connectionId,
-    meta: { ...target.meta, harnessConnection: { ...target.meta!.harnessConnection!, removed: true } },
-  });
+  // 只从列表里拿掉:保管目录里的登录仍归它,用户根里要是正好是它的账号,换走时还得写回去。API Key 连接的 key 随这一步删掉。
+  await registry.retireAccount(namespace(providerId), connectionId,
+    { ...target.meta, harnessConnection: { ...target.meta!.harnessConnection!, removed: true } });
 }
 
 /**
