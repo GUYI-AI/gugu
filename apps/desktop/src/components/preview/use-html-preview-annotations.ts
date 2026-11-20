@@ -42,8 +42,8 @@ export function useHtmlPreviewAnnotations({ context, root, frames, source, ready
     win?.addEventListener('message', handler);
     return () => win?.removeEventListener('message', handler);
   }, [frames, root, source]);
-  return useBrowserAnnotations({
-    sessionId: context?.sessionId,
+  const annotations = useBrowserAnnotations({
+    conversation: context ? { kind: 'session', sessionId: context.sessionId } : undefined,
     browserId: `html-preview:${context?.path ?? id}`,
     visible: true,
     available: ready && !!context && !!desktopIpc(),
@@ -51,4 +51,5 @@ export function useHtmlPreviewAnnotations({ context, root, frames, source, ready
     filePath: context?.path,
     subscribeSpaceRelease,
   });
+  return { ...annotations, toolbar: context ? annotations.toolbar : null };
 }

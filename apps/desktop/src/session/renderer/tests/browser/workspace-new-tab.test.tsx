@@ -14,7 +14,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
-const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
+const { navigate, registerBrowser } = vi.hoisted(() => ({ navigate: vi.fn(), registerBrowser: vi.fn(async () => ({ success: false })) }));
 vi.mock('@renderer/features/chats/owned-agent-chat-boundary', () => ({
   OwnedAgentChatBoundary: ({ children }: { children: ReactNode }) => children,
 }));
@@ -24,7 +24,7 @@ vi.mock('@renderer/lib/ipc', async (original) => {
     get(target, key) {
       // A real renderer page with no Electron web contents behind it.
       if (key === 'browser') return {
-        registerSession: async () => ({ success: false }),
+        registerSession: registerBrowser,
         unregisterSession: async () => ({ success: true }),
         setActiveBrowser: async () => ({ success: true }),
       };
@@ -41,6 +41,33 @@ let harness: ReturnType<typeof createReactHarness> | undefined;
 const previousTheme = document.documentElement.dataset.theme;
 const group = { viewId: 'new-tab-group', place: { kind: 'chat', chatId: 'new-tab-group' } } as const;
 const topic = { viewId: 'new-tab-topic', place: { kind: 'chat', chatId: 'new-tab-topic' } } as const;
+
+it('keeps the annotation entry visible on an ordinary group browser and registers the tab conversation', async () => {
+  await i18n.changeLanguage('zh-CN');
+  await page.viewport(1240, 640);
+  const view = harness = createReactHarness();
+  view.container.className = 'emlight gugu-skin';
+  view.container.style.cssText = 'position:fixed;inset:0;width:1200px;height:580px';
+  const chatId = 'annotation-entry-group';
+  installSessionTabViews();
+  const layout = chatLayoutOf(chatId);
+  try {
+    await view.render(<ChatPanes chatId={chatId} actionsSlot={null} body={<div>群聊正文</div>}
+      chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="批注测试群" menu={null} focused />} />);
+    await act(() => { layout.open('browser', { initialUrl: 'https://example.org/group' }, { from: null, intent: 'newTab' }); });
+    await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeVisible();
+    // Without an Electron page behind this browser fixture, the visible action waits disabled.
+    await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeDisabled();
+    expect(registerBrowser).toHaveBeenCalledWith(expect.objectContaining({ conversation: { kind: 'chat', chatId } }));
+    const toolbar = page.getByRole('button', { name: '批注', exact: true }).element();
+    const address = page.getByPlaceholder('搜索或输入网址').element();
+    expect(toolbar.compareDocumentPosition(address) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  } finally {
+    await act(() => {
+      for (const { pane } of layout.groups) for (const tab of [...pane.resolvedTabs]) if (tab.kind !== 'chat') closeChatTab(chatId, tab.tabId);
+    });
+  }
+});
 afterEach(() => {
   harness?.cleanup();
   harness = undefined;
