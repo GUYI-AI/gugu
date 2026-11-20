@@ -74,8 +74,12 @@ import {
   SidebarGroup,
   SidebarMenu,
   sidebarCountClass,
+  sidebarDropTargetClass,
   sidebarGroupHeaderClass,
 } from './sidebar-primitives';
+import { useSessionDropTarget } from './use-session-drop-target';
+import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
+import { cn } from '@renderer/utils/utils';
 import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
 
@@ -507,9 +511,15 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
   }, [ancestorsKey]);
   const list = chatAgentSection(agents, { expanded: sidebarStore.expandedSessionIds, showAll, open });
   const total = chatAgentCounts(agents).total;
+  // A sub-session of this list dragged onto the section header goes back to the top level (spec session-page「把会话拖成 child」).
+  const unnestDrop = useSessionDropTarget();
+  const unnestHere = unnestDrop.bind(
+    (dragged) => sidebarStore.parentOf(dragged.sessionId) !== null && agents.some((agent) => agent.id === dragged.sessionId),
+    (child) => moveSessionUnder(child, null, sidebarStore.parentOf(child.sessionId))
+  );
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="agents">
-      <div className={sidebarGroupHeaderClass}>
+      <div className={cn(sidebarGroupHeaderClass, unnestDrop.over && sidebarDropTargetClass)} data-unnest-target={unnestDrop.over || undefined} {...unnestHere}>
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.agents')}
