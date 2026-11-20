@@ -1,4 +1,9 @@
 export default {
+  "firstInstallImport": {
+    "title": "Bring your data into Gugu",
+    "description": "Bring along your memories, project rules, and work habits",
+    "available": "Import your local {{name}} configuration"
+  },
   "usagePopover": {
     "title": "Usage",
     "refresh": "Refresh usage",
