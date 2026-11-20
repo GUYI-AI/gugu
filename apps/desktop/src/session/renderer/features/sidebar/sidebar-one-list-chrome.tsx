@@ -1,11 +1,11 @@
-import { CalendarClock, ChevronsLeft, ChevronsRight, FolderPlus, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { CalendarClock, ChevronsLeft, ChevronsRight, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { DropdownMenu, MenuItem, MenuSubmenu } from '@/components/ui/Menu';
+import { DropdownMenu, MenuItem } from '@/components/ui/Menu';
 import { TourBubble } from '@/components/productTour/TourBubble';
 import { Hint } from '@/components/ui/Tooltip';
 import { requestShellChatAction, useProductTourOnScreen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
@@ -18,7 +18,6 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { LOCAL_SESSION_ENGINE_LABEL } from '@shared/core/session-import/session-import';
-import { AddProjectMenuItems } from './add-project-menu-items';
 import { nextSidebarIntro, SIDEBAR_INTRO_STEPS, sidebarIntroShown, type SidebarIntroEvent } from './sidebar-intro';
 import { SidebarSearchTrigger } from './sidebar-search-trigger';
 import { SidebarSpace } from './sidebar-space';
@@ -32,20 +31,20 @@ import { SidebarSpace } from './sidebar-space';
  */
 
 /** The 「+」 menu, in order. Each runs the action of the same name that exists today. */
-export const ONE_LIST_CREATE_MENU = ['create-group', 'new-project', 'add-contact'] as const;
+export const ONE_LIST_CREATE_MENU = ['create-group', 'add-contact'] as const;
 export type OneListCreateAction = (typeof ONE_LIST_CREATE_MENU)[number];
 
 /**
  * 新建群聊 / 添加联系人: the chat list's own dialogs (the same request as the old Chats-tab rows; the one list's chat list
- * is always open, so nothing needs flipping first). 新建项目 is no action of its own but a submenu: the old sidebar's
- * 「添加项目」 group (新建空白项目 / 使用现有文件夹 / 使用远程文件夹 ›, AddProjectMenuItems), ❌ straight into a blank project.
+ * is always open, so nothing needs flipping first). A group is the one thing to create; folders are bound to it from its
+ * folder card's「+」.
  */
-export function runOneListCreateAction(action: Exclude<OneListCreateAction, 'new-project'>): void {
+export function runOneListCreateAction(action: OneListCreateAction): void {
   requestShellChatAction(action);
 }
 
-const CREATE_MENU_ICON = { 'create-group': Users, 'new-project': FolderPlus, 'add-contact': UserRound } as const;
-const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project': 'task.projectNew', 'add-contact': 'sidebar.addContact' } as const;
+const CREATE_MENU_ICON = { 'create-group': Users, 'add-contact': UserRound } as const;
+const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'add-contact': 'sidebar.addContact' } as const;
 
 /**
  * The top row's geometry as a function of the open/close progress p (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上):
@@ -113,11 +112,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
             )}
             {ONE_LIST_CREATE_MENU.map((action) => {
               const Icon = CREATE_MENU_ICON[action];
-              return action === 'new-project' ? (
-                <MenuSubmenu key={action} icon={<Icon size={15} />} label={translate(CREATE_MENU_LABEL[action])} data-testid={`sidebar-create-${action}`}>
-                  <AddProjectMenuItems />
-                </MenuSubmenu>
-              ) : (
+              return (
                 <MenuItem key={action} icon={<Icon size={15} />} data-testid={`sidebar-create-${action}`} onClick={() => runOneListCreateAction(action)}>
                   {translate(CREATE_MENU_LABEL[action])}
                 </MenuItem>

@@ -34,9 +34,9 @@ for (const theme of ['dark', 'light']) it(`${theme}: phone home exposes the dire
   capabilities.barcodeScan = true
   harness = createReactHarness()
   Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', background: 'var(--bg)' })
-  const create = vi.fn(), project = vi.fn(), scan = vi.fn()
+  const create = vi.fn(), scan = vi.fn()
   await renderWithAppProviders(harness, <LocalizationProvider>
-    <ChatListPanel mobile onOpenSessionCreate={create} onNewProject={project} onScan={scan} />
+    <ChatListPanel mobile onOpenSessionCreate={create} onScan={scan} />
     <NeedsYouHost />
   </LocalizationProvider>, { chat: { chats: [], activeChatId: null } })
   const find = (id: string) => harness!.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)
@@ -49,11 +49,9 @@ for (const theme of ['dark', 'light']) it(`${theme}: phone home exposes the dire
   expect(create).toHaveBeenCalledOnce()
   expect(document.querySelector('[role="menu"]')).toBeNull()
   await page.getByTestId(AUTOMATION_TEST_IDS.chatListPlusButton).click()
-  await until('the four existing More actions are visible', () => document.querySelectorAll('[role="menuitem"]').length === 4)
+  await until('the three More actions are visible', () => document.querySelectorAll('[role="menuitem"]').length === 3)
   const ids = [...document.querySelectorAll('[role="menuitem"]')].map(item => item.getAttribute('data-testid'))
-  expect(ids).toEqual(['plus-menu-create-group', 'plus-menu-new-project', 'plus-menu-add-friend', 'plus-menu-scan'])
+  expect(ids).toEqual(['plus-menu-create-group', 'plus-menu-add-friend', 'plus-menu-scan'])
   await page.screenshot({ element: document.body, path: `__screenshots__/home-more-${theme}.png` })
-  await page.getByTestId('plus-menu-new-project').click()
-  expect(project).toHaveBeenCalledOnce()
   expect(create).toHaveBeenCalledOnce()
 })

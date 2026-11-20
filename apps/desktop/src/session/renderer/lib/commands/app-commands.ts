@@ -31,7 +31,6 @@ function createAppCommandProvider(): CommandProvider {
 
       const settingsDef = appDef('app.settings');
       const marketplaceDef = appDef('app.library');
-      const newProjectDef = appDef('app.newProject');
       const giveFeedbackDef = appDef('app.giveFeedback');
       const toggleThemeDef = appDef('app.toggleTheme');
       const navigateBackDef = appDef('app.navigateBack');
@@ -50,14 +49,6 @@ function createAppCommandProvider(): CommandProvider {
           execute() {
             revealSessionpage();
             appState.navigation.navigate('apps');
-          },
-        },
-        {
-          ...newProjectDef,
-          execute() {
-            // 「新建项目」命令 = 行为文档里的「新建空白项目」(仅命名,落默认项目目录)。
-            // 旧的 AddProjectModal(Pick/New/Clone)已删:不在产品预期里,能力被菜单项覆盖。
-            showModal('createProjectNameModal', { onSuccess: () => {} });
           },
         },
       ];

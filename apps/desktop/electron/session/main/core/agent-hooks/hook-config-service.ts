@@ -17,7 +17,7 @@ export function userWorkspaceFs(sessionPath: string): PluginFs {
   const said = (verb: string, path: string) => (error: unknown): never => {
     if (error instanceof HarnessStartupError) throw error;
     const detail = error instanceof Error ? error.message : String(error);
-    throw new HarnessStartupError(`Could not ${verb} ${path} in this project: ${detail}`, { cause: error });
+    throw new HarnessStartupError(`Could not ${verb} ${path} in this folder: ${detail}`, { cause: error });
   };
   return {
     ...fs,

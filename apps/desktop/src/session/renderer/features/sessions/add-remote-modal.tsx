@@ -93,7 +93,7 @@ export const AddRemoteModal = observer(function AddRemoteModal({
       if (tab === 'create') {
         if (!githubAccountId) {
           setError(
-            'Select a GitHub account in project settings before creating a GitHub repository'
+            'Select a GitHub account in the folder settings before creating a GitHub repository'
           );
           return;
         }

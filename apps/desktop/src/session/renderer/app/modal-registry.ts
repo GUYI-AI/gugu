@@ -7,8 +7,6 @@ import { PromptModal } from '@renderer/features/library/prompts/prompt-modal'
 import { ThemeImportModal } from '@renderer/features/library/themes/theme-import-modal'
 import { McpServerModal } from '@renderer/features/mcp/components/mcp-server-modal'
 import { RenameSessionModal } from '@renderer/features/sessions/rename-session-modal'
-import { CreateProjectNameModal } from '@renderer/features/projects/components/create-project-name-modal'
-import { LocalFolderProjectModal } from '@renderer/features/projects/components/local-folder-project-modal'
 import { AgentSignInModal } from '@renderer/features/settings/agents-page/AgentSignInModal'
 import { GithubConnectModal } from '@renderer/features/settings/components/github-connect-modal'
 import { AddRemoteModal } from '@renderer/features/sessions/add-remote-modal'
@@ -26,8 +24,6 @@ export const modalRegistry = {
   agentHomeReimportModal: createModal(ReimportDialog, { size: 'lg' }),
   commandPaletteModal: createModal(CommandPaletteModal, { size: 'md' }),
   globalSearchModal: createModal(GlobalSearchModal, { size: 'lg' }),
-  localFolderProjectModal: createModal(LocalFolderProjectModal, { size: 'sm' }),
-  createProjectNameModal: createModal(CreateProjectNameModal, { size: 'sm' }),
   githubDeviceFlowModal: createModal(GithubDeviceFlowModal, { size: 'md' }),
   confirmActionModal: createModal(ConfirmActionDialog, { size: 'xs' }),
   confirmExternalLinkModal: createModal(ExternalLinkChoiceDialog, { size: 'sm' }),

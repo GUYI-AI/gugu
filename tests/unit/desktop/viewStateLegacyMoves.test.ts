@@ -94,19 +94,16 @@ it('per-account memories: tab placement, participant panes, recent tasks, recent
   expect(Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).filter((key) => key !== 'gugu.readModel.v1.account' && !key.startsWith('gugu.view-state:'))).toEqual([])
 })
 
-it('the phone\'s last machine for a new project and its folded and expanded projects', async () => {
+it('the phone\'s folded and expanded projects', async () => {
   const { readInterface } = await start({
-    'gugu.partners.newProjectMachine': 'd22',
     'gugu.agent-watch.collapsed.projects': JSON.stringify(['p1']),
     'gugu.agent-watch.more.projects': JSON.stringify(['p2', 3]),
   }, async () => {
-    await import('../../../apps/desktop/src/mobile/partners/PhoneNewProjectPage')
     await import('../../../apps/desktop/src/mobile/agent-watch/ProjectsPage')
   })
-  expect(readInterface('gugu.partners.newProjectMachine')).toBe('d22')
   expect(readInterface('gugu.agent-watch.collapsed.projects')).toEqual(['p1'])
   expect(readInterface('gugu.agent-watch.more.projects')).toEqual(['p2'])
-  expect(left('gugu.partners.newProjectMachine', 'gugu.agent-watch.collapsed.projects', 'gugu.agent-watch.more.projects')).toEqual([])
+  expect(left('gugu.agent-watch.collapsed.projects', 'gugu.agent-watch.more.projects')).toEqual([])
 })
 
 it('with no account known at the start (signed out, or a version that kept no last-account pointer), per-account values wait: their old keys stay until the first account is published', async () => {

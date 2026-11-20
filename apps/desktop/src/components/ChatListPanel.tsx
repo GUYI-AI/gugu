@@ -6,7 +6,7 @@ import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
-import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
+import { BellOff, ChevronDown, ChevronRight, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
 import { Sheet } from './ui/Sheet'
 import { useGrowingList, useOffsetInScroller } from '@gugu/session-ui/react/growing-list'
 import { DropdownMenu, MenuItem } from './ui/Menu'
@@ -100,8 +100,6 @@ interface ChatListPanelProps {
   leadChatId?: string | null
   /** 手机页头左上角(自己的头像 →「我的」)。 */
   headerLeading?: ReactNode
-  /** 手机右上加号菜单里的「新项目」。 */
-  onNewProject?: () => void
 }
 
 const CHAT_LIST_PLUS_BUTTON_SELECTOR = AUTOMATION_TEST_IDS.chatListPlusButton
@@ -442,16 +440,14 @@ interface PlusMenuItemsProps {
   onGroupChat: () => void
   onAddFriend: () => void
   onScan?: () => void
-  /** Phone More contains social/project actions; the separate pen owns Agent creation. */
-  onNewProject?: () => void
+  /** Phone More contains social actions; the separate pen owns Agent creation. */
   mobile?: boolean
 }
 
-function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, onNewProject, mobile = false }: PlusMenuItemsProps) {
+function PlusMenuItems({ onSessionCreate, onGroupChat, onAddFriend, onScan, mobile = false }: PlusMenuItemsProps) {
   const { t } = useTranslation('messaging')
   const phoneItems = mobile ? [
     { testid: 'plus-menu-create-group', icon: <Users size={15} />, label: t('chatList.createGroupMobile'), onClick: onGroupChat },
-    ...(onNewProject ? [{ testid: 'plus-menu-new-project', icon: <FolderClosed size={15} />, label: t('chatList.newProject'), onClick: onNewProject }] : []),
     { testid: 'plus-menu-add-friend', icon: <UserRound size={15} />, label: t('chatList.addContact'), onClick: onAddFriend },
   ] : null
   // design line 592: 新建群聊 (contacts icon) + 添加联系人 (add-person icon)
@@ -543,7 +539,6 @@ export function ChatListPanel({
   lead,
   leadChatId = null,
   headerLeading,
-  onNewProject,
 }: ChatListPanelProps) {
   const inSidebar = placement === 'sidebar'
   const notificationsOpen = useSidebarNotificationsOpen()
@@ -1125,7 +1120,6 @@ export function ChatListPanel({
                     onGroupChat={() => setShowGroupModal(true)}
                     onAddFriend={() => setShowAddFriendModal(true)}
                     onScan={onScan}
-                    onNewProject={onNewProject ? () => { setShowPlusMenu(false); onNewProject() } : undefined}
                     mobile={mobile}
                   />
                 </DropdownMenu.Content>

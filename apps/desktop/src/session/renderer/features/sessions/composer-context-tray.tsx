@@ -6,13 +6,11 @@
 // 群选择器列的是挂了文件夹的群(我各台机器上的,账号上记着的也算),在哪台跑由机器选择器定。
 // ❌ 不各写一份：两份一旦分叉，「记住最近一次选择」就会在两个入口给出不同答案。
 import { nameTwinIds } from '@renderer/features/projects/name-twins';
-import { ChevronDown, Folder, Plus, Users, X } from '@/lib/icons'
+import { ChevronDown, Folder, Users, X } from '@/lib/icons'
 import { MenuSearch } from '@/components/ui/Menu'
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { readChatSummary } from '@/lib/chatSummariesBridge';
-import { ProjectCreationMenuItems } from '@renderer/features/projects/components/project-creation-menu-items';
-import { RemoteProjectMenuItems } from '@renderer/features/sidebar/remote-project-menu-items';
 import { ProjectPickerItem } from '@renderer/features/projects/components/project-picker-item';
 import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { GroupFoldersError } from '@renderer/features/folders/group-folders-error';
@@ -20,9 +18,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@renderer/lib/ui/dropdown-menu';
 import { sessionComposerTrayTriggerClassName } from './session-composer-styles';
@@ -112,7 +107,6 @@ export const ComposerProjectPicker = observer(function ComposerProjectPicker({
                 <ProjectPickerItem key={group.chatId} group={group} twin={twins.has(group.chatId)} onSelect={onSelect} />
               ))}
             </div>
-            <NewProjectSubmenu onProjectReady={onSelect} />
           </>
         )}
       </DropdownMenuContent>
@@ -120,21 +114,3 @@ export const ComposerProjectPicker = observer(function ComposerProjectPicker({
   );
 });
 
-/** 菜单底部「新建群 ›」:新建群(同时新建一个文件夹)/ 用现有文件夹新建群(本机,或其他机器上的文件夹 ›)。 */
-function NewProjectSubmenu({ onProjectReady }: { onProjectReady: (chatId: string) => void }) {
-  const { translate } = useSessionMessages();
-  return (
-    <div className="border-t border-border py-1">
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger data-testid="project-create-menu">
-          <Plus className="size-3.5" />
-          <span>{translate('task.projectNew')}</span>
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="min-w-52">
-          <ProjectCreationMenuItems onProjectReady={onProjectReady} />
-          <RemoteProjectMenuItems />
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
-    </div>
-  );
-}

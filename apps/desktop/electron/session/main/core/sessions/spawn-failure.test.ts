@@ -111,7 +111,7 @@ describe('startupFailureForUser', () => {
       );
       expect(failure).toBeInstanceOf(HarnessStartupError);
       const told = String(startupFailureForUser(failure));
-      expect(told).toMatch(/^Error: Could not write \.claude\/settings\.local\.json in this project: E(ACCES|PERM)\b/);
+      expect(told).toMatch(/^Error: Could not write \.claude\/settings\.local\.json in this folder: E(ACCES|PERM)\b/);
       expect(told).not.toContain('gugu-models:');
     } finally {
       await chmod(project, 0o700);
