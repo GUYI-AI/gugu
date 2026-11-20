@@ -268,7 +268,9 @@ it('collapsed, the rail keeps the bell between 「»」 and the 「+」, and ope
   expect(bell.left + 20 + 16 - panel.left).toBe(36);
   expect(bell.top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
   expect(plus.getBoundingClientRect().top).toBeGreaterThanOrEqual(bell.bottom);
-  expect(plus.getBoundingClientRect().left + 16 - panel.left).toBe(36);
+  // The edge lands once it is within SIDEBAR_LANDED_PX of the rail, while the 「+」's row follows the spring's own progress,
+  // whose sub-pixel tail runs on a little longer: the 「+」 is on the axis where that motion rests.
+  await expect.poll(() => plus.getBoundingClientRect().left + 16 - panel.left).toBe(36);
 
   setSidebarNotificationsOpen(true);
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
