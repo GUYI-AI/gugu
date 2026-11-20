@@ -113,7 +113,7 @@ export function createProjectFilePublisher(deps: {
       return await publishFile(chatId, { ...selected, path }, parentId, actor, store, options, true)
     } finally { await rm(directory, { recursive: true, force: true }).catch(() => undefined) } // the message is already committed: a stuck temp file must not turn it into an error
   }
-  return Object.assign(publish, { async local(chatId: string, contentType: string) { const here = await place(chatId); return !!here && !!here.storage && !uploadsManaged(here.storage, contentType) } })
+  return Object.assign(publish, { async local(chatId: string, contentType: string) { const here = await place(chatId); return !!here && !(here.storage && uploadsManaged(here.storage, contentType)) } })
 }
 
 /**

@@ -143,7 +143,7 @@ describe('external selections become durable project-owned copies through the sa
 const publishedPaths = (f: ReturnType<typeof fixture>) => f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish').map(([, args]) => args.p_path as string)
 afterEach(async () => { expect(home.startsWith(join(tmpdir(), 'gugu-file-publication-153-'))).toBe(true); await rm(home, { recursive: true, force: true }) })
 /** `project`: this device's project bound to the chat (here 'project' for 'group'); `projectChat`: whether the chat is one of the account's projects (here, any chat but 'ordinary'). */
-function fixture(proactive = false, identity = { accountId: 'owner', deviceId: 'device' }, storage: Partial<FileStorage> = {}) {
+function fixture(proactive = false, identity = { accountId: 'owner', deviceId: 'device' }, storage: Partial<FileStorage> | null = {}) {
   let accountId = identity.accountId
   const rpc = vi.fn(async (name: string, _args: Record<string, unknown>): Promise<unknown> => {
     if (name === 'file_device_publish') return { item_id: 'item', ...(_args.p_message ? { message: { id: 'message', file_item_id: 'item', file_version: 1 } } : {}) }
@@ -153,7 +153,7 @@ function fixture(proactive = false, identity = { accountId: 'owner', deviceId: '
   const cloud = vi.fn(async () => row)
   const publish = createProjectFilePublisher({ identity: async () => ({ accountId, deviceId: identity.deviceId }),
     root: async id => id === 'project' ? root : id === 'device-store' ? store : null, project: async chat => chat === 'group' ? 'project' : undefined, rpc, env,
-    storage: async () => ({ ...DEFAULT_FILE_STORAGE, proactive_upload: proactive, ...storage }), projectChat: async chat => chat !== 'ordinary' })
+    storage: async () => (storage ? { ...DEFAULT_FILE_STORAGE, proactive_upload: proactive, ...storage } : null) as FileStorage, projectChat: async chat => chat !== 'ordinary' })
   return { publish, rpc, store: cloud, account: (value: string) => { accountId = value } }
 }
 describe('project file publication runs before document conversion or cloud upload', () => {
@@ -284,6 +284,8 @@ describe('a folder group\'s image goes up as a cloud copy; other files stay on t
     expect(await f.publish.local('group', 'image/png')).toBe(false)
     expect(await fixture(true).publish.local('group', 'text/plain')).toBe(false)
     expect(await f.publish.local('ordinary', 'text/plain')).toBe(false)
+    // Settings not read: nothing is decided to go up, so a file stays here, as before.
+    expect(await fixture(false, undefined, null).publish.local('group', 'text/plain')).toBe(true)
   })
   it('a task\'s image input stays on this device, and names its pixel size, read from its header', async () => {
     const png = new Uint8Array(24); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0x06, 0x40, 0, 0, 0x01, 0x90])
