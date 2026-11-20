@@ -111,7 +111,7 @@ export async function dispatchForApp(
   args: Record<string, unknown>,
   page: Omit<DispatchHere, 'preselect' | 'local'> & { session: string | null },
   effects: DesktopDispatchEffects,
-): Promise<{ to: unknown; id?: string; deferred?: true } | { cancelled: true }> {
+): Promise<{ to: unknown; id?: string; deferred?: true; widgetId?: string } | { cancelled: true }> {
   // #1927 `{ binding }`: the one conversation the person chose for this App, found and checked by the host — the answer
   // names the binding, never the chat.
   const to = args.to as { binding?: unknown } | null | undefined;

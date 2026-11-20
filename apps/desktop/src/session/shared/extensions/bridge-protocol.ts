@@ -160,7 +160,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
 // 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
-export const EXTENSION_API_VERSION = 59;
+// 60: held by an open change (App menu row icons); left free here.
+// 61 (app-dispatch-core.ts): `dispatch(text, { widget: { app?, view, data?, height? }, to: { chat } })` sends a widget view
+// as whoever works the page, as `widget_send` does for an agent. An older host ignores `widget` and refuses the call as a
+// plain dispatch to a chat, so an App that sends one says 61, or offers it only where `gugu.apiVersion` is 61 or more.
+export const EXTENSION_API_VERSION = 61;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
