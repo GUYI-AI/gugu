@@ -811,7 +811,8 @@ export default {
       "usage": "用量"
     },
     "dataImport": {
-      "chatgptExport": "ChatGPT 导出文件",
+      "chatgptExport": "ChatGPT 聊天记录导出文件",
+      "sourceIncomplete": "部分来源暂不可读取",
       "readOnlyHistory": "{{count}} 条只读历史记录",
 
       "alreadyImported": "{{count}} 项已存在，无需重复导入",

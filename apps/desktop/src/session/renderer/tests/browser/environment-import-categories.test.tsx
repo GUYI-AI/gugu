@@ -14,7 +14,7 @@ import '@/styles/tokens.css'
 import '@/components/settings/data-import/data-import.css'
 
 const state = vi.hoisted(() => ({
-  counts: {} as Record<string, number | 'error'>,
+  counts: {} as Record<string, number | 'error' | 'unknown' | 'pending' | 'needs-source'>,
   enqueue: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), cancelAutomatic: vi.fn(),
   owners: { fixture: { automatic: true, sources: ['codex'], categories: ['tasks'] as string[] } },
   update: vi.fn(),
@@ -29,7 +29,8 @@ vi.mock('@renderer/lib/ipc', async load => ({
 vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/replica')>(),
   useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id]) => state.counts[id] === 'error'
     ? { state: 'error', error: new Error('fixture') }
-    : { state: 'value', value: { count: state.counts[id] ?? 0, pending: false } }),
+    : state.counts[id] === 'unknown' ? { state: 'unknown' }
+    : { state: 'value', value: { count: typeof state.counts[id] === 'number' ? state.counts[id] : 0, pending: state.counts[id] === 'pending', needsSource: state.counts[id] === 'needs-source' } }),
 }))
 vi.mock('@/components/settings/data-import/import-replicas', () => ({ importSourceCounts: { refresh: state.refresh } }))
 vi.mock('@/components/settings/data-import/import-queue', () => ({
@@ -102,6 +103,8 @@ it('a failed category never becomes a complete total or blocks another category 
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
   expect(rows[0]!.querySelector('button')!.disabled).toBe(true)
+  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).not.toContain(i18n.t('settings.dataImport.reading', {ns:'main'}))
+  expect(harness.container.textContent).toContain('部分来源暂不可读取')
   expect(rows[0]!.textContent).not.toContain('11')
   await clickElement(rows[4]!.querySelector('button')!)
   expect(state.refresh).toHaveBeenCalledWith('codex:skills', null)
@@ -143,4 +146,34 @@ it('keeps legacy export-file histories distinct from resumable native tasks', as
   expect(harness.container.textContent).toContain('只读历史记录');
   expect(harness.container.querySelectorAll('.gg-import-row')).toHaveLength(2);
   expect(harness.container.textContent).not.toContain('任务');
+});
+
+it.each(['unknown', 'pending'] as const)('continues checking a genuinely %s source', async stateName => {
+  state.counts.codex = stateName;
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />));
+  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
+  expect(harness.container.querySelector('.gg-import-row button')!.hasAttribute('disabled')).toBe(true);
+});
+
+it('shows a confirmed empty native source without a perpetual checking label', async () => {
+  providers.forEach(provider => { state.counts[provider.id] = 0 });
+  await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />));
+  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).toContain('0');
+  expect(harness.container.textContent).not.toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
+  expect(harness.container.querySelector('.gg-import-row button')!.hasAttribute('disabled')).toBe(true);
+});
+
+it('asks for a JSON file before selection and keeps the file icon and read-only count after selection', async () => {
+  const history: ImportProvider = { ...providers[0]!, id: 'chatgpt-json', sourceId: undefined, sourceLabel: undefined,
+    label: 'ChatGPT 聊天记录导出文件', historyOnly: true, pickSource: vi.fn() };
+  state.counts[history.id] = 'needs-source';
+  await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
+  const heading = harness.container.querySelector('.gg-import-card-trigger')!;
+  expect(heading.textContent).toContain('选择导出文件');
+  expect(heading.textContent).not.toContain('0');
+  expect(heading.querySelector('svg')).not.toBeNull();
+  state.counts[history.id] = 2;
+  await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
+  expect(heading.textContent).toContain('2');
+  expect(heading.textContent).toContain('只读历史记录');
 });

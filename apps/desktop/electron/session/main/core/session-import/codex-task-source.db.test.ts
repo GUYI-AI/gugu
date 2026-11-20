@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm, readFile, symlink, utimes } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, writeFile, rm, readFile, readdir, symlink, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
@@ -114,4 +114,42 @@ it('refuses cyclic lineage and detects an altered ancestor in the scan revision'
   expect((await scanCodexTasks(f.root)).rows[0].revision).not.toBe(first.rows[0].revision);
   await writeFile(parent, meta(other, id));
   expect(await scanCodexTasks(f.root)).toMatchObject({ invalid: 1, rows: [], blocked: [{ id, reason: 'invalid-history' }] });
+});
+
+// #3334: a normal Codex shutdown removes these sidecars. Scanning must not recreate them.
+it.skipIf(process.platform === 'win32')('reads a closed WAL index in a read-only directory without creating sidecars', async () => {
+  const f = await fixture();
+  f.db.pragma('journal_mode = WAL');
+  await f.add(id); f.db.close();
+  await chmod(f.root, 0o500);
+  try {
+    const before = await readFile(f.path);
+    const names = await readdir(f.root);
+    expect(names).not.toContain('state_5.sqlite-wal');
+    expect(names).not.toContain('state_5.sqlite-shm');
+    expect(await scanCodexTasks(f.root)).toMatchObject({ status: 'ready', indexed: 1, rows: [{ id }] });
+    expect(await readFile(f.path)).toEqual(before);
+    expect(await readdir(f.root)).toEqual(names);
+  } finally { await chmod(f.root, 0o700); }
+});
+
+it('includes committed live WAL rows instead of treating the main file as immutable', async () => {
+  const f = await fixture();
+  try {
+    f.db.pragma('journal_mode = WAL');
+    f.db.pragma('wal_checkpoint(TRUNCATE)');
+    await f.add(id);
+    const before = await readFile(f.path);
+    const wal = await readFile(`${f.path}-wal`);
+    expect(wal.length).toBeGreaterThan(0);
+    expect(await scanCodexTasks(f.root)).toMatchObject({ status: 'ready', indexed: 1, rows: [{ id }] });
+    expect(await readFile(f.path)).toEqual(before);
+    expect(await readFile(`${f.path}-wal`)).toEqual(wal);
+  } finally { f.db.close(); }
+});
+
+it('reports an absent Codex home and an unsupported threads schema separately', async () => {
+  const f = await fixture(); f.db.exec('DROP TABLE threads'); f.db.close();
+  expect(await scanCodexTasks(join(f.root, 'not-installed'))).toMatchObject({ status: 'unavailable', reason: 'missing-index' });
+  expect(await scanCodexTasks(f.root)).toMatchObject({ status: 'unavailable', reason: 'unsupported-index' });
 });
