@@ -27,6 +27,8 @@ import type { ResourceBindingAction } from '@shared/extensions/agent-resources';
 import { BUNDLE_SKIP_NAMES, type MarketInstallRecord } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
+import { log } from '@main/lib/logger';
+import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta';
 
 export type { ExtensionOrigin };
 
@@ -986,6 +988,14 @@ export class ExtensionsService {
     // caller sees a failure and skips the rest of its teardown — its cookies and
     // localStorage would outlive it. Nothing is destroyed until every step that
     // can fail has succeeded.
+    // API 60: the saved credentials it used are no longer its own (the vault's grants to it), named while it still has a
+    // name. By that name alone: its manifest may no longer read (#6984).
+    const credentialIdentity = this.identityOf(extensionId);
+    if (credentialIdentity && PASSWORD_BETA_ENABLED) {
+      const subject = `app:${appKey(credentialIdentity)}`;
+      void import('./app-credentials').then(({ clearAppCredentials }) => clearAppCredentials(subject))
+        .catch((error: unknown) => log.warn('An uninstalled App kept its saved-credential grants', { extensionId, error: error instanceof Error ? error.message : String(error) }));
+    }
     this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
     this.forgetBindingAuthors(extensionId);

@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto'
 import type { AuditInput, CredentialGrant, CredentialInput, CredentialReference, CredentialSummary } from './contracts'
 import { VaultError } from './contracts'
-import { maskedAccount, type VaultPayload } from './schema'
+import { maskedAccount, syncedGrants, type VaultPayload } from './schema'
 
 type StoredCredential = VaultPayload['credentials'][number]
 export interface ManagementRuntime {
@@ -75,7 +75,7 @@ export async function saveCredential(runtime: ManagementRuntime, operationId: st
   runtime.current()
   // An Agent that creates a credential may keep maintaining it; nobody else gains access.
   const grants = old ? old.grants : creator ? [creator] : []
-  await runtime.publish({ kind: 'save', id: operation.credentialId, value: { ...value, grants } })
+  await runtime.publish({ kind: 'save', id: operation.credentialId, value: { ...value, grants: syncedGrants(grants) } })
   runtime.current()
   payload.credentials = [...payload.credentials.filter(item => item.id !== operation!.credentialId), { ...value, grants, id: operation.credentialId, version: operation.version }]
   operation.status = 'committed'
@@ -105,11 +105,12 @@ export async function deleteCredential(runtime: ManagementRuntime, operationId: 
 /** Person-only. Grants never change secret values, so the credential version is kept. */
 export async function updateGrants(runtime: ManagementRuntime, reference: CredentialReference, grants: CredentialGrant[]): Promise<CredentialSummary> {
   const old = runtime.check(reference)
-  const unique = new Map(grants.map(grant => [grant.subject, grant.level] as const))
+  const unique = new Map(grants.map(grant => [grant.subject, grant] as const))
   runtime.current()
-  const next = [...unique].map(([subject, level]) => ({ subject, level }))
+  const next = [...unique.values()].map(({ subject, level, code }) => ({ subject, level, ...(code ? { code } : {}) }))
   const { id: _id, version: _version, ...value } = old
-  await runtime.publish({ kind: 'save', id: old.id, value: { ...value, grants: next } })
+  // Only the shared (Agent/project) grants travel; a change to this device's own choices has nothing to publish.
+  if (JSON.stringify(syncedGrants(next)) !== JSON.stringify(syncedGrants(old.grants))) await runtime.publish({ kind: 'save', id: old.id, value: { ...value, grants: syncedGrants(next) } })
   runtime.current()
   old.grants = next
   await runtime.persist(runtime.payload)

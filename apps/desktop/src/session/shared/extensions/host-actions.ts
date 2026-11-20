@@ -232,6 +232,9 @@ export interface AttachmentSheetSource {
   over?: InstalledOver;
 }
 
+/** The saved credentials an install asks for (`permissions.credentials`): picked in the sheet, held for that manifest. */
+export interface ConsentCredentials { manifestDigest: string; sites: string[] }
+
 export interface ExtensionInstallConsentRequest {
   /** Removing one installed fork; the same human confirmation transport, never uninstall. */
   removeVariant?: { name: string; active: boolean };
@@ -339,6 +342,8 @@ export type ExtensionConsentEventDetail =
       machine?: string;
       /** owner 10-16: the person's other computers it may also go on with this one yes, each by name. Absent: not asked. */
       alsoOn?: InstallAlsoOnMachine[];
+      /** API 60: the websites whose saved credential the person picks here, for this exact manifest (app-credentials.ts). */
+      credentials?: ConsentCredentials;
       confirmLabel: string;
       /** What the button that says no says, when 「取消」 would mislead (first run: 「不装」 is never asked again). */
       cancelLabel?: string;

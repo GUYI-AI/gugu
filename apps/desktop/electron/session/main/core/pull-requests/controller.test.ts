@@ -157,7 +157,7 @@ describe('pullRequestController', () => {
       err({
         type: 'github_auth_required',
         host: 'github.com',
-        hint: 'Connect GitHub from account settings.',
+        hint: 'Connect GitHub (or paste a token) in Connectors › GitHub.',
       })
     );
 
@@ -166,7 +166,7 @@ describe('pullRequestController', () => {
         type: 'auth_required',
         host: 'ghe.example.com',
         message: 'GHES auth required',
-        hint: 'Run: gh auth login --hostname ghe.example.com',
+        hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
       })
     );
 
@@ -182,7 +182,7 @@ describe('pullRequestController', () => {
       err({
         type: 'ghes_auth_required',
         host: 'ghe.example.com',
-        hint: 'Run: gh auth login --hostname ghe.example.com',
+        hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
       })
     );
   });
@@ -197,7 +197,7 @@ describe('pullRequestController', () => {
         type: 'auth_required',
         host: 'ghe.example.com',
         message: 'GHES auth required',
-        hint: 'Run: gh auth login --hostname ghe.example.com',
+        hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
       })
     );
 
@@ -207,7 +207,7 @@ describe('pullRequestController', () => {
       err({
         type: 'ghes_auth_required',
         host: 'ghe.example.com',
-        hint: 'Run: gh auth login --hostname ghe.example.com',
+        hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
       })
     );
   });
@@ -222,7 +222,7 @@ describe('pullRequestController', () => {
         type: 'auth_required',
         host: 'ghe.example.com',
         message: 'GHES auth required',
-        hint: 'Run: gh auth login --hostname ghe.example.com',
+        hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
       })
     );
 
@@ -236,7 +236,7 @@ describe('pullRequestController', () => {
       err({
         type: 'ghes_auth_required',
         host: 'ghe.example.com',
-        hint: 'Run: gh auth login --hostname ghe.example.com',
+        hint: 'Paste a token for ghe.example.com in Connectors › GitHub.',
       })
     );
   });

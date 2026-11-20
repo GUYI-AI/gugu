@@ -176,6 +176,11 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     save(args: Record<string, unknown>): Promise<unknown>;
     delete(id: string): Promise<unknown>;
   };
+  /** `gugu.credentials` (60): a request the host sends with the person's chosen credential for a website (app-credentials.ts). */
+  readonly credentials?: {
+    read(site: string, url: string, options?: { headers?: Record<string, string> }): Promise<unknown>;
+    write(site: string, method: string, url: string, body?: unknown, options?: { headers?: Record<string, string> }): Promise<unknown>;
+  };
   /** `gugu.cloud` (31, `app-cloud-core.ts`): `on` is composed of subscribe and `onCloudHeard`; a program writes with `programWrite`. */
   readonly cloud?: {
     read(name: string, args?: Record<string, unknown>): Promise<unknown>;

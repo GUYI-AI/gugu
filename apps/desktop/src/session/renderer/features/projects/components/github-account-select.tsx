@@ -5,16 +5,15 @@ import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { GitHubAccountSummary, GitHubCredentialSource } from '@shared/github';
 
-// "GitHub CLI" and "OAuth" are proper nouns shown verbatim in both locales; the
-// two descriptive sources are translated.
-const GITHUB_SOURCE_VERBATIM: Partial<Record<GitHubCredentialSource, string>> = {
-  cli: 'GitHub CLI',
-  emdash_oauth: 'OAuth',
-};
-
-const GITHUB_SOURCE_KEYS: Partial<Record<GitHubCredentialSource, SessionMessageKey>> = {
-  device_flow: 'projects.github.sourceDeviceFlow',
-  secure_storage: 'projects.github.sourceSavedToken',
+// Every source has a label (a total record, so a new source cannot show an empty badge): "GitHub CLI" and "OAuth" are
+// proper nouns shown verbatim in both locales; the descriptive ones are translated.
+const GITHUB_SOURCE_LABELS: Record<GitHubCredentialSource, { verbatim: string } | { key: SessionMessageKey }> = {
+  cli: { verbatim: 'GitHub CLI' },
+  emdash_oauth: { verbatim: 'OAuth' },
+  device_flow: { key: 'projects.github.sourceDeviceFlow' },
+  secure_storage: { key: 'projects.github.sourceSavedToken' },
+  pat: { key: 'projects.github.sourceSavedToken' },
+  vault: { key: 'projects.github.sourceSavedToken' },
 };
 
 export function GitHubAccountSelectItem({ account }: { account: GitHubAccountSummary }) {
@@ -58,13 +57,13 @@ export function GitHubDefaultAccountBadge() {
 
 export function GitHubCredentialSourceBadge({ source }: { source: GitHubCredentialSource }) {
   const { translate } = useSessionMessages();
-  const key = GITHUB_SOURCE_KEYS[source];
+  const label = GITHUB_SOURCE_LABELS[source];
   return (
     <Badge
       variant="outline"
       className="rounded-md border-foreground/10 bg-transparent text-foreground-muted"
     >
-      {key ? translate(key) : GITHUB_SOURCE_VERBATIM[source]}
+      {'key' in label ? translate(label.key) : label.verbatim}
     </Badge>
   );
 }

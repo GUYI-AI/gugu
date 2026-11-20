@@ -5,7 +5,6 @@ import { err, ok, type Lease, type Result } from '@gugu/session-shared';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
 import { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
 import { GitRepositoryService } from '@main/core/git/repository/service';
-import { projectGitHubAccountBackfillService } from '@main/core/github/services/project-github-account-backfill-instance';
 import { openFileSystem } from '@main/core/runtime/files-helpers';
 import { runtimeManager } from '@main/core/runtime/runtime-manager';
 import type { MachineRuntime } from '@main/core/runtime/types';
@@ -71,7 +70,7 @@ export async function createProvider(
         runtimeLease,
         repoLease
       );
-      await backfillGitHubAccount(provider);
+      await migrateGitHubAccount(provider);
       return ok(provider);
     } catch (error) {
       await repoLease?.release();
@@ -111,16 +110,21 @@ async function runLegacyProjectSettingsMigration(
   }
 }
 
-async function backfillGitHubAccount(provider: ProjectProvider): Promise<void> {
+/**
+ * A project that picked a GitHub account before the password vault kept them: that pick becomes the vault's grant to the
+ * project, and the old field goes (`null`, 「不用 GitHub」, stays). Without a pick, the connector's current account applies.
+ */
+async function migrateGitHubAccount(provider: ProjectProvider): Promise<void> {
   try {
-    const result = await projectGitHubAccountBackfillService.backfillProject(provider);
-    // gugu #2328(GAP #4): backfill 转后台后 mount 返回先于回填落库,renderer 可能已读走
-    // 无 githubAccountId 的设置——落库成功即广播变更,让读方缓存失效。
-    if (result.status === 'updated') {
-      events.emit(projectSettingsChangedChannel, { projectId: provider.projectId });
-    }
+    const legacy = (await provider.settings.get()).githubAccountId;
+    if (typeof legacy !== 'string') return;
+    const { migrateProjectGitHubAccount } = await import('@main/core/github/github-migration');
+    await migrateProjectGitHubAccount(provider.projectId, legacy);
+    const result = await provider.settings.patch({ githubAccountId: undefined });
+    if (result.success) events.emit(projectSettingsChangedChannel, { projectId: provider.projectId });
   } catch (error) {
-    log.warn('createProvider: failed to backfill project GitHub account', {
+    // Left in place on failure, to move on the next mount; the connector shows the vault's problem meanwhile.
+    log.warn('createProvider: the project\'s GitHub account could not move into the password vault', {
       projectId: provider.projectId,
       error: error instanceof Error ? error.message : String(error),
     });

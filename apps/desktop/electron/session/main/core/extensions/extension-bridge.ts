@@ -2309,6 +2309,15 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return await promptsForApp(method, args, extensionId);
     }
 
+    case 'credentialsRead':
+    case 'credentialsWrite': {
+      // A page an agent works never sends the person's credential: a write was handed to the agent before here (toAgent);
+      // a read is refused, so an App's grant is never a way around the agent's own.
+      if (caller.binding?.operator.kind === 'agent') throw Object.assign(new Error('Saved credentials are used only on a page the person works'), { code: 'unavailable' });
+      const { appCredentialRequest } = await import('@main/core/extensions/app-credentials');
+      return await appCredentialRequest(extensionId, args, method === 'credentialsWrite');
+    }
+
     case 'cloudRead':
     case 'cloudWrite':
     case 'cloudProgramWrite': {

@@ -1,3 +1,4 @@
+import { AppCredentialRows } from '../app-credential-picker';
 import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
@@ -149,6 +150,7 @@ export function AppManagePage({
   const text = localizedManifestText(manifest, locale);
   const permissions = declaredPermissions(manifest);
   const withdrawn = permissions.filter((permission) => revoked.includes(permission.key)).length;
+  const credentialSites = manifest.permissions?.credentials?.length ? manifest.permissions.credentials.map(({ site }) => site) : null;
   const disclosureSwitchId = useId();
   const programs = (manifest.contributes.mcpServers ?? []).map((server) => ('name' in server ? server.name : server.tools));
 
@@ -389,9 +391,11 @@ export function AppManagePage({
   if (prompts) sections.push({ id: 'prompts', label: translate('extensions.managePrompts'), note: translate('extensions.managePromptsNote'), body: prompts });
   sections.push({ id: 'permissions', label: translate('extensions.detailPermissions'), note: permissionsNote ?? (withdrawn > 0
     ? translate('extensions.permissionsWithdrawnNote', { count: permissions.length, revoked: withdrawn })
-    : translate(permissions.length === 0 ? 'extensions.permissionsNoteNone' : onTogglePermission ? 'extensions.permissionsNoteAsked' : 'extensions.permissionsNoteInstall')), body: permissions.length === 0
+    : translate(permissions.length === 0 && !credentialSites ? 'extensions.permissionsNoteNone' : onTogglePermission ? 'extensions.permissionsNoteAsked' : 'extensions.permissionsNoteInstall')), body: permissions.length === 0 && !credentialSites
     ? <Row title={translate('extensions.permissionsNone')} />
-    : <fieldset disabled={readOnly} className="contents">{permissions.map(permissionRow)}</fieldset> });
+    : <fieldset disabled={readOnly} className="contents">{permissions.map(permissionRow)}
+      {/* API 60: the saved credentials it uses, one per website (the vault's grant to this App), on an installed App. */}
+      {credentialSites && onTogglePermission ? <AppCredentialRows extensionId={manifest.id} hosts={manifest.permissions?.network ?? []} disabled={readOnly || !enabled} /> : null}</fieldset> });
   if (api.appData && onClearData) {
     sections.push({ id: 'data', label: translate('extensions.manageData'), body: (
       <Row title={translate('extensions.manageDataRow')} note={translate('extensions.manageDataNote')} testId="app-manage-data">

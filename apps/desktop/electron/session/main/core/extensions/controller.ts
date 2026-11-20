@@ -925,6 +925,38 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /**
+   * API 60 (app-credentials.ts): the saved credentials of a website the person may pick for an App — in an install's sheet
+   * (held for that manifest, given to the App when it lands) or in the App's permissions. Trusted App permissions UI only,
+   * never an App bridge verb; no value ever comes here.
+   */
+  credentialChoices: async (args: { site: string }) => {
+    try {
+      const { credentialChoices } = await import('./app-credentials');
+      return { success: true as const, data: await credentialChoices(args.site) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  stageCredentialChoices: async (args: { manifestDigest: string; choices: Record<string, string | null> }) => {
+    try {
+      const { stageCredentialChoices } = await import('./app-credentials');
+      stageCredentialChoices(args.manifestDigest, args.choices);
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  appCredentials: async (args: { extensionId: string }) => {
+    try {
+      const { appCredentialStates } = await import('./app-credentials');
+      return { success: true as const, data: await appCredentialStates(args.extensionId) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  setAppCredential: async (args: { extensionId: string; site: string; credentialId: string | null }) => {
+    try {
+      const { setAppCredential } = await import('./app-credentials');
+      await setAppCredential(args.extensionId, args.site, args.credentialId);
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');

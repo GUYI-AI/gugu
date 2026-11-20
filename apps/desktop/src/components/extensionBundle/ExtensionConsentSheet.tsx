@@ -19,6 +19,8 @@ import { translateSessionMessage } from '../../session/renderer/localization/loc
 import { Check } from '../../lib/icons'
 import { DispatchSheet } from '../chat/DispatchSheet'
 import { SelectionSendLayer } from '../chat/SelectionSend'
+import { ConsentCredentialPickers } from '../../session/renderer/features/extensions/app-credential-picker'
+import { rpc } from '../../session/renderer/lib/ipc'
 
 type Ask = Extract<ExtensionConsentEventDetail, { type: 'ask' }>
 
@@ -71,8 +73,11 @@ function InstallConsentSheet() {
   /** owner 10-16: the other computers ticked to install on too — none until the person ticks one. */
   const [alsoOn, setAlsoOn] = useState<string[]>([])
   const titleId = useId()
+  /** API 60: the saved credential picked per website, held for this manifest when the person says yes. */
+  const [picks, setPicks] = useState<Record<string, string | null>>({})
+  const [pickError, setPickError] = useState('')
   // Each ask starts with none ticked.
-  useEffect(() => setAlsoOn([]), [ask?.requestId])
+  useEffect(() => { setAlsoOn([]); setPicks({}); setPickError('') }, [ask?.requestId])
 
   useEffect(() => {
     const onEvent = (event: Event) => {
@@ -147,13 +152,22 @@ function InstallConsentSheet() {
               })}
             </fieldset>
           ) : null}
+          {ask.credentials ? <ConsentCredentialPickers sites={ask.credentials.sites} picks={picks} onPick={(site, id) => setPicks((now) => ({ ...now, [site]: id }))} /> : null}
+          {pickError ? <p role="alert" className="!mt-2 text-[var(--text-error)]">{pickError}</p> : null}
           {ask.given ? <div data-testid="extension-consent-grant" className={`!mt-2 ${ask.alsoOn?.length ? 'px-2' : ''} text-[length:var(--font-caption)] leading-normal text-[var(--text-tertiary)]`}>{ask.given.first ? t('chatArea.appEnable.devicesHint') : t('chatArea.appEnable.addsChat', { name: ask.given.chat.name })}</div> : null}
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" data-testid="extension-consent-cancel" onClick={() => answer('declined')}>
             {ask.cancelLabel ?? (ask.requester ? t('chatArea.appEnable.decline') : t('common.cancel'))}
           </Button>
-          <Button data-testid="extension-consent-confirm" onClick={() => answer('confirmed')}>
+          <Button data-testid="extension-consent-confirm" onClick={() => {
+            if (!ask.credentials) { answer('confirmed'); return }
+            // The picks travel with the yes: held for this manifest, given to the App by the install that lands it.
+            const credentials = ask.credentials
+            void rpc.extensions.stageCredentialChoices({ manifestDigest: credentials.manifestDigest,
+              choices: Object.fromEntries(credentials.sites.map((site) => [site, picks[site] ?? null])) })
+              .then((result) => { if (result.success) answer('confirmed'); else setPickError(result.error) })
+          }}>
             {ask.confirmLabel}
           </Button>
         </div>

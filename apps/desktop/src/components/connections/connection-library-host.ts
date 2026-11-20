@@ -170,7 +170,7 @@ export function connectionLibraryHost(base: LibraryHost, panel: ConnectionMetada
         const account = (await githubAccounts()).find(row => row.accountId === accountId)!
         return { success: true,account }
       },
-      importCliAccounts: () => authorize('github',() => base.github.importCliAccounts()),
+      saveToken: (input) => authorize('github',() => base.github.saveToken(input)),
       auth: () => authorize('github',() => base.github.auth()),
       authCancel: () => { cancelPending('github'); return prepared ? base.github.authCancel() : Promise.resolve({ success: true as const }) },
       onEvent,

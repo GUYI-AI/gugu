@@ -7,6 +7,7 @@ import {
   type GitHubAccountStore,
 } from '../accounts/github-accounts';
 import type { GitHubIdentityClient } from './github-identity-client';
+import { vaultProblem } from './github-api-auth-errors';
 
 export type GitHubDeviceFlowConfig = {
   clientId: string;
@@ -100,7 +101,7 @@ export class GitHubDeviceFlowService {
         return { success: false, error: 'Auth cancelled' };
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = vaultProblem(error) ?? (error instanceof Error ? error.message : String(error));
       this.deps.events.emit(githubAuthErrorChannel, { error: 'device_flow_error', message });
       return { success: false, error: message };
     } finally {

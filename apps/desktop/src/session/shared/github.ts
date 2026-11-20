@@ -6,7 +6,8 @@ export interface GitHubUser {
   avatar_url: string;
 }
 
-export type GitHubTokenSource = 'secure_storage' | 'cli' | 'emdash_oauth' | 'device_flow' | null;
+export const GITHUB_CREDENTIAL_SOURCES = ['secure_storage', 'cli', 'emdash_oauth', 'device_flow', 'pat', 'vault'] as const;
+export type GitHubTokenSource = (typeof GITHUB_CREDENTIAL_SOURCES)[number] | null;
 
 export type GitHubCredentialSource = Exclude<GitHubTokenSource, null>;
 
@@ -23,14 +24,12 @@ export type GitHubAccountState = {
   connected: boolean;
   accounts: GitHubAccountSummary[];
   defaultAccountId: string | null;
+  /** The accounts could not be read (the password vault, or moving old accounts into it): what to tell the person. */
+  error?: string;
 };
 
 export type GitHubSetDefaultAccountResponse =
   | { success: true; account: GitHubAccountSummary }
-  | { success: false; error: string };
-
-export type GitHubImportCliAccountsResponse =
-  | { success: true; accounts: GitHubAccountSummary[]; importedAccountIds: string[] }
   | { success: false; error: string };
 
 export type GitHubRemoveAccountResponse =

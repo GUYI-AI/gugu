@@ -575,7 +575,7 @@ migrate their data to make your new code work.
    slug matching \`^[a-z0-9][a-z0-9-]{0,62}$\`. It checks out the exact
    installed upstream commit into a git working directory and returns where to edit. Use
    that returned directory, never the installed bundle. The upstream remote is \`upstream\`.
-   A connected GitHub account gets a real fork as \`origin\`; without one, the local repo works.
+   The repo is local; a fork on GitHub as \`origin\` is yours to make with the person's own git/gh (see Push below).
 2. Read the App's code and the relevant \`apps-*\` guides. Make the requested change in that
    working directory with your normal editing tools. Preserve data and the App's identity;
    keep its upstream version, and commit your code. Do not add permissions unless needed.

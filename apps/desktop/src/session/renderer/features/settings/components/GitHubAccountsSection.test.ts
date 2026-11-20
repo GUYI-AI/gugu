@@ -13,7 +13,7 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn(), useToast: () =
 
 const { GitHubAccountRows } = await import('./GitHubAccountsSection');
 
-const account = { accountId: 'gh:1', login: 'octo', isDefault: false, source: 'device-flow' } as never;
+const account = { accountId: 'gh:1', login: 'octo', isDefault: false, host: 'github.com', avatarUrl: '', credentialSource: 'device_flow' } as never;
 
 async function render(readOnly: boolean) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');

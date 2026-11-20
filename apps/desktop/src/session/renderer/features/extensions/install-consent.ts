@@ -8,6 +8,7 @@ import {
   type ExtensionInstallConsentRequest,
   type ExtensionInstallConsentResult,
   type InstallAlsoOnMachine,
+  type ConsentCredentials,
 } from '@shared/extensions/host-actions';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { getLocaleSnapshot } from '@/i18n';
@@ -28,7 +29,7 @@ export type InstallConsentAsk = Omit<ExtensionInstallConsentRequest, 'sourceDir'
  * The words: what it may do (`consentPrompt`), and where it came from — for a package from a chat who sent it (and whom it
  * would replace), for one from the market that it came from there.
  */
-export function installConsentPrompt(request: InstallConsentAsk, manifest: ExtensionManifest): ConsentPrompt {
+export function installConsentPrompt(request: InstallConsentAsk, manifest: ExtensionManifest): ConsentPrompt & { credentials?: ConsentCredentials } {
   const locale = getLocaleSnapshot().resolvedLocale;
   const asked = consentPrompt(request.installed, request.revokedPermissions, manifest, translateSessionMessage, locale, request.market?.releaseNotes, request.machine);
   if (request.removeVariant) {
@@ -37,7 +38,9 @@ export function installConsentPrompt(request: InstallConsentAsk, manifest: Exten
       description: `${translateSessionMessage(request.removeVariant.active ? 'extensions.removeActiveVariantBody' : 'extensions.removeVariantBody', values)}${request.removeVariant.active ? `\n\n${asked.description}` : ''}`,
       confirmLabel: translateSessionMessage('extensions.removeVariantConfirm'), ...(request.removeVariant.active && asked.details ? { details: asked.details } : {}), variant: 'default' };
   }
-  const prompt = request.market ? withMarketSource(asked, translateSessionMessage) : asked;
+  const prompt: ConsentPrompt & { credentials?: ConsentCredentials } = request.market ? withMarketSource(asked, translateSessionMessage) : asked;
+  // The picks on the sheet are held for this exact manifest: the install that lands it gives them to the App.
+  if (asked.credentialSites?.length) prompt.credentials = { manifestDigest: request.manifestDigest, sites: asked.credentialSites };
   if (request.attachment) {
     // Whoever sent it may be gone (an agent whose profile was rebuilt): say so, not an empty name (摩擦单 F30).
     const from = request.attachment.from.trim() || translateSessionMessage('extensions.consentFromDeletedAgent');
@@ -71,7 +74,7 @@ export function installConsentPrompt(request: InstallConsentAsk, manifest: Exten
  * sheet closes. Null when no shell drew it (the session page on its own): the caller then asks its own way, in the same window.
  */
 export function askInShell(
-  prompt: ConsentPrompt,
+  prompt: ConsentPrompt & { credentials?: ConsentCredentials },
   requestId: string,
   timeoutMs: number,
   /** What it gives where it lands (`InstallGrant`), said on the sheet; absent: it gives agents no tools. */
@@ -93,6 +96,7 @@ export function askInShell(
     ...(requester ? { requester } : {}),
     ...(machine ? { machine } : {}),
     ...(alsoOn?.length ? { alsoOn } : {}),
+    ...(prompt.credentials ? { credentials: prompt.credentials } : {}),
     confirmLabel: prompt.confirmLabel,
     ...(prompt.cancelLabel ? { cancelLabel: prompt.cancelLabel } : {}),
     shown: false,

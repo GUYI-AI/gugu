@@ -3,7 +3,8 @@ import type { AuditInput, AuditReceipt, AuditRecord, CredentialGrant, Credential
 import { VaultError } from './contracts'
 import { EncryptedVaultAudit } from './audit'
 import { sealedJson } from './crypto'
-import { auditInput, binding, credentialInputSchema, grantSchema, payloadSchema, uuid, identity, httpsOrigin, type VaultDocument, type VaultPayload } from './schema'
+import { auditInput, binding, credentialInputSchema, credentialServes, grantSchema, isLocalSubject, payloadSchema, syncedGrants, uuid, identity, httpsOrigin, type VaultDocument, type VaultPayload } from './schema'
+import { sendWithCredential, type CredentialRequest, type CredentialResponse } from './request-sink'
 import { VaultFile } from './vault-file'
 import { captureBrowserSink, performCredentialUse } from './browser-use'
 import { OutcomeAuditIssuer } from './outcome-audit'
@@ -39,10 +40,13 @@ export class LocalPasswordVault {
   /** Uses with no saved credential behind them (every value typed for that use): nothing to look up afterwards. */
   readonly #transient = new Set<string>()
   readonly #dependencies: VaultDependencies
+  /** The request sink's transport, fixed at construction like the browser sink. */
+  readonly #http: typeof fetch
   constructor(dependencies: VaultDependencies) {
     if (!identity.safeParse(dependencies.accountId).success || !dependencies.installationBinding?.trim()) throw new VaultError('INVALID_INPUT')
     this.#dependencies = dependencies
     this.#browser = captureBrowserSink(dependencies.browser)
+    this.#http = dependencies.http ?? globalThis.fetch.bind(globalThis)
     this.#acquireFeatureGuard = dependencies.acquireFeatureGuard?.bind(dependencies)
     if (activeRoots.has(dependencies.root)) throw new VaultError('UNAVAILABLE')
     this.#file = new VaultFile(dependencies)
@@ -253,14 +257,24 @@ export class LocalPasswordVault {
       finally { runtime?.release() }
     }).finally(revocation.release)
   }
-  /** Person-only: replace who may use/maintain one credential. */
+  /** Person-only: replace who may use/maintain one credential. An App's or the connector's choice is only kept or taken
+   * away here, as stored: choosing one is `assignSiteGrant`, which keeps it to one credential per website. */
   setGrants(context: object, reference: CredentialReference, grants: CredentialGrant[]): Promise<CredentialSummary> {
     this.person(context)
     if (!Array.isArray(grants) || grants.some(grant => !grantSchema.safeParse(grant).success)) return Promise.reject(new VaultError('INVALID_INPUT'))
-    const copy = grants.map(grant => ({ subject: grant.subject, level: grant.level }))
     return this.run(async () => {
       let runtime: ReturnType<LocalPasswordVault['management']> | undefined
-      try { await this.gates(); await this.open(undefined, true); runtime = this.management(Promise.resolve(true)); return await updateGrants(runtime, reference, copy) }
+      try {
+        await this.gates(); await this.open(undefined, true); runtime = this.management(Promise.resolve(true))
+        const stored = runtime.check(reference).grants
+        const copy = grants.map(grant => {
+          if (!isLocalSubject(grant.subject)) return { subject: grant.subject, level: grant.level }
+          const kept = stored.find(entry => entry.subject === grant.subject)
+          if (!kept) throw new VaultError('INVALID_INPUT')
+          return { ...kept }
+        })
+        return await updateGrants(runtime, reference, copy)
+      }
       catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
       finally { runtime?.release() }
     })
@@ -270,7 +284,7 @@ export class LocalPasswordVault {
     this.person(context)
     return this.run(async () => {
       await this.gates(); await this.open(undefined, true); const { key, document } = this.unlocked()
-      return this.#file.payload(document, key).credentials.map(({ version: _version, ...value }) => value)
+      return this.#file.payload(document, key).credentials.map(({ version: _version, ...value }) => ({ ...value, grants: syncedGrants(value.grants) }))
     })
   }
   /** Sync engine only: apply changes pulled from the cloud. Each changed credential is revoked like a local edit, so
@@ -295,7 +309,10 @@ export class LocalPasswordVault {
         for (const change of changes) {
           const old = payload.credentials.find(item => item.id === change.id)
           if (!change.value && !old) continue
-          const parsed = change.value ? payloadSchema.shape.credentials.element.safeParse({ ...change.value, id: change.id, version: (old?.version ?? 0) + 1 }) : undefined
+          // The cloud carries the shared grants only; this device's own App/connector choices on it stay as they were.
+          const local = (old?.grants ?? []).filter(grant => isLocalSubject(grant.subject))
+          const incoming = change.value ? { ...change.value, grants: [...syncedGrants(change.value.grants ?? []), ...local] } : undefined
+          const parsed = incoming ? payloadSchema.shape.credentials.element.safeParse({ ...incoming, id: change.id, version: (old?.version ?? 0) + 1 }) : undefined
           if (parsed && !parsed.success) throw new VaultError('DATA_DAMAGED')
           payload.credentials = [...payload.credentials.filter(item => item.id !== change.id), ...(parsed ? [parsed.data] : [])]
           events.push({ id: randomUUID(), action: parsed ? old ? 'edit' : 'add' : 'delete', source: 'lifecycle', outcome: 'completed',
@@ -306,6 +323,72 @@ export class LocalPasswordVault {
       } catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
       finally { runtime?.release(); for (const revocation of revocations) revocation.release() }
     })
+  }
+  /**
+   * Person-only: `subject` (an App or the connector) uses `reference` on `site` from now on — or nothing there, with null.
+   * One credential per subject and website: the grant leaves every other credential serving that site in the same write.
+   * `code`: for an App, the fingerprint of the code the person confirmed. Local to this device; nothing is published.
+   */
+  assignSiteGrant(context: object, subject: string, site: string, reference: CredentialReference | null, code?: string): Promise<CredentialSummary[]> {
+    this.person(context)
+    const grant = { subject, level: 'read' as const, ...(code ? { code } : {}) }
+    if (!isLocalSubject(subject) || !grantSchema.safeParse(grant).success || !/^[a-z0-9.-]+$/.test(site)) return Promise.reject(new VaultError('INVALID_INPUT'))
+    return this.run(async () => {
+      let runtime: ReturnType<LocalPasswordVault['management']> | undefined
+      try {
+        await this.gates(); await this.open(undefined, true); runtime = this.management(Promise.resolve(true))
+        const target = reference ? runtime.check(reference) : undefined
+        if (target && !credentialServes(target, site)) throw new VaultError('INVALID_INPUT')
+        const touched: CredentialSummary[] = []
+        for (const item of runtime.payload.credentials) {
+          if (item !== target && !(credentialServes(item, site) && item.grants.some(entry => entry.subject === subject))) continue
+          const others = item.grants.filter(entry => entry.subject !== subject)
+          const next = item === target ? [...others, grant] : others
+          touched.push(await updateGrants(runtime, { id: item.id, version: item.version, epoch: runtime.epoch }, next))
+        }
+        return touched
+      } catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
+      finally { runtime?.release() }
+    })
+  }
+  /**
+   * The request sink, for the trusted host only (an App's verb, the connector's GitHub client): the credential `subject`
+   * chose for `site` goes into one header of one https request to an allowed host it serves, and the answer comes back.
+   * The value never leaves this method; the caller gets GitHub's (or whoever's) status and body.
+   */
+  request(subject: string, site: string, code: string | undefined, request: CredentialRequest, signal?: AbortSignal, credentialId?: string): Promise<CredentialResponse> {
+    // `credentialId`: the host's own screens, with the one the person is picking right now (a new project's account), not a
+    // stored choice. Never for an App: an App only ever uses the credential granted to it.
+    if (!isLocalSubject(subject) || credentialId !== undefined && !subject.startsWith('host:')) return Promise.reject(new VaultError('INVALID_INPUT'))
+    let feature: VaultFeatureOperation | undefined
+    // The lookup holds the vault's queue; the network does not: the value is out only as a registered, wiped-on-lock buffer.
+    return this.run(async () => {
+      const held = feature = await this.feature('use', signal)
+      return this.#file.disk.withFeature(held, async () => {
+        await held.wait(() => this.gates()); await held.wait(() => this.open(held))
+        const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)
+        try {
+          const chosen = payload.credentials.filter(item => credentialServes(item, site) && (credentialId !== undefined ? item.id === credentialId : item.grants.some(entry => entry.subject === subject)))
+          if (chosen.length !== 1) throw new VaultError('NOT_GRANTED')
+          const item = chosen[0], grant = item.grants.find(entry => entry.subject === subject)
+          if (subject.startsWith('app:') && grant?.code !== code) throw new VaultError('GRANT_STALE')
+          const text = request.value === 'password' ? item.password : request.value === 'account' ? item.account
+            : item.fields.find(field => field.name === (request.value as { field: string }).field)?.value ?? ''
+          if (!text) throw new VaultError('UNAVAILABLE')
+          held.assertCurrent(); this.current(epoch)
+          const value = Buffer.from(text), secret = { credentialId: item.id, clear() { value.fill(0) } }
+          this.#activeSecrets.add(secret)
+          return { value, secret, epoch, target: { origin: item.origin, sites: [...item.sites] }, audit: { id: item.id, version: item.version, origin: item.origin } }
+        } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
+      })
+    }).then(async ({ value, secret, epoch, target, audit }) => {
+      try {
+        if (this.#epoch !== epoch || this.#revocations.has(audit.id)) throw new VaultError('CANCELLED')
+        const answer = await sendWithCredential(this.#http, target, request, value, signal)
+        await this.run(async () => { await this.open(); await this.record({ id: randomUUID(), action: 'use', source: 'policy', outcome: 'completed', credential: { id: audit.id, version: audit.version }, origin: audit.origin }) })
+        return answer
+      } finally { secret.clear(); this.#activeSecrets.delete(secret) }
+    }).finally(() => feature?.release())
   }
   /** Person-only plaintext for the settings eye button, after local system verification (Touch ID or login password). */
   reveal(context: object, reference: CredentialReference): Promise<CredentialSecrets> {

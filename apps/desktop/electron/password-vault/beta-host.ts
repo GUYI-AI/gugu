@@ -13,9 +13,10 @@ import type { PermissionPolicy } from '../permissions/rules'
 import { guguMcpToolScope, passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
-import { macVaultKeyProtector } from './mac'
+import { systemVaultKeyProtector } from './system-keys'
 import { VaultError, type CredentialGrant } from './contracts'
-import { httpsOrigin } from './schema'
+import { credentialServes, httpsOrigin, isLocalSubject, syncedGrants } from './schema'
+import type { CredentialRequest, CredentialResponse } from './request-sink'
 import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 import { BetaPasswordLogin } from './beta-login'
 import { BetaPasswordSaves, type SaveProposal, type SaveResult } from './beta-save'
@@ -105,7 +106,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     } })
   const saves = new BetaPasswordSaves({ deviceId, changed, describe, deliver: host.deliverSave })
   const remote = new BetaRemoteLogins({ deviceId, changed })
-  const keys = macVaultKeyProtector(reason => host.verifyOwner(reason))
+  const keys = systemVaultKeyProtector(process.platform === 'darwin' ? reason => host.verifyOwner(reason) : null)
   // The vault publishes through this port before each local commit; the engine exists once the vault does.
   const port: { sync?: VaultSync } = {}
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),
@@ -139,7 +140,9 @@ export async function closePasswordVaultForAccountClosure(ownerId: string): Prom
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
   try { candidates = passwordGrantCandidates(value.ownerId) } catch { candidates = [] }
-  return { items: await value.vault.list(person), approvals: [...value.login.pending(), ...value.remote.pending()], outcomes: [...value.login.outcomes(), ...value.saves.outcomes()], saves: value.saves.pending(), candidates, sync: value.sync.view() }
+  // The person's page manages Agent and project grants; the connector's and Apps' picks live on their own pages.
+  const items = (await value.vault.list(person)).map(item => ({ ...item, grants: syncedGrants(item.grants) }))
+  return { items, approvals: [...value.login.pending(), ...value.remote.pending()], outcomes: [...value.login.outcomes(), ...value.saves.outcomes()], saves: value.saves.pending(), candidates, sync: value.sync.view() }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
@@ -187,6 +190,7 @@ async function invokePasswordCommand(value: Account, command: PasswordUiCommand)
       case 'sync-approve': await value.sync.approve(command.deviceId); break
       case 'sync-reject': await value.sync.reject(command.deviceId); break
       case 'sync-ask-again': await value.sync.askAgain(); break
+      case 'sync-reset': await value.sync.reset(); break
       case 'sync-recovery-create': { const { code } = await value.sync.createRecovery(); changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code } }
       case 'sync-recovery-remove': await value.sync.removeRecovery(); break
       case 'sync-recovery-skip': await value.sync.skipRecovery(); break
@@ -312,3 +316,63 @@ export function passwordBetaRemoteHandlers() {
     },
   }
 }
+
+/**
+ * The host's own use of the vault for a website (an App's `permissions.credentials`, the GitHub connector): which saved
+ * credentials serve it, which one a user (`app:<publisher>/<id>`, `host:connector:github`) chose, choosing, and the
+ * request sink. Main-process callers only, each acting on the person's choice; no value ever comes out. Every failure is
+ * the vault's own code (`UNAVAILABLE`, `SYSTEM_STORAGE_UNAVAILABLE`, `NOT_GRANTED`, `GRANT_STALE`…), never a fallback.
+ */
+export interface SiteCredential { id: string; name: string; origin: string; account?: string; maskedAccount: string
+  /** Its values marked non-secret (a GitHub id, an avatar address), by name. */
+  fields: Record<string, string>
+  /** This device's App/connector/project choices on it, by user. */
+  users: { subject: string; code?: string }[] }
+const siteCredential = (item: import('./contracts').CredentialSummary): SiteCredential => ({
+  id: item.reference.id, name: item.name, origin: item.origin, ...(item.account !== undefined ? { account: item.account } : {}), maskedAccount: item.maskedAccount,
+  fields: Object.fromEntries(item.fields.filter(field => !field.secret && field.value !== undefined).map(field => [field.name, field.value!])),
+  users: item.grants.filter(grant => isLocalSubject(grant.subject)).map(grant => ({ subject: grant.subject, ...(grant.code ? { code: grant.code } : {}) })),
+})
+export const passwordVaultForHost = Object.freeze({
+  async siteCredentials(site: string): Promise<SiteCredential[]> {
+    const value = await account()
+    return accounts.run(value, async () => (await value.vault.list(person)).filter(item => credentialServes(item, site)).map(siteCredential))
+  },
+  /** Every saved credential, as the host's own screens list them (the GitHub connector's accounts across hosts). */
+  async credentials(): Promise<SiteCredential[]> {
+    const value = await account()
+    return accounts.run(value, async () => (await value.vault.list(person)).map(siteCredential))
+  },
+  /** `credentialId` null: the user uses nothing on that website any more. */
+  async assign(subject: string, site: string, credentialId: string | null, code?: string): Promise<void> {
+    const value = await account()
+    await accounts.run(value, async () => {
+      const reference = credentialId ? (await value.vault.list(person)).find(item => item.reference.id === credentialId)?.reference : null
+      if (credentialId && !reference) throw new VaultError('STALE_REFERENCE')
+      await value.vault.assignSiteGrant(person, subject, site, reference ?? null, code)
+      changed()
+    })
+  },
+  async request(subject: string, site: string, code: string | undefined, request: CredentialRequest, signal?: AbortSignal, credentialId?: string): Promise<CredentialResponse> {
+    const value = await account()
+    return accounts.run(value, () => value.vault.request(subject, site, code, request, signal, credentialId))
+  },
+  /**
+   * A credential the person handed the host (a device-flow token, a pasted one): saved, or — `credentialId` — saved over
+   * that one (the same account signing in again). Non-secret `fields` by name. Answers its id.
+   */
+  async save(input: { origin: string; name: string; account: string; password: string; fields?: Record<string, string> }, credentialId?: string): Promise<string> {
+    const value = await account()
+    return accounts.run(value, async () => {
+      const items = await value.vault.list(person)
+      const previous = credentialId ? items.find(item => item.reference.id === credentialId) : undefined
+      if (credentialId && !previous) throw new VaultError('STALE_REFERENCE')
+      const fields = [...Object.entries(input.fields ?? {}).map(([name, text]) => ({ id: previous?.fields.find(field => field.name === name)?.id ?? randomUUID(), name, value: text, secret: false })),
+        // The person's own values on it stay as they are (a blank value keeps the stored one).
+        ...(previous?.fields ?? []).filter(field => !Object.hasOwn(input.fields ?? {}, field.name)).map(field => ({ id: field.id, name: field.name, value: '', secret: field.secret }))]
+      const saved = await value.vault.save(person, randomUUID(), { origin: input.origin, name: input.name, account: input.account, password: input.password, fields }, previous?.reference)
+      value.pull.now(); changed()
+      return saved.reference.id
+    })
+  },
+})

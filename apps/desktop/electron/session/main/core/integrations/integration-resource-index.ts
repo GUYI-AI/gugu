@@ -9,10 +9,22 @@ import { log } from '@main/lib/logger'
  * without decrypting credentials or starting a provider command. Credentials the
  * platform keeps (#921) are asked of the platform first, so a connection made on
  * another device of the person's is listed here too. */
+/** The vault's GitHub credentials as the index lists accounts; an unreadable vault lists none and says so in the log. */
+async function githubAccountsForIndex() {
+  try {
+    const { githubVaultAccountStore } = await import('@main/core/github/accounts/github-vault-accounts')
+    return await githubVaultAccountStore.listAccounts('github')
+  } catch (error) {
+    log.warn('GitHub accounts are unavailable for the assistant index', { error: error instanceof Error ? error.message : String(error) })
+    return []
+  }
+}
+
 export async function configuredIntegrationIndex() {
   await platformCredentials.refresh()
   const configured = await Promise.all(integrationPluginRegistry.getAll().map(async plugin => ({
-    plugin, accounts: await providerAccountRegistry.listAccounts(plugin.metadata.id),
+    // GitHub's accounts are the password vault's GitHub credentials (github-vault-accounts.ts); every other provider's are here.
+    plugin, accounts: plugin.metadata.id === 'github' ? await githubAccountsForIndex() : await providerAccountRegistry.listAccounts(plugin.metadata.id),
   })))
   const providers = new Set(configured.filter(row => row.accounts.length).map(row => row.plugin.metadata.id))
   const skills = await connectedCliSkills(async provider => providers.has(provider), () => {
@@ -29,9 +41,10 @@ export async function configuredIntegrationIndex() {
       : !cliMethodOf(provider) && integrationGivesSessionTools(provider)
         ? { note: `${plugin.metadata.name}已连接，要用就派任务；任务会话里自带它的工具`, delegate: { tool: 'session_spawn' }, task_skills: [] }
         : undefined
-    // Neither tools nor a CLI: connected for issue links only, nothing the assistant can call.
-    // A CLI whose skills cannot be read right now is still a CLI, not an issue link.
-    const note = !use && !cliMethodOf(provider) && !integrationGivesSessionTools(provider) ? '只用来关联 issue，助理不能直接用' : undefined
+    // Neither tools nor a CLI: used in Gugu's own screens only (GitHub: the PR panel, sync and issue links), nothing the
+    // assistant can call. A CLI whose skills cannot be read right now is still a CLI.
+    const note = !use && !cliMethodOf(provider) && !integrationGivesSessionTools(provider)
+      ? provider === 'github' ? '咕咕界面里的 PR 面板、PR 同步和 issue 关联用它，助理不能直接用' : '只用来关联 issue，助理不能直接用' : undefined
     return accounts.map(account => ({
       id: `${provider}:${account.accountId}`, name: plugin.metadata.name,
       modifiedAt: new Date(account.updatedAt).toISOString(), isDefault: account.isDefault,

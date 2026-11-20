@@ -56,12 +56,12 @@ function mapPrSyncEngineError(
         ? {
             type: 'github_auth_required' as const,
             host: e.host,
-            hint: e.hint ?? 'Connect GitHub from account settings.',
+            hint: e.hint ?? 'Connect GitHub (or paste a token) in Connectors › GitHub.',
           }
         : {
             type: 'ghes_auth_required' as const,
             host: e.host,
-            hint: e.hint ?? `Run: gh auth login --hostname ${e.host}`,
+            hint: e.hint ?? `Paste a token for ${e.host} in Connectors › GitHub.`,
           }
     )
     .with({ type: 'account_not_found' }, (e) => ({

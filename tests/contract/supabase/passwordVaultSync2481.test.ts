@@ -29,6 +29,7 @@ const rpc = {
   password_vault_set_recovery: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_public_key', 'text'], ['p_verifier', 'text'], ['p_sealed', 'text'], ['p_entry', 'jsonb']],
   password_vault_recovery_begin: [['p_device_id', 'text'], ['p_proof', 'text']],
   password_vault_recover: [['p_device_id', 'text'], ['p_proof', 'text'], ['p_public_key', 'text'], ['p_epoch', 'integer'], ['p_sealed_key', 'text'], ['p_entry', 'jsonb']],
+  password_vault_reset: [['p_device_id', 'text']],
 } as const
 
 function rpcAs(db: Database, owner: string): SyncRpc {
@@ -240,6 +241,36 @@ describe('password vault sync between two devices of one account', () => {
       expect(await reinstalled.askAgain()).toMatchObject({ state: 'joining' })
       expect(ready(await restarted.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
       restarted.dispose(); reinstalled.dispose()
+    } finally { await db.query('ROLLBACK') }
+  }))
+
+  it('when no device can open the vault any more, a new one deletes it and starts over from what it holds', async () => withContractDatabase(async db => {
+    await db.query('BEGIN')
+    try {
+      const owner = randomUUID(), [lostId, newId] = [randomUUID(), randomUUID()]
+      await db.query(`INSERT INTO auth.users(id,aud,role,email,created_at,updated_at) VALUES($1,'authenticated','authenticated',$2,now(),now())`, [owner, `${owner}@vault.invalid`])
+      for (const id of [lostId, newId]) await db.query(`INSERT INTO identity.gugu_devices(device_id,user_id,label,hostname,platform,machine_id)
+        VALUES($1,$2,$3,'h','linux',$4)`, [id, owner, id === lostId ? 'Lost' : 'New', `machine-${id}`])
+      const engine = (deviceId: string, vault: MemoryVault) => (vault.sync = new VaultSync({ root: join(root, deviceId), ownerId: owner, deviceId, keys, rpc: rpcAs(db, owner), vault, changed() {} }))
+      const lostVault = new MemoryVault(), newVault = new MemoryVault()
+      const old = randomUUID(), fresh = randomUUID()
+      lostVault.items.set(old, credential('https://github.com', 'me', 'canary-old'))
+      newVault.items.set(fresh, credential('https://github.com', 'me', 'canary-new'))
+      ready(await engine(lostId, lostVault).refresh())
+      const device = engine(newId, newVault)
+      expect(await device.refresh()).toMatchObject({ state: 'joining' })
+
+      // The lost device is still approved: it could still open them, so nothing is deleted.
+      await expect(device.reset()).rejects.toMatchObject({ code: 'VAULT_STILL_OPENABLE' })
+      expect((await db.query('SELECT 1 FROM identity.password_vault_items WHERE owner_user_id=$1', [owner])).rows).toHaveLength(1)
+
+      // Removed in Settings › Devices (its device row goes): now nobody can, and this device starts over.
+      await db.query('DELETE FROM identity.gugu_devices WHERE device_id=$1', [lostId])
+      const view = ready(await device.reset())
+      expect(view.devices.map(entry => entry.deviceId)).toEqual([newId])
+      const items = (await db.query<{ item_id: string }>('SELECT item_id FROM identity.password_vault_items WHERE owner_user_id=$1', [owner])).rows
+      expect(items.map(row => row.item_id)).toEqual([fresh])
+      expect(newVault.items.get(fresh)?.password).toBe('canary-new')
     } finally { await db.query('ROLLBACK') }
   }))
 

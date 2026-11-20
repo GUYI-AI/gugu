@@ -72,6 +72,8 @@ export type PasswordUiCommand =
   | { type: 'sync-reject'; deviceId: string }
   /** This device was refused, and the person asks again (with a new device key). */
   | { type: 'sync-ask-again' }
+  /** Every device that could open the passwords is gone and there is no recovery code: delete them all and start over here. */
+  | { type: 'sync-reset' }
   /** Recovery code (a device on paper): generate or replace it, drop it, decline the offer, or join with it. Generating
    * and recovering answer with `recoveryCode`, shown once. */
   | { type: 'sync-recovery-create' }

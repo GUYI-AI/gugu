@@ -4,14 +4,17 @@ import { credentialString, optionalCredentialString } from '../../helpers/creden
 
 export const GITHUB_DOTCOM_API_BASE_URL = 'https://api.github.com';
 
+/** A token (checking one the person is about to save); a host that keeps the credential itself passes `fetch` instead. */
 export const gitHubCredentialsSchema = z.object({
-  accessToken: credentialString('GitHub access token is required.'),
+  accessToken: optionalCredentialString(),
   apiBaseUrl: optionalCredentialString().transform(
     (value) => value?.replace(/\/+$/, '') ?? GITHUB_DOTCOM_API_BASE_URL
   ),
 });
 
 export type GitHubCredentials = z.infer<typeof gitHubCredentialsSchema>;
+/** Checking a token the person is about to save: then there is one. */
+export const gitHubTokenCredentialsSchema = gitHubCredentialsSchema.extend({ accessToken: credentialString('GitHub access token is required.') });
 
 export type GitHubClient = Octokit;
 

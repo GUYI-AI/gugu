@@ -22,6 +22,8 @@ vi.mock('../../../apps/desktop/electron/session/main/core/integrations/session-i
   integrationGivesSessionTools: (integrationId: string) => ['email', 'amap'].includes(integrationId),
 }))
 vi.mock('../../../apps/desktop/electron/session/main/core/provider-accounts/provider-account-registry-instance', () => ({ providerAccountRegistry: data }))
+// GitHub's accounts are the password vault's GitHub credentials.
+vi.mock('../../../apps/desktop/electron/session/main/core/github/accounts/github-vault-accounts', () => ({ githubVaultAccountStore: { listAccounts: data.listAccounts } }))
 vi.mock('../../../apps/desktop/electron/session/main/core/integrations/platform-credentials-instance', () => ({ platformCredentials: platform }))
 vi.mock('../../../apps/desktop/electron/session/main/core/integrations/cli/cli-integrations', () => ({
   cliMethodOf: (id: string) => ['dingtalk', 'feishu', 'wecom'].includes(id) ? { kind: 'cli' } : null,
@@ -38,14 +40,14 @@ it('tells the assistant to delegate a connected CLI application, naming the skil
       use: { note: '钉钉已连接，要用就派任务', delegate: { tool: 'session_spawn' }, task_skills: ['dws'] } },
     { id: 'email:default', name: '邮箱', modifiedAt: '1970-01-01T00:00:01.000Z', isDefault: true,
       use: { note: '邮箱已连接，要用就派任务；任务会话里自带它的工具', delegate: { tool: 'session_spawn' }, task_skills: [] } },
-    { id: 'github:default', name: 'GitHub', modifiedAt: '1970-01-01T00:00:01.000Z', isDefault: true, note: '只用来关联 issue，助理不能直接用' },
+    { id: 'github:default', name: 'GitHub', modifiedAt: '1970-01-01T00:00:01.000Z', isDefault: true, note: '咕咕界面里的 PR 面板、PR 同步和 issue 关联用它，助理不能直接用' },
   ])
   expect(data.resolveSecret).not.toHaveBeenCalled()
 })
 
-it('says a connection that hands an agent no tools and no task skills is only for linking issues', async () => {
+it('says a connection that hands an agent no tools and no task skills is for Gugu\'s own screens only', async () => {
   const rows = await configuredIntegrationIndex()
-  expect(rows.find(row => row.id === 'github:default')).toMatchObject({ note: '只用来关联 issue，助理不能直接用' })
+  expect(rows.find(row => row.id === 'github:default')).toMatchObject({ note: '咕咕界面里的 PR 面板、PR 同步和 issue 关联用它，助理不能直接用' })
   // Tool and CLI connections keep their own route; they never read as issue-only.
   for (const id of ['email:default', 'dingtalk:default']) expect(rows.find(row => row.id === id)).not.toHaveProperty('note')
 })

@@ -25,7 +25,7 @@ function setup() {
     ownerAccounts: vi.fn(async () => [{ providerId: 'github',accountId: 'actual',configured: true,publicMetadata: { version: 1,providerId: 'github',accountId: 'actual' } }]),
     ownerAuthorizationCommit: vi.fn((_input: NativeConnectionAuthorization) => completion.promise),ownerAuthorizationCommitBatch: vi.fn(),connect: vi.fn(),authorize: vi.fn(),cliLoginStart: vi.fn(),cliToolPrepare: vi.fn(),cancelAuthorization: vi.fn(async () => {}) }
   const github = { auth: vi.fn(() => authorization.promise),authCancel: vi.fn(async () => ({ success: true })),onEvent: vi.fn(() => () => {}),
-    removeAccount: vi.fn(),setDefaultAccount: vi.fn(),importCliAccounts: vi.fn() }
+    removeAccount: vi.fn(),setDefaultAccount: vi.fn(),saveToken: vi.fn() }
   const recreateBegin = vi.fn<ConnectionClient['recreateBegin']>(async () => ({ recreationId: ticket,operationId,expectedItemRevision: null,revision: '0',expiresAt: '2099-01-01T00:00:00Z' }))
   const snapshot = vi.fn<() => Promise<ConnectionSnapshot>>(async () => ({ version: 1,state: 'ready',revision: '0',items: [],application: [] }))
   const client = { snapshot,recreateBegin,commit: vi.fn(async (change: ConnectionCommit) => ({ operationId: change.operationId,scopeKey: change.scopeKey,resourceKey: change.resourceKey ?? 'resolved-key',revision: '10',status: 'applied' })) } as unknown as ConnectionClient
@@ -77,7 +77,7 @@ function unknownSnapshot(providerId: string): ConnectionSnapshot {
   application: [{ operationId,requestHash: 'a'.repeat(64),scopeKey,resourceKey,deviceId,revision: '9',expectedItemRevision: '8',operation: 'save',
     status: 'failed',errorCode: 'CONNECTION_OUTCOME_UNKNOWN',terminal: true,admissionId: ticket,startedAt: '2026-11-07T00:00:00Z' }] }
 }
-it.each(['platform-form','platform-oauth','native-form','native-oauth','native-cli','native-prepare','github-auth','github-import'] as const)(
+it.each(['platform-form','platform-oauth','native-form','native-oauth','native-cli','native-prepare','github-auth','github-token'] as const)(
   'blocks a retained %s action when its latest application becomes UNKNOWN before submit',async kind => {
     const test = setup(),provider = kind.startsWith('platform') ? kind === 'platform-oauth' ? 'baidu-pan' : 'amap' : 'github'
     // Construct while healthy, as an already-open dialog does; never rely on its stale disabled state.
@@ -85,13 +85,13 @@ it.each(['platform-form','platform-oauth','native-form','native-oauth','native-c
       : kind === 'platform-oauth' || kind === 'native-oauth' ? () => test.actions.integrations.authorize(provider)
         : kind === 'native-cli' ? () => test.actions.integrations.cliLoginStart(provider)
           : kind === 'native-prepare' ? () => test.actions.integrations.cliToolPrepare(provider)
-          : kind === 'github-import' ? () => test.actions.github.importCliAccounts() : () => test.actions.github.auth()
+          : kind === 'github-token' ? () => test.actions.github.saveToken({ token: 'synthetic' }) : () => test.actions.github.auth()
     test.authorization.resolve(authorized); test.completion.resolve(receipt)
     test.snapshot.mockResolvedValue(unknownSnapshot(provider))
     await expect(submit()).rejects.toMatchObject({ code: 'outcome-unknown' })
     expect(test.recreateBegin).not.toHaveBeenCalled()
     expect(test.native.ownerAuthorizationBegin).not.toHaveBeenCalled()
-    for (const effect of [fixture.platform.saveCredential,fixture.platform.beginOAuth,test.native.connect,test.native.authorize,test.native.cliLoginStart,test.native.cliToolPrepare,test.github.auth,test.github.importCliAccounts])
+    for (const effect of [fixture.platform.saveCredential,fixture.platform.beginOAuth,test.native.connect,test.native.authorize,test.native.cliLoginStart,test.native.cliToolPrepare,test.github.auth,test.github.saveToken])
       expect(effect).not.toHaveBeenCalled()
     expect(fixture.notify).not.toHaveBeenCalled()
   })

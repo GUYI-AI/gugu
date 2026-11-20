@@ -62,14 +62,8 @@ export class ProjectGitHubAuthContextResolver {
 
     try {
       const settings = await project.settings.get();
-      if (!Object.hasOwn(settings, 'githubAccountId')) {
-        return err({
-          type: 'unconfigured',
-          projectId,
-          message: 'No GitHub account is configured for this project.',
-        });
-      }
-
+      // null is the person's 「不用 GitHub」 for this project. Otherwise its account is the password vault's grant to it
+      // (`host:github:project:<id>`), else the connector's current one: resolved per request (GitHubApiAuthService).
       if (settings.githubAccountId === null) {
         return err({
           type: 'disabled',
@@ -77,16 +71,7 @@ export class ProjectGitHubAuthContextResolver {
           message: 'GitHub API is disabled for this project.',
         });
       }
-
-      const accountId = settings.githubAccountId?.trim() || null;
-      if (!accountId) {
-        return err({
-          type: 'unconfigured',
-          projectId,
-          message: 'No GitHub account is configured for this project.',
-        });
-      }
-      return ok({ accountId });
+      return ok({ projectId });
     } catch (error) {
       const message = errorMessage(error);
       this.deps.logger.warn('Failed to resolve project GitHub account selection', {

@@ -1,3 +1,4 @@
+import { GitHubAccountRows } from './GitHubAccountsSection';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import React, { useMemo } from 'react';
 import { MarketConnectorDetail } from '@renderer/features/extensions/panel/market-detail-connector';
@@ -292,6 +293,7 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
       }
       onTryPlaybook={selectedIntegration.onTryPlaybook}
       onClose={closeSheet}
+      {...(selectedIntegration.id === 'github' ? { credentials: <GitHubAccountRows accounts={sortedGithubAccounts} readOnly={selectedIntegration.readOnly} /> } : {})}
     />
   );
 

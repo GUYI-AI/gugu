@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { APP_CREDENTIAL_HEADERS, APP_CREDENTIALS_API_VERSION } from './app-credentials';
 import { WIDGET_HEIGHT_MIN, WIDGET_HEIGHT_MAX } from '@gugu/core/shared/ui/widgetModels';
 import { EXTENSION_API_VERSION, EXTENSION_ASSISTANT_RULES_API_VERSION, EXTENSION_TOOL_CONFINEMENT_API_VERSION } from './bridge-protocol';
 import { networkHostAllowed } from './network-host';
@@ -506,6 +507,19 @@ const permissionsSchema = z.strictObject({
       'resources:write': z.array(z.string()).min(1).max(8).optional(),
     }).optional(),
   })).length(1).optional(),
+  /**
+   * API 60 (app-credentials.ts): saved credentials the App's requests may carry, one per website. The person picks which
+   * of their saved ones at install and in the App's permissions; the value only ever goes into the declared header of a
+   * request the host sends (`gugu.credentials`) to a host in `network` that the credential serves.
+   */
+  credentials: z.array(z.strictObject({
+    site: z.string().regex(/^(?!-)[a-z0-9-]{1,63}(?:\.(?!-)[a-z0-9-]{1,63})+$/, { message: 'must be a bare lowercase hostname' }),
+    header: z.enum(APP_CREDENTIAL_HEADERS),
+    format: z.string().max(64).refine((format) => format.split('{value}').length === 2 && !/[\r\n]/.test(format), { message: 'names {value} once, on one line' }),
+    value: z.union([z.literal('password'), z.literal('account'), z.strictObject({ field: z.string().trim().min(1).max(200) })]),
+  })).min(1).max(4)
+    .refine((list) => new Set(list.map((entry) => entry.site)).size === list.length, { message: 'one declaration per website' })
+    .optional(),
   /** Hostnames its pages and host-confined tools may reach. Anything else is blocked. */
   network: z
     .array(
@@ -791,6 +805,12 @@ export const extensionManifestSchema = z
       ctx.addIssue({ code: 'custom', path: ['contributes', 'assistantRules'], message: `assistantRules requires apiVersion ${EXTENSION_ASSISTANT_RULES_API_VERSION}` });
     }
     if (new Set(prompts.map((prompt) => prompt.name)).size !== prompts.length) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'duplicate prompt name' });
+    if (manifest.permissions?.credentials && manifest.apiVersion < APP_CREDENTIALS_API_VERSION) ctx.addIssue({ code: 'custom', path: ['permissions', 'credentials'], message: `credentials require apiVersion ${APP_CREDENTIALS_API_VERSION}` });
+    for (const [index, credential] of (manifest.permissions?.credentials ?? []).entries()) {
+      // A credential is only ever sent to a host the App may reach that the credential is for: say one, or it can never go anywhere.
+      const reachable = (manifest.permissions?.network ?? []).some((host) => { const bare = host.replace(/^\*\./, ''); return bare === credential.site || bare.endsWith(`.${credential.site}`); });
+      if (!reachable) ctx.addIssue({ code: 'custom', path: ['permissions', 'credentials', index, 'site'], message: `network names no host of ${credential.site}: the credential could never be sent` });
+    }
     if ((manifest.permissions?.capabilities ?? []).includes('prompts') && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['permissions', 'capabilities'], message: '"prompts" requires apiVersion 34' });
     if (manifest.contributes.tabs.filter((tab) => tab.chatFile !== undefined).length > 1) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'tabs'], message: 'one tab at most names the file it shows in a chat (chatFile)' });

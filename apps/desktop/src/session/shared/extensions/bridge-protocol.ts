@@ -160,7 +160,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
 // 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
-export const EXTENSION_API_VERSION = 59;
+// 60 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
+// `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person chose for the
+// App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
+export const EXTENSION_API_VERSION = 60;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1033,6 +1036,14 @@ export const BRIDGE_VERBS = {
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
+  /**
+   * `gugu.credentials` (60, app-credentials.ts): a request the host sends for the page with the credential the person chose
+   * for that website (password vault grant `app:<publisher>/<id>`, bound to the App's code); the value never reaches the
+   * page. Gated by `permissions.credentials`, `permissions.network` and that choice, not a capability word. A page an agent
+   * works never uses the person's credential: a read there answers `unavailable`, a write is handed to the agent.
+   */
+  credentialsRead: { needs: null, only: 'page' },
+  credentialsWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudSubscribe: { needs: null, only: 'page' },
   cloudUnsubscribe: { needs: null, only: 'page' },
   /**

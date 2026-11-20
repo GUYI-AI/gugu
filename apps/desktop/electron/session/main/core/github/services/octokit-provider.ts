@@ -24,23 +24,27 @@ export class GitHubApiAuthErrorException extends Error {
   }
 }
 
+/**
+ * An Octokit whose every request is sent by the password vault with the chosen GitHub credential (`request.fetch`): no
+ * `auth`, no token in this process. One per host and credential choice.
+ */
 export async function getOctokit(
   host: string,
   context: GitHubApiAuthContext = {}
 ): Promise<Result<Octokit, GitHubApiAuthError>> {
   const normalizedHost = normalizeRepositoryHost(host);
-  const token = await githubApiAuthService.getToken(normalizedHost, context);
-  if (!token.success) return err(token.error);
+  const auth = await githubApiAuthService.resolve(normalizedHost, context);
+  if (!auth.success) return err(auth.error);
 
-  const cached = getCachedOctokit(normalizedHost, context);
-  if (cached?.token === token.data) return ok(cached.octokit);
+  const cached = getCachedOctokit(auth.data.cacheKey);
+  if (cached) return ok(cached);
 
   const octokit = new Octokit({
-    auth: token.data,
     baseUrl: githubApiBaseUrlForHost(normalizedHost),
     log: octokitLog,
+    request: { fetch: auth.data.fetch },
   });
 
-  setCachedOctokit(normalizedHost, context, { octokit, token: token.data });
+  setCachedOctokit(auth.data.cacheKey, octokit);
   return ok(octokit);
 }

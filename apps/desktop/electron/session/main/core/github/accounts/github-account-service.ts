@@ -1,24 +1,20 @@
-import type { GitHubAccountSummary, GitHubImportCliAccountsResponse } from '@shared/github';
+import type { GitHubAccountSummary } from '@shared/github';
 import {
   GITHUB_PROVIDER_ID,
   toGitHubAccount,
   type GitHubAccount,
-  type GitHubAccountStore,
 } from './github-accounts';
-import type { GitHubCliAccountImportService } from './github-cli-account-import';
+import type { GitHubVaultAccountStore } from './github-vault-accounts';
 
 type GitHubAccountServiceStore = Pick<
-  GitHubAccountStore,
+  GitHubVaultAccountStore,
   'listAccounts' | 'getDefaultAccountId' | 'setDefaultAccount' | 'removeAccount'
 >;
-
-type GitHubCliAccountImporter = Pick<GitHubCliAccountImportService, 'importAccounts'>;
 
 export class GitHubAccountService {
   constructor(
     private readonly accountStore: GitHubAccountServiceStore,
-    private readonly cliAccountImporter: GitHubCliAccountImporter,
-    private readonly clearCachedClients: (host?: string, accountId?: string) => void = () => {}
+    private readonly clearCachedClients: () => void = () => {}
   ) {}
 
   async listAccounts(): Promise<GitHubAccountSummary[]> {
@@ -31,19 +27,10 @@ export class GitHubAccountService {
       .map((account) => this.toAccountSummary(account, defaultAccountId));
   }
 
-  async importCliAccounts(): Promise<Extract<GitHubImportCliAccountsResponse, { success: true }>> {
-    const imported = await this.cliAccountImporter.importAccounts();
-    const importedAccountIds = [...new Set(imported.map((account) => account.id))];
-    return {
-      success: true,
-      accounts: await this.listAccounts(),
-      importedAccountIds,
-    };
-  }
-
   async setDefaultAccount(accountId: string): Promise<GitHubAccountSummary | null> {
     const account = await this.accountStore.setDefaultAccount(GITHUB_PROVIDER_ID, accountId);
     if (!account) return null;
+    this.clearCachedClients();
     return this.toAccountSummary(toGitHubAccount(account), account.accountId);
   }
 
@@ -51,8 +38,7 @@ export class GitHubAccountService {
     const removed = await this.accountStore.removeAccount(GITHUB_PROVIDER_ID, accountId);
     if (!removed) return null;
 
-    const account = toGitHubAccount(removed);
-    this.clearCachedClients(account.host, account.id);
+    this.clearCachedClients();
     return this.listAccounts();
   }
 

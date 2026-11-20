@@ -30,8 +30,29 @@ export const recordSchema = auditSchema.extend({ id: uuid, at: z.iso.datetime(),
 export const fieldSchema = z.strictObject({ id: uuid, name: z.string().trim().min(1).max(200), value: z.string().max(65536), secret: z.boolean().default(true) })
 /** Other websites this credential may be filled into (an API key pasted into another service's settings). Its own origin is implied. */
 export const sitesSchema = z.array(origin).max(64)
-/** Grant subjects are verified native identities: one Agent, or every task session of one project. */
-export const grantSchema = z.strictObject({ subject: z.string().regex(/^(?:agent|project):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i), level: z.enum(['read', 'write']) })
+/**
+ * Grant subjects are verified native identities: one Agent, or every task session of one project — and, on this device
+ * only, an installed App (`app:<publisher>/<id>`, with `code`: the fingerprint of the App code the person confirmed), the
+ * host's own GitHub connector (`host:connector:github`) or one project's GitHub account (`host:github:project:<id>`). Those two are a choice: one credential per website (`assignSiteGrant`),
+ * used only through the request sink, never read; they are not synced (`syncedGrants`), since an App and its code are
+ * installed per device and older clients refuse subjects they do not know.
+ */
+const SHARED_SUBJECT = /^(?:agent|project):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const LOCAL_SUBJECT = /^(?:app:[A-Za-z0-9-]{1,64}\/[a-z0-9][a-z0-9-]{1,63}|host:connector:github|host:github:project:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+export const grantSchema = z.strictObject({ subject: z.string().refine(value => SHARED_SUBJECT.test(value) || LOCAL_SUBJECT.test(value)), level: z.enum(['read', 'write']),
+  code: z.string().regex(/^[a-f0-9]{64}$/).optional() })
+  .refine(grant => !LOCAL_SUBJECT.test(grant.subject) || grant.level === 'read', 'an App or connector grant is read-only')
+  .refine(grant => grant.code === undefined || grant.subject.startsWith('app:'), 'only an App grant carries a code fingerprint')
+export const isLocalSubject = (subject: string) => LOCAL_SUBJECT.test(subject)
+/** What leaves this device with a credential: the Agent and project grants only. */
+export const syncedGrants = <T extends { subject: string }>(grants: readonly T[]): T[] => grants.filter(grant => !isLocalSubject(grant.subject))
+/** A credential is for a website when that website (or a parent domain of it) is its own origin or one of its sites. */
+export function credentialServes(credential: { origin: string; sites: readonly string[] }, host: string): boolean {
+  const wanted = host.toLowerCase()
+  return [credential.origin, ...credential.sites].some(origin => {
+    try { const own = new URL(origin).hostname; return wanted === own || wanted.endsWith('.' + own) } catch { return false }
+  })
+}
 /** Edits may leave account/password/field values blank: blank keeps the stored value. */
 export const credentialInputSchema = z.strictObject({ origin: z.string(), name: z.string().trim().max(200).optional(), account: z.string().max(4096),
   accountSecret: z.boolean().optional(), password: z.string().max(65536), fields: z.array(fieldSchema).max(64).default([]), sites: sitesSchema.optional() })

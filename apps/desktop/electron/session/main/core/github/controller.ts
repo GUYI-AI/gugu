@@ -2,6 +2,7 @@ import { Result } from '@gugu/session-shared/result';
 import { githubAccountService } from '@main/core/github/accounts/github-account-service-instance';
 import { githubDeviceFlowService } from '@main/core/github/services/github-device-flow-service-instance';
 import { repoService } from '@main/core/github/services/repo-service';
+import { vaultProblem } from '@main/core/github/services/github-api-auth-errors';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { githubAuthErrorChannel, githubAuthSuccessChannel } from '@shared/events/githubEvents';
@@ -9,7 +10,6 @@ import type {
   GitHubAccountState,
   GitHubAccountSummary,
   GitHubAuthResponse,
-  GitHubImportCliAccountsResponse,
   GitHubRemoveAccountResponse,
   GitHubSetDefaultAccountResponse,
 } from '@shared/github';
@@ -18,21 +18,8 @@ import { createRPCController } from '@shared/lib/ipc/rpc';
 export const githubController = createRPCController({
   getAccountState: async (): Promise<GitHubAccountState> =>
     Result.tryAsync(async () => {
-      // @@@3130 对账挪到这里(原先在 embedded-boot 开机 fire-and-forget)。这是 UI 真正要读账号的
-      // 唯一入口,renderer 在 mount 时就查一次,所以功能一点不少;而开机不再碰 macOS 钥匙串。
-      //
-      // 动态 import 不是花活:静态引这个实例会把 encrypted-app-secrets-store 拉进本模块的加载期
-      // 模块图,于是「谁 import 了 github controller,谁就 import 了 electron.safeStorage」——
-      // 与本 issue 要消除的「过早绑定」是同一个毛病(controller.test.ts 的 electron mock 当场就
-      // 炸了,那是症状不是原因)。惰性化要连模块图一起。
-      //
-      // 对账失败不该把已有账号一起吞掉 —— 沿用原来的 warn 语义,继续往下列。
-      const { githubAccountReconciliationService } = await import(
-        '@main/core/github/accounts/github-account-reconciliation-instance'
-      );
-      await githubAccountReconciliationService.reconcileOnce().catch((error: unknown) => {
-        log.warn('Failed to reconcile GitHub accounts:', error);
-      });
+      // The accounts are the password vault's GitHub credentials (the first read moves the old ones in). A vault that
+      // cannot be read, or a move that failed, is said on the connector with its repair — never an empty list.
       const accounts = await githubAccountService.listAccounts();
       return {
         connected: accounts.length > 0,
@@ -41,7 +28,7 @@ export const githubController = createRPCController({
       };
     }).unwrapOrElse((error) => {
       log.error('Failed to get GitHub account state:', error);
-      return { connected: false, accounts: [], defaultAccountId: null };
+      return { connected: false, accounts: [], defaultAccountId: null, error: vaultProblem(error) ?? error.message };
     }),
 
   auth: async (ownerConnection = false): Promise<GitHubAuthResponse> => {
@@ -89,13 +76,15 @@ export const githubController = createRPCController({
       return [];
     }),
 
-  importCliAccounts: (): Promise<GitHubImportCliAccountsResponse> =>
-    Result.tryAsync<GitHubImportCliAccountsResponse>(async () => {
-      const result = await githubAccountService.importCliAccounts();
-      return result;
+  /** A token the person pasted (classic or fine-grained, or for a GitHub Enterprise host): checked with GitHub, then saved into the vault. */
+  saveToken: (input: { host?: string; token: string }): Promise<GitHubAuthResponse> =>
+    Result.tryAsync<GitHubAuthResponse>(async () => {
+      const { saveGitHubToken } = await import('./github-paste-token');
+      return { success: true, account: await saveGitHubToken(input.host ?? 'github.com', input.token) };
     }).unwrapOrElse((error) => {
-      log.error('Failed to import GitHub CLI accounts:', error);
-      return { success: false, error: 'Failed to import GitHub CLI accounts' };
+      // `error` is the serialized throw (Result.tryAsync): its name, code and message, never the class.
+      log.error('Failed to save a pasted GitHub token:', error.message);
+      return { success: false, error: vaultProblem(error) ?? error.message };
     }),
 
   setDefaultAccount: (accountId: string): Promise<GitHubSetDefaultAccountResponse> =>
