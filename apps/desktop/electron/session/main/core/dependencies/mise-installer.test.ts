@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation } from './mise-installer';
 import { managedMiseBinDir } from './managed-agent-home';
+import * as progressMeter from './install-progress-meter';
 
 const mocks = vi.hoisted(() => ({ appRoot: '', run: vi.fn(), exec: vi.fn(), resolve: vi.fn() }));
 vi.mock('@gugu/session-core/exec', async (original) => {
@@ -307,6 +308,7 @@ describe('application-owned mise lifecycle', () => {
      * 计时器假的(只假 setTimeout / setInterval),量目录的 I/O 是真的:模拟三分钟、一声不出。
      */
     describe('下包那一段 mise 一声不出', () => {
+      let sampleCompleted: (() => void) | undefined;
       const files = () => path.join(home, 'agents/mise/cache/npm/aube/store/v1/files');
       /** 别家早先装进 store 的一个文件。 */
       const earlier = () => path.join(files(), 'ab', 'earlier-package-file');
@@ -318,9 +320,10 @@ describe('application-owned mise lifecycle', () => {
             for (let step = 0; step < 36; step += 1) {
               if (each === 'land') await appendFile(blob, Buffer.alloc(64 * 1024));
               if (each === 'rewrite-earlier') await writeFile(earlier(), Buffer.alloc(64 * 1024));
+              const sampled = new Promise<void>((resolve) => { sampleCompleted = resolve; });
               await vi.advanceTimersByTimeAsync(5_000);
-              // 让量目录那一轮真实的 readdir / stat 跑完再推下一段时间。
-              for (let turn = 0; turn < 20; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+              // 等本轮真实 readdir/stat 的结果已交给安装器，再推进假时间。
+              await sampled;
               options.signal.throwIfAborted();
             }
           }
@@ -328,6 +331,17 @@ describe('application-owned mise lifecycle', () => {
         });
       };
       beforeEach(async () => {
+        sampleCompleted = undefined;
+        const start = progressMeter.startInstallProgressMeter;
+        vi.spyOn(progressMeter, 'startInstallProgressMeter').mockImplementation((options) => start({
+          ...options,
+          onSample(sample) {
+            options.onSample(sample);
+            const completed = sampleCompleted;
+            sampleCompleted = undefined;
+            completed?.();
+          },
+        }));
         await mkdir(path.dirname(earlier()), { recursive: true });
         await writeFile(earlier(), Buffer.alloc(64 * 1024));
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
