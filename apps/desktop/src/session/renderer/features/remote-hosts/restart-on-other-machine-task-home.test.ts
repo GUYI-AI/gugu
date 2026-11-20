@@ -63,4 +63,82 @@ describe('restart with the last view on a session of another machine, before its
       expect(appState.navigation.currentViewId).toBe('home');
     } finally { off(); }
   });
+
+  // #3433 The roster is not always there when the session page starts: the bridge can be installed after `start()`, or be
+  // installed while the device list is still being read (nothing seeds it at boot when the cached list is too big to keep).
+  // An empty roster then says nothing, and a restored view of another machine's project must not be judged deleted.
+  describe('while the machine roster is not complete', () => {
+    async function boot(projectId: string, sessionId: string) {
+      const { appState } = await import('@renderer/lib/stores/app-state');
+      const { sessionViewCanActivate } = await import('@renderer/features/sessions/session-view-guard');
+      const { remoteHostsStore } = await import('./remote-hosts-store');
+      const { installRemoteHostsBridge } = await import('@/session/shared/remote-hosts');
+      for (const id of ['home', 'new-session', 'session', 'screen'] as const) appState.navigation.registerView(id);
+      appState.navigation.registerGuard('session', sessionViewCanActivate);
+      appState.navigation.restoreSnapshot({ currentViewId: 'session', viewParams: { session: { projectId, sessionId } } });
+      return { appState, remoteHostsStore, installRemoteHostsBridge };
+    }
+    const second = (): RemoteHostDevice => ({
+      id: 'dev-second', label: 'Mac 2', isOnline: true, platform: 'darwin', lastSeenAt: null, directTerminal: false,
+      projects: [{ ...ordinary, localProjectId: '33333333-3333-4333-8333-333333333333', name: 'second' }], sessionDigest: [],
+    });
+
+    it('start() before the bridge is installed: an ordinary project of another machine stays, then the roster merges in', async () => {
+      const { appState, remoteHostsStore, installRemoteHostsBridge } = await boot(ordinary.localProjectId, 's-proj');
+      remoteHostsStore.start();
+      expect(appState.navigation.currentViewId).toBe('session');
+      const off = installRemoteHostsBridge({ listDevices: () => [machine()], subscribeDevices: () => () => {}, pickFolder: async () => null } as never);
+      try {
+        expect(appState.navigation.currentViewId).toBe('session');
+        expect(appState.projects.projects.has(ordinary.localProjectId)).toBe(true);
+      } finally { off(); }
+    });
+
+    it('the bridge is installed but the device list is not read yet: stays; once read, a project of the roster stays and one that is gone goes Home', async () => {
+      for (const [projectId, sessionId, view] of [[ordinary.localProjectId, 's-proj', 'session'], ['22222222-2222-4222-8222-222222222222', 's-gone', 'home']] as const) {
+        vi.resetModules();
+        const { appState, remoteHostsStore, installRemoteHostsBridge } = await boot(projectId, sessionId);
+        let read = false;
+        let roster: RemoteHostDevice[] = [];
+        const listeners = new Set<() => void>();
+        const off = installRemoteHostsBridge({
+          devicesRead: () => read, listDevices: () => roster,
+          subscribeDevices: (listener: () => void) => (listeners.add(listener), () => listeners.delete(listener)), pickFolder: async () => null,
+        } as never);
+        try {
+          remoteHostsStore.start();
+          expect(appState.navigation.currentViewId).toBe('session');
+          read = true; roster = [machine()];
+          listeners.forEach((listener) => listener());
+          expect(appState.navigation.currentViewId).toBe(view);
+        } finally { off(); }
+      }
+    });
+
+    it('the device list is read and has no other machine: a restored view of a project nobody has goes Home', async () => {
+      const { appState, remoteHostsStore, installRemoteHostsBridge } = await boot('22222222-2222-4222-8222-222222222222', 's-gone');
+      let read = false;
+      const listeners = new Set<() => void>();
+      const off = installRemoteHostsBridge({
+        devicesRead: () => read, listDevices: () => [], subscribeDevices: (listener: () => void) => (listeners.add(listener), () => listeners.delete(listener)), pickFolder: async () => null,
+      } as never);
+      try {
+        remoteHostsStore.start();
+        expect(appState.navigation.currentViewId).toBe('session');
+        read = true;
+        listeners.forEach((listener) => listener());
+        expect(appState.navigation.currentViewId).toBe('home');
+      } finally { off(); }
+    });
+
+    it('two other machines: the first one merged does not judge the second one\'s project deleted', async () => {
+      const { appState, remoteHostsStore, installRemoteHostsBridge } = await boot('33333333-3333-4333-8333-333333333333', 's-second');
+      const off = installRemoteHostsBridge({ listDevices: () => [machine(), second()], subscribeDevices: () => () => {}, pickFolder: async () => null } as never);
+      try {
+        remoteHostsStore.start();
+        expect(appState.navigation.currentViewId).toBe('session');
+        expect(appState.projects.projects.has('33333333-3333-4333-8333-333333333333')).toBe(true);
+      } finally { off(); }
+    });
+  });
 });
