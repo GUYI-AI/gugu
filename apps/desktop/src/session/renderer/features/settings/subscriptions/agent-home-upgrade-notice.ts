@@ -27,7 +27,7 @@ export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): voi
         const t = i18n.getFixedT(null, 'main')
         notify({ key, title: t('agentHome.codexUpgradeReloginTitle', { name: codex.name }), tier: 'info', ongoing: true,
           description: t('agentHome.codexUpgradeRelogin'),
-          action: { label: t('agentHome.signInSettings'), onClick: () => openShellSettings('subscriptions') },
+          action: { label: t('agentHome.signInSettings'), onClick: () => openShellSettings('model') },
           onDismiss: () => { try { localStorage.setItem(key, '1') } catch { /* The in-memory guard remains. */ } },
         })
       }

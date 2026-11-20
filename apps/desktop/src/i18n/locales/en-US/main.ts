@@ -193,7 +193,7 @@ export default {
   "updated": ", later changed in the terminal",
   "row": "Imported {{date}}",
   "upgradeKept": "Gugu kept your existing {{name}} configuration.",
-  "upgradeRelogin": "Sign in to {{name}} again in Settings → Subscriptions.",
+  "upgradeRelogin": "Sign in to {{name}} again in Settings → Models → Coding Plan.",
   "reimport": "Re-import",
   "reimportTitle": "Re-import local configuration",
   "loginNotSynced": "Sign-ins are not synced here.",

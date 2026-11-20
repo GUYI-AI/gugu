@@ -775,12 +775,12 @@ it.each([
 
 
 
-it.each(['claude', 'codex'])('the model page puts an expired %s account directly into the existing login flow', async provider => {
-  const capture = provider === 'claude' && import.meta.env.VITE_DESIGN5_CAPTURE === '1';
+it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { provider, expired: false }]))('the model page keeps $provider sign-in reachable with expired=$expired', async ({ provider, expired }) => {
+  const capture = expired && provider === 'claude' && import.meta.env.VITE_DESIGN5_CAPTURE === '1';
   if (capture) setLocalePreference('zh-CN');
   control.codex = true;
-  control.signedOut = true;
-  control.expired = true;
+  control.signedOut = expired;
+  control.expired = expired;
   control.connectionsByProvider[provider] = [{ id: 'expired-model-account', kind: 'account', name: capture ? 'Claude Max' : 'Saved plan', current: true }];
   if (capture) {
     await page.viewport(1200, 900);
@@ -796,7 +796,9 @@ it.each(['claude', 'codex'])('the model page puts an expired %s account directly
   </>);
   await until('the expired account is on the model list', () => !!host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`));
   const row = host.querySelector(`[data-subscription-model="${provider}:expired-model-account"]`)!;
-  expect(row.textContent).toContain(capture ? '登录已失效' : 'Sign-in expired');
+  if (expired) expect(row.textContent).toContain(capture ? '登录已失效' : 'Sign-in expired');
+  else expect(row.textContent).not.toContain('Sign-in expired');
+  expect(row.querySelector('[data-testid="model-sign-in-expired-model-account"]')?.textContent).toContain(capture ? '重新登录' : 'Sign in again');
   if (capture) await page.screenshot({ element: host, path: '__screenshots__/design5-models/expired-subscription-fixture.png' });
   await userEvent.click(page.getByTestId('model-sign-in-expired-model-account'));
   expect(modalStore.activeModalId).toBe('agentSignInModal');
@@ -904,30 +906,20 @@ it('Models shows no switch or current label for a provider with one subscription
 });
 
 
-it.each([
-  ['claude', 'Claude subscription'],
-  ['codex', 'ChatGPT subscription'],
-] as const)('an expired native %s connection creates a separate account for sign-in', async (provider, label) => {
+it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { provider, expired: false }]))('native $provider keeps a visible state and login entry with expired=$expired', async ({ provider, expired }) => {
   control.codex = true;
-  control.signedOut = true;
-  control.expired = true;
+  control.signedOut = expired;
+  control.expired = expired;
   control.connectionsByProvider[provider] = [{ id: 'native', kind: 'native', name: '', current: true }];
   root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>);
 
   const row = () => host.querySelector(`[data-subscription-model="${provider}:native"]`);
-  await until('the native row displays its expiry', () => row()?.textContent?.includes('Sign-in expired') === true);
-  expect(row()?.querySelector('[data-testid="model-sign-in-native"]')).toBeNull();
-
-  await userEvent.click(page.getByTestId(`model-add-account-${provider}`));
-  const dialog = page.getByTestId('custom-model-dialog');
-  await expect.element(dialog.getByTestId('custom-model-provider')).toHaveTextContent(label);
+  await until('the native row displays its actual state', () => row()?.textContent?.includes(expired ? 'Sign-in expired' : 'Signed in') === true);
+  expect(row()?.textContent).toContain('Sign in again');
+  await userEvent.click(page.getByTestId('model-sign-in-native'));
+  await until('the same native connection signs in', () => modalStore.activeModalId === 'agentSignInModal');
   expect(control.created).toBeNull();
-  expect(modalStore.activeModalId).not.toBe('agentSignInModal');
-
-  await userEvent.click(dialog.getByRole('button', { name: 'Sign in', exact: true }));
-  await until('the separate account signs in', () => modalStore.activeModalId === 'agentSignInModal');
-  expect(control.created).toMatchObject({ providerId: provider, kind: 'account' });
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'account-1' });
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'native' });
   expect(thrown).toEqual([]);
 });
 

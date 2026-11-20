@@ -1,7 +1,7 @@
 import { codexStartupKind, isCodexProviderStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { AcpStartError } from '@renderer/lib/acp/acp-live-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
-import { isCodexRefreshTokenRevoked } from '@gugu/session-core/acp';
+import { isCodexRefreshTokenRevoked } from '@gugu/session-core/acp/client';
 
 export type AcpLoadError =
   | { kind: 'agent_home_import'; message: string }

@@ -27,7 +27,7 @@ it('reaches an old copied-OAuth migration even after its original notice was dis
   expect(notice).toMatchObject({ ongoing: true, description: 'agentHome.codexUpgradeRelogin' });
   expect(calls.storage.has(notice.key)).toBe(false);
   notice.action.onClick();
-  expect(calls.open).toHaveBeenCalledWith('subscriptions');
+  expect(calls.open).toHaveBeenCalledWith('model');
   notice.onDismiss();
   expect(calls.storage.get(notice.key)).toBe('1');
 });

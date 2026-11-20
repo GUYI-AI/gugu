@@ -181,7 +181,7 @@ export default {
   "updated": "，终端里后来又改过",
   "row": "{{date}} 导入",
   "upgradeKept": "咕咕已沿用你原来的 {{name}} 配置。",
-  "upgradeRelogin": "请在设置 → 订阅中重新登录 {{name}}。",
+  "upgradeRelogin": "请在设置 → 模型 → Coding Plan 中重新登录 {{name}}。",
   "reimport": "重新导入",
   "reimportTitle": "重新导入本机配置",
   "loginNotSynced": "登录不在这里同步。",
