@@ -33,27 +33,4 @@
     color: var(--em-selection-foreground);
   }
 
-  /* 只给鼠标指针:触屏上 ::-webkit-scrollbar 会把系统悬浮条换成常驻、占宽的经典条 */
-  @media (hover: hover) and (pointer: fine) {
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: var(--em-border) transparent;
-    }
-
-    *::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    *::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    *::-webkit-scrollbar-thumb {
-      background-color: var(--em-border);
-      border-radius: 4px;
-      border: 2px solid transparent;
-      background-clip: content-box;
-    }
-  }
 }

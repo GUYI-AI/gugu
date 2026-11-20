@@ -19,14 +19,6 @@ export type BrowserAnnotationSelection = {
   /** The actual page capture, with this selection's number drawn on it. */
   screenshot: File;
 };
-export type FileAnnotationSelection = {
-  kind: 'file';
-  path: string;
-  startLine: number;
-  endLine: number;
-  text: string;
-  annotation: string;
-};
 export type DiffAnnotationSelection = {
   kind: 'diff';
   path: string;
@@ -38,7 +30,7 @@ export type DiffAnnotationSelection = {
   text: string;
   annotation: string;
 };
-type AnnotationSelection = BrowserAnnotationSelection | FileAnnotationSelection | DiffAnnotationSelection;
+type AnnotationSelection = BrowserAnnotationSelection | DiffAnnotationSelection;
 type AnnotationIdentity = { id: string; number: number };
 export type SessionAnnotation = AnnotationSelection & AnnotationIdentity;
 
@@ -131,13 +123,6 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
     previousHeading = heading;
   };
   for (const item of items) {
-    if (item.kind === 'file') {
-      append('annotations.prompt.selectedText', [
-        copy('annotations.prompt.fileSelection', { number: item.number }),
-        JSON.stringify({ path: item.path, startLine: item.startLine, endLine: item.endLine, text: item.text, annotation: item.annotation }),
-      ].join('\n'));
-      continue;
-    }
     if (item.kind === 'diff') {
       append('annotations.prompt.allComments', [
         copy('annotations.prompt.userComment', { number: item.number }),

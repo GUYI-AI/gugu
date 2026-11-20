@@ -268,6 +268,8 @@ it('keeps the silent copy available to hover and keyboard without moving any row
   const geometry = () => ({ height: line.getBoundingClientRect().height, backgroundTop: background.getBoundingClientRect().top });
   const resting = geometry();
   await userEvent.hover(document.body);
+  // Read at rest: leaving the line starts the controls' fade-out, which ends before they are read.
+  await Promise.all(actions.getAnimations().map(animation => animation.finished));
   expect(getComputedStyle(actions).opacity).toBe('0');
   await userEvent.hover(line);
   await until('the actual copy control is revealed by hover', () => getComputedStyle(actions).opacity === '1');
@@ -339,6 +341,7 @@ it.each([390, 1200])('aligns a reply, its artifact and the final actions at %ipx
   expect(host.querySelectorAll('[data-user-message-actions="answer"]')).toHaveLength(1);
   const copy = actions.querySelector<HTMLElement>('[data-slot="message-copy"]')!;
   if (matchMedia('(hover: hover)').matches) {
+    await Promise.all(copy.getAnimations().map(animation => animation.finished));
     expect(getComputedStyle(copy).opacity).toBe('0');
     await userEvent.hover(bubble);
     await until('the reply hover reveals the moved controls', () => getComputedStyle(copy).opacity === '1');

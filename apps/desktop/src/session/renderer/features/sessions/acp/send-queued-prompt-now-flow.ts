@@ -3,17 +3,20 @@ import {
   shouldConfirm,
   stopAsking,
 } from '@renderer/features/settings/interface-confirm-preference';
+import { readDevicePreferences, writeDevicePreferences } from '@/lib/devicePreferences';
+import { platform } from '@/platform';
+import { toast } from '@renderer/lib/hooks/use-toast';
 import { showModal } from '@renderer/lib/modal/modal-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 
-/**
- * 排队提示的「立即发送」。这一下要取消在跑的回合(`cancelsTurn`)时先问,问不问由
- * `interface.confirmBeforeCancelAndSend` 说了算(出厂 = 问);不取消(空闲,或这家能插话,#6574)就直接发。
- * 确认框自带「不再询问」,设置 → 界面留一行把问题调回来 —— 与归档确认同一个形状(owner 2026-09-23)。
- */
+/** Only cancelling a running reply requires confirmation. The preference belongs to the current device. */
 export function requestSendQueuedPromptNow(args: { cancelsTurn: boolean; send: () => void }): void {
   const { cancelsTurn, send } = args;
-  if (!cancelsTurn || !shouldConfirm('confirmBeforeCancelAndSend')) {
+  const nativePhone = platform.kind === 'capacitor';
+  const confirm = () => nativePhone
+    ? readDevicePreferences().confirmBeforeCancelAndSend !== false
+    : shouldConfirm('confirmBeforeCancelAndSend');
+  if (!cancelsTurn || !confirm()) {
     send();
     return;
   }
@@ -22,11 +25,16 @@ export function requestSendQueuedPromptNow(args: { cancelsTurn: boolean; send: (
     description: translateSessionMessage('chat.cancelAndSendDescription'),
     confirmLabel: translateSessionMessage('chat.cancelAndSend'),
     variant: 'destructive',
-    dontAskAgainLabel: canOfferDontAskAgain()
-      ? translateSessionMessage('chat.cancelAndSendDontAskAgain')
-      : undefined,
+    dontAskAgainLabel: nativePhone
+      ? translateSessionMessage('chat.cancelAndSendAlwaysAllow')
+      : canOfferDontAskAgain() ? translateSessionMessage('chat.cancelAndSendDontAskAgain') : undefined,
     onSuccess: ({ dontAskAgain }) => {
-      if (dontAskAgain) {
+      if (dontAskAgain && nativePhone) {
+        writeDevicePreferences({ confirmBeforeCancelAndSend: false });
+        if (readDevicePreferences().confirmBeforeCancelAndSend !== false) {
+          toast({ title: translateSessionMessage('chat.cancelAndSendDontAskAgainFailed'), variant: 'destructive' });
+        }
+      } else if (dontAskAgain) {
         stopAsking('confirmBeforeCancelAndSend', {
           logTag: '[gugu-queue]',
           title: translateSessionMessage('chat.cancelAndSendDontAskAgainFailed'),

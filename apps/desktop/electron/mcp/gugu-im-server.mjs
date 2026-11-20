@@ -632,11 +632,11 @@ async function requireChat(args, deps) {
   throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
 }
 
-/** Personal writes use the caller's native session; a DM is only an older spelling of that same destination. */
+/** A session whose page the owner reads takes their writes there; a DM is only an older spelling of it. Elsewhere it is the DM. */
 async function resolveWriteTarget(args, deps) {
   const address = typeof args?.chat_id === 'string' ? args.chat_id.trim() : ''
   if (!address) throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
-  if (deps.context.personalAssistant) return { chatId: await requireChat(args, deps) }
+  if (deps.context.personalAssistant || !deps.context.ownerReadsSession) return { chatId: await requireChat(args, deps) }
   if (/^(aid|user|gugu):/.test(address)) {
     const decoded = decodeIdentityAddress(address, 'chat_id')
     const userId = decoded.kind === 'user' ? decoded.id : (await lookupGuguNumber(decoded.number, deps)).id
@@ -2352,7 +2352,7 @@ async function publishHere(args, deps, chatId, message, next) {
 
 /** A next version that started from a version the file is no longer at: nothing was sent, and what to do. */
 function newerVersionRefusal(file, version) {
-  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file, or workspace__read with save), make your change on it, and send it with that version.`
+  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file), make your change on it, and send it with that version.`
 }
 
 async function sendMessageAsOwner(args, deps, content, extra = {}, outcome = { uncertain: false }) {
