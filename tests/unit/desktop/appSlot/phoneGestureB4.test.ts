@@ -28,7 +28,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '0a000000-0000-4000-8000-0000000000b4' })).toString('base64url')}.s` }))
 const machines = vi.hoisted(() => ({ devices: [] as Device[] }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => machines.devices }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: () => {
@@ -119,12 +119,11 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   filesDownload: { ref: { name: 'a.md' } },
   filesForward: { refs: [{ name: 'a.md' }] },
   filesOpenIn: { ref: { name: 'a.md' }, app: 'finder' },
-  filesAnnotateSelection: { file: { workspace: 'session:s-1', id: 'a.md' }, open: { selection: { startLine: 1, endLine: 1, text: 'x' }, rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } } },
-  filesSendSelection: { text: 'x', refs: [{ file: { name: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   showMessage: { id: 'msg-1' },
   showSession: { id: 's-1' },
   dispatch: { text: 'picked' },
   clipboardWriteText: { text: 'hi' },
+  filesSelectionAction: { action: 'cite', file: { name: 'a.md' }, places: [{ at: { lines: '1' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   openLink: { url: 'gugu://ext/radar/radar' },
   cloudWrite: { name: 'radar_save', args: {} },
   pickAgent: {},

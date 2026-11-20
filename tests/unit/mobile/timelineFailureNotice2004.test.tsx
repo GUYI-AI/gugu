@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest'
 import { createReactHarness, renderWithAppProviders } from '../../support/testHarness'
-import { useTimelineFailureNotice } from '../../../apps/desktop/src/mobile/agent-watch/useTimelineFailureNotice'
+import { useTimelineFailureNotice } from '../../../apps/desktop/src/components/session-watch/useTimelineFailureNotice'
 import * as notices from '../../../apps/desktop/src/lib/notices'
 
 let harness: ReturnType<typeof createReactHarness>

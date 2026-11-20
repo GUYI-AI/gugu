@@ -1,4 +1,6 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
+import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -173,11 +175,30 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
   );
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
   const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
-  return createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
+  const row = readSessionRow(sessionId, { includeArchived: true });
+  const pty = row && row.runtime !== 'acp';
+  const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
     sessionId,
+    ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });
+  try {
+    // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
+    const last = timeline.getSnapshot().turns.at(-1);
+    if (pty && last && !last.outcome && last.startedAt !== undefined
+      && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
+      const latest = readSessionRow(sessionId, { includeArchived: true });
+      if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
+        && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
+        recordPtyEngineEnd(sessionId, Date.now(), true, last.startedAt);
+      }
+    }
+    return timeline;
+  } catch (error) {
+    timeline.dispose();
+    throw error;
+  }
 };
 
 let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;
@@ -1713,6 +1734,7 @@ async function respondQuestion(
   const unavailable = permissionChannelError(target, 'question', current?.questions);
   if (unavailable) return fail(unavailable.code, unavailable.message);
   if (!current?.questions) return fail('question_not_found', '这条会话里没有这道提问');
+  if ('discuss' in input) return fail('answer_invalid', 'Discussion is only available for a host question');
   let prepared: PreparedQuestionAnswer;
   try {
     prepared = prepareQuestionAnswer(target, current.questions, 'decline' in input ? 'decline' : input.answers);

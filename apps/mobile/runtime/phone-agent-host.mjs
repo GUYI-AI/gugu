@@ -6,6 +6,7 @@ import { createPhoneAssistantWorkOutbox } from './phone-assistant-work-outbox.mj
 import { createPhoneAssistantWorkHistory } from './phone-assistant-work-history.mjs'
 import { createPhoneAssistantWork } from './phone-assistant-work.mjs'
 import { randomUUID } from 'node:crypto'
+import { registerGuguDevice } from '../../../packages/core/src/cloud/deviceRegistration.ts'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { processPendingDeviceCommandsOnce, reportRuntimeInstanceHeartbeat, recoverOrphanedDeviceCommands } from '../../../packages/core/src/cloud/deviceCommands.ts'
@@ -224,8 +225,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     setImmediate(() => { void drain().catch((error) => warn(error.message)) })
     return job
   }
-  const inbox = async (agentUserId) => {
-    const agent = agents().find((row) => row.agentUserId === agentUserId)
+  const inbox = async (agentUserId, registrations = agents()) => {
+    const agent = registrations.find((row) => row.agentUserId === agentUserId)
     if (!agent || stopped || signingOut) return { pulled: 0, injected: 0 }
     const scanGap = inboxGap
     await verifyAgent(agentUserId)
@@ -332,7 +333,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     'agent.deliver': async (command) => {
       // From an App, not a chat (`source`): the chat inbox has nothing of it and App programs do not run here. Said, ❌ recorded as done.
       if (command.payload.source) throw Object.assign(new Error(`App ${command.payload.source} cannot deliver to an agent on a phone`), { reason: 'appUnavailable' })
-      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id)).injected > 0 }
+      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id, retainedAgents())).injected > 0 }
     },
     'agent.stop': async (command) => { const agent = agents().find((row) => row.agentUserId === command.payload.agent_user_id); if (!agent) throw new Error('Agent 没有在这台手机上建立会话'); await cancel(agent); return { stopped: true } },
     // Retire hands the identity to its new device: archive here, keep the social identity.
@@ -763,13 +764,11 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       if (!row || row.device_id !== deviceId || row.user_id !== ownerId) throw new Error('手机设备登记信息与当前宿主不一致')
       await reportRuntimeInstanceHeartbeat(cloud.identity, instanceId, deviceId)
       if (stopped || signingOut) return
-      const now = new Date().toISOString()
       // This successful probe can restore heartbeat health; the other startup/auth/RPC gates
       // still have to be true before the device advertises a task runtime.
       const available = startupComplete && authenticated && rpcConnected
       // This host's version is known even while startup/auth/RPC readiness is pending.
-      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
-      if (error) throw new Error(error.message)
+      await registerGuguDevice(cloud.identity, { ...row, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { expectedDeviceId: deviceId, signal: abort.signal })
       if (stopped || signingOut) return
       if (available && store.state.preparationBackoff) {
         store.state.preparationBackoff.awaitingHeartbeat = false

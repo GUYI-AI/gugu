@@ -21,10 +21,11 @@ import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
 import { classifyDocumentPreview, documentPreviewNeedsFetch, type DocumentPreviewKind } from './documentPreview'
 import { savedFileName } from '../../session/shared/extensions/app-runtime-protocol'
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
-import type { FileAnnotationContext } from '../preview/FilePreviewAnnotations'
+import type { FileTextSelection } from '../preview/FileTextContent'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
 import { useFilePlace } from '../preview/file-place'
+import { serverNow } from '@gugu/core/shared/serverClock'
 
 const fileOpenLog = rendererLogger('chat/file-open')
 
@@ -32,32 +33,31 @@ const fileOpenLog = rendererLogger('chat/file-open')
 export type PreviewFile = Pick<ParsedAttachment, 'kind' | 'fileName' | 'mimeType' | 'sizeBytes' | 'source'> & { document?: boolean }
 
 /**
- * A file the chat's file service does not hold (a session's working copy, on this computer or another): the same preview,
- * with its bytes and what it can do said by whoever opened it.
+ * A file supplied directly by the opener, such as a workspace file or a draft attachment.
+ * The opener supplies its bytes and any actions specific to its source.
  */
 export interface HostedPreviewSource {
   kind: 'hosted'
   /** The bytes' identity: changing it reads them again. */
   key: string
   read: () => Promise<Blob>
-  registerHtml: (documentHtml: string) => Promise<HtmlPreviewRegistration>
-  quote: (selection: FileViewerSelection | null) => Promise<void>
-  /** Its text preview offers Cite on a selection (a session's file): `quote` with that selection. */
-  citesSelection?: boolean
-  annotation?: FileAnnotationContext
-  /** Its text preview offers Send on a selection too (`openSelectionSend`, beside it). */
-  send?: (selection: FileViewerSelection, at: DOMRect) => void
+  registerHtml?: (documentHtml: string) => Promise<HtmlPreviewRegistration>
+  quote?: (selection: FileViewerSelection | null) => Promise<void>
+  /** Its text's selection menu (FileSelectionMenu). */
+  selectable?: FileTextSelection
+  /** A session's HTML page takes comments on the page itself. */
+  annotation?: { sessionId: string; path: string }
   /** The folders it is in, top first: one with `open` goes there. */
   folders?: readonly { name: string; open?: () => void }[]
   /** This file's source can be edited: the preview's Edit opens it there. */
   edit?: () => void
   /** The next step under a file it cannot draw, or could not read: never a dead end. */
-  unreadableAction: ReactNode
+  unreadableAction?: ReactNode
   /** Absent: this file has no address the system's programs can reach. */
   openExternal?: () => void
   /** The programs of this computer it opens in. */
   openIn?: readonly { key: string; label: string; open: () => void }[]
-  download: () => void
+  download?: () => void
 }
 export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { source: HostedPreviewSource; document?: undefined }
 
@@ -138,11 +138,12 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const activeKey = useRef(key)
   const viewerRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (readOnly || !viewerRef.current || (file.source.kind !== 'item' && file.source.kind !== 'hosted' && !message)) return
+    const hostedQuote = file.source.kind === 'hosted' ? file.source.quote : undefined
+    if (readOnly || !viewerRef.current || (file.source.kind !== 'item' && !hostedQuote && !message)) return
     return bindFileViewerMenu(viewerRef.current, () => ({
       resource: file.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: file.source.itemId, version: file.source.version } } : undefined,
       quote: async (selection) => {
-        if (file.source.kind === 'hosted') return file.source.quote(selection)
+        if (hostedQuote) return hostedQuote(selection)
         if (file.source.kind === 'item') return quoteChatFile(file.source.itemId, file.source.version, selection)
         const { UI_EVENTS } = await import('@/lib/uiEvents')
         window.dispatchEvent(new CustomEvent(UI_EVENTS.quoteMessage, { detail: { messageId: message!.id, source: message, senderName: file.fileName, content: selection ? selectedTextQuote(selection) : file.fileName } }))
@@ -218,7 +219,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     const current = read
     if (video.dataset.renewing) return
     const fail = (error?: unknown) => setRead(row => row === current ? { ...row, ...previewFailure(error, t) } : row)
-    if (!current?.renew || Date.now() < (current.expiresAt ?? Infinity)) { fail(); return }
+    // The lease's expiry is on the backend's clock (`@@@server-clock`).
+    if (!current?.renew || serverNow() < (current.expiresAt ?? Infinity)) { fail(); return }
     video.dataset.renewing = 'true'
     const time = video.currentTime, playing = !video.paused
     try {
@@ -246,7 +248,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   }
   const download = () => {
     if (missing) return
-    if (file.source.kind === 'hosted') { file.source.download(); return }
+    if (file.source.kind === 'hosted' && file.source.download) { file.source.download(); return }
     void previewBytes(file).then(({ blob }) => downloadBlob(blob, savedName)).catch((error) => {
       if (rememberMissing(error)) return
       fileOpenLog.error({ error }, 'preview file download failed'); toast(t('chatArea.downloadFailed'), 'error', messageForUser(error))
@@ -257,5 +259,5 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const connection = besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
   const shown = read?.binary ? 'unsupported' : kind
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, onCite: readOnly || !file.source.citesSelection ? undefined : file.source.quote, onSend: readOnly ? undefined : file.source.send, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, selectable: file.source.selectable, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

@@ -102,7 +102,9 @@ final class GuguIOSCloudBroker {
             if let schema { request.setValue(schema, forHTTPHeaderField: method == "GET" ? "Accept-Profile" : "Content-Profile") }
             if let prefer { request.setValue(prefer, forHTTPHeaderField: "Prefer") }
             if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys, .withoutEscapingSlashes]) }
+            let sentAt = Date()
             send(request) { bytes, response, error in
+                GuguServerClock.shared.observe(date: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Date"), sentAt: sentAt, receivedAt: Date())
                 do {
                     // Native publication is checked again before any data leaves
                     // the broker, including same-owner token rotation/retirement.

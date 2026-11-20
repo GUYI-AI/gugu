@@ -1,32 +1,31 @@
-.gg-account-deletion-title {
-  margin: 0;
-  font-size: var(--font-title);
-  line-height: var(--lh-title);
-  font-weight: var(--font-weight-semibold);
-}
-
-.gg-account-deletion-form {
+.gg-account-deletion-dialog {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.gg-account-deletion-form > [data-slot="field"] {
-  width: 100%;
-}
-
-.gg-account-deletion-consent {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  padding: 24px;
   font-size: var(--font-body);
   line-height: var(--lh-body);
 }
-
-.gg-account-deletion-consent input {
-  margin-top: 4px;
+.gg-account-deletion-dialog h2 {
+  margin: 0;
+  font-size: var(--font-title);
+  font-weight: var(--font-weight-semibold);
 }
-
-@media (min-width: 720px) {
-  .gg-account-deletion-form > [data-slot="field"] { max-width: 320px; }
+.gg-account-deletion-impact { color: var(--muted-fg); }
+.gg-account-deletion-impact p, .gg-account-deletion-status { margin: 0; }
+.gg-account-deletion-impact p::before { content: '•'; margin-right: 6px; }
+.gg-account-deletion-consent { display: flex; align-items: center; gap: 8px; }
+.gg-account-deletion-consent input { margin: 0; accent-color: var(--fg); }
+.gg-account-deletion-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-h-lg);
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
 }
+.gg-account-deletion-code input { min-width: 0; flex: 1; }
+.gg-account-deletion-code button { flex: none; color: var(--muted-fg); }
+.gg-account-deletion-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.gg-account-deletion-status { color: var(--muted-fg); }

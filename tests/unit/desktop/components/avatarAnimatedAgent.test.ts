@@ -6,7 +6,7 @@ import { boringAvatarAppearance } from '../../../../apps/desktop/src/lib/agentAv
 import { AVATAR_FEATURE_COLOR } from '@gugu/core/shared/ui/avatarPalette'
 import { dicebearAvatarDataUri } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 import { boringAgentAvatarDataUri } from '../../../../apps/desktop/src/lib/boringAgentAvatar'
-import { SessionAvatar } from '../../../../apps/desktop/src/mobile/agent-watch/StatusGlyph'
+import { SessionAvatar } from '../../../../apps/desktop/src/components/session-watch/StatusGlyph'
 import { runtime } from '../../../../apps/desktop/src/components/agentAvatar/engine/runtime'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'

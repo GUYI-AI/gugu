@@ -344,3 +344,30 @@ describe('ids written as a prefix', () => {
     expect(graphMessage).not.toHaveBeenCalled()
   })
 })
+
+// Owner 2026-11-16: reply_to_message_id written short is matched against the deliveries the caller was given; only the full
+// id goes on to the envelope.
+describe('reply_to_message_id written as a prefix', () => {
+  const FULL = 'abcdef12-3456-4789-8abc-def012345678'
+  it('sends the full msg id of the one delivery it names', async () => {
+    const receivedMessageIds = vi.fn(async () => [FULL])
+    const { deps, graphMessage } = makeDeps({ receivedMessageIds })
+    await handleUnifiedSessionMessage({ to: [`session:${OTHER_SESSION}`], text: 'ok', reply_to_message_id: 'msg:abcdef12' }, deps)
+    expect(receivedMessageIds).toHaveBeenCalledWith('abcdef12')
+    expect(graphMessage).toHaveBeenCalledWith([OTHER_SESSION], 'ok', { reply_to_message_id: `msg:${FULL}` })
+  })
+
+  it('several or none fail before anything is sent; a full id is not looked up', async () => {
+    const two = makeDeps({ receivedMessageIds: async () => [FULL, 'abcdef12-0000-4000-8000-000000000000'] })
+    await expect(handleUnifiedSessionMessage({ to: [`session:${OTHER_SESSION}`], text: 'ok', reply_to_message_id: 'msg:abcdef12' }, two.deps))
+      .rejects.toThrow(/msg:abcdef12 matches 2 messages: msg:abcdef12-3456.*Pass a longer prefix or the full id; nothing was sent/)
+    const none = makeDeps({ receivedMessageIds: async () => [] })
+    await expect(handleUnifiedSessionMessage({ to: [`session:${OTHER_SESSION}`], text: 'ok', reply_to_message_id: 'msg:abcdef12' }, none.deps))
+      .rejects.toThrow('No delivery you were given matches msg:abcdef12')
+    expect([...two.graphMessage.mock.calls, ...none.graphMessage.mock.calls]).toEqual([])
+    const lookup = vi.fn(async () => [])
+    const full = makeDeps({ receivedMessageIds: lookup })
+    await handleUnifiedSessionMessage({ to: [`session:${OTHER_SESSION}`], text: 'ok', reply_to_message_id: `msg:${FULL}` }, full.deps)
+    expect(lookup).not.toHaveBeenCalled()
+  })
+})

@@ -1,5 +1,6 @@
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
+import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
 import type { NormalizedEvent } from '../acp/reducer/normalized-event';
 
 import type { QueuedPrompt } from '../acp/models/prompt';
@@ -97,6 +98,8 @@ export type TurnPublishArchive = {
 export type SessionTimelineDeps = {
   /** 进 reducer 的 turn id 前缀。同一份记录用同一个值，turn id 才在重开之间稳定。 */
   sessionId: string;
+  /** Durable host engine ends supplement missing native boundaries, shared by snapshots and live deltas. */
+  hostTurnEnds?: HostTurnEnds;
   /** 默认快照取多少轮。 */
   defaultLimit?: number;
   now?: () => number;
@@ -260,6 +263,9 @@ class RecordTimeline implements SessionTimeline {
   private suspended = false;
   private resetTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private stopHostTurnEnds: (() => void) | undefined;
+  private hostEnds: readonly HostTurnEnd[] = [];
+  private hostEnded = new WeakMap<TranscriptTurn, TranscriptTurn>();
   /** Turns handed out by `drainSettled`, and the ids of what they own. */
   private retainedFrom = 0;
   /** Record position of each held turn's first entry (committed, then active), for a fill's cursor. */
@@ -277,6 +283,7 @@ class RecordTimeline implements SessionTimeline {
     this.defaultLimit = deps.defaultLimit ?? DEFAULT_LIMIT;
     this.epochValue = this.newEpoch();
     this.parser = new AcpTranscriptParser({ sessionId: deps.sessionId });
+    this.hostEnds = deps.hostTurnEnds?.read() ?? [];
   }
 
   async begin(): Promise<void> {
@@ -305,6 +312,14 @@ class RecordTimeline implements SessionTimeline {
     } finally {
       this.suspended = false;
     }
+    // Register only after a successful read, and refresh any boundary recorded during that read.
+    this.hostEnds = this.deps.hostTurnEnds?.read() ?? [];
+    this.hostEnded = new WeakMap();
+    this.stopHostTurnEnds = this.deps.hostTurnEnds?.subscribe(() => {
+      this.hostEnds = this.deps.hostTurnEnds!.read();
+      this.hostEnded = new WeakMap();
+      this.publish();
+    });
     this.publish();
   }
 
@@ -477,7 +492,7 @@ class RecordTimeline implements SessionTimeline {
 
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot {
     const limit = options?.limit ?? this.defaultLimit;
-    const all = options?.committedOnly ? [...this.parser.history] : this.currentTurns();
+    const all = options?.committedOnly ? this.withHostEnds([...this.parser.history]) : this.currentTurns();
     const turns = limit >= all.length ? all : all.slice(all.length - limit);
     return {
       cursor: { epoch: this.epochValue, seq: this.seq },
@@ -604,6 +619,8 @@ class RecordTimeline implements SessionTimeline {
           ? { host: { kind: request.origin.source, payload: request.origin.payload } }
           : {}),
         ...(request.origin?.source === 'agent-question' && request.questions ? { questions: request.questions, askedAt: request.askedAt } : {}),
+        ...(request.origin?.source === 'agent-question' && request.skippable === true ? { skippable: true } : {}),
+        ...(request.origin?.source === 'agent-question' && request.canDiscuss === true ? { canDiscuss: true } : {}),
         state: 'pending',
         optionId: null,
         resolvedBy: null,
@@ -717,6 +734,8 @@ class RecordTimeline implements SessionTimeline {
   }
 
   dispose(): void {
+    this.stopHostTurnEnds?.();
+    this.stopHostTurnEnds = undefined;
     if (this.liveReplyTimer) clearTimeout(this.liveReplyTimer);
     this.liveReplyTimer = null;
     this.disposed = true;
@@ -929,7 +948,18 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const active = this.parser.activeTurn;
-    return active ? [...this.parser.history, active] : [...this.parser.history];
+    return this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+  }
+
+  private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {
+    if (!this.hostEnds.length) return turns;
+    return turns.map(turn => {
+      const cached = this.hostEnded.get(turn);
+      if (cached) return cached;
+      const ended = applyHostTurnEnd(turn, this.hostEnds);
+      this.hostEnded.set(turn, ended);
+      return ended;
+    });
   }
 
   /**
@@ -941,6 +971,12 @@ class RecordTimeline implements SessionTimeline {
   private publish(): void {
     if (this.disposed || this.suspended) return;
     const turns = this.currentTurns();
+    // Questions held by this ended native turn have lost their answer channel too. Do not retain a false waiting state.
+    for (const settlement of this.settlements.values()) {
+      if (settlement.state !== 'pending') continue;
+      const ended = turns.find(turn => turn.hostEnd && toolNameIn(turn.items, settlement.itemId) !== null);
+      if (ended?.hostEnd) this.putSettlement({ ...settlement, state: 'cancelled', resolvedAt: ended.hostEnd.at });
+    }
     const nextSeq = this.seq + 1;
     let changed = this.needsPublish || this.dirtySettlements.size > 0 || this.queuedDirty || this.liveReplyDirty || this.terminalsDirty;
 
@@ -1175,7 +1211,9 @@ function outcomeOf(boundary: RecordBoundary): TranscriptTurnOutcome {
   if (boundary.kind === 'turn_aborted') return { kind: 'cancelled', reason: 'cancelled' };
   if (boundary.kind === 'turn_failed') {
     // A rebuilt transcript says the same as the live one: the recorded words, read by the one shared parser.
-    const detail = boundary.creditExhausted
+    const detail = boundary.teamCreditReason
+      ? JSON.stringify({ error: { code: 'credits_exhausted', reason_code: boundary.teamCreditReason } })
+      : boundary.creditExhausted
       ? '{"error":{"code":"credits_exhausted","message":"Gugu credits"}}'
       : boundary.detail && redactSecrets(boundary.detail);
     const said = boundary.detail ? upstreamSaid(boundary.detail) : undefined;

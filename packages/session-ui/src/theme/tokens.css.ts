@@ -132,68 +132,68 @@ globalStyle(':root', {
 
 // ── Composite typography role vars ────────────────────────────────────────────
 //
-// These chain var→var so they can't go in the typed contract (VE only accepts
-// static strings in the `vars` map). They keep the same --type-* names for
-// backward compatibility with typography.css.
+// Each role points at a primitive token. A `tokenVars.x` value is already `var(--x)`:
+// use it as is (wrapping it again emits `var(var(--x))`, which is invalid CSS).
+// The --type-* names stay for typography.css.
 
 globalStyle(':root', {
-  [nsName('type-body-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-body-font-size')]: `var(${tokenVars.textSm})`,
-  [nsName('type-body-font-weight')]: `var(${tokenVars.fontWeightNormal})`,
+  [nsName('type-body-font-family')]: tokenVars.fontSans,
+  [nsName('type-body-font-size')]: tokenVars.textSm,
+  [nsName('type-body-font-weight')]: tokenVars.fontWeightNormal,
   [nsName('type-body-line-height')]: '18px',
 
-  [nsName('type-body-bold-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-body-bold-font-size')]: `var(${tokenVars.textSm})`,
-  [nsName('type-body-bold-font-weight')]: `var(${tokenVars.fontWeightSemibold})`,
+  [nsName('type-body-bold-font-family')]: tokenVars.fontSans,
+  [nsName('type-body-bold-font-size')]: tokenVars.textSm,
+  [nsName('type-body-bold-font-weight')]: tokenVars.fontWeightSemibold,
   [nsName('type-body-bold-line-height')]: '18px',
 
-  [nsName('type-body-italic-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-body-italic-font-size')]: `var(${tokenVars.textSm})`,
-  [nsName('type-body-italic-font-weight')]: `var(${tokenVars.fontWeightNormal})`,
+  [nsName('type-body-italic-font-family')]: tokenVars.fontSans,
+  [nsName('type-body-italic-font-size')]: tokenVars.textSm,
+  [nsName('type-body-italic-font-weight')]: tokenVars.fontWeightNormal,
   [nsName('type-body-italic-font-style')]: 'italic',
   [nsName('type-body-italic-line-height')]: '18px',
 
-  [nsName('type-body-link-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-body-link-font-size')]: `var(${tokenVars.textSm})`,
-  [nsName('type-body-link-font-weight')]: `var(${tokenVars.fontWeightNormal})`,
+  [nsName('type-body-link-font-family')]: tokenVars.fontSans,
+  [nsName('type-body-link-font-size')]: tokenVars.textSm,
+  [nsName('type-body-link-font-weight')]: tokenVars.fontWeightNormal,
   [nsName('type-body-link-line-height')]: '18px',
 
-  [nsName('type-h1-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-h1-font-size')]: `var(${tokenVars.textXl})`,
-  [nsName('type-h1-font-weight')]: `var(${tokenVars.fontWeightSemibold})`,
+  [nsName('type-h1-font-family')]: tokenVars.fontSans,
+  [nsName('type-h1-font-size')]: tokenVars.textXl,
+  [nsName('type-h1-font-weight')]: tokenVars.fontWeightSemibold,
   [nsName('type-h1-line-height')]: '28px',
 
-  [nsName('type-h2-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-h2-font-size')]: `var(${tokenVars.textLg})`,
-  [nsName('type-h2-font-weight')]: `var(${tokenVars.fontWeightSemibold})`,
+  [nsName('type-h2-font-family')]: tokenVars.fontSans,
+  [nsName('type-h2-font-size')]: tokenVars.textLg,
+  [nsName('type-h2-font-weight')]: tokenVars.fontWeightSemibold,
   [nsName('type-h2-line-height')]: '25px',
 
-  [nsName('type-h3-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-h3-font-size')]: `var(${tokenVars.textTitle})`,
-  [nsName('type-h3-font-weight')]: `var(${tokenVars.fontWeightSemibold})`,
+  [nsName('type-h3-font-family')]: tokenVars.fontSans,
+  [nsName('type-h3-font-size')]: tokenVars.textTitle,
+  [nsName('type-h3-font-weight')]: tokenVars.fontWeightSemibold,
   [nsName('type-h3-line-height')]: '21px',
 
-  [nsName('type-inline-code-font-family')]: `var(${tokenVars.fontMono})`,
+  [nsName('type-inline-code-font-family')]: tokenVars.fontMono,
   // ❌ 不给它开一档 px:mono 比 sans 视觉偏大,这里要的是跨字体光学补偿而不是层级。
   // 0.92em 跟着周围正文走(13 → 11.96,与原来写死的 12px 差 0.04px),
   // 标题里的行内代码也就自动跟着标题放大 —— 写死 px 做不到这件事。
   // 与 markdown.css(`.gg-md` 行内 code 0.92em)同一条约定。
   [nsName('type-inline-code-font-size')]: '0.92em',
-  [nsName('type-inline-code-font-weight')]: `var(${tokenVars.fontWeightNormal})`,
+  [nsName('type-inline-code-font-weight')]: tokenVars.fontWeightNormal,
   [nsName('type-inline-code-line-height')]: '20px',
 
-  [nsName('type-code-font-family')]: `var(${tokenVars.fontMono})`,
-  [nsName('type-code-font-size')]: `var(${tokenVars.textSm})`,
-  [nsName('type-code-font-weight')]: `var(${tokenVars.fontWeightNormal})`,
+  [nsName('type-code-font-family')]: tokenVars.fontMono,
+  [nsName('type-code-font-size')]: tokenVars.textSm,
+  [nsName('type-code-font-weight')]: tokenVars.fontWeightNormal,
   [nsName('type-code-line-height')]: '20px',
 
-  [nsName('type-code-lang-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-code-lang-font-size')]: `var(${tokenVars.textTiny})`,
-  [nsName('type-code-lang-font-weight')]: `var(${tokenVars.fontWeightMedium})`,
+  [nsName('type-code-lang-font-family')]: tokenVars.fontSans,
+  [nsName('type-code-lang-font-size')]: tokenVars.textTiny,
+  [nsName('type-code-lang-font-weight')]: tokenVars.fontWeightMedium,
   [nsName('type-code-lang-line-height')]: '16px',
 
-  [nsName('type-mention-font-family')]: `var(${tokenVars.fontSans})`,
-  [nsName('type-mention-font-size')]: `var(${tokenVars.textSm})`,
-  [nsName('type-mention-font-weight')]: `var(${tokenVars.fontWeightSemibold})`,
+  [nsName('type-mention-font-family')]: tokenVars.fontSans,
+  [nsName('type-mention-font-size')]: tokenVars.textSm,
+  [nsName('type-mention-font-weight')]: tokenVars.fontWeightSemibold,
   [nsName('type-mention-line-height')]: '18px',
 });

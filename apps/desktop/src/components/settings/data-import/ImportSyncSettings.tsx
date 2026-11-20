@@ -1,3 +1,5 @@
+import { ENVIRONMENT_IMPORT_CATEGORIES, type EnvironmentImportCategory } from '@shared/core/session-import/environment-import'
+import { categoryLabelKey } from './environment-import-view'
 import { Checkbox } from '@base-ui/react/checkbox'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -38,7 +40,7 @@ function ReadyImportSyncSettings({ ownerId, reading }: {
   const { t } = useTranslation('main')
   const available = reading.sources.length > 0
   const [customizing, setCustomizing] = useState(false)
-  const [sessions, setSessions] = useState(true)
+  const [categories, setCategories] = useState<EnvironmentImportCategory[]>([...ENVIRONMENT_IMPORT_CATEGORIES])
   const [saving, setSaving] = useState(false)
   const change = async (enabled: boolean) => {
     setSaving(true)
@@ -59,8 +61,8 @@ function ReadyImportSyncSettings({ ownerId, reading }: {
         description={available ? t('settings.dataImport.syncDescription') : t('settings.dataImport.syncPrerequisite')}
         control={<Switch aria-label={t('settings.dataImport.autoSync')} checked={reading.automatic}
           disabled={!available || saving} onCheckedChange={(value) => { void change(value) }} />} />
-      <SettingsRow title={t('settings.dataImport.syncScope')} description={t('settings.dataImport.allScopes')}
-        control={<Button variant="secondary" size="sm" disabled={!available} onClick={() => { setSessions(true); setCustomizing(true) }}>
+      <SettingsRow title={t('settings.dataImport.syncScope')} description={(reading.categories ?? ['tasks']).length < ENVIRONMENT_IMPORT_CATEGORIES.length ? t('settings.dataImport.selectedScopes', { count: (reading.categories ?? ['tasks']).length }) : t('settings.dataImport.scopeCategories')}
+        control={<Button variant="secondary" size="sm" disabled={!available} onClick={() => { setCategories([...(reading.categories ?? ['tasks'])]); setCustomizing(true) }}>
           {t('settings.dataImport.customize')}
         </Button>} />
       {customizing && (
@@ -71,17 +73,23 @@ function ReadyImportSyncSettings({ ownerId, reading }: {
               <h3>{t('settings.dataImport.chooseScope')}</h3>
               <IconButton aria-label={t('settings.close')} onClick={() => setCustomizing(false)}><X size={16} /></IconButton>
             </div>
-            {[t('settings.dataImport.scopeAll'), t('settings.dataImport.sessions')].map((label) => (
-              <label key={label} className="gg-import-checkbox">
-                <span>{label}</span>
-                <Checkbox.Root checked={sessions} onCheckedChange={setSessions}>
+            {(['all', ...ENVIRONMENT_IMPORT_CATEGORIES] as const).map((category) => (
+              <label key={category} className="gg-import-checkbox">
+                <span>{category === 'all' ? t('settings.dataImport.scopeAll') : t(categoryLabelKey(category))}</span>
+                <Checkbox.Root checked={category === 'all' ? categories.length === ENVIRONMENT_IMPORT_CATEGORIES.length : categories.includes(category)}
+                  onCheckedChange={checked => setCategories(before => category === 'all' ? checked ? [...ENVIRONMENT_IMPORT_CATEGORIES] : []
+                    : checked ? [...new Set([...before, category])] : before.filter(item => item !== category))}>
                   <Checkbox.Indicator><Check size={12} /></Checkbox.Indicator>
                 </Checkbox.Root>
               </label>
             ))}
             <div className="gg-import-scope-actions">
               <Button variant="secondary" size="sm" onClick={() => setCustomizing(false)}>{t('settings.dataImport.cancel')}</Button>
-              <Button variant="primary" size="sm" disabled={!sessions} onClick={() => setCustomizing(false)}>{t('settings.dataImport.save')}</Button>
+              <Button variant="primary" size="sm" disabled={!categories.length || saving} onClick={() => {
+                setSaving(true)
+                void updateImportSettings(ownerId, before => ({ ...before, categories })).then(() => { cancelAutomaticImports(ownerId, categories); setCustomizing(false) })
+                  .catch(() => notify({ tier: 'error', title: t('settings.dataImport.syncSaveFailed') })).finally(() => setSaving(false))
+              }}>{t('settings.dataImport.save')}</Button>
             </div>
           </div>
         </Sheet>

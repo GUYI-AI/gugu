@@ -6,7 +6,7 @@ import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } 
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { DevicesContext, useDevicesStore } from '@/store/devicesContext'
 import { PhoneGroupAgentCreation } from '@/mobile/chat/PhoneNewTask'
-import * as rpc from '@/mobile/agent-watch/sessionpage-rpc'
+import * as rpc from '@/components/session-watch/sessionpage-rpc'
 import { clickElement, createReactHarness, deferred, device, renderWithAppProviders } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 import { runInAction } from 'mobx'

@@ -29,7 +29,22 @@ describe('agent question selection', () => {
     expect(latestAgentQuestion({ old: { ...old, state: 'resolved' }, receipt })).toBeNull()
   })
 
+  it('treats an explicit skip as ready and isolates drafts when host support changes', () => {
+    expect(questionAnswerReady(question, { selected: [], skipped: true }, false)).toBe(true)
+    expect(questionAnswerReady(question, { selected: ['300'], skipped: true }, false)).toBe(false)
+    expect(questionAnswerReady(question, { selected: [], other: 'text', skipped: true }, true)).toBe(false)
+    const asked = settlement('same-host-support', 'pending')
+    expect(agentQuestionDraftKey('owner:a', asked)).not.toBe(agentQuestionDraftKey('owner:a', { ...asked, skippable: true }))
+  })
+
   it('does not fabricate an answerable card when the host has no question channel', () => {
     expect(latestAgentQuestion({ unsupported: { ...settlement('unsupported', 'pending'), questions: undefined } })).toBeNull()
+  })
+
+  it('keeps a discussion receipt after waiting ends, until a newer question takes its place', () => {
+    const discussion = { ...settlement('discussion', 'resolved'), optionId: 'discuss', askedAt: 1 }
+    expect(latestAgentQuestion({ discussion })).toEqual(discussion)
+    expect(latestAgentQuestion({ discussion, next: { ...settlement('next', 'pending'), askedAt: 2 } })?.itemId).toBe('next')
+    expect(latestAgentQuestion({ discussion, next: { ...settlement('next', 'resolved'), askedAt: 2 } })).toBeNull()
   })
 })

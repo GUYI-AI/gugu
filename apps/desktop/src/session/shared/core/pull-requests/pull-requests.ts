@@ -109,34 +109,6 @@ export type PrSyncProgress = {
   error?: string;
 };
 
-// ── Query options ─────────────────────────────────────────────────────────────
-
-export type PullRequestStatusFilter = PullRequestStatus | 'all' | 'not-open';
-
-export type PrFilters = {
-  status?: PullRequestStatusFilter;
-  authorUserIds?: string[];
-  labelNames?: string[];
-  assigneeUserIds?: string[];
-};
-
-export type PrSortField = 'newest' | 'oldest' | 'recently-updated';
-
-export type ListPrOptions = {
-  limit?: number;
-  offset?: number;
-  searchQuery?: string;
-  filters?: PrFilters;
-  sort?: PrSortField;
-  repositoryUrl?: string;
-};
-
-export type PrFilterOptions = {
-  authors: PullRequestUser[];
-  labels: Label[];
-  assignees: PullRequestUser[];
-};
-
 export type RemoteNotReadyPullRequestError = { type: 'remote_not_ready'; status: string };
 
 export type PullRequestAuthError =
@@ -166,8 +138,6 @@ export type PullRequestRepositoryError =
   | { type: 'host_unreachable'; host: string; reason: string };
 
 export type PullRequestOperationError =
-  | { type: 'list_failed'; message: string }
-  | { type: 'filter_options_failed'; message: string }
   | { type: 'session_pull_requests_failed'; message: string }
   | { type: 'sync_failed'; message: string }
   | { type: 'refresh_failed'; message: string }
@@ -175,23 +145,12 @@ export type PullRequestOperationError =
   | { type: 'comments_failed'; message: string }
   | { type: 'create_failed'; message: string }
   | { type: 'merge_failed'; message: string }
-  | { type: 'mark_ready_failed'; message: string }
-  | { type: 'files_failed'; message: string };
+  | { type: 'mark_ready_failed'; message: string };
 
 export type PullRequestError =
   | PullRequestRepositoryError
   | PullRequestAuthError
   | PullRequestOperationError;
-
-// ── Pass-through types ────────────────────────────────────────────────────────
-
-export interface PullRequestFile {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  patch?: string;
-}
 
 export function pullRequestErrorMessage(error: PullRequestError): string {
   return match(error)
@@ -220,8 +179,6 @@ export function pullRequestErrorMessage(error: PullRequestError): string {
         { type: 'github_rate_limited' },
         { type: 'github_forbidden' },
         { type: 'github_account_resolution_failed' },
-        { type: 'list_failed' },
-        { type: 'filter_options_failed' },
         { type: 'session_pull_requests_failed' },
         { type: 'sync_failed' },
         { type: 'refresh_failed' },
@@ -229,8 +186,7 @@ export function pullRequestErrorMessage(error: PullRequestError): string {
         { type: 'comments_failed' },
         { type: 'create_failed' },
         { type: 'merge_failed' },
-        { type: 'mark_ready_failed' },
-        { type: 'files_failed' }
+        { type: 'mark_ready_failed' }
       ),
       (e) => e.message
     )

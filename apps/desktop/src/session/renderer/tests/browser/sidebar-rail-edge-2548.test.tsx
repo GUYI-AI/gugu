@@ -225,3 +225,56 @@ it('the rail flips in the frame the list\'s layer takes the rail\'s width, both 
   }
   observer.disconnect();
 });
+
+// Collapsed, the bell keeps a place on the rail: under 「»」 and over the 「+」, on the avatars' axis, one bell at a time.
+// The rail has no room for its list: collapsing closes the list, and opening it from the rail expands the sidebar into it.
+it('collapsed, the rail keeps the bell between 「»」 and the 「+」, and opening it expands the sidebar', async () => {
+  const { setSidebarNotificationsOpen } = await import('@/lib/sidebarChatsBridge');
+  await page.viewport(1000, 700);
+  document.documentElement.dataset.theme = 'light';
+  harness = createReactHarness();
+  await harness.render(
+    <div data-desktop-shell="" style={{ display: 'flex', width: '100vw', height: '100vh' }}>
+      <div className="gugu-skin emlight" style={{ flex: 1, height: '100%' }}>
+        <SessionLocalizationProvider>
+          <WorkspaceLayoutContextProvider>
+            <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full bg-background">history</div>} />
+          </WorkspaceLayoutContextProvider>
+        </SessionLocalizationProvider>
+      </div>
+    </div>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+  const plus = document.querySelector<HTMLElement>('[data-testid="sidebar-create-menu"]')!;
+  const bells = () => [...document.querySelectorAll<HTMLElement>('[data-notification-slot="toggle"]')];
+  const shown = () => bells().filter((slot) => !slot.hidden);
+  const railRow = document.querySelector<HTMLElement>('[data-sidebar-rail-bell]')!;
+  expect(shown()).toHaveLength(1);
+  expect(railRow.contains(shown()[0])).toBe(false);
+  expect(railRow.getBoundingClientRect().height).toBe(0);
+
+  setSidebarNotificationsOpen(true);
+  fold.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
+  await expect.poll(() => railRow.contains(shown()[0] ?? null)).toBe(true);
+  expect(shown()).toHaveLength(1);
+  expect(document.querySelector('[data-notification-slot="list"]:not([hidden])')).toBeNull();
+  const panel = aside.getBoundingClientRect();
+  const bell = railRow.getBoundingClientRect();
+  expect(railRow.closest('[inert]')).toBeNull();
+  // The count stands out over the bell's top-right corner: nothing between the bell and the sidebar clips it.
+  for (let box: HTMLElement | null = railRow; box && box !== aside; box = box.parentElement) expect(getComputedStyle(box).overflowY, box.className).not.toBe('hidden');
+  expect(bell.top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
+  expect(plus.getBoundingClientRect().top).toBeGreaterThanOrEqual(bell.bottom);
+  // The edge lands once it is within SIDEBAR_LANDED_PX of the rail, while the bell's and the 「+」's rows follow the spring's
+  // own progress, whose sub-pixel tail runs on a little longer: both are on the axis where that motion rests.
+  await expect.poll(() => railRow.getBoundingClientRect().left + 20 + 16 - panel.left).toBe(36);
+  await expect.poll(() => plus.getBoundingClientRect().left + 16 - panel.left).toBe(36);
+
+  setSidebarNotificationsOpen(true);
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
+  await expect.poll(() => document.querySelector('[data-notification-slot="list"]:not([hidden])')).not.toBeNull();
+  await expect.poll(() => railRow.getBoundingClientRect().height, { timeout: 3000 }).toBe(0);
+  setSidebarNotificationsOpen(false);
+});

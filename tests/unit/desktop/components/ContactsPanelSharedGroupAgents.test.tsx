@@ -29,14 +29,13 @@ describe('ContactsPanel shared-group Agent cloud projection', () => {
       chat: { chats: [] },
     })
 
-    const cloud = harness.container.querySelector('[data-device-scope="cloud"]')
-    // 设备段默认收起,收起时只挂可被查找的名字行;像用户一样先点开这一段
-    await clickElement(cloud?.querySelector('[data-slot="section-label"]') as HTMLElement)
-    const row = cloud?.querySelector('[data-contact-id="shared-agent"]') as HTMLElement | null
-    expect(row).toBeTruthy()
+    // 别人的 Agent 归「咕咕云」分组:像用户一样在左栏点开这一组,右边铺开它
+    await clickElement(harness.container.querySelector('[data-section-key="cloud"]') as HTMLElement)
+    const row = () => harness.container.querySelector('[data-testid="contacts-section-pane"] [data-contact-id="shared-agent"]') as HTMLElement | null
+    expect(row()).toBeTruthy()
     await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.contactsSelectModeButton}"]`) as HTMLElement)
-    expect(harness.container.querySelector('[data-contact-id="shared-agent"]')?.hasAttribute('data-contact-option')).toBe(false)
-    await clickElement(row!)
+    expect(row()?.hasAttribute('data-contact-option')).toBe(false)
+    await clickElement(row()!)
     const openGroup = harness.container.querySelector('[data-testid="contact-shared-agent-primary-action"]') as HTMLButtonElement | null
     expect(openGroup?.textContent).toContain('打开群聊')
     expect(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.contactsDetailSendMessageButton}"]`)).toBeNull()

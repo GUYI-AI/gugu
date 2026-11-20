@@ -1,3 +1,4 @@
+import { codexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import type { AcpClient } from '@gugu/session-core/agents/plugins';
 import type { AcpPlatformInjection, AdapterExit, AgentRunContext } from '@gugu/session-core/acp';
 import { acpErr } from '@gugu/session-core/acp';
@@ -52,6 +53,7 @@ export interface CreateAcpConnectionSourceDeps {
 
 export interface AcquireAcpConnectionInput {
   providerId: string;
+  sessionProgram?: string | null;
   workspaceId: string;
   cwd: string;
   behavior: IAcpBehavior;
@@ -130,6 +132,7 @@ async function provisionAcpConnection(
   );
   const spawn = await deps.agentHost.buildAcpSpawn(input.providerId, {
     cwd: input.cwd,
+    sessionProgram: input.sessionProgram,
     runContext: input.runContext,
     platform: input.platform,
     capabilitySpawnEnv: input.capabilitySpawnEnv,
@@ -137,7 +140,8 @@ async function provisionAcpConnection(
     signal: started.signal,
   });
   if (!spawn.success) {
-    const failure = toSerializedError(new Error(agentHostErrorMessage(spawn.error)));
+    const original = toSerializedError(new Error(agentHostErrorMessage(spawn.error)));
+    const failure = input.providerId === 'codex' ? { ...original, data: { codexStartupKind: codexStartupKind(spawn.error, true) ?? 'unknown' } } : original;
     // 版本低于下界:两个数原样带过边界,界面才说得出「需要 X,现在是 Y」(与终端腿 #6341 同一份提示)。
     const versionBlock = spawn.error instanceof SessionRuntimeCompatibilityError
       && spawn.error.code === 'runtime-version-unsupported'

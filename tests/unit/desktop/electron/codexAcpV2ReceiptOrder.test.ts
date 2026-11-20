@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { chmodSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -8,7 +10,7 @@ import * as v2 from '@agentclientprotocol/sdk/experimental/v2';
 import { expect, it } from 'vitest';
 import { awaitFact } from '../../../support/awaitFact';
 
-async function fixture(body: string) {
+async function fixture(body: string, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'codex-v2-receipts-'));
   const bin = join(dir, 'codex.cjs');
   writeFileSync(bin, `#!/usr/bin/env node
@@ -24,7 +26,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
 })`);
   chmodSync(bin, 0o755);
   const child = spawn(process.execPath, [resolve('apps/desktop/electron/runtime/codex-app-server-acp.mjs')], {
-    cwd: dir, env: { ...process.env, GUGU_CODEX_BIN: bin }, stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: dir, env: { ...process.env, GUGU_CODEX_BIN: bin, ...env }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const updates: v2.SessionUpdate[] = [];
   const connection = v2.client({ name: 'fixture' }).onNotification(v2.methods.client.session.update, ({ params }) => { updates.push(params.update); }).connect(
@@ -89,12 +91,40 @@ it('cancels an uninserted request without inventing acceptance, then admits a ne
   try {
     const pending = p.agent.request(v2.methods.agent.session.prompt, { sessionId: 'thread', prompt: [{ type: 'text', text: 'cancel' }] });
     const refused = expect(pending).rejects.toMatchObject({ code: -32800 });
-    await awaitFact('native running before cancellation', () => p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'running'), { producer: p.child });
+    await awaitFact('native running before cancellation', () => p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'running') || undefined, { producer: p.child });
     await p.agent.notify(v2.methods.agent.session.cancel, { sessionId: 'thread' });
     await refused;
-    await awaitFact('native idle after cancellation', () => p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'idle'), { producer: p.child });
+    await awaitFact('native idle after cancellation', () => p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'idle') || undefined, { producer: p.child });
     expect(await p.agent.request(v2.methods.agent.session.prompt, { sessionId: 'thread', prompt: [{ type: 'text', text: 'next' }] })).toEqual({ messageId: 'next-native' });
   } finally { await p.close(); }
+});
+
+it('a cancel that lands while native auth is being confirmed is not lost', async () => {
+  let hits = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const server = createServer((request, response) => {
+    request.resume();
+    const reply = () => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ accessToken: 'access', chatgptAccountId: 'account', identity: 'identity' })); };
+    if (++hits === 1) return reply(); // startup sign-in
+    void gate.then(reply); // the prompt's own confirmation stays in flight until released
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const p = await fixture(awaitingInsertion, {
+    GUGU_CODEX_NATIVE_AUTH_ENDPOINT: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`,
+    GUGU_CODEX_NATIVE_AUTH_BEARER: 'bearer',
+  });
+  try {
+    const pending = p.agent.request(v2.methods.agent.session.prompt, { sessionId: 'thread', prompt: [{ type: 'text', text: 'cancel' }] });
+    const refused = expect(pending).rejects.toMatchObject({ code: -32800 });
+    await awaitFact('native auth confirmation in flight', () => hits === 2 ? true : undefined, { producer: p.child });
+    await p.agent.notify(v2.methods.agent.session.cancel, { sessionId: 'thread' });
+    // stdin is ordered: the reply to this unsupported request proves the cancel above was already handled.
+    await p.agent.request(v2.methods.agent.session.list, {}).catch(() => undefined);
+    release();
+    await refused;
+    expect(p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'running')).toBe(false);
+  } finally { await p.close(); server.close(); }
 });
 
 it('connection exit rejects outstanding native receipts', async () => {
@@ -102,7 +132,7 @@ it('connection exit rejects outstanding native receipts', async () => {
   try {
     const pending = p.agent.request(v2.methods.agent.session.prompt, { sessionId: 'thread', prompt: [{ type: 'text', text: 'pending' }] });
     const refused = expect(pending).rejects.toBeDefined();
-    await awaitFact('native running before close', () => p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'running'), { producer: p.child });
+    await awaitFact('native running before close', () => p.updates.some(u => u.sessionUpdate === 'state_update' && u.state === 'running') || undefined, { producer: p.child });
     p.child.stdin.end();
     await refused;
   } finally { await p.close(); }

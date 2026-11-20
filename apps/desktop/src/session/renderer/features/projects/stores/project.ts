@@ -9,14 +9,10 @@ import { ProjectSettingsStore } from './project-settings-store';
 import { ProjectViewStore } from './project-view';
 
 export type UnregisteredProjectPhase =
-  | 'creating-repo' // gh api — new mode only
-  | 'cloning' // git clone
   | 'registering' // db insert
   | 'error';
 
 export type UnmountedProjectPhase = 'opening' | 'error' | 'closing' | 'idle';
-
-export type ProjectMode = 'pick' | 'clone' | 'new';
 
 /**
  * Holds all mounted-only state for a project. Created atomically by
@@ -84,7 +80,6 @@ export class ProjectStore {
   phase: UnregisteredProjectPhase | UnmountedProjectPhase | null;
   error: string | undefined = undefined;
   errorCode: 'path-not-found' | 'path-access-blocked' | undefined = undefined;
-  mode: ProjectMode | null;
   mountedProject: MountedProject | null = null;
 
   constructor(
@@ -92,8 +87,7 @@ export class ProjectStore {
     id: string,
     name: string | null,
     data: LocalProject | null,
-    phase: UnregisteredProjectPhase | UnmountedProjectPhase | null,
-    mode: ProjectMode | null = null
+    phase: UnregisteredProjectPhase | UnmountedProjectPhase | null
   ) {
     this.state = state;
     this.id = id;
@@ -101,7 +95,6 @@ export class ProjectStore {
     this.data = data;
     this.createdAt = data?.createdAt ?? new Date().toISOString();
     this.phase = phase;
-    this.mode = mode;
     makeAutoObservable(this, { mountedProject: observable.ref });
   }
 
@@ -132,23 +125,6 @@ export class ProjectStore {
     this.error = undefined;
     this.errorCode = undefined;
   }
-
-  transitionToUnregistered(
-    id: string,
-    name: string,
-    phase: UnregisteredProjectPhase,
-    mode: ProjectMode
-  ): void {
-    this.mountedProject?.dispose();
-    this.mountedProject = null;
-    this.data = null;
-    this.id = id;
-    this.name = name;
-    this.state = 'unregistered';
-    this.phase = phase;
-    this.mode = mode;
-    this.error = undefined;
-  }
 }
 
 export type UnregisteredProject = ProjectStore & {
@@ -156,7 +132,6 @@ export type UnregisteredProject = ProjectStore & {
   id: string;
   name: string;
   phase: UnregisteredProjectPhase;
-  mode: ProjectMode;
   error: string | undefined;
 };
 
@@ -187,10 +162,9 @@ export function isMountedProject(p: ProjectStore): p is ProjectStore & {
 export function createUnregisteredProject(
   id: string,
   name: string,
-  phase: UnregisteredProjectPhase,
-  mode: ProjectMode = 'pick'
+  phase: UnregisteredProjectPhase
 ): ProjectStore {
-  return new ProjectStore('unregistered', id, name, null, phase, mode);
+  return new ProjectStore('unregistered', id, name, null, phase);
 }
 
 export function createUnmountedProject(

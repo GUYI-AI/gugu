@@ -11,7 +11,7 @@ import { registerNativeComposer } from '../../../../apps/desktop/src/lib/nativeC
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 const rpc = vi.hoisted(() => vi.fn())
 const lists = vi.hoisted(() => vi.fn())
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ appCallOn: rpc, fetchSessionsList: lists }))
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ appCallOn: rpc, fetchSessionsList: lists }))
 const AGENT = 'user:22222222-2222-4222-8222-222222222222'
 const app = { extensionId: 'board', extensionName: 'Board' }
 const device = (id: string, online = true): Device => ({ device_id: id, label: id, hostname: id, platform: 'darwin', status: 'online', is_online: online, last_seen_at: '2026-10-26T01:00:00Z', capabilities: { terminals: [], runtimes: [] } }) as Device

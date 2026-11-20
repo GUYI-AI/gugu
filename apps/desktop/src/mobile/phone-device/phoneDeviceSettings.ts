@@ -67,6 +67,18 @@ export function setPhoneAgentHostEnabled(userId: string, hostEnabled: boolean): 
   write(userId, { ...read(userId), hostEnabled })
 }
 
+/** Closure must durably pause publication; a stale enabled disk value could restart after cancellation. */
+export function pausePhoneDeviceForAccountClosure(userId: string): void {
+  const next = { ...read(userId), enabled: false, hostEnabled: false }
+  try {
+    localStorage.setItem(KEY_PREFIX + userId, JSON.stringify(next))
+    const saved = JSON.parse(localStorage.getItem(KEY_PREFIX + userId) ?? 'null') as Partial<PhoneDeviceSettings> | null
+    if (!saved || saved.enabled !== false || saved.hostEnabled !== false) throw new Error('Pause was not stored')
+  } catch { throw Object.assign(new Error('Phone publication pause could not be saved'), { code: 'closure_storage_unavailable' }) }
+  cache.set(userId, next)
+  for (const listener of [...listeners]) listener()
+}
+
 export function setPhoneActionGroup(userId: string, group: PhoneActionGroup, on: boolean): void {
   const current = read(userId)
   write(userId, { ...current, groups: { ...current.groups, [group]: on } })

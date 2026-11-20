@@ -1,4 +1,4 @@
-import { runtimeModelId, customModelRefFromOption } from '@gugu/session-core/models/custom-model';
+import { runtimeModelId, customModelRefFromOption, customModelOptionId } from '@gugu/session-core/models/custom-model';
 import { knownTaskName, taskName } from './task-name';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { type SessionRow } from '@main/db/schema';
@@ -147,6 +147,7 @@ export function mapSessionRowToSession(
     // ❌ 别再只读 pty 那一支:ACP 分叉会因此在侧栏丢掉「fork 自 ×」。
     forkedFrom: config?.forkedFrom,
     forkFromProviderSessionId: config?.type === 'acp' ? config.forkFromProviderSessionId : undefined,
+    forkOnStartProviderSessionId: config?.forkOnStartProviderSessionId,
     providerSessionEndpoint: config?.providerSessionEndpoint,
     providerMintedSessionId: config?.providerMintedSessionId,
     // Its one name: a bound task's pending-bind record is empty (task-name.ts).
@@ -158,4 +159,9 @@ export function mapSessionRowToSession(
     initialMessageId: config?.initialMessageId,
     taskChatId: config?.taskChatId,
   };
+}
+
+/** The stored choice, including the connection identity stripped from the runtime model ID. */
+export function recordedSessionModelOption(session: Pick<Session, 'model' | 'customModel'>): string | undefined {
+  return session.customModel ? customModelOptionId(session.customModel) : session.model;
 }

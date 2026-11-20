@@ -2,90 +2,90 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PersonalAccountDeletion, PersonalAccountDeletionEntry } from '../../../../apps/desktop/src/components/settings/accountDeletion/PersonalAccountDeletion'
-import { accountDeletionConfirmed, type AccountDeletionImpact, type AccountDeletionView } from '../../../../apps/desktop/src/components/settings/accountDeletion/accountDeletionView'
+import { accountDeletionCanSubmit, type AccountDeletionView } from '../../../../apps/desktop/src/components/settings/accountDeletion/accountDeletionView'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { clickElement, createNode, createReactHarness } from '../../../support/testHarness'
 
-const impact: AccountDeletionImpact = { email: 'example@gugu.test', agents: 6, projects: 3, files: 28, fileBytes: 156000000, groupMessages: 342, remainingCredits: 1280 }
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness(); setLocalePreference('zh-CN') })
 afterEach(() => harness.cleanup())
-const render = (view: AccountDeletionView) => harness.render(createNode(PersonalAccountDeletion, { view, onCancel: vi.fn() }))
-const submit = () => act(async () => { harness.container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
-
-describe('personal account deletion presentation', () => {
-  it('requires the exact phrase and an explicit positive-credit waiver', () => {
-    expect(accountDeletionConfirmed('注销账号', 1280, false)).toBe(false)
-    expect(accountDeletionConfirmed('注销账号 ', 1280, true)).toBe(false)
-    expect(accountDeletionConfirmed(' 注销账号', 0, true)).toBe(false)
-    expect(accountDeletionConfirmed('注销账号', Number.NaN, true)).toBe(false)
-    expect(accountDeletionConfirmed('注销账号', -1, true)).toBe(false)
-    expect(accountDeletionConfirmed('注销账号', 1280, true)).toBe(true)
-    expect(accountDeletionConfirmed('注销账号', 0, false)).toBe(true)
-  })
-
-  it('shows all consequences and retains group history under the deleted identity', async () => {
-    await render({ stage: 'impact', impact, acknowledged: false, onAcknowledge: vi.fn(), onContinue: vi.fn() })
-    const text = harness.container.textContent!
-    for (const label of ['你的智能体', '你的项目', '你上传的文件', '你发出的消息和文件', '剩余积分', '已注销用户']) expect(text).toContain(label)
-    expect([...harness.container.querySelectorAll('button')].find(button => button.textContent === '继续')?.disabled).toBe(true)
-    expect(text).not.toMatch(/冷静期|反悔期|群消息将被删除/)
-  })
-
-  it('refuses form submission before credit waiver, then permits explicit confirmation', async () => {
-    const onDelete = vi.fn()
-    const view: AccountDeletionView = { stage: 'confirm', impact, confirmation: '注销账号', waived: false, busy: false, onConfirmation: vi.fn(), onWaive: vi.fn(), onDelete }
-    await render(view)
-    await submit()
-    expect(onDelete).not.toHaveBeenCalled()
-    await render({ ...view, waived: true })
-    await submit()
-    expect(onDelete).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps a pending request separate from a completed deletion', async () => {
-    const onDelete = vi.fn()
-    await render({ stage: 'confirm', impact, confirmation: '注销账号', waived: true, busy: true, onConfirmation: vi.fn(), onWaive: vi.fn(), onDelete })
-    await submit()
-    expect(onDelete).not.toHaveBeenCalled()
-    expect(harness.container.querySelector('[role="status"]')?.textContent).toBe('正在注销账号…')
-    expect(harness.container.querySelector('h2')?.textContent).toBe('确认注销账号？')
-  })
-
-  it('does not accept a nonnumeric six-character email code', async () => {
-    const onVerify = vi.fn()
-    const view: AccountDeletionView = { stage: 'verify', email: impact.email, code: 'abc123', busy: false, onCode: vi.fn(), onVerify, onResend: vi.fn() }
-    await render(view)
-    await submit()
-    expect(onVerify).not.toHaveBeenCalled()
-    await render({ ...view, code: '123456' })
-    await submit()
-    expect(onVerify).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows a single actionable blocker without claiming deletion succeeded', async () => {
-    const onAction = vi.fn()
-    await render({ stage: 'blocked', reason: '有一笔退款正在处理。', items: [{ id: 'refund', label: '退款处理中', actionLabel: '查看退款进度', onAction }], onRetry: vi.fn() })
-    expect(harness.container.textContent).toContain('账号尚未注销，数据未受影响。')
-    await clickElement([...harness.container.querySelectorAll('button')].find(button => button.textContent === '查看退款进度')!)
-    expect(onAction).toHaveBeenCalledTimes(1)
-  })
-
-  it('reports an unavailable review without inventing empty account quantities', async () => {
-    await render({ stage: 'unavailable', onRetry: vi.fn() })
-    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('请重试。账号尚未注销，数据未受影响。')
-    expect(harness.container.querySelectorAll('.gg-settings-row')).toHaveLength(0)
-  })
+const view = (patch: Partial<AccountDeletionView> = {}): AccountDeletionView => ({
+  phase: 'ready', remainingCredits: 1280, code: '123456', codeSent: true, waived: false,
+  onCode: vi.fn(), onWaive: vi.fn(), onResend: vi.fn(), onDelete: vi.fn(), onCheckResult: vi.fn(), onRetryLocal: vi.fn(), ...patch,
 })
+const render = (state: AccountDeletionView) => harness.render(createNode(PersonalAccountDeletion, { view: state, onCancel: vi.fn() }))
+const dialog = () => document.body.querySelector('[role="dialog"]')!
+const submit = () => act(async () => { dialog().querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
 
-it('only presents the personal account entry when explicitly available', async () => {
-  const onOpen = vi.fn()
-  for (const flags of [{ available: false, personal: true }, { available: true, personal: false }]) {
-    await harness.render(createNode(PersonalAccountDeletionEntry, { ...flags, onOpen }))
+describe('approved compact account closure dialog', () => {
+  it('uses the existing Cancel button for explicit unknown-confirm cancellation and honors the native fence', async () => {
+    const onCancel = vi.fn(), state = view({ phase: 'unconfirmed', canCancel: true })
+    await harness.render(createNode(PersonalAccountDeletion, { view: state, onCancel }))
+    await clickElement([...dialog().querySelectorAll('button')].find(button => button.textContent === '取消')!)
+    expect(onCancel).toHaveBeenCalledOnce()
+    await harness.render(createNode(PersonalAccountDeletion, { view: { ...state, canCancel: false }, onCancel }))
+    expect([...dialog().querySelectorAll('button')].find(button => button.textContent === '取消')?.disabled).toBe(true)
+    expect(state.onDelete).not.toHaveBeenCalled()
+  })
+  it('hides the entry while admission is closed or the account is not personal', async () => {
+    const onOpen = vi.fn()
+    await harness.render(createNode(PersonalAccountDeletionEntry, { available: false, personal: true, onOpen }))
     expect(harness.container.textContent).toBe('')
-  }
-  await harness.render(createNode(PersonalAccountDeletionEntry, { available: true, personal: true, onOpen }))
-  expect(harness.container.textContent).toContain('注销你的个人账号。')
-  await clickElement(harness.container.querySelector('button')!)
-  expect(onOpen).toHaveBeenCalledTimes(1)
+    await harness.render(createNode(PersonalAccountDeletionEntry, { available: true, personal: false, onOpen }))
+    expect(harness.container.textContent).toBe('')
+    expect(onOpen).not.toHaveBeenCalled()
+    await harness.render(createNode(PersonalAccountDeletionEntry, { available: true, personal: true, onOpen }))
+    await clickElement(harness.container.querySelector('button')!)
+    expect(onOpen).toHaveBeenCalledOnce()
+  })
+  it('shows the two effects, one credit waiver and one code field in a single dialog', async () => {
+    await render(view())
+    const text = dialog().textContent!
+    expect(text).toContain('智能体、项目和文件会删除')
+    expect(text).toContain('发过的消息保留，显示为「已注销用户」')
+    expect(text).toContain('放弃剩余 1,280 积分')
+    expect(dialog().querySelectorAll('input')).toHaveLength(2)
+    expect(text).not.toContain('输入「注销账号」')
+    expect(text).not.toContain('注销账号后会发生什么')
+  })
+  it('shows no waiver for a confirmed zero balance and never treats an unread balance as zero', async () => {
+    await render(view({ remainingCredits: 0 }))
+    expect(dialog().querySelector('input[type="checkbox"]')).toBeNull()
+    expect(accountDeletionCanSubmit(view({ remainingCredits: 0 }))).toBe(true)
+    await render(view({ phase: 'loading', remainingCredits: null }))
+    expect(dialog().querySelector('input[type="checkbox"]')).toBeNull()
+    expect(dialog().querySelector('[role="status"]')?.textContent).toBe('正在读取剩余积分…')
+    expect(accountDeletionCanSubmit(view({ remainingCredits: null }))).toBe(false)
+  })
+  it('requires explicit credit forfeiture and a sent six-digit code, with no typed phrase', async () => {
+    const state = view()
+    await render(state); await submit()
+    expect(state.onDelete).not.toHaveBeenCalled()
+    await render({ ...state, waived: true }); await submit()
+    expect(state.onDelete).toHaveBeenCalledTimes(1)
+    for (const patch of [{ code: 'abc123' }, { code: '' }, { codeSent: false }, { remainingCredits: Number.NaN }, { remainingCredits: -1 }]) {
+      expect(accountDeletionCanSubmit(view({ waived: true, ...patch }))).toBe(false)
+    }
+  })
+  it('keeps final submission disabled while native work is in progress', async () => {
+    const state = view({ phase: 'confirming', waived: true })
+    await render(state); await submit()
+    expect(state.onDelete).not.toHaveBeenCalled()
+    expect([...dialog().querySelectorAll('button')].find(b => b.textContent === '取消')?.disabled).toBe(true)
+    expect(dialog().querySelector('[role="status"]')?.textContent).toBe('正在注销账号…')
+  })
+  it('checks the original unknown result rather than submitting account closure again', async () => {
+    const state = view({ phase: 'unconfirmed' })
+    await render(state); await submit()
+    expect(state.onCheckResult).toHaveBeenCalledOnce()
+    expect(state.onDelete).not.toHaveBeenCalled()
+    expect(dialog().textContent).not.toContain('账号已注销')
+  })
+  it('continues pending local cleanup in the same dialog without another deletion', async () => {
+    const state = view({ phase: 'local-pending' })
+    await render(state)
+    await clickElement([...dialog().querySelectorAll('button')].find(b => b.textContent === '继续清理本机')!)
+    expect(state.onRetryLocal).toHaveBeenCalledOnce()
+    expect(state.onDelete).not.toHaveBeenCalled()
+  })
 })

@@ -9,11 +9,10 @@ import {
   InnerHeadRowLayout,
   InnerSidebarFoldButton,
   innerSectionEmptyClass,
-  innerSectionHeaderClass,
 } from './inner-sidebar-parts';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
-import { SidebarGroup, SidebarMenu, sidebarCountClass } from './sidebar-primitives';
+import { SidebarGroup, SidebarMenu, sidebarCountClass, sidebarGroupHeaderClass } from './sidebar-primitives';
 import { SessionRowShell } from './sidebar-session-row';
 
 /**
@@ -55,7 +54,7 @@ const SampleAgentsSection = observer(function SampleAgentsSection({ agent, activ
   const collapsed = sidebarFolds.has('inner:agents');
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="agents">
-      <div className={innerSectionHeaderClass}>
+      <div className={sidebarGroupHeaderClass}>
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.agents')}
@@ -101,7 +100,7 @@ const SampleTopicsSection = observer(function SampleTopicsSection() {
   const collapsed = sidebarFolds.has('inner:topics');
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="topics">
-      <div className={innerSectionHeaderClass}>
+      <div className={sidebarGroupHeaderClass}>
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.topics')}

@@ -1,12 +1,13 @@
 import type { HumanAuthSession } from '@gugu/core'
 import { isAuthRetryableFetchError, type Session, type User } from '@supabase/supabase-js'
 import { hydrateIdentityAuthUser } from './auth'
+import { accountKindFromMetadata } from '@/features/team/accountKind'
 import { setRejectedAccessTokenRecovery } from './authBoundedFetch'
 import { abortAuthSessionBoundary, keepAuthSessionBoundary, resetAuthSessionBoundary } from './authSessionLoss'
 import { publishRendererSession } from './sessionPublication'
 import { refreshSshMachines } from './sshLinkChannel'
 import { MAIN_AUTH_STORAGE_KEY, mainAuthSessionStorage, supabase } from './supabase'
-import { phoneHostAuthAvailable, phoneHostGetSession, phoneHostRefreshSession, phoneHostRestoreSession, phoneHostSignOut, setPhoneHostAuthHandoffBarrier } from './phoneHostAuth'
+import { phoneHostAuthAvailable, phoneHostGetSession, phoneHostRefreshSession, phoneHostRestoreSession, phoneHostSignOut, setPhoneHostAuthHandoffBarrier, forgetClosedPhoneHostSession } from './phoneHostAuth'
 import { platform } from '../platform'
 import type { AuthUser } from '../store/auth'
 import { ingestMessages } from './messageIngest'
@@ -19,6 +20,7 @@ export interface SessionCoordinatorDeps {
   refreshSession: (session: { refresh_token: string }) => Promise<{ data: { session: Session | null }; error: unknown }>
   restoreSession: (session: { access_token: string; refresh_token: string }) => Promise<{ data: { session: Session | null }; error: unknown }>
   onAuthStateChange: (listener: (event: string, session: Session | null) => void) => { data: { subscription: { unsubscribe: () => void } } }
+  prepareSignOut?: () => Promise<void>
   signOut: () => Promise<{ error: unknown; signedOutSession?: Session }>
   hydrateUser: (user: User, signal: AbortSignal) => Promise<AuthUser | null>
   publishSession: (event: string, session: Session | null) => void
@@ -29,6 +31,8 @@ export interface SessionCoordinatorDeps {
   getPersistedSessionState: () => { bootCandidate: Session | null; warning: Error | null }
   commitPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
   clearPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
+  clearClosedAccountCache?: (ownerId: string) => Promise<void>
+  clearClosedOwnerMemory?: (ownerId: string) => void
   subscribeAppForeground: (listener: () => void, onError: (error: unknown) => void) => () => void
 }
 
@@ -94,7 +98,7 @@ function isPermanentAuthError(value: unknown): boolean {
 }
 function userFromSession(session: Session): AuthUser {
   const user = session.user
-  return { id: user.id, email: user.email ?? '', nickname: '', identityPending: true }
+  return { id: user.id, email: user.email ?? '', nickname: '', identityPending: true, accountKind: accountKindFromMetadata(user.app_metadata) }
 }
 function sessionWork(generation: number, session: Session): Work {
   return { generation, userId: session.user.id, accessToken: session.access_token, refreshToken: session.refresh_token }
@@ -204,9 +208,53 @@ export class SessionCoordinator {
     const release = this.beginAuthHandoff()
     return this.performLogout().finally(release)
   }
+  /** Called only after native V2 reports original-owner local-complete.
+   * Native already retired Auth and its mirror. This clears renderer custody
+   * without another live-auth sign-out, native preparation or generic mirror clear.
+   */
+  async finalizeClosedOwner(ownerId: string): Promise<void> {
+    const fail = () => Object.assign(new Error('Account changed during account closure cleanup'), { code: 'wrong_local_owner' })
+    const sameOwner = () => {
+      const owner = this.snapshot.session?.user.id
+      if (owner && owner !== ownerId) throw fail()
+    }
+    sameOwner()
+    const release = this.beginAuthHandoff()
+    try {
+      await this.deps.loadPersistedSession()
+      sameOwner()
+      const persisted = this.deps.getPersistedSessionState().bootCandidate
+      if (persisted && persisted.user.id !== ownerId) throw fail()
+      const original = this.snapshot.session ?? persisted
+      this.interactiveAttempt += 1
+      const generation = this.nextGeneration()
+      const requireCurrent = () => { sameOwner(); if (!this.generationIsCurrent(generation)) throw fail() }
+      // Cancel queued old-owner publication. A later login owns a new generation.
+      this.mirrorVersion += 1
+      abortAuthSessionBoundary()
+      this.deps.clearClosedOwnerMemory?.(ownerId)
+      await this.mirrorTail.catch(() => undefined)
+      requireCurrent()
+      await this.deps.clearClosedAccountCache?.(ownerId)
+      requireCurrent()
+      if (original) await this.deps.clearPersistedSession(original, this.generationAbort.signal)
+      requireCurrent()
+      await ingestMessages(ownerId, 'clear')
+      requireCurrent()
+      const warning = this.deps.getPersistedSessionState().warning
+      if (warning) throw Object.assign(new Error('Account closure storage cleanup is pending', { cause: warning }), { code: 'closure_storage_unavailable' })
+      abortAuthSessionBoundary()
+      this.deps.publishSession('ACCOUNT_CLOSED', null)
+      this.setSnapshot({ status: 'anonymous', session: null, user: null, error: null })
+    } finally { release() }
+  }
   private async performLogout(): Promise<{ success: boolean }> {
     const session = this.snapshot.session
     if (!session) return { success: true }
+    if (this.deps.prepareSignOut) {
+      await this.deps.prepareSignOut()
+      if (this.snapshot.session !== session) return { success: false }
+    }
     const work = sessionWork(this.nextGeneration(), session)
     this.logoutWork = work
     abortAuthSessionBoundary()
@@ -625,6 +673,11 @@ export const sessionCoordinator = new SessionCoordinator({
   restoreSession: (session) => phoneHostRestoreSession(() => supabase.auth.setSession(session)),
   onAuthStateChange: (listener) => supabase.auth.onAuthStateChange((event, session) => listener(event, session)),
   // @@@6659 退出只吊销这一个会话 —— 不传 scope 时 supabase-js 默认 global,同账号所有设备一起被踢下线。
+  prepareSignOut: async () => {
+    if (!platform.androidNotificationSettings) return
+    const { prepareAndroidPushSignOut } = await import('../mobile/android-push/startAndroidPush')
+    await prepareAndroidPushSignOut()
+  },
   signOut: () => phoneHostSignOut(() => supabase.auth.signOut({ scope: 'local' })),
   hydrateUser: hydrateIdentityAuthUser,
   publishSession: publishRendererSession,
@@ -634,6 +687,15 @@ export const sessionCoordinator = new SessionCoordinator({
   getPersistedSessionState: () => mainAuthSessionStorage.getState(),
   commitPersistedSession: (session, signal) => mainAuthSessionStorage.commit(session, signal),
   clearPersistedSession: (session, signal) => mainAuthSessionStorage.remove(session, signal),
+  clearClosedAccountCache: async ownerId => {
+    if (platform.kind === 'capacitor') {
+      const { quiesceClosedPhoneOwner } = await import('../mobile/phone-device/phoneDeviceRuntime')
+      await quiesceClosedPhoneOwner(ownerId)
+    }
+    const { eraseClosedImAccount } = await import('./imRepository')
+    await eraseClosedImAccount(ownerId)
+  },
+  clearClosedOwnerMemory: forgetClosedPhoneHostSession,
   subscribeAppForeground: (listener, onError) => platform.subscribeAppForeground(listener, onError),
 })
 setRejectedAccessTokenRecovery((rejected) => sessionCoordinator.recoverRejectedAccessToken(rejected))

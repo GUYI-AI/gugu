@@ -23,7 +23,7 @@ const transcriptCommands = vi.hoisted(() => vi.fn())
 const transcriptView = vi.hoisted(() => ({ setScrollMode: vi.fn(), openItem: vi.fn(() => false) }))
 const openImageViewer = vi.hoisted(() => vi.fn())
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error {}, fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   setSessionOption: vi.fn(), onLinkChange: vi.fn(() => () => {}),
   onMachineEvent: vi.fn((_device: string, channel: { name: string }, listener: (view: LifeView) => void) => {
@@ -40,8 +40,8 @@ vi.mock('../../../apps/desktop/src/components/assistant-ui/session-transcript-vi
   return ready ? createElement('div', {}, props.composerContent) : null
 } }))
 
-import { SessionConversation } from '../../../apps/desktop/src/mobile/agent-watch/SessionConversation'
-import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { SessionConversation } from '../../../apps/desktop/src/components/session-watch/SessionConversation'
+import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/components/session-watch/agent-watch-store'
 import { state, changed, EMPTY } from '../../../apps/desktop/src/lib/sessionInputOutboxBridge'
 import type { SessionInputOutbox } from '../../../apps/desktop/src/lib/sessionInputOutbox'
 import { SessionInputQueue } from '../../../apps/desktop/src/components/chat/SessionInputQueue'
@@ -277,3 +277,16 @@ it('settles only the discarded host input notice when the real life event remove
   expect(sendNotices.size).toBe(1)
   expect(hostActions.discard.mock.calls).toEqual([[sessionId, 'host-a'], [sessionId, 'host-a']])
 })
+
+
+it('does not query ACP-only options for a PTY conversation (#3374)', async () => {
+  const { fetchSessionOptions } = await import('../../../apps/desktop/src/components/session-watch/sessionpage-rpc');
+  vi.mocked(fetchSessionOptions).mockClear();
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    deviceId: 'machine', sessionId: 'pty-3374', local: false, mobile: true, sessionRuntime: 'pty',
+    agentName: 'Claude Code', machineLabel: 'Test host', respondingItemId: null, onRespond: vi.fn(),
+    onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false, stopping: false,
+    timeline: emptyAgentWatchTimeline(), onStop: vi.fn(), onLoadOlder: async () => undefined,
+  }));
+  expect(fetchSessionOptions).not.toHaveBeenCalled();
+});

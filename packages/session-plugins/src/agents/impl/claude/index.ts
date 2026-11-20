@@ -5,6 +5,7 @@ import {
   registerPluginBehavior,
   type AgentMemoryDescriptor,
   type SessionBundleDescriptor,
+  guguBridgeRevert,
 } from '@gugu/session-core/agents/plugins';
 import {
   CLAUDE_GUGU_CAPABILITY_PACKAGE,
@@ -355,6 +356,8 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeClaudeSessionBundle,
   },
   acp: {
+    // Gugu's own bridge: `_meta.guguRevert` points, `_session/revert`.
+    revert: guguBridgeRevert,
     // Its session/load replays the user messages it received: canonical evidence of delivered communications.
     historyRecovery: { canonicalReplay: true },
     explainError: (cause) => {

@@ -48,6 +48,8 @@ export type ResolvedAgentHome = {
   configRoot: string;
   /** 用户那一份 —— 仅供显式导入、重新导入与以前会话读取。 */
   userConfigRoot: string;
+  /** The OS home used to resolve the native configuration and credential stores. */
+  osHomeDir: string;
   /**
    * 分家时**不**带过来的条目(相对配置根,`/` 分隔)—— 见 `AgentConfigRoot.carryExclusions`。
    * 默认全带:❌ 复制那一层不许自己决定「哪些算配置」,它没有那个信息;

@@ -32,12 +32,15 @@ public class MainActivity extends BridgeActivity {
         }
         registerPlugin(GuguAuthStoragePlugin.class);
         registerPlugin(GuguAccountClosurePlugin.class);
+        registerPlugin(GuguAccountClosureV2Plugin.class);
         registerPlugin(GuguPreviewOrigins.class);
         registerPlugin(GuguAppUpdatePlugin.class);
         registerPlugin(GuguSharePlugin.class);
         registerPlugin(GuguAppStorePlugin.class);
         registerPlugin(GuguPhoneActionsPlugin.class);
         registerPlugin(GuguNotificationChannelsPlugin.class);
+        registerPlugin(GuguAndroidPushPlugin.class);
+        registerPlugin(GuguChatNotificationsPlugin.class);
         registerPlugin(GuguAgentPlugin.class);
         registerPlugin(GuguPhoneDataPlugin.class);
         registerPlugin(GuguAudioPermissionsPlugin.class);

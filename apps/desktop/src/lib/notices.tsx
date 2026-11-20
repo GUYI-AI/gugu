@@ -36,8 +36,8 @@ export interface Notice {
   icon?: ReactNode
   /** 带一次性动作(撤销)的提示要留够点它的时间;不给就是档位的停留。 */
   duration?: number
-  /** Brief copy confirmation; still rendered by the single NoticeHost. */
-  presentation?: 'compact'
+  /** Special layouts still render through the single NoticeHost. */
+  presentation?: 'compact' | 'first-install-import'
   /**
    * 用户亲手关掉了这一条(关闭钮 / 滑走)。`dismissNotice` 收的、同 key 换内容的都**不**算 ——
    * sonner 对程序收的那条也会回调,而且晚一帧:那时同 key 可能已经是新的一条,调用方按 key 记的状态分不出是哪一条。
@@ -93,8 +93,8 @@ export function notify({ key, title, description, tier, variant, ongoing, waitin
       retire()
       onAutoClose?.()
     },
-    className: [passthrough && 'gugu-notice-passthrough', presentation === 'compact' && 'gugu-notice-compact'].filter(Boolean).join(' ') || undefined,
-    position: presentation === 'compact' ? 'top-center' as const : undefined,
+    className: [passthrough && 'gugu-notice-passthrough', presentation && `gugu-notice-${presentation}`].filter(Boolean).join(' ') || undefined,
+    position: presentation === 'compact' ? 'top-center' as const : presentation === 'first-install-import' ? 'top-right' as const : undefined,
     duration: ongoing ? Infinity : duration,
     closeButton: ongoing ? true : undefined,
   }

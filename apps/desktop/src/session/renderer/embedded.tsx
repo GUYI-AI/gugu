@@ -11,7 +11,7 @@ import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
 import { setupNavigationGuards } from '@renderer/app/view-registry';
-import { prefetchAllAppSettings } from '@renderer/features/settings/app-settings-client';
+import { prefetchAllAppSettings, wireNewSessionMemoryRefresh } from '@renderer/features/settings/app-settings-client';
 // @@@task-fusion (#2802) — session-ui 的 CSS 栈按它自己文档的契约显式引一次。
 // 从前这里是一行 `@gugu/session-ui/style.css`,那是 tsdown/vite lib 把下面这些打成的
 // 产物;并入本体后包按源码消费,VE 桶(layers/tokens/surfaces/reset/sprinkles/
@@ -220,6 +220,7 @@ async function bootstrap() {
   wireModelRegistryInvalidation(modelRegistry);
   wirePrCacheInvalidation();
   wireAgentCapabilityInvalidation();
+  wireNewSessionMemoryRefresh();
   wireCommitHistoryInvalidation();
   wireExternalLinkRequests();
   // 屏上的会话报给主进程:闲置回收不停人正看着的会话(spec idle-reclaim「不在屏上」)。

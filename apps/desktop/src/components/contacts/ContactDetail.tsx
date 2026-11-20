@@ -3,6 +3,10 @@ import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
 // 联系人详情(人 / Agent)和它用到的几块:原样从 ContactsPanel.tsx 搬出(那个文件行数冻结、只减不增),
 // 手机「伙伴」点一个朋友也开这一页(#446)。
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import '../../i18n/registerAgentsCatalog'
+import { commitManualAgentDesiredStatus } from '../../lib/manualAgentDesiredStatus'
+import { rendererLogger } from '../../lib/log'
 import { useReplica } from '../../lib/replica'
 import { commonGroupChats } from '../../lib/commonGroupChats'
 import { useChatStore } from '../../store/chatContext'
@@ -175,6 +179,7 @@ function AgentDetail({
   const shownName = useShownAgentName({ name: contact.display_name, agentType: contact.agent_type, createdAt: contact.created_at ?? undefined })
 
   const { user } = useAuth()
+  const { t: tAgents } = useTranslation('agents')
   const [showShareModal, setShowShareModal] = useState(false)
   const [visibilitySaving, setVisibilitySaving] = useState(false)
   const { status, presence, opening, openRuntime: handleOpenRuntime } = useAgentDisplayStatus(contact.id)
@@ -183,6 +188,7 @@ function AgentDetail({
   const isOwned = Boolean(user?.id && contact.owner_user_id === user.id)
   const sourceText = isOwned ? ct('profile.ownedSource') : contact.owner_user_id ? ct('profile.otherOwnerSource') : ct('common.unknown')
   const [desiredStatusSaving, setDesiredStatusSaving] = useState(false)
+  const [desiredStatusFailed, setDesiredStatusFailed] = useState(false)
   const { allowsLiveActions } = agentContactPresentation(status)
   const requestLabel = requestState === 'requested'
     ? ct('commonGroups.requested')
@@ -206,8 +212,13 @@ function AgentDetail({
   const toggleDesiredStatus = async () => {
     if (!isOwned || !allowsLiveActions || desiredStatusSaving) return
     setDesiredStatusSaving(true)
+    setDesiredStatusFailed(false)
     try {
-      await onSetAgentDesiredStatus(contact.id, desiredStatus === 'offline' ? 'online' : 'offline')
+      const next = desiredStatus === 'offline' ? 'online' : 'offline'
+      await commitManualAgentDesiredStatus(contact, next, () => onSetAgentDesiredStatus(contact.id, next))
+    } catch (error) {
+      rendererLogger('agents/pause').error({ error }, 'pause agent failed')
+      setDesiredStatusFailed(true)
     } finally {
       setDesiredStatusSaving(false)
     }
@@ -292,6 +303,10 @@ function AgentDetail({
           />
         ) : null}
       </div> : null}
+
+      {desiredStatusFailed && <div role="alert" className={cn(detailNoticeClass, 'text-[var(--danger-fg)]')}>
+        {tAgents('settings.profile.pauseFailed')}
+      </div>}
 
       <FieldList className={detailBlockClass}>
         <FieldRow

@@ -14,7 +14,7 @@ vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
   const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
   return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
 })
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => {
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => {
   if (deviceId !== 'server') throw new Error('wrong target')
   return { assistantHome: { start: mocks.start, status: mocks.status, cancel: mocks.cancel, preflight: mocks.preflight } }
 } }))

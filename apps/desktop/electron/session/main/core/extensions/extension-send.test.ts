@@ -130,10 +130,14 @@ vi.mock('./app-unread-bindings', () => ({
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
   agentSessionContext: async (sessionId: string) => (sessionId === 'conv-agent' ? { sessionId, projectId: 'p-1', workspaceRoot: null } : null),
 }));
+// Where a computer's file is: its path on that machine (file-selection-reference.ts, tested on its own).
+vi.mock('./file-selection-reference', () => ({
+  fileReferenceOf: async (ref: { id: string }) => ({ name: ref.id.split('/').pop(), target: `/w/${ref.id}` }),
+}));
 const { dispatchForApp } = await import('./extension-send');
 
 const entry = { id: ITEM, chat: GROUP, name: 'card[17].vote.json', type: 'json' };
-const here = { chat: null, session: null };
+const here = { chat: null, session: null, folders: [] };
 const drafts: unknown[] = [];
 const sessionDrafts: Array<{ session: { id: string; projectId: string }; text: string }> = [];
 let picked: unknown = null;
@@ -180,24 +184,37 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
     expect(toldSessions).toEqual([]);
   });
 
-  it('a draft citing a working copy goes into that session as @file mentions: no chat pill points at such a file', async () => {
+  const inSession = { chat: null, session: 'conv-agent', folders: [] };
+  const draftHere = (page: typeof here | typeof inSession, args: Record<string, unknown>) => dispatchForApp('notes', { draft: true, ...args }, page, effects());
+
+  it('a draft citing a computer\'s files goes to the page\'s session, each file named by its path on its machine', async () => {
     const workspace = 'session:conv-agent';
-    await draft({ text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
-    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent', projectId: 'p-1' }, text: '@[a.py](src/a.py) @[b.md (L3)](b.md)\n' });
+    await draftHere(inSession, { text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
+    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent', projectId: 'p-1' }, text: '@[a.py](/w/src/a.py) @[b.md (L3)](/w/b.md)\n' });
   });
 
   it('a cited selection is a quote above the pill, a blank line apart: the quote does not take the pill in', async () => {
     const workspace = 'session:conv-agent';
-    await draft({ text: '> picked words\n> more', refs: [{ file: { workspace, id: 'b.md' }, label: '第 3–4 行' }] });
-    expect(sessionDrafts.at(-1)?.text).toBe('> picked words\n> more\n\n@[b.md (第 3–4 行)](b.md)\n');
-    await draft({ text: 'look', refs: [{ file: { workspace, id: 'b.md' } }] });
-    expect(sessionDrafts.at(-1)?.text).toBe('look\n@[b.md](b.md)\n');
+    await draftHere(inSession, { text: '> picked words\n> more', refs: [{ file: { workspace, id: 'b.md' }, label: '第 3–4 行' }] });
+    expect(sessionDrafts.at(-1)?.text).toBe('> picked words\n> more\n\n@[b.md (第 3–4 行)](/w/b.md)\n');
+    await draftHere(inSession, { text: 'look', refs: [{ file: { workspace, id: 'b.md' } }] });
+    expect(sessionDrafts.at(-1)?.text).toBe('look\n@[b.md](/w/b.md)\n');
+  });
+
+  it('goes where the page is, not where the file is: a group page\'s draft of its folder\'s file goes into the group', async () => {
+    await draftHere({ chat: { id: GROUP, name: 'G', members: [] }, session: null, folders: [] } as never, { text: '> w', refs: [{ file: { workspace: 'folder:dev-1/ws-1', id: 'AGENTS.md' }, label: 'L2' }] });
+    expect(drafts.at(-1)).toEqual({ chatId: GROUP, text: '> w', refs: [{ label: 'AGENTS.md (L2)', link: '/w/AGENTS.md' }] });
+    expect(sessionDrafts).toEqual([]);
+  });
+
+  it('a page with no conversation has nowhere to cite a computer\'s file into', async () => {
+    await expect(draftHere(here, { text: '', refs: [{ file: { workspace: 'project:p-1', id: 'a.md' } }] })).rejects.toMatchObject({ code: 'invalid' });
   });
 
   it('refs: each goes under the text as a pill the agent can open (App 引用 pill)', async () => {
     await send('dinner-vote', { to: `user:${AGENT}`, text: 'marked doubtful', refs: [{ file: entry }] });
     // The file as it is now: its name (brackets escaped, the label stays one pill) and its version.
-    expect(rpcs[0]!.args).toMatchObject({ p_chat_id: GROUP, p_content: `marked doubtful\n\n@[card\\[17\\].vote.json](gugu-file://${ITEM}?v=7)` });
+    expect(rpcs[0]!.args).toMatchObject({ p_chat_id: GROUP, p_content: `marked doubtful\n\n@[card&#91;17&#93;.vote.json](gugu-file://${ITEM}?v=7)` });
     // A program's handed file is `{ id }`: the same file, the same chat.
     await send('dinner-vote', { to: `user:${AGENT}`, text: 'your move', refs: [{ file: { id: ITEM } }] });
     expect(rpcs[1]!.args).toMatchObject({ p_chat_id: GROUP, p_is_whisper: true });
@@ -208,7 +225,7 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
       text: ' ',
       refs: [{ file: { ...entry, displayName: '工资表.xlsx', version: 6 }, at: { row: 3 }, label: ' Row 3 ' }, { file: { id: ITEM }, at: { row: 4, col: 'B' }, version: 5 }],
     });
-    expect(rpcs[2]!.args.p_content).toBe(`@[card\\[17\\].vote.json (Row 3)](gugu-file://${ITEM}?v=6#row=3) @[card\\[17\\].vote.json](gugu-file://${ITEM}?v=5#row=4&col=B)`);
+    expect(rpcs[2]!.args.p_content).toBe(`@[card&#91;17&#93;.vote.json (Row 3)](gugu-file://${ITEM}?v=6#row=3) @[card&#91;17&#93;.vote.json](gugu-file://${ITEM}?v=5#row=4&col=B)`);
   });
 
   it('refused before anything is written, said how: refs into another chat than named, about, a ref whose chat is not the file\'s, a session file, a bad ref, two chats, a bad member, empty text', async () => {
@@ -277,7 +294,7 @@ describe('to one of the person\'s agents: told directly, as session_message tell
 
   it('refs go with it as pills under the text, as in a chat', async () => {
     await tell('notes', `user:${AGENT}`, 'look', { refs: [{ file: entry }] });
-    expect(toldSessions[0]!.text).toBe(`look\n\n@[card\\[17\\].vote.json](gugu-file://${ITEM}?v=7)`);
+    expect(toldSessions[0]!.text).toBe(`look\n\n@[card&#91;17&#93;.vote.json](gugu-file://${ITEM}?v=7)`);
   });
 
   it('the narrow tier reaches the agents it started; :all every one here — wherever the page is', async () => {
@@ -367,7 +384,7 @@ describe('to a new agent: started as this App, answered by its agent', () => {
     expect(started).toEqual({ to: { agent: 'user:aaaaaaaa-0000-4000-8000-000000000001' } });
     expect(spawned).toEqual([{
       extensionId: 'kanban', extensionName: 'App kanban', bySession: 'conv-worker',
-      prompt: `do card 7\n\n@[card\\[17\\].vote.json](gugu-file://${ITEM}?v=7)`, title: 'Card 7', transport: 'acp',
+      prompt: `do card 7\n\n@[card&#91;17&#93;.vote.json](gugu-file://${ITEM}?v=7)`, title: 'Card 7', transport: 'acp',
     }]);
     await expect(dispatchForApp('kanban', { text: 'x', to: { new: true }, spawn: { transport: 'tty' } }, here, effects())).rejects.toMatchObject({ code: 'invalid' });
   });

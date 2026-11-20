@@ -7,6 +7,7 @@ import type { projectionSources } from '../../../../../../src/session/app-runtim
 import type { ProjectionFrame } from '@shared/extensions/projection-protocol';
 import type { MediaProcess } from '../../../../../../native/projection-media/node/host.mjs';
 import type { ProjectionSignalContext } from '../../../../../../native/projection-media/node/signaling.mjs';
+import { untilObserved } from './fixture-wait';
 
 const deferred = <T = void>() => {
   let resolve!: (value: T) => void;
@@ -64,14 +65,14 @@ export async function probeFeedOwnership(runtime: Runtime, page: BridgeCaller, c
   const streams: Awaited<ReturnType<typeof buildStream>>[] = [];
   try {
     streams.push(await buildStream()); streams.push(await buildStream());
-    const until = async (condition: () => boolean) => {
-      const deadline = Date.now() + 3000;
-      while (!condition()) {
-        for (const stream of streams) stream.feed.lease.signal.throwIfAborted();
-        if (Date.now() > deadline) throw new Error('Concurrent NativeImage lease probe timed out');
-        await pause();
-      }
-    };
+    const until = (condition: () => boolean) => untilObserved(condition, {
+      phase: 'concurrent NativeImage leases',
+      fault: () => {
+        const aborted = streams.find(stream => stream.feed.lease.signal.aborted)?.feed.lease.signal;
+        return aborted && (aborted.reason ?? new Error('lease aborted'));
+      },
+      arrived: () => ({ buffers: streams.map(stream => stream.buffers.length) }),
+    });
     await until(() => streams.every(stream => stream.buffers.length === 1));
     assert.notEqual(streams[0]!.buffers[0], streams[1]!.buffers[0]);
     for (const stream of streams) stream.held.resolve();

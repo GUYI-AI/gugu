@@ -131,10 +131,19 @@ export type InstallFailureArtifact = {
   bytes: number | null;
 };
 
+export type InstallSourceIntent =
+  | { kind: 'explicit'; registry: string }
+  | { kind: 'automatic'; registries: readonly string[]; fallbackRegistry: string };
+
+/** A host runner may report the source actually installed; legacy runners return void. */
+export type InstallCommandOutcome = void | { registry?: string };
+
 export type InstallCommandContext = {
   mise?: {
     target: Extract<InstallTarget, { kind: 'mise' }>;
-    registry?: string;
+    source?: InstallSourceIntent;
+    /** An update must not pick an older mirror release. */
+    minimumVersion?: string;
     operation: 'install' | 'update' | 'uninstall';
     selectedPath?: string;
   };

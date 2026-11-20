@@ -16,20 +16,19 @@ import {
 import { extensionTabKind, parseExtensionTabKind } from '@shared/extensions/manifest';
 import { declaredMenuCommands, runExtensionCommand } from './extension-commands';
 import { ExtensionTabBadge } from './extension-tab-badge';
-import { ExtensionMark } from './extension-mark';
+import { TabKindMark } from './extension-mark';
 import { ExtensionTabPane } from './extension-tab-pane';
 import { ExtensionSharedSlot } from './extension-shared-slot';
 import { extensionViewStore, residentPageKey, residentPlace } from './extension-view-store';
 import { confirmCloseOfUnsaved, reloadAppPage } from './app-page-unsaved';
 import { extensionSurfaceStore, extensionTabTitle } from './extension-surface-store';
-import { installedExtensionsStore, WORKSPACE_APP_ID } from './installed-extensions-store';
+import { installedExtensionsStore } from './installed-extensions-store';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { placeOnScreen } from '@renderer/app/screen-layout-actions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { followLink } from '@/lib/guguLinks';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName, filePathKey } from '@renderer/features/sessions/stores/workspace-path';
-import { Folder } from '@/lib/icons';
 import { AppFileMark } from './app-file-mark';
 
 /**
@@ -137,16 +136,7 @@ function createExtensionTabContent(extensionId: string, kind: string) {
  */
 const ExtensionTabIcon = observer(function ExtensionTabIcon({ kind, file }: { kind: string; file?: string }) {
   if (file) return <span className="flex shrink-0"><AppFileMark kind={kind} fileName={fileBaseName(file)} context="session" size={12} /></span>;
-  if (parseExtensionTabKind(kind)?.extensionId === WORKSPACE_APP_ID) return <Folder className="size-3 text-foreground-muted" />;
-  const iconDataUrl = installedExtensionsStore.allTabContributions.find(
-    (entry) => entry.kind === kind
-  )?.iconDataUrl;
-  return (
-    <ExtensionMark
-      iconDataUrl={iconDataUrl}
-      className="text-foreground-muted [&>svg]:h-3 [&>svg]:w-3"
-    />
-  );
+  return <TabKindMark kind={kind} className="text-foreground-muted [&>svg]:h-3 [&>svg]:w-3" />;
 });
 
 

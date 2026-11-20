@@ -1,28 +1,30 @@
-/** View data only. This is not an HTTP/RPC contract; the backend contract is still pending. */
-export interface AccountDeletionImpact {
-  email: string
-  agents: number
-  projects: number
-  files: number
-  fileBytes: number
-  groupMessages: number
-  remainingCredits: number
+import { compareCreditAmounts, requireCreditAmount, type CreditAmount } from '@gugu/core/billing/creditAmount'
+
+export type AccountDeletionPhase = 'loading' | 'unavailable' | 'ready' | 'sending' | 'preparing' | 'confirming' | 'unconfirmed' | 'local-pending' | 'cancelling'
+export interface AccountDeletionView {
+  phase: AccountDeletionPhase
+  /** null is unread/unavailable, never a zero-credit account. */
+  remainingCredits: CreditAmount | null
+  code: string
+  codeSent: boolean
+  waived: boolean
+  /** The same Cancel control fences unknown confirmation only while native permits it. */
+  canCancel?: boolean
+  unknownBeforeConfirmation?: boolean
+  error?: string
+  onCode(value: string): void
+  onWaive(value: boolean): void
+  onResend(): void
+  onDelete(): void
+  onCheckResult(): void
+  onRetryLocal(): void
 }
 
-export const ACCOUNT_DELETION_CONFIRMATION = '注销账号'
-
-/** A UI guard only. The service must independently authorize and reverify every deletion. */
-export function accountDeletionConfirmed(confirmation: string, remainingCredits: number, waived: boolean): boolean {
-  return confirmation === ACCOUNT_DELETION_CONFIRMATION
-    && Number.isFinite(remainingCredits) && remainingCredits >= 0
-    && (remainingCredits === 0 || waived)
+/** The final button itself is confirmation; the approved dialog has no typed phrase. */
+export function accountDeletionCanSubmit(view: Pick<AccountDeletionView, 'phase' | 'remainingCredits' | 'code' | 'codeSent' | 'waived'>): boolean {
+  if (view.phase !== 'ready' || !view.codeSent || !/^\d{6}$/.test(view.code) || view.remainingCredits === null) return false
+  try {
+    requireCreditAmount(view.remainingCredits, 'account-closure.remaining-credits')
+    return compareCreditAmounts(view.remainingCredits, 0) >= 0 && (compareCreditAmounts(view.remainingCredits, 0) === 0 || view.waived)
+  } catch { return false }
 }
-
-export type AccountDeletionView =
-  | { stage: 'loading' }
-  | { stage: 'impact'; impact: AccountDeletionImpact; acknowledged: boolean; onAcknowledge: (value: boolean) => void; onContinue: () => void }
-  | { stage: 'verify'; email: string; code: string; busy: boolean; error?: string; onCode: (value: string) => void; onVerify: () => void; onResend: () => void }
-  | { stage: 'confirm'; impact: AccountDeletionImpact; confirmation: string; waived: boolean; busy: boolean; error?: string; onConfirmation: (value: string) => void; onWaive: (value: boolean) => void; onDelete: () => void }
-  | { stage: 'deleted'; waivedCredits: number; onReturnToLogin: () => void }
-  | { stage: 'blocked'; reason: string; items: readonly { id: string; label: string; actionLabel?: string; onAction?: () => void }[]; onRetry: () => void }
-  | { stage: 'unavailable'; onRetry: () => void }

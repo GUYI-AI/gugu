@@ -11,10 +11,10 @@ import { LoadingIndicator } from '../../lib/loading/LoadingIndicator'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { useDevicesStore } from '../../store/devicesContext'
 import type { TaskChatEndpoint } from '../../lib/assistantTaskChat'
-import { PeekSessionTimeline } from '../../mobile/agent-watch/PeekSessionTimeline'
+import { PeekSessionTimeline } from '../session-watch/PeekSessionTimeline'
 import { TaskChatFilePreviewHost } from './TaskChatFilePreviewHost'
-import '@/mobile/agent-watch/agent-watch.css'
-import '@/mobile/agent-watch/phone-conversation.css'
+import '@/components/session-watch/agent-watch.css'
+import '@/components/session-watch/phone-conversation.css'
 import './assistant-task-chat.css'
 
 /**

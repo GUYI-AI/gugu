@@ -507,7 +507,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   // 名单之外出现新的差异 = 红。
   const JUSTIFIED_OMISSIONS: Record<string, Record<string, string>> = {
     MessageList: {
-      footer: '#7199 只有「助理」App 那个聊天面在消息流末尾接一个「它在处理」的打字气泡(取代运行条);分栏不传 = 运行条照旧,与对话页同形',
+      footer: '#7199 助理的打字气泡，以及 #3252 仅人类旧私聊的好友提示，由主线 ChatMessageList 组合；话题分栏既不是助理也不是人类私聊，不接这两个页尾',
     },
     ChatMessageComposer: {
       entryActive: '#1959 会话列表的具名进入意图只交给主输入框;分栏 surface=aside 沿既有规则不登记全局焦点落点,也不消费主线进入意图',
@@ -576,8 +576,13 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   it('分栏与主线的入参差异只能是名单上那几条 —— 复用组件不等于接全它的契约', async () => {
     const panel = await readFile('apps/desktop/src/components/ChatAreaPanel.tsx', 'utf8')
     const pane = await readFile('apps/desktop/src/components/chat/TopicSplitPane.tsx', 'utf8')
+    const list = await readFile('apps/desktop/src/components/chat/ChatMessageList.tsx', 'utf8')
+    // The conversation wrapper may compose only the footer; every other list prop must reach the generic list unchanged.
+    expect(list).toMatch(/function ChatMessageList\(\{ footer, \.\.\.props \}: ComponentProps<typeof MessageList>\)/)
+    expect(list).toMatch(/<MessageList\s+\{\.\.\.props\}\s+footer=/)
+    expect(jsxProps(list, 'MessageList')).toEqual(['footer'])
     for (const tag of ['MessageList', 'ChatMessageComposer']) {
-      const main = new Set(jsxProps(panel, tag))
+      const main = new Set(jsxProps(panel, tag === 'MessageList' ? 'ChatMessageList' : tag))
       const aside = new Set(jsxProps(pane, tag))
       expect(main.size, `${tag}: 主线那个调用点没解析出任何 prop,这一格就判不了事`).toBeGreaterThan(3)
       const missing = [...main].filter((name) => !aside.has(name) && !(name in JUSTIFIED_OMISSIONS[tag]!))

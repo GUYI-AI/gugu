@@ -476,6 +476,10 @@ describe('answering another machine', () => {
     const { xm } = makeCrossMachine()
     const h = host()
     await expect(xm.answer('peers', CALLER, { action: 'peers' }, h)).resolves.toEqual(['peer'])
+    expect(h.peers).toHaveBeenLastCalledWith(undefined)
+    // An attachment names its one recipient session: only that row is resolved there.
+    await xm.answer('peers', CALLER, { action: 'peers', session_id: 's-recipient' }, h)
+    expect(h.peers).toHaveBeenLastCalledWith('s-recipient')
     await expect(xm.answer('get', CALLER, { action: 'get', session_id: 's' }, h)).resolves.toEqual({ ran: true })
     expect(h.run).toHaveBeenCalledWith(CALLER, { action: 'get', session_id: 's' })
   })

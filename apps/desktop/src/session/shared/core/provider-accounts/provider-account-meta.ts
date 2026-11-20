@@ -45,6 +45,8 @@ const v1Schema = z.object({
     removed: z.boolean().optional(),
     /** Retained for rollback; migration also deduplicates by credential_ref. */
     migratedTo: z.string().optional(),
+    /** Device-local reference only. OAuth tokens remain in the native CLI's file. */
+    nativeOAuth: z.object({ root: z.string(), identity: z.string(), operationId: z.string() }).optional(),
   }).optional(),
 });
 

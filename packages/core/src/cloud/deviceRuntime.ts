@@ -39,8 +39,8 @@ import {
   type DeviceCommandTableClient,
   type ProcessDeviceCommandResult,
 } from './deviceCommands'
-import { dbPayload } from './supabase'
 import { resolveDeviceHostInfo } from './deviceHostInfo'
+import { registerGuguDevice, type DeviceRegistrationClient } from './deviceRegistration'
 import { machineDisplayName } from '../device/machineDisplayName'
 import type { DeviceHostInfo } from '../shared/types/deviceHost'
 import {
@@ -70,7 +70,7 @@ type DeviceHeartbeatResult = {
   data?: { runtimes: string[] | null }[] | null
 }
 
-export interface DeviceHeartbeatTableClient {
+export interface DeviceHeartbeatTableClient extends DeviceRegistrationClient {
   from(table: 'gugu_devices'): {
     upsert(value: never, options: { onConflict: string }): PromiseLike<DeviceHeartbeatResult>
     update(value: { status: 'online' | 'offline'; updated_at: string }): {
@@ -93,7 +93,8 @@ export interface DeviceHeartbeatTableClient {
   rpc(
     fn: 'cleanup_legacy_gugu_devices',
     args: { p_keep_device_id: string; p_hostname: string }
-  ): PromiseLike<DeviceHeartbeatResult>
+  ): PromiseLike<{ error: { message: string } | null }>
+  rpc(...args: Parameters<DeviceRegistrationClient['rpc']>): ReturnType<DeviceRegistrationClient['rpc']>
 }
 
 export interface DeviceCapabilityProbe {
@@ -392,14 +393,17 @@ async function resolveLocalDeviceIdentity(
     (signal) => resolveMachineIdentifier(options.machineIdentifier, signal, env),
   )
   const tier = resolveTier(env)
-  const inherited = await findExistingDeviceIdForUserMachine(
-    options.heartbeatClient,
-    options.userId,
-    machineId,
-    tier,
-    timeouts.deviceLookupMs,
+  const registered = await runDeviceOperation(
+    'device identity registration', timeouts.deviceLookupMs,
+    (signal) => registerGuguDevice(options.heartbeatClient, {
+      device_id: deterministicDeviceId(machineId, options.userId, tier),
+      machine_id: machineId, tier,
+      label: machineDisplayName(), hostname: hostname(), platform: platform(),
+      capabilities: { host_kind: env.GUGU_SERVER_MODE === '1' ? 'server' : 'desktop', terminals: [], runtimes: [] },
+      reserve_only: true,
+    }, { signal }),
   )
-  const deviceId = inherited ?? deterministicDeviceId(machineId, options.userId, tier)
+  const deviceId = registered.deviceId
   const cacheWriter = options.deviceIdCacheWriter ?? writeDeviceIdCache
   await runDeviceOperation(
     'device id cache write',
@@ -407,30 +411,6 @@ async function resolveLocalDeviceIdentity(
     (signal) => cacheWriter(deviceFile(env, options.userId), deviceId, { signal }),
   )
   return { deviceId, machineId }
-}
-
-async function findExistingDeviceIdForUserMachine(
-  client: DeviceHeartbeatTableClient,
-  userId: string,
-  machineId: string,
-  tier: string,
-  timeoutMs: number,
-): Promise<string | null> {
-  const result = await runDeviceRequest(
-    'device identity lookup',
-    timeoutMs,
-    () => client
-      .from('gugu_devices')
-      .select('device_id')
-      .eq('user_id', userId)
-      .eq('machine_id', machineId)
-      .eq('tier', tier)
-      .limit(1)
-      .maybeSingle(),
-  )
-  if (result.error) throw new Error(result.error.message)
-  const id = result.data?.device_id
-  return typeof id === 'string' && id.length > 0 ? id : null
 }
 
 // @@@tier-env (#523) - mirrors GUGU_HOME / RPC-port / tmux-socket tier scoping: electron sets GUGU_TIER
@@ -832,19 +812,22 @@ export async function syncDeviceHeartbeat(
     session_digest: resolveSessionDigest(options.sessionDigest)
   }
   const content = JSON.stringify(registration)
-  const write = (register: boolean) => runDeviceRequest(
-    'device heartbeat write', timeouts.heartbeatUpsertMs, () => register
-      ? client.from('gugu_devices').upsert(dbPayload({ ...registration, ...presence }), { onConflict: 'device_id' })
-      // A missing/cleared registration is restored through the same full upsert.
-      : client.from('gugu_devices').update(presence).eq('device_id', identity.deviceId).select('runtimes:capabilities->runtimes'),
-  )
+  const write = async (register: boolean): Promise<DeviceHeartbeatResult> => {
+    if (register) {
+      await runDeviceOperation('device heartbeat write', timeouts.heartbeatUpsertMs,
+        (signal) => registerGuguDevice(client, { ...registration, session_digest: presence.session_digest },
+          { signal, expectedDeviceId: identity.deviceId }))
+      return { error: null }
+    }
+    return await runDeviceRequest('device heartbeat write', timeouts.heartbeatUpsertMs,
+      () => client.from('gugu_devices').update(presence).eq('device_id', identity.deviceId).select('runtimes:capabilities->runtimes'))
+  }
   try {
     const register = publishedCapabilities?.get(identity.deviceId) !== content
     let result = await write(register)
-    // 诊断:一次心跳写「成功返回、却没碰到任何行」时说出来 —— 这正是「本机无失败、库里却没落」那一类(写被吞)。
-    // 只记日志,行为不变(UPDATE 0 行照旧走下面那次完整 upsert 补登记)。upsert 不带 select 时 data 为空,判不了,不报。
+    // Presence updates must affect a registration; a cleared row/capability set needs a full atomic registration.
     if (!result.error && Array.isArray(result.data) && result.data.length === 0) {
-      log.warn({ device: identity.deviceId.slice(-8), write: register ? 'upsert' : 'update' }, 'device heartbeat write affected 0 rows')
+      log.warn({ device: identity.deviceId.slice(-8), write: register ? 'register' : 'update' }, 'device heartbeat write affected 0 rows')
     }
     if (!result.error && !register && result.data?.[0]?.runtimes == null) result = await write(true)
     if (result.error) throw new Error(result.error.message)

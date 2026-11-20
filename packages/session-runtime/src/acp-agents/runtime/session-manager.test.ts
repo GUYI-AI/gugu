@@ -628,6 +628,77 @@ describe('AcpRuntime session manager', () => {
     expect(request._meta?.gugu?.ephemeralFork).toBe(false);
   });
 
+  // A billing-route switch forks the conversation's own native session onto the new route (codex refuses to resume
+  // it there). It is the same agent and the same transcript: the fork says so, and the forked session opens with
+  // the host's resume facts (no replay, turns numbered after the stored ones) instead of a new fork's replay.
+  it('a route-switch fork keeps the agent: marked as such, then loaded without replay', async () => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    h.agent.initialize.mockResolvedValueOnce({
+      protocolVersion: 1,
+      agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {} } },
+    });
+    h.agent.unstable_forkSession.mockResolvedValueOnce({ sessionId: 'thread-on-new-route' });
+
+    const result = await rt.startSession(
+      makeStartInput({
+        sessionId: 'conv-route-switch',
+        providerSessionId: 'thread-on-old-route',
+        forkFromProviderSessionId: 'thread-on-old-route',
+        forkKeepsAgent: true,
+        replayHistory: false,
+        turnIndexBase: 3,
+      })
+    );
+
+    expect(result).toEqual({ success: true, data: { providerSessionId: 'thread-on-new-route' } });
+    const fork = h.agent.unstable_forkSession.mock.calls[0]?.[0] as {
+      sessionId?: string;
+      _meta?: { gugu?: { ephemeralFork?: boolean; forkKeepsAgent?: boolean } };
+    };
+    expect(fork.sessionId).toBe('thread-on-old-route');
+    expect(fork._meta?.gugu).toEqual({ ephemeralFork: false, forkKeepsAgent: true });
+    expect(h.agent.loadSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'thread-on-new-route', _meta: expect.objectContaining({ history: { replay: false } }) })
+    );
+    expect(h.agent.newSession).not.toHaveBeenCalled();
+  });
+
+  // A route switch before the session ever ran: the engine has nothing to fork, as a resume would have nothing to
+  // load. With the host's never-ran declaration it is that same first start; without it the missing source is loud.
+  it('a route-switch fork of a never-ran session starts it; without the declaration it reports missing', async () => {
+    const neverRan = '019ff4fc-1e4b-7a20-a24a-353f95aa51b6';
+    const missing = { code: -32600, message: `no rollout found for thread id ${neverRan}` };
+    for (const fresh of [true, false]) {
+      const h = makeAcpHarness();
+      const rt = new AcpRuntime(h.deps);
+      h.agent.initialize.mockResolvedValueOnce({
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: true, sessionCapabilities: { fork: {} } },
+      });
+      h.agent.unstable_forkSession.mockRejectedValueOnce(missing);
+      h.agent.newSession.mockResolvedValueOnce({ sessionId: 'thread-first' });
+
+      const result = await rt.startSession(
+        makeStartInput({
+          sessionId: `conv-never-ran-${fresh}`,
+          providerSessionId: neverRan,
+          forkFromProviderSessionId: neverRan,
+          forkKeepsAgent: true,
+          ...(fresh ? { freshIfProviderSessionMissing: true } : {}),
+        })
+      );
+
+      if (fresh) {
+        expect(result).toMatchObject({ success: true, data: { providerSessionId: 'thread-first' } });
+      } else {
+        expect(result).toMatchObject({ success: false, error: { type: 'provider_session_missing' } });
+        expect(h.agent.newSession).not.toHaveBeenCalled();
+      }
+      await rt.dispose();
+    }
+  });
+
   // 阳控:同一个开关在**运行时分叉**上必须是 true —— 否则上面那条即使写死 false 也会绿。
   it('still marks a runtime-view fork as ephemeral', async () => {
     const h = makeAcpHarness();
@@ -759,6 +830,15 @@ describe('AcpRuntime session manager', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.type).toBe('auth_required');
+  });
+
+  it('maps an explicit revoked refresh token at startup to auth_required and preserves its cause', async () => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    const message = 'Your refresh token was revoked. Please log out and sign in again.';
+    h.agent.newSession.mockRejectedValueOnce({ code: -32603, message, data: { message, codexErrorInfo: 'other' } });
+    const result = await rt.startSession(makeStartInput({ sessionId: 'revoked-at-start' }));
+    expect(result).toMatchObject({ success: false, error: { type: 'auth_required', cause: { message } } });
   });
 
   it('gives each conversation its own process and releases it on stop', async () => {

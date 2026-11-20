@@ -1,11 +1,12 @@
 import { compareCreditAmounts, type CreditAmount } from '@gugu/core/billing/creditAmount'
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AreaChart, BarChart3, Clock, PieChart, TrendingUp, WalletCards } from '@/lib/icons'
+import { AreaChart, BarChart3, CircleDot, Clock, PieChart, TrendingUp, WalletCards } from '@/lib/icons'
 import { rankModels, stackedPoints, type ModelAmount } from '../../lib/usage/charts'
 import type { DayRange } from '../../lib/usage/derive'
+import type { CacheHitSeries } from '../../lib/usage/cacheHitRate'
 import { ChartCard, SegSwitch, type Tone } from './UsageParts'
-import { heightPx } from './format'
+import { cachePercent, heightPx } from './format'
 
 // 用量看板的两张卡:「消耗分布」(柱状/面积二选一)与「模型调用分析」(趋势/分布/排行三页签)。
 // 图本体在 UsageCharts.tsx,懒加载。
@@ -15,6 +16,7 @@ const CreditStackedChart = lazy(() => import('./UsageCharts').then((m) => ({ def
 const ShareChart = lazy(() => import('./UsageCharts').then((m) => ({ default: m.ShareChart })))
 const RankChart = lazy(() => import('./UsageCharts').then((m) => ({ default: m.RankChart })))
 const HourChart = lazy(() => import('./UsageCharts').then((m) => ({ default: m.HourChart })))
+const CacheHitChart = lazy(() => import('./UsageCharts').then((m) => ({ default: m.CacheHitChart })))
 
 function ChartSlot({ empty, children }: { empty: boolean; children: ReactNode }) {
   const { t } = useTranslation('settings')
@@ -40,13 +42,14 @@ export function ConsumptionCard({ amounts, range, format, testId }: { amounts: M
   )
 }
 
-type AnalysisTab = 'trend' | 'share' | 'rank'
+type AnalysisTab = 'trend' | 'share' | 'rank' | 'cache'
 
 /** kind=calls:「调用」口径(积分明细里的请求次数);kind=tokens:本机日志里各模型的 token。 */
-export function ModelAnalysisCard({ amounts, range, kind, format, testId, filter }: {
+export function ModelAnalysisCard({ amounts, range, kind, format, testId, filter, cacheHits }: {
   amounts: ModelAmount[]; range: DayRange; kind: 'calls' | 'tokens'; format: (n: number) => string; testId?: string
   /** 卡头右侧、页签左边的额外筛选(模型用量卡用它切「咕咕模型 / 自己账号」)。 */
   filter?: ReactNode
+  cacheHits?: CacheHitSeries
 }) {
   const { t } = useTranslation('settings')
   const [tab, setTab] = useState<AnalysisTab>('trend')
@@ -57,17 +60,22 @@ export function ModelAnalysisCard({ amounts, range, kind, format, testId, filter
     ? { title: t('usage.na.modelCalls'), trend: t('usage.na.callTrend'), share: t('usage.na.callShare'), rank: t('usage.na.callRank') }
     : { title: t('usage.na.modelTokens'), trend: t('usage.na.tokenTrend'), share: t('usage.na.tokenShare'), rank: t('usage.na.tokenRank') }
   const tone: Tone = 'chart-4'
+  const showCache = tab === 'cache' && cacheHits !== undefined
   return (
-    <ChartCard icon={<PieChart />} tone={tone} title={labels.title} total={format(stacked.total)} testId={testId}
-      actions={<div className="na-card-actions">{filter}<SegSwitch label={labels.title} value={tab} onChange={setTab} items={[
+    <ChartCard icon={<PieChart />} tone={tone} title={labels.title}
+      total={showCache ? cachePercent(cacheHits.average) : format(stacked.total)}
+      totalLabel={showCache ? t('usage.cacheHit.average') : undefined} testId={testId}
+      actions={<div className="na-card-actions">{!showCache && filter}<SegSwitch label={labels.title} value={tab} onChange={setTab} items={[
         { value: 'trend', label: labels.trend, icon: <TrendingUp />, testId: `${testId}-trend` },
         { value: 'share', label: labels.share, icon: <PieChart />, testId: `${testId}-share` },
         { value: 'rank', label: labels.rank, icon: <BarChart3 />, testId: `${testId}-rank` },
+        ...(cacheHits ? [{ value: 'cache' as const, label: t('usage.cacheHit.label'), icon: <CircleDot />, testId: `${testId}-cache` }] : []),
       ]} /></div>}>
-      <ChartSlot empty={stacked.total === 0}>
+      <ChartSlot empty={showCache ? cacheHits.average === null : stacked.total === 0}>
         {tab === 'trend' && <StackedChart mode="area" points={stacked.points} domain={stacked.domain} format={format} totalLabel={t('usage.na.total')} otherLabel={other} />}
         {tab === 'share' && <ShareChart totals={ranked} format={format} />}
         {tab === 'rank' && <RankChart totals={ranked} format={format} />}
+        {showCache && <CacheHitChart series={cacheHits} />}
       </ChartSlot>
     </ChartCard>
   )

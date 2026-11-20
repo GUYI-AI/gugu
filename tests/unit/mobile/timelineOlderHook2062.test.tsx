@@ -2,10 +2,10 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { useTimelineSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/mobile/agent-watch/use-timeline-session'
+import { useTimelineSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/components/session-watch/use-timeline-session'
 import type { TimelineAfterResult, TimelineOlderResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
 
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/timeline-cache', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/timeline-cache', () => ({
   readCachedTimeline: () => null, hydrateCachedTimeline: async () => null, writeCachedTimeline: () => {},
 }))
 vi.mock('../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }))

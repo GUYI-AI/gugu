@@ -1,3 +1,18 @@
+/** The conversation that owns the tab; chat identifiers never grant task-browser access. */
+export type AnnotationConversation = { kind: 'chat'; chatId: string } | { kind: 'session'; sessionId: string };
+
+export function isAnnotationConversation(value: unknown): value is AnnotationConversation {
+  if (!value || typeof value !== 'object') return false;
+  const at = value as Partial<AnnotationConversation> & { chatId?: unknown; sessionId?: unknown };
+  const id = at.kind === 'chat' ? at.chatId : at.kind === 'session' ? at.sessionId : undefined;
+  return typeof id === 'string' && !!id.trim();
+}
+
+export function annotationConversationKey(at: AnnotationConversation): string {
+  if (!isAnnotationConversation(at)) throw new Error('The annotation has no conversation');
+  return at.kind === 'chat' ? `chat:${at.chatId}` : `session:${at.sessionId}`;
+}
+
 /** Coordinates normalized to the picture the person selected, independent of zoom or screen density. */
 export type BrowserAnnotationQuery = { x: number; y: number; width: number; height: number };
 export type BrowserAnnotationTarget = {

@@ -114,5 +114,25 @@ describe('#7103 Codex 起步失败按层分', () => {
       expect(replied.message.split('\n')[0]).toBe('model gpt-x is not supported')
       expect(replied.message).toContain('received SIGTERM, shutting down')
     })
+
+    it('preserves a structured provider refusal through the native error wrapper and IPC code', () => {
+      const source = new CodexRpcReplyError({ code: -32600, message: 'private native diagnostic',
+        data: { type: 'modelProviderNotConfigured', modelProvider: 'gugu_platform' } })
+      const wrapped = describeCodexStartFailure(bin, source, '')
+      const failure = startupFailureForUser(wrapped)
+      expect(String(failure)).toBe('Error: gugu-codex-provider:provider-missing')
+      expect((failure as Error).cause).toBe(wrapped)
+    })
+
+    it('keeps the provider reason when session-page teardown also fails', () => {
+      const source = new CodexRpcReplyError({ code: -32600, message: 'private native diagnostic',
+        data: { type: 'modelProviderMismatch', modelProvider: 'gugu_platform', currentModelProvider: 'openai' } })
+      const combined = new AggregateError([
+        describeCodexStartFailure(bin, source, ''), new Error('teardown failed'),
+      ], 'Startup and teardown both failed')
+      const failure = startupFailureForUser(combined)
+      expect(String(failure)).toBe('Error: gugu-codex-provider:provider-mismatch')
+      expect((failure as Error).cause).toBe(combined)
+    })
   })
 })
