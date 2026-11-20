@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
-import { encodeTurnValue, decodeTurnValue, turnImages, turnValueRoots, type StoredTurnValue } from './session-turn-codec';
+import { encodeTurnValue, decodeTurnValue, sharedBodies, turnImages, turnValueRoots, type StoredTurnValue } from './session-turn-codec';
 import type { TurnPayloadFiles } from './session-turn-payloads';
 import { ownTurnFieldsPayloads, registerTurnPayloads, turnPayloadFiles } from './session-turn-payload-owners';
 import { runTurnRows } from './session-turn-sql';
@@ -140,11 +140,11 @@ export function prepareSessionTurn(connection: Database.Database, row: StoredTur
   const next = flatten(turn), files = turnPayloadFiles(connection), changes: Change[] = [], images = turnImages(turn);
   const encodedAfter = new Map<string, Map<string, string | null>>();
   for (const [key, node] of next) {
-    const prior = previous.get(key), fields: Change['fields'] = [];
+    const prior = previous.get(key), fields: Change['fields'] = [], bodies = sharedBodies(Object.values(node.fields));
     for (const name of new Set([...Object.keys(prior?.fields ?? {}), ...Object.keys(node.fields)])) {
       const before = prior?.fields[name], after = node.fields[name];
       if (head?.base !== 'empty' && isDeepStrictEqual(before, after)) continue;
-      const value = after === undefined ? null : JSON.stringify(encodeTurnValue(after, files, name, images));
+      const value = after === undefined ? null : JSON.stringify(encodeTurnValue(after, files, name, images, bodies));
       const encoded = encodedAfter.get(key) ?? new Map<string, string | null>();
       encoded.set(name, value); encodedAfter.set(key, encoded);
       if (head?.base === 'empty' && (encodedBefore.get(key)?.get(name) ?? null) === value) continue;
@@ -169,9 +169,10 @@ export function prepareSessionTurn(connection: Database.Database, row: StoredTur
     const array = (parent: string, collection: string): StoredTurnValue => ({ t: 'array', values:
       (lists.get(JSON.stringify([parent, collection])) ?? []).sort((a, b) => a.ordinal - b.ordinal).map(describe) });
     const describe = (node: Node): StoredTurnValue => {
+      const bodies = sharedBodies(Object.values(node.fields));
       const values: Array<[string, StoredTurnValue]> = Object.entries(node.fields).filter(([, value]) => value !== undefined).map(([name, value]) => {
         const encoded = encodedAfter.get(node.key)?.get(name);
-        return [name, encoded == null ? encodeTurnValue(value, files, name, images) : JSON.parse(encoded) as StoredTurnValue];
+        return [name, encoded == null ? encodeTurnValue(value, files, name, images, bodies) : JSON.parse(encoded) as StoredTurnValue];
       });
       if (node.key === 'root') {
         values.push(['items', array('root', 'items')]);

@@ -1,9 +1,15 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TurnPayloadFiles, unbindTurnPayloadDirectory } from './session-turn-payloads';
-import { encodeTurnValue, decodeTurnValue } from './session-turn-codec';
+import { encodeTurnValue, decodeTurnValue, sharedBodies, sharedJson } from './session-turn-codec';
+
+const uuid = vi.hoisted(() => ({ next: undefined as string | undefined }));
+vi.mock('node:crypto', async original => {
+  const actual = await original<typeof import('node:crypto')>();
+  return { ...actual, randomUUID: () => uuid.next ?? actual.randomUUID() };
+});
 
 let root: string, files: TurnPayloadFiles;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'turn-codec-')); files = new TurnPayloadFiles(root); });
@@ -39,4 +45,115 @@ it('shares an image with its exact raw JSON and content-block spellings regardle
   const encoded = encodeTurnValue(value, files);
   expect(decodeTurnValue(encoded, files)).toEqual(value);
   expect(files.counters.writtenBytes).toBeLessThan(47000);
+});
+
+// A seeded generator keeps failures reproducible: the seed is in the test name.
+function random(seed: number) {
+  return () => {
+    seed = seed + 0x6d2b79f5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const PIECES = ['a', 'Z', ' ', '"', '\\', '/', '\n', '\r', '\t', '\b', '\f', '\u0000', '\u001f', '\u007f', '\u2028', '\u2029', 'é', 'e\u0301',
+  '中文', '🙂', '\ud800', '\udfff', '\\u00e9', '\\"', '{', '}', '[', ']', ':', ',', '"aggregatedOutput"', '\u0000gugu-shared-body:'];
+const KEYS = ['aggregatedOutput', 'stdout', '__proto__', 'constructor', '1', '0', 'b', 'a', '', '中', 'é', 'e\u0301', '"', '\\'];
+const NUMBERS = [0, -1, 1.5, 0.1, 1e21, 5e-7, 2 ** 53 + 2, -1e-300];
+function generator(next: () => number) {
+  const pick = <T>(list: readonly T[]): T => list[Math.floor(next() * list.length)];
+  const text = (min: number) => { let one = ''; while (one.length < min || next() < 0.3) one += pick(PIECES); return one; };
+  const tree = (depth: number, bodies: readonly string[]): unknown => {
+    const roll = next();
+    if (depth > 0 && roll < 0.25) return Object.fromEntries(Array.from({ length: Math.floor(next() * 5) },
+      () => [next() < 0.8 ? pick(KEYS) : text(1), tree(depth - 1, bodies)]));
+    if (depth > 0 && roll < 0.4) return Array.from({ length: Math.floor(next() * 5) }, () => tree(depth - 1, bodies));
+    if (roll < 0.6) return pick(bodies);
+    if (roll < 0.7) return next() < 0.5 ? pick(bodies) + text(0) : text(0) + JSON.stringify(pick(bodies));
+    if (roll < 0.85) return pick(NUMBERS);
+    return roll < 0.9 ? text(0) : pick([true, false, null]);
+  };
+  return { pick, text, tree };
+}
+
+/** The spellings a provider may send: canonical at either indent, and near misses the exact check must refuse. */
+function spellings(value: unknown, bodies: readonly string[]): string[] {
+  const two = JSON.stringify(value, null, 2), zero = JSON.stringify(value), body = JSON.stringify(bodies[0]);
+  const all = [two, zero, JSON.stringify(value, null, 4), JSON.stringify(value, null, '\t'), ` ${two}`, `${zero}\n`,
+    two.replaceAll('é', '\\u00e9'), zero.replaceAll('/', '\\/'), two.replaceAll('\\u001f', '\\u001F'), zero.replaceAll('1.5', '1.50'),
+    `{"b":${body},"1":${body}}`, `{"b":${body},"b":0}`, `{${body}:${body}}`, `[${body},${body}]`, `[${body}, ${body}]`, `{"x":[${body}]}`,
+    JSON.stringify({ inner: JSON.stringify({ aggregatedOutput: bodies[0] }) }), JSON.stringify({ wrap: `x${bodies[0]}` }, null, 2),
+    JSON.stringify([`x"${bodies[0]}`, bodies[1]]), JSON.stringify({ [`"${bodies[1]}`]: bodies[1] })];
+  if (zero.startsWith('{') && zero !== '{}') all.push(`{"a":1,${zero.slice(1)}`.replace('{"a":1,', '{"a":1,"a":1,'));
+  let deep: unknown = bodies[0];
+  for (let i = 0; i < 40; i += 1) deep = i % 2 ? [deep] : { a: deep };
+  all.push(JSON.stringify(deep, null, 2), JSON.stringify(deep));
+  return all;
+}
+
+it.each([1, 2, 3, 4, 5, 6, 7, 8])('shares a sibling body inside raw JSON only when the raw text is restored byte for byte (seed %i)', seed => {
+  const { tree, text } = generator(random(seed));
+  let shared = 0, refused = 0;
+  for (let run = 0; run < 40; run += 1) {
+    const bodies = [text(1024), text(1024)];
+    for (const raw of spellings(tree(4, bodies), bodies)) {
+      const fast = sharedJson(raw, bodies);
+      let exact: unknown;
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object' && [2, 0].some(indent => JSON.stringify(parsed, null, indent) === raw)) exact = parsed;
+      } catch { /* not JSON */ }
+      if (fast) {
+        shared += 1;
+        // The restored tree serializes back to the very same code units, keeps key order and own "__proto__" keys.
+        expect(JSON.stringify(fast.parsed, null, fast.indent) === raw).toBe(true);
+        expect(JSON.stringify(fast.parsed)).toBe(JSON.stringify(exact));
+        expect(Object.getPrototypeOf(fast.parsed)).toBe(Array.isArray(fast.parsed) ? Array.prototype : Object.prototype);
+      } else refused += 1;
+      const generic = encodeTurnValue(raw, files, 'rawOutput'), encoded = encodeTurnValue(raw, files, 'rawOutput', undefined, bodies);
+      expect(encoded).toEqual(generic);
+      expect(decodeTurnValue(encoded, files) === raw).toBe(true);
+    }
+  }
+  expect(shared).toBeGreaterThan(0);
+  expect(refused).toBeGreaterThan(0);
+});
+
+it.each([
+  ['a body used as a key', '{"BODY":"BODY"}', 'BODY'],
+  ['a body literal that starts at an escaped quote inside a longer string', '["x\\"BODY"]', 'BODY'],
+  ['a body split across two tokens', '["a","b"]', ','],
+  ['a body straddling a key and its value', '{"a":"b"}', ':'],
+  ['a body that is the whole raw text', '"BODY"', 'BODY'],
+  ['a body whose literal is spelled with an escape', '{"x":"\\u0042ODY"}', 'BODY'],
+  ['raw text that is not JSON', '"BODY" trailing', 'BODY'],
+  ['a body that does not occur', '"BODY"', 'BOD'],
+])('falls back to the full check for %s', (_, raw, body) => {
+  expect(sharedJson(raw, [body])).toBeUndefined();
+  expect(encodeTurnValue(raw, files, 'rawOutput', undefined, [body])).toEqual(encodeTurnValue(raw, files, 'rawOutput'));
+});
+
+it('restores every occurrence of a body and keeps an own "__proto__" key', () => {
+  const body = 'line\n"quoted" 🙂 \ud800'.repeat(100), raw = `{"__proto__":${JSON.stringify(body)},"list":[${JSON.stringify(body)},1]}`;
+  const fast = sharedJson(raw, [body])!;
+  expect(Object.keys(fast.parsed)).toEqual(['__proto__', 'list']);
+  expect(Object.getPrototypeOf(fast.parsed)).toBe(Object.prototype);
+  expect(JSON.stringify(fast.parsed) === raw).toBe(true);
+  const value = { outputText: body, rawOutput: raw };
+  expect(sharedBodies(Object.values(value))).toEqual([body, raw]);
+  expect(decodeTurnValue(encodeTurnValue(value, files), files)).toEqual(value);
+});
+
+it('falls back when the raw text already spells the placeholder it would use', () => {
+  uuid.next = '00000000-0000-4000-8000-000000000000';
+  try {
+    const raw = JSON.stringify([`\u0000gugu-shared-body:${uuid.next}:0`, 'BODY']);
+    expect(sharedJson(raw, ['BODY'])).toBeUndefined();
+    expect(decodeTurnValue(encodeTurnValue(raw, files, 'rawOutput', undefined, ['BODY']), files) === raw).toBe(true);
+  } finally { uuid.next = undefined; }
+});
+
+it('skips a body occurrence that overlaps one already cut and still restores the raw text exactly', () => {
+  const raw = '["a","b"]', fast = sharedJson(raw, ['a', ','])!;
+  expect(JSON.stringify(fast.parsed, null, fast.indent) === raw).toBe(true);
 });
