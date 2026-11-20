@@ -181,7 +181,7 @@ it.each(['light', 'dark'])(
       await page.getByRole('tab', { name: '我的连接', exact: true }).click()
     })
     expect(harness.container.querySelector('.connected-app-empty p')?.textContent).toBe(
-      '还没有连接任何应用'
+      '暂未连接任何应用'
     )
     expect(harness.container.querySelector('h2')).toBeNull()
     const browse = harness.container.querySelector<HTMLElement>('.connected-app-browse')!
@@ -268,11 +268,11 @@ it.each(['pending', 'failed'] as const)(
     await act(async () => {
       await page.getByRole('tab', { name: '我的连接', exact: true }).click()
     })
-    expect(harness.container.textContent).not.toContain('还没有连接任何应用')
+    expect(harness.container.textContent).not.toContain('暂未连接任何应用')
     if (read === 'pending')
       expect(
         harness.container.querySelector('[data-testid="application-list-pending"]')
       ).not.toBeNull()
-    else expect(harness.container.textContent).toContain('没读到连接应用')
+    else expect(harness.container.textContent).toContain('无法读取连接应用')
   }
 )

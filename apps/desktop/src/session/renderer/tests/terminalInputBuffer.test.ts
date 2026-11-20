@@ -6,6 +6,14 @@ import {
 } from '@renderer/lib/pty/pty-input-buffer';
 
 describe('TerminalInputBuffer', () => {
+  it('keeps fragmented bracketed paste as literal multiline text until Enter', () => {
+    const buffer = new SubmittedInputBuffer();
+    expect(buffer.feed('\x1b[20')).toEqual([]);
+    expect(buffer.feed('0~first\r\nsecond\x7f\x1b[2D')).toEqual([]);
+    expect(buffer.feed('\x1b[201')).toEqual([]);
+    expect(buffer.feed('~')).toEqual([]);
+    expect(buffer.feed('\r')).toEqual(['first\nsecond\x7f\x1b[2D']);
+  });
   it('captures a message after Enter + confirmSubmit', () => {
     const onCapture = vi.fn();
     const buffer = new TerminalInputBuffer(onCapture);

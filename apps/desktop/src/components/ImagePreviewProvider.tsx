@@ -29,6 +29,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
 import { wireReadingZoom } from './preview/image-reading-zoom'
+import { usesPhoneFlight, wirePhoneFlight } from './preview/image-viewer-phone-flight'
 import {
   decodedSizeOf,
   downloadNameFor,
@@ -131,7 +132,8 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     dataSource: request.items.map(slideFor),
     index: request.index,
     mainClass: 'gg-image-viewer',
-    showHideAnimationType: 'zoom',
+    // 手机上开、关、下拉由 image-viewer-phone-flight 画(#3311),PhotoSwipe 自己瞬开瞬关
+    showHideAnimationType: usesPhoneFlight(mobile, request.items[request.index]) ? 'none' : 'zoom',
     showAnimationDuration: DUR_SLOW_MS,
     hideAnimationDuration: DUR_SLOW_MS,
     zoomAnimationDuration: DUR_SLOW_MS,
@@ -476,6 +478,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           if (disposed) return
           const { t: translate, mobile: isMobile } = latest.current
           const pswp = new PhotoSwipeCtor(viewerOptions(request, isMobile, translate('shell.imagePreview.loadFailed')))
+          if (usesPhoneFlight(isMobile, request.items[request.index])) wirePhoneFlight(pswp, request.items, request.index)
           const live = () => !pswp.isDestroying && pswp.isOpen
           wireViewer(pswp, translate('shell.imagePreview.dialog'), {
             follow: (item) => fileReadProgress(latest.current.tm, (progress) => { if (live()) setReading((now) => new Map(now).set(item, progress)) }),

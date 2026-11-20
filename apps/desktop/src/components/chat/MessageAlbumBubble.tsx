@@ -4,8 +4,8 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseAttachmentContent, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { originalImage, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
-import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
+import { registerAttachmentImage, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { openImageFromThumb } from '../../lib/imageViewer'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { Markdown } from '../markdown/Markdown'
 import { layoutAlbum, type AlbumLayout } from './albumLayout'
@@ -89,14 +89,8 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
   // The viewer opens on the thumbnail and swaps in the original when it reaches this image (same as one image).
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    const original = originalImage(meta.source, { metadata: meta.fileMetadata })
-    const unregister = registerFullImage(img.current, original.full, meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined,
-    { name: meta.fileName, contentType: meta.mimeType }, { chatId, messageId: member.id },
-    size?.width && size.height ? { width: size.width, height: size.height } : undefined)
-    return () => {
-      unregister()
-      original.release()
-    }
+    return registerAttachmentImage(img.current, meta.source, { name: meta.fileName, contentType: meta.mimeType },
+      { chatId, messageId: member.id }, size?.width && size.height ? { width: size.width, height: size.height } : undefined, meta.fileMetadata)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, meta.fileMetadata?.status, chatId, member.id, size?.width, size?.height])
   const failed = member.local_send_state === 'failed'

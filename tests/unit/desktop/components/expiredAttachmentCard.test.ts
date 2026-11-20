@@ -11,10 +11,11 @@ import type { ToastContextValue } from '../../../../apps/desktop/src/components/
 import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
 import { holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
-const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn() }))
+const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn(), registerImage: vi.fn(), releaseImage: vi.fn() }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: f.message } }))
 vi.mock('@/lib/attachmentBytes', () => ({ attachmentMetadata: f.metadata, cachedAttachmentCopy: f.cached,
-  sourceKeyOf: () => 'file@1', attachmentBytes: f.signed, useAttachmentObjectUrl: f.view, originalImage: () => ({ full: vi.fn(), release: vi.fn() }),
+  sourceKeyOf: () => 'file@1', attachmentBytes: f.signed, useAttachmentObjectUrl: f.view,
+  registerAttachmentImage: f.registerImage,
 }))
 vi.mock('@/components/extensionBundle/ExtensionBundleCard', () => ({ ExtensionBundleCard: () => null }))
 vi.mock('@/components/markdown/Markdown', () => ({ Markdown: () => null }))
@@ -32,6 +33,7 @@ describe('expired attachment re-upload', () => {
     harness = createReactHarness(); toast = vi.fn()
     attachmentQueryClient.clear()
     vi.clearAllMocks()
+    f.registerImage.mockReturnValue(f.releaseImage)
     f.view.mockReturnValue({ status: 'loading' })
     f.message.mockResolvedValue(original)
     f.metadata.mockResolvedValue({ status: 'expired', sha256: 'ab'.repeat(32) })
@@ -106,7 +108,11 @@ describe('expired attachment re-upload', () => {
     const image = harness.container.querySelector<HTMLImageElement>('img[src="blob:decoded"]')!
     expect(geometry(image.closest('button')!)).toEqual(sending)
     expect(image.style.position).toBe('absolute')
+    expect(f.registerImage).toHaveBeenCalledExactlyOnceWith(image, committed.source,
+      { name: 'shot.png', contentType: 'image/png' }, undefined, { width: 1200, height: 900 })
     expect(f.signed).not.toHaveBeenCalled()
+    await harness.render(null)
+    expect(f.releaseImage).toHaveBeenCalledOnce()
   })
   it('rechecks the real sender and ACL, then reuses normal send with the original private audience and thread', async () => {
     await render(); await click()

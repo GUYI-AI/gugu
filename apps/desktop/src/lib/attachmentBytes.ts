@@ -6,7 +6,7 @@ import { resolveFile, requestFile, fileReader, attachmentCopyKey, cachedDisplayA
 import { queryClient, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
-import { openImageViewer, type ImageViewerItem } from './imageViewer'
+import { openImageViewer, registerFullImage, type ImageViewerItem, type Size } from './imageViewer'
 import type { ViewBox, ViewedImage } from '@/session/shared/extensions/app-runtime-protocol'
 import { rendererLogger } from './log'
 import { sentFileCopy, sentFileOf } from './sentFileCopies'
@@ -14,6 +14,7 @@ import { resumingCopy } from './attachmentUploads'
 import { attachmentSha256 as blobSha256 } from '@gugu/core/cloud/attachmentsApi'
 import { useAttachmentChange } from './attachmentChanges'
 import { sessionFileReader } from './sessionFileReaders'
+import { createImageRead } from './imageRead'
 
 const log = rendererLogger('attachment-bytes')
 const goneFile = { status: 'gone', sha256: null } as const
@@ -49,7 +50,7 @@ export type AttachmentVariant = 'full' | 'thumb'
 
 /** 一个附件来源的身份(effect 的依赖):每次渲染重新解析出来的对象不同,身份相同。 */
 export function sourceKeyOf(source: AttachmentSource): string {
-  return source.kind === 'url' ? `url:${source.url}` : source.kind === 'item' ? `item:${source.itemId}@${source.version}` : source.kind === 'message' ? `msg:${source.messageId}` : source.kind === 'attachment' ? `attachment:${source.attachmentId}` : source.kind === 'session-file' ? `session-file:${source.sessionId ?? ''}:${source.sha256}` : 'gone'
+  return source.kind === 'url' ? `url:${source.url}` : source.kind === 'item' ? `item:${source.itemId}@${source.version}` : source.kind === 'message' ? `msg:${source.messageId}` : source.kind === 'attachment' ? `attachment:${source.attachmentId}` : source.kind === 'session-file' ? `session-file:${JSON.stringify([source.sessionId, source.path, source.sha256])}` : 'gone'
 }
 
 /** `acknowledged`: only for 'shown' — the bytes came before the server acknowledged the read; rejecting means take them down. */
@@ -94,7 +95,9 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   const { sha256 } = file.revision
   const { accountId } = file.reader
   const keep = async (blob: Blob) => {
-    if (sha256 && (variant !== 'save' || !globalThis.window?.electronAPI)) await putAttachment(attachmentCopyKey(accountId, sha256), blob)
+    if (!sha256 || variant === 'save' && globalThis.window?.electronAPI) return
+    try { await putAttachment(attachmentCopyKey(accountId, sha256), blob) }
+    catch (error) { log.warn({ error }, 'authorized copy not kept') }
   }
   if (variant !== 'shown') { const blob = await fileBlob(file); await keep(blob); return { status: 'ready', blob, link: file.revision } }
   // A preview that can take itself down shows the bytes before the server's read acknowledgement. The plaintext is kept
@@ -171,6 +174,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
   const metadata = changed ? undefined : given
   const [attempt, setAttempt] = useState(0)
   const owned = useRef<string | null>(null), shown = useRef(false), awaited = useRef(false)
+  const previousSource = useRef<{ key: string; messageId?: string } | null>(null)
   const sourceKey = sourceKeyOf(source)
   const metadataKey = metadata?.status === 'ready' ? metadata.revision.sha256 : metadata?.status
   // A sending row's local preview is ready from its first render; the sender owns that URL.
@@ -182,6 +186,13 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
       owned.current = objectUrl
       shown.current = next.status === 'ready'
       setView(next)
+    }
+    const previous = previousSource.current
+    const sameAttachment = previous?.key === sourceKey || !!messageId && previous?.messageId === messageId
+    previousSource.current = { key: sourceKey, messageId }
+    if (!sameAttachment) {
+      awaited.current = false
+      show({ status: 'loading' })
     }
     if (preview) { show({ status: 'ready', objectUrl: preview }); return }
     if (!enabled) return
@@ -229,7 +240,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
       stopListening()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 source 的身份
-  }, [sourceKey, metadataKey, variant, attempt, enabled, changed])
+  }, [sourceKey, metadataKey, messageId, variant, attempt, enabled, changed])
   const retry = useCallback(() => {
     setAttempt((n) => n + 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,6 +293,7 @@ export function originalImage(source: AttachmentSource, options: { signal?: Abor
     return current
   }
   const full = (listener?: (state: FileReadState) => void, display?: true): Promise<string> => {
+    if (released) return Promise.reject(new Error('Image reader is released'))
     if (listener) { listeners.add(listener); if (last) listener(last) }
     const current = read ??= start()
     // A listener hears the acknowledgement too, so a display can be taken down after it got its pixels.
@@ -294,8 +306,6 @@ export function originalImage(source: AttachmentSource, options: { signal?: Abor
 /** One file in the shared viewer: the bubble's thumbnail cache first, then the verified original, each read when shown. */
 function attachmentImageItem(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): ImageViewerItem {
   const file: NonNullable<ImageViewerItem['file']> = { name: fileName }
-  const urls: string[] = []
-  let released = false, preview: Promise<string> | undefined
   const controller = new AbortController()
   // The record's size reaches the viewer with the first pixels, so the thumbnail is laid out as the original.
   const learn = (link: FileRevision) => {
@@ -304,18 +314,16 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
     if (!item.size && width && height) item.size = { width, height }
   }
   const original = originalImage(source, { signal: controller.signal, onLink: learn })
-  const thumb = async () => {
+  const thumb = createImageRead(async () => {
     const bytes = await sessionThumb(source)
     if (bytes.status !== 'ready') throw new Error(bytes.status)
     learn(bytes.link)
-    const url = URL.createObjectURL(bytes.blob)
-    if (released) URL.revokeObjectURL(url); else urls.push(url)
-    return url
-  }
+    return bytes.blob
+  })
   const item: ImageViewerItem = {
     url: '', alt: fileName, file, source: origin,
-    preview: () => preview ??= thumb(), full: original.full,
-    release: () => { released = true; controller.abort(); urls.splice(0).forEach(url => URL.revokeObjectURL(url)); original.release() },
+    preview: thumb.load, full: original.full,
+    release: () => { controller.abort(); thumb.release(); original.release() },
     resource: source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: source.itemId, version: source.version } } : undefined,
   }
   return item
@@ -324,6 +332,15 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
 /** Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. */
 export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): void {
   openImageViewer([attachmentImageItem(source, fileName, origin)])
+}
+
+/** A mounted bubble lends the viewer its original's reader (shared, retried after a failure) and owns its URL until it unmounts. */
+export function registerAttachmentImage(thumb: HTMLImageElement, source: AttachmentSource, file: NonNullable<ImageViewerItem['file']>,
+  origin?: ImageViewerItem['source'], size?: Size, metadata?: FileMetadata): () => void {
+  const original = originalImage(source, { metadata })
+  const resource = source.kind === 'item' ? { kind: 'file' as const, target: { kind: 'file' as const, itemId: source.itemId, version: source.version } } : undefined
+  const unregister = registerFullImage(thumb, original.full, resource, file, origin, size)
+  return () => { unregister(); original.release() }
 }
 
 /** How long the viewer waits for the clicked image's thumbnail (and so its size), to open from it rather than empty. */
@@ -357,16 +374,11 @@ export async function openViewerFromClick(items: ImageViewerItem[], index: numbe
 
 /** A working copy's image in the shared viewer: its bytes read when shown (`read`), its size from them. */
 export function workingCopyImageItem(name: string, read: () => Promise<Blob>): ImageViewerItem {
-  const urls: string[] = []
-  let released = false, bytes: Promise<string> | undefined
+  const reader = createImageRead(read)
   return {
     url: '', alt: name, file: { name },
-    preview: () => bytes ??= read().then((blob) => {
-      const url = URL.createObjectURL(blob)
-      if (released) URL.revokeObjectURL(url); else urls.push(url)
-      return url
-    }),
-    release: () => { released = true; urls.splice(0).forEach(url => URL.revokeObjectURL(url)) },
+    preview: reader.load,
+    release: reader.release,
   }
 }
 

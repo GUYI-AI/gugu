@@ -23,41 +23,41 @@ beforeEach(async () => {
 describe('file-link failure notices', () => {
   it('names the offline file-holding computer without a protocol or message prefix', async () => {
     state.metadata.mockResolvedValue({ status: 'ready', revision: { source: 'local', host_online: false } })
-    await expect(openTarget(target)).rejects.toThrow(/^存放这个文件的电脑当前离线，请等电脑上线后再试$/)
+    await expect(openTarget(target)).rejects.toThrow(/^存放该文件的设备当前离线，请在设备上线后重试$/)
     expect(state.metadata).toHaveBeenCalledExactlyOnceWith(target.itemId, 3)
   })
 
   it.each(['gone', 'expired', 'missing'])('uses the missing-file wording only after confirmed %s metadata', async status => {
     state.metadata.mockResolvedValue({ status, sha256: null })
-    await expect(openTarget(target)).rejects.toThrow(/^这个文件已删除或无法访问$/)
+    await expect(openTarget(target)).rejects.toThrow(/^该文件已删除或无法访问$/)
   })
 
   it.each([true, undefined])('keeps an unknown or online holder failure distinct from a deleted file (%s)', async online => {
     state.metadata.mockResolvedValue({ status: 'ready', revision: { source: 'local', host_online: online } })
-    await expect(openTarget(target)).rejects.toThrow(/^暂时打不开这个文件，请稍后重试$/)
+    await expect(openTarget(target)).rejects.toThrow(/^无法打开该文件，请稍后重试$/)
   })
 
   it('does not turn a metadata transport failure into a deleted-file claim or expose raw error details', async () => {
     state.metadata.mockRejectedValue(new Error('file: private transport error /Users/test/private'))
-    await expect(openTarget(target)).rejects.toThrow(/^暂时打不开这个文件，请稍后重试$/)
+    await expect(openTarget(target)).rejects.toThrow(/^无法打开该文件，请稍后重试$/)
   })
 
   it('keeps a synchronous signed-out metadata refusal behind the generic file notice', async () => {
     state.metadata.mockImplementation(() => { throw new Error('File reader is not signed in') })
-    await expect(openTarget(target)).rejects.toThrow(/^暂时打不开这个文件，请稍后重试$/)
+    await expect(openTarget(target)).rejects.toThrow(/^无法打开该文件，请稍后重试$/)
   })
 
   it('also classifies a rejected open RPC instead of exposing its internal failure', async () => {
     state.open.mockRejectedValue(new Error('file: connection closed /Users/test/private'))
     state.metadata.mockResolvedValue({ status: 'ready', revision: { source: 'local', host_online: false } })
-    await expect(openTarget(target)).rejects.toThrow(/^存放这个文件的电脑当前离线，请等电脑上线后再试$/)
+    await expect(openTarget(target)).rejects.toThrow(/^存放该文件的设备当前离线，请在设备上线后重试$/)
   })
 
   it('shows one file-specific notice for a normal followed file link', async () => {
     state.metadata.mockResolvedValue({ status: 'ready', revision: { source: 'local', host_online: false } })
     expect(followLink(target)).toBe(true)
     await vi.waitFor(() => expect(state.notice).toHaveBeenCalledExactlyOnceWith({
-      tier: 'error', title: '存放这个文件的电脑当前离线，请等电脑上线后再试',
+      tier: 'error', title: '存放该文件的设备当前离线，请在设备上线后重试',
     }))
   })
 

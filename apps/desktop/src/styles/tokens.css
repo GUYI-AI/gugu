@@ -1092,15 +1092,15 @@
    它们靠根的底色当正文底,不能跟着透。 */
 :root[data-window-material='native'] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
 :root[data-window-material='native'] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]),
+:root[data-window-material='native'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']),
 :root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
-:root[data-window-material='native'][data-sidebar-tint='on'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) {
+:root[data-window-material='native'][data-sidebar-tint='on'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
   background-color: color-mix(in oklab, var(--bg) 40%, transparent);
 }
-/* 同 @@@dark-material-veil:任务页停靠列与壳里的导航列同一层薄纱。 */
-:root[data-window-material='native']:not([data-theme='light']) .gugu-skin [data-workspace-left-panel] > :not([data-peek]) {
+/* 同 @@@dark-material-veil:任务页停靠列、群 / 项目的内层栏与壳里的导航列同一层薄纱。 */
+:root[data-window-material='native']:not([data-theme='light']) .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
   background-color: color-mix(in oklab, var(--bg) 70%, transparent);
 }
 
@@ -1210,12 +1210,10 @@ input {
    内容在每次滚动时左右跳 4px),只把 thumb 的颜色在两个状态间切。
    「正在滚动」由 lib/scrollbarAutoHide.ts 打的 `data-scrolling` 属性表示 —— CSS 没有这个状态,
    鼠标停在可滚区域内也会在停滚后隐藏,只有悬停滑块本身时才加深颜色。
+   横向滑块常亮:横着滚的是消息里的表格、代码块,鼠标的滚轮滚不动它们,看得见、拖得动的滑块是唯一入口。
 
-   ⚠️ 这一条**只管主界面**,❌ 不要顺手把 session/renderer/index.css 的 `.gugu-skin` 那套一起改。
-   那边写了 `scrollbar-color`,而**元素上只要存在 scrollbar-color,Blink 就整个禁用 ::-webkit-scrollbar
-   伪元素**、改走系统滚动条 —— 在 macOS 上那本来就是「滚动时才浮出」的 overlay 条,已经是这里想要的
-   效果了。真机实测(Chromium headless 四格对照):`scrollbar-color + webkit` 同时写 ⇒ 不显示;
-   只写 webkit ⇒ 显示。所以给那边加 `data-scrolling` 规则是一条**不会生效**的改动。 */
+   这是全应用(含会话页)唯一一套。❌ 在别处再写 `scrollbar-width` / `scrollbar-color`:元素上一有它们,
+   Blink 就整个不认 ::-webkit-scrollbar、改走系统滚动条 —— Windows 上那是静止时不画的悬浮条。 */
 @media (hover: hover) and (pointer: fine) {
   ::-webkit-scrollbar {
     width: 4px;
@@ -1228,7 +1226,8 @@ input {
     background: transparent;
     border-radius: 2px;
   }
-  [data-scrolling]::-webkit-scrollbar-thumb {
+  [data-scrolling]::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-thumb:horizontal {
     background: var(--border-color);
   }
   ::-webkit-scrollbar-thumb:hover {

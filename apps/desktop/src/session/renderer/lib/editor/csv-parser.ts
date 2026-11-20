@@ -14,6 +14,7 @@ export function parseCsv(content: string): CsvParseResult {
   let cell = '';
   let inQuotes = false;
   let quotedCell = false;
+  let cellStarted = false;
   let truncatedColumns = 0;
   let truncatedRows = 0;
 
@@ -25,6 +26,11 @@ export function parseCsv(content: string): CsvParseResult {
     }
     cell = '';
     quotedCell = false;
+    cellStarted = false;
+  };
+  const append = (char: string) => {
+    cellStarted = true;
+    if (rows.length < MAX_PREVIEW_ROWS && row.length < MAX_PREVIEW_COLUMNS) cell += char;
   };
   const pushRow = () => {
     pushCell();
@@ -38,10 +44,10 @@ export function parseCsv(content: string): CsvParseResult {
 
   for (let index = 0; index < content.length; index += 1) {
     const char = content[index];
-    if (char === '"' && (inQuotes || (!quotedCell && cell.length === 0))) {
+    if (char === '"' && (inQuotes || (!quotedCell && !cellStarted))) {
       quotedCell = true;
       if (inQuotes && content[index + 1] === '"') {
-        cell += '"';
+        append('"');
         index += 1;
       } else {
         inQuotes = !inQuotes;
@@ -52,11 +58,11 @@ export function parseCsv(content: string): CsvParseResult {
       if (char === '\r' && content[index + 1] === '\n') index += 1;
       pushRow();
     } else {
-      cell += char;
+      append(char);
     }
   }
 
-  if (quotedCell || cell.length > 0 || row.length > 0 || content.endsWith(',')) {
+  if (quotedCell || cellStarted || row.length > 0 || content.endsWith(',')) {
     pushRow();
   }
 

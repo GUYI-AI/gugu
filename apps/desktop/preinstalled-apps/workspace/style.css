@@ -310,10 +310,13 @@ body[data-mode='edit'] .preview-cut, .preview-cut[hidden] { display: none; }
 @container panes (max-width: 1167px) {
   .outline { left: 12px; }
   .outline:not(:hover, :focus-within) { width: 28px; gap: 8px; padding: 6px; }
-  .outline:not(:hover, :focus-within) > .outline-item { width: 16px; height: 2px; padding: 0; border-radius: 1px; font-size: 0; background: var(--em-border-1); }
+  /* A folded row's line is its own mark, not the button's fill: the fill is the button's state, and the host fades it
+     (ui.css), so a line drawn as the fill faded out over every row as the list opened — each row looked picked. */
+  .outline:not(:hover, :focus-within) > .outline-item { width: 16px; height: 2px; padding: 0; border-radius: 1px; font-size: 0; }
+  .outline:not(:hover, :focus-within) > .outline-item::before { content: ''; display: block; height: 100%; background: var(--em-border-1); }
   .outline:not(:hover, :focus-within) > .outline-item[data-depth='1'] { width: 12px; }
   .outline:not(:hover, :focus-within) > .outline-item[data-depth='2'] { width: 8px; }
-  .outline:not(:hover, :focus-within) > .outline-item[aria-current] { background: var(--em-foreground); }
+  .outline:not(:hover, :focus-within) > .outline-item[aria-current]::before { background: var(--em-foreground); }
   .outline:is(:hover, :focus-within) { width: 240px; padding: 6px; border: 1px solid var(--em-border); border-radius: var(--em-radius-control); background: var(--em-background); box-shadow: var(--em-shadow-dialog); }
 }
 @media (hover: none) and (pointer: coarse) { .outline { display: none; } }

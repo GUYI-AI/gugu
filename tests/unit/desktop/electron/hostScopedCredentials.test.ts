@@ -99,16 +99,14 @@ beforeEach(() => {
 })
 
 describe('host-scoped task runtime credentials (#1755 slice 1)', () => {
-  it('every ACP and PTY bridge receives the device read and upload hosts', () => {
+  it('every ACP and PTY bridge receives the same device attachment and read hosts: one builder, used by all three', () => {
     const source = readFileSync(new URL('../../../../apps/desktop/electron/main.ts', import.meta.url), 'utf8')
-    const acp = [...source.matchAll(/socialBridgeDeps:\s*\{([\s\S]*?)grantKey:/g)].map(match => match[1])
-    const pty = source.match(/socialBridge\(info, host\)[\s\S]*?return\s*\{([\s\S]*?)grantKey:/)?.[1]
-    const sites = [...acp, pty]
-    expect(sites).toHaveLength(3)
-    for (const site of sites) {
-      expect(site).toContain('...mcpFileReads,')
-      expect(site).toMatch(/attachments:\s*attachmentUploads\b/)
-    }
+    const builder = source.match(/function sessionSocialBridge\([\s\S]*?\n}\n/)?.[0]
+    expect(builder).toMatch(/attachments:\s*attachmentUploads\b/)
+    expect(builder).toMatch(/requestFile:\s*desktopFiles\.request\b/)
+    // The chat session, its side-chat fork and the terminal session: each bridge is the builder's, none a copy of its own.
+    expect([...source.matchAll(/socialBridgeDeps:\s*\{\s*\.\.\.sessionSocialBridge\(/g)]).toHaveLength(2)
+    expect(source).toMatch(/socialBridge\(info, host\)\s*\{[^}]*return sessionSocialBridge\(/)
   })
 
   it('rejects a bridge without its attachment host before granting tools', async () => {

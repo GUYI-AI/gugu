@@ -172,6 +172,8 @@ interface GuguMcpContextBase {
   grantKey?: string
   /** Raw session ID stamped by the native bridge creator; never parse grantKey for identity. */
   nativeSessionId?: string
+  /** The owner reads this session's own record (a structured session page): a message to the owner is committed there. */
+  ownerReadsSession?: true
 }
 
 /** #6615 会话经 catalog_* 够得到的扩展工具,与此刻被排除在外的程序(问题 16);扩展服务就绪后由宿主设上,没设 = 没有。 */
@@ -424,6 +426,7 @@ export interface BuildSocialBridgeDeps {
   host: DesktopGuguMcpHost
   grantKey: string
   nativeSessionId?: string
+  ownerReadsSession?: true
   personalAssistant?: true
   assistantWork?: AssistantWorkBinding
   runHostAction?: (action: unknown, auth: RuntimeAuth, signal: AbortSignal) => Promise<unknown>
@@ -470,6 +473,7 @@ export async function buildSocialBridge(
       guguHome: resolveGuguHome(context.env),
       grantKey: deps.grantKey,
       nativeSessionId: deps.nativeSessionId,
+      ...(deps.ownerReadsSession ? { ownerReadsSession: true as const } : {}),
       ...(deps.webSearch ? { webSearch: {
         available: deps.webSearch.available,
         run: async (query: string, signal: AbortSignal) => {

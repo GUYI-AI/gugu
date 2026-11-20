@@ -3,12 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHostResumeHandler, installNativeSleepActivity, watchHostResumeGap } from '../../../../apps/desktop/electron/server/host-resume'
+import { createHostResumeHandler, installNativeSleepActivity } from '../../../../apps/desktop/electron/server/host-resume'
+import { createAccountResumeHandler, installNativeResumeSource } from '../../../../apps/desktop/electron/server/account-resume-wiring'
 import { runResume } from '../../../../apps/desktop/electron/server/resume-cli'
 import { callAccountProcess } from '../../../../apps/desktop/electron/server/account-call'
 import { HOST_RESUME_CALL } from '../../../../apps/desktop/electron/session/main/core/pty/attach/attach-protocol'
 import { startPtyAttachServer } from '../../../../apps/desktop/electron/session/main/core/pty/attach/attach-server'
 import type { ServerAccount } from '../../../../apps/desktop/electron/server/server-layout'
+
+vi.mock('@gugu/core', () => ({ listAgents: async () => [{ gugu_user_id: 'a1' }, { gugu_user_id: 'a2' }, { gugu_user_id: '' }, { gugu_user_id: 'a3' }] }))
 
 afterEach(() => vi.useRealTimers())
 
@@ -42,7 +45,7 @@ describe('retained account resume', () => {
     const notifyCommands = vi.fn()
     const resume = createHostResumeHandler({ pullUnread, reconnect, reconcile, notifyCommands, observed: vi.fn(), failed: vi.fn() })
     resume('controller')
-    resume('wall-clock-gap')
+    resume('native-power')
     expect(pullUnread).toHaveBeenCalledOnce()
     expect(reconnect).toHaveBeenCalledOnce()
     expect(reconcile).toHaveBeenCalledOnce()
@@ -58,21 +61,22 @@ describe('retained account resume', () => {
     expect(failed).toHaveBeenCalledWith('realtime', expect.any(Error))
   })
 
-  it('detects a wall-clock jump without a channel error and does not treat normal ticks as resumes', async () => {
+  it('reads no inbox through a 30 s event-loop stall, and one roster read on a power resume', async () => {
     vi.useFakeTimers()
-    let clock = 0
-    const resume = vi.fn()
-    const stop = watchHostResumeGap(resume, () => clock)
-    clock = 1_000
+    const agentsWithInbox = vi.fn(async () => ['a3'])
+    const kickInbox = vi.fn()
+    const listeners = new Map<string, () => void>()
+    const resume = createAccountResumeHandler({ kickInbox, agentsWithInbox, reconnect: async () => undefined,
+      reconcile: async () => undefined, notifyCommands: vi.fn() })
+    installNativeResumeSource({ on: (event, callback) => listeners.set(event, callback) }, vi.fn(), resume)
+    vi.setSystemTime(Date.now() + 30_000)
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(resume).not.toHaveBeenCalled()
-    clock = 61_000
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(resume).toHaveBeenCalledExactlyOnceWith('wall-clock-gap')
-    stop()
-    clock = 121_000
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(resume).toHaveBeenCalledOnce()
+    expect(agentsWithInbox).not.toHaveBeenCalled()
+    expect(kickInbox).not.toHaveBeenCalled()
+    listeners.get('resume')!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(agentsWithInbox).toHaveBeenCalledExactlyOnceWith(['a1', 'a2', 'a3'])
+    expect(kickInbox).toHaveBeenCalledExactlyOnceWith('a3', 'host-resume')
   })
 
   it('announces resume over the real account socket, restricted to a signed-in account', async () => {
