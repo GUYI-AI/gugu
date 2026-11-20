@@ -99,7 +99,10 @@ it('preserves large skill bodies and streams large top-level resources through t
   const result = await importCodexSkills({ home: f.home, selection: selection(scan.items) });
   expect(result.items[0]!.status).toBe('imported');
   expect((await fs.stat(join(result.items[0]!.target, 'SKILL.md'))).size).toBe(2 * 1024 * 1024);
-  expect(await streamImportFile(join(result.items[0]!.target, 'asset.bin')))
+  // Publication deliberately uses a visible directory link. The strict stream verifier takes
+  // a canonical, link-free root, just like snapshotAgentHomeDirectory does in the product.
+  const managed = await fs.realpath(result.items[0]!.target);
+  expect(await streamImportFile(join(managed, 'asset.bin')))
     .toBe(await streamImportFile(join(source, 'asset.bin')));
 });
 
