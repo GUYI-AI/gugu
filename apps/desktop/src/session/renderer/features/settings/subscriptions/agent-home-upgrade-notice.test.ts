@@ -8,7 +8,7 @@ vi.mock('@/lib/notices', () => ({ notify: calls.notify }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: vi.fn() }));
 vi.mock('@renderer/lib/open-shell-settings', () => ({ openShellSettings: calls.open }));
 afterEach(() => { vi.unstubAllGlobals(); calls.storage.clear(); vi.clearAllMocks(); });
-function home(importedAt: string, upgradeSignIn?: 'copied' | 'relogin'): AgentHomeScan {
+function home(importedAt: string, upgradeSignIn?: 'copied' | 'relogin' | 'reference'): AgentHomeScan {
   vi.stubGlobal('localStorage', { getItem: (key: string) => calls.storage.get(key) ?? null,
     setItem: (key: string, value: string) => { calls.storage.set(key, value); } });
   return { providerId: 'codex', name: 'Codex', userRoot: '/fixture/native', sourceReadable: true,
@@ -52,4 +52,11 @@ it('keeps skipped-file results available alongside the OAuth warning', () => {
   showAgentHomeUpgradeNotice([{ ...home('oauth-skipped-files', 'copied'), upgradeIssues: [{ path: 'rules/link', reason: 'symlink' }] }]);
   expect(calls.notify).toHaveBeenCalledTimes(2);
   expect(calls.notify.mock.calls[1]![0].action).toBeDefined();
+});
+
+it('does not ask for a second login once copied OAuth has become a native reference', () => {
+  showAgentHomeUpgradeNotice([home('native-reference', 'reference')]);
+  expect(calls.notify).toHaveBeenCalledTimes(1);
+  expect(calls.notify.mock.calls[0]![0].description).toBe('agentHome.migrationNotice');
+  expect(calls.notify.mock.calls[0]![0].ongoing).toBeUndefined();
 });

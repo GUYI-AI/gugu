@@ -527,6 +527,8 @@ export class AgentPluginHost {
     const env = composeAgentSpawnEnv(runContext, {
       providerEnv: await this.deps.resolveProviderEnv?.(providerId),
     });
+    // Login changes the CLI's own authority; conversations keep the managed history root.
+    Object.assign(env, runContext.loginConfigRootEnv);
 
     if (programAuth.data === null) {
       if (methodId !== 'cli-login') {

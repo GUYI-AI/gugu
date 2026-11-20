@@ -44,3 +44,13 @@ it('continues copying a file-backed API key byte for byte without changing its s
   expect(await readFile(join(managed.nativeRoot, 'auth.json'), 'utf8')).toBe(key);
   expect(await readFile(join(previous.nativeRoot, 'auth.json'), 'utf8')).toBe(key);
 });
+
+it('copies only the active API key from a mixed document, without carrying inactive OAuth tokens', async () => {
+  const key = JSON.stringify({ ...JSON.parse(oauth), auth_mode: 'apikey', OPENAI_API_KEY: 'fixture-source-key' });
+  const { previous, managed } = await homes(key);
+  expect(await copyCodexUpgradeSignIn(previous, managed, 'native')).toBe('api-key');
+  const copied = await readFile(join(managed.nativeRoot, 'auth.json'), 'utf8');
+  expect(JSON.parse(copied)).toEqual({ auth_mode: 'apikey', OPENAI_API_KEY: 'fixture-source-key' });
+  expect(copied).not.toContain('fixture-refresh');
+  expect(await readFile(join(previous.nativeRoot, 'auth.json'), 'utf8')).toBe(key);
+});

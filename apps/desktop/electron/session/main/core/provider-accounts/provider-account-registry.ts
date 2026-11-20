@@ -189,6 +189,45 @@ export class ProviderAccountRegistry {
     return rows.map(toProviderAccount);
   }
 
+  /** Commit native Codex reference, aliases and default together; a prepared file operation can replay this. */
+  async commitCodexNativeReference(input: {
+    operationId: string; root: string; identity: string;
+    expected: { accountId: string; updatedAt: number; isDefault: boolean }[];
+    aliases: string[]; retained: { id: string; name: string }[]; defaultId: string;
+  }): Promise<void> {
+    const providerId = 'harness:codex';
+    this.db.transaction(tx => {
+      const current = tx.select().from(providerAccounts).where(eq(providerAccounts.providerId, providerId)).all();
+      if (current.find(row => row.accountId === 'native')?.meta?.harnessConnection?.nativeOAuth?.operationId === input.operationId) return;
+      if (current.length !== input.expected.length || input.expected.some(expected => !current.some(row =>
+        row.accountId === expected.accountId && row.updatedAt === expected.updatedAt && row.isDefault === expected.isDefault))) {
+        throw new Error('Codex connections changed during credential migration; retry after the current operation');
+      }
+      const now = Date.now();
+      for (const item of input.retained) {
+        if (current.some(row => row.accountId === item.id)) continue;
+        tx.insert(providerAccounts).values({ id: randomUUID(), providerId, accountId: item.id,
+          credentialRef: defaultCredentialRef(providerId, item.id), isDefault: false, createdAt: now, updatedAt: now,
+          meta: { version: '1', displayName: item.name, harnessConnection: { kind: 'account' } } }).run();
+      }
+      for (const row of current) {
+        if (row.accountId !== 'native' && !input.aliases.includes(row.accountId)) continue;
+        const native = row.accountId === 'native';
+        const meta: ProviderAccountMeta = { ...row.meta, version: '1', harnessConnection: {
+          ...row.meta?.harnessConnection, kind: native ? 'native' : 'account',
+          ...(native ? { nativeOAuth: { root: input.root, identity: input.identity, operationId: input.operationId } }
+            : { migratedTo: 'native', removed: true }),
+        } };
+        tx.update(providerAccounts).set({ meta, updatedAt: nextProviderAccountUpdate(row.updatedAt, now) })
+          .where(eq(providerAccounts.id, row.id)).run();
+      }
+      tx.update(providerAccounts).set({ isDefault: false }).where(eq(providerAccounts.providerId, providerId)).run();
+      tx.update(providerAccounts).set({ isDefault: true })
+        .where(and(eq(providerAccounts.providerId, providerId), eq(providerAccounts.accountId, input.defaultId))).run();
+    });
+    this.changed();
+  }
+
   /**
    * Resolve one account: by id when given, otherwise the provider's default
    * account. A missing or dangling default self-heals to the oldest account.

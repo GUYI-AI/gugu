@@ -51,6 +51,13 @@ const AUTH_FILE = 'auth.json';
 /** 账号身份:同一个 ChatGPT 工作区里可以有好几个人,所以「人 + 工作区」一起算。 */
 export function codexAuthIdentity(raw: unknown): string | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const doc = raw as { auth_mode?: unknown; OPENAI_API_KEY?: unknown };
+  const mode = doc.auth_mode ?? (doc.OPENAI_API_KEY != null ? 'apikey' : 'chatgpt');
+  if (mode === 'apikey') {
+    const key = doc.OPENAI_API_KEY;
+    return typeof key === 'string' && key.trim() ? `apikey:${createHash('sha256').update(key.trim()).digest('hex').slice(0, 16)}` : null;
+  }
+  if (mode !== 'chatgpt') return null;
   const tokens = (raw as { tokens?: unknown }).tokens;
   if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
     const claims = jwtClaims((tokens as { id_token?: unknown }).id_token);
@@ -61,8 +68,6 @@ export function codexAuthIdentity(raw: unknown): string | null {
     const subject = claims?.sub;
     if (typeof subject === 'string' && subject) return `chatgpt:${subject}|${typeof workspace === 'string' ? workspace : ''}`;
   }
-  const key = (raw as { OPENAI_API_KEY?: unknown }).OPENAI_API_KEY;
-  if (typeof key === 'string' && key.trim()) return `apikey:${createHash('sha256').update(key.trim()).digest('hex').slice(0, 16)}`;
   return null;
 }
 
@@ -300,7 +305,13 @@ export async function copyCodexUpgradeSignIn(
   if (live.identity.startsWith('chatgpt:')) return false;
   const target = await readAuth(managed.nativeRoot);
   if (target && target.identity !== live.identity) return false;
-  if (!target) await writeAuth(managed.nativeRoot, live.text);
+  const parsed = JSON.parse(live.text) as { tokens?: unknown; OPENAI_API_KEY: string };
+  // An inactive OAuth field in a mixed API-key document must not duplicate its refresh token.
+  if (!target) await writeAuth(managed.nativeRoot, parsed.tokens ? JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: parsed.OPENAI_API_KEY }) : live.text);
+  else {
+    const existing = JSON.parse(target.text) as { tokens?: unknown; OPENAI_API_KEY: string };
+    if (existing.tokens) await writeAuth(managed.nativeRoot, JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: existing.OPENAI_API_KEY }));
+  }
   await recordLiveState(managed.liveStateFile, { connectionId, identity: live.identity });
   return 'api-key';
 }
