@@ -10,7 +10,7 @@ import { withSessionAttachments, type SessionAttachmentRef } from '@gugu/core/cl
 import { isActivityAction, runActivityAction, type ActivityAction } from '../activity/actions';
 import { tabHygiene, type TabHygieneResult } from './tab-hygiene';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
-import { SESSION_DETAILS_BATCH_SIZE, type SessionPaneTabsResult } from '@gugu/session-core/session-record/contract';
+import { SESSION_DETAILS_BATCH_SIZE, SESSION_PREVIEW_CONCURRENCY, type SessionPaneTabsResult } from '@gugu/session-core/session-record/contract';
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import { readCurrentActivitySource } from './session-activity-source';
 import { receiveAssistantWorkReport, workReportSchema, type WorkReport } from '../../../../sessionpage/assistant-work';
@@ -2216,17 +2216,24 @@ async function readSessionDetails(sessionIds: readonly string[], signal?: AbortS
   const rows = await db.select().from(sessions).where(inArray(sessions.id, [...new Set(sessionIds)]));
   const byId = new Map(rows.map(row => [row.id, row]));
   const [summaries, models, outward] = await Promise.all([readAcpSessionSummaries(), sessionPlatformModels(sessionIds), machineOutwardProjectIds()]);
-  const result = [];
-  // Preview I/O is serial within a bounded batch, rather than an unbounded per-row Promise.all.
-  for (const id of sessionIds) {
-    signal?.throwIfAborted();
-    const row = byId.get(id);
-    if (!row) { result.push({ session_id: id, preview: { error: { code: 'session_not_found', message: '这台机器上没有这条会话' } } }); continue; }
-    const value = snapshot(row, summaries, sessionModelFromDecision(models.get(id), row.config?.model ?? null), outward);
-    if (row.archivedAt) { result.push(value); continue; }
-    try { result.push({ ...value, preview: await sessionPreview(id) }); }
-    catch (error) { result.push({ ...value, preview: { error: { code: 'preview_failed', message: error instanceof Error ? error.message : String(error) } } }); }
-  }
+  // Preview I/O runs on a small fixed pool inside the bounded batch (at most SESSION_PREVIEW_CONCURRENCY reads in flight,
+  // never the unbounded per-row Promise.all). Serial reads gave up the overlap of file reads and parsing (#2007: ~2x slower
+  // than the old unbounded fan-out on 512 KiB transcripts). Results are written by index so the order is the request's.
+  const result: unknown[] = new Array(sessionIds.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < sessionIds.length; i = next++) {
+      signal?.throwIfAborted();
+      const id = sessionIds[i];
+      const row = byId.get(id);
+      if (!row) { result[i] = { session_id: id, preview: { error: { code: 'session_not_found', message: '这台机器上没有这条会话' } } }; continue; }
+      const value = snapshot(row, summaries, sessionModelFromDecision(models.get(id), row.config?.model ?? null), outward);
+      if (row.archivedAt) { result[i] = value; continue; }
+      try { result[i] = { ...value, preview: await sessionPreview(id) }; }
+      catch (error) { result[i] = { ...value, preview: { error: { code: 'preview_failed', message: error instanceof Error ? error.message : String(error) } } }; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(SESSION_PREVIEW_CONCURRENCY, sessionIds.length) }, worker));
   return result;
 }
 

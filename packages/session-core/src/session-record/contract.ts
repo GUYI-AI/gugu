@@ -594,6 +594,8 @@ export const AGENT_SESSION_ACTIONS = [
 
 export type AgentSessionActionName = (typeof AGENT_SESSION_ACTIONS)[number];
 export const SESSION_DETAILS_BATCH_SIZE = 32;
+/** Previews read at the same time inside one get_many batch: bounded (never the unbounded per-row Promise.all), but enough to overlap file reads with parsing. */
+export const SESSION_PREVIEW_CONCURRENCY = 8;
 
 /**
  * 发起跨机器 session 动作的那条会话(在另一台机器上)的自述。凡是本机工具从发起方会话行上读的,

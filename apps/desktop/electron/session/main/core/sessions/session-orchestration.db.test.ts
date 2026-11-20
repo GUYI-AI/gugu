@@ -7,6 +7,7 @@ import { setProjectGroupHost } from '../projects/project-group-host';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@shared/core/projects/session-home-project';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionPaneTab } from '@gugu/session-core/session-record/contract';
+import { SESSION_PREVIEW_CONCURRENCY } from '@gugu/session-core/session-record/contract';
 import type { AppDb } from '@main/db/client';
 import { resumeHostUpdate } from '../agent-status/resume-host-update';
 import { sessionBootTasks } from '../boot-tasks';
@@ -2423,6 +2424,46 @@ describe('session orchestration', () => {
       expect(mocks.readSessionPreview).toHaveBeenCalledExactlyOnceWith('selected');
       await expect(runSessionAction(context, { action: 'get_many', session_ids: Array.from({ length: 33 }, (_, i) => `id-${i}`) })).rejects.toThrow('at most 32');
     } finally { single.mockRestore(); batch.mockRestore(); }
+  });
+
+  it('#2007 get_many reads previews on a bounded pool: at most SESSION_PREVIEW_CONCURRENCY in flight, request order kept, a failing row stays on its row', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `pool-${i}`);
+    for (const id of ids) insertPtyChild(id, 'idle', 'caller');
+    const gates = new Map<string, () => void>();
+    let inFlight = 0;
+    let peak = 0;
+    const original = mocks.readSessionPreview.getMockImplementation();
+    mocks.readSessionPreview.mockClear();
+    mocks.readSessionPreview.mockImplementation(async (sessionId: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise<void>((resolve) => gates.set(sessionId, resolve));
+      inFlight -= 1;
+      if (sessionId === 'pool-3') throw new Error('boom');
+      if (sessionId === 'pool-4') return { ok: false, error: { code: 'record_not_found', message: 'gone' } };
+      return { ok: true, value: { running: false, now: null, ended: { kind: 'done', reason: 'end_turn' }, entries: [{ kind: 'text', id: `${sessionId}-a`, text: sessionId, truncated: false, at: null }] } };
+    });
+    try {
+      const pending = runSessionAction(context, { action: 'get_many', session_ids: ids }) as Promise<Array<{ session_id: string; preview: { entries: Array<{ text: string }> } }>>;
+      let done = false;
+      void pending.then(() => { done = true; }, () => { done = true; });
+      // The pool fills up to the cap at once (reads really overlap) and nothing beyond the cap starts while they are held.
+      await vi.waitFor(() => expect(gates.size).toBe(SESSION_PREVIEW_CONCURRENCY));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mocks.readSessionPreview).toHaveBeenCalledTimes(SESSION_PREVIEW_CONCURRENCY);
+      // Finish them newest-first so completion order is the reverse of request order; the pool keeps refilling.
+      while (!done) {
+        for (const [id, release] of [...gates].reverse()) { gates.delete(id); release(); }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const rows = await pending;
+      expect(peak).toBe(SESSION_PREVIEW_CONCURRENCY);
+      expect(mocks.readSessionPreview).toHaveBeenCalledTimes(ids.length);
+      expect(rows.map((row) => row.session_id)).toEqual(ids);
+      expect(rows[3].preview).toEqual({ error: { code: 'preview_failed', message: 'boom' } });
+      expect(rows[4].preview).toEqual({ error: { code: 'record_not_found', message: 'gone' } });
+      expect(rows.filter((_, i) => i !== 3 && i !== 4).every((row) => row.preview.entries[0].text === row.session_id)).toBe(true);
+    } finally { mocks.readSessionPreview.mockImplementation(original!); }
   });
 
   // 被拒停住的 child 在状态上与做完的一模一样(idle):session_get 上的 preview.ended 把两者分开。
