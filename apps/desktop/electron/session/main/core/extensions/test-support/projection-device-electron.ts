@@ -12,7 +12,7 @@ import { extensionProjections as bridge } from '../extension-projection-bridge';
 import type { BridgeCaller } from '../extension-bridge';
 import { projectionSources, type ProjectionHost } from '../../../../../../src/session/app-runtime/projection-source';
 import { untilObserved } from './fixture-wait';
-import { spawnHeadlessViewer } from './headless-viewer';
+import { headlessViewerArgs } from './headless-viewer';
 
 /** Real installed grant/factory/helper/browser. RPC bytes use the real requester/responder over an isolated in-memory pipe, not the cloud. */
 export async function probeDeviceProjection(appId: string) {
@@ -86,7 +86,7 @@ export async function probeDeviceProjection(appId: string) {
     const currentServer = server;
     await new Promise<void>(resolve => currentServer.listen(0, '127.0.0.1', resolve));
     const address = currentServer.address(); assert.ok(address && typeof address !== 'string');
-    browser = spawnHeadlessViewer(path.join(app.getPath('userData'), 'device-projection-viewer'), `http://127.0.0.1:${address.port}`);
+    browser = spawn(process.env.GUGU_TEST_CHROMIUM!, headlessViewerArgs(path.join(app.getPath('userData'), 'device-projection-viewer'), `http://127.0.0.1:${address.port}`), { stdio: ['ignore', 'ignore', 'pipe'] });
     browser.stderr?.on('data', bytes => { stderr = (stderr + bytes).slice(-4096); });
     browserExit = new Promise<void>(resolve => {
       browser!.once('error', error => { faults.push(error); }); browser!.once('close', () => { exited = true; resolve(); });
