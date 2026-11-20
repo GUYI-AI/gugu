@@ -88,15 +88,17 @@ it('publishes complete native skill trees, preserves links/modes/assets, and lea
   expect((await importCodexSkills({ home: f.home, selection: selection(before.items) })).items[0]!.status).toBe('exists');
 });
 
-it('streams a large top-level resource through the existing migration primitive', async () => {
+it('preserves large skill bodies and streams large top-level resources through the migration primitive', async () => {
   const f = await fixture();
   const source = await f.skill(f.codex, 'large');
+  await fs.truncate(join(source, 'SKILL.md'), 2 * 1024 * 1024);
   await f.write(join(source, 'asset.bin'), '');
   await fs.truncate(join(source, 'asset.bin'), 51 * 1024 * 1024);
   const scan = await scanCodexSkills({ home: f.home });
   expect(scan.items[0]!.status).toBe('ready');
   const result = await importCodexSkills({ home: f.home, selection: selection(scan.items) });
   expect(result.items[0]!.status).toBe('imported');
+  expect((await fs.stat(join(result.items[0]!.target, 'SKILL.md'))).size).toBe(2 * 1024 * 1024);
   expect(await streamImportFile(join(result.items[0]!.target, 'asset.bin')))
     .toBe(await streamImportFile(join(source, 'asset.bin')));
 });

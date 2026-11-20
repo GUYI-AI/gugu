@@ -6,14 +6,14 @@ import { parse } from 'yaml';
 import type { ResolvedAgentHome } from '@gugu/session-core/agents/plugins';
 import {
   AgentHomeSensitiveLinkError, checkAgentHomeImportSpace, initializeManagedAgentHome, resolveAgentHomeImportLink,
-  snapshotAgentHomeDirectory, type AgentHomeDirectorySnapshot,
+  snapshotAgentHomeDirectory, streamImportFile, type AgentHomeDirectorySnapshot,
 } from '@gugu/session-core/agents/plugins/helpers';
 
 const disk: typeof fs = process.versions.electron
   ? createRequire(import.meta.url)('original-fs').promises : fs;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
-const MANIFEST_LIMIT = 1024 * 1024;
+const FRONTMATTER_LIMIT = 1024 * 1024;
 
 export type CodexSkillStatus = 'ready' | 'exists' | 'conflict' | 'skipped' | 'imported' | 'failed';
 export type CodexSkillReason =
@@ -79,8 +79,9 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
   const handle = await disk.open(join(root, 'SKILL.md'), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > MANIFEST_LIMIT) return null;
-    const bytes = Buffer.alloc(stat.size + 1);
+    if (!stat.isFile()) return null;
+    // A large instruction body is still a complete skill. Bound only the metadata header read.
+    const bytes = Buffer.alloc(Math.min(stat.size + 1, FRONTMATTER_LIMIT));
     let read = 0;
     while (read < bytes.length) {
       const result = await handle.read(bytes, read, bytes.length - read, null);
@@ -88,7 +89,13 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot) {
       read += result.bytesRead;
     }
     const content = bytes.subarray(0, read);
-    if (hash(content) !== manifest.hash) throw stale();
+    if (stat.size < FRONTMATTER_LIMIT) {
+      if (hash(content) !== manifest.hash) throw stale();
+    } else {
+      await streamImportFile(join(root, 'SKILL.md'), undefined, manifest.hash, root);
+      const after = await handle.stat();
+      if (after.ino !== stat.ino || after.dev !== stat.dev || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) throw stale();
+    }
     const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content.toString('utf8'));
     if (!match) return null;
     let fields: Record<string, unknown> | null;
