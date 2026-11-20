@@ -22,7 +22,6 @@ import { getPlugin } from '../agents/plugin-registry';
 import { agentProgramsOf } from '@gugu/session-core/deps/runtime';
 import type { AgentInstallationStatus } from '@shared/core/agents/agent-payload';
 import { LatestVersionService } from './latest-version-service';
-import { probeInstallSources, rankInstallSources } from './install-source-race';
 import { getDependencyDescriptor } from './registry';
 
 /**
@@ -84,13 +83,6 @@ export class AgentUpdateService {
   /** Cache of latest versions keyed by dependency and, for npm, registry. */
   private latestVersionCache = new Map<string, string | null>();
 
-  /**
-   * 上一趟测速排出来的下载源顺序,按依赖 id 存。第一条 = 这次用哪个源,后面的是换源重试的候选。
-   *
-   * 只活在进程内存里、也只是一个**偏好**:没有读数时安装照旧走 descriptor 的推荐源,
-   * ❌ 不因为「还没测过」就拦着不让装。
-   */
-  private installSourceRanking = new Map<DependencyId, string[]>();
   /** Last raw event per depId for re-emitting after async fetch. */
   private storedEvents = new Map<string, StoredEvent>();
   /**
@@ -171,9 +163,8 @@ export class AgentUpdateService {
       }
     }
 
-    // 这一趟顺手计时:谁先正确答出来,谁就是下一次安装的下载源(#6157)。测法见
-    // `install-source-race.ts`(借 nrm 的做法)。❌ 不为选源另发一趟请求。
-    const probes = await probeInstallSources([...sources.keys()], async (registry) => {
+    // Display metadata has no side effect on the next installation's source.
+    const entries = await Promise.all([...sources.keys()].map(async (registry) => {
       const packageName = sources.get(registry)!;
       const [version, platformBuild] = await Promise.all([
         this.latestVersionService.fetchLatestVersion(
@@ -184,10 +175,8 @@ export class AgentUpdateService {
           ? this.latestVersionService.probePlatformBuild(packageName, registry, target)
           : Promise.resolve('unknown' as const),
       ]);
-      return { version, platformBuild };
-    });
-    this.installSourceRanking.set(id, rankInstallSources(probes));
-    const entries = probes.map((p) => [p.registry, p.version, p.platformBuild] as const);
+      return [registry, version, platformBuild] as const;
+    }));
 
     const knownVersions = entries
       .map(([, version]) => parseVersion(version))
@@ -221,16 +210,6 @@ export class AgentUpdateService {
     }
 
     return result;
-  }
-
-  /**
-   * 这一家该按什么顺序试下载源(#6157)。
-   *
-   * 读的是上一趟「查最新版本」的计时结果(面板一打开就发过)。还没测过就是空数组 ——
-   * 调用方据此退回 descriptor 的推荐源,❌ 不在这里现测一趟把安装按住。
-   */
-  installSourceOrder(id: DependencyId): string[] {
-    return this.installSourceRanking.get(id) ?? [];
   }
 
   /**
