@@ -94,11 +94,12 @@ export class StandaloneProfileData {
 
   /**
    * No CDP command lists the sites holding data, so they are the union of what Chrome's own databases list (local storage,
-   * quota-managed IndexedDB, Cache Storage, service workers, file systems), the open pages and the cookie domains. Each is
+   * quota-managed IndexedDB, Cache Storage, service workers, file systems), the open and just-closed pages and the cookie domains. Each is
    * cleared by storage key. What cannot be listed or cleared is reported after everything else was cleared.
    */
   private async clearSiteDataInPlace(partition: string): Promise<void> {
-    const keys = new Set((await this.options.pool.openOrigins(partition)).map(origin => `${origin}/`));
+    // Open pages and tabs closed in the last minute: a local storage write may still be on its way to Chrome's disk.
+    const keys = new Set([...await this.options.pool.openOrigins(partition), ...this.options.pool.recentOrigins(partition)].map(origin => `${origin}/`));
     const problems: string[] = [];
     try { for (const key of this.options.storageKeys(this.options.pool.directoryFor(partition))) keys.add(key); }
     catch (error) { problems.push(error instanceof Error ? error.message : String(error)); }

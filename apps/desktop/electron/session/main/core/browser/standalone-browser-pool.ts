@@ -12,7 +12,11 @@ type Options = {
   profilesRoot: string;
   installation(): Promise<StandaloneKernelInstallation | null>;
   create(input: { profile: string; executable: string }): ServerTaskBrowser;
+  /** Clock for the recent-sites memory; tests replace it. */
+  now?(): number;
 };
+/** Chrome writes local storage to disk some seconds after the page stored it; a site shown this recently may not be listed there yet. */
+const RECENT_SITE_MS = 60_000;
 
 /** One persistent Chrome process per existing browser profile; tabs never combine unrelated profiles. */
 export class StandaloneBrowserPool {
@@ -20,6 +24,8 @@ export class StandaloneBrowserPool {
   private readonly tabs = new Map<string, Binding>();
   private readonly partitionsByTab = new Map<string, string>();
   private readonly pending = new Map<string, Promise<unknown>>();
+  private readonly recent = new Map<string, Map<string, number>>();
+  private readonly watched = new WeakSet<object>();
   private disposed = false;
 
   constructor(private readonly options: Options) {
@@ -56,6 +62,22 @@ export class StandaloneBrowserPool {
   /** Where a profile's Chrome keeps its data. Stable per partition, never shared between profiles. */
   directoryFor(partition: string): string {
     return path.join(this.options.profilesRoot, createHash('sha256').update(partition).digest('hex'));
+  }
+
+  /** Origins shown in the last minute in one profile, including tabs closed since. Memory only; nothing is written to disk. */
+  recentOrigins(partition: string): string[] {
+    const seen = this.recent.get(partition);
+    if (!seen) return [];
+    const now = (this.options.now ?? Date.now)();
+    for (const [origin, at] of seen) if (now - at > RECENT_SITE_MS) seen.delete(origin);
+    return [...seen.keys()];
+  }
+
+  private remember(partition: string, url: string | undefined): void {
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    const seen = this.recent.get(partition) ?? new Map<string, number>();
+    seen.set(new URL(url).origin, (this.options.now ?? Date.now)());
+    this.recent.set(partition, seen);
   }
 
   /** Origins of the web pages open in one profile right now. */
@@ -154,8 +176,11 @@ export class StandaloneBrowserPool {
       entry.tabs.add(input.browserId);
       this.tabs.set(input.browserId, binding);
     }
-    try { return await binding.entry.browser.pageFor(input.browserId, input.url, input.signal); }
-    catch (error) {
+    try {
+      const page = await binding.entry.browser.pageFor(input.browserId, input.url, input.signal);
+      await this.watch(binding.partition, input.browserId, binding.entry.browser);
+      return page;
+    } catch (error) {
       await this.closeBound(input.browserId, binding);
       throw error;
     }
@@ -176,8 +201,19 @@ export class StandaloneBrowserPool {
     });
   }
 
+  /** Every address this page shows is a site that may have just stored something. */
+  private async watch(partition: string, browserId: string, browser: ServerTaskBrowser): Promise<void> {
+    const screen = await browser.existingPage(browserId).catch(() => null);
+    if (!screen || this.watched.has(screen)) return;
+    this.watched.add(screen);
+    const note = () => this.remember(partition, screen.state().url);
+    note();
+    screen.on('state', note);
+  }
+
   private async closeBound(browserId: string, binding: Binding): Promise<void> {
     if (this.tabs.get(browserId) !== binding) return;
+    this.remember(binding.partition, (await binding.entry.browser.existingPage(browserId).catch(() => null))?.state().url);
     await binding.entry.browser.closeTask(browserId);
     this.tabs.delete(browserId);
     this.partitionsByTab.delete(browserId);
