@@ -132,6 +132,7 @@ export {
   matchAgentByProviderSessionId,
   removeAgents,
   archiveAgents,
+  restoreArchivedAgents,
   updateAgent,
   writeAgentName,
   type LocalAgentUpdate,

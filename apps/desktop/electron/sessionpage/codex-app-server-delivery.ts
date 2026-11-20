@@ -17,6 +17,7 @@
 // `turn/start`,见 deliver)。接进 delivery-bridge 与 provisioning 是上层接线,另见那两处。
 
 import { routeSwitchHistory } from '../runtime/codex-route-history.mjs'
+import { initializeNativeCodexSession, nativeCodexSessionArgs } from '@gugu/core/local/codex-native-auth.mjs'
 import crypto from 'node:crypto'
 import WebSocket from 'ws'
 import { pluginRegistry, resolveSessionTuiDeliveryToolNames } from '@gugu/session-plugins/agents'
@@ -581,6 +582,8 @@ export class CodexRpcClient {
   private readonly pending = new Map<number, Pending>()
   private readonly eventHandlers: Array<(m: RpcMessage) => void> = []
   onClose?: (error: Error) => void
+  onNativeAuthRefresh?: ((params: { previousAccountId?: string | null }) => Promise<unknown>) | null
+  nativeAuthSession?: Awaited<ReturnType<typeof initializeNativeCodexSession>>
 
   /** 连接 endpoint 的 `/rpc` 并完成升级握手。 */
   connect(endpoint: CodexAppServerEndpoint, timeoutMs = 15_000): Promise<void> {
@@ -646,6 +649,13 @@ export class CodexRpcClient {
         if (msg.error) p.reject(new CodexRpcReplyError(msg.error))
         else p.resolve(msg.result)
       } else if (msg.id !== undefined && msg.method !== undefined) {
+        if (msg.method === 'account/chatgptAuthTokens/refresh' && this.onNativeAuthRefresh) {
+          void this.onNativeAuthRefresh((msg.params ?? {}) as { previousAccountId?: string | null }).then(
+            result => this.send({ id: msg.id, result }),
+            error => this.send({ id: msg.id, error: { code: -32000, message: error instanceof Error ? error.message : 'Codex native sign-in unavailable; run codex login' } }),
+          ).catch(() => undefined) // The connection can close while its credential request is settling.
+          continue
+        }
         // codex 的【反向请求】(批准、问人……):这条投递连接一条都不答。app-server 把反向请求发给这个
         // thread 上**所有**订阅的连接,第一份应答算数(openai/codex@cd85a26cae00
         // `app-server/src/outgoing_message.rs` `send_request_to_connections`);同一个 thread 上挂着
@@ -1806,6 +1816,7 @@ export class CodexAppServerSession {
             threadStart: opts.threadStart,
           })
           : []),
+        ...nativeCodexSessionArgs(childEnv),
       ]
       const launch = resolveCodexAppServerSpawn(
         this.codexBin,
@@ -1900,6 +1911,10 @@ export class CodexAppServerSession {
         appVersion: process.env.GUGU_APP_VERSION, mode: 'app-server-ws', phase: 'initialized', versionSource: 'initialize',
       }), 'codex runtime initialized')
       client.notify('initialized', {})
+      client.nativeAuthSession = await initializeNativeCodexSession(childEnv, (method, params) => client.rpc(method, params), {
+        platform: Boolean(childEnv.OPENAI_API_KEY || childEnv.CODEX_API_KEY),
+        setRefresh: handler => { client.onNativeAuthRefresh = handler },
+      })
       // Before any thread: the roots are the app-server's, so the thread the TUI creates or resumes lists the skills.
       // Adopting a running app-server (below) skips this — it kept the roots it was started with.
       if (opts?.skillRoots?.length) await client.rpc('skills/extraRoots/set', { extraRoots: [...opts.skillRoots] })
@@ -1981,6 +1996,7 @@ export class CodexAppServerSession {
       threadStart?: Readonly<Record<string, unknown>>
       /** The same thread config the app-server was started with: the TUI reopened over it needs its direct-only list. */
       threadConfig?: Readonly<Record<string, unknown>>
+      env?: NodeJS.ProcessEnv
     },
   ): Promise<string | null> {
     const endpoint = parseCodexAppServerEndpoint(backend.endpoint)
@@ -2001,6 +2017,10 @@ export class CodexAppServerSession {
       await client.connect(endpoint, this.handshakeTimeoutMs)
       await client.rpc('initialize', CODEX_INITIALIZE_PARAMS)
       client.notify('initialized', {})
+      if (opts.env) client.nativeAuthSession = await initializeNativeCodexSession(opts.env, (method, params) => client.rpc(method, params), {
+        platform: Boolean(opts.env.OPENAI_API_KEY || opts.env.CODEX_API_KEY),
+        setRefresh: handler => { client.onNativeAuthRefresh = handler },
+      })
       trackedCodexAppServerSessions.add(this)
       const threadId = opts.threadId?.trim()
       if (threadId) {
@@ -2189,6 +2209,7 @@ export class CodexAppServerSession {
     if (this.terminalError) throw this.terminalError
     const client = this.client
     if (!client || !this.threadId) throw new Error('codex app-server 会话未建立(fail-loud)')
+    await client.nativeAuthSession?.ensure()
     const input = [{ type: 'text', text, text_elements: [] }]
     // @@@6112 TUI 还没载入 / 咕咕还没接入:❌ 不读、不起轮,直接交给 codex 队列 —— 服务端在 TUI
     // 载入之后才起这一轮,TUI 不会「中途加入」(实测:先排队、后 TUI resume,3/3 干净)。

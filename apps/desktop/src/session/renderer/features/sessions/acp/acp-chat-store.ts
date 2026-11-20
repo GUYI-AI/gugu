@@ -34,7 +34,7 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import { findToolItem } from '@gugu/session-core/session-record/tool-image';
-import { turnHeld } from '@gugu/session-core/session-record/held-turn';
+import { turnHeld, turnHasHeldMcp } from '@gugu/session-core/session-record/held-turn';
 import { toolImageUrl } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
@@ -208,7 +208,7 @@ export class AcpChatStore {
   private _senderInputs: readonly SessionInput[] = [];
   private _queueEditTimer: ReturnType<typeof setTimeout> | null = null;
   reverting = false;
-  messageEdit: { itemId: string; text: string } | null = null;
+  messageEdit: { itemId: string; text: string; restoreFiles?: boolean } | null = null;
   /**
    * 运行时最近一次报的「本进程里还在跑」的后台任务 id(#6582);`null` = 对面没报这一格(旧运行时)。
    * 只由挂着的活会话的 sessionState 写 —— 读它走 `runningBackgroundTaskIds`。
@@ -761,7 +761,17 @@ export class AcpChatStore {
   }
 
   changeMessageEdit(itemId: string, text: string): void {
-    if (this.messageEdit?.itemId === itemId && !this.reverting) this.messageEdit = { itemId, text };
+    if (this.messageEdit?.itemId === itemId && !this.reverting) this.messageEdit = { ...this.messageEdit, text };
+  }
+
+  /** Whether reverting to this message can also restore the files changed from it on (the provider says so per message). */
+  canRestoreFiles(itemId: string): boolean {
+    const item = this.revertMessageItem(itemId);
+    return item?.kind === 'message' && item.revertFiles === true;
+  }
+
+  changeMessageEditRestoreFiles(itemId: string, restoreFiles: boolean): void {
+    if (this.messageEdit?.itemId === itemId && !this.reverting) this.messageEdit = { ...this.messageEdit, restoreFiles };
   }
 
   cancelMessageEdit(itemId: string): void {
@@ -789,13 +799,13 @@ export class AcpChatStore {
       attachments = (item.attachments ?? []).map((attachment) => ({ ref: { type: 'attachment', ...attachmentRefSchema.parse(attachment) } }));
     } catch (error) { this._toastError('acpFailure.attachment', error); return; }
     const session = this.session;
-    if (!await this.revertMessage(itemId, false) || this.session !== session) return;
+    if (!await this.revertMessage(itemId, false, edit.restoreFiles === true && this.canRestoreFiles(itemId)) || this.session !== session) return;
     runInAction(() => { this.messageEdit = null; });
     // History is already cut back: a send that fails keeps the edited words in the draft.
     await this.submitPrompt(edit.text, attachments, item.files).catch(() => this.setDraftText([edit.text, this.draftText].filter(Boolean).join('\n')));
   }
 
-  async revertMessage(itemId: string, restoreDraft = true): Promise<boolean> {
+  async revertMessage(itemId: string, restoreDraft = true, restoreFiles = false): Promise<boolean> {
     const item = this.revertMessageItem(itemId);
     const session = this.session;
     if (!session || item?.kind !== 'message' || !item.revertAnchor || !this.canRevertMessage(itemId)) return false;
@@ -803,7 +813,7 @@ export class AcpChatStore {
     const generation = ++this._historyGeneration;
     runInAction(() => { this.reverting = true; });
     try {
-      const result = await session.revertSession(item.revertAnchor);
+      const result = await session.revertSession(item.revertAnchor, restoreFiles);
       if (!result.success) { this._toastError('acpFailure.revert', result.error); return false; }
       if (this.session !== session || generation !== this._historyGeneration) return false;
       this._resetOwnerNotificationRead();
@@ -1385,14 +1395,15 @@ export class AcpChatStore {
   }
 
   /**
-   * A row has come on screen from behind a fold. An older page read over a device link carries a turn as its folded
-   * form (`lean: 'folded'`): read that turn again and put it in its place. Only pages gone back for are sent that
-   * way and they are not read again behind the reader, so a turn stays whole once it is.
+   * A row has come on screen from behind a fold. Older folded pages and lean MCP lines leave their payload held:
+   * read that one turn again and put it in its place. MCP detail rows ask for the original payload; other steps
+   * keep the existing lean read. The initial page never carries raw MCP arguments merely for a collapsed process.
    * Opening an exchange brings many rows on screen at once: their turns are read together and land as one change.
    */
   fillHeldTurn(itemId: string): void {
     const held = (turn: TranscriptTurn) => itemId.startsWith(`${turn.id}:`) && turnHeld(turn);
-    const turn = (this._olderSource === 'stored' ? this._olderHistoryTurns.find(held) : undefined) ?? this.historyWindow?.turns.find(held);
+    const turn = this._storedHistoryTurns.find(held)
+      ?? (this._olderSource === 'stored' ? this._olderHistoryTurns.find(held) : undefined) ?? this.historyWindow?.turns.find(held);
     if (!turn || this._heldReading.has(turn.seq)) return;
     this._heldWanted.add(turn.seq);
     this._heldTimer ??= setTimeout(() => { this._heldTimer = null; void this._readHeldTurns(); }, 30);
@@ -1403,17 +1414,35 @@ export class AcpChatStore {
     this._heldWanted.clear();
     for (const seq of wanted) this._heldReading.add(seq);
     const generation = this._historyGeneration;
+    const sources = [...this._storedHistoryTurns, ...(this._olderSource === 'stored' ? this._olderHistoryTurns : []), ...(this.historyWindow?.turns ?? [])];
+    const requested = new Map(wanted.map(seq => [seq, sources.find(turn => turn.seq === seq && turnHeld(turn))]));
     try {
-      const pages = await Promise.all(wanted.map(seq =>
-        rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: seq + 1, limit: 1, lean: true }).catch(() => null)));
+      const pages = await Promise.all(wanted.map(seq => {
+        const turn = requested.get(seq);
+        return rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: seq + 1, limit: 1,
+          lean: turn ? !turnHasHeldMcp(turn) : true }).catch(() => null);
+      }));
       const whole = new Map<number, TranscriptTurn>();
-      pages.forEach((page, index) => { const turn = page?.turns[0]; if (turn?.seq === wanted[index]) whole.set(turn.seq, turn); });
+      pages.forEach((page, index) => {
+        const turn = page?.turns[0];
+        if (turn?.seq === wanted[index] && turn.id === requested.get(turn.seq)?.id) whole.set(turn.seq, turn);
+      });
       if (!whole.size || this._disposed || generation !== this._historyGeneration) return;
       runInAction(() => {
+        // The newest stored page can also contain a lean MCP line. Do not replace one revised while the read was out.
+        let changed = false;
+        const stored = this._storedHistoryTurns.map(one => {
+          const filled = one === requested.get(one.seq) ? whole.get(one.seq) : undefined;
+          if (!filled) return one;
+          changed = true;
+          return filled;
+        });
+        if (changed) this._storedHistoryTurns = stored;
         if (this._olderSource === 'stored' && this._olderHistoryTurns.some(one => whole.has(one.seq) && turnHeld(one))) {
           this._olderHistoryTurns = this._olderHistoryTurns.map(one => turnHeld(one) ? whole.get(one.seq) ?? one : one);
-          this.chatState.transcript.history.seed(this._composedHistory());
+          changed = true;
         }
+        if (changed) this.chatState.transcript.history.seed(this._composedHistory());
         this.historyWindow?.fill(whole);
       });
     } finally {

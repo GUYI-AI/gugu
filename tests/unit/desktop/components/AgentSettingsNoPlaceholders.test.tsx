@@ -43,7 +43,7 @@ it('keeps a failed pause unchanged and allows retry in the same row', async () =
   await renderWithAppProviders(h, <AgentSettingsModal agent={agent} />, { auth: { id: 'u1' }, contacts: { setAgentDesiredStatus } })
   await clickElement(pause())
   const row = document.querySelector('[data-testid="agent-profile-pause"]')!
-  expect(row.querySelector('[role="alert"]')?.textContent).toContain('没能更改暂停状态')
+  expect(row.querySelector('[role="alert"]')?.textContent).toContain('无法更改暂停状态')
   expect(pause().getAttribute('aria-checked')).toBe('false')
   expect(pause().disabled).toBe(false)
   await clickElement(pause())

@@ -466,7 +466,8 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([[WEBAPP_SECTION, 55, 'cached', 'gugu']]);
     expect(getComputedStyle(boxOf(0)).maxHeight).toBe('320px');
     expect(getComputedStyle(boxOf(0)).overflowY).toBe('auto');
-    expect(getComputedStyle(boxOf(0)).getPropertyValue('scrollbar-width')).toBe('thin');
+    // 全应用那一套滚动条(styles/tokens.css):元素上不写 scrollbar-width,否则那一套就失效。
+    expect(getComputedStyle(boxOf(0)).getPropertyValue('scrollbar-width')).toBe('auto');
     expect(boxOf(0).scrollHeight).toBeGreaterThan(boxOf(0).clientHeight);
     const toggle = sectionAt(0).getByTestId('session-history-section-show-less');
     await expect.element(toggle).toHaveTextContent('收起');

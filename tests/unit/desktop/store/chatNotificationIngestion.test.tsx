@@ -11,12 +11,27 @@ import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } fro
 import type { AccountRevisionSource, AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { createChatListProjectionLedger, useChatProjectionBinding } from '../../../../apps/desktop/src/store/chatListProjection'
 import * as notifications from '../../../../apps/desktop/src/store/chatListProjection'
+import { unknownMemberName } from '../../../../apps/desktop/src/lib/memberFallbackName'
+import enMessaging from '../../../../apps/desktop/src/i18n/locales/en-US/messaging'
+import zhMessaging from '../../../../apps/desktop/src/i18n/locales/zh-CN/messaging'
 
-const native = vi.hoisted(() => ({ show: vi.fn() }))
+const native = vi.hoisted(() => ({
+  show: vi.fn(),
+  capabilities: { notifications: true, conversationNotifications: true as boolean },
+  faces: undefined as undefined | (() => unknown),
+  current: true,
+}))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: { capabilities: { notifications: true }, showNotification: native.show },
+  platform: { capabilities: native.capabilities, showNotification: native.show },
 }))
 vi.mock('../../../../apps/desktop/src/lib/onScreenChat', () => ({ isChatOnScreen: () => false }))
+// The faces module draws on a canvas; here every face is simply not known, so the presentation is deterministic.
+vi.mock('../../../../apps/desktop/src/lib/chatNotificationFaces', () => ({
+  createNotificationFaceSources: () => native.faces!(),
+}))
+const noFaces = () => ({ identity: async () => null, userFace: async () => null, groupFace: async () => null })
+/** The banner is presented after its (async) presentation settles; the coordinator does not wait for it. */
+const delivered = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
 
 type Response = { data: unknown; error: null }
 const cloudRows = new Map<string, unknown[]>()
@@ -94,6 +109,7 @@ beforeEach(async () => {
     return memory.commit(operations)
   } } })
   await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
+  native.capabilities.conversationNotifications = true; native.faces = noFaces; native.current = true
   native.show.mockReset().mockImplementation(async () => {
     bodyPresentAtNotification.push(repository.snapshot().message.some(row => row.id === MESSAGE))
     return { success: true, displayed: false }
@@ -115,7 +131,7 @@ beforeEach(async () => {
     recover: async () => { throw new Error('complete message fixture must not need recovery') },
     notify: async message => notifications.notifyForIngestedMessage(ACCOUNT,
       repository.snapshot().chat.find(row => row.id === GROUP)!.value, message,
-      { onScreen: () => false, notificationsEnabled: enabled, soundEnabled: false }),
+      { onScreen: () => false, notificationsEnabled: enabled, soundEnabled: false, isCurrent: () => native.current }),
   })
   coordinator.start()
   await coordinator.whenIdle() // Initial catchup is a silent baseline, not a live arrival.
@@ -129,23 +145,41 @@ afterEach(() => {
 })
 
 describe('chat notification ingestion', () => {
-  const publish = async (row = nextRow(), requestSeq = 1) => {
+  const publish = async (row = nextRow(), requestSeq = 1, sender: { sender_user_id?: string | null } = {}) => {
     await act(async () => {
       const id = row.unread_locator?.message_id ?? MESSAGE
       pending.push({ revision: String(pending.length + 1), event: 'message_created', payload: {
-        chat_id: GROUP, entity_id: id, message: { ...messageRow, id, seq: row.unread_locator?.message_seq ?? 1 },
+        chat_id: GROUP, entity_id: id, message: { ...messageRow, ...sender, id, seq: row.unread_locator?.message_seq ?? 1 },
       } })
       wake(String(pending.length))
       await coordinator!.whenIdle()
       await binding.publish([row], [displayIdentity(ACCOUNT)], { requestSeq, notify: true })
     })
+    await delivered()
   }
 
   it('notifies once for one eligible off-screen publication', async () => {
     await publish()
     expect(native.show).toHaveBeenCalledExactlyOnceWith({
       title: 'Fixture group', body: 'controlled addressed message', chatId: GROUP, silent: true,
+      // No identity directory in this window: the group is named by what the chat row knows and its author, not being
+      // known, by the chat's own unknown-member label; no picture, and the notification still goes out at once.
+      presentation: {
+        accountId: ACCOUNT, messageId: MESSAGE, sentAt: Date.parse(AT),
+        conversation: { id: GROUP, kind: 'group', name: 'Fixture group', avatar: null },
+        author: { id: 'notify-sender', name: unknownMemberName(), avatar: null },
+      },
     })
+  })
+
+  it('names the author of a deleted account with the label the chat shows for a member it cannot name, not the group', async () => {
+    native.faces = () => ({ identity: async (id: string) => displayIdentity(id), groupFace: async () => null, userFace: async () => null })
+    await publish(nextRow(), 1, { sender_user_id: null })
+    const { author, conversation } = native.show.mock.calls[0]![0].presentation
+    expect(author).toEqual({ id: null, name: unknownMemberName(), avatar: null })
+    // The catalog's own wording (whichever language this window runs in), not a made-up one.
+    expect([zhMessaging.group.memberFallback.unknown, enMessaging.group.memberFallback.unknown]).toContain(author.name)
+    expect(author.name).not.toBe(conversation.name)
   })
 
   it('does not notify again when the same message is replayed after publication settles', async () => {
@@ -160,6 +194,48 @@ describe('chat notification ingestion', () => {
       unread_locator: { ...locator, message_id: 'notify-message-2', message_seq: 2,
         unread_count: 2, addressed_count: 2, version: 2 } }, 2)
     expect(native.show).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives a host that does not draw conversations the notification exactly as before', async () => {
+    native.capabilities.conversationNotifications = false
+    await publish()
+    expect(native.show).toHaveBeenCalledExactlyOnceWith({
+      title: 'Fixture group', body: 'controlled addressed message', chatId: GROUP, silent: true,
+    })
+  })
+
+  it('goes out after the picture budget without slow pictures, then refreshes the same message silently', async () => {
+    let finish: (face: string) => void = () => undefined
+    native.faces = () => ({ identity: async (id: string) => displayIdentity(id), groupFace: async () => null,
+      userFace: () => new Promise<string>((resolve) => { finish = resolve }) })
+    await publish()
+    expect(native.show).not.toHaveBeenCalled() // still inside the picture budget
+    // Past the budget the banner went out without the face; the face then arrives.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1300)) })
+    expect(native.show.mock.calls[0]![0].presentation).toMatchObject({ author: { avatar: null }, conversation: { avatar: null } })
+    await act(async () => { finish('late-face') })
+    await vi.waitFor(() => expect(native.show).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(native.show.mock.calls[1]![0]).toMatchObject({ chatId: GROUP, presentation: { messageId: MESSAGE, update: true, author: { avatar: 'late-face' } } })
+  }, 10_000)
+
+  it('drops a late picture refresh once the account is no longer current', async () => {
+    let finish: (face: string) => void = () => undefined
+    native.faces = () => ({ identity: async (id: string) => displayIdentity(id), groupFace: async () => null,
+      userFace: () => new Promise<string>((resolve) => { finish = resolve }) })
+    await publish()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1300)) })
+    native.current = false
+    await act(async () => { finish('late-face') })
+    await delivered()
+    expect(native.show).toHaveBeenCalledTimes(1)
+  }, 10_000)
+
+  it('still shows the banner as before when the presentation cannot be prepared', async () => {
+    native.faces = () => { throw new Error('faces unavailable') }
+    await publish()
+    expect(native.show).toHaveBeenCalledExactlyOnceWith({
+      title: 'Fixture group', body: 'controlled addressed message', chatId: GROUP, silent: true,
+    })
   })
 
   it('does not notify when chat message notifications are disabled', async () => {
@@ -177,6 +253,7 @@ describe('chat notification ingestion', () => {
       releaseCommit.resolve()
       await Promise.all(publications)
     })
+    await delivered()
     expect(native.show).toHaveBeenCalledTimes(1)
   })
 
@@ -194,6 +271,7 @@ describe('chat notification ingestion', () => {
         pending.push({ revision: '1', event: 'message_created', payload: { chat_id: GROUP, entity_id: MESSAGE, message: messageRow } })
         wake('1'); await coordinator!.whenIdle()
       })
+      await delivered()
       expect(native.show).toHaveBeenCalledTimes(1)
       expect(bodyPresentAtNotification).toEqual([true])
     } finally { stop() }

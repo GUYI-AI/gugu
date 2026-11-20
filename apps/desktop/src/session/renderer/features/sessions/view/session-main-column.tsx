@@ -1,6 +1,6 @@
 import { DndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SessionMachineStatus } from './session-machine-status';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { auxLeadingReserve, PutBackButton } from '@renderer/app/aux-window-host';
@@ -23,6 +23,8 @@ import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { Popover } from '@/components/ui/Popover';
+import { AppsButton, ChatAppsPicker } from '@/components/chat/ChatAppsPicker';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionViewOfRuntime } from '@shared/core/sessions/sessions';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
@@ -225,6 +227,7 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   const startupFailure = useSessionStartupFailure(sessionId ?? null);
   return (
     <TabBarActionRow atWindowEdge={atScreenEdge}>
+      <SessionApps />
       <SessionMachineStatus />
       <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} paneLayout={paneLayout} />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。
@@ -245,6 +248,17 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
       {windowId ? <PutBackButton windowId={windowId} /> : null}
     </TabBarActionRow>
   );
+});
+
+/** The task's Apps: the chat header's one button and picker; a picked App opens as a tab of this task. */
+const SessionApps = observer(function SessionApps() {
+  const { paneLayout } = useWorkspaceViewModel();
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  return <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
+    <Popover.Trigger ref={anchor} render={<AppsButton size="sm" />} />
+    {open && <ChatAppsPicker chatId={null} anchor={anchor} onOpen={(app) => paneLayout.openBeside(app.kind, {})} onClose={() => setOpen(false)} />}
+  </Popover.Root>;
 });
 
 /**

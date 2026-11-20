@@ -110,9 +110,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       </span>
     </span>} note={translate(note)} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
       {group === 'coding-plan' && agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex').sort((a, b) => Number(a.id === 'claude') - Number(b.id === 'claude')).map(agent => (
-        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows={{
-          onAddAccount: () => setEditing({ group: 'coding-plan', account: agent.id === 'codex' ? 'codex' : 'claude' }),
-        }} />
+        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />
       ))}
       {reading.state === 'error' ? <SettingsRow description={errorText(reading.error)} control={<Button onClick={refresh}>{translate('common.retry')}</Button>} />
         : reading.state === 'unknown' ? <SettingsRow control={<Unknown className="w-32" />} /> : <>

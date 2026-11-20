@@ -468,6 +468,8 @@ export type TurnOutcomeItem = {
    * 于是这里是 undefined，那一行就不渲染「取回指令」（见 `ChatCommands.onRestorePrompt`）。
    */
   prompt?: string;
+  /** The user message `prompt` was read from: the point 「退回重新编辑」 steps back to. */
+  promptItemId?: string;
 };
 
 /**

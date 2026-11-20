@@ -190,7 +190,8 @@ function toolNodeSegment(kind: ToolNode['kind']): ItemSegmenter {
     chrome: COMPOSITE_CHROME,
     segment(item, ctx) {
       const tool = item as ToolNode;
-      if (ctx.agentConversation && tool.kind !== 'tool-group' && !isQuestionOrPlanToolName(toolCallName(tool))) {
+      // MCP keeps the shared tool row: its server/tool and expandable request/result are part of the call.
+      if (ctx.agentConversation && tool.kind !== 'tool-group' && tool.kind !== 'mcp-tool-call' && !isQuestionOrPlanToolName(toolCallName(tool))) {
         const row = unit('conversation-step', tool, conversationStepData(tool, ctx.translate), { key: 'self' });
         row.chrome = MESSAGE_CHROME;
         return [row];

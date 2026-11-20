@@ -449,6 +449,16 @@ describe('a lean page leaves out output the conversation view does not show', ()
     expect(trimCursorPageForTransport(page)).toBe(page);
   });
 
+  it('keeps MCP raw input out of the lean page and marks the summary for an on-demand detail read', () => {
+    const call = gugu('message_history', { rawInput: '{"query":"needle"}', outputText: long });
+    const sent = lean([call]).items[0];
+    expect(sent).toMatchObject({ server: 'gugu', tool: 'message_history', inputSummary: 'needle', held: true,
+      outputText: long.slice(0, HELD_PREVIEW_CHARS) });
+    expect(sent).not.toHaveProperty('rawInput');
+    const original = trimCursorPageForTransport({ turns: [turn('t', [call])], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, false);
+    expect(original.turns[0]!.items[0]).toBe(call);
+  });
+
   it('counts a lean page by what it sends, so it holds more turns', () => {
     const heavy = (index: number) => ({ ...turn(`t${index}`, [execTool(`e${index}`, { outputText: 'o'.repeat(8_000) })]), seq: index });
     expect(transportSizeOf(heavy(0), TRANSPORT_TEXT_LIMIT, true)).toBeLessThan(transportSizeOf(heavy(0)) / 10);

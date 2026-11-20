@@ -260,6 +260,22 @@ describe('AgentConfigRuntime', () => {
     await runtime.dispose();
   });
 
+  it('uses the native authority only for login while status keeps the managed conversation environment', async () => {
+    const ptySpawner = new FakePtySpawner();
+    const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext) => ({ kind: 'authenticated' as const }));
+    const { runtime } = makeRuntime({ ptySpawner, authCheckStatus });
+    const context: AgentRunContext = { ...SELECTED_CLI,
+      configRootEnv: { CODEX_HOME: '/synthetic/gugu-history' },
+      loginConfigRootEnv: { CODEX_HOME: '/synthetic/native-codex' } };
+    try {
+      await runtime.refreshAuthStatus('claude', context);
+      expect(authCheckStatus.mock.calls[0]![0].env.CODEX_HOME).toBe('/synthetic/gugu-history');
+      await runtime.startLogin('claude', 'login', context);
+      expect(ptySpawner.processes[0]?.spec.env?.CODEX_HOME).toBe('/synthetic/native-codex');
+      expect(context.configRootEnv.CODEX_HOME).toBe('/synthetic/gugu-history');
+    } finally { await runtime.dispose(); }
+  });
+
   it('#2507 the login state carries the device code, the paste-back prompt and the failure lines (no terminal needed)', async () => {
     const ptySpawner = new FakePtySpawner();
     const { runtime } = makeRuntime({ ptySpawner });
@@ -472,7 +488,7 @@ describe('AgentConfigRuntime', () => {
     it('起的是与真会话同一条 buildAcpSpawn,发厂商自报的 methodId,不开终端', async () => {
       const t = acpRuntime();
       await expect(t.runtime.startLogin('claude', 'google', SELECTED_CLI)).resolves.toEqual(ok(undefined));
-      expect(t.buildAcpSpawn).toHaveBeenCalledWith('claude', { cwd: '/home/ada', runContext: SELECTED_CLI });
+      expect(t.buildAcpSpawn).toHaveBeenCalledWith('claude', { cwd: '/home/ada', runContext: SELECTED_CLI, authProgram: null });
       expect(t.captured()?.methodId).toBe('oauth-personal');
       expect(t.captured()?.spawn).toEqual(SPAWN);
       expect(t.ptySpawner.processes).toHaveLength(0);

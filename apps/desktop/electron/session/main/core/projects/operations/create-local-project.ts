@@ -163,7 +163,6 @@ export async function createLocalProject(
         path: gitInfo.rootPath,
         workspaceProvider: 'local',
         baseRef: gitInfo.baseRef,
-        gitless: gitInfo.baseRef === null,
         kind: isImplicitSessionHomeProjectId(projectId) || (params.automatic && isAppKeptDirectory(gitInfo.rootPath)) ? 'workspace' : 'project',
         updatedAt: sql`CURRENT_TIMESTAMP`,
       }).returning().get();

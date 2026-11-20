@@ -8,13 +8,22 @@ import { cn } from '@renderer/utils/utils';
 
 const Select = SelectPrimitive.Root;
 
-function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
+/** A titled group; the title is a prop because Select.GroupLabel throws outside a Select.Group. */
+function SelectGroup({
+  className,
+  label,
+  children,
+  ...props
+}: SelectPrimitive.Group.Props & { label?: React.ReactNode }) {
   return (
-    <SelectPrimitive.Group
-      data-slot="select-group"
-      className={cn('scroll-my-1 p-1', className)}
-      {...props}
-    />
+    <SelectPrimitive.Group data-slot="select-group" className={cn('scroll-my-1 p-1', className)} {...props}>
+      {label ? (
+        <SelectPrimitive.GroupLabel data-slot="select-label" className="px-2 py-1.5 text-xs text-foreground-muted">
+          {label}
+        </SelectPrimitive.GroupLabel>
+      ) : null}
+      {children}
+    </SelectPrimitive.Group>
   );
 }
 
@@ -100,16 +109,6 @@ function SelectContent({
   );
 }
 
-function SelectLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
-  return (
-    <SelectPrimitive.GroupLabel
-      data-slot="select-label"
-      className={cn('px-2 py-1.5 text-xs text-foreground-muted', className)}
-      {...props}
-    />
-  );
-}
-
 function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
   return (
     <SelectPrimitive.Item
@@ -185,7 +184,6 @@ export {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectScrollDownButton,
   SelectScrollUpButton,
   SelectSeparator,

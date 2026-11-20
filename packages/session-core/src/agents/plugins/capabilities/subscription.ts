@@ -104,7 +104,7 @@ export const subscriptionUsageReadingSchema = z.discriminatedUnion('kind', [
 export type SubscriptionUsageReading = z.infer<typeof subscriptionUsageReadingSchema>;
 
 export type ISubscriptionBehavior = {
-  /** 谁付钱 + 套餐。只读本机(文件 / 不联网的 CLI 子命令),要快。 */
+  /** 谁付钱 + 套餐。优先本机读数；可握手查询厂商的正式套餐字段，但绝不触发登录或模型推理。 */
   readPlan(ctx: AgentAuthContext): Promise<SubscriptionPlanReading>;
   /** 这一期还剩多少。可以联网、可以起这家自己的程序去问;拿到 `readPlan` 的结果，据此决定问不问。 */
   readUsage(ctx: AgentAuthContext, plan: SubscriptionPlanReading): Promise<SubscriptionUsageReading>;

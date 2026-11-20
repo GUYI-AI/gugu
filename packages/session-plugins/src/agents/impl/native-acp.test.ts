@@ -10,6 +10,8 @@ const spawnCtx = {
 const nativeAcpProviders: Array<{
   id: string;
   cli?: string;
+  /** The host-built env this provider requires at spawn (e.g. its managed config root). */
+  spawnEnv?: Record<string, string>;
   args: string[];
   command?: string;
   env?: Record<string, string>;
@@ -19,11 +21,12 @@ const nativeAcpProviders: Array<{
     args: ['--acp'],
     env: { AUGMENT_DISABLE_AUTO_UPDATE: '1' },
   },
-  // #6335:托管装好的 `agy_acp_server` 就是 ctx.cli,不带参数;回环免代理无条件带上
-  // (它起会话要连自己的本地 harness,被系统代理截走时 session/new -32603)。
+  // New chats run `agy acp` on the managed config root; loopback proxy exclusions are always added
+  // (it reaches its own local harness; a system proxy intercepting that fails session/new with -32603).
   {
     id: 'antigravity',
-    args: [],
+    spawnEnv: { GEMINI_HOME: '/managed/.gemini' },
+    args: ['acp', '--stdio', '--gemini-dir', '/managed/.gemini'],
     env: { NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' },
   },
   { id: 'cline', args: ['--acp'] },
@@ -76,7 +79,7 @@ describe('native ACP provider behaviors', () => {
   it.each(nativeAcpProviders)('$id starts the documented native ACP command', (entry) => {
     const provider = pluginRegistry.get(entry.id)!;
     const cli = entry.cli ?? spawnCtx.cli;
-    const spawn = provider.behavior.acp!.buildSpawn({ ...spawnCtx, cli });
+    const spawn = provider.behavior.acp!.buildSpawn({ ...spawnCtx, cli, env: entry.spawnEnv ?? spawnCtx.env });
 
     expect(spawn.command).toBe(entry.command ?? cli);
     expect(spawn.args).toEqual(entry.args);

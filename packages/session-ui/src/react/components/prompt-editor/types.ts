@@ -166,6 +166,8 @@ export interface PromptEditorProps {
   disabled?: boolean;
   /** Called with the serialized plain-text value on every change. */
   onChange?: (text: string) => void;
+  /** Explicitly clearing the document can end composition without a DOM compositionend. */
+  onDocumentClear?: () => void;
   /**
    * 粘贴纯文本时先问一句宿主要不要它。返回 `true` = 宿主收走了，编辑器**不**插入。
    *

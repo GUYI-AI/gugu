@@ -1,6 +1,6 @@
 /**
  * One action table for a session — and for my agent, whose name and task are that session (task-name.ts). Every menu
- * that shows it — its tab, its sidebar row, its chat-list row, the phone's session menu — draws from this table:
+ * that shows it — its tab, its sidebar row, its contacts row, the phone's session menu — draws from this table:
  * the same actions, the same names, the same order, the same fold. An entry only says which actions do not apply
  * where it is, and why ({@link SESSION_MENU_EXCLUDES}); it never adds, renames or reorders one.
  *
@@ -22,10 +22,8 @@ export type SessionMenuAction =
   | 'copy-id'
   | 'reload'
   | 'legacy-history'
-  | 'mark-all-read'
-  | 'delete-chat'
 
-export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'chat-row' | 'phone' | 'contacts'
+export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'phone' | 'contacts'
 
 export type SessionMenuLabel = MenuLabel
 export type SessionMenuItem = MenuTableItem<SessionMenuAction>
@@ -35,10 +33,9 @@ export type SessionMenuState = {
   pinned: boolean
   /** 固定到左侧栏: null = not offered (a child session never is a row of the left list). */
   sidebarPin: 'pin' | 'unpin' | null
-  /** The task is already archived: archive gives way to deleting the conversation. */
+  /** The task is already archived: no archive. */
   archived?: boolean
   hasUnread?: boolean
-  hasAnyUnread?: boolean
   notificationsMuted?: boolean
   /** Forking needs the harness to support it on this runtime. */
   canFork?: boolean
@@ -46,8 +43,6 @@ export type SessionMenuState = {
   reloading?: boolean
   /** The legacy DM history exists for this agent. */
   hasLegacyHistory?: boolean
-  /** The conversation may be deleted (an archived owned agent's DM): `'unknown'` keeps the place, disabled. */
-  canDeleteChat?: boolean | 'unknown'
 }
 
 /**
@@ -67,8 +62,6 @@ export const SESSION_MENU_EXCLUDES: MenuExcludes<SessionMenuEntry, SessionMenuAc
     'mark-read': 'The tab is open: what it shows is being read.',
     'mark-unread': 'The tab is open: what it shows is being read.',
     notifications: 'Notifications belong to the conversation; its settings are one click away in the chat page.',
-    'mark-all-read': 'Acts on the whole chat list, not on this tab.',
-    'delete-chat': 'An open tab is a live task; deleting the conversation is offered only once the agent is archived, from the chat list.',
   },
   'sidebar-row': {
     'open-chat': 'Clicking the row opens it.',
@@ -76,15 +69,6 @@ export const SESSION_MENU_EXCLUDES: MenuExcludes<SessionMenuEntry, SessionMenuAc
     'mark-unread': 'A project task row has no conversation of its own to mark unread.',
     notifications: 'A project task row has no conversation of its own to mute.',
     reload: 'Restarting asks through the session page confirmation, which lives with the open session.',
-    'legacy-history': 'The legacy history dialog lives with the open session page.',
-    'mark-all-read': 'Acts on the whole chat list, not on the project list.',
-    'delete-chat': 'A project task row has no conversation of its own to delete.',
-  },
-  'chat-row': {
-    'open-chat': 'Clicking the row opens it.',
-    fork: 'The row may stand for a task on another machine; forking needs the task on this one.',
-    'copy-id': 'The row may stand for a task on another machine; its session id is not known here without opening it.',
-    reload: 'Restarting needs the task mounted on this machine.',
     'legacy-history': 'The legacy history dialog lives with the open session page.',
   },
   phone: {
@@ -97,8 +81,6 @@ export const SESSION_MENU_EXCLUDES: MenuExcludes<SessionMenuEntry, SessionMenuAc
     'copy-id': 'Session ids are a desktop tool.',
     reload: 'The phone has no restart call to the task host.',
     'legacy-history': 'The legacy history dialog is desktop only.',
-    'mark-all-read': 'The phone session list has no conversation unread state.',
-    'delete-chat': 'Deleting a conversation is in the phone chat list.',
   },
   contacts: {
     'sidebar-pin': 'Pin to sidebar is offered on the agent\'s own rows in the left list.',
@@ -106,8 +88,6 @@ export const SESSION_MENU_EXCLUDES: MenuExcludes<SessionMenuEntry, SessionMenuAc
     'copy-id': 'The contact may stand for a task on another machine; its session id is not known here without opening it.',
     reload: 'Restarting needs the task mounted on this machine.',
     'legacy-history': 'The legacy history dialog lives with the open session page.',
-    'mark-all-read': 'Acts on the whole chat list, not on this contact.',
-    'delete-chat': 'An archived agent leaves the contacts list; its conversation is deleted from the chat list.',
   },
 }
 
@@ -145,18 +125,12 @@ function allItems(state: SessionMenuState): SessionMenuItem[] {
   items.push({ id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell', fold: true })
   // 更多 — fork: a few times a week at most, to try another direction.
   if (state.canFork) items.push({ id: 'fork', label: session('sidebar.forkSession'), icon: 'fork', fold: true })
-  // 更多 — mark all read: acts on the whole chat list, not on this row.
-  items.push({ id: 'mark-all-read', label: messaging('chatList.markAllRead'), icon: 'read', fold: true, disabled: !state.hasAnyUnread })
   // 更多 — restart: only when a task is stuck.
   if (!state.reloading) items.push({ id: 'reload', label: session('task.manualReload'), icon: 'reload', fold: true })
   // 更多 — copy the session id: a tool for reporting a problem.
   items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
   // 更多 — the legacy history: read once, after the move to tasks.
   if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
-  // 更多, last — delete an archived agent's conversation: rare and destructive, asks first.
-  if (state.archived && state.canDeleteChat) {
-    items.push({ id: 'delete-chat', label: messaging('chatList.delete'), icon: 'trash', fold: true, danger: true, disabled: state.canDeleteChat === 'unknown' })
-  }
   return items
 }
 

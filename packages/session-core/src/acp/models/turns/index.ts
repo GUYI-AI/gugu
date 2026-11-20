@@ -1,6 +1,7 @@
 export * from './compaction';
 export * from './context-reset';
 export * from './session-notice';
+export * from './history-reverted';
 export * from './messages';
 export * from './message-reference';
 export * from './thinking';
