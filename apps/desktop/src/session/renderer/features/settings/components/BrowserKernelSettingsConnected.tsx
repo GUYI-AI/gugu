@@ -6,20 +6,12 @@ import { Unknown } from '@/components/ui/Unknown';
 import { rpc } from '@renderer/lib/ipc';
 import type { BrowserKernelStatus } from '@shared/browser-kernel';
 import { BrowserKernelSettings } from './BrowserKernelSettings';
-import { getAppSettingValueSnapshot, setAppSettingsValueInCache } from '../app-settings-client';
 
 /** Device-owned status, without a snapshot: installation progress must be read from the current installer. */
 const kernelStatus = replica({
-  name: 'browserKernelStatus', scope: 'device', refreshEvery: 500, keep: 60_000,
-  read: async () => {
-    const status = await rpc.browser.kernelStatus();
-    // New tabs adopt a choice only after installation commits the preference.
-    if (status.phase === 'idle') {
-      const browser = getAppSettingValueSnapshot('browser');
-      if (browser && browser.kernel !== status.selected) setAppSettingsValueInCache('browser', { ...browser, kernel: status.selected });
-    }
-    return status;
-  },
+  name: 'browserKernelStatus', scope: 'device', refreshEvery: 500, refreshOnFocus: true, keep: 60_000,
+  // Committed preferences arrive through browserKernelSelectionChannel. A status read must not overwrite them.
+  read: () => rpc.browser.kernelStatus(),
 });
 
 export function BrowserKernelSettingsConnected() {
