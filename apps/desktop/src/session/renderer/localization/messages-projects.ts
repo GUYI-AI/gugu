@@ -206,24 +206,6 @@ export const enUSProjectMessages = {
   'projects.github.default': 'Default',
 
   // ── projects: creation entry points ────────────────────────────────────
-  'projects.create.nameTitle': 'Name the group',
-  'projects.create.nameTitleOnMachine': 'Name the group on {machine}',
-  'projects.create.nameLabel': 'Group name',
-  'projects.create.cancel': 'Cancel',
-  'projects.create.pickFolderTitle': 'Use an existing folder',
-  'projects.create.pickFolderMessage': 'Choose a folder to attach to the new group',
-  'projects.create.folderUnusable': 'Cannot use this folder',
-  'projects.create.folderNameUnreadable': 'Could not read the folder name from the path',
-  'projects.create.folderUnusableDetail':
-    'Check that the folder still exists and that you can read and write it, or pick a different one.',
-  'projects.create.blankProject': 'New group (with a new folder)',
-  'projects.create.existingFolder': 'Use an existing folder',
-  'projects.create.creating': 'Creating…',
-  'projects.create.save': 'Save',
-  'projects.create.failed': 'Didn\'t work. Try again',
-  'projects.create.machineOffline': 'That machine is offline. Bind a folder there once it is back.',
-  'projects.create.noDefaultDirectory': 'No default location for new folders is configured. Set one in settings first.',
-  'projects.create.invalidName': 'A group name cannot contain path separators or reserved characters.',
 
   // ── projects: delete confirmation ──────────────────────────────────────
 
@@ -426,23 +408,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.github.default': '默认',
 
   // ── projects: creation entry points ────────────────────────────────────
-  'projects.create.nameTitle': '为群命名',
-  'projects.create.nameTitleOnMachine': '在 {machine} 上新建群',
-  'projects.create.nameLabel': '群名',
-  'projects.create.cancel': '取消',
-  'projects.create.pickFolderTitle': '使用现有文件夹',
-  'projects.create.pickFolderMessage': '选择要挂进新群的文件夹',
-  'projects.create.folderUnusable': '无法使用此文件夹',
-  'projects.create.folderNameUnreadable': '无法从路径中读取文件夹名称',
-  'projects.create.folderUnusableDetail': '确认这个文件夹还在、且你能读写它；也可以换一个文件夹。',
-  'projects.create.blankProject': '新建群（同时新建一个文件夹）',
-  'projects.create.existingFolder': '使用现有文件夹',
-  'projects.create.creating': '创建中…',
-  'projects.create.save': '保存',
-  'projects.create.failed': '没建成，再试一次',
-  'projects.create.machineOffline': '那台机器现在离线，等它上线再挂文件夹。',
-  'projects.create.noDefaultDirectory': '未配置新文件夹的默认位置，请先到设置中配置',
-  'projects.create.invalidName': '群名不能包含路径分隔符或系统保留字符',
 
   // ── projects: delete confirmation ──────────────────────────────────────
 

@@ -294,7 +294,6 @@ export default {
     "createTask": "New task",
     "createGroup": "New group chat",
     "createGroupMobile": "New group chat",
-    "newProject": "New group",
     "delete": "Delete",
     "disableNotifications": "Mute notifications",
     "deleteFailed": "Could not delete this conversation",
