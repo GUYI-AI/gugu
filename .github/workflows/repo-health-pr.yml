@@ -49,8 +49,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/repo-health" "$RUNNER_TEMP/reference"
-          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow repo-health-weekly.yml --branch dev \
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          # Until the weekly workflow is on dev (and has run once) there is no reference; say why and go on.
+          if ! run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow repo-health-weekly.yml --branch dev \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>&1); then
+            echo "::notice::No weekly scan to compare with: $run_id"
+            run_id=
+          fi
           if [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n repo-health-reference -D "$RUNNER_TEMP/reference"; then
             cp "$RUNNER_TEMP/reference/repowise.raw.json" "$RUNNER_TEMP/repo-health/" ||
               echo "::notice::The weekly scan has no churn; hotspots are left out"
