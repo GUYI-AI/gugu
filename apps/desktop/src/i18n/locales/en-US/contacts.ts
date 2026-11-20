@@ -285,6 +285,7 @@ export default {
     "allContacts": "All contacts",
     "backToContactList": "Back to contact list",
     "backToContacts": "Back to contacts",
+    "jumpToLetter": "Jump to letter",
     "backToGroupList": "Back to group chat list",
     "contactCountSummary": "{{count}} contacts total",
     "contactCountSummary_one": "{{count}} contact total",

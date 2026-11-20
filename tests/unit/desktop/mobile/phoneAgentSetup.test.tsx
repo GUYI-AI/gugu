@@ -39,6 +39,7 @@ import { openPhoneAgentSetup, readPhoneAgentSetup, savePhoneAgentSetup } from '.
 import { phoneInstallId, readPhoneDeviceSettings, setPhoneActionGroup, setPhoneDeviceEnabled } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings'
 import { PermissionsSection } from '../../../../apps/desktop/src/components/settings/PermissionsSection'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
+import { i18n } from '../../../../apps/desktop/src/i18n/runtime'
 
 function osState(): PhoneOsState {
   return { runtime: { calendar: 'prompt', contacts: 'prompt', location: 'prompt', coarseLocation: 'prompt' }, special: { notification_listener: false, dnd_access: false, location_enabled: true, background_location: false, alarm_app: true, foreground: true }, health: { supported: true, granted_types: [], background_supported: true, background_granted: false }, data: { supported: true, sms: false, audio: false, images: false, videos: false, selected: false } }
@@ -115,7 +116,7 @@ describe('single phone permissions destination', () => {
 describe('phone permission actions and real Android state', () => {
   it('lists four system permissions and ten distinct phone capability permissions, without changing consent on mount', async () => {
     await render()
-    for (const row of PHONE_PERMISSION_ROWS) expect(byId(`phone-device-group-${row.id}`)?.textContent).toContain(row.purpose)
+    for (const row of PHONE_PERMISSION_ROWS) expect(byId(`phone-device-group-${row.id}`)?.textContent).toContain(i18n.t(`phonePermissions.rows.${row.id}.purpose`, { ns: 'mobileWorkspace' }))
     for (const p of mocks.permissions) expect(byId(`phone-device-system-${p}`)).not.toBeNull()
     expect(byId('phone-permissions-list')?.querySelectorAll('[role="button"]')).toHaveLength(14)
     expect(byId('phone-permissions-list')?.textContent).toContain('此手机上的任务 Agent 可用')

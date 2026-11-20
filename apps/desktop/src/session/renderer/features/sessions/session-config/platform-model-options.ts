@@ -126,8 +126,8 @@ export function sanitizeHarnessModelOptions(
   const offending = platformNamespaceCollisions(Object.keys(harnessOptions));
   if (offending.length === 0) return harnessOptions;
   const message =
-    `harness 模型 id 撞上了平台条目前缀 '${PLATFORM_OPTION_PREFIX}':${offending.join(', ')}。` +
-    '改插件里的模型 id,或改 platform-model-options.ts 的前缀 —— 两个命名空间不能重叠。';
+    `harness model ids collide with the platform option prefix '${PLATFORM_OPTION_PREFIX}': ${offending.join(', ')}. ` +
+    'Rename the model id in the plugin, or change the prefix in platform-model-options.ts; the two namespaces must not overlap.';
   if (import.meta.env.DEV && options?.fromStaticTable) throw new Error(message);
   log.warn(message);
   // 丢的就是判定点名的那些 —— ❌ 别在这里再写一次 `startsWith`:那会让同一条规则在同一个函数里

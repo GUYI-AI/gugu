@@ -575,6 +575,7 @@ export default {
     }
   },
   "auth": {
+    "phoneHostSignOutUnconfirmed": "手机宿主未确认退出登录",
     "loadingMethods": "正在加载登录方式",
     "google": {
       "signIn": "用 Google 登录",
@@ -871,6 +872,7 @@ export default {
       "thisComputer": "这台电脑",
       "devices": "来源设备",
       "refresh": "刷新导入来源",
+      "refreshFirst": "请先刷新导入来源",
       "available_other": "{{count}} 个会话可导入",
       "action": "导入",
       "importSource": "导入 {{source}} 内容",

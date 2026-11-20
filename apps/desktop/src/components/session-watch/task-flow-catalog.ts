@@ -1,4 +1,4 @@
-import { registerLocaleNamespace } from '@/i18n/runtime'
+import { i18n, registerLocaleNamespace } from '@/i18n/runtime'
 
 registerLocaleNamespace('mobileTaskFlow', {
   'zh-CN': {
@@ -23,6 +23,35 @@ registerLocaleNamespace('mobileTaskFlow', {
     noProject: '不选项目',
     noMachine: '没有可用的机器',
     noFolderHere: '此机器上暂无该项目的文件夹',
+    draftRecovery: {
+      readFailed: '读取上次发送的原稿失败，未重新发送。请保留本机记录后重试。',
+      retryFailed: '尚未确认接收，请重试原消息。',
+      pending: '上次发送尚未确认，请先重试原消息。已输入的新内容会保留。',
+      viewOriginal: '查看原消息', retrying: '正在重试', retryOriginal: '重试原消息',
+    },
+    errors: {
+      signInToCreate: '请先登录后创建 Agent',
+      sendOriginalFirst: '上次创建尚未确认，请先发送原来的任务以继续同一次创建',
+      taskRecordIncomplete: '手机尚未返回完整的任务记录，请继续同一次创建',
+      createRecordIncomplete: '上次创建记录不完整，请保留记录后重试',
+      createPending: '上次创建尚未确认，请先继续同一次创建',
+      createRecordChanged: '创建记录已经改变，请保留记录后重试',
+      phoneCreateRecordIncomplete: '这台手机的创建记录不完整，请保留记录后重试',
+      phoneCreateRecordChanged: '手机创建记录已经改变，未删除新的记录',
+      phoneNotConnected: '这台手机尚未连接，暂时不能创建 Agent',
+      nameAndTaskRequired: '请填写 Agent 名字和第一件任务',
+      modelRequired: '请选择可用的咕咕模型',
+      agentResultIncomplete: '手机尚未返回完整的 Agent 创建结果，请继续同一次创建',
+      groupJoinUnconfirmed: 'Agent 的入群结果尚未确认，请继续同一次创建',
+      createUnconfirmed: '手机尚未确认此次创建，请使用原内容继续同一次创建。',
+      noResult: '手机尚未返回操作结果，请重试。',
+      sendRecordIncomplete: '上次任务发送记录不完整，请保留记录后重试',
+      accountChanged: '当前账号已改变，未重新发送原稿',
+      pendingDraftChanged: '待确认原稿已改变，请查看当前任务后再试',
+      taskRequired: '请填写任务内容',
+      sendPending: '上条任务尚未确认，请先重试原消息，再发送新的内容',
+      sendUnconfirmed: '手机尚未确认接收任务，请重试原消息',
+    },
   },
   'en-US': {
     phoneAgent: 'Phone Agent',
@@ -46,5 +75,38 @@ registerLocaleNamespace('mobileTaskFlow', {
     noProject: 'No project',
     noMachine: 'No machine available',
     noFolderHere: 'This project has no folder on this machine',
+    draftRecovery: {
+      readFailed: 'Could not read the previously sent text, so it was not sent again. Keep the local record and try again.',
+      retryFailed: 'Receipt is not confirmed. Retry the original message.',
+      pending: 'The previous message is not confirmed. Retry the original message first. New text you entered is kept.',
+      viewOriginal: 'View original message', retrying: 'Retrying', retryOriginal: 'Retry original message',
+    },
+    errors: {
+      signInToCreate: 'Sign in to create an agent.',
+      sendOriginalFirst: 'The previous creation is not confirmed. Send the original task to continue the same creation.',
+      taskRecordIncomplete: 'The phone has not returned the complete task record. Continue the same creation.',
+      createRecordIncomplete: 'The previous creation record is incomplete. Keep the record and try again.',
+      createPending: 'The previous creation is not confirmed. Continue the same creation first.',
+      createRecordChanged: 'The creation record has changed. Keep the record and try again.',
+      phoneCreateRecordIncomplete: 'The creation record on this phone is incomplete. Keep the record and try again.',
+      phoneCreateRecordChanged: 'The phone creation record has changed. The newer record was not deleted.',
+      phoneNotConnected: 'This phone is not connected. Agents cannot be created right now.',
+      nameAndTaskRequired: 'Enter the agent name and its first task.',
+      modelRequired: 'Select an available Gugu model.',
+      agentResultIncomplete: 'The phone has not returned the complete agent creation result. Continue the same creation.',
+      groupJoinUnconfirmed: 'The agent’s group join result is not confirmed. Continue the same creation.',
+      createUnconfirmed: 'The phone has not confirmed this creation. Continue the same creation with the original content.',
+      noResult: 'The phone has not returned a result. Try again.',
+      sendRecordIncomplete: 'The previous task send record is incomplete. Keep the record and try again.',
+      accountChanged: 'The current account has changed. The original text was not sent again.',
+      pendingDraftChanged: 'The unconfirmed text has changed. Check the current task, then try again.',
+      taskRequired: 'Enter the task.',
+      sendPending: 'The previous task is not confirmed. Retry the original message before sending new content.',
+      sendUnconfirmed: 'The phone has not confirmed receipt of the task. Retry the original message.',
+    },
   },
 })
+
+/** Copy for modules outside React (phone create/send flows); importing it registers the namespace. */
+export const taskFlowText = (key: string, values: Record<string, string | number> = {}): string =>
+  i18n.t(key, { ns: 'mobileTaskFlow', ...values })

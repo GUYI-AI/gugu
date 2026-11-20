@@ -1,12 +1,14 @@
 import { useCallback, useState } from 'react'
 import type { PasswordSyncRequest, PasswordSyncView, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { publishPasswordSnapshot } from '@/lib/passwordBetaNotifications'
+import { i18n } from '@/i18n'
+import '@/i18n/registerSettingsCatalog'
 
-export const passwordErrorText = (code: string) => code === 'SYSTEM_STORAGE_UNAVAILABLE' ? '这台电脑的系统密码存储不可用，请稍后重试。' : code === 'CANNOT_UNLOCK' ? '本人验证未通过。'
-  : code === 'INVALID_INPUT' ? '请填写 https 网址、账号和密码；字段名不能重复。'
-    : code === 'STALE_REFERENCE' ? '该密码已被修改，请返回后重试。'
-    : code === 'RECOVERY_INVALID' ? '恢复码不正确，请核对后重新输入。'
-      : '暂时无法完成，请稍后重试。'
+const ERROR_KEYS: Readonly<Record<string, string>> = {
+  SYSTEM_STORAGE_UNAVAILABLE: 'systemStorage', CANNOT_UNLOCK: 'cannotUnlock', INVALID_INPUT: 'invalidInput',
+  STALE_REFERENCE: 'stale', RECOVERY_INVALID: 'recoveryInvalid',
+}
+export const passwordErrorText = (code: string) => i18n.t(`passwords.errors.${ERROR_KEYS[code] ?? 'generic'}`, { ns: 'settings' })
 
 /** Which device requests this device should put in front of the person: not those opened on another device. */
 export const promptedRequests = (sync?: PasswordSyncView): PasswordSyncRequest[] =>

@@ -14,6 +14,18 @@ export interface WindowChromeLabels {
 
 const HOST_CATALOG = {
   'zh-CN': {
+    browserFeedback: {
+      operating: '正在操作网页',
+      finished: '网页操作已结束',
+      running: {
+        move: '正在移动光标', scroll: '正在滚动', click: '正在点击', type: '正在输入',
+        key: '正在按键', navigate: '正在打开网页', reload: '正在刷新网页', view: '正在查看网页',
+      },
+      done: {
+        move: '已移动光标', scroll: '已滚动', click: '已点击', type: '已输入',
+        key: '已按键', navigate: '已打开网页', reload: '已刷新网页', view: '已查看网页',
+      },
+    },
     teamPaymentTitle: '团队积分充值',
     tray: {
       tooltip: '咕咕',
@@ -122,6 +134,18 @@ const HOST_CATALOG = {
     },
   },
   'en-US': {
+    browserFeedback: {
+      operating: 'Working in the page',
+      finished: 'Finished working in the page',
+      running: {
+        move: 'Moving the pointer', scroll: 'Scrolling', click: 'Clicking', type: 'Typing',
+        key: 'Pressing a key', navigate: 'Opening the page', reload: 'Reloading the page', view: 'Reading the page',
+      },
+      done: {
+        move: 'Moved the pointer', scroll: 'Scrolled', click: 'Clicked', type: 'Typed',
+        key: 'Pressed a key', navigate: 'Opened the page', reload: 'Reloaded the page', view: 'Read the page',
+      },
+    },
     teamPaymentTitle: 'Team credit payment',
     tray: {
       tooltip: 'Gugu',

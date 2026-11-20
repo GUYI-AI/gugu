@@ -593,6 +593,7 @@ export default {
     }
   },
   "auth": {
+    "phoneHostSignOutUnconfirmed": "The phone host did not confirm sign-out.",
     "loadingMethods": "Loading sign-in methods",
     "google": {
       "signIn": "Sign in with Google",
@@ -889,6 +890,7 @@ export default {
       "thisComputer": "This computer",
       "devices": "Source devices",
       "refresh": "Refresh import sources",
+      "refreshFirst": "Refresh the import sources first.",
       "available_one": "{{count}} session available",
       "available_other": "{{count}} sessions available",
       "action": "Import",

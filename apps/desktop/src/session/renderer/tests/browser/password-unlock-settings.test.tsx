@@ -61,10 +61,10 @@ async function capture(name: string) {
 it.each(['light', 'dark'])('uses the full-page entry and grouped code while retaining the corner card in %s', async theme => {
   document.documentElement.dataset.theme = theme;
   const entry = await mount(true);
-  expect(entry.textContent).toContain('此电脑尚未解锁密码');
-  expect(entry.textContent).toContain('请在另一台设备的咕咕上核对以下数字，并点击「允许」。');
+  expect(entry.textContent).toContain('Passwords are not unlocked on this computer');
+  expect(entry.textContent).toContain('In Gugu on another device, check that it shows the digits below, then click Allow.');
   expect(entry.querySelector('[data-testid="password-unlock-code"]')?.textContent).toBe('482 916');
-  expect(entry.querySelector('[aria-label="验证码 4 8 2 9 1 6"]')).not.toBeNull();
+  expect(entry.querySelector('[aria-label="Verification code 4 8 2 9 1 6"]')).not.toBeNull();
   expect(harness.container.textContent).not.toContain('Example login');
   expect(harness.container.textContent).not.toContain('在另一台设备上允许这台电脑后，你的密码会出现在这里');
   expect(harness.container.querySelector('[data-testid="password-actions"]')?.children).toHaveLength(0);
@@ -76,7 +76,7 @@ it.each(['light', 'dark'])('uses the full-page entry and grouped code while reta
   expect(box.top - heading.bottom).toBeLessThanOrEqual(140);
   await capture(`joining-${theme}`);
   const corner = document.querySelector('[data-testid="password-join-card"]')!;
-  await page.elementLocator(corner.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!).click();
+  await page.elementLocator(corner.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!).click();
   expect(document.querySelector('[data-testid="password-join-card"]')).toBeNull();
   expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull();
 });
@@ -84,7 +84,7 @@ it.each(['light', 'dark'])('uses the full-page entry and grouped code while reta
 it('shows only a pending comparison code until the real joining code arrives', async () => {
   current = snapshot({ state: 'joining' });
   const entry = await mount();
-  expect(entry.querySelector('[aria-label="验证码生成中"]')?.textContent).toBe('··· ···');
+  expect(entry.querySelector('[aria-label="Generating code"]')?.textContent).toBe('··· ···');
   await push(snapshot({ state: 'joining', code: '123456' }));
   await vi.waitFor(() => expect(entry.querySelector('[data-testid="password-unlock-code"]')?.textContent).toBe('123 456'));
 });
@@ -94,8 +94,8 @@ it('uses only the title and primary recovery action when joining is blocked', as
   const entry = await mount();
   expect(entry.querySelector('.password-unlock-instruction')).toBeNull();
   expect(entry.querySelector('[data-testid="password-unlock-code"]')).toBeNull();
-  expect([...entry.querySelectorAll('button')].map(node => node.textContent)).toEqual(['用恢复码解锁']);
-  expect(getComputedStyle(button(entry, '用恢复码解锁')).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect([...entry.querySelectorAll('button')].map(node => node.textContent)).toEqual(['Unlock with recovery code']);
+  expect(getComputedStyle(button(entry, 'Unlock with recovery code')).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   await capture('blocked');
 });
 
@@ -108,10 +108,10 @@ it('asks again after refusal and updates both the settings entry and corner from
     if (command.type === 'sync-ask-again') current = snapshot({ state: 'joining', code: '123456', recovery: true });
     return { ok: true, snapshot: current };
   });
-  await page.elementLocator(button(entry, '重新申请')).click();
+  await page.elementLocator(button(entry, 'Request again')).click();
   expect(invoke).toHaveBeenCalledWith({ type: 'sync-ask-again' });
   await vi.waitFor(() => expect(entry.querySelector('[data-testid="password-unlock-code"]')?.textContent).toBe('123 456'));
-  expect(document.querySelector('[data-testid="password-join-card"]')?.textContent).not.toContain('拒绝');
+  expect(document.querySelector('[data-testid="password-join-card"]')?.textContent).not.toContain('declined');
 });
 
 it('restores the list automatically when another device approves', async () => {
@@ -120,14 +120,14 @@ it('restores the list automatically when another device approves', async () => {
   expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).toBeNull();
   expect(harness.container.textContent).toContain('Example login');
   expect(document.querySelector('[data-testid="password-join-card"]')).toBeNull();
-  expect(button(harness.container, '添加')).not.toBeUndefined();
+  expect(button(harness.container, 'Add')).not.toBeUndefined();
   await capture('approved');
 });
 
 it('discards an open credential form when the device locks and returns to the list on approval', async () => {
   current = ready(); await harness.render(<Frame />);
-  await vi.waitFor(() => expect(button(harness.container, '添加')).not.toBeUndefined());
-  await page.elementLocator(button(harness.container, '添加')).click();
+  await vi.waitFor(() => expect(button(harness.container, 'Add')).not.toBeUndefined());
+  await page.elementLocator(button(harness.container, 'Add')).click();
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-form"]')).not.toBeNull());
   await push(snapshot({ state: 'joining', code: '482916' }));
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull());
@@ -139,26 +139,26 @@ it('discards an open credential form when the device locks and returns to the li
 
 it('reuses recovery input, retains errors, and shows the replacement code after the list unlocks', async () => {
   const entry = await mount();
-  await page.elementLocator(button(entry, '用恢复码解锁')).click();
+  await page.elementLocator(button(entry, 'Unlock with recovery code')).click();
   const sheet = () => document.querySelector<HTMLElement>('[data-testid="password-recover"]')!;
   await vi.waitFor(() => expect(sheet()).not.toBeNull());
-  expect(sheet().textContent).toContain('用恢复码解锁');
-  expect(sheet().textContent).not.toContain('恢复后，此设备可使用你的密码');
-  expect(button(sheet(), '解锁').disabled).toBe(true);
-  await page.elementLocator(button(sheet(), '取消')).click();
+  expect(sheet().textContent).toContain('Unlock with recovery code');
+  expect(sheet().textContent).not.toContain('After restoring, this device can use your passwords');
+  expect(button(sheet(), 'Unlock').disabled).toBe(true);
+  await page.elementLocator(button(sheet(), 'Cancel')).click();
   await vi.waitFor(() => expect(sheet()).toBeNull());
   expect(invoke.mock.calls.some(([command]) => command.type === 'sync-recover')).toBe(false);
-  await page.elementLocator(button(entry, '用恢复码解锁')).click();
-  await page.getByRole('textbox', { name: '恢复码', exact: true }).fill('TEST-ONLY-RECOVERY-CODE');
+  await page.elementLocator(button(entry, 'Unlock with recovery code')).click();
+  await page.getByRole('textbox', { name: 'Recovery code', exact: true }).fill('TEST-ONLY-RECOVERY-CODE');
   await capture('recovery-dialog');
   invoke.mockImplementation(async command => command.type === 'sync-recover' ? { ok: false, code: 'RECOVERY_INVALID' } : { ok: true, snapshot: current });
-  await page.elementLocator(button(sheet(), '解锁')).click();
-  await vi.waitFor(() => expect(sheet().textContent).toContain('恢复码不正确，请核对后重新输入。'));
+  await page.elementLocator(button(sheet(), 'Unlock')).click();
+  await vi.waitFor(() => expect(sheet().textContent).toContain('The recovery code is incorrect. Check it and enter it again.'));
   invoke.mockImplementation(async command => {
     if (command.type === 'sync-recover') { current = ready(); return { ok: true, snapshot: current, recoveryCode: 'NEW-TEST-RECOVERY-CODE' }; }
     return { ok: true, snapshot: current };
   });
-  await page.elementLocator(button(sheet(), '解锁')).click();
+  await page.elementLocator(button(sheet(), 'Unlock')).click();
   await vi.waitFor(() => expect(document.querySelector('[data-testid="password-recovery-code"]')?.textContent).toContain('NEW-TEST-RECOVERY-CODE'));
   expect(invoke).toHaveBeenCalledWith({ type: 'sync-recover', code: 'TEST-ONLY-RECOVERY-CODE' });
   expect(harness.container.querySelector('[data-testid="password-settings"]')).not.toBeNull();

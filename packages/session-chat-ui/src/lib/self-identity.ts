@@ -9,6 +9,7 @@
  * Anyone else is still named only by what the envelope says — no guessing.
  */
 import { createContext, useContext } from 'solid-js';
+import type { ChatTranslator } from '@session-chat/localization';
 
 export type SelfIdentity = {
   /** Canonical `identity.users.id`; compared against the envelope's `from_id` (`user:<id>`). */
@@ -20,11 +21,12 @@ export type SelfIdentity = {
 /**
  * The same rendering rule as core's `identityShown` minus the typed-id anchor
  * (the card already shows `from_id` in its details tier):
- * "Name (咕咕号 N)" → "Name" → "咕咕号 N" → null when the profile names nothing.
+ * "Name (Gugu ID N)" → "Name" → "Gugu ID N" → null when the profile names nothing; the number's label is
+ * `transcript.selfGuguNumber` in the reader's language.
  */
-export function selfIdentityLabel(self: SelfIdentity): string | null {
+export function selfIdentityLabel(self: SelfIdentity, t: ChatTranslator): string | null {
   const name = self.displayName?.trim() || null;
-  const number = self.guguNumber != null ? `咕咕号 ${self.guguNumber}` : null;
+  const number = self.guguNumber != null ? t('transcript.selfGuguNumber', { number: self.guguNumber }) : null;
   if (name && number) return `${name} (${number})`;
   return name ?? number;
 }
@@ -38,9 +40,9 @@ export function isSelfAddress(fromId: string | null, self: SelfIdentity | null):
  * For other messages, a typed address repeated after a readable name stays in
  * details; an address with no readable name remains visible here.
  */
-export function shownSender(from: string | null, fromId: string | null, self: SelfIdentity | null): string | null {
+export function shownSender(from: string | null, fromId: string | null, self: SelfIdentity | null, t: ChatTranslator): string | null {
   if (self && isSelfAddress(fromId, self)) {
-    const label = selfIdentityLabel(self);
+    const label = selfIdentityLabel(self, t);
     if (label) return label;
   }
   const repeatedAddress = fromId?.startsWith('user:') ? ` (${fromId})` : null;

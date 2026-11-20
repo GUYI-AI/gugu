@@ -429,6 +429,12 @@ export default {
     "action": "放入输入框"
   },
   "composer": {
+    "sessionInput": {
+      "attachmentsKept": "附件草稿已保留，连接恢复后可继续发送",
+      "composerNotReady": "会话输入框尚未就绪，草稿已保留",
+      "accountNotReady": "当前账号的会话输入尚未就绪",
+      "notConfirmed": "会话尚未确认接收这条消息，稍后自动重试"
+    },
     "phoneTask": {
       "attachFolder": "挂文件夹",
       "attachFailed": "文件夹没挂上，请重试",
@@ -932,6 +938,7 @@ export default {
     "title": "发送到"
   },
   "topic": {
+    "untitled": "话题",
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
     "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",

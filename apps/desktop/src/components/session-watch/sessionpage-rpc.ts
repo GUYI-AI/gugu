@@ -50,6 +50,7 @@ import type {
 // ⚠️ 只能从 `/contract` 取,❌ 不许写成 `@gugu/session-core/session-record`:那个 barrel 会往下拖
 // node:fs 与 better-sqlite3(宿主侧的记录源),浏览器里首屏直接白屏 —— 实测过一次。
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
+import { i18n } from '@/i18n/runtime'
 
 /**
  * 手机 → 某台机器的会话页:与别的电脑同一条线(`taskhost.*` 窗口)、同一张有类型的路由表(`sessionTimeline.*`)。
@@ -227,7 +228,7 @@ export async function sendSessionText(deviceId: string, sessionId: string, text:
   const result = await rpc(deviceId).sessionTimeline.sessionSend({ conversationId: sessionId, text, ...(clientMessageId ? { clientMessageId } : {}), ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) })
   if (!result.ok) throw new SessionInputAdmissionError(result.error.message, sessionInputAdmission(result.error), result.error.code)
   const receipt = result.value
-  if (clientMessageId && receipt.clientMessageId !== clientMessageId) throw new Error('会话尚未确认接收这条消息，稍后自动重试')
+  if (clientMessageId && receipt.clientMessageId !== clientMessageId) throw new Error(i18n.t('composer.sessionInput.notConfirmed', { ns: 'messaging' }))
   return receipt
 }
 

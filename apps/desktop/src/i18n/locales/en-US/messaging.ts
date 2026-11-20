@@ -430,6 +430,12 @@ export default {
     "action": "Add to composer"
   },
   "composer": {
+    "sessionInput": {
+      "attachmentsKept": "The attachment draft is kept. You can send it when the connection is restored.",
+      "composerNotReady": "The task input is not ready yet. The draft is kept.",
+      "accountNotReady": "Task input for the current account is not ready yet.",
+      "notConfirmed": "The task has not confirmed receipt of this message. Gugu will retry automatically."
+    },
     "phoneTask": {
       "attachFolder": "Attach folder",
       "attachFailed": "Could not attach the folder. Try again.",
@@ -935,6 +941,7 @@ export default {
     "title": "Send to"
   },
   "topic": {
+    "untitled": "Topic",
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but won't get notifications from this topic",
     "removeHint": "They can still read it, but won't get notifications from this topic",

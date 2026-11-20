@@ -140,7 +140,7 @@ function deliveryDetails(item: ChatMessage, translate: ChatTranslator): Delivery
 
 function sourceLayout(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars) {
   const facts = cardFacts(item), t = rowTranslator(ctx), self = ctx.selfIdentity ?? null;
-  const named = facts ? isSelfAddress(facts.fromId, self) ? t('transcript.deliveryFromMe') : shownSender(facts.from, facts.fromId, self) : null;
+  const named = facts ? isSelfAddress(facts.fromId, self) ? t('transcript.deliveryFromMe') : shownSender(facts.from, facts.fromId, self, t) : null;
   const sender = named || t(facts ? 'transcript.deliveryUnknownSender' : 'transcript.deliveryLegacySender');
   const route = facts ? routeLabel(facts, t, { appName: ctx.appName ?? (() => null), chatName: ctx.chatName ?? (() => null) }) : '';
   const width = userAvailableWidth(ctx.width, ctx.theme.layout), line = ctx.theme.fonts.body.lineHeight;
@@ -165,8 +165,9 @@ function detailsHeight(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): 
 function replyLayout(item: ChatMessage, ctx: MeasureCtx) {
   const reply = cardFacts(item)?.replyTo;
   if (!reply || ctx.commands?.onConversationReply) return null;
-  const text = rowTranslator(ctx)('transcript.deliveryReplyTo', {
-    from: shownSender(reply.from, reply.fromId, ctx.selfIdentity ?? null) ?? reply.fromId,
+  const t = rowTranslator(ctx);
+  const text = t('transcript.deliveryReplyTo', {
+    from: shownSender(reply.from, reply.fromId, ctx.selfIdentity ?? null, t) ?? reply.fromId,
     preview: quotedWords(reply.preview),
   });
   return readableLabel(text, ctx, userAvailableWidth(ctx.width, ctx.theme.layout) - 10, 12, ctx.theme.fonts.body.lineHeight);
@@ -318,7 +319,7 @@ function SingleDelivery(props: {
   const namedSender = () => {
     const f = facts();
     if (!f) return null;
-    return isSelfAddress(f.fromId, self()) ? translate('transcript.deliveryFromMe') : shownSender(f.from, f.fromId, self());
+    return isSelfAddress(f.fromId, self()) ? translate('transcript.deliveryFromMe') : shownSender(f.from, f.fromId, self(), translate);
   };
 
   const sender = () => {
@@ -401,7 +402,7 @@ function SingleDelivery(props: {
             disabled={!commands().onConversationReply} aria-label={translate('transcript.showOriginalMessage')}
             onClick={() => commands().onConversationReply?.(props.data.conversationReply?.itemId ?? reply().messageId)}>
             {replyLayout(props.data, { ...mCtx()!, commands: commands(), selfIdentity: self(), translate })?.text ?? translate('transcript.deliveryReplyTo', {
-              from: shownSender(reply().from, reply().fromId, self()) ?? reply().fromId,
+              from: shownSender(reply().from, reply().fromId, self(), translate) ?? reply().fromId,
               preview: quotedWords(reply().preview),
             })}
           </button>

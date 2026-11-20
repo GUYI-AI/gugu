@@ -11,6 +11,7 @@ import { currentGroupAdmin } from './groupAdmin'
 //   · 沉降 —— 纯列表位置,由 last_message_at 派生,不落任何状态位。
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chatDb, getCurrentAuthUserId } from './supabase'
+import { i18n } from '@/i18n/runtime'
 
 export type CreateTopicInput = {
   topicId?: string
@@ -75,11 +76,11 @@ export const topicService = {
     const row = (Array.isArray(data) ? data[0] : data) as RawCreatedTopic | undefined
     const chatId = text(row?.chat_id)
     // fail loud:RPC 回了空行说明来源校验在服务端就没过,❌ 不许静默返回一个假的空话题。
-    if (!row || !chatId) throw new Error('create_topic 没有返回话题 —— 来源消息可能已被删除')
+    if (!row || !chatId) throw new Error('create_topic returned no topic; the source message may have been deleted')
     return {
       chat_id: chatId,
       public_id: typeof row.public_id === 'number' ? row.public_id : null,
-      name: text(row.name) ?? '话题',
+      name: text(row.name) ?? i18n.t('topic.untitled', { ns: 'messaging' }),
       source_chat_id: text(row.source_chat_id) ?? input.sourceChatId,
       source_message_id: text(row.source_message_id) ?? input.sourceMessageId,
       creator_user_id: text(row.creator_user_id),
@@ -103,7 +104,7 @@ export const topicService = {
       if (!chatId || !sourceMessageId) continue
       rows.push({
         chat_id: chatId,
-        name: text(raw.name) ?? '话题',
+        name: text(raw.name) ?? i18n.t('topic.untitled', { ns: 'messaging' }),
         source_message_id: sourceMessageId,
         creator_user_id: text(raw.creator_user_id),
         last_message_at: text(raw.last_message_at),

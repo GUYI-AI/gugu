@@ -285,6 +285,7 @@ export default {
     "allContacts": "全部联系人",
     "backToContactList": "返回联系人列表",
     "backToContacts": "返回联系人",
+    "jumpToLetter": "按首字母跳转",
     "backToGroupList": "返回群聊列表",
     "contactCountSummary": "共 {{count}} 位联系人",
     "contactCountSummary_one": "共 {{count}} 位联系人",

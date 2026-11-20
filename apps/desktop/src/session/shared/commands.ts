@@ -61,7 +61,7 @@ export const COMMANDS = defineCommands({
   'app.sessionHistory': {
     label: 'Task history',
     labelKey: 'sidebar.sessionHistory',
-    description: '在同一列表中查看咕咕会话与本机 Claude Code / Codex 会话：打开、恢复已归档的会话，或导入尚未导入的会话',
+    description: 'View Gugu tasks and local Claude Code / Codex sessions in one list: open them, restore archived ones, or import ones not yet imported',
     iconKey: 'history',
     category: 'Navigation',
   },
@@ -89,7 +89,7 @@ export const COMMANDS = defineCommands({
   'app.giveFeedback': {
     label: 'Give Feedback',
     labelKey: 'main:shell.feedback',
-    description: '把问题反馈给咕咕团队',
+    description: 'Send feedback to the Gugu team',
     iconKey: 'message-square-share',
     category: 'Navigation',
   },
