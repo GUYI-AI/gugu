@@ -2,7 +2,7 @@ import type { ChatFileRef } from './app-files-core';
 // #7199 一条聊天文件夹(群文件夹 / 私聊文件夹,`chat.workspace_items`)里某个文件此刻的文本。「助理」App 的「今天」页
 // 读和助理那条私聊里的 today.json 用。两处读:桌面在主进程(electron/.../extensions/chat-folder-text.ts),
 // 手机 / 网页在窗口里(lib/chatFolder.ts)—— 各自交进令牌、库、文件服务地址,读法只有这一份。
-// 此刻的内容只问文件服务(它在自己那边把活文档序列化好,JSON 缩进好),与 App 的 downloadSource、agent 的 workspace__read
+// 此刻的内容只问文件服务(它在自己那边把活文档序列化好,JSON 缩进好),与 App 的 downloadSource、agent 的 message_download_file
 // 同一条路;`inline_text` 只是最后一次保存,❌ 当此刻。
 
 export type ChatFolderText = { itemId: string; updatedAt: string; text: string };

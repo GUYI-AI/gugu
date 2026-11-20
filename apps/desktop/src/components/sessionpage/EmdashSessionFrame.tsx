@@ -1,14 +1,13 @@
 // 会话页(源码在 apps/desktop/src/session 与 packages/session-*)。它与咕咕**同一次 rollup**出产物(第二个入口 session-embedded.html),
-// 这里把产出的 bundle 挂进一个 Shadow DOM——
-// 同一文档、同一进程、同一 React 版本,CSS 靠 shadow root 隔离(会话页与 gugu 都用
-// Tailwind v4 且都在 :root 定义 --text-*,同文档合并会互相污染,故 shadow 隔离)。
+// 这里把产出的 bundle 直接挂进咕咕自己的文档(light DOM,不是 Shadow DOM,见下方 @@@task-fusion)——
+// 同一文档、同一进程、同一 React 版本;会话页的样式在构建时收窄到 .gugu-skin 下,靠它与咕咕隔开。
 //
 // 「原生融入」皮肤(owner 令:会话页要看起来本来就长在 gugu 里、UI 风格一致):
 // 会话页的主题靠在挂载元素上打 emlight/emdark 类切换其 --neutral-*/--jade-* 原始色阶,
 // 上层语义 token(--background/--foreground/--border 及 --em-* 设计系统)从中派生。我们
 // 给挂载元素同时打 gugu-skin 标记 + 跟随 gugu 主题的 emlight/emdark,再在会话页自身
 // CSS 之后注入一段桥接 <style>:把会话页的原始色阶/语义原色重定义为 gugu 的语义 token
-// (--bg/--fg/--accent/--border-color… 经 host 继承进 shadow)。桥接规则不进 @layer、且
+// (--bg/--fg/--accent/--border-color… 从咕咕的 :root 继承下来)。桥接规则不进 @layer、且
 // 注入在后 → 稳压会话页的分层/在前规则。gugu 切明暗 → 挂载类翻转 → 会话页整体跟随。
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -145,7 +144,7 @@ const GUGU_SKIN_BRIDGE_CSS = `
 
 /* 兜底 + 实测必要(非仅"以防万一"):会话页用 Tailwind v4 preflight 的
    'html, :host { font-family: var(--default-font-family, ui-sans-serif…) }' 做基础字体
-   ——它直接设在 shadow host 上、走继承落到 mount 的每个后代,我们从没碰过
+   ——它设在根上、走继承落到 mount 的每个后代,我们从没碰过
    --default-font-family 这个变量。绝大多数组件(如 Home 的 ActionListItem)也没有任何
    font-* 工具类去引用 --em-font-sans/--em-type-*,所以只改那些变量文字并不会真的变
    Sora——实测验证:同一条规则不带 !important 时 computed font-family 仍是 preflight 的

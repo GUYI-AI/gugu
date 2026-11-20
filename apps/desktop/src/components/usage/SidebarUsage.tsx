@@ -22,21 +22,19 @@ const brand = (provider: SubscriptionUsageProvider) => provider === 'claude' ? '
 function UsageRings({ rings }: { rings: ReturnType<typeof useSidebarUsage>['rings'] }) {
   const geometry = usageRingGeometry(rings.length)
   return <svg width="22" height="22" viewBox={`0 0 ${geometry.size} ${geometry.size}`} fill="none" aria-hidden="true" className="gg-usage-rings">
-    <g transform={`rotate(-90 ${geometry.center} ${geometry.center})`}>
-      {rings.map((item, index) => {
-        const radius = geometry.radii[index]!
-        const remaining = remainingUsagePercent(item.week)!
-        const circumference = 2 * Math.PI * radius
-        const common = { cx: geometry.center, cy: geometry.center, r: radius }
-        return <g key={`${item.provider}:${item.connection.id}`} className="gg-usage-ring gg-model-quota-colors" data-usage-provider={item.provider}>
-          <circle {...common} className="gg-usage-ring-track" strokeWidth={USAGE_RING_WIDTH} />
-          {remaining > 0 && <>
-            <circle {...common} className="gg-usage-ring-edge" strokeWidth={USAGE_RING_WIDTH + 4} strokeDasharray={`${circumference * remaining / 100} ${circumference}`} strokeLinecap="round" />
-            <circle {...common} className="gg-usage-ring-fill" strokeWidth={USAGE_RING_WIDTH} strokeDasharray={`${circumference * remaining / 100} ${circumference}`} strokeLinecap="round" />
-          </>}
-        </g>
-      })}
-    </g>
+    {rings.map((item, index) => {
+      const radius = geometry.radii[index]!
+      const remaining = remainingUsagePercent(item.week)!
+      const circumference = 2 * Math.PI * radius
+      const common = { cx: geometry.center, cy: geometry.center, r: radius }
+      return <g key={`${item.provider}:${item.connection.id}`} className="gg-usage-ring gg-model-quota-colors" data-usage-provider={item.provider}>
+        <circle {...common} className="gg-usage-ring-track" strokeWidth={USAGE_RING_WIDTH} />
+        {remaining > 0 && <>
+          <circle {...common} className="gg-usage-ring-edge" strokeWidth={USAGE_RING_WIDTH + 4} strokeDasharray={`${circumference * remaining / 100} ${circumference}`} strokeLinecap="round" />
+          <circle {...common} className="gg-usage-ring-fill" strokeWidth={USAGE_RING_WIDTH} strokeDasharray={`${circumference * remaining / 100} ${circumference}`} strokeLinecap="round" />
+        </>}
+      </g>
+    })}
   </svg>
 }
 

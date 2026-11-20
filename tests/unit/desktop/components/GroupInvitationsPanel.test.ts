@@ -33,7 +33,7 @@ describe('group invitation owner consent', () => {
     })
     const rows = harness.container.querySelectorAll('[data-testid="group-invitation"]')
     expect(rows[0]!.textContent).toContain('请来讨论实验结果')
-    expect(rows[1]!.querySelector('p')).toBeNull()
+    expect(rows[1]!.textContent).not.toContain('邀请你加入群聊「论文评审」。')
   })
   it('keeps the invitation and displays an acceptance failure', async () => {
     vi.mocked(decideGroupInvitation).mockRejectedValueOnce(new Error('Group member limit reached'))
@@ -65,8 +65,8 @@ describe('group invitation owner consent', () => {
     expect(decideGroupInvitation).toHaveBeenCalledWith('invite-1', false)
     expect(refreshChats).not.toHaveBeenCalled()
   })
-  it('shows the pending invitation on its own discoverable requests tab', async () => {
-    await renderWithAppProviders(harness, createNode(NewFriendsPanel), {
+  it('shows the pending invitation on its own discoverable requests tab (phone)', async () => {
+    await renderWithAppProviders(harness, createNode(NewFriendsPanel, { onBack: () => {} }), {
       contacts: { groupInvitations: [invitation] },
     })
     const tab = [...harness.container.querySelectorAll('[role="tab"]')].find((element) => element.textContent?.includes('群聊')) as HTMLButtonElement // @@@6418 页签改名「群聊」:群邀请 + 入群申请

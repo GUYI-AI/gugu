@@ -36,6 +36,7 @@ import { usePhoneInputQueue } from './use-phone-input-queue'
 import { phoneQueueReady, phoneWaitingReceipts } from './phone-input-queue'
 import { SessionTranscriptView } from '@/components/assistant-ui/session-transcript-view.aui'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
+import { useDraftAttachmentPreview } from '../chat/useDraftAttachmentPreview'
 import { useComposerFileUploads } from '@renderer/features/sessions/acp/use-composer-file-uploads'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import type { SettlementResponse, SessionpageSessionRespondResult, SessionpageSessionSummary, TurnFileRef } from '@gugu/session-core/session-record/contract'
@@ -197,9 +198,10 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       if (!agentUserId) throw Object.assign(new Error('attachments: no agent chat to place them in'), { code: 'task_identity_missing' })
       return { chatId: await chatService.getOrCreateDM(owner, agentUserId), owner, deviceId: local ? null : deviceId, sessionId }
     } })
+  const draftPreview = useDraftAttachmentPreview(localQueueKey, mobile && visibility.shown, uploads.draftFile)
   const addFiles = (files: File[]) => {
     for (const { id, file } of fileSelection.choose(files)) {
-      void uploads.add({ id, name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file', mimeType: file.type }, file)
+      void uploads.add({ id, name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file', mimeType: file.type, hasLocalPreview: mobile }, file)
     }
   }
   const changeAttachments = (visible: ComposerAttachment[]) => {
@@ -407,7 +409,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
       attachmentExtra={annotationItems.length ? <AnnotationTray conversation={{ kind: 'session', sessionId }} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
-      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
+      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments} onViewAttachment={mobile ? draftPreview.open : undefined}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
       onAttach={mobile && (composerControls || !appPanel) ? () => input.current?.click() : undefined}
       toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />
@@ -415,7 +417,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={quotes.loadOlder} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} contentOverlay onReady={ready => { view.current = ready; setOverlay(ready.contentOverlay ?? null); reading.onReady(ready) }} className="relative min-h-0 flex-1" />
-    {overlay ? createPortal(hasPendingWindow(timeline) ? <SessionChatLoading label={t('agentWatch.timeline.loadingWindow')} /> : turns.length === 0 ? emptyNote : null, overlay) : null}</div>{outputs.panel}{options.confirmation}
+    {overlay ? createPortal(hasPendingWindow(timeline) ? <SessionChatLoading label={t('agentWatch.timeline.loadingWindow')} /> : turns.length === 0 ? emptyNote : null, overlay) : null}</div>{outputs.panel}{options.confirmation}{draftPreview.panel}
   </MessageProvider></SessionUiTheme>
 }
 

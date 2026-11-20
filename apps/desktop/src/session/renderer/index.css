@@ -1060,29 +1060,6 @@
      (35% 透明度)。它们与本文件 :282 的那条**同选择器**,而那条不分层 —— 不分层恒压过分层,
      所以这一对从来没有生效过。删掉,免得后来人去调一个根本不起作用的值。 */
 
-  /* Scrollbar styles for light and dark mode —— 只给鼠标指针(触屏交还系统悬浮条,见 styles/tokens.css 同条) */
-  @media (hover: hover) and (pointer: fine) {
-    .gugu-skin * {
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-
-    .gugu-skin *::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    .gugu-skin *::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .gugu-skin *::-webkit-scrollbar-thumb {
-      background-color: var(--border);
-      border-radius: 4px;
-      border: 2px solid transparent;
-      background-clip: content-box;
-    }
-  }
 }
 
 @layer components {

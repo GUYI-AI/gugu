@@ -1,5 +1,8 @@
-import { LayoutGrid } from '@/lib/icons';
+import { observer } from 'mobx-react-lite';
+import { Folder, LayoutGrid } from '@/lib/icons';
+import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { cn } from '@renderer/utils/utils';
+import { installedExtensionsStore, WORKSPACE_APP_ID } from './installed-extensions-store';
 
 /**
  * An extension's own mark, or the generic one when it shipped none.
@@ -30,3 +33,9 @@ export function ExtensionMark({
     </span>
   );
 }
+
+/** A tab kind's mark wherever it shows; the Files App's is the folder glyph in the text colour, so it follows the theme. */
+export const TabKindMark = observer(function TabKindMark({ kind, className }: { kind: string; className?: string }) {
+  if (parseExtensionTabKind(kind)?.extensionId !== WORKSPACE_APP_ID) return <ExtensionMark iconDataUrl={installedExtensionsStore.allTabContributions.find((entry) => entry.kind === kind)?.iconDataUrl} className={className} />;
+  return <span className={cn('inline-flex size-3.5 shrink-0 items-center justify-center', className)} aria-hidden><Folder className="size-3.5" /></span>;
+});

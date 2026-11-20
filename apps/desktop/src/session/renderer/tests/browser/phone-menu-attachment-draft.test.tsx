@@ -4,6 +4,7 @@ import { page } from 'vitest/browser'
 import { ChatComposer, type ComposerAttachment, MessageProvider } from '@gugu/session-ui/react/components'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
+import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { PhoneComposerControl, PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
@@ -63,7 +64,7 @@ async function pick(kind: 'file' | 'photo', names: string[]) {
   const transfer = new DataTransfer()
   for (const name of names) transfer.items.add(kind === 'photo'
     ? new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMngAAAAASUVORK5CYII='), char => char.charCodeAt(0))], name, { type: 'image/png' })
-    : new File(['测试附件'], name, { type: 'text/plain' }))
+    : new File([`Preview contents for ${name}`], name, { type: 'text/plain' }))
   await act(async () => {
     picker.files = transfer.files
     picker.dispatchEvent(new Event('change', { bubbles: true }))
@@ -112,6 +113,44 @@ it('a photo-only draft hides the menu through the existing photo picker path', a
   await pick('photo', ['test.png'])
   await checkMenu({ draft: true })
   expect(editor().textContent?.trim()).toBe('')
+})
+
+it('opens the selected draft file and leaves both attachments queued after closing', async () => {
+  const send = vi.fn(async () => {})
+  await mount(<ChatMessageComposer chatId="attachment-preview-text" isGroupChat onSend={send} />)
+  await pick('file', ['first.txt', 'second.txt'])
+  await act(async () => (tiles()[1] as HTMLElement).click())
+  const preview = page.getByTestId('draft-attachment-preview')
+  const panel = preview.getByTestId('message-file-preview-panel')
+  await expect.element(panel.getByRole('heading', { name: 'second.txt' })).toBeVisible()
+  await expect.element(panel.getByText('Preview contents for second.txt')).toBeVisible()
+  await panel.getByRole('button', { name: '关闭' }).click()
+  await expect.element(preview).not.toBeInTheDocument()
+  expect(tiles()).toHaveLength(2)
+  expect(send).not.toHaveBeenCalled()
+})
+
+it('opens the draft photo in the shared image viewer with the selected bytes', async () => {
+  const view = vi.fn<(request: ImageViewerRequest) => void>()
+  const unregister = registerImageViewerHost(view)
+  try {
+    await mount(<ChatMessageComposer chatId="attachment-preview-image" isGroupChat onSend={vi.fn(async () => {})} />)
+    await pick('photo', ['picked.png'])
+    await act(async () => (tiles()[0] as HTMLElement).click())
+    expect(view).toHaveBeenCalledOnce()
+    const image = view.mock.calls[0]![0].items[0]!
+    expect(image.alt).toBe('picked.png')
+    try {
+      const url = await image.preview!()
+      const file = await (await fetch(url)).blob()
+      expect(file.type).toBe('image/png')
+      expect(file.size).toBeGreaterThan(0)
+    } finally {
+      image.release?.()
+    }
+  } finally {
+    unregister()
+  }
 })
 
 it('removing the final attachment keeps the menu hidden for text and keyboard editing hides the whole row', async () => {
