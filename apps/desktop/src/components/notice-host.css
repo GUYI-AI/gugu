@@ -83,8 +83,8 @@
 .gugu-notices [data-sonner-toast][data-styled='true'].gugu-notice-first-install-import [data-button] {
   align-self: flex-end;
   height: var(--control-h-md);
-  margin: 0;
-  padding: 0 12px;
+  margin: 12px 0 0;
+  padding: 0 15px;
   border-radius: var(--radius-document);
   background: var(--primary);
   color: var(--primary-fg);
@@ -93,8 +93,8 @@
   transition: none;
 }
 .gugu-notices [data-sonner-toast][data-styled='true'].gugu-notice-first-install-import [data-close-button] {
-  top: 12px;
-  right: 12px;
+  top: 20px;
+  right: 20px;
   left: auto;
   width: 24px;
   height: 24px;
@@ -107,4 +107,11 @@
 }
 .gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-close-button]:hover {
   background: var(--hover);
+}
+
+.gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-close-button] svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+  color: var(--text-secondary);
 }
