@@ -20,7 +20,7 @@ function run(ctx, command, args, { allowExit = [0], env = {}, maxBuffer = 1 << 3
   })
   if (result.error) throw result.error
   if (!allowExit.includes(result.status)) {
-    throw new Error(`${command} ${args.join(' ')} exited ${result.status}\n${result.stderr.slice(-4000)}`)
+    throw new Error(`${command} ${args.join(' ')} exited ${result.status}\n${(result.stdout + result.stderr).slice(-4000)}`)
   }
   return result
 }
@@ -223,7 +223,12 @@ async function repowise(ctx) {
     '--no-hook', '--no-editor-setup', '--no-agents', '--no-codex', '--no-claude-md', '--no-distill-hook', '--no-onboarding',
     '--commit-limit', String(commits + 1),
     '-x', 'apps/desktop/preinstalled-apps/', '-x', 'apps/desktop/session-tooling/node-deps/', '-x', 'examples/',
-  ], { env: REPOWISE_ENV })
+  // Exit 2 = indexed, with the deep-history backfill (never run in --mode fast) still pending. Accept it only when
+  // the index really reached HEAD.
+  ], { env: REPOWISE_ENV, allowExit: [0, 2] })
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ctx.root, encoding: 'utf8' }).trim()
+  const indexed = JSON.parse(readFileSync(resolve(ctx.root, '.repowise/state.json'), 'utf8')).last_sync_commit
+  if (indexed !== head) throw new Error(`repowise index is at ${indexed}, not HEAD ${head}`)
   const dump = run(ctx, resolve(venv, 'bin/python'), ['-c', [
     'import json, sqlite3, sys',
     `rows = sqlite3.connect(sys.argv[1]).execute(${JSON.stringify(CHURN_SQL)}).fetchall()`,
