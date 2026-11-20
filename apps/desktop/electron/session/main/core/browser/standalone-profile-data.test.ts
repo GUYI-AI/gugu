@@ -30,7 +30,7 @@ async function fixture(initial: Record<string, string> = {}, storageKeys: (direc
           return method === 'Network.getAllCookies' ? cookies() : method === 'Network.setCookie' ? { success: true } : {};
         } } as unknown as TaskPageContents;
       }),
-      existingPage: vi.fn(async (id: string) => pages.has(id) ? { state: () => ({ url: pages.get(id)! }) } as never : null),
+      existingPage: vi.fn(async (id: string) => pages.has(id) ? { state: () => ({ url: pages.get(id)! }), on: vi.fn() } as never : null),
       closeTask: vi.fn(async (id: string) => { pages.delete(id); }),
       privateLogin: vi.fn(), dispose: vi.fn(async () => {}),
     };
@@ -142,6 +142,17 @@ describe('standalone cookie import and data clearing', () => {
     expect(f.create).toHaveBeenCalledOnce();
     expect(f.opened.filter(page => page.id === 'tab')).toHaveLength(1);
     expect(f.pool.inUse).toBe(true);
+    await f.pool.dispose();
+  });
+
+  it('also clears a site whose tab was just closed: its local storage may not be on disk yet', async () => {
+    const f = await fixture({ [work]: 'Cookies' }, () => []);
+    await f.pool.pageFor({ browserId: 'gone', partition: work, url: 'https://just-closed.test/page', signal });
+    await f.pool.pageFor({ browserId: 'stays', partition: work, url: 'https://open.test/', signal });
+    await f.pool.closeTab('gone');
+    await f.data.clear(work, 'siteData');
+    expect(f.commands.filter(command => command.method === 'Storage.clearDataForStorageKey').map(command => command.params?.storageKey))
+      .toEqual(['https://open.test/', 'https://just-closed.test/']);
     await f.pool.dispose();
   });
 

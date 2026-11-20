@@ -144,4 +144,35 @@ describe('standalone browser profile lifetime', () => {
     await f.pool.dispose();
     expect(f.pool.inUse).toBe(false);
   });
+
+  it('remembers the sites a tab showed for a minute after it closed, in memory only', async () => {
+    let now = 1_000_000;
+    const states = new Map<string, { url: string; listeners: Set<() => void> }>();
+    const create = vi.fn((): ServerTaskBrowser => ({
+      pageFor: vi.fn(async (id: string, url?: string) => {
+        states.set(id, { url: url ?? 'about:blank', listeners: new Set() });
+        return { id } as unknown as TaskPageContents;
+      }),
+      existingPage: vi.fn(async (id: string) => {
+        const entry = states.get(id);
+        return entry ? { state: () => ({ url: entry.url }), on: (_event: string, listener: () => void) => entry.listeners.add(listener) } as never : null;
+      }),
+      closeTask: vi.fn(async (id: string) => { states.delete(id); }),
+      privateLogin: vi.fn(), dispose: vi.fn(async () => {}),
+    }));
+    const pool = new StandaloneBrowserPool({ profilesRoot: '/isolated/profiles', installation: async () => installed('158.0.1.1'), create, now: () => now });
+    await pool.pageFor({ browserId: 'tab', partition: profile, url: 'https://a.test/page?x=1', signal });
+    const entry = states.get('tab')!;
+    now += 5_000;
+    entry.url = 'https://b.test:8443/other'; entry.listeners.forEach(listener => listener());
+    expect(pool.recentOrigins(profile)).toEqual(['https://a.test', 'https://b.test:8443']);
+    now += 20_000;
+    await pool.closeTab('tab');
+    expect(pool.recentOrigins('persist:gugu-browser-profile-other')).toEqual([]);
+    now += 30_000; // 55 s after b.test was last shown, 30 s after the tab closed, 50 s after a.test was last shown
+    expect(pool.recentOrigins(profile)).toEqual(['https://a.test', 'https://b.test:8443']);
+    now += 31_000; // b.test was last shown when the tab closed, 61 s ago; a.test longer ago
+    expect(pool.recentOrigins(profile)).toEqual([]);
+    await pool.dispose();
+  });
 });
