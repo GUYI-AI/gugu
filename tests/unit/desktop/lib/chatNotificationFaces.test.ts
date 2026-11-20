@@ -29,9 +29,8 @@ describe('defaultGroupFaceSvg', () => {
     expect(defaultGroupFaceSvg({ id: 'group-7', name: 'Alpha' }, read)).toContain('<circle cx="104" cy="104" r="104" fill="#123456"/>')
   })
 
-  it('falls back to the shared tokens when the theme cannot be read', () => {
-    const svg = defaultGroupFaceSvg({ id: 'group-7', name: 'Alpha' }, () => '')
-    expect(svg).not.toContain('var(')
-    expect(svg).toMatch(/fill="#[0-9a-f]{6}"/)
+  it('refuses to invent a colour when a theme token cannot be read', () => {
+    expect(() => defaultGroupFaceSvg({ id: 'group-7', name: 'Alpha' }, () => '')).toThrow(/Theme token --avatar-group-text-\d+ is not defined/)
+    expect(() => defaultGroupFaceSvg({ id: 'group-7', name: 'Alpha' }, (name) => name === '--card' ? '' : read(name))).toThrow('--card')
   })
 })

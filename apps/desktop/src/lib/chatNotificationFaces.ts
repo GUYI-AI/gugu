@@ -22,10 +22,16 @@ const IDENTITY_WAIT_MS = 4000
  */
 export function defaultGroupFaceSvg(group: { id: string; name: string }, readVar: (name: string) => string): string {
   const index = groupAvatarColorIndex(group.id) + 1
-  const colour = (name: string, fallback: string) => readVar(name).trim() || fallback
-  const text = colour(`--avatar-group-text-${index}`, '#d7c198')
-  const stroke = colour(`--avatar-group-stroke-${index}`, '#a48c5d')
-  const disc = colour('--card', '#191919')
+  // Colours come from the theme tokens only. A token that cannot be read is an error, not a made-up colour: the
+  // caller then shows the face as unavailable.
+  const colour = (name: string) => {
+    const value = readVar(name).trim()
+    if (!value) throw new Error(`Theme token ${name} is not defined`)
+    return value
+  }
+  const text = colour(`--avatar-group-text-${index}`)
+  const stroke = colour(`--avatar-group-stroke-${index}`)
+  const disc = colour('--card')
   const face = groupAvatarSvg({ color: text, strokeColor: stroke, text: groupAvatarDefaultText(group.name), px: FACE_PX, label: group.name })
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 208 208" width="${FACE_PX}" height="${FACE_PX}">`
     + `<circle cx="104" cy="104" r="104" fill="${disc}"/>${face}</svg>`
