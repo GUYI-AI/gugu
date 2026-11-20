@@ -85,8 +85,10 @@ export const chatTabSlotKey = (chatId: string, tabId: string) => `${CHAT_TAB_SLO
 /**
  * 这个对话是不是画在会话页的格子里(对话块,gugu-dev#181):ChatSlotHost 给它包上;不在格子里 = null。
  * 输入框据此换成格子里的排法(「新任务 / 定时任务」在框内底排,能换成会话页那一侧的框);❌ 去 DOM 里找格子猜。
- * `groupName`:它是群时,群的名字(输入框提示「发消息给 X…」,群里还没有消息时正中摆文件夹卡);别的对话 = null。
+ * `groupName`:它是群时,群的名字(输入框提示「发消息给 X…」);别的对话 = null。
+ * `home`:这个群在我的电脑上挂了文件夹 —— 群里还没有消息时,正中是群首页(文件夹卡 + 新任务的框);没挂文件夹的群照旧是聊天。
  */
-export const InChatSlot = createContext<{ groupName: string | null } | null>(null)
+export const InChatSlot = createContext<{ groupName: string | null; home: boolean } | null>(null)
 export const useInChatSlot = () => useContext(InChatSlot) !== null
 export const useChatSlotGroupName = () => useContext(InChatSlot)?.groupName ?? null
+export const useChatSlotHome = () => useContext(InChatSlot)?.home === true

@@ -9,6 +9,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useMachineCreateContext } from '@renderer/features/sessions/use-machine-create-target';
 import { useEnsureMounted } from '@renderer/features/projects/hooks/use-ensure-mounted';
 import { foldersInScope, machineOfKey, scopeKey, useProjectRunMachine } from '@renderer/features/projects/components/main-panel/project-run-machine';
+import { useImplicitProjectId } from '@renderer/features/sessions/implicit-session-home-project';
 import { ProjectFolderCard, shortHome, type AttachMachine, type FolderCardMachine } from '@renderer/features/projects/components/main-panel/project-folder-card';
 import { electronApi } from '@renderer/lib/electron-api';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -46,8 +47,11 @@ export function useGroupFolderStage(chatId: string, { floating = false, onChosen
   const machineOf = (deviceId: string | null): FolderCardMachine => (deviceId ? describeMachine(deviceId) : thisComputer);
   // Where「+」can bind: this computer and every machine of mine (unreachable ones listed, greyed).
   const attachMachines: AttachMachine[] = [thisComputer, ...remoteHostsStore.pickableMachineIds().map(describeMachine)];
-  // The machines that hold a folder of this group (in the order the folders are listed: this computer first).
-  const groupMachines = [...new Map((folders.folders ?? []).map((folder) => [scopeKey(folder.deviceId), machineOf(folder.deviceId)] as const)).values()];
+  // The machines that hold a folder of this group (in the order the folders are listed: this computer first). A group with
+  // no folder anywhere runs its tasks on this computer, in the task home (v2 ⑨, Q5).
+  const folderless = folders.folders?.length === 0;
+  const groupMachines = folderless ? [thisComputer]
+    : [...new Map((folders.folders ?? []).map((folder) => [scopeKey(folder.deviceId), machineOf(folder.deviceId)] as const)).values()];
   const runMachine = useProjectRunMachine(
     chatId,
     groupMachines.map((machine) => ({ key: scopeKey(machine.id ?? null), online: machine.online })),
@@ -60,7 +64,8 @@ export function useGroupFolderStage(chatId: string, { floating = false, onChosen
   // The machine a new task starts on = the one the tray shows (runMachine); its folder is chosen among that machine's.
   // No folder anywhere = this computer (a group without folders runs its tasks in the task home, Q5).
   const executionDevice = runMachine.machine !== undefined ? runMachine.machine : null;
-  const targetFolderId = scopedFolders.chosen?.id ?? null;
+  const taskHome = useImplicitProjectId(folderless);
+  const targetFolderId = scopedFolders.chosen?.id ?? (folderless ? taskHome ?? null : null);
   // The folder a new session is created in must be mounted: sending needs its session list.
   useEnsureMounted(targetFolderId ? [targetFolderId] : []);
   useEffect(() => remoteHostsStore.start(), []);

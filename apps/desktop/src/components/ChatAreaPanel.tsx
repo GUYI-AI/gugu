@@ -76,7 +76,7 @@ import { useChatSearch } from './chat/useChatSearch'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 export { ChatNotificationLevelControl } from './chat/ChatNotificationLevelControl'
 import { ChatSettingsPanel } from './chat/ChatSettingsPanel'
-import { useChatSlotGroupName } from '../lib/shellSlots'
+import { useChatSlotHome } from '../lib/shellSlots'
 import { useChatHasMessages } from '../lib/chatSummariesBridge'
 import { ChatPartSlot } from '../session/renderer/lib/chat-slot'
 interface ChatAreaPanelProps {
@@ -161,8 +161,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const openFilePreview = filePreview.open
   filePreviewCloseRef.current = filePreview.close
   const handleOpenSettingsDrawer = useCallback(() => { if (activeChatId) openInfoTab(activeChatId) }, [activeChatId])
-  const groupName = useChatSlotGroupName()
-  const emptyGroup = useChatHasMessages(groupName !== null ? activeChatId ?? undefined : undefined) === false
+  // A group with folders and no messages yet shows its home (folder card + new-task box); a group without folders is a chat.
+  const emptyGroup = useChatHasMessages(useChatSlotHome() ? activeChatId ?? undefined : undefined) === false
   const openConversationOrAgentSettings = handleOpenSettingsDrawer
   // #1319 — anchor for the header ⋯ menu. The menu is portalled to document.body and positioned with
   // position:fixed off this button's rect, so an ancestor's overflow:hidden (the header) can't clip it.

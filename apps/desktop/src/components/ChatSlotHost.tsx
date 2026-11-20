@@ -2,6 +2,7 @@ import { useSidebarChatView } from '../lib/sidebarChatsBridge'
 import { memo, useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { CHAT_SLOT_PREFIX, InChatSlot, chatPartSlotKey, installShellSlots, readShellSlots } from '../lib/shellSlots'
+import { groupFoldersStore } from '../session/renderer/features/folders/group-folders-store'
 import { ChatAreaPanel } from './ChatAreaPanel'
 import { TaskChatScope } from './assistant/TaskChatScope'
 import type { AssistantChatHandlers } from './assistant/AssistantChatSlot'
@@ -21,11 +22,17 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
  * 块里没有群聊头:头上那排图标、对话的头像和名字、开着的话题画进这一块页签条上留的几格(chatPartSlotKey)。
  */
 // memo: the shell re-renders on every tab switch; the chat blocks it portals must not (@@@shell-tab-store).
+function foldersGroupsKey(): string {
+  return groupFoldersStore.groups.filter((group) => group.folders.length > 0).map((group) => group.chatId).sort().join(',')
+}
+
 export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHandlers) {
   const entryReady = useOwnedAgentEntries()
   const { identitiesById, chatsRead, chatsLoadFailed } = useChatStore('identitiesById', 'chatsRead', 'chatsLoadFailed')
   const { theme } = useTheme()
   const sidebarView = useSidebarChatView()
+  // @@@group-folders — the groups with a folder on one of my machines (a primitive snapshot: the store's lists are new each read).
+  const homeGroups = useSyncExternalStore(groupFoldersStore.subscribe, foldersGroupsKey, foldersGroupsKey)
   const slots = readShellSlots()
   const entries = useSyncExternalStore(
     (listener) => slots?.subscribeSlots(listener) ?? (() => undefined),
@@ -55,7 +62,7 @@ export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHa
           // A block is session-page content the shell draws, in this React tree: its popups portal out of the mount, so they need
           // the session page's theme layer (the +, a file's ⋯, an App's menus).
           <SessionUiTheme theme={theme}>
-            <InChatSlot.Provider value={{ groupName: chat.kind === 'group' ? chat.name ?? '' : null }}>
+            <InChatSlot.Provider value={{ groupName: chat.kind === 'group' ? chat.name ?? '' : null, home: chat.kind === 'group' && homeGroups.split(',').includes(chatId) }}>
               <TaskChatScope chatId={chatId}>
                 <ChatAreaPanel
                   viewportKey={key}

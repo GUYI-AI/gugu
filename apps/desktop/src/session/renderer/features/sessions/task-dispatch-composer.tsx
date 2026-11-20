@@ -13,7 +13,7 @@ import { useGroupFolderStage } from '@renderer/features/folders/group-folder-sta
 import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { composerDrafts } from './composer-drafts';
 import { ComposerTray } from './composer-tray';
-import { ensureImplicitSessionHomeProjectId } from './implicit-session-home-project';
+import { useImplicitProjectId } from './implicit-session-home-project';
 import { NewSessionComposer } from './new-session-page';
 import { sessionComposerDockBandClassName, sessionComposerDockedWidthClassName } from './session-composer-styles';
 import { cancelComposerVerb, composerVerbLook } from './composer-verb-tag';
@@ -214,17 +214,3 @@ function useChatGroupMemory(chatId: string, deviceId: string | null): string | u
   return groupChatId && groupFoldersStore.foldersOf(groupChatId).length > 0 ? groupChatId : undefined;
 }
 
-/** 没选群:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。 */
-function useImplicitProjectId(wanted: boolean): string | undefined {
-  const [projectId, setProjectId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (!wanted || projectId) return;
-    let live = true;
-    void ensureImplicitSessionHomeProjectId().then(
-      (id) => { if (live && id) setProjectId(id); },
-      (error: unknown) => log.warn('prepare the implicit project for a task failed', { error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [wanted, projectId]);
-  return projectId;
-}

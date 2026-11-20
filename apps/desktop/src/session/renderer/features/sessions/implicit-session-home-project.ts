@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
+import { log } from '@renderer/utils/logger';
 
 /**
  * 隐藏工作区准备失败是**已知产品错误**，所以这里只抛稳定语义码，不抛成品文案：
@@ -33,4 +35,19 @@ export async function ensureImplicitSessionHomeProjectId(): Promise<string | und
   } catch (error) {
     throw new ImplicitSessionHomeProjectError('open-failed', error instanceof Error ? error.message : String(error));
   }
+}
+
+/** 没选群,或群一个文件夹都没挂(Q5):与新建会话页同一个隐式工作目录(task home)。`wanted` = 这一刻要它。 */
+export function useImplicitProjectId(wanted: boolean): string | undefined {
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!wanted || projectId) return;
+    let live = true;
+    void ensureImplicitSessionHomeProjectId().then(
+      (id) => { if (live && id) setProjectId(id); },
+      (error: unknown) => log.warn('prepare the implicit project for a task failed', { error: error instanceof Error ? error.message : String(error) }),
+    );
+    return () => { live = false; };
+  }, [wanted, projectId]);
+  return projectId;
 }

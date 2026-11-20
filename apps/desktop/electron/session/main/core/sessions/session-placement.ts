@@ -7,7 +7,7 @@
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { canonicalPath } from '@gugu/session-core/files';
-import { ensureFolder, ensureTaskHomeFolder, listFolders, rootFolderOf } from '@main/core/folders/folders';
+import { ensureFolder, ensureTaskHomeFolder, isTaskHomeFolder, listFolders, rootFolderOf } from '@main/core/folders/folders';
 import { checkIsValidDirectory } from '@main/core/utils/directory-status';
 
 export type SessionPlacement = { groupChatId: string | null; workspaceId: string; note?: string };
@@ -27,7 +27,8 @@ export function resolveSessionPlacement(input: {
   if (input.workspaceId) {
     const folder = rootFolderOf(input.workspaceId);
     if (!folder) throw new PlacementError('folder_not_found', `workspace ${input.workspaceId} is not a folder on this machine`);
-    if (groupChatId !== null && folder.chatId !== groupChatId) {
+    // The task home is bound to no group: a group with no folder here runs its tasks in it (Q5).
+    if (groupChatId !== null && folder.chatId !== groupChatId && !isTaskHomeFolder(folder.id)) {
       throw new PlacementError('folder_not_in_group', `folder ${folder.path} is not bound to group ${groupChatId} on this machine`);
     }
     return { groupChatId, workspaceId: input.workspaceId };
