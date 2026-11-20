@@ -175,4 +175,28 @@ describe('message_send_file in a project chat', () => {
     expect(h.uploads).toEqual([])
   })
 
+  test('stored JSON bytes remain on the binary publication route even when the new bytes are an object', async () => {
+    const publish = vi.fn(async (_chat: string, _file: unknown, _actor: string, message: Record<string, unknown>) =>
+      ({ message: { id: message.message_id, chat_id: CHAT, content: envelope, file_item_id: ITEM, file_version: 2 } }))
+    const h = setup({ publish, target: () => ({ kind: 'file', version: 1 }) })
+    await h.send({ file: `gugu-file://${ITEM}?v=1`, file_path: object })
+    expect(publish).toHaveBeenCalledOnce()
+    expect(h.commits).toEqual([])
+    expect(h.uploads).toEqual([])
+  })
+
+  test.each(['folder', 'future-version', 'denied'])('%s replacement is refused before sending any bytes or message', async kind => {
+    const publish = vi.fn()
+    const h = setup({ publish, target: () => {
+      if (kind === 'denied') throw new Error('workspace access denied')
+      return { kind: kind === 'folder' ? 'folder' : 'document', version: 1 }
+    } })
+    const error = await h.send({ file: `gugu-file://${ITEM}?v=${kind === 'future-version' ? 2 : 1}`, file_path: object }).catch((error: Error) => error) as Error
+    expect(error.message).toMatch(kind === 'folder' ? /not a file or text document/ : kind === 'denied' ? /workspace access denied/ : /at version 1, not the supplied version 2/)
+    expect(error.message).not.toContain('someone stored a newer version')
+    expect(publish).not.toHaveBeenCalled()
+    expect(h.commits).toEqual([])
+    expect(h.uploads).toEqual([])
+  })
+
 })
