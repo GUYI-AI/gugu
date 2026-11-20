@@ -29,8 +29,8 @@ test('cancellation removes a pending tool and rejects an already aborted call be
 
 test('closing the runtime settles all outstanding callers', async () => {
   const bridge = createNativeBridge(() => {})
-  const one = assert.rejects(bridge.call('one', {}), /关闭/)
-  const two = assert.rejects(bridge.call('two', {}), /关闭/)
+  const one = assert.rejects(bridge.call('one', {}), /closed/)
+  const two = assert.rejects(bridge.call('two', {}), /closed/)
   bridge.close()
   await Promise.all([one, two])
 })

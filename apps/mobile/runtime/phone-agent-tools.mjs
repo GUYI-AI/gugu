@@ -24,7 +24,7 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
     if (value.startsWith('user:')) return uuid(bare(value, 'user'), 'recipient')
     if (value.startsWith('session:')) {
       const target = Object.values(store.state.agents).find((item) => item.sessionId === bare(value, 'session'))
-      if (!target) throw new Error('该会话不在这台手机上，请用 session_message 联系它')
+      if (!target) throw new Error('That session is not on this phone; contact it with session_message')
       return target.agentUserId
     }
     if (/^gugu:\d+$/.test(value)) {
@@ -32,7 +32,7 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
       if (error) throw new Error(error.message)
       return uuid(data.id, 'recipient')
     }
-    throw new Error('收件人必须使用 user:、gugu: 或 session: 地址')
+    throw new Error('Recipients must use a user:, gugu: or session: address')
   }
   const facts = async (id) => rowOf(await cloud.rpc('chat', 'chat_facts', { p_chat_id: id, p_as_user_id: agent.agentUserId }))
   const ledger = groupRulesLedgerFor(env)
@@ -44,11 +44,11 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
     const currentRules = await rules(id)
     if (currentRules.trim()) {
       const seen = await ledger.read(agent.agentUserId, id)
-      if (seen?.version !== groupRulesVersion(currentRules)) throw new Error('发送前必须先调用 message_rules 阅读这条聊天的当前群规')
+      if (seen?.version !== groupRulesVersion(currentRules)) throw new Error("Call message_rules to read this chat's current group rules before sending")
     }
     const recipients = Array.isArray(args.to_user_ids) ? await Promise.all(args.to_user_ids.map(userId)) : null
     await chatAccess.beforeWrite(id, recipients)
-    if (args.whisper && recipients?.length !== 1) throw new Error('悄悄话必须恰好指定一个收件人')
+    if (args.whisper && recipients?.length !== 1) throw new Error('A whisper must name exactly one recipient')
     const replyToMessageId = args.reply_to_message_id ? await chatAccess.messageId(args.reply_to_message_id, id, 'reply source') : null
     const notice = id === agent.chatId && (!recipients?.length || recipients.includes(store.state.ownerId)) && deviceId
       ? recordPhoneOwnerNotice(store, job, agent, deviceId, callId, body) : null
@@ -67,12 +67,12 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
   }
   return [
     {
-      name: 'message_send', label: '发送咕咕消息', description: '以你自己的咕咕 Agent 身份发消息。chat_id 取自本轮投递或 message_conversations，收件人地址取自 message_members。回复聊天投递必须调用本工具；打印最终回答不会发送。群聊请明确指定收件人的 typed 地址；回复请带 reply_to_message_id。',
+      name: 'message_send', label: 'Send a Gugu message', description: 'Sends a message as your own Gugu Agent identity. Take chat_id from this turn\'s delivery or message_conversations, and recipient addresses from message_members. Replying to a chat delivery requires this tool; printing a final answer sends nothing. In a group, name recipients explicitly by typed address; when replying, pass reply_to_message_id.',
       parameters: { type: 'object', required: ['chat_id', 'text'], properties: { chat_id: { type: 'string' }, text: { type: 'string' }, to_user_ids: { type: 'array', items: { type: 'string' } }, reply_to_message_id: { type: 'string' }, whisper: { type: 'boolean' } } },
       execute: messageSend,
     },
     {
-      name: 'message_rules', label: '读取当前群规', description: '按你的 Agent 身份读取这条聊天及来源群的当前群规；在发送前执行群规检查。',
+      name: 'message_rules', label: 'Read current group rules', description: 'Reads the current group rules of this chat and its source group as your Agent identity; do this group-rules check before sending.',
       parameters: { type: 'object', required: ['chat_id'], properties: { chat_id: { type: 'string' } } },
       execute: async (_callId, args) => {
         const id = await chatId(args.chat_id)
@@ -82,7 +82,7 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
       },
     },
     {
-      name: 'session_message', label: '联系其他任务 Agent', description: '向任务会话发消息。收件人用 session:<id> 地址。本轮来自 session-direct 时，必须用本工具回复来源会话。消息实际经咕咕设备 RPC 到收件人宿主。',
+      name: 'session_message', label: 'Message another task Agent', description: 'Sends a message to a task session. Address recipients as session:<id>. When this turn came from session-direct, you must reply to the source session with this tool. The message travels over Gugu device RPC to the recipient\'s host.',
       parameters: { type: 'object', required: ['to', 'text'], properties: { to: { type: 'array', minItems: 1, items: { type: 'string' } }, text: { type: 'string' }, reply_to_message_id: { type: 'string' }, then: { type: 'string', enum: ['continue', 'wait', 'stop'] }, work_result: { type: 'object', required: ['work_id', 'status'], additionalProperties: false, properties: { work_id: { type: 'string', format: 'uuid' }, status: { type: 'string', enum: ['progress', 'question', 'completed', 'cancelled'] } } } } },
       execute: async (callId, args) => {
         await authorize(job.usedGroups ?? [])
@@ -98,7 +98,7 @@ export function phoneCommunicationTools({ agent, job, cloud, store, env, deviceI
       },
     },
     {
-      name: 'profile_whoami', label: '查看自己的身份', description: '返回你自己的真实咕咕 Agent 身份和手机运行位置。',
+      name: 'profile_whoami', label: 'View your own identity', description: 'Returns your own real Gugu Agent identity and where you run on the phone.',
       parameters: { type: 'object', properties: {} },
       execute: async () => {
         const { data, error } = await cloud.identity.from('active_users').select('id,display_name,gugu_number,owner_user_id,device_id').eq('id', agent.agentUserId).single()
@@ -113,7 +113,7 @@ export async function deliverPhoneOutbox(cloud, store, id, authorize = async () 
   const message = store.state.outbox[id]
   if (!message) throw new Error('phone reply journal entry is missing')
   if (message.status === 'sent') return message.receipt
-  if (message.status === 'revoked') throw new Error('这条手机结果的授权已撤销，不能重新交付')
+  if (message.status === 'revoked') throw new Error('Permission for this phone result was revoked; it cannot be delivered again')
   try { await authorize(message.usedGroups ?? [], message) } catch (error) {
     if (['revoked', 'not_granted', 'os_permission'].includes(error.code)) {
       message.status = 'revoked'; message.error = error.message
