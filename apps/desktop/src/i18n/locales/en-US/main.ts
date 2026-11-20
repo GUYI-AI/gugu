@@ -1,4 +1,30 @@
 export default {
+  "usagePopover": {
+    "title": "Usage",
+    "refresh": "Refresh usage",
+    "remaining": "{{amount}}% remaining",
+    "reset": "Resets {{date}}",
+    "updated": "Updated {{time}}",
+    "windowMissing": "No usable window reported",
+    "fiveHours": "5-hour limit",
+    "weekly": "Weekly limit",
+    "readFailed": "Unable to read usage. Try again.",
+    "expired": "Sign-in expired",
+    "signedOut": "Not signed in",
+    "refreshFailed": "Refresh failed. Showing the last reading.",
+    "guguSubscription": "Gugu subscription",
+    "credits": "Remaining credits",
+    "fullUsage": "View full usage",
+    "reason": {
+      "vendor-console": "Check usage in the provider console.",
+      "not-reported": "The provider does not report usage.",
+      "not-signed-in": "Not signed in",
+      "custom-endpoint": "Usage is recorded by the connected service.",
+      "other-login": "The provider requires a different sign-in.",
+      "not-read-yet": "Not read yet. Refresh to check.",
+      "error": "Unable to read usage. Try again."
+    }
+  },
   "referrals": {
     "accountCount": "{{count}} invited",
     "invite": "Invite",
