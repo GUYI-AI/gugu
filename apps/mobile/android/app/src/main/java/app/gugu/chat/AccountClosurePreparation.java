@@ -6,7 +6,9 @@ import java.security.MessageDigest;
 
 /** Native-only persistent fence. Missing or corrupt evidence never permits erase. */
 final class AccountClosurePreparation {
-    static final int STOPPING = 1, STOPPED = 2, RETIRED = 3, ERASING = 4, CLOSED = 5;
+    static final int STOPPING = AccountClosureCompletionFence.STOPPING,
+        STOPPED = AccountClosureCompletionFence.STOPPED, RETIRED = AccountClosureCompletionFence.RETIRED,
+        ERASING = 4, CLOSED = 5;
     private final AccountClosureEncryptedFiles secrets;
     private final String installation;
     AccountClosurePreparation(Context context) throws Exception {
@@ -44,18 +46,28 @@ final class AccountClosurePreparation {
     }
     static void requireOpen(Context context, String owner) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            AndroidAccountClosureV2.requireNoCapturedOperation(context, owner);
             if (new AccountClosurePreparation(context).state(owner) != 0) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
         }
     }
     static void requireWritableState(Context context, String owner) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            AndroidAccountClosureV2.requireWritableState(context, owner);
             if (new AccountClosurePreparation(context).state(owner) >= ERASING) throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
         }
     }
     static void requireAuthWrite(Context context, String value) throws Exception {
+        AndroidAccountClosureV2.requireAuthMutation(context, value);
         String owner = AccountClosureAuthSlot.ownerOf(value);
         if (owner != null && new AccountClosurePreparation(context).state(owner) >= ERASING)
             throw new AccountClosureReceiptStore.Failure("closure_not_prepared");
+    }
+    interface CompletionFence { void check() throws Exception; }
+    interface StoppedCommit { void run() throws Exception; }
+    static void completeCaptured(int expectedState, String expectedGeneration, int currentState, String currentGeneration,
+                                 CompletionFence fence, StoppedCommit commit) throws Exception {
+        AccountClosureCompletionFence.complete(expectedState, expectedGeneration, currentState, currentGeneration,
+            fence::check, commit::run);
     }
     private String key(String owner) throws Exception {
         GuguAgentHostPolicy.owner(owner);
