@@ -29,6 +29,8 @@ export type ProviderAccountUpsert = {
   secret?: string;
   /** Replaces the stored meta when provided; omitted meta keeps the existing value. */
   meta?: ProviderAccountMetaInput;
+  /** A new row is the provider's default when none is yet. `false` keeps a row out of that (a removal record is not a connection). */
+  electDefault?: boolean;
   /**
    * Secret key override for accounts whose secret already lives at a released
    * key (e.g. GitHub's `github-account-token:<id>`). Ignored when the account
@@ -164,7 +166,7 @@ export class ProviderAccountRegistry {
         providerId: input.providerId,
         accountId: input.accountId,
         credentialRef,
-        isDefault: !hasDefault,
+        isDefault: input.electDefault === false ? false : !hasDefault,
         meta: meta ?? null,
         createdAt: now,
         updatedAt: now,
