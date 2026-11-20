@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ChatKind } from '@gugu/core/shared/types/chat'
-import { PersonalConversationRowMenu } from '../../../apps/desktop/src/components/chat/PersonalConversationRowMenu'
+import { ChatRowContextMenu } from '../../../apps/desktop/src/components/chat/ChatRowContextMenu'
 import { chatService } from '../../../apps/desktop/src/lib/chat'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../support/testHarness'
 
@@ -13,7 +13,7 @@ it.each<ChatKind>(['dm', 'ai', 'group', 'topic'])('the personal menu for %s invo
   const settings = vi.spyOn(chatService, 'getGroupChatSettings').mockRejectedValue(new Error('ordinary member has no administration permission'))
   const hide = vi.fn().mockResolvedValue(undefined), legacyDelete = vi.fn(), leave = vi.fn(), removeAgent = vi.fn()
   const row = chat({ id: 'personal-row', kind, unread_count: 2 })
-  await renderWithAppProviders(harness, createNode(PersonalConversationRowMenu, {
+  await renderWithAppProviders(harness, createNode(ChatRowContextMenu, {
     chat: row, x: 20, y: 40, onClose: vi.fn(), onPin: vi.fn(), onSetNotificationLevel: vi.fn(), onHide: hide,
   }), { chat: { chats: [row], deleteChat: legacyDelete, leaveGroup: leave }, contacts: { removeOwnedAgent: removeAgent } })
   const remove = document.querySelector<HTMLElement>('[data-testid=conversation-row-hide-chat]')
