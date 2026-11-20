@@ -5,7 +5,6 @@ import { createClaudeSessionDecoder } from '../../../session-plugins/src/agents/
 import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
 import { createChatState } from '@session-chat/state/chat-state';
-import { turnProcessId } from '@session-chat/state/flatten';
 import { expect, it } from 'vitest';
 import { until } from '../../../../tests/support/awaitCondition';
 
@@ -25,7 +24,6 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
   const send = (update: Record<string, unknown>) => {
     parser.pushEvent(decode(update), 1000);
     state.transcript.activeTurn.set(parser.activeTurn);
-    if (parser.activeTurn) state.viewState.setCollapsed(turnProcessId(parser.activeTurn.id), true);
   };
   try {
     state.session.setGenerating(true);
@@ -33,6 +31,7 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
     send({ sessionUpdate: 'tool_call_update', toolCallId: 'lookup', title: name, name, kind: 'other', status: 'in_progress',
       rawInput: provider === 'claude' ? {} : request });
     await until('the collapsed MCP row identifies its server and tool', () => trigger()?.textContent?.includes('fixture, lookup') === true);
+    expect(host.querySelector('[data-conversation-process]')?.getAttribute('aria-expanded')).toBe('true');
     expect(host.textContent).not.toContain('Called 1 MCP tool');
     expect(host.querySelector('[data-slot="tool-call-request"]')).toBeNull();
     expect(trigger()!.getAttribute('aria-expanded')).toBe('false');
@@ -54,7 +53,13 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
     state.session.setGenerating(false);
     view.dispose();
     view = createChatView({ context, state, parent: host });
+    // A running process starts open; a finished one starts closed. Open the
+    // history through its own control, without changing the MCP disclosure.
+    const process = () => host.querySelector<HTMLButtonElement>('[data-conversation-process]');
+    await until('the reopened history process starts closed', () => process()?.getAttribute('aria-expanded') === 'false');
+    process()!.click();
     await until('the reopened local MCP row retains its identity', () => trigger()?.textContent?.includes('fixture, lookup') === true);
+    expect(trigger()!.getAttribute('aria-expanded')).toBe('false');
     trigger()!.click();
     await until('local history retains the complete result below the old preview limit', () => host.querySelector('[data-slot="tool-call-result"]')?.textContent?.includes('RESULT-END-3327') === true);
     expect(host.querySelector('[data-slot="tool-call-request"]')?.textContent).toContain('needle-3327');

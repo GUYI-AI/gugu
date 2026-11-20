@@ -53,7 +53,7 @@ describe('observable conversation process', () => {
     const tool = v.host.querySelector<HTMLElement>('[data-slot="tool-call-trigger"]')!;
     expect(tool.textContent).toContain('plugin_gugu-product_gugu, message_send');
     expect(tool.getAttribute('aria-expanded')).toBe('false');
-    expect(v.host.querySelector('[data-row-kind="mcp-tool-call"]')).not.toBeNull();
+    expect(tool.closest('[data-row-kind="tool"]')).not.toBeNull();
     runs[0].querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
     await v.settle();
     expect(v.host.textContent).not.toContain(nativeName);
