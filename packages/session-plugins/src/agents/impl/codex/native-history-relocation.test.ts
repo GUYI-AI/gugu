@@ -170,7 +170,7 @@ describe('native Codex history relocation', () => {
   });
   it.each(['ENOSPC', 'ESTALE'])('rolls back newly created outputs after %s', async code => {
     const r = await rig(), root = await r.add();
-    vi.mocked(streamImportFile).mockImplementationOnce(async (_source, destination, _expected, _root, onCreated) => { await writeFile(destination!, 'partial'); await onCreated?.(await stat(destination!)); throw Object.assign(new Error(code), { code }); });
+    vi.mocked(streamImportFile).mockImplementationOnce(async (_source, destination, _expected, _root, _signal, onCreated) => { await writeFile(destination!, 'partial'); await onCreated?.(await stat(destination!)); throw Object.assign(new Error(code), { code }); });
     const result = await relocateNativeCodexHistory(r.options);
     expect(result.counts.pending).toBe(1); expect(await exists(join(r.managed, root.path))).toBe(false);
     expect(await readFile(join(r.native, root.path))).toEqual(root.content); expect((await r.calls()).some(c => c.method === 'thread/delete')).toBe(false);
