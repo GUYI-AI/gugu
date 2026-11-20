@@ -230,6 +230,13 @@ export function sessionTurnRootObjectSql(field: string, table = 'session_turns')
     ELSE coalesce(json_type(${table}.data, '$.${field}') = 'object', 0) END)`;
 }
 
+/** Whether the stored turn may hold an item of this kind, without decoding it. A legacy body answers conservatively. */
+export function storedTurnHasItem(connection: Database.Database, rowId: string, kind: string): boolean {
+  return connection.prepare(`SELECT 1 FROM session_turn_nodes WHERE row_id=? AND removed=0 AND collection='items' AND kind=?
+    UNION ALL SELECT 1 FROM session_turns, json_each(session_turns.data,'$.items') WHERE session_turns.id=? AND json_extract(value,'$.kind')=?
+    LIMIT 1`).get(rowId, kind, rowId, kind) !== undefined;
+}
+
 /** Message identity/text only. A tool, picture, terminal or outcome change performs no FTS writes. */
 export function syncSessionTurnText(connection: Database.Database, rowId: string, turn: TranscriptTurn): void {
   const owner = connection.prepare('SELECT session_id,seq FROM session_turns WHERE id=?').get(rowId) as { session_id: string; seq: number } | undefined;

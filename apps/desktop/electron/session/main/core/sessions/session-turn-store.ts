@@ -8,7 +8,7 @@ import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BU
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import { keepHistoryReverted, markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
-import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision, sessionTurnRootObjectSql, type StoredTurnInput } from './session-turn-storage';
+import { prepareSessionTurn, readSessionTurn, sessionTurnHeaderSql, sessionTurnRevision, sessionTurnRootObjectSql, storedTurnHasItem, type StoredTurnInput } from './session-turn-storage';
 import { turnPayloadFiles, withTurnPayloadWrite } from './session-turn-payload-owners';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
@@ -268,10 +268,7 @@ export async function readUnfinishedRecordTurnsNow(sessionId: string): Promise<T
  * so it happens only for a turn that has a notice; any other turn answers with its header (no items).
  */
 function storedNotices(row: StoredTurnInput, header?: TranscriptTurn): TranscriptTurn {
-  const notice = db.connection.prepare(`SELECT 1 FROM session_turn_nodes WHERE row_id=? AND removed=0 AND collection='items' AND kind='session-notice'
-    UNION ALL SELECT 1 FROM session_turns, json_each(session_turns.data,'$.items') WHERE session_turns.id=? AND json_extract(value,'$.kind')='session-notice'
-    LIMIT 1`).get(row.id, row.id);
-  return notice ? readSessionTurn(db.connection, row) : header ?? readSessionTurn(db.connection, row, { headerOnly: true });
+  return storedTurnHasItem(db.connection, row.id, 'session-notice') ? readSessionTurn(db.connection, row) : header ?? readSessionTurn(db.connection, row, { headerOnly: true });
 }
 
 /** The record matcher has proved this unfinished row's native identity; keep its stored sequence/references. */
