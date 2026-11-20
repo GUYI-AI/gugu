@@ -31,7 +31,7 @@ import { clearMathMeasure } from '@session-chat/components/rows/markdown/math/la
 import type { SessionPatch } from '@gugu/session-core/acp';
 import { parsePatchRows } from '@session-chat/components/rows/tools/diff/diff-lines';
 import type { DiffRow } from '@session-chat/components/rows/tools/diff/diff-lines';
-import { createMermaidRenderId, renderMermaidDiagram, type MermaidTheme } from '@session-chat/core/mermaid/render';
+import { renderMermaidDiagram } from '@session-chat/core/mermaid/render';
 import {
   createDefaultHighlighter,
   type ChatHighlighter,
@@ -157,16 +157,16 @@ export type SharedCaches = {
   /** Compute a line-level diff with bounded LRU caching (100 entries). */
   computeDiff(patch: SessionPatch): DiffRow[];
   /**
-   * Render a Mermaid diagram source to an SVG string in one theme.
-   * Resolves null when mermaid rejects the source, or when `signal` aborted it first.
-   * Caches result per theme in a bounded LRU (100 entries).
+   * Render a Mermaid diagram source to an SVG string (one for every theme).
+   * Resolves null when pele rejects the source, or when `signal` aborted it first.
+   * Caches result in a bounded LRU (100 entries).
    */
-  renderMermaid(source: string, theme: MermaidTheme, signal?: AbortSignal): Promise<string | null>;
+  renderMermaid(source: string, signal?: AbortSignal): Promise<string | null>;
   /**
    * Cache-only Mermaid SVG lookup; never triggers rendering.
    * Use for the synchronous fast-path on scroll-back re-mounts.
    */
-  peekMermaid(source: string, theme: MermaidTheme): string | null;
+  peekMermaid(source: string): string | null;
   /**
    * Flush pretext's internal global caches.
    * Call after fonts load (glyph metrics change with the loaded font).
@@ -247,7 +247,7 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
   // Patch-row LRU — keyed by the complete canonical block, including scope and metadata.
   const diffCache = new Map<string, DiffRow[]>();
 
-  // Mermaid SVG LRU — keyed by `${theme}\x00${source}`.
+  // Mermaid SVG LRU — keyed by source.
   const mermaidCache = new Map<string, string>();
 
   function highlight(code: string, lang: string | undefined): HighlightResult | null {
@@ -293,21 +293,20 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
       return result;
     },
 
-    async renderMermaid(source, theme, signal) {
-      const key = `${theme}\x00${source}`;
-      const hit = lruGet(mermaidCache, key);
+    async renderMermaid(source, signal) {
+      const hit = lruGet(mermaidCache, source);
       if (hit !== undefined) return hit;
       try {
-        const svg = await renderMermaidDiagram({ id: createMermaidRenderId(), chart: source, theme, signal });
-        lruSet(mermaidCache, key, svg, MERMAID_CACHE_MAX);
+        const svg = await renderMermaidDiagram(source, signal);
+        lruSet(mermaidCache, source, svg, MERMAID_CACHE_MAX);
         return svg;
       } catch {
         return null;
       }
     },
 
-    peekMermaid(source, theme) {
-      return mermaidCache.get(`${theme}\x00${source}`) ?? null;
+    peekMermaid(source) {
+      return mermaidCache.get(source) ?? null;
     },
 
     clearTextMeasure() {

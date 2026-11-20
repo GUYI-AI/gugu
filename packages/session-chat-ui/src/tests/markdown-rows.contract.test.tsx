@@ -58,7 +58,6 @@ import { htmlBlockDef } from '@session-chat/components/rows/markdown/html/html.d
 import { mathBlockDef } from '@session-chat/components/rows/markdown/math/math.def'
 import { mathContent } from '@session-chat/components/rows/markdown/math/math.css'
 import { mermaidBlockDef } from '@session-chat/components/rows/markdown/mermaid/mermaid.def'
-import { readMermaidTheme } from '@session-chat/core/mermaid/render'
 import {
   mermaidError,
   mermaidPlaceholder,
@@ -414,7 +413,7 @@ const mermaidDrawn: Fixture = {
   label: 'mermaid drawn',
   def: mermaidBlockDef,
   block: { kind: 'mermaid', id: 'md#9', source: MERMAID_ONE_LINE },
-  prime: (ctx) => ctx.caches.renderMermaid(MERMAID_ONE_LINE, readMermaidTheme())
+  prime: (ctx) => ctx.caches.renderMermaid(MERMAID_ONE_LINE)
 }
 
 const mermaidBroken: Fixture = {
