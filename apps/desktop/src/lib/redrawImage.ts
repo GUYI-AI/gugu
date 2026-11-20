@@ -1,19 +1,7 @@
+import { imageLoaded } from '@/lib/imageLoaded'
 import { rendererLogger } from '@/lib/log'
 
 const log = rendererLogger('redraw-image')
-
-/**
- * Settles when the image has loaded or failed. Not `image.decode()`: a hidden document (the phone's WebView with the app
- * in the background) renders no frame, decode waits for one, and its promise then never settles — while `load` and
- * `error` fire regardless and `drawImage` decodes by itself. A face drawn for a notification is drawn exactly then.
- */
-function loaded(image: HTMLImageElement, src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    image.onload = () => resolve()
-    image.onerror = () => reject(new Error('image failed to load'))
-    image.src = src
-  })
-}
 
 /**
  * An image drawn again on a canvas, `size` px square, as a `data:` URL: what a page is handed instead of the source, so
@@ -30,7 +18,7 @@ export async function redrawImage(
     const image = new Image()
     // An upload is on the storage host: drawn on a canvas only as a CORS image, or the canvas cannot be read back.
     image.crossOrigin = 'anonymous'
-    await loaded(image, src)
+    await imageLoaded(image, src)
     phase = 'draw'
     const canvas = document.createElement('canvas')
     canvas.width = size
