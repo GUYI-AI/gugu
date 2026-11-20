@@ -594,9 +594,13 @@ export async function snapshotAgentHomeDirectory(
       options.signal?.throwIfAborted();
       await makeDirectory(resourceHome, join(options.destination, directory.path));
     }
-    for (const item of collected.items) if (item.linkTarget === undefined) {
+    for (const item of collected.items) {
       options.signal?.throwIfAborted();
-      await disk.chmod(join(options.destination, item.target), item.mode);
+      const target = join(options.destination, item.target);
+      if (item.linkTarget === undefined) await disk.chmod(target, item.mode);
+      // macOS applies the process umask when creating links, and their mode is part of the
+      // snapshot fingerprint. Change only this new private link, never its resource target.
+      else if (process.platform === 'darwin') await disk.lchmod(target, item.mode);
     }
     for (const directory of [...directories].reverse()) {
       options.signal?.throwIfAborted();
