@@ -11,6 +11,7 @@ import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from
 import { browserPageFeedback } from '@shared/browser-page-feedback';
 import { TaskPageCapture } from './server-task-page-capture';
 import { TaskPageViewport } from './task-page-viewport';
+import { CHROME_ERROR_PAGE_URL, READ_CHROME_ERROR_SCRIPT, taskPageLoadFailure } from './task-page-load-error';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -44,6 +45,11 @@ export interface TaskPageContents {
   isScreening?(): boolean;
   /** An agent holds the page with Page events on, so it receives dialogs and may answer them. */
   agentListening?(): boolean;
+  /** Windows this page opens (window.open, target=_blank) are closed in Chrome and reported as 'window-open' (url) instead of staying where nobody sees them. */
+  denyNewWindows?(): void;
+  /** Chrome hands file choosers over: 'file-chooser' (multiple, backendNodeId) is reported, `setFileInputFiles` fills the input. */
+  interceptFileChoosers?(): Promise<void>;
+  setFileInputFiles?(backendNodeId: number, files: string[]): Promise<void>;
   readonly debugger: {
     attach(protocolVersion?: string): void;
     detach(): void;
@@ -115,7 +121,8 @@ export class PipeConnection extends EventEmitter {
 }
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
-class PageTarget extends EventEmitter implements TaskPageContents {
+/** @internal exported for tests */
+export class PageTarget extends EventEmitter implements TaskPageContents {
   async hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
     await this.viewport.ready();
     if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
@@ -134,6 +141,9 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   private screening = false;
   /** The agent's session asked for Page events: Chrome tells it about dialogs too. */
   private agentPage = false;
+  /** The agent's session took the file chooser over, so the person is not asked as well. */
+  private agentIntercept = false;
+  private windowsDenied = false;
   /** The host's own session: navigation and loading state for the shared navigation guard, never lent. */
   private watchSession: string | null = null;
   private mainFrame: string | null = null;
@@ -153,6 +163,13 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   }
 
   private readonly onEvent = (message: CdpMessage) => {
+    if (message.method === 'Target.targetCreated') {
+      const info = message.params?.targetInfo as { targetId?: string; type?: string; openerId?: string } | undefined;
+      if (this.windowsDenied && info?.type === 'page' && info.openerId === this.targetId && info.targetId) {
+        void this.connection.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+      }
+      return;
+    }
     if (message.method === 'Target.targetDestroyed' && message.params?.targetId === this.targetId) return this.destroy();
     if (message.method === 'Target.targetInfoChanged') {
       const info = message.params?.targetInfo as { targetId?: string; title?: string; url?: string } | undefined;
@@ -200,6 +217,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       if (sessionId && !this.children.has(sessionId)) throw new Error('unknown session');
       if (!sessionId && method === 'Page.enable') this.agentPage = true;
       if (!sessionId && method === 'Page.disable') this.agentPage = false;
+      if (!sessionId && method === 'Page.setInterceptFileChooserDialog') this.agentIntercept = params.enabled === true;
       return this.connection.send(method, params, sessionId || this.session);
     },
     on: (event: 'message' | 'detach', listener: (...args: never[]) => void) => this.native.on(event, listener as (...args: unknown[]) => void),
@@ -225,16 +243,25 @@ class PageTarget extends EventEmitter implements TaskPageContents {
         if (main(params.frameId)) { this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); }
         break;
       case 'Page.frameNavigated': {
-        const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string } | undefined;
+        const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string; unreachableUrl?: string } | undefined;
         if (!frame || frame.parentId || !main(frame.id)) break;
-        this.url = `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
+        // Chrome's error page stands in for a page that did not load; the address stays what was asked for.
+        const failed = frame.url === CHROME_ERROR_PAGE_URL;
+        this.url = failed ? frame.unreachableUrl ?? this.url : `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
         this.feedback.invalidate();
         this.emit('did-navigate', {}, this.url);
         void this.readHistory();
+        if (failed) void this.reportLoadFailure(this.url);
         break;
       }
       case 'Page.navigatedWithinDocument':
         if (main(params.frameId)) { this.url = String(params.url); void this.readHistory(); }
+        break;
+      case 'Page.windowOpen':
+        this.emit('window-open', { url: String(params.url ?? '') });
+        break;
+      case 'Page.fileChooserOpened':
+        if (!this.agentIntercept) this.emit('file-chooser', { multiple: params.mode === 'selectMultiple', backendNodeId: Number(params.backendNodeId) });
         break;
       case 'Page.javascriptDialogOpening':
         this.emit('javascript-dialog', { type: String(params.type), message: String(params.message ?? '') });
@@ -246,9 +273,31 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   }
 
   private agentLetGo() {
+    this.agentIntercept = false;
     if (!this.agentPage) return;
     this.agentPage = false;
     this.emit('agent-detached');
+  }
+
+  /** What Chrome's error page says went wrong, in the terms the built-in browser's `did-fail-load` uses. */
+  private async reportLoadFailure(validatedURL: string) {
+    const read = await this.connection.send('Runtime.evaluate', { expression: READ_CHROME_ERROR_SCRIPT, returnByValue: true }, this.watchSession ?? undefined)
+      .catch(() => null) as { result?: { value?: unknown } } | null;
+    if (this.destroyed) return;
+    const line = typeof read?.result?.value === 'string' ? read.result.value : '';
+    this.emit('did-fail-load', { ...taskPageLoadFailure(line), validatedURL });
+  }
+
+  denyNewWindows(): void { this.windowsDenied = true; }
+
+  async interceptFileChoosers(): Promise<void> {
+    if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
+    await this.connection.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.watchSession);
+  }
+
+  async setFileInputFiles(backendNodeId: number, files: string[]): Promise<void> {
+    if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
+    await this.connection.send('DOM.setFileInputFiles', { files, backendNodeId }, this.watchSession);
   }
 
   /** Answers the dialog Chrome is showing, whoever it was meant for; nothing to answer is not an error. */

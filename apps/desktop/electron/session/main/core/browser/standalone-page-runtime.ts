@@ -1,7 +1,7 @@
 import { clipboard, ClipboardItem, dialog } from 'electron';
 import { getMainWindow } from '@main/app/window';
 import { events } from '@main/lib/events';
-import { browserPageEventChannel, browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
+import { browserOpenInNewTabChannel, browserPageEventChannel, browserTaskPagePacketChannel, browserTaskPageStateChannel } from '@shared/events/browserEvents';
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout } from '@shared/browser-page-layout';
 import type { AnnotationConversation } from '@shared/browser-annotation';
 import type { BrowserKernelKind } from '@shared/browser-kernel';
@@ -13,6 +13,8 @@ import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { connectTaskPageScreen } from './task-page-screen';
 import { watchTaskPageConnection } from './remote-task-page';
 import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
+import { wireStandalonePageFeatures, type FeatureHost, type FeaturePage } from './standalone-page-features';
+import { log } from '@main/lib/logger';
 
 export const browserKernelBindings = new BrowserKernelBindings();
 const contents = new Map<string, TaskPageContents>();
@@ -37,6 +39,25 @@ function dialogPage(page: TaskPageContents): DialogPage | null {
     isScreening: () => isScreening.call(page),
     agentListening: () => agentListening.call(page),
   };
+}
+
+function featurePage(page: TaskPageContents): FeaturePage | null {
+  const { denyNewWindows, interceptFileChoosers, setFileInputFiles } = page;
+  if (!denyNewWindows || !interceptFileChoosers || !setFileInputFiles) return null;
+  return {
+    on: (event, listener) => page.on(event, listener),
+    denyNewWindows: () => denyNewWindows.call(page),
+    interceptFileChoosers: () => interceptFileChoosers.call(page),
+    setFileInputFiles: (backendNodeId, files) => setFileInputFiles.call(page, backendNodeId, files),
+  };
+}
+
+/** The same open-file dialog the built-in browser puts over the Gugu window for an `<input type=file>`. */
+async function chooseFiles({ multiple }: { multiple: boolean }): Promise<string[] | null> {
+  const window = getMainWindow();
+  if (!window || window.isDestroyed()) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(window, { properties: multiple ? ['openFile', 'multiSelections'] : ['openFile'] });
+  return canceled ? null : filePaths;
 }
 
 export function registerBrowserKernel(input: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string }) {
@@ -76,6 +97,16 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
     if (dialogs) wireStandalonePageDialogs(dialogs, askPerson);
     const screen = await standaloneKernelService().pool.existingPage(browserId);
     if (!screen) throw new Error('The standalone browser page closed');
+    const features = featurePage(page);
+    if (features) {
+      const host: FeatureHost = {
+        openInNewTab: url => events.emit(browserOpenInNewTabChannel, { sourceBrowserId: browserId, url }),
+        chooseFiles,
+        loadFailed: failure => events.emit(browserPageEventChannel, { browserId, type: 'did-fail-load', state: screen.state(), detail: { ...failure, isMainFrame: true } }),
+        report: (message, error) => log.warn(message, { browserId, error: String(error) }),
+      };
+      await wireStandalonePageFeatures(features, host);
+    }
     let loading = false;
     let address = '';
     const report = () => {
