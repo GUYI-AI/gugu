@@ -400,7 +400,8 @@ export function describePrompt(message: string, mode = '', home = ''): Omit<Serv
   const firstLine = message.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? ''
   const lastLine = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() ?? ''
   if (mode === 'none') return { kind: 'notice', message, label: firstLine }
-  if (/continue connecting|\(yes\/no|Please type 'yes', 'no'/i.test(message)) {
+  // Windows 上 askpass 经 .cmd 转一手,cmd 在第一个换行处截断参数:主机指纹的提问只剩「authenticity of host」那一行。
+  if (/continue connecting|\(yes\/no|Please type 'yes', 'no'|authenticity of host/i.test(message)) {
     const host = message.match(/authenticity of host '([^']+)'/)?.[1]?.replace(/\s*\(.*\)$/, '') ?? ''
     const key = message.match(/(\S+) key fingerprint is:?\s*(\S+?)\.?\s*$/m)
     return {
@@ -998,17 +999,10 @@ export function buildForwardSshArgs(
  *    关掉浏览器页签 = cancel,转发随之撤掉。
  * 只绑本机回环地址,与 buildForwardSshArgs 相同。
  */
-export function buildEnsureMasterArgs(target: SshTarget, controlPath: string): string[] {
-  const args = [
-    '-T',
-    '-o', 'ConnectTimeout=15',
-    '-o', 'ServerAliveInterval=5',
-    '-o', 'ServerAliveCountMax=3',
-    '-o', 'LogLevel=ERROR',
-    '-o', 'ControlMaster=auto',
-    '-o', `ControlPath=${controlPath}`,
-    '-o', `ControlPersist=${SHARED_CONTROL_PERSIST}`,
-  ]
+export function buildEnsureMasterArgs(target: SshTarget, controlPath: string | null): string[] {
+  const args = ['-T', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=3', '-o', 'LogLevel=ERROR']
+  // 没有共享连接(Windows):只认证一次(记下新指纹、装上钥匙),❌ 留连接。
+  if (controlPath) args.push('-o', 'ControlMaster=auto', '-o', `ControlPath=${controlPath}`, '-o', `ControlPersist=${SHARED_CONTROL_PERSIST}`)
   if (target.port !== undefined) args.push('-p', String(target.port))
   if (target.options?.length) args.push(...target.options)
   args.push('--', target.destination, 'exit 0')

@@ -13,7 +13,7 @@ import { machineBlockIsStatus, machineNoticeLabel, machineUnavailableReason, typ
  */
 export const CONNECTING_NOTICE_DELAY_MS = 2_500;
 
-export type MachineNoticeSpec = Pick<Notice, 'title' | 'description' | 'tier' | 'waiting'> & {
+export type MachineNoticeSpec = Pick<Notice, 'title' | 'description' | 'tier' | 'waiting' | 'action'> & {
   /** 是个「还在试」的状态:先等 CONNECTING_NOTICE_DELAY_MS 看会不会自己好。 */
   delayed: boolean;
 };
@@ -28,6 +28,8 @@ export function machineNotice(input: {
   signInExpiredAt?: string | null;
   notices?: readonly ServerMachineNotice[];
   serverUpdate?: DeviceServerUpdate;
+  /** 要先登录时提示条上那一段「登录」(登录的提问浮在窗口顶上那张卡片里)。 */
+  signIn?: () => void;
   translate: Translate;
 }): MachineNoticeSpec | null {
   const { connection, label, dials, translate } = input;
@@ -47,6 +49,7 @@ export function machineNotice(input: {
     // 离线 / 休眠 / 正在连只是那台此刻用不了;叫醒没成、要先登录、版本太旧是要人知道、可能要人去做点什么的事。
     tier: machineBlockIsStatus(connection, input.signInExpiredAt) ? 'info' : 'error',
     waiting: trying || connection === 'waking' || connection === 'updating',
+    action: connection === 'sign-in' && input.signIn ? { label: translate('remoteHost.signIn'), onClick: input.signIn } : undefined,
     delayed: trying,
   };
 }
@@ -76,6 +79,7 @@ function show(deviceId: string, spec: MachineNoticeSpec): void {
     description: spec.description,
     tier: spec.tier,
     waiting: spec.waiting,
+    action: spec.action,
     ongoing: true,
     // 只在用户亲手关时回调(我们自己收的不算,见 Notice.onDismiss)。
     onDismiss: () => {
@@ -108,7 +112,7 @@ export function useMachineNotice(deviceId: string | null, label: string, spec: M
     };
   }, [deviceId]);
 
-  const signature = spec ? JSON.stringify([spec.title, spec.description ?? null, spec.tier, spec.waiting]) : null;
+  const signature = spec ? JSON.stringify([spec.title, spec.description ?? null, spec.tier, spec.waiting, spec.action?.label ?? null]) : null;
   useEffect(() => {
     if (!deviceId) return;
     if (!spec) {

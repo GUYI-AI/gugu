@@ -164,6 +164,10 @@ describe('共享连接', () => {
     const ensure = buildEnsureMasterArgs(target, '/tmp/d/cm-%C')
     expect(ensure).toEqual(expect.arrayContaining(['ControlMaster=auto', 'ControlPath=/tmp/d/cm-%C', 'ControlPersist=yes', '-p', '2222', '-J', 'jump']))
     expect(ensure.slice(-3)).toEqual(['--', 'alice@box', 'exit 0'])
+    // 没有共享连接(Windows):登录只认证一次(记下指纹、装上钥匙),❌ 带任何 Control 选项。
+    const once = buildEnsureMasterArgs(target, null)
+    expect(once.some(arg => arg.startsWith('Control'))).toBe(false)
+    expect(once.slice(-3)).toEqual(['--', 'alice@box', 'exit 0'])
     const forward = buildMuxForwardArgs(target, { controlPath: '/tmp/d/cm-%C', localPort: 4000, remotePort: 3000, op: 'forward' })
     expect(forward).toEqual(expect.arrayContaining(['-O', 'forward', '-L', '127.0.0.1:4000:localhost:3000', '-p', '2222', '-J', 'jump']))
     expect(forward.slice(-2)).toEqual(['--', 'alice@box'])
