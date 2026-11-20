@@ -143,6 +143,30 @@ describe('Codex project source', () => {
 });
 
 describe('Codex project import', () => {
+  it.each(['file', 'directory'])('keeps repository capabilities for a root with its own .git %s', async (kind) => {
+    const directory = await folder('repository-root');
+    if (kind === 'directory') await mkdir(join(directory, '.git'));
+    else await writeFile(join(directory, '.git'), 'gitdir: /fixture/worktree-metadata\n');
+    await project('p', [directory]);
+    const [result] = await importCodexProjects((await scan()).items, { sourceRoot });
+    expect(result.status).toBe('imported');
+    expect(host.create).toHaveBeenCalledWith(expect.objectContaining({
+      path: directory, exactPath: false, initGitRepository: false, createDirectory: false,
+    }));
+    expect((await stat(join(directory, '.git'))).isDirectory()).toBe(kind === 'directory');
+    if (kind === 'file') expect(await readFile(join(directory, '.git'), 'utf8')).toBe('gitdir: /fixture/worktree-metadata\n');
+  });
+
+  it('keeps a repository subdirectory at its original path', async () => {
+    const parent = await folder('repository');
+    await mkdir(join(parent, '.git'));
+    const directory = join(parent, 'nested');
+    await mkdir(directory);
+    await project('p', [directory]);
+    await importCodexProjects((await scan()).items, { sourceRoot });
+    expect(host.create).toHaveBeenCalledWith(expect.objectContaining({ path: directory, exactPath: true, initGitRepository: false }));
+  });
+
   it('registers the exact original directory and verifies its real open path', async () => {
     const directory = await folder('original files');
     await writeFile(join(directory, 'README.md'), 'original');

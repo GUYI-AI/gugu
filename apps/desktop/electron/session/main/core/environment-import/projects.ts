@@ -205,9 +205,16 @@ export async function importCodexProjects(
         continue;
       }
       options.signal?.throwIfAborted();
+      // Match local-session import: only a directory with its own .git marker
+      // goes through repository inspection. A subdirectory keeps its exact cwd.
+      const isRepositoryRoot = !existing && await access(join(item.directory, '.git')).then(
+        () => true,
+        (error: unknown) => { if (code(error) === 'ENOENT' || code(error) === 'ENOTDIR') return false; throw error; },
+      );
+      options.signal?.throwIfAborted();
       const created = existing ? undefined : await createLocalProject({
         path: item.directory, name: item.name,
-        allowNonGit: true, exactPath: true, reuseExisting: true, automatic: true,
+        allowNonGit: true, exactPath: !isRepositoryRoot, reuseExisting: true, automatic: true,
         createDirectory: false, initGitRepository: false,
       });
       if (created && !created.success) {
