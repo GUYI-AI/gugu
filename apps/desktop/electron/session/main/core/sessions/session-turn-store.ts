@@ -6,7 +6,7 @@ import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
 import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, type LeanPage, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
-import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { keepHistoryReverted, markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
@@ -110,7 +110,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     // 改口的可能是结局(进程退出改写 prompt_failed),也可能是内容(落定后才到的尾巴,#6191)
     // ⇒ 整轮按库里的序号重编号后替换,❌ 只挑某个字段写。
     const previous = JSON.parse(row.data) as TranscriptTurn;
-    const turn = { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId };
+    const turn = keepHistoryReverted(previous, { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId });
     const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
     const revised = prepared.turn, serialized = JSON.stringify(revised);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
@@ -260,7 +260,7 @@ export function reviseRecordTurnNow(sessionId: string, seq: number, turn: Transc
   const stored = db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
     .from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq), like(sessionTurns.turnId, 'record:%'))).limit(1).get();
   if (!stored) throw new Error(`Cannot revise missing record turn: sessionId=${sessionId} seq=${seq}`);
-  const data = JSON.stringify(renumberStoredTurn(turn, sessionId, stored.seq));
+  const data = JSON.stringify(renumberStoredTurn(keepHistoryReverted(JSON.parse(stored.data) as TranscriptTurn, turn), sessionId, stored.seq));
   if (stored.data !== data) {
     const publish = db.transaction(tx => {
       tx.update(sessionTurns).set({ data }).where(eq(sessionTurns.id, stored.id)).run();
@@ -527,8 +527,17 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
   return withStoredTurns(sessionId, async () => {
     stopFillingReplay(sessionId);
     const removed = db.transaction(tx => {
-      const result = tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).returning({ seq: sessionTurns.seq, turnId: sessionTurns.turnId }).all();
+      const result = tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).returning({ seq: sessionTurns.seq, turnId: sessionTurns.turnId, data: sessionTurns.data }).all();
       const origins = new Set(result.map(row => row.turnId));
+      // The last kept turn says how many turns were removed after it (one faint line; the turns themselves are gone).
+      const removedTurns = result.filter(row => (JSON.parse(row.data) as TranscriptTurn).items.some(item => item.kind === 'message' && item.role === 'user')).length;
+      const kept = tx.select({ id: sessionTurns.id, data: sessionTurns.data }).from(sessionTurns)
+        .where(and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, fromSeq), notLike(sessionTurns.turnId, 'owner-notify:%')))
+        .orderBy(desc(sessionTurns.seq)).limit(1).get();
+      if (kept && removedTurns > 0) {
+        tx.update(sessionTurns).set({ data: JSON.stringify(markHistoryReverted(JSON.parse(kept.data) as TranscriptTurn, removedTurns, Date.now())) })
+          .where(eq(sessionTurns.id, kept.id)).run();
+      }
       // A notification commits before its calling provider turn; deleting that turn must remove its earlier notice too.
       const attached = tx.select({ seq: sessionTurns.seq, turnId: sessionTurns.turnId, data: sessionTurns.data }).from(sessionTurns)
         .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all()

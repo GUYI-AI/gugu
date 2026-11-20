@@ -1294,10 +1294,10 @@ export class SessionManager implements InboundRouter {
 
   finishHistoryRevert(sessionId: string): void { this.cells.get(sessionId)?.cell.finishHistoryRevert(); }
 
-  async revertSession(sessionId: string, anchor: string) {
+  async revertSession(sessionId: string, anchor: string, restoreFiles?: boolean) {
     const record = this.cells.get(sessionId);
     if (!record) return acpErr.sessionNotFound(sessionId);
-    return record.cell.revertSession(anchor);
+    return record.cell.revertSession(anchor, restoreFiles);
   }
 
   async stopBackgroundTask(
@@ -2365,6 +2365,7 @@ export class SessionManager implements InboundRouter {
         ? { sessionModes: provider.capabilities.acp.sessionModes }
         : {}),
       historyRecovery: this.deps.agentHost.resolveAcp(input.providerId)?.behavior.historyRecovery,
+      revert: this.deps.agentHost.resolveAcp(input.providerId)?.behavior.revert,
       ...(() => {
         const turnFailure = this.deps.agentHost.resolveAcp(input.providerId)?.behavior.turnFailure;
         return turnFailure
