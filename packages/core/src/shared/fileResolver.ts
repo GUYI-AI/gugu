@@ -79,8 +79,6 @@ export interface FileBytes {
   dispose(): Promise<void>
   /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
   readonly acknowledged?: Promise<void>
-  /** This caller durably saved the verified snapshot; its provider may release resumable chunks. */
-  saved?(): Promise<void>
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'
@@ -299,9 +297,7 @@ export function createFileResolver(providers: FileProviders, readHooks?: () => F
           const file = await get()
           await file.acknowledged
           check()
-          const saved = await providers.saveTo!(revision, { ...context, openedBytes: async () => file }, directory, name, store)
-          await file.saved?.()
-          return saved
+          return await providers.saveTo!(revision, { ...context, openedBytes: async () => file }, directory, name, store)
         }
         finally { await dispose() }
       } } : {}),

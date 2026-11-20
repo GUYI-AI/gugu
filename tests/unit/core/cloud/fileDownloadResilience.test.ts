@@ -126,7 +126,7 @@ it('resumes only the incomplete chunk after a stalled CDN body even when its can
   }, cancel: cancelled })))
   const file = value(await finish(f.cloud.managed(revision, context)))
   expect(cancelled).toHaveBeenCalled()
-  expect(f.cache.get(0)).toEqual(bytes.subarray(0, 524288))
+  expect(f.cache.size).toBe(0)
   expect(new Headers(f.object.mock.calls[1]?.[1]?.headers).get('Range')).toBe('bytes=524288-')
   expect(f.object.mock.calls.map(([url]) => new URL(String(url)).host)).toEqual(['cdn.invalid', 'oss.invalid'])
   expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
@@ -211,7 +211,7 @@ it('restarts only the interrupted chunk at its existing offset after a response 
   const file = value(await finish(f.cloud.managed(revision, context)))
   expect(f.object.mock.calls[1]?.[0]).toContain('oss.invalid')
   expect(new Headers(f.object.mock.calls[1]?.[1]?.headers).get('Range')).toBe('bytes=524288-')
-  expect(f.cache.get(0)).toEqual(bytes.subarray(0, 524288))
+  expect(f.cache.size).toBe(0)
   expect(sha(Buffer.concat([await file.read(0, 524288), await file.read(524288, bytes.length - 524288)]))).toBe(revision.sha256)
 })
 it('bounds connection retries with an old backend that has no origin URL and reports the failing hop safely', async () => {

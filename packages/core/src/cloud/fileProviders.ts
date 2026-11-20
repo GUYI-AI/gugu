@@ -212,19 +212,15 @@ export function cloudFileProviders(deps: {
         dataKey = Uint8Array.from(atob(lease!.key!), char => char.charCodeAt(0))
         if (dataKey.length !== 32) throw new Error('Invalid file decryption key')
         return (await transformFile({ direction: 'decrypt', revision, source, sink: writing, key: dataKey, ciphertextSha256: lease!.ciphertext_sha256!, signal: transfer.signal })).file
-      } catch (error) {
-        await sink?.abort()
+      } catch (error) { await sink?.abort(); throw error } finally {
+        dataKey?.fill(0); await source.dispose()
+        // The sink holds the bytes once read. Only an interrupted or abandoned read keeps its chunks, to resume from them.
         if (!source.interrupted() && !transfer.signal?.aborted) await deps.cache.clear(key)
-        throw error
-      } finally { dataKey?.fill(0); await source.dispose() }
+      }
     }
     if (admission && !admission.reusable) context.reads?.state({ status: 'transferring', route: 'oss' })
     const file = !encrypted && context.reads && !destination ? await context.reads.acquire(backendScope, 'oss', revision, context, acquire) : await acquire(context)
-    // This reader's refusal or failed ACK cannot invalidate another reader's content-addressed chunks.
-    const clearAfterRefusal = (error: unknown) => !context.reads || error instanceof FileReadRevokedError && error.reason === 'revision'
-    const afterSave = () => deps.cache.clear(key)
-    const snapshot = { size: file.size, read: (offset: number, length: number) => file.read(offset, length), dispose: () => file.dispose(), saved: afterSave }
-    const saved = async (sink: FileSink) => { const bytes = await sink.commit(); await deps.cache.clear(key); return bytes }
+    const snapshot = { size: file.size, read: (offset: number, length: number) => file.read(offset, length), dispose: () => file.dispose() }
     try {
       context.reads?.state({ status: 'verifying' })
       if (encrypted && combined) {
@@ -247,11 +243,8 @@ export function cloudFileProviders(deps: {
         })
         // A saved copy cannot be taken back: a download still waits. Bytes for display are returned now and the
         // acknowledgement follows; whoever shows them takes them down if it fails (`acknowledged`).
-        if (destination) { await acknowledge(); return await saved(destination) }
-        const acknowledged = acknowledge().catch(async error => {
-          if ((error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) && clearAfterRefusal(error)) await deps.cache.clear(key)
-          throw error
-        })
+        if (destination) { await acknowledge(); return await destination.commit() }
+        const acknowledged = acknowledge()
         acknowledged.catch(() => undefined)
         return { ...snapshot, acknowledged }
       }
@@ -262,10 +255,7 @@ export function cloudFileProviders(deps: {
           const current = await metadata({ ...context, ref }) as Download
           context.signal?.throwIfAborted()
           changed(current, revision, !!admission)
-        })().catch(async error => {
-          if (!context.signal?.aborted && clearAfterRefusal(error)) await deps.cache.clear(key)
-          throw error
-        })
+        })()
         acknowledged.catch(() => undefined)
         return { ...snapshot, acknowledged }
       }
@@ -275,11 +265,10 @@ export function cloudFileProviders(deps: {
       changed(current, revision, !!admission)
       if (encrypted) await request(context, 'file-read-complete', { download_id: lease!.download_id, as: context.actor.actorId })
       context.signal?.throwIfAborted()
-      return destination ? await saved(destination) : snapshot
+      return destination ? await destination.commit() : snapshot
     } catch (error) {
       await file.dispose()
       await destination?.abort()
-      if (!context.signal?.aborted && clearAfterRefusal(error)) await deps.cache.clear(key)
       throw error
     }
   }

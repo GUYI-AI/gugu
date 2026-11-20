@@ -174,7 +174,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
               title={t('account.uploadAvatar')}
             >
               <span className="gg-avatar-upload-frame">
-                <Avatar name={resolveOrLoud(user?.nickname, `account nickname ${user?.id}`)} avatarUrl={user?.avatarUrl} seed={user?.id} size="md" />
+                <Avatar name={resolveOrLoud(user?.nickname, `account nickname ${user?.id}`)} avatarUrl={user?.avatarUrl} seed={user?.id} isAgent={false} size="md" />
                 {avatarUploading && (
                   <span className="gg-avatar-upload-busy">
                     <span className="gg-avatar-upload-spinner" />

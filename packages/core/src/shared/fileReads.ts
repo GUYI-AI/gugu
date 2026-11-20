@@ -193,7 +193,7 @@ export function createFileReads(providers: FileProviders, store: FileReadStore =
       joined.bytes.then(file => {
         context.signal?.removeEventListener('abort', abort)
         if (context.signal?.aborted) { abort(); return }
-        resolve({ size: file.size, read: (offset, length) => file.read(offset, length), dispose: release, saved: file.saved?.bind(file),
+        resolve({ size: file.size, read: (offset, length) => file.read(offset, length), dispose: release,
           acknowledged: readerScope ? file.acknowledged : undefined })
       }, error => {
         context.signal?.removeEventListener('abort', abort)

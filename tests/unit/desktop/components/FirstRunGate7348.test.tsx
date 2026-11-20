@@ -190,6 +190,20 @@ describe('first run gate (#7348)', () => {
     }
   })
 
+  it('profile: a new account without an avatar shows its generated face before the identity directory is open', async () => {
+    io.readFirstRunProgress.mockResolvedValue({ stage: 'profile', occupation: null })
+    const harness = await renderGate()
+    try {
+      await waitForCondition(() => !!byTestId(harness.container, 'first-run-profile'), 'profile screen')
+      const profile = byTestId(harness.container, 'first-run-profile')!
+      // No identity directory bridge here (the IM store is not open yet on a first run): the account is a person anyway.
+      expect(profile.querySelector('[data-avatar-empty]')).toBeNull()
+      expect(profile.querySelector('img[alt="neo"]')).not.toBeNull()
+    } finally {
+      harness.cleanup()
+    }
+  })
+
   it('profile: name prefilled, occupation required ("other" needs its sentence); its 「continue」 finishes the first run', async () => {
     io.readFirstRunProgress.mockResolvedValue({ stage: 'profile', occupation: null })
     const harness = await renderGate()

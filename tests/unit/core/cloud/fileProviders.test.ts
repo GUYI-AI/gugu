@@ -282,7 +282,8 @@ describe('one cloud provider and verified raw chunk cache', () => {
     await file.dispose()
     const hit = await cloud.managed(revision, context)
     expect(await hit.read(0, 1)).toEqual(new Uint8Array([73])); await hit.dispose()
-    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(1)
+    // A finished read dropped its chunks (they only serve a resume), so a new read signs and downloads again.
+    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(2); expect(c.chunks.size).toBe(0)
   })
   it('recovers a real interrupted HTTP GET in the same read without fetching its verified prefix again', async () => {
     const c = cache(), requests: (string | undefined)[] = []
@@ -303,7 +304,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const deps = { endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch }
     try {
       const resumed = await cloudFileProviders(deps).managed(revision, context)
-      expect(c.chunks.size).toBe(2); expect(c.store.clear).not.toHaveBeenCalled()
+      expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
       const chunks = [await resumed.read(0, 524288), await resumed.read(524288, plain.length - 524288)]
       expect(digest(Buffer.concat(chunks))).toBe(revision.sha256)
       expect(requests).toEqual([undefined, 'bytes=524288-'])
@@ -373,14 +374,13 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const decoded = await cloud.temporary(local, context)
     await vi.waitFor(() => expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete']))
     expect(digest(Buffer.concat([await decoded.read(0, 524288), await decoded.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
-    expect(c.chunks.size).toBeGreaterThan(0)
+    // The bytes are in the sink once shown: the read drops its chunks before the acknowledgement settles.
+    expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
     answer()
-    if (outcome === 'same' || outcome === 'flaky') { await decoded.acknowledged; expect(c.store.clear).not.toHaveBeenCalled() }
-    else if (outcome === 'down') { await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 }); expect(c.store.clear).not.toHaveBeenCalled() }
-    else {
-      await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
-      expect(c.store.clear).toHaveBeenCalledTimes(1); expect(c.chunks.size).toBe(0)
-    }
+    if (outcome === 'same' || outcome === 'flaky') await decoded.acknowledged
+    else if (outcome === 'down') await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 })
+    else await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
+    expect(c.store.clear).toHaveBeenCalledTimes(1)
     expect(a.calls.filter(row => row.route === 'file-read-complete')).toHaveLength(acks)
     expect(a.calls[0]!.body.download_request_id).toMatch(/^[0-9a-f-]{36}$/)
     expect(a.calls[1]!.body).toMatchObject({ download_id: 'download', ref: { item_id: 'file', version: 2 }, expect: { sha256: local.sha256, size_bytes: local.size_bytes } })
