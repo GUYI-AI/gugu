@@ -163,6 +163,44 @@ it('tapping a tab runs the liquid capsule animation (#3310), never while swiping
   for (const rule of motionRules) expect(rule.conditionText).toContain('prefers-reduced-motion: no-preference')
 })
 
+// #3310 真界面对照:动画跑到一半又点回去,胶囊曾一帧跳回整格(量到 0.95 格);原型里两条边是弹簧,接着当前位置走。
+it('tapping the other tab mid-animation carries on from where the capsule is, without a jump', async () => {
+  const { items } = await mountBar('dark')
+  const nav = document.querySelector<HTMLElement>('.gg-phone-nav-destinations')!
+  // 以格为单位、相对第 0 格:左沿 = 目标格 + translate,宽 = scale X(原点在目标格左沿,见 phone-look.css)。
+  const edges = () => {
+    const pill = getComputedStyle(nav, '::before')
+    const index = Number(getComputedStyle(nav).getPropertyValue('--phone-nav-selected-index'))
+    const left = index + (pill.translate === 'none' ? 0 : Number.parseFloat(pill.translate) / 100)
+    return { left, width: pill.scale === 'none' ? 1 : Number.parseFloat(pill.scale) }
+  }
+  const liquid = (name: string) => document.getAnimations().find((a): a is CSSAnimation => a instanceof CSSAnimation && a.animationName === name)!
+  items[1]!.click()
+  await until('the second tab is current', () => items[1]!.getAttribute('aria-current') === 'page')
+  const forward = liquid('gg-phone-nav-liquid-forward')
+  forward.pause()
+  forward.currentTime = Number(forward.effect!.getComputedTiming().duration) * 0.4
+  const before = edges()
+  expect(before.width, 'stretched over both tabs').toBeGreaterThan(1.8)
+  items[0]!.click()
+  await until('the first tab is current again', () => items[0]!.getAttribute('aria-current') === 'page')
+  const back = liquid('gg-phone-nav-liquid-back')
+  back.pause()
+  back.currentTime = 0
+  const after = edges()
+  expect(after.left).toBeCloseTo(before.left, 2)
+  expect(after.width).toBeCloseTo(before.width, 2)
+  back.play()
+  await until('the animation window closes', () => !nav.closest('nav')!.hasAttribute('data-tab-switching'))
+  // 停稳后再点,起点又是整整一格(上一次的接续起点不残留)。
+  items[1]!.click()
+  await until('the second tab is current', () => items[1]!.getAttribute('aria-current') === 'page')
+  const fresh = liquid('gg-phone-nav-liquid-forward')
+  fresh.pause()
+  fresh.currentTime = 0
+  expect(edges()).toEqual({ left: 0, width: 1 })
+})
+
 // #3310 真界面对照:安卓 WebView 点完一格,:hover 粘在那一格上,ghost 按钮的悬停底(4% 白)铺在目标格,
 // 胶囊拉长时叠出两截颜色。触屏(hover: none)上底栏格子不留悬停底;有鼠标的照旧。
 it('a tab left hovered by a finger tap paints no surface of its own, only on touch screens', async () => {
