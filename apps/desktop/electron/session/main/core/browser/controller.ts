@@ -27,6 +27,7 @@ import {
   DEFAULT_BROWSER_PROFILE_ID,
   isBrowserDataClearKind,
   isBrowsingDataKind,
+  isNamedBrowserProfileId,
   type BrowserDataClearKind,
 } from '@shared/browser';
 import { createRPCController } from '@shared/lib/ipc/rpc';
@@ -34,7 +35,7 @@ import type { BrowserKernelAction, BrowserKernelKind } from '@shared/browser-ker
 import { standaloneKernelService } from './standalone-kernel-service';
 import { browserKernelBindings, copyStandaloneScreenshot, isStandalonePage, measureStandalonePage,
   mountStandalonePage, registerBrowserKernel, snapshotStandalonePage, standaloneCommand, standaloneHostCommand,
-  standaloneScreen, unregisterBrowserKernel, watchStandalonePage } from './standalone-page-runtime';
+  standaloneScreen, unregisterBrowserKernel, watchStandalonePage, setStandalonePageZoom } from './standalone-page-runtime';
 
 export const browserController = createRPCController({
   kernelStatus: () => standaloneKernelService().status(),
@@ -86,7 +87,7 @@ export const browserController = createRPCController({
   setPageZoom: async (args: { browserId: string; factor: number }) => {
     if (!isStandalonePage(args.browserId)) return { success: setBrowserPageZoom(args.browserId, args.factor) };
     if (!Number.isFinite(args.factor) || args.factor < 0.25 || args.factor > 5) throw new Error('Invalid browser zoom');
-    await standaloneHostCommand(args.browserId, 'Emulation.setPageScaleFactor', { pageScaleFactor: args.factor });
+    await setStandalonePageZoom(args.browserId, args.factor);
     return { success: true };
   },
   measurePage: async (browserId: string) => ({ layout: await (isStandalonePage(browserId) ? measureStandalonePage(browserId) : measureBrowserPage(browserId)) }),
@@ -128,10 +129,9 @@ export const browserController = createRPCController({
   /** #7191「从默认浏览器导入登录」:它的全部 cookie 一次导进这份浏览器配置。 */
   importDefaultBrowserCookies: async (profileId: string) => {
     try {
-      if (await standaloneKernelService().selection() === 'standalone') {
-        throw new Error('Importing logins into standalone Chrome is not available in this prototype');
-      }
-      return await importDefaultBrowserCookies(profileId);
+      const service = standaloneKernelService();
+      return await importDefaultBrowserCookies(profileId,
+        await service.selection() === 'standalone' ? service.profileData.cookies(browserProfilePartition(profileId)) : undefined);
     } catch (error) {
       return { ok: false as const, browser: defaultBrowser().name, reason: 'other' as const, detail: error instanceof Error ? error.message : String(error) };
     }
@@ -150,15 +150,17 @@ export const browserController = createRPCController({
       return { success: false as const, error: 'Invalid browser data clear kind' };
     }
     if (isStandalonePage(browserId)) {
-      if (kind === 'storage') throw new Error('Clearing standalone Chrome site storage is not available in this prototype');
-      await standaloneHostCommand(browserId, kind === 'cookies' ? 'Network.clearBrowserCookies' : 'Network.clearBrowserCache');
+      // Like the built-in engine, "storage" empties the whole profile this tab belongs to, cookies included.
+      if (kind === 'storage') await standaloneKernelService().profileData.clear(browserKernelBindings.get(browserId)!.partition, 'all');
+      else await standaloneHostCommand(browserId, kind === 'cookies' ? 'Network.clearBrowserCookies' : 'Network.clearBrowserCache');
       return { success: true };
     }
     return { success: await browserWebContentsRegistry.clearData(browserId, kind) };
   },
 
   clearProfileStorage: async (profileId: string) => {
-    if (await standaloneKernelService().hasProfiles()) throw new Error('Clearing standalone Chrome profiles is not available in this prototype');
+    // A profile may hold data in both engines, whichever one is selected now.
+    if (isNamedBrowserProfileId(profileId)) await standaloneKernelService().profileData.clear(browserProfilePartition(profileId), 'all');
     return { success: await browserWebContentsRegistry.clearProfileStorage(profileId) };
   },
 
@@ -166,7 +168,7 @@ export const browserController = createRPCController({
     if (!isBrowsingDataKind(kind)) {
       return { success: false as const, error: 'Invalid browsing data kind' };
     }
-    if (await standaloneKernelService().hasProfiles()) throw new Error('Clearing all standalone Chrome browsing data is not available in this prototype');
+    await standaloneKernelService().profileData.clearAll(kind);
     const partitions = await collectBrowserPartitions();
     return { success: await browserWebContentsRegistry.clearBrowsingData(kind, partitions) };
   },

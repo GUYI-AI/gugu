@@ -1,9 +1,11 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { ServerTaskBrowser, TaskPageContents, TaskPageScreenTarget } from '../../../../server/server-task-browser';
 import type { StandaloneKernelInstallation } from './standalone-kernel-installer';
 import { isBrowserPartition } from './webview-security';
 
+export type StandaloneHostCommand = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+const PROFILE_TAB = 'profile-data:';
 type Entry = { browser: ServerTaskBrowser; version: string; tabs: Set<string> };
 type Binding = { partition: string; entry: Entry };
 type Options = {
@@ -48,34 +50,104 @@ export class StandaloneBrowserPool {
     const partition = this.partitionsByTab.get(input.browserId);
     if (partition && partition !== input.partition) throw new Error('The browser tab belongs to another profile');
     this.partitionsByTab.set(input.browserId, input.partition);
-    return this.serial(input.partition, async () => {
-      if (this.disposed) throw new Error('The standalone browser pool is closed');
-      input.signal.throwIfAborted();
-      this.partitionsByTab.set(input.browserId, input.partition);
-      let binding = this.tabs.get(input.browserId);
-      if (binding && binding.partition !== input.partition) throw new Error('The browser tab belongs to another profile');
-      if (!binding) {
-        let entry = this.profiles.get(input.partition);
-        if (!entry) {
-          const installation = await this.options.installation();
-          input.signal.throwIfAborted();
-          if (!installation) throw new Error('The standalone browser is not installed');
-          const directory = createHash('sha256').update(input.partition).digest('hex');
-          entry = { version: installation.version, tabs: new Set(), browser: this.options.create({
-            executable: installation.executable, profile: path.join(this.options.profilesRoot, directory),
-          }) };
-          this.profiles.set(input.partition, entry);
-        }
-        binding = { partition: input.partition, entry };
-        entry.tabs.add(input.browserId);
-        this.tabs.set(input.browserId, binding);
+    return this.serial(input.partition, () => this.open(input));
+  }
+
+  /** Where a profile's Chrome keeps its data. Stable per partition, never shared between profiles. */
+  directoryFor(partition: string): string {
+    return path.join(this.options.profilesRoot, createHash('sha256').update(partition).digest('hex'));
+  }
+
+  /** Partitions whose Chrome process is running now. */
+  get livePartitions(): readonly string[] { return [...this.profiles.keys()]; }
+
+  /**
+   * Browser-level CDP on one profile for host work such as cookies. A throwaway tab starts the profile's Chrome when it
+   * is not running and is closed with `close()`; tabs already open keep it alive either way.
+   */
+  async openProfileHost(partition: string): Promise<{ command: StandaloneHostCommand; close(): Promise<void> }> {
+    if (!isBrowserPartition(partition)) throw new Error('Invalid standalone browser profile');
+    const host = await this.serial(partition, () => this.openHost(partition));
+    return { command: host.command, close: () => this.serial(partition, host.close) };
+  }
+
+  /**
+   * Close every tab and the process of one profile so its directory can be rewritten: `clean` runs while the profile is
+   * idle, then `restore` may seed what must survive. The tabs it had reopen at the addresses they were on.
+   */
+  async resetProfile(partition: string, steps: { clean(): Promise<void>; restore?(command: StandaloneHostCommand): Promise<void> }): Promise<void> {
+    if (!isBrowserPartition(partition)) throw new Error('Invalid standalone browser profile');
+    await this.serial(partition, async () => {
+      const reopen: { browserId: string; url?: string }[] = [];
+      const entry = this.profiles.get(partition);
+      for (const browserId of entry ? [...entry.tabs] : []) {
+        const binding = this.tabs.get(browserId);
+        if (!binding) continue;
+        const url = (await binding.entry.browser.existingPage(browserId))?.state().url;
+        if (!browserId.startsWith(PROFILE_TAB)) reopen.push({ browserId, url: url && /^https?:\/\//i.test(url) ? url : undefined });
+        await this.closeBound(browserId, binding);
+        if (!browserId.startsWith(PROFILE_TAB)) this.partitionsByTab.set(browserId, partition); // Still registered, only its page is gone.
       }
-      try { return await binding.entry.browser.pageFor(input.browserId, input.url, input.signal); }
-      catch (error) {
-        await this.closeBound(input.browserId, binding);
-        throw error;
+      try {
+        await steps.clean();
+        if (steps.restore) {
+          const host = await this.openHost(partition);
+          try { await steps.restore(host.command); } finally { await host.close(); }
+        }
+      } finally {
+        for (const tab of reopen) {
+          await this.open({ browserId: tab.browserId, partition, url: tab.url, signal: AbortSignal.timeout(30_000) }).catch(() => {
+            this.partitionsByTab.set(tab.browserId, partition);
+          });
+        }
       }
     });
+  }
+
+  private async openHost(partition: string): Promise<{ command: StandaloneHostCommand; close(): Promise<void> }> {
+    const browserId = `${PROFILE_TAB}${randomUUID()}`;
+    const close = async () => {
+      const binding = this.tabs.get(browserId);
+      if (binding) await this.closeBound(browserId, binding);
+      this.partitionsByTab.delete(browserId);
+    };
+    try {
+      const page = await this.open({ browserId, partition, signal: AbortSignal.timeout(30_000) });
+      if (!page.hostCommand) throw new Error('The standalone browser host connection is unavailable');
+      const host = page.hostCommand.bind(page);
+      return { command: (method, params = {}) => host(method, params), close };
+    } catch (error) {
+      await close();
+      throw error;
+    }
+  }
+
+  private async open(input: { browserId: string; partition: string; url?: string; signal: AbortSignal }): Promise<TaskPageContents> {
+    if (this.disposed) throw new Error('The standalone browser pool is closed');
+    input.signal.throwIfAborted();
+    this.partitionsByTab.set(input.browserId, input.partition);
+    let binding = this.tabs.get(input.browserId);
+    if (binding && binding.partition !== input.partition) throw new Error('The browser tab belongs to another profile');
+    if (!binding) {
+      let entry = this.profiles.get(input.partition);
+      if (!entry) {
+        const installation = await this.options.installation();
+        input.signal.throwIfAborted();
+        if (!installation) throw new Error('The standalone browser is not installed');
+        entry = { version: installation.version, tabs: new Set(), browser: this.options.create({
+          executable: installation.executable, profile: this.directoryFor(input.partition),
+        }) };
+        this.profiles.set(input.partition, entry);
+      }
+      binding = { partition: input.partition, entry };
+      entry.tabs.add(input.browserId);
+      this.tabs.set(input.browserId, binding);
+    }
+    try { return await binding.entry.browser.pageFor(input.browserId, input.url, input.signal); }
+    catch (error) {
+      await this.closeBound(input.browserId, binding);
+      throw error;
+    }
   }
 
   async existingPage(browserId: string): Promise<TaskPageScreenTarget | null> {

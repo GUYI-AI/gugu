@@ -10,6 +10,7 @@ import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@sha
 import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
 import { browserPageFeedback } from '@shared/browser-page-feedback';
 import { TaskPageCapture } from './server-task-page-capture';
+import { TaskPageViewport } from './task-page-viewport';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -32,6 +33,8 @@ export type TaskPageScreenFrame = { data: string; width: number; height: number;
 export interface TaskPageContents {
   /** Host-owned connection, independent of the restricted Agent debugger lease. Never exposed as an RPC. */
   hostCommand?(method: string, params: Record<string, unknown>): Promise<unknown>;
+  /** Host layout zoom, never part of the restricted page protocol. */
+  setZoomFactor?(factor: number): Promise<void>;
   readonly debugger: {
     attach(protocolVersion?: string): void;
     detach(): void;
@@ -104,10 +107,16 @@ class PipeConnection extends EventEmitter {
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 class PageTarget extends EventEmitter implements TaskPageContents {
-  hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
-    if (!this.watchSession || this.destroyed) return Promise.reject(new Error('The task browser page closed'));
+  async hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
+    await this.viewport.ready();
+    if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
     return this.connection.send(method, params, this.watchSession);
   }
+  private readonly viewport = new TaskPageViewport((method, params) => {
+    if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
+    return this.connection.send(method, params, this.watchSession);
+  });
+  setZoomFactor(factor: number): Promise<void> { return this.viewport.zoom(factor); }
   readonly feedback = browserPageFeedback(this);
   private session: string | null = null;
   private readonly children = new Set<string>();
@@ -303,8 +312,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       case 'reload': await this.connection.send('Page.reload', {}, session); return;
       case 'stop': await this.connection.send('Page.stopLoading', {}, session); return;
       case 'resize':
-        await this.connection.send('Emulation.setDeviceMetricsOverride',
-          { width: control.width, height: control.height, deviceScaleFactor: control.scale, mobile: false }, session);
+        await this.viewport.resize(control);
         return;
     }
   }

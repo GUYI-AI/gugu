@@ -5,6 +5,7 @@ import { getCookies } from '@steipete/sweet-cookie';
 import { log } from '@main/lib/logger';
 import { browserProfilePartition, isNamedBrowserProfileId } from '@shared/browser';
 import { configureBrowserProfileSession } from './browser-profile-session';
+import type { CookieSink } from './standalone-profile-data';
 import {
   chromiumProfileOption,
   chromiumUserDataRoot,
@@ -54,7 +55,8 @@ async function chromiumProfileFor(source: CookieSource): Promise<{ chromeProfile
   return chromiumProfileOption(source, process.platform, root, localState ? lastUsedChromiumProfile(localState) : null);
 }
 
-export async function importDefaultBrowserCookies(profileId: string): Promise<CookieImportResult> {
+/** `sink` is where the cookies go; omitted = the built-in engine's session for that profile. */
+export async function importDefaultBrowserCookies(profileId: string, sink?: CookieSink): Promise<CookieImportResult> {
   if (!isNamedBrowserProfileId(profileId)) throw new Error(`not a browser profile you can import into: ${profileId}`);
   const { name } = defaultBrowser();
   const source = name ? cookieSourceForBrowserName(name) : null;
@@ -81,7 +83,7 @@ export async function importDefaultBrowserCookies(profileId: string): Promise<Co
     return { ok: false, browser: name, reason: classifyCookieReadFailure(warnings), detail: warnings[0] };
   }
 
-  const session = configureBrowserProfileSession(browserProfilePartition(profileId));
+  const store: CookieSink = sink ?? configureBrowserProfileSession(browserProfilePartition(profileId)).cookies;
   let imported = 0;
   let skipped = 0;
   for (const cookie of cookies) {
@@ -91,13 +93,13 @@ export async function importDefaultBrowserCookies(profileId: string): Promise<Co
       continue;
     }
     try {
-      await session.cookies.set(details);
+      await store.set(details);
       imported += 1;
     } catch {
       skipped += 1;
     }
   }
-  await session.cookies.flushStore();
+  await store.flushStore();
   const partial = partialReadFailure(warnings);
   log.info('Cookie import: done', { browser: name, profileId, imported, skipped, partial });
   return { ok: true, browser: name, imported, skipped, partial };

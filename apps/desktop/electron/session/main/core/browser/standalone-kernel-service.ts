@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
-import { readdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { appSettingsService } from '../settings/settings-service';
 import { log } from '@main/lib/logger';
@@ -14,6 +14,8 @@ import { installStandaloneKernel, readStandaloneKernelInstallation } from './sta
 import { StandaloneKernelManager } from './standalone-kernel-manager';
 import { StandaloneBrowserPool } from './standalone-browser-pool';
 import { standaloneBrowserCredentialStore } from './standalone-browser-launch-policy';
+import { StandaloneProfileData } from './standalone-profile-data';
+import { browserProfilePartition, DEFAULT_BROWSER_PROFILE_ID } from '@shared/browser';
 
 const execute = promisify(execFile);
 
@@ -22,12 +24,20 @@ class StandaloneKernelService {
   private readonly asset = process.platform === 'darwin' && process.arch === 'arm64' ? STANDALONE_MAC_ASSET : null;
   private readonly root = path.join(app.getPath('userData'), 'BrowserKernels');
   private update: BrowserKernelStatus['update'] = null;
+  private readonly profilesRoot = path.join(app.getPath('userData'), 'StandaloneBrowserProfiles');
   readonly pool = new StandaloneBrowserPool({
-    profilesRoot: path.join(app.getPath('userData'), 'StandaloneBrowserProfiles'),
+    profilesRoot: this.profilesRoot,
     installation: () => this.installation(),
     create: ({ profile, executable }) => createServerTaskBrowser({
       binary: () => executable, profile, credentialStore: standaloneBrowserCredentialStore(process.env, app.isPackaged), log,
     }),
+  });
+  /** Cookie import and clearing for the person's browser profiles, the standalone engine's half of the built-in controls. */
+  readonly profileData = new StandaloneProfileData({
+    pool: this.pool,
+    profilesRoot: this.profilesRoot,
+    partitions: async () => [DEFAULT_BROWSER_PROFILE_ID, ...(await appSettingsService.get('browser')).profiles.map(profile => profile.id)]
+      .map(browserProfilePartition),
   });
   private readonly manager = new StandaloneKernelManager({
     asset: this.asset,
@@ -60,11 +70,6 @@ class StandaloneKernelService {
   }
 
   installation() { return this.asset ? readStandaloneKernelInstallation(this.root, this.asset) : Promise.resolve(null); }
-
-  async hasProfiles(): Promise<boolean> {
-    try { return (await readdir(path.join(app.getPath('userData'), 'StandaloneBrowserProfiles'))).length > 0; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
-  }
 
   async status(): Promise<BrowserKernelStatus> { return { ...await this.manager.status(), update: this.update }; }
 

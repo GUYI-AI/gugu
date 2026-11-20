@@ -85,9 +85,16 @@ export async function mountStandalonePage(input: { browserId: string; partition:
 
 export async function standaloneCommand(browserId: string, command: BrowserPageCommand) {
   if (command === 'focus') return true; // Focus belongs to the renderer's projection input, never a Chrome window.
-  const action = command === 'goBack' ? 'back' : command === 'goForward' ? 'forward' : command === 'reloadIgnoringCache' ? 'reload' : command;
+  if (command === 'reloadIgnoringCache') { await standaloneHostCommand(browserId, 'Page.reload', { ignoreCache: true }); return true; }
+  const action = command === 'goBack' ? 'back' : command === 'goForward' ? 'forward' : command;
   await (await standaloneScreen(browserId)).control({ action });
   return true;
+}
+
+export async function setStandalonePageZoom(browserId: string, factor: number): Promise<void> {
+  const page = await standalonePage(browserId);
+  if (!page.setZoomFactor) throw new Error('The standalone browser layout zoom is unavailable');
+  await page.setZoomFactor(factor);
 }
 
 export async function standaloneHostCommand(browserId: string, method: string, params: Record<string, unknown> = {}): Promise<unknown> {
