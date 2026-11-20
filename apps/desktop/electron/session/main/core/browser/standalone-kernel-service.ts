@@ -1,10 +1,12 @@
-import { app } from 'electron';
+import { app, dialog } from 'electron';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
 import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { appSettingsService } from '../settings/settings-service';
 import { log } from '@main/lib/logger';
+import { getMainWindow } from '@main/app/window';
 import { events } from '@main/lib/events';
 import { browserKernelSelectionChannel } from '@shared/events/browserEvents';
 import { createServerTaskBrowser } from '../../../../server/server-task-browser';
@@ -15,11 +17,31 @@ import { StandaloneKernelManager } from './standalone-kernel-manager';
 import { StandaloneBrowserPool } from './standalone-browser-pool';
 import { standaloneBrowserCredentialStore } from './standalone-browser-launch-policy';
 import { StandaloneProfileData } from './standalone-profile-data';
+import { manageDownloads, type DownloadSaver } from './standalone-downloads';
 import { readChromeStorageKeys } from './standalone-chrome-storage';
 import { openChromeStorageCopy } from './standalone-chrome-storage-sqlite';
 import { browserProfilePartition, DEFAULT_BROWSER_PROFILE_ID } from '@shared/browser';
 
 const execute = promisify(execFile);
+
+/** The built-in browser lets the person choose where a download goes, at the moment it begins; so does the standalone one. */
+const downloadSaver: DownloadSaver = {
+  chooseFile: async name => {
+    const options = { defaultPath: path.join(app.getPath('downloads'), name) };
+    const window = getMainWindow();
+    const { canceled, filePath } = window && !window.isDestroyed() ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    return canceled || !filePath ? null : filePath;
+  },
+  failed: (name, error) => {
+    log.warn('Standalone browser download failed', { name, error: error.message });
+    const window = getMainWindow();
+    if (!window || window.isDestroyed()) return;
+    const zh = app.getLocale().toLowerCase().startsWith('zh');
+    void dialog.showMessageBox(window, {
+      type: 'error', message: zh ? `无法保存“${name}”` : `Could not save “${name}”`, detail: error.message,
+    }).catch(() => undefined);
+  },
+};
 
 /** Device-local installation and profiles. Creating the service never downloads or starts Chrome. */
 class StandaloneKernelService {
@@ -32,6 +54,7 @@ class StandaloneKernelService {
     installation: () => this.installation(),
     create: ({ profile, executable }) => createServerTaskBrowser({
       binary: () => executable, profile, credentialStore: standaloneBrowserCredentialStore(process.env, app.isPackaged), log,
+      connected: connection => manageDownloads(connection, downloadSaver, tmpdir()),
     }),
   });
   /** Cookie import and clearing for the person's browser profiles, the standalone engine's half of the built-in controls. */

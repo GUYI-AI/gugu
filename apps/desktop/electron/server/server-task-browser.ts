@@ -55,7 +55,7 @@ export interface TaskPageContents {
 }
 
 /** A pipe-connected Chromium: commands, events and one exit. */
-class PipeConnection extends EventEmitter {
+export class PipeConnection extends EventEmitter {
   private next = 0;
   private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
   private buffer = '';
@@ -387,6 +387,8 @@ export function createServerTaskBrowser(options: {
   profile: string;
   /** Desktop profiles retain Chrome's system credential storage; the display-free server keeps its existing basic store. */
   credentialStore?: 'basic' | 'system';
+  /** Runs once the browser is up and before any page is opened, for host-side setup such as download handling. A failure stops the browser. */
+  connected?: (connection: PipeConnection) => Promise<void>;
   log: { info(message: string, fields?: object): void; warn(message: string, fields?: object): void };
 }): ServerTaskBrowser {
   let starting: Promise<{ process: ChildProcess; connection: PipeConnection }> | null = null;
@@ -419,6 +421,7 @@ export function createServerTaskBrowser(options: {
       pages.clear();
     });
     await connection.send('Target.setDiscoverTargets', { discover: true });
+    try { await options.connected?.(connection); } catch (error) { child.kill('SIGKILL'); throw error; }
     options.log.info('Task browser started', { pid: child.pid, userAgent });
     return { process: child, connection };
   }
