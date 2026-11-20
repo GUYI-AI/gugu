@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { IDBFactory, IDBKeyRange, IDBObjectStore as FakeObjectStore } from 'fake-indexeddb'
+import { IDBFactory, IDBIndex as FakeIndex, IDBKeyRange } from 'fake-indexeddb'
 import { eraseClosedImAccount, openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb, openLocalSyncDb, IM_STORE_NAMES } from '../../../../apps/desktop/src/lib/localSyncDb'
 
@@ -67,9 +67,10 @@ describe('closed original-owner renderer cache', () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange)
     const factory = new IDBFactory(), adapter = await openLocalSyncDb(factory), a = crypto.randomUUID()
     await adapter.commit([{ type: 'put', store: 'sync_state', value: { accountId: a, key: 'original', value: { keep: true } } }])
-    const before = await rawRows(factory, a), original = FakeObjectStore.prototype.openKeyCursor
-    const failure = vi.spyOn(FakeObjectStore.prototype, 'openKeyCursor').mockImplementation(function(this: InstanceType<typeof FakeObjectStore>, ...args: Parameters<typeof original>) {
-      if (this.name === 'chat') throw new Error('Injected clear failure')
+    // The clear walks each store's accountId index, so the fault goes on the index cursor.
+    const before = await rawRows(factory, a), original = FakeIndex.prototype.openKeyCursor
+    const failure = vi.spyOn(FakeIndex.prototype, 'openKeyCursor').mockImplementation(function(this: InstanceType<typeof FakeIndex>, ...args: Parameters<typeof original>) {
+      if (this.objectStore.name === 'chat') throw new Error('Injected clear failure')
       return original.apply(this, args)
     })
     await expect(adapter.retireAccount!(a)).rejects.toThrow('Injected clear failure')

@@ -1,44 +1,45 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { requireCreditAmount, compareCreditAmounts, type CreditAmount } from '@gugu/core/billing/creditAmount'
-import { getCreditsBalance } from '../../../lib/billing/balance'
+import { compareCreditAmounts, type CreditAmount } from '@gugu/core/billing/creditAmount'
+import { useSpendingPower } from '../../../lib/billing/useSpendingPower'
+import { replicaAccount, useReplica } from '../../../lib/replica'
+import { useSelect, type Readable } from '../../../lib/selectStore'
 import { getRendererSession } from '../../../lib/sessionPublication'
 import type { AccountClosureV2FlowState } from '../../../platform/accountClosureV2Flow'
+import { accountClosurePolicy } from './accountClosurePolicy'
 import { accountClosureV2Controller } from './accountClosureV2Runtime'
 import { PersonalAccountDeletion, PersonalAccountDeletionEntry } from './PersonalAccountDeletion'
 import type { AccountDeletionView } from './accountDeletionView'
 
 const empty: AccountClosureV2FlowState = { policy: { status: 'unread' }, operation: null, busy: false, error: null }
-const noSubscription = () => () => {}
-const emptySnapshot = () => empty
+const noController: Readable<AccountClosureV2FlowState> = { get: () => empty, subscribe: () => () => {} }
+const whole = (state: AccountClosureV2FlowState) => state
+const terminal = ['processing', 'deleted', 'local-complete', 'finalized', 'cancelled']
+
+/** A remaining balance the dialog can state: read, a valid amount, not negative. null is unknown, never zero. */
+function stated(balance: CreditAmount | null): CreditAmount | null {
+  try { return balance !== null && compareCreditAmounts(balance, 0) >= 0 ? balance : null } catch { return null }
+}
 
 export function AccountDeletionSettings({ ownerId }: { ownerId: string }) {
   const controller = accountClosureV2Controller()
-  const state = useSyncExternalStore(controller?.subscribe ?? noSubscription, controller?.getSnapshot ?? emptySnapshot, emptySnapshot)
+  // The native-led flow publishes one snapshot per change (the operation, busy); admission is read below.
+  const state = useSelect(controller ? { get: controller.getSnapshot, subscribe: controller.subscribe } : noController, whole, Object.is)
   const { t } = useTranslation('settings'), { t: tMain } = useTranslation('main')
   const [open, setOpen] = useState(false)
-  const [policyOwner, setPolicyOwner] = useState<string | null>(null)
-  const [balance, setBalance] = useState<CreditAmount | null>(null)
-  const [readingBalance, setReadingBalance] = useState(false)
   const [code, setCode] = useState(''), [waived, setWaived] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [intent, setIntent] = useState<'sending' | 'confirming' | 'cancelling' | null>(null)
-
-  useEffect(() => {
-    let live = true, started = false
-    setPolicyOwner(null); setOpen(false)
-    if (!controller) return
-    const read = () => {
-      if (started || controller.getSnapshot().busy) return
-      started = true
-      void controller.refresh().then(() => {
-        if (live && getRendererSession()?.user.id === ownerId) setPolicyOwner(ownerId)
-      }).catch(() => undefined)
-    }
-    const unsubscribe = controller.subscribe(read)
-    read()
-    return () => { live = false; unsubscribe() }
-  }, [controller, ownerId])
+  const policyReading = useReplica(accountClosurePolicy, controller && replicaAccount().id === ownerId ? [] : null)
+  // A refresh that failed keeps no earlier admission: closed unless this read says open.
+  const available = policyReading.state === 'value' && !policyReading.error && policyReading.value.available
+  const operation = state.operation
+  // Credits matter only to a fresh closure; an original operation is recovered or cancelled without them.
+  const freshClosure = open && available && !operation?.recoveryOnly && !(operation && terminal.includes(operation.phase))
+  const spending = useSpendingPower(freshClosure ? { id: ownerId } : null)
+  const balance = spending.state === 'value' ? stated(spending.balance) : null
+  const readingBalance = freshClosure && spending.state === 'unknown'
+  const balanceFailed = freshClosure && spending.state !== 'unknown' && balance === null
 
   const originalOwner = () => {
     const nativeOwner = controller?.getSnapshot().operation?.ownerId
@@ -52,32 +53,22 @@ export function AccountDeletionSettings({ ownerId }: { ownerId: string }) {
     catch (failure) { setError(typeof (failure as { code?: unknown } | null)?.code === 'string' ? (failure as { code: string }).code : 'closure_unavailable') }
     finally { setIntent(null) }
   }
-  const show = async () => {
-    if (!controller) return
-    setOpen(true); setBalance(null); setReadingBalance(true); setError(null); setCode(''); setWaived(false)
-    try {
-      originalOwner(); await controller.refresh(); originalOwner()
-      const refreshed = controller.getSnapshot()
-      if (refreshed.policy.status !== 'known' || !refreshed.policy.value.available || refreshed.operation?.recoveryOnly
-        || refreshed.operation && ['processing', 'deleted', 'local-complete', 'finalized', 'cancelled'].includes(refreshed.operation.phase)) return
-      const value = requireCreditAmount(await getCreditsBalance(), 'account-closure.remaining-credits')
-      originalOwner()
-      if (compareCreditAmounts(value, 0) < 0) throw new Error('Credit balance unavailable')
-      setBalance(value)
-    } catch { setError('closure_unavailable') }
-    finally { setReadingBalance(false) }
+  const show = () => {
+    setOpen(true); setError(null); setCode(''); setWaived(false)
+    // Opening reads admission again through native; the dialog follows that reading.
+    void accountClosurePolicy.refresh()
   }
   if (!controller) return null
-  const operation = state.operation
   const hasOriginalOperation = operation?.ownerId === ownerId && getRendererSession()?.user.id === ownerId
     && !['finalized', 'cancelled'].includes(operation.phase)
   const pending = operation?.recoveryOnly || operation?.phase === 'confirming' || operation?.phase === 'processing'
   const localPending = operation && ['deleted', 'local-complete'].includes(operation.phase)
-  const errorCode = error ?? state.error
+  const errorCode = error ?? state.error ?? (balanceFailed ? 'closure_unavailable' : null)
   const beforeConfirmation = !!operation?.pendingEffect && operation.pendingEffect !== 'confirm'
-  const policyUnavailable = state.policy.status !== 'known' || !state.policy.value.available
+  const policyLoading = policyReading.state === 'unknown'
+  const policyUnavailable = !policyLoading && !available
   const phase: AccountDeletionView['phase'] = state.busy ? intent ?? 'loading'
-    : localPending ? 'local-pending' : pending ? 'unconfirmed' : policyUnavailable ? 'unavailable' : readingBalance ? 'loading' : 'ready'
+    : localPending ? 'local-pending' : pending ? 'unconfirmed' : policyLoading || readingBalance ? 'loading' : policyUnavailable ? 'unavailable' : 'ready'
   const canCancel = !state.busy && !operation?.confirmCancellationBlocked
     && (!operation || !['processing', 'deleted', 'local-complete', 'finalized'].includes(operation.phase))
   const view: AccountDeletionView = {
@@ -107,9 +98,7 @@ export function AccountDeletionSettings({ ownerId }: { ownerId: string }) {
     })
   }
   return <>
-    <PersonalAccountDeletionEntry available={policyOwner === ownerId && state.policy.status === 'known' && state.policy.value.available}
-      personal={state.policy.status === 'known' && state.policy.value.available} hasOriginalOperation={hasOriginalOperation}
-      onOpen={() => { void show() }} />
+    <PersonalAccountDeletionEntry available={available} personal={available} hasOriginalOperation={hasOriginalOperation} onOpen={show} />
     {open && <PersonalAccountDeletion view={view} onCancel={cancel} />}
   </>
 }
