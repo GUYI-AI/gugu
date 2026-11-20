@@ -201,6 +201,7 @@ export function registerSshLinkIpc(options: {
       entry.askpass = askpass
       askpass.onPrompt((prompt) => send(SSH_LINK_CHANNELS.prompt, { deviceId, prompt }))
       askpass.onKeyInstall?.((outcome) => send(KEY_INSTALL_EVENT, { label: machine.display, outcome }))
+      let installing: Promise<void> | void
       try {
         const exit = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
           const child = spawn('ssh', buildEnsureMasterArgs(sshTargetOf(machine), controlPath), {
@@ -219,12 +220,14 @@ export function registerSshLinkIpc(options: {
           options.log?.('ssh link: sign-in failed', { deviceId, code: exit.code, detail: exit.stderr.trim().split(/\r?\n/).slice(-3).join('\n') })
           return outcome
         }
-        askpass.authenticated?.()
+        installing = askpass.authenticated?.()
       } finally {
         send(SSH_LINK_CHANNELS.prompt, { deviceId, prompt: null })
-        // 钥匙可能还在装(装完才报结果):askpass 的目录与套接字此刻就能收掉,装钥匙用的是刚才那条共享连接。
+        // 装钥匙不用这个 askpass(复用共享连接,没有就自己带着刚答的密码再登一次):它的目录与套接字此刻就能收掉。
         void askpass.close()
       }
+      // 勾了「以后不用再输密码」:钥匙装好再开设备连接 —— 没有共享连接(Windows)时,设备连接靠的就是这把钥匙。
+      await installing
       return openOutcome(deviceId, await links.open(deviceId), upgrader)
     })()
     signIns.set(deviceId, entry)
