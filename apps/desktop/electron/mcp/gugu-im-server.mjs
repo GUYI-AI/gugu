@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
+import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
@@ -20,6 +22,7 @@ import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../p
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
+import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
@@ -254,6 +257,41 @@ function decodeImArgs(args) {
   for (const field of MESSAGE_ID_LIST_FIELDS) {
     if (field in out) out[field] = decodeIdList('msg', out[field], field)
   }
+  return out
+}
+
+/**
+ * Owner 2026-11-16: a message id may be written as its first 8+ characters (idPrefix.ts, the same matcher as session ids).
+ * It is matched against the messages this agent can read — in chatId when the tool names a chat — and only the full id
+ * goes on. A full id (or anything that is not a prefix) is returned as written for the exact paths to judge.
+ */
+async function fullMessageId(deps, id, chatId = null, chatLabel = chatId) {
+  // A stored message id is opaque text (`turn-failure:batch:<hash>`): only the start of a UUID is a prefix.
+  const range = typeof id === 'string' ? uuidPrefixRange(id) : null
+  if (!range) return id
+  // Read as the owner, kept only where this agent may read (can_read_message), so neither a match nor a candidate leaks.
+  const read = await deps.restGet(`messages?id=gte.${range.lo}&id=lte.${range.hi}${chatId ? `&chat_id=eq.${enc(chatId)}` : ''}`
+    + '&select=id,content,created_at&order=created_at.desc&limit=11')
+  const visible = await Promise.all(read.map((row) => agentCanSee(deps, row)))
+  const rows = read.filter((_row, index) => visible[index])
+  return matchIdPrefix({
+    kind: 'msg', id, rows, keyOf: (row) => row.id, noun: 'messages',
+    describe: (row) => `${JSON.stringify(String(row.content ?? '').slice(0, 40))}, ${row.created_at}`,
+    notFound: (written) => `No message matches ${written} ${chatId ? `in chat ${chatLabel}` : 'among the messages you can read'}; message_history lists message ids`,
+  })
+}
+
+/** Every message-id argument of an IM tool, before its handler (client_message_id is the agent's own key, never looked up). */
+async function resolveMessagePrefixes(args, deps) {
+  const prefixed = (value) => typeof value === 'string' && uuidPrefixRange(value) !== null
+  const fields = [...MESSAGE_ID_FIELDS].filter((field) => field !== 'client_message_id' && prefixed(args[field]))
+  const lists = [...MESSAGE_ID_LIST_FIELDS].filter((field) => Array.isArray(args[field]) && args[field].some(prefixed))
+  if (!fields.length && !lists.length) return args
+  const address = typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
+  const chatId = address && !/^(aid|user|gugu):/.test(address) ? await requireChat(args, deps) : null
+  const out = { ...args }
+  for (const field of fields) out[field] = await fullMessageId(deps, out[field], chatId, address)
+  for (const field of lists) out[field] = await Promise.all(out[field].map((value) => fullMessageId(deps, value, chatId, address)))
   return out
 }
 
@@ -503,7 +541,8 @@ function createSessionState() {
 }
 
 function createDeps(context, injected = {}, state = createSessionState()) {
-  const fetchImpl = injected.fetch ?? fetch
+  // Its answers tune this process's `serverNow()` (`@@@server-clock`): message `created_at` is the database's clock.
+  const fetchImpl = withServerClock(injected.fetch ?? fetch)
   return {
     restGet: (path, profile) => restGet(context, path, profile, fetchImpl),
     restInsert: (table, row, profile) => restInsert(context, table, row, profile, fetchImpl),
@@ -522,9 +561,9 @@ function createDeps(context, injected = {}, state = createSessionState()) {
     },
     attachmentsEndpoint: () => attachmentsEndpoint(context, fetchImpl),
     attachments: context.attachments,
-    resolveFile: (ref, actor = context.agentId) => {
+    resolveFile: (ref, actor = context.agentId, options) => {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
-      return context.resolveFile(ref, actor)
+      return context.resolveFile(ref, actor, options)
     },
     ...injected,
     context,
@@ -593,11 +632,11 @@ async function requireChat(args, deps) {
   throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
 }
 
-/** Personal writes use the caller's native session; a DM is only an older spelling of that same destination. */
+/** A session whose page the owner reads takes their writes there; a DM is only an older spelling of it. Elsewhere it is the DM. */
 async function resolveWriteTarget(args, deps) {
   const address = typeof args?.chat_id === 'string' ? args.chat_id.trim() : ''
   if (!address) throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
-  if (deps.context.personalAssistant) return { chatId: await requireChat(args, deps) }
+  if (deps.context.personalAssistant || !deps.context.ownerReadsSession) return { chatId: await requireChat(args, deps) }
   if (/^(aid|user|gugu):/.test(address)) {
     const decoded = decodeIdentityAddress(address, 'chat_id')
     const userId = decoded.kind === 'user' ? decoded.id : (await lookupGuguNumber(decoded.number, deps)).id
@@ -733,8 +772,7 @@ async function workspaceRpcItem(deps, name, body, label) {
  * F112 Only the item's id: it is unique, and the host finds its group from it.
  */
 export function workspaceFileLink(item) {
-  const name = String(item.filename ?? '').replace(/[[\]\\]/g, (c) => `\\${c}`)
-  return `[${name}](${groupFileLink(item.id)})`
+  return `[${markdownLiteral(String(item.filename ?? ''))}](${groupFileLink(item.id)})`
 }
 function summarizeWorkspaceItem(item) {
   return {
@@ -896,6 +934,7 @@ async function agentCanSee(deps, message, readerId = deps.context.agentId) {
  */
 export async function extensionAttachmentOf(context, messageId, injected = {}) {
   const deps = createDeps(context, injected)
+  messageId = await fullMessageId(deps, messageId)
   const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,file_item_id,file_version,file_blob_id`)
   if (!message || !(await agentCanSee(deps, message))) throw new Error(`app_install: there is no message ${messageId} you can read`)
   // The message was just read as the owner, so the owner is in that chat and its member list is never empty; an empty
@@ -932,7 +971,7 @@ async function readableWidgetOf(deps, widgetId) {
 /** A checked widget resolves its original message through the same registry as references. */
 export async function widgetCheckScopeOf(context, target, injected = {}) {
   const deps = createDeps(context, injected)
-  const messageId = typeof target === 'object' && target !== null ? target.messageId : undefined
+  const messageId = typeof target === 'object' && target !== null ? await fullMessageId(deps, target.messageId) : undefined
   const id = typeof target === 'object' && target !== null ? messageId ?? target.widgetId : target
   const unreadable = () => new Error(`app_check: there is no widget message ${id} you can read`)
   if (typeof id !== 'string' || !id.length || id.includes('\0')) throw unreadable()
@@ -1390,7 +1429,7 @@ const FLOOD_LIMITS = [
 
 async function floodNotice(deps, chatId, kind) {
   try {
-    const now = Date.now()
+    const now = serverNow()
     const since = new Date(now - FLOOD_LIMITS.at(-1).ms).toISOString()
     const rows = await deps.restGet(
       `messages?chat_id=eq.${enc(chatId)}&created_at=gte.${enc(since)}&deleted_at=is.null&select=sender_user_id,created_at&order=seq.desc&limit=200`,
@@ -2277,17 +2316,16 @@ async function documentUploadBytes(args) {
 
 // gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
 // (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, label, chatId) {
+async function uploadForSend(args, deps, requestId) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const bytes = await uploadBlob(label, args, contentType)
+  const bytes = await uploadBlob('message_send_as_owner', args, contentType)
   const endpoint = await deps.attachmentsEndpoint()
-  // Its bytes go up before anything is sent, so the same file from this agent to the same friend is one upload: sent again
-  // after a timeout or restart, it resumes. Another friend is another upload, so parallel sends never share one.
+  // Bind the permit to this send and its bytes. A separate send of the same file has its own message request ID.
   const sha = await fileSha256(String(args.file_path))
-  const request_id = await contentRequestId('send', deps.context.agentId, chatId ? `chat ${chatId}` : `friend ${String(args.friend_user_id)}`, sha, String(bytes.size))
+  const request_id = await contentRequestId('send', requestId, deps.context.agentId, String(args.friend_user_id), sha, String(bytes.size))
   return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
-    { chat_id: chatId, as: deps.context.agentId, request_id }) }
+    { chat_id: null, as: deps.context.agentId, request_id }) }
 }
 
 /**
@@ -2314,7 +2352,18 @@ async function publishHere(args, deps, chatId, message, next) {
 
 /** A next version that started from a version the file is no longer at: nothing was sent, and what to do. */
 function newerVersionRefusal(file, version) {
-  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file, or workspace__read with save), make your change on it, and send it with that version.`
+  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file), make your change on it, and send it with that version.`
+}
+
+/** Read under the sending agent's membership before choosing a replacement route; SQL checks again at the write. */
+async function replacementTarget(args, deps, chatId, file) {
+  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: file.itemId }, 'message_send')
+  if (item.chat_id !== chatId) throw new Error('message_send: the file belongs to another chat; nothing was sent')
+  if (item.kind !== 'file' && item.kind !== 'document') throw new Error('message_send: the target is not a file or text document; nothing was sent')
+  if (!Number.isInteger(item.version) || item.version < 1) throw new Error('message_send: the server did not confirm the current file version')
+  if (item.version > file.version) throw new Error(newerVersionRefusal(args.file, file.version))
+  if (item.version !== file.version) throw new Error(`message_send: the file is at version ${item.version}, not the supplied version ${file.version}; nothing was sent`)
+  return item
 }
 
 async function sendMessageAsOwner(args, deps, content, extra = {}, outcome = { uncertain: false }) {
@@ -2359,9 +2408,10 @@ async function commitWithReplay(commit) {
 
 async function handleOwnerFile(args, deps) {
   const friendUserId = friendUserIdArg(args.friend_user_id)
-  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, 'message_send_as_owner', null)
+  const request_id = randomUUID()
+  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, request_id)
   // 库里那一半照 send_friend_message_as_owner 的规矩(gugu-supabase send_friend_file_as_owner):发送者是主人,记下是这个 agent 代发。
-  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id: randomUUID(), file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
+  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
   const result = await commitWithReplay(() => sendFileAsOwner(endpoint, send))
   if (typeof result.message_id !== 'string' || result.sent_by_agent !== true) {
     throw new Error('message_send_as_owner: the server did not confirm the send')
@@ -2402,22 +2452,33 @@ async function downloadSourceOf(args, deps) {
   return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
 }
 
-// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:harness 的工具超时到了下载也不停,再调一次就接上。
+// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:一次调用最多等 DOWNLOAD_CALL_BUDGET_MS,
+// 到了就正常返回「还在传」,下载照跑;再调一次就接上。没人等着时失败了,失败留给下一次调用报一次,再下一次重新读。
 const downloading = new Map()
+/** One call's wait, not the download's: about a harness tool timeout, so an agent turn is never held by a long read. */
+export const DOWNLOAD_CALL_BUDGET_MS = 60_000
 
 /** message_download_file:唯一取字节的门。判读者 → resolver(字节从哪来由它定)→ 本机 file-store 的只读副本。 */
 async function downloadFile(args, deps) {
   const source = await downloadSourceOf(args, deps)
   const key = `${source.reader}\n${fileRefKey(source.ref)}`
-  let saving = downloading.get(key)
-  if (!saving) {
-    saving = (async () => {
+  let flight = downloading.get(key)
+  if (flight?.failure) {
+    downloading.delete(key)
+    throw flight.failure
+  }
+  if (!flight) {
+    const started = Date.now()
+    flight = { started, state: 'waiting_sender', waiters: 0, failure: null }
+    const read = flight
+    read.saving = (async () => {
       // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
       const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
-      let file = await deps.resolveFile(source.ref, source.reader)
+      const progress = () => { read.state = 'transferring' }
+      let file = await deps.resolveFile(source.ref, source.reader, { progress })
       while (file.status === 'pending' && Date.now() < until) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
-        file = await deps.resolveFile(source.ref, source.reader)
+        file = await deps.resolveFile(source.ref, source.reader, { progress })
       }
       if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
       if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
@@ -2427,10 +2488,27 @@ async function downloadFile(args, deps) {
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
       const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
-    })().finally(() => downloading.delete(key))
-    downloading.set(key, saving)
+    })()
+    // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
+    // nobody waits for is kept (never an unhandled rejection) for the next call. A finished read leaves its copy in the
+    // file store, where the next call's own read finds it.
+    read.saving.then(() => { downloading.delete(key) }, (error) => {
+      if (read.waiters > 0) downloading.delete(key)
+      else read.failure = error
+    })
+    downloading.set(key, read)
   }
-  return JSON.stringify({ ...source.echo, ...await saving })
+  flight.waiters += 1
+  let budget
+  try {
+    const result = await Promise.race([flight.saving, new Promise((resolve) => { budget = setTimeout(resolve, DOWNLOAD_CALL_BUDGET_MS, null) })])
+    if (result) return JSON.stringify({ ...source.echo, ...result })
+    return JSON.stringify({ ...source.echo, status: 'transferring', state: flight.state, waited_ms: Date.now() - flight.started,
+      next: 'call message_download_file again with the same arguments' })
+  } finally {
+    clearTimeout(budget)
+    flight.waiters -= 1
+  }
 }
 
 /** message_send 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */
@@ -2494,7 +2572,10 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   let uploadReceipt = {}
   // A text file the shared classifier makes a document goes up through the attachments commit, where the server makes it
   // one (as a person's upload does); only stored bytes are published from a project.
-  let documentBytes = null
+  const replacement = folderFile && args.file_path ? await replacementTarget(args, deps, chatId, folderFile) : null
+  const documentBytes = replacement?.kind === 'document'
+    ? await readUploadBytes('message_send', args, WORKSPACE_TEXT_MAX_BYTES)
+    : !folderFile ? await documentUploadBytes(args) : null
   if (folderFile && !args.file_path) {
     // 按引用发(attachments/share):消息钉住群文件夹里那个文件的那一版,不传字节;文本文件钉住它此刻的正文。
     if (isWhisper) throw new Error('message_send: a whisper cannot carry a file of the chat\'s folder; send it openly, or a file_path')
@@ -2503,11 +2584,11 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       sender_user_id: deps.context.agentId, ...meta,
     }).catch(refused)
     fileName = attachmentNameOf(message)
-  } else if (!(documentBytes = folderFile ? null : await documentUploadBytes(args)) && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
+  } else if (!documentBytes && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
     sender_user_id: deps.context.agentId, ...meta, ...(isWhisper ? { is_whisper: true } : {}) },
     folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
     const reason = String(error?.message ?? error)
-    if (folderFile && /File revision conflict/.test(reason)) throw new Error(newerVersionRefusal(args.file, folderFile.version))
+    if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
     refused(error)
   }))) {
     fileName = resolveUploadName(args)
@@ -2543,7 +2624,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
           note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
       }
       await deps.attachments.drop(messageId)
-      if (error.code === 'version_conflict') throw new Error(newerVersionRefusal(args.file, folderFile.version))
+      if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
       refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
@@ -2799,7 +2880,7 @@ export const TOOL_DEFS = [
     description: 'Open a topic from a message. Only participants are notified. Messages use its chat_id; files and Apps use the source chat. Deletion: catalog topic_delete.',
     schema: z.object({
       chat_id: chatIdSchema.describe('The source chat.'),
-      source_message_id: z.string().trim().min(1).describe('A message of chat_id (msg:<uuid>).'),
+      source_message_id: z.string().trim().min(1).describe('A message of chat_id (msg:<id>).'),
       name: z.string().optional().describe('Default: the source message\'s start.'),
       to_user_ids: chatRecipientsSchema.describe('Who to bring in: members of the source chat only.'),
     }),
@@ -3065,8 +3146,9 @@ async function dispatchTool(context, name, args, injected, state) {
     )
   }
   // The id boundary lives here, on the one path both the SDK server and the exported callTool take.
-  const decoded = decodeImArgs(args || {})
-  const out = await def.handler(decoded, createDeps(context, injected, state))
+  const deps = createDeps(context, injected, state)
+  const decoded = await resolveMessagePrefixes(decodeImArgs(args || {}), deps)
+  const out = await def.handler(decoded, deps)
   if (def.rawOutput) return out
   // 列表工具(def.list)的 handler 回整张排好序的表,在这里按 list-window 的约定切窗(与 sessionpage 注册机同一个函数)。
   return encodeImOutput(name, decoded, def.list ? JSON.stringify(windowResult(def.list, out, decoded)) : out)
@@ -3088,7 +3170,7 @@ export async function callToolWithState(context, name, args, deps, state) {
 export async function sendWidgetOf(context, args, content, injected = {}, state = createSessionState()) {
   if (context.forkOf !== undefined) throw new Error('widget_send is unavailable in a side chat')
   const deps = createDeps(context, injected, state)
-  const decoded = decodeImArgs(args)
+  const decoded = await resolveMessagePrefixes(decodeImArgs(args), deps)
   const chatId = await requireChat(decoded, deps)
   await assertGroupRulesSeen(deps, chatId, 'widget_send')
   const replyToMessageId = decoded.reply_to_message_id ?? null

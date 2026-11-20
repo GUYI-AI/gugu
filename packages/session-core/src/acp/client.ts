@@ -13,3 +13,4 @@ export {
   type RecentActionSummary,
 } from './recent-actions';
 export { runningBackgroundCommands, type RunningBackgroundCommand } from './background-commands';
+export { isCodexRefreshTokenRevoked } from './sign-in-failure';

@@ -1,6 +1,6 @@
 export default {
-  "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
-  "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。", "sent": "已发送" },
+  "humanDm": { "notFriends": "对方还不是你的好友", "addFriend": "添加好友" },
+  "fileCite": { "selectLine": "选择第 {{line}} 行", "line": "第 {{first}} 行", "lines": "第 {{first}}–{{last}} 行" },
   "agent": {
     "identity": {
       "phone": "手机 Agent",
@@ -277,9 +277,6 @@ export default {
     "unpinFromSidebar": "取消固定到左侧栏",
     "hiddenRefreshFailed": "已从列表删除，但列表刷新失败，请重试",
     "agentDeleted": "智能体已删除",
-    "retryAgentDelete": "重试删除智能体",
-    "hiddenAgentDeleteFailed": "聊天记录已清空，但智能体删除失败",
-    "alsoRemoveAgent": "同时删除 Agent",
     "hideAgentDescription": "这条对话会从你的列表移除，有新消息时会重新出现。",
     "removeFromList": "从列表删除",
     "hideFailed": "无法隐藏这条对话",
@@ -381,7 +378,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
-  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}"},
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}", "noSuchMessage": "这个会话里没有以 {{prefix}} 开头的消息", "messageUnavailable": "消息不可用", "chatUnavailable": "聊天不可用", "sessionUnavailable": "任务不可用", "messages": "{{count}} 条消息", "severalMessages": "这个会话里有 {{count}} 条消息以 {{prefix}} 开头，选一条"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "文件已删除",
@@ -741,12 +738,11 @@ export default {
     }
   },
   "header": {
-    "openApp": "打开应用",
-    "groupApps": "应用",
+    "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
-    "noGroupApps": "本设备暂无可用的应用。",
+    "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
     "groupInfo": "群信息",
     "chatInfo": "会话信息",

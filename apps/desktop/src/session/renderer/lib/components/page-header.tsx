@@ -38,7 +38,6 @@ export function PageHeader({
   children,
   sticky = false,
   aside,
-  showTitleInSettings = false,
 }: {
   title: string;
   description?: string;
@@ -50,8 +49,6 @@ export function PageHeader({
   sticky?: boolean;
   /** 标题与说明右边那一格(App 页的搜索框,#7059 原型「顶上『App』+ 一句话,右边搜索」)。 */
   aside?: ReactNode;
-  /** A distinct section heading inside the settings panel, e.g. “My subscriptions”. */
-  showTitleInSettings?: boolean;
 }) {
   const inherited = useContext(PageScopeContext);
   const scope = scopeProp === undefined ? inherited : scopeProp;
@@ -61,14 +58,17 @@ export function PageHeader({
       {status}
     </div>
   ) : null;
-  if (useContext(InSettingsPanelContext) && !showTitleInSettings) {
-    if (!scope?.control && !description && !children) return null;
+  if (useContext(InSettingsPanelContext)) {
+    if (!scope?.control && !description && !children && !aside) return null;
     return (
       <div className="flex flex-col gap-4">
-        {scope?.control ? (
-          <div className="flex min-w-0" data-slot="page-scope">
-            {scope.control}
-            {statusSlot ? <div className="ml-2 flex min-w-0 items-center">{statusSlot}</div> : null}
+        {scope?.control || aside ? (
+          <div className="flex min-w-0 items-center justify-between gap-4">
+            {scope?.control ? <div className="flex min-w-0" data-slot="page-scope">
+              {scope.control}
+              {statusSlot ? <div className="ml-2 flex min-w-0 items-center">{statusSlot}</div> : null}
+            </div> : null}
+            {aside ? <div className="ml-auto flex shrink-0 [-webkit-app-region:no-drag]">{aside}</div> : null}
           </div>
         ) : null}
         {description ? <SettingsNote>{description}</SettingsNote> : null}

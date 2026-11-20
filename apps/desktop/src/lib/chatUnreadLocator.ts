@@ -93,7 +93,8 @@ export type OpenableUnreadTarget = {
   locator: ChatUnreadLocator & { message_id: string; message_seq: number }
 }
 
-export type CapturedUnreadEntry = OpenableUnreadTarget & { onSeen: () => void }
+/** consume: ends this opening's entry (seen, jumped to, or no longer presented); a newer entry for the chat survives it. */
+export type CapturedUnreadEntry = OpenableUnreadTarget & { consume: () => void }
 
 export type UnreadMessageRevealRequest = {
   token: string

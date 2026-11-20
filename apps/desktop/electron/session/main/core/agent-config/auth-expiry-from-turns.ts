@@ -11,7 +11,8 @@
  *
  * 纯函数;真正去改标记的是 `applyTurnToAuthExpiry`(写入方注入,见下)。
  */
-import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { isCodexRefreshTokenRevoked, type TranscriptTurn } from '@gugu/session-core/acp';
+import { toSerializedError } from '@gugu/session-shared';
 
 export type AuthExpiryEffect = { kind: 'mark' | 'clear'; providerId: string } | null;
 
@@ -36,6 +37,19 @@ export type AuthExpiryWriter = {
   clear(providerId: string, sessionId?: string): Promise<void>;
   log(message: string, detail: Record<string, unknown>): void;
 };
+
+/** Startup can fail before any turn exists. Attribute explicit revocation to the session's bound connection. */
+export function applyStartToAuthExpiry(
+  event: { providerId?: string; sessionId: string; platformCredentials: boolean; failure: unknown },
+  writer: AuthExpiryWriter,
+): Promise<void> | null {
+  if (!event.providerId || event.platformCredentials || !event.failure || typeof event.failure !== 'object') return null;
+  const cause = (event.failure as { cause?: unknown }).cause;
+  if (!cause || !isCodexRefreshTokenRevoked(toSerializedError(cause))) return null;
+  return writer.mark(event.providerId, event.sessionId).catch(error => {
+    writer.log('auth expiry update from startup failed', { providerId: event.providerId, error: String(error) });
+  });
+}
 
 /** 把一条回合的结局落到标记上。写失败只记日志 —— ❌ 冒到会话那一侧(那会把一次状态写失败升级成会话出错)。 */
 export function applyTurnToAuthExpiry(

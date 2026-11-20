@@ -41,7 +41,7 @@ hear:callback=>{const handler=(_event,watch,packet)=>callback(watch,packet);ipcR
     const env: NodeJS.ProcessEnv = { ...process.env, GUGU_HOME: path.join(temporary, 'home'), GUGU_USER_DATA_DIR: path.join(temporary, 'user-data') };
     fs.mkdirSync(env.GUGU_HOME!, { recursive: true }); fs.mkdirSync(env.GUGU_USER_DATA_DIR!, { recursive: true });
     delete env.ELECTRON_RUN_AS_NODE;
-    const child = spawn(electron!, [path.join(temporary, 'main.cjs')], { env, signal: AbortSignal.timeout(25_000), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(electron!, [path.join(temporary, 'main.cjs')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk.toString(); });
     child.stderr.on('data', chunk => { stderr += chunk.toString(); });
@@ -54,7 +54,7 @@ hear:callback=>{const handler=(_event,watch,packet)=>callback(watch,packet);ipcR
     const line = stdout.split('\n').find(line => line.startsWith('PROJECTION_RESULT='));
     expect(line, stdout + '\n' + stderr).toBeDefined();
     cases = JSON.parse(line!.slice('PROJECTION_RESULT='.length)).cases;
-  }, 35_000);
+  });
   afterAll(() => { if (temporary) fs.rmSync(temporary, { recursive: true, force: true }); });
   it.each(['native-installed-app-grants', 'native-capture-and-render', 'native-painted-feedback-and-resize', 'native-unicode-once-and-fixture-routing', 'native-app-revocation'])('%s', name => {
     expect(cases[name], JSON.stringify(cases[name])).toEqual({ passed: true });

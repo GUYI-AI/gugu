@@ -564,7 +564,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
       "Agent plugin 'gemini' does not declare a tui sessionpage integration",
     )
   })
-  it('映射里的群已归档 ⇒ 不复用,另建新群并换掉映射', async () => {
+  it('旧服务端替换归档群的回执不能覆盖原映射，显式恢复后仍接回原群', async () => {
     await provisionCreated(
       { sessionId: 'conv-g1', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleCloud()
@@ -573,21 +573,21 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
     await provisionCreated(
       { sessionId: 'conv-g2', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleCloud()
-    const fresh = groups.find((g) => g.chatId !== first.chatId)!
-    expect(fresh, '归档群不复用,得另建一个').toBeTruthy()
-    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g2')?.cache).toMatchObject({ sessionpage_group_chat_id: fresh.chatId })
+    const { readProjectGroupId } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups')
+    expect(await readProjectGroupId('proj-gamma', 'owner-1', deps.env)).toBe(first.chatId)
+    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g2')?.cache).toMatchObject({ sessionpage_group_chat_id: '' })
     expect(first.members, '新 agent 没被塞进归档群').toHaveLength(2)
+    first.status = 'active'
     await provisionCreated(
       { sessionId: 'conv-g3', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleCloud()
-    expect(groups.filter((g) => g.chatId !== first.chatId), '第三条会话复用新群,不再建').toHaveLength(1)
+    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g3')?.cache).toMatchObject({ sessionpage_group_chat_id: first.chatId })
     const { settleSessionpageCloudProvisioning } = await import(SUT)
     await provisionCreated(
       { sessionId: 'conv-g1', providerId: 'codex', surface: 'tui', cwd: '/w', projectId: 'proj-gamma' }, deps)
     await settleSessionpageCloudProvisioning()
-    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g1')?.cache).toMatchObject({ sessionpage_group_chat_id: fresh.chatId })
-    expect(fresh.members, 'conv-g1 的 agent 进了新群').toContain(roster.find((r) => r.cache?.emdash_session_id === 'conv-g1')!.gugu_user_id)
-    expect(groups.filter((g) => g.chatId !== first.chatId), '仍只有那一个新群').toHaveLength(1)
+    expect(roster.find((r) => r.cache?.emdash_session_id === 'conv-g1')?.cache).toMatchObject({ sessionpage_group_chat_id: first.chatId })
+    expect(await readProjectGroupId('proj-gamma', 'owner-1', deps.env)).toBe(first.chatId)
   })
   it('reuses a group only for the exact cached project and clears it when projectless', async () => {
     const alpha = await provisionCreated(
@@ -1144,17 +1144,19 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     expect(roster[0].status).toBe('archived')
     expect(tombstones).toEqual([])
   })
-  it('项目没了 → 归档镜像它的群,并摘掉它产生的 agent', async () => {
+  it('项目行缺席只收本机失效任务，群状态、成员和持久绑定不变', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
-    await provisionCreated(
-      { sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
+    const { readProjectGroupId } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups')
+    await provisionCreated({ sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
     const groupId = groups[0].chatId
+    const members = [...groups[0].members]
     await reconcileSessionpageAgents(reapDeps({ sessionIds: ['conv-a'], projectIds: ['proj-alpha'] }))
     const res = await reconcileSessionpageAgents(reapDeps({ sessionIds: [], projectIds: [] }))
-    expect(res.reapedAgents).toBe(1)
-    expect(res.archivedGroups).toBe(1)
-    expect(chatUpdates, '群被置为 archived(咕咕没有群硬删能力)').toEqual(
-      expect.arrayContaining([{ table: 'chats', patch: { status: 'archived' }, id: groupId }]))
+    expect(res).toEqual({ reapedAgents: 1, archivedGroups: 0 })
+    expect(chatUpdates).toEqual([])
+    expect(rpcCalls.filter(call => call.name === 'archive_group_as')).toEqual([])
+    expect(groups[0].members).toEqual(members)
+    expect(await readProjectGroupId('proj-alpha', 'owner-1', deps.env)).toBe(groupId)
     expect(agentsForOwner(roster, null)).toHaveLength(0)
     expect(roster).toHaveLength(1)
   })
@@ -1216,26 +1218,18 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     expect(groups[0].chatId, '回到原来那个群').toBe(firstGroupId)
     expect(groups, '❌ 没有多出第二个同名群').toHaveLength(1)
   })
-  it('项目没了(群已归档)→ 忘掉映射,同 id 项目再出现时不复用归档群', async () => {
+  it('暂时丢失项目行后恢复同ID，继续使用原群而非新建同名群', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     const { readProjectGroupId } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups')
-    await provisionCreated(
-      { sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
+    await provisionCreated({ sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
     const firstGroupId = groups[0].chatId
     await reconcileSessionpageAgents(reapDeps({ sessionIds: ['conv-a'], projectIds: ['proj-alpha'] }))
-    const res = await reconcileSessionpageAgents(reapDeps({ sessionIds: [], projectIds: [] }))
-    expect(res.archivedGroups).toBe(1)
-    expect(roster).toHaveLength(1)
-    expect(roster[0].status).toBe('archived')
-    const archivedAgentId = roster[0].gugu_user_id
-    expect(await readProjectGroupId('proj-alpha', 'owner-1', deps.env)).toBeNull()
-    groups.length = 0 // 归档的群不再算「可复用的活群」(替身的 groupExists 按这个数组回答)
-    await provisionCreated(
-      { sessionId: 'conv-d', providerId: 'codex', surface: 'tui', cwd: '/w/d', projectId: 'proj-alpha' }, deps)
-    expect(groups[0].chatId, '建了新群,不复用归档的那个').not.toBe(firstGroupId)
+    expect((await reconcileSessionpageAgents(reapDeps({ sessionIds: [], projectIds: [] }))).archivedGroups).toBe(0)
+    expect(await readProjectGroupId('proj-alpha', 'owner-1', deps.env)).toBe(firstGroupId)
+    await provisionCreated({ sessionId: 'conv-d', providerId: 'codex', surface: 'tui', cwd: '/w/d', projectId: 'proj-alpha' }, deps)
     expect(groups).toHaveLength(1)
-    expect(await readProjectGroupId('proj-alpha', 'owner-1', deps.env)).toBe(groups[0].chatId)
-    expect(roster.find((agent) => agent.gugu_user_id === archivedAgentId)?.status).toBe('archived')
+    expect(groups[0].chatId).toBe(firstGroupId)
+    expect(await readProjectGroupId('proj-alpha', 'owner-1', deps.env)).toBe(firstGroupId)
   })
   it('清单不自洽(有会话却零项目)→ 拒绝归档任何群,只按会话摘 agent', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
@@ -1248,12 +1242,13 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     expect(chatUpdates, '没有任何 chats 被改状态').toEqual([])
     expect(res.reapedAgents, '摘 agent 照常(它只依赖会话清单)').toBe(1)
   })
-  it('项目真的全删了(会话也随之为空)→ 该归档还是归档', async () => {
+  it('本机项目行和会话都为空，也不是群归档授权', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     await provisionCreated(
       { sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
     const res = await reconcileSessionpageAgents(reapDeps({ sessionIds: [], projectIds: [] }))
-    expect(res.archivedGroups, '级联把会话也带走了 → 守卫不该误伤这条真删除').toBe(1)
+    expect(res.archivedGroups).toBe(0)
+    expect(chatUpdates).toEqual([])
   })
   it('用户自己建的 agent(无会话绑定)绝不被碰', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
@@ -1495,7 +1490,7 @@ describe('#7341 项目群跨设备:预留的群 id、别的机器还在用的群
     expect(await readProjectGroupId('proj-alpha', 'owner-1', env())).toBe(groups[0]!.chatId)
   })
 
-  it('项目在这台机器上没了、群里还有别的机器上的 agent ⇒ 不归档,只忘掉这台的对照;本机的 agent 照收', async () => {
+  it('项目在这台机器上没了，不查其他设备也保留群和原绑定', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     const { listProjectGroupIds } = await import(MAPPING)
     await provisionCreated(
@@ -1507,14 +1502,14 @@ describe('#7341 项目群跨设备:预留的群 id、别的机器还在用的群
       ...reapDeps({ sessionIds: [], projectIds: [] }),
       listGroupAgentsElsewhere: checker,
     })
-    expect(checker).toHaveBeenCalledWith({ chatId: groupId, deviceId: 'device-1', accessToken: 'token', ownerUserId: 'owner-1' })
+    expect(checker).not.toHaveBeenCalled()
     expect(res.archivedGroups).toBe(0)
     expect(archived(), '别的机器还在用 ⇒ ❌ 归档').toEqual([])
-    expect(await listProjectGroupIds('owner-1', env()), '这台机器上的对照忘掉').toEqual([])
+    expect(await listProjectGroupIds('owner-1', env()), '保留原绑定供恢复').toEqual([{ projectId: 'proj-alpha', chatId: groupId }])
     expect(res.reapedAgents, '本机这个项目的 agent 照样收').toBe(1)
   })
 
-  it('群里只剩本机的 agent ⇒ 照旧归档', async () => {
+  it('群里只剩本机的 agent，仍不自动归档', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     await provisionCreated(
       { sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
@@ -1524,27 +1519,25 @@ describe('#7341 项目群跨设备:预留的群 id、别的机器还在用的群
       ...reapDeps({ sessionIds: [], projectIds: [] }),
       listGroupAgentsElsewhere: async () => [],
     })
-    expect(res.archivedGroups).toBe(1)
-    expect(archived()).toEqual([groupId])
+    expect(res.archivedGroups).toBe(0)
+    expect(archived()).toEqual([])
+    expect(groups[0]!.chatId).toBe(groupId)
   })
 
-  it('查不出别的机器在不在用 ⇒ 不归档、对照不动,并且响亮失败(fail closed)', async () => {
+  it('本地项目缺席不再发起其他设备查询，断网也保留绑定', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     const { listProjectGroupIds } = await import(MAPPING)
-    await provisionCreated(
-      { sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
+    await provisionCreated({ sessionId: 'conv-a', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: 'proj-alpha' }, deps)
     const groupId = groups[0]!.chatId
     await reconcileSessionpageAgents(reapDeps({ sessionIds: ['conv-a'], projectIds: ['proj-alpha'] }))
-    await expect(reconcileSessionpageAgents({
-      ...reapDeps({ sessionIds: [], projectIds: [] }),
-      listGroupAgentsElsewhere: async () => { throw new Error('network down') },
-    })).rejects.toThrow(/check other machines before archiving: network down/)
+    const checker = vi.fn(async () => { throw new Error('network down') })
+    expect(await reconcileSessionpageAgents({ ...reapDeps({ sessionIds: [], projectIds: [] }), listGroupAgentsElsewhere: checker }))
+      .toEqual({ reapedAgents: 1, archivedGroups: 0 })
+    expect(checker).not.toHaveBeenCalled()
     expect(archived()).toEqual([])
-    expect(await listProjectGroupIds('owner-1', env()), '映射留着,下次触发再判').toEqual([{ projectId: 'proj-alpha', chatId: groupId }])
-    expect(roster, '保留归档名册以便恢复').toHaveLength(1)
+    expect(await listProjectGroupIds('owner-1', env())).toEqual([{ projectId: 'proj-alpha', chatId: groupId }])
     expect(roster[0].status).toBe('archived')
   })
-
   it('本机设备还没解析出来 ⇒ 判不了别的机器,这一轮不归档', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     await provisionCreated(
@@ -1563,7 +1556,7 @@ describe('#7341 项目群跨设备:预留的群 id、别的机器还在用的群
     expect(archived()).toEqual([])
   })
 
-  it('这台机器上另一个还在的项目也绑着这个群 ⇒ 不归档,只忘掉没了的那个项目的对照', async () => {
+  it('同群另一个本机项目还在，两条绑定都保留', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
     const { rememberProjectGroupId, listProjectGroupIds } = await import(MAPPING)
     await provisionCreated(
@@ -1578,7 +1571,7 @@ describe('#7341 项目群跨设备:预留的群 id、别的机器还在用的群
     expect(res.archivedGroups).toBe(0)
     expect(archived()).toEqual([])
     expect(checker, '本机就判得出来,不必问云端').not.toHaveBeenCalled()
-    expect(await listProjectGroupIds('owner-1', env())).toEqual([{ projectId: 'proj-beta', chatId: groupId }])
+    expect(await listProjectGroupIds('owner-1', env())).toEqual(expect.arrayContaining([{ projectId: 'proj-alpha', chatId: groupId }, { projectId: 'proj-beta', chatId: groupId }]))
   })
 
   describe('listGroupAgentsOnOtherDevices(默认的那一问)', () => {

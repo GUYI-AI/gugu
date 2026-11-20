@@ -66,7 +66,7 @@ function project(agents: readonly LocalAgentRecord[]): Map<string, BoundTaskName
   const next = new Map<string, BoundTaskName>();
   for (const agent of agents) {
     const sessionId = agent.cache?.[SESSIONPAGE_SESSION_CACHE_KEY];
-    if (agent.status === 'archived' || typeof sessionId !== 'string' || !sessionId || !agent.gugu_user_id || !agent.name.trim()) continue;
+    if (typeof sessionId !== 'string' || !sessionId || !agent.gugu_user_id || !agent.name.trim()) continue;
     const ownerUserId = agentOwnerUserId(agent);
     if (owner && next.get(sessionId)?.ownerUserId === owner && ownerUserId !== owner) continue;
     next.set(sessionId, { agentUserId: agent.gugu_user_id, name: agent.name.trim(), pending: agent.cache?.name_pending === true, ownerUserId });

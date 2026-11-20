@@ -11,6 +11,7 @@ import {
 import { openInAppIdSchema } from '@shared/openInApps';
 import { SESSION_TITLE_INSTRUCTIONS_MAX } from '@shared/core/sessions/session-title-namer';
 import { COMMANDS } from '@shared/commands';
+import type { DevicePreferences } from '../../../../../shared/device-preferences';
 import { isValidProviderId } from '../agents/plugin-registry';
 import { isGuguPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp/client';
 
@@ -62,12 +63,17 @@ export const terminalSettingsSchema = z.object({
   defaultShell: z.enum(TERMINAL_SHELL_IDS),
 });
 
-export const themeSchema = z
-  .enum(['emlight', 'emdark'])
-  .nullable()
-  .catch(null)
-  .optional()
-  .default(null);
+/** @@@device-preferences — this device's own preferences (shared/device-preferences.ts); main applies theme, language and tray badge. */
+export const devicePreferencesSchema = z.object({
+  theme: z.enum(['light', 'dark', 'system']),
+  locale: z.enum(['system', 'zh-CN', 'en-US']),
+  sidebarTint: z.boolean(),
+  trayBadge: z.boolean(),
+  chatMessages: z.boolean(),
+  chatSound: z.boolean(),
+  meetingReminder: z.boolean(),
+  confirmBeforeCancelAndSend: z.boolean().default(true),
+}) satisfies z.ZodType<DevicePreferences>;
 
 /**
  * 出厂**不预选任何 agent**。
@@ -256,6 +262,12 @@ const dataImportSettingsSchema = z.object({
   owners: z.record(z.string(), z.object({
     automatic: z.boolean(),
     sources: z.array(z.string()),
+    categories: z.array(z.enum(['tasks', 'projects', 'memories', 'skills', 'connectors'])).optional(),
+    categoryAttempts: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+    categoryResults: z.array(z.object({ providerId: z.string(), finishedAt: z.number(), items: z.array(z.object({
+      id: z.string(), title: z.string(), category: z.enum(['tasks', 'projects', 'memories', 'skills', 'connectors']),
+      status: z.enum(['imported', 'existing', 'conflict', 'skipped', 'failed']).optional(), reason: z.string().optional(),
+    })).max(10000) })).max(50).optional(),
   })),
 });
 
@@ -269,7 +281,7 @@ export const APP_SETTINGS_SCHEMA_MAP = {
   dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
-  theme: themeSchema,
+  devicePreferences: devicePreferencesSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,
@@ -289,7 +301,7 @@ export const appSettingsSchema = z.object({
   dataImport: dataImportSettingsSchema,
   keyboard: keyboardSettingsSchema,
   notifications: notificationSettingsSchema,
-  theme: themeSchema,
+  devicePreferences: devicePreferencesSchema,
   openIn: openInSettingsSchema,
   interface: interfaceSettingsSchema,
   terminal: terminalSettingsSchema,

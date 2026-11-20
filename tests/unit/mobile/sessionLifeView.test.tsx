@@ -3,14 +3,14 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { LifeView } from '@/session/shared/core/sessions/session-life'
-import { useSessionLifeView } from '@/mobile/agent-watch/useSessionLifeView'
+import { useSessionLifeView } from '@/components/session-watch/useSessionLifeView'
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const host = vi.hoisted(() => ({
   reads: [] as Array<{ sessionId: string; resolve: (view: LifeView) => void; reject: (error: unknown) => void }>,
   events: new Set<(view: LifeView) => void>(), links: new Set<(open: boolean) => void>(),
 }))
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessions: { lifeView: (sessionId: string) => new Promise<LifeView>((resolve, reject) => host.reads.push({ sessionId, resolve, reject })) } }),
   onMachineEvent: (_device: string, _event: unknown, fn: (view: LifeView) => void) => { host.events.add(fn); return () => host.events.delete(fn) },
   onLinkChange: (_device: string, fn: (open: boolean) => void) => { host.links.add(fn); return () => host.links.delete(fn) },

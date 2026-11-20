@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { SessionInput } from '@/lib/sessionInputOutbox'
-import { startPhoneSendQueueObserver, type PhoneQueueObserverDependencies, type PhoneQueueSource } from '@/mobile/agent-watch/phone-send-queue-observer'
+import { startPhoneSendQueueObserver, type PhoneQueueObserverDependencies, type PhoneQueueSource } from '@/components/session-watch/phone-send-queue-observer'
 
 const held = (id = 'held'): SessionInput => ({ id, accountId: 'owner', deviceId: 'host', sessionId: 'session', text: id, createdAt: 1, queued: true, sendQueue: { order: 1 } })
 const turn = (done: boolean): TranscriptTurn => ({ id: 'turn', seq: 1, initiator: 'user', items: [], ...(done ? { outcome: { kind: 'done' as const } } : {}) })

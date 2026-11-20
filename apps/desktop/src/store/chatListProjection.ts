@@ -14,11 +14,15 @@ import type { PersonalConversationDeletion } from '../lib/deleteListedConversati
 import type { PersonalConversationStateReceipt } from '../lib/hideListedConversation'
 import { prepareProjectedReadWatermark } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
+import { publishChatRemovalFacts, publishChatRemoved } from '../lib/chatRemovalBridge'
 import {
   createChatProjection, readProjectionCursor,
   type ChatProjection, type ChatProjectionAttachment,
 } from '../lib/chatProjection'
 import { shareRows } from '../lib/chatProjectionAlgebra'
+import { presentChatMessage } from '../lib/chatNotificationPresentation'
+import { unknownMemberName } from '../lib/memberFallbackName'
+import { rendererLogger } from '@/lib/log'
 import type { ChatWindowCache } from './chatWindowCache'
 
 // @@@selection-is-intent (#4314) — 一次刷新没提到某条会话，含义取决于这一发相对「最后一次看见它」有多新：
@@ -89,14 +93,17 @@ export async function applyFetchedChatList(
   return shareRows(currentChats, missing.length > 0 ? [...missing, ...visible] : visible)
 }
 
+const log = rendererLogger('chat-notification')
 const notifiedSends = new Set<string>()
+/** #3416 How long a banner waits for its pictures before going out without them (they are then refreshed, silently). */
+const PRESENTATION_BUDGET_MS = 1200
 
 /** Only the winner of the committed account message's IDB claim calls this outlet. */
 export async function notifyForIngestedMessage(
   accountId: string,
   chat: ChatItem,
   message: MessageItem,
-  context: { onScreen: (chatId: string) => boolean; notificationsEnabled: boolean; soundEnabled: boolean },
+  context: { onScreen: (chatId: string) => boolean; notificationsEnabled: boolean; soundEnabled: boolean; isCurrent?: () => boolean },
 ): Promise<void> {
   if (!platform.capabilities.notifications) return
   if (!shouldNotify({ kind: 'message', accountId, chat, message },
@@ -107,9 +114,24 @@ export async function notifyForIngestedMessage(
     notifiedSends.add(message.send_group_id)
     if (notifiedSends.size > 256) notifiedSends.delete(notifiedSends.values().next().value!)
   }
-  await platform.showNotification({ ...createChatNotificationPayload({ ...chat,
+  const payload = { ...createChatNotificationPayload({ ...chat,
     last_message_preview: (sendGroupPreview(message.send_group_size) ?? chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) }))
-      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
+      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled }
+  // #3416 A host that draws conversations is told whose message this is (the other person's / the group's face, the real
+  // author); the rest of the hosts get the notification exactly as before. Identity and faces stay on this device.
+  const presented = platform.capabilities.conversationNotifications
+    ? await import('../lib/chatNotificationFaces')
+      .then(({ createNotificationFaceSources }) =>
+        presentChatMessage({ accountId, chat, message, title: payload.title, unknownAuthorName: unknownMemberName() },
+          createNotificationFaceSources(), PRESENTATION_BUDGET_MS))
+      // The banner is what matters: without its pictures it still goes out as before.
+      .catch((error: unknown) => { log.error({ error: error instanceof Error ? error.name : 'unknown' }, 'chat notification presentation failed'); return null })
+    : null
+  await platform.showNotification(presented ? { ...payload, presentation: presented.presentation } : payload)
+  // Late pictures refresh the banner that is still up: same message, no new alert, never for another account.
+  void presented?.refresh?.then((presentation) => {
+    if (context.isCurrent?.() !== false) return platform.showNotification({ ...payload, presentation })
+  }).catch((error: unknown) => log.error({ error: error instanceof Error ? error.name : 'unknown' }, 'chat notification picture refresh failed'))
 }
 
 /** 屏上正打开的主时间线不产生未读红点；手工标未读与别的话题流仍保留。 */
@@ -196,11 +218,11 @@ export function useChatProjectionBinding(deps: {
   }, [chatsRef, repositoryRef])
 
   /** `revokedMembership` 是增量那一路的另一半判据:要**权威的成员行 tombstone**,不是整表缺席(#4314)。 */
-  const publish = useCallback(async (
+  const publish = useCallback(async function publishSnapshot(
     fetched: readonly ChatItem[],
     identities: readonly unknown[],
     options: { requestSeq: number; notify: boolean; preserveMissingActive?: boolean; revokedMembership?: (chatId: string) => boolean },
-  ): Promise<void> => {
+  ): Promise<void> {
     const repository = await getRepository()
     const accountId = repository.accountId
     if (repositoryRef.current?.accountId !== accountId) return
@@ -224,20 +246,42 @@ export function useChatProjectionBinding(deps: {
     const serviceById = new Map(fetched.map(row => [row.id, row]))
     const currentById = new Map(current.map(row => [row.id, row]))
     const rebased = published.flatMap(row => {
+      if (isConversationDeleted?.(row.id)) return []
       const source = serviceById.get(row.id) ?? currentById.get(row.id)
       return source ? [source] : []
     })
-    const merged = mergeFetchedChatsPreservingActiveLocal(rebased, current, activeChatIdRef.current,
-      { preserveMissingActive: false })
+    // A repository wait can outlive a new selection. Decide against that selection
+    // at publication time; absence from the captured list is not a removal fact.
+    // Keep the original revocation when applyFetchedChatList already retired its
+    // ledger entry, while still consulting the live membership/deletion facts.
+    const selectedChatId = activeChatIdRef.current
+    const revokeSelected = !!selectedChatId && (!!isConversationDeleted?.(selectedChatId)
+      || ((selectedChatId === activeChatId && revokeMissingActive) || ledger.shouldRevokeActive({
+        activeChatId: selectedChatId, fetched, requestSeq: options.requestSeq, preserveMissingActive: options.preserveMissingActive,
+      })) && (!options.revokedMembership || options.revokedMembership(selectedChatId)))
+    const merged = mergeFetchedChatsPreservingActiveLocal(rebased, current, selectedChatId,
+      { preserveMissingActive: !revokeSelected })
     const pendingReads: Array<() => void> = []
     const acknowledged = acknowledgeOnScreenChatRows(merged, {
       current, onScreen: isChatOnScreen, canAcknowledge, visibleSeqOf,
       deferPersist: (persist) => pendingReads.push(persist),
     })
     acceptRows(accountId, shareRows(current, acknowledged))
+    const binding = ownerRef.current
+    if (binding?.accountId === accountId) publishChatRemovalFacts(accountId, id =>
+      ownerRef.current === binding && repositoryRef.current?.accountId === accountId
+      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)), async ids => {
+        if (ownerRef.current !== binding || repositoryRef.current?.accountId !== accountId) return
+        const rows = await binding.owner.readRestoredLayoutMemberships(ids, readProjectionCursor(repositoryRef.current), currentAuthSessionSignal())
+        if (rows !== null && ownerRef.current === binding && repositoryRef.current?.accountId === accountId) {
+          await publishSnapshot(rows, binding.owner.identities(), { requestSeq: ++requestSeqRef.current, notify: false,
+            preserveMissingActive: false, revokedMembership: binding.owner.isMembershipRevoked })
+        }
+      })
     for (const persist of pendingReads) persist()
-    if (revokeMissingActive && activeChatId) onActiveRevoked(activeChatId)
-  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef])
+    if (revokeMissingActive && activeChatId && activeChatId !== selectedChatId) onActiveRevoked(activeChatId)
+    if (revokeSelected && selectedChatId) onActiveRevoked(selectedChatId)
+  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef, requestSeqRef])
 
   /** 冷启快照:一次「哪些会话属于我」的读 + 与增量同一套族读 ⇒ 2 波(spec I7,没有第二条拉取路)。 */
   const hydrate = useCallback((accountId: string) => ownerFor(accountId)
@@ -262,6 +306,7 @@ export function useChatProjectionBinding(deps: {
     const binding = ownerRef.current
     if (!binding || binding.accountId !== accountId) return false
     binding.owner.confirmPersonalDeletion(receipt) // Synchronous, before any older result can publish.
+    publishChatRemoved(accountId, receipt.chat_id)
     ledger.forgetChat(receipt.chat_id)
     const repository = await getRepository()
     if (ownerRef.current !== binding || repository.accountId !== accountId) return false

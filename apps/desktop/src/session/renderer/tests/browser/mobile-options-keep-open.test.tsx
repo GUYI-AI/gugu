@@ -11,12 +11,12 @@ import { useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { CreateOptionsPill, ModelChoices } from '@/mobile/agent-watch/CreateOptionsPill';
+import { CreateOptionsPill, ModelChoices } from '@/components/session-watch/CreateOptionsPill';
 import { setLocalePreference } from '@/i18n';
-import type { CreateSelection } from '@/mobile/agent-watch/create-session-form';
+import type { CreateSelection } from '@/components/session-watch/create-session-form';
 import '@/i18n';
 import '@/styles/tokens.css';
-import '@/mobile/agent-watch/agent-watch.css';
+import '@/components/session-watch/agent-watch.css';
 
 let root: Root | null = null;
 beforeEach(() => page.viewport(412, 842));

@@ -3,6 +3,9 @@ import { z } from 'zod'
 export const providerSessionStateSchema = z.enum(['missing', 'restart_failed'])
 export type ProviderSessionState = z.infer<typeof providerSessionStateSchema>
 
+/** A provider's local lookup confirmed the requested native conversation cannot be found. */
+export class MissingProviderSessionError extends Error {}
+
 const CODEX_MISSING_ROLLOUT_CODE = -32600
 const ACP_INTERNAL_ERROR_CODE = -32603
 const ACP_INTERNAL_ERROR_MESSAGE = 'Internal error'
@@ -45,6 +48,7 @@ export function isProviderSessionMissingError(
 function isProviderSessionMissingErrorInner(error: unknown, seen: Set<object>): boolean {
   if (typeof error !== 'object' || error === null || seen.has(error)) return false
   seen.add(error)
+  if (error instanceof MissingProviderSessionError) return true
 
   const value = error as { code?: unknown; message?: unknown; cause?: unknown; data?: unknown }
   const message = typeof value.message === 'string' ? value.message.trim() : null

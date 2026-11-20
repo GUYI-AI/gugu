@@ -13,6 +13,7 @@ import {
   BARE_VERSION_LINE,
 } from '@gugu/session-core/agents/plugins/helpers';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
+import { codebuddyRevert } from './revert';
 import {
   CODEBUDDY_ACP_CHINA,
   CODEBUDDY_ACP_INTERNATIONAL,
@@ -164,9 +165,12 @@ export const provider = registerPluginBehavior(plugin, {
   auth: { checkStatus: codebuddyAuthStatus },
   sessionBundle: { materialize: materializeCodebuddySessionBundle, platformModel },
   // 会话级 argv(`--settings <文档>`)由物化器产出,经 `capabilityArgs` 挂在 `codebuddy --acp` 上。
-  acp: createNativeAcpBehavior((ctx) => ({
-    args: ['--acp', ...(ctx.capabilityArgs ?? [])],
-  })),
+  acp: {
+    ...createNativeAcpBehavior((ctx) => ({
+      args: ['--acp', ...(ctx.capabilityArgs ?? [])],
+    })),
+    revert: codebuddyRevert,
+  },
   prompt: {
     buildCommand: (ctx) =>
       buildStandardCommand(ctx, {

@@ -1,34 +1,42 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { Markdown } from '../markdown/Markdown'
 import { Button } from '../ui/Button'
-import { Popover } from '../ui/Popover'
 import { useBackLayer } from '../ui/sheetStack'
-import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
+import type { AnnotationConversation } from '@/session/shared/browser-annotation'
+import { selectionMenu, type FileReference } from '@/session/shared/extensions/file-selection'
+import { i18n } from '@/i18n'
 import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-range'
-import { useSessionMessages } from '@renderer/localization/use-session-messages'
-import { FilePreviewAnnotations, type FileAnnotationContext } from './FilePreviewAnnotations'
+import { openSendLine } from '@renderer/features/sessions/annotations/file-selection-overlay'
+import { FileSelectionMenu } from './FileSelectionMenu'
+import { linesPlace, selectionCite, type SelectionCite } from './quote-preview-file'
 import './file-text-content.css'
 
 type Selection = { range: Range; quote: FileTextRange }
 
-/** The file's existing native selection (including touch handles) offers Cite (into the composer) and, where given, Send. */
-export function FileTextContent({ content, kind, style, onCite, onSend, annotation }: {
+/**
+ * What a file's text preview can do with a selection: whose conversation it is and how its readers name the file
+ * (file-selection.ts), where a cite goes on this platform, and whether a Send can go out from here.
+ */
+export interface FileTextSelection {
+  conversation: AnnotationConversation | null
+  file: FileReference | null
+  cite: (cite: SelectionCite) => void | Promise<void>
+  sends: boolean
+}
+
+/** The file's existing native selection (including touch handles) offers the host's one selection menu (FileSelectionMenu). */
+export function FileTextContent({ content, kind, style, selectable }: {
   content: string
   kind: 'text' | 'markdown'
   style?: CSSProperties
-  onCite?: (selection: FileViewerSelection) => void | Promise<void>
-  /** Send this selection with a few words, from a box beside it (`openSelectionSend`), at the selection's place on screen. */
-  onSend?: (selection: FileViewerSelection, at: DOMRect) => void
-  annotation?: FileAnnotationContext
+  selectable?: FileTextSelection
 }) {
   const { t } = useTranslation('messaging')
-  const { translate } = useSessionMessages()
   const container = useUiPortalContainer()
   const root = useRef<HTMLDivElement>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
-  const [annotationSelection, setAnnotationSelection] = useState<Selection | null>(null)
   const selecting = useRef(false)
   const lineAnchor = useRef<number | null>(null)
   const dragging = useRef<number | null>(null)
@@ -39,7 +47,7 @@ export function FileTextContent({ content, kind, style, onCite, onSend, annotati
 
   useEffect(() => {
     const element = root.current
-    if (!element || !onCite) return
+    if (!element || !selectable) return
     const doc = element.ownerDocument
     let frame = 0
     const capture = () => {
@@ -65,7 +73,7 @@ export function FileTextContent({ content, kind, style, onCite, onSend, annotati
       doc.removeEventListener('pointerup', up)
       doc.removeEventListener('pointercancel', up)
     }
-  }, [content, kind, onCite])
+  }, [content, kind, selectable])
 
   const selectLines = (from: number, to: number) => {
     const element = root.current
@@ -82,22 +90,20 @@ export function FileTextContent({ content, kind, style, onCite, onSend, annotati
     selectedLines.current = { range, quote }
     setSelection({ range, quote })
   }
-  const take = (act: (picked: FileViewerSelection, at: DOMRect) => void) => {
-    if (!selection) return
-    const { startLine, endLine, text } = selection.quote
-    const at = selection.range.getBoundingClientRect()
-    act({ text, at: { lines: startLine === endLine ? String(startLine) : `${startLine}-${endLine}` }, code: kind === 'text' }, at)
-    root.current?.ownerDocument.getSelection()?.removeAllRanges()
-    close()
-  }
+  const conversation = selectable?.conversation, file = selectable?.file
+  const items = useMemo(() => selectable ? selectionMenu(selectable.conversation, Boolean(selectable.file), selectable.sends, i18n.language) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- by value: callers hand a new object each render
+    [JSON.stringify(selectable?.conversation ?? null), Boolean(selectable?.file), selectable?.sends])
+  const citeOf = ({ quote: { startLine, endLine, text } }: Selection) =>
+    selectionCite(conversation!, file!, { text, places: [linesPlace(startLine, endLine)], ...(kind === 'text' ? { code: true } : {}) })
   return <>
-    <div ref={root} style={style} className={annotation ? "relative" : undefined} data-file-cite={onCite ? '' : undefined}
+    <div ref={root} style={style} data-file-cite={selectable ? '' : undefined}
       onPointerDown={event => {
         if (!(event.target instanceof Element) || !event.target.closest('.gg-file-line-number')) selectedLines.current = null
         if (event.button === 0) { selecting.current = true; setSelection(null) }
       }}>
-      {kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks sourceLines={!!onCite} />
-        : onCite ? <div className="gg-file-source">
+      {kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks sourceLines={!!selectable} />
+        : selectable ? <div className="gg-file-source">
           {lines.map((line, index) => <div className="gg-file-source-row" key={index}>
             <Button variant="ghost" size="sm" className="gg-file-line-number" data-line={index + 1}
               aria-label={t('fileCite.selectLine', { line: index + 1 })}
@@ -119,25 +125,17 @@ export function FileTextContent({ content, kind, style, onCite, onSend, annotati
             <span data-file-line={index + 1} data-file-source-start={index + 1} data-file-source-end={index + 1}>{line}{index < lines.length - 1 ? '\n' : ''}</span>
           </div>)}
         </div> : <pre style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit', fontSize: 'var(--font-body)', lineHeight: 1.65 }}>{content}</pre>}
-      {annotation && <FilePreviewAnnotations key={`${annotation.sessionId}:${annotation.path}`} context={annotation}
-        root={root} selection={annotationSelection} onClose={() => setAnnotationSelection(null)} />}
     </div>
-    {selection && onCite ? <Popover.Root open modal={false} onOpenChange={open => { if (!open) close() }}>
-      <Popover.Portal container={container}>
-        <Popover.Positioner positionMethod="fixed" anchor={{ contextElement: root.current ?? undefined, getBoundingClientRect: () => selection.range.collapsed
-          ? root.current!.querySelector(`[data-file-line="${selection.quote.startLine}"]`)!.parentElement!.getBoundingClientRect() : selection.range.getBoundingClientRect() }}
-          side="bottom" align="start" sideOffset={8} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
-          <Popover.Popup initialFocus={false} finalFocus={false} data-occludes-browser-page className="gg-file-cite-popup">
-            <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(picked => void onCite?.(picked))}>{t('fileCite.cite')}</Button>
-            {annotation ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => {
-              const original = kind === 'text' && !selection.range.collapsed ? selection.range.toString() : selection.quote.text
-              setAnnotationSelection({ ...selection, quote: { ...selection.quote, text: original } })
-              root.current?.ownerDocument.getSelection()?.removeAllRanges()
-              close()
-            }}>{translate('annotations.mode')}</Button> : onSend ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(onSend)}>{t('selectionSend.send')}</Button> : null}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root> : null}
+    {selection && selectable ? <FileSelectionMenu items={items} text={selection.quote.text} container={container} onClose={close}
+      anchor={() => selection.range.collapsed
+        ? root.current!.querySelector(`[data-file-line="${selection.quote.startLine}"]`)!.parentElement!.getBoundingClientRect() : selection.range.getBoundingClientRect()}
+      onCite={() => {
+        void selectable.cite(citeOf(selection))
+        root.current?.ownerDocument.getSelection()?.removeAllRanges()
+      }}
+      onSend={() => {
+        if (conversation && root.current) openSendLine({ at: selection.range.getBoundingClientRect(), within: root.current, container: container ?? null, conversation, cite: citeOf(selection) })
+        root.current?.ownerDocument.getSelection()?.removeAllRanges()
+      }} /> : null}
   </>
 }

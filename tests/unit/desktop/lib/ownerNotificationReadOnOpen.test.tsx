@@ -24,7 +24,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpcOn: (device: string | null) => {
   scope.ipcRoute(device); return { sessionTimeline: { sessionVisible: scope.visible, sessionReadState: scope.snapshot } }
 } }))
-vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (device: string) => {
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: (device: string) => {
   scope.mobileRoute(device); return { sessionTimeline: { sessionVisible: scope.visible, sessionReadState: scope.snapshot } }
 } }))
 let harness: ReturnType<typeof createReactHarness>
@@ -73,7 +73,7 @@ it.each([
     addNotice(`session:turn:s3:message:${input.request_id}`)
     return { status: 'sent', message_id: input.request_id, session_id: 'session', seq: 3 }
   })
-  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction }
+  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction, ownerReadsSession: true as const }
   const deps = {
     restGet: vi.fn(async (path: string) => path.startsWith('chats?') ? [{ id: dm, public_id: 218799 }] : []),
     restRpc: vi.fn(async (name: string) => name === 'chat_facts' ? [{ kind: 'dm', rules: null }]

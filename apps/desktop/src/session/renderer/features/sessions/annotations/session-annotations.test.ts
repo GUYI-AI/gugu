@@ -57,6 +57,24 @@ describe('submitted annotation language', () => {
 });
 
 describe('the conversation annotation draft', () => {
+  it('shares a chat draft across tab and composer without aliasing any task or other chat', () => {
+    const id = crypto.randomUUID();
+    const chat = sessionAnnotations.forConversation({ kind: 'chat', chatId: id });
+    chat.add(page());
+    expect(sessionAnnotations.forConversation({ kind: 'chat', chatId: id })).toBe(chat);
+    expect(sessionAnnotations.forSession(id).items).toHaveLength(0);
+    expect(sessionAnnotations.forConversation({ kind: 'chat', chatId: `${id}-other` }).items).toHaveLength(0);
+    expect(sessionAnnotations.forConversation({ kind: 'session', sessionId: id })).toBe(sessionAnnotations.forSession(id));
+  });
+
+  it('keeps an unsent group screenshot private when another account opens the same group', () => {
+    const conversation = { kind: 'chat' as const, chatId: crypto.randomUUID() };
+    const owner = sessionAnnotations.forConversation(conversation, 'account-a');
+    owner.add(page());
+    expect(sessionAnnotations.forConversation(conversation, 'account-b').items).toHaveLength(0);
+    expect(sessionAnnotations.forConversation(conversation, 'account-a')).toBe(owner);
+    expect(owner.items).toHaveLength(1);
+  });
   it('keeps comments across tab consumers and isolates conversations', () => {
     sessionAnnotations.forSession('one').add(page());
     expect(sessionAnnotations.forSession('one').items).toHaveLength(1);
@@ -124,38 +142,22 @@ describe('the conversation annotation draft', () => {
   });
 });
 
-it('composes the three sources in draft order and uploads only actual page evidence', async () => {
+it('composes page and diff comments in draft order and uploads only actual page evidence', async () => {
   const draft = new SessionAnnotations();
-  const file = draft.add({ kind: 'file', path: 'docs/pricing.txt', startLine: 3, endLine: 4,
-    text: 'First line\n## Still literal file text', annotation: 'Check both lines' });
   const browser = draft.add(page());
-  draft.add({ kind: 'diff', path: 'src/sample.ts', turnId: 'turn1', patchIndex: 1, rowIndex: 4,
+  const diff = draft.add({ kind: 'diff', path: 'src/sample.ts', turnId: 'turn1', patchIndex: 1, rowIndex: 4,
     oldLine: 8, text: 'const prior = 1;', annotation: 'Explain removal' });
-  expect(draft.items.map(item => item.number)).toEqual([1, 2, 3]);
+  expect(draft.items.map(item => item.number)).toEqual([1, 2]);
   const sent = annotationPrompt('', draft.items);
-  expect(sent.match(/^## (?:User Comment \d+|Selection \d+ \(file\))$/gm)).toEqual(['## Selection 1 (file)', '## User Comment 2', '## User Comment 3']);
-  expect(sent).toContain('# Selected text:\n\n## Selection 1 (file)\n');
-  expect(JSON.parse(sent.split('\n').find(line => line.startsWith('{"path":'))!)).toEqual({
-    path: 'docs/pricing.txt', startLine: 3, endLine: 4, text: 'First line\n## Still literal file text', annotation: 'Check both lines',
-  });
+  expect(sent.match(/^## User Comment \d+$/gm)).toEqual(['## User Comment 1', '## User Comment 2']);
   expect(sent).toContain('File path: "src/sample.ts"\nRecorded patch 2\nOld line: 8');
   expect(sent).not.toContain('New line:');
   const upload = vi.fn(async () => true);
   prepareAnnotationImages(draft.items, { has: () => false, add: upload });
   expect(upload).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ id: annotationImageId(browser.id) }), browser.screenshot);
-  draft.remove(file.id);
-  expect(draft.items.map(item => item.number)).toEqual([2, 3]);
-});
-
-it.each<SupportedLocale>(['en-US', 'zh-CN'])('preserves exact file selection JSON and an empty optional note in %s', locale => {
-  const draft = new SessionAnnotations();
-  const selection = { path: '文档/"notes".md', startLine: 3, endLine: 4, text: '  first\n## User Comment 99\nlast  ', annotation: '' };
-  draft.add({ kind: 'file', ...selection });
-  const sent = annotationPrompt('', draft.items, locale);
-  expect(sent).toContain(locale === 'en-US' ? '# Selected text:\n\n## Selection 1 (file)\n' : '# 选中文本：\n\n## 选区 1（文件）\n');
-  expect(JSON.parse(sent.split('\n').at(-1)!)).toEqual(selection);
-  expect(sent).not.toMatch(/^## User Comment 99$/m);
+  draft.remove(browser.id);
+  expect(draft.items.map(item => item.number)).toEqual([diff.number]);
 });
 
 it('names a captured HTML preview by its file path without exposing its temporary URL', () => {

@@ -1,0 +1,28 @@
+name: Set up Linux CI tools without APT
+description: Verify pinned tool archives and the hosted image's existing build dependencies.
+inputs:
+  profile:
+    description: unit, desktop, android, or media.
+    required: true
+runs:
+  using: composite
+  steps:
+    - if: inputs.profile != 'android'
+      id: archives
+      uses: actions/cache/restore@v4
+      with:
+        path: .ci-cache/linux-tool-archives/${{ inputs.profile }}
+        key: linux-tool-archives-v1-${{ inputs.profile }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ci/linux-tools.json') }}
+    - shell: bash
+      env:
+        PROFILE: ${{ inputs.profile }}
+      run: node "$GITHUB_WORKSPACE/scripts/ci/setup-linux-tools.mjs" "$PROFILE"
+    - shell: bash
+      env:
+        PROFILE: ${{ inputs.profile }}
+      run: bash "$GITHUB_WORKSPACE/scripts/ci/verify-linux-tools.sh" "$PROFILE"
+    - if: inputs.profile != 'android' && github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.archives.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .ci-cache/linux-tool-archives/${{ inputs.profile }}
+        key: ${{ steps.archives.outputs.cache-primary-key }}

@@ -5,7 +5,7 @@ import { observer } from 'mobx-react-lite'
 import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { isNeedsYou } from '@gugu/core/shared/agentStatusPresentation'
 import { useMobileShell } from '@/hooks/useMobileShell'
-import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
+import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { followLink } from '@/lib/guguLinks'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
 import { Bell } from '@/lib/icons'
@@ -58,7 +58,10 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   return <>{[...entries].map(([key, element]) => {
     // md: on the desktop sidebar's head (#2548) the bell sits in one row with the 32px collapse and 会话历史 buttons, and in
     // the chat list's header beside its 32px 「+」; the phone grows md to the touch size (IconButton).
-    if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) return createPortal(
+    // One bell at a time: a place may hold an inactive slot (the desktop head's while the sidebar is the rail, whose own row
+    // has it), as the list's slots do.
+    const active = slots?.getSlotLabel?.(key) === 'active'
+    if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) return active ? createPortal(
       <span className="relative inline-flex">
         <Hint label={title} side="bottom">
           <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
@@ -66,8 +69,8 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
           </IconButton>
         </Hint>
         {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
-      </span>, element, key)
-    if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || slots?.getSlotLabel?.(key) !== 'active') return null
+      </span>, element, key) : null
+    if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || !active) return null
     const showEmpty = mobile && !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && !joining
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">

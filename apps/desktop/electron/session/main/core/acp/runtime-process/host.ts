@@ -30,7 +30,7 @@ import { prepareWindowCommitStorage } from '../../session-timeline/window-projec
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
-import { applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
+import { applyStartToAuthExpiry, applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
 import { clearProviderSessionMissing, markProviderSessionMissing } from '@main/core/sessions/mark-provider-session-missing';
 import { isResidentNeverRun } from '@main/core/sessions/never-run-session';
 import { setSessionMcpServers } from '@main/core/sessions/set-session-mcp-servers';
@@ -528,7 +528,7 @@ export function provisionStartIdentity(
   });
 }
 
-export async function withEmdashPlatformInjection<T extends { input: { sessionId: string; sourceSessionId?: string; forkFromProviderSessionId?: string; projectId: string; workspaceId: string; providerId: string; cwd: string; effort?: string | null; providerSessionId?: string | null } }>(
+export async function withEmdashPlatformInjection<T extends { input: { sessionId: string; sourceSessionId?: string; forkFromProviderSessionId?: string; forkKeepsAgent?: boolean; projectId: string; workspaceId: string; providerId: string; cwd: string; effort?: string | null; providerSessionId?: string | null } }>(
   input: T,
   lifecycle: 'fresh' | 'fork' | 'resume',
   facts: SessionInjectionFacts,
@@ -564,8 +564,10 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
     //    `session/load` 去 `session/new`,悄悄把这条会话的历史换成空的。缺席与陈旧在线上同形,
     //    所以这里**无条件**覆盖,而不是只在渲染进程没给的时候补。
     providerSessionId: facts.providerSessionId,
-    // #7223 同一份记录、同一条纪律:无条件以宿主读到的为准(缺席就是缺席),分叉不带。
-    freshIfProviderSessionMissing: !input.input.forkFromProviderSessionId && facts.residentNeverRun ? true : undefined,
+    // #7223 同一份记录、同一条纪律:无条件以宿主读到的为准(缺席就是缺席),分叉不带 —— 换计费路的分叉除外:
+    // 它续的就是这条会话,一句没聊过的原生会话在引擎里没有存档可分叉,与续接时同样缺的只是一次首启。
+    freshIfProviderSessionMissing: (!input.input.forkFromProviderSessionId || input.input.forkKeepsAgent)
+      && facts.residentNeverRun ? true : undefined,
     ...(input.input.sourceSessionId && input.input.forkFromProviderSessionId && facts.sourceSession
       ? { forkSourceSession: facts.sourceSession }
       : {}),
@@ -759,10 +761,13 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
 export async function callSessionStart<T extends { success: boolean }>(
   start: () => Promise<T>,
   sessionId: string,
-  credentialInjected: boolean
+  credentialInjected: boolean,
+  providerId?: string,
 ): Promise<T> {
   try {
     const result = await start();
+    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, platformCredentials: credentialInjected,
+      failure: 'error' in result ? result.error : undefined }, authExpiryWriter);
     if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);
     }

@@ -16,6 +16,7 @@ import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } 
 import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
+  batchFamilyKeys,
   compareListRows,
   reassemble,
   sortMembers,
@@ -112,6 +113,8 @@ export type ChatProjection = {
   advance: (operations: readonly ProjectionOperation[], cursor: string, signal: AbortSignal) => Promise<ChatItem[] | null>
   /** 接到 revision 派发上:认领哪些 event、payload 怎么变成键、批怎么合成,全在本域(I7)。 */
   attach: (attachment: ChatProjectionAttachment) => () => void
+  /** Once per owner lifetime: authoritative facts for ids named by the restored layout; failures are not retried. */
+  readRestoredLayoutMemberships: (chatIds: readonly string[], cursor: string, signal: AbortSignal) => Promise<ChatItem[] | null>
   current: () => ChatItem[]
   /** 已投影出的身份 —— 交给 applyFetchedChatList,与行**一起**登记(#4314)。 */
   identities: () => DisplayIdentity[]
@@ -245,6 +248,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     stamp: (family, id) => cache.get(entityKey(family, id))?.stamp,
   }
   const confirmedDeletions = new Map<string, string>()
+  const restoredMembershipReads = new Set<string>()
   const ledger: ChatProjectionLedgerEntry[] = []
   // 调度:`open` = 已折进、还没开跑的那一批(开跑即关批);`inflight` = 在跑/已排队那次的结果;
   // `tail` 把推进串行化(并发推进会让同一个键被两发,违 I2)且永不 reject —— 它只承载次序。
@@ -659,6 +663,44 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       return schedule(arrival, snapshotAt === null, signal)
     },
 
+    readRestoredLayoutMemberships(chatIds, cursor, signal) {
+      assertRevision(cursor, 'restored layout cursor')
+      const candidates = [...new Set(chatIds)].filter(id => !restoredMembershipReads.has(id))
+      for (const id of candidates) restoredMembershipReads.add(id)
+      if (candidates.length === 0) return Promise.resolve(null)
+      // Share the owner's serialization and family reader, but not the journal's dirty/retry queue.
+      const read = async (): Promise<ChatItem[] | null> => {
+        signal.throwIfAborted()
+        const ids = candidates.map(id => membershipId(id, viewerId)).filter(id => !cache.has(entityKey('membership', id)))
+        if (ids.length === 0) return null
+        const batches = batchFamilyKeys('membership', ids), startedAt = Date.now()
+        const facts = { trigger: ['restored-layout'], revisions: [cursor, cursor] as [string, string], keysDirty: ids.length,
+          requestsByFamily: { membership: batches.length }, requests: batches.length, waves: 1 }
+        try {
+          const reads = await Promise.all(batches.map(batch => readers.membership(batch, signal, () => {})))
+          signal.throwIfAborted()
+          const cells = batches.flatMap((batch, index) => batch.map(id => {
+            const value = (reads[index]!.get(id) ?? null) as Cell['value']
+            const observed = (value as MembershipValue | null)?.personal_state_observed_revision
+            if (observed) assertRevision(observed, 'restored membership observation')
+            return [entityKey('membership', id), { value, stamp: observed && compareStamp(observed, cursor) > 0 ? observed : cursor }] as const
+          }))
+          merge(cells)
+          // These reads only settle removal authority; a live row's other cells may still be unread.
+          for (const [key] of cells) unpublished.delete(key)
+          rows = rows.filter(row => !owner.isConversationDeleted(row.id) && !owner.isMembershipRevoked(row.id))
+          record({ ...facts, ms: Date.now() - startedAt, ok: true })
+          return rows
+        } catch (error) {
+          record({ ...facts, ms: Date.now() - startedAt, ok: false, error: String(error), ...(signal.aborted ? { aborted: true } : {}) })
+          throw error
+        }
+      }
+      const pending = tail.then(read, read)
+      tail = pending.then(() => {}, () => {})
+      return pending
+    },
+
     current: () => rows,
     identities: identitySnapshot,
     isMembershipRevoked(chatId) {
@@ -687,6 +729,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     reset() {
       forgetArchivedGroups()
       confirmedDeletions.clear()
+      restoredMembershipReads.clear()
       cache = new Map()
       membersByChat.clear()
       chatsByUser.clear()

@@ -4,7 +4,7 @@ import { trackRecentTools } from '../browser/workspace-recent-tools';
 import { Fragment, useContext, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useGroupRef } from 'react-resizable-panels';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup, setGroupLayout } from '@renderer/lib/ui/resizable';
 import { PaneDimensionProvider } from './pane-dimension-provider';
 import { RetainedTabContent } from './retained-tab-content';
 import { MIN_PANE_HEIGHT_PX, type PaneLayoutStore } from './pane-layout-store';
@@ -16,6 +16,9 @@ import { useRef } from 'react';
 import { useChatWorkspaceDivider } from './use-chat-workspace-divider';
 import { ChatWorkspaceDropZones } from './chat-workspace-drop-zones';
 import { ChatWorkspaceChrome, type ChatWorkspaceChromeProps } from './chat-workspace-chrome';
+import { MessageSquare } from '@/lib/icons';
+import { Button } from '@renderer/lib/ui/button';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 /** `part`: 'all' = the pane's strip over its page; while paired the main pane's 'bar' is drawn above both 'body's. */
 type RenderPane = (paneId: string, first: boolean, last: boolean, part: 'all' | 'bar' | 'body') => ReactNode;
@@ -35,6 +38,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   chatChrome?: ChatWorkspaceChromeProps;
 }) {
   const treeId = useId().replace(/[^\w-]/g, '');
+  const { translate } = useSessionMessages();
   const withChatChrome = !!chatChrome;
   const workspaceShown = useContext(SurfaceShownContext);
   useEffect(() => withChatChrome && workspaceShown ? trackRecentTools(layout) : undefined, [layout, withChatChrome, workspaceShown]);
@@ -68,6 +72,14 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
           </RetainedTabContent>;
         })}
         {draggingChatTool && layout.chatWorkspaceMode === 'full' && <ChatWorkspaceDropZones layout={layout} tabId={String(active.id)} />}
+        {scopedChrome && layout.chatWorkspaceConversationPresentation === 'bubble' && <Button
+          variant="secondary" className="absolute bottom-3 left-3 z-30 gap-2"
+          style={{ minWidth: 44, minHeight: 44, height: 44, paddingInline: 12 }}
+          data-testid="chat-workspace-bubble" data-occludes-browser-page
+          aria-label={translate('tabs.returnToChat')} title={translate('tabs.returnToChat')}
+          onClick={() => layout.showChatWorkspaceConversation()}>
+          <MessageSquare className="size-4" />{translate('tabs.returnToChat')}
+        </Button>}
       </div>
     </div>
   </PaneDimensionProvider>;
@@ -100,11 +112,7 @@ const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorO
   useEffect(() => {
     const handle = groupRef.current;
     if (!handle || narrow) return;
-    const wanted = Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0]));
-    try {
-      const current = handle.getLayout();
-      if (!ids.every((id) => Math.abs((current[id] ?? -1) - wanted[id]) < 0.5)) handle.setLayout(wanted);
-    } catch { /* First paint uses the same default shares. */ }
+    setGroupLayout(handle, Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0])), 0.5);
   }, [idsKey, sizesKey, groupRef, narrow]);
   return <ResizablePanelGroup orientation={node.orientation} groupRef={groupRef} style={narrow ? { position: 'relative', display: 'block' } : undefined} onLayoutChanged={(sizes, meta) => {
     if (!narrow && meta.isUserInteraction) layout.setSplitSizes(node.id, ids.map((id) => sizes[id] ?? 0));

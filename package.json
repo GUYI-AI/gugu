@@ -18,9 +18,9 @@
     "android:build:release": "pnpm build:mobile-agent && pnpm cap:sync && scripts/build/android-gradle-build.sh assembleRelease",
     "build": "pnpm build:app && electron-builder",
     "build:acp": "node scripts/build/fetch-acp-adapters.mjs",
-    "build:app": "pnpm preflight:env && pnpm build:tmux && pnpm build:acp && pnpm build:mise && pnpm build:frpc && pnpm build:assistant-rules && tsgo --noEmit && tsx scripts/build/build-electron-app.mts && pnpm gate:bake && pnpm rebuild:native && node scripts/build-provenance.mjs --write",
+    "build:app": "pnpm preflight:env && pnpm build:tmux && pnpm build:acp && pnpm build:mise && pnpm build:frpc && pnpm build:cc-switch && pnpm build:assistant-rules && tsgo --noEmit && tsx scripts/build/build-electron-app.mts && pnpm gate:bake && pnpm rebuild:native && node scripts/build-provenance.mjs --write",
     "build:app:pack": "node scripts/typecheck-unless-proven.mjs && pnpm build:app:ci",
-    "build:app:ci": "pnpm preflight:env && pnpm build:tmux && pnpm build:acp && pnpm build:mise && pnpm build:frpc && pnpm build:assistant-rules && tsx scripts/build/build-electron-app.mts && pnpm gate:bake && node scripts/build-provenance.mjs --write",
+    "build:app:ci": "pnpm preflight:env && pnpm build:tmux && pnpm build:acp && pnpm build:mise && pnpm build:frpc && pnpm build:cc-switch && pnpm build:assistant-rules && tsx scripts/build/build-electron-app.mts && pnpm gate:bake && node scripts/build-provenance.mjs --write",
     "build:beta": "GUGU_TIER=beta pnpm build:mac",
     "build:linux": "pnpm build:app:pack && electron-builder --linux --x64",
     "build:linux:beta": "GUGU_TIER=beta pnpm build:linux",
@@ -40,10 +40,10 @@
     "cap:sync": "pnpm build:renderer && node scripts/build/phone-web-dir.mts && cap sync android",
     "cap:sync:ios": "node scripts/build/prepare-ios-backend.mts && pnpm build:renderer && node scripts/build/phone-web-dir.mts && node scripts/build/build-ios-agent.mjs && cap sync ios",
     "ios:build:simulator": "pnpm cap:sync:ios && node scripts/build/ios-simulator-build.mjs",
-    "dev": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && vite",
-    "dev:alice": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && GUGU_USER_DATA_DIR=$HOME/.gugu-alice vite --port=5173",
-    "dev:bob": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && GUGU_USER_DATA_DIR=$HOME/.gugu-bob vite --port=5174",
-    "dev:web": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && GUGU_TARGET=web vite --host 0.0.0.0",
+    "dev": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && pnpm build:cc-switch && vite",
+    "dev:alice": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && pnpm build:cc-switch && GUGU_USER_DATA_DIR=$HOME/.gugu-alice vite --port=5173",
+    "dev:bob": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && pnpm build:cc-switch && GUGU_USER_DATA_DIR=$HOME/.gugu-bob vite --port=5174",
+    "dev:web": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && pnpm build:cc-switch && GUGU_TARGET=web vite --host 0.0.0.0",
     "format": "prettier --write .",
     "i18n:check": "pnpm i18n:extract && pnpm i18n:status && pnpm i18n:check:session",
     "i18n:check:session": "vitest run --project session-main apps/desktop/src/session/renderer/localization/locale-store.test.ts",
@@ -85,10 +85,11 @@
     "typecheck": "pnpm preflight:node && tsgo --noEmit",
     "build:mise": "node scripts/build/build-mise-bundle.mjs",
     "build:frpc": "node scripts/build/build-frpc-bundle.mjs",
-    "lint:source": "pnpm preflight:node && node scripts/checks/native-history-reads.cjs && concurrently --group --timings --max-processes 8 --names eslint,console-usage-check,error-outlet-check,user-copy-leak-check,check-session-shell-port,check-case-collisions,check-file-url-paths,check-contract-producers,check-session-chat-ui-geometry,check-ui-visual-spec,check-css-parses,gen-icons,theme-color-check,check-focus-modality 'pnpm lint:eslint' 'node scripts/checks/console-usage-check.mts --root apps/desktop/src --root apps/desktop/electron --root apps/desktop/shared --root apps/desktop/session-tooling --root packages/core' 'node scripts/checks/error-outlet-check.mjs --root apps/desktop/electron --root packages' 'node scripts/checks/user-copy-leak-check.mts --root apps/desktop/src --root apps/desktop/electron --root packages' 'node scripts/checks/check-session-shell-port.mjs' 'node scripts/checks/check-case-collisions.mjs' 'node scripts/checks/check-file-url-paths.mjs' 'node scripts/checks/check-contract-producers.mjs' 'node scripts/checks/check-session-chat-ui-geometry.mjs' 'node scripts/checks/check-ui-visual-spec.mts' 'node scripts/checks/check-css-parses.mjs' 'node scripts/build/gen-icons.mjs --check' 'node scripts/checks/theme-color-check.mjs' 'node scripts/checks/check-focus-modality.mjs'"
+    "build:cc-switch": "node scripts/build/build-cc-switch-bundle.mjs",
+    "lint:source": "pnpm preflight:node && node scripts/checks/native-history-reads.cjs && node scripts/checks/check-jsonl-readline.mts && concurrently --group --timings --max-processes 8 --names eslint,console-usage-check,error-outlet-check,user-copy-leak-check,check-session-shell-port,check-case-collisions,check-file-url-paths,check-contract-producers,check-session-chat-ui-geometry,check-ui-visual-spec,check-css-parses,gen-icons,theme-color-check,check-focus-modality 'pnpm lint:eslint' 'node scripts/checks/console-usage-check.mts --root apps/desktop/src --root apps/desktop/electron --root apps/desktop/shared --root apps/desktop/session-tooling --root packages/core' 'node scripts/checks/error-outlet-check.mjs --root apps/desktop/electron --root packages' 'node scripts/checks/user-copy-leak-check.mts --root apps/desktop/src --root apps/desktop/electron --root packages' 'node scripts/checks/check-session-shell-port.mjs' 'node scripts/checks/check-case-collisions.mjs' 'node scripts/checks/check-file-url-paths.mjs' 'node scripts/checks/check-contract-producers.mjs' 'node scripts/checks/check-session-chat-ui-geometry.mjs' 'node scripts/checks/check-ui-visual-spec.mts' 'node scripts/checks/check-css-parses.mjs' 'node scripts/build/gen-icons.mjs --check' 'node scripts/checks/theme-color-check.mjs' 'node scripts/checks/check-focus-modality.mjs'"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "npm:@gugu-acp/claude-agent-acp@1.6.2",
+    "@agentclientprotocol/claude-agent-acp": "npm:@gugu-acp/claude-agent-acp@1.7.1",
     "@agentclientprotocol/sdk": "1.9.0",
     "@anthropic-ai/claude-agent-sdk": "0.3.293",
     "@codemirror/lang-css": "6.3.1",
@@ -118,6 +119,7 @@
     "pi-acp": "npm:@gugu-acp/pi-acp@1.1.0",
     "picomatch": "^4.0.4",
     "playwright-core": "1.64.0-alpha-1790635538000",
+    "tldts": "7.0.28",
     "ws": "^8.20.0",
     "zcode-acp-server": "npm:@gugu-acp/zcode-acp@1.3.1",
     "zod": "^4.4.3"
@@ -221,6 +223,7 @@
     "codemirror": "6.0.2",
     "colorjs.io": "^0.5.2",
     "concurrently": "^8.2.2",
+    "core-js": "3.48.0",
     "croner": "^10.0.1",
     "cronstrue": "^3.14.0",
     "devicon": "^2.17.0",
@@ -247,6 +250,7 @@
     "katex": "^0.16.47",
     "lib0": "0.2.117",
     "libsodium-wrappers": "0.8.4",
+    "lightningcss": "1.33.0",
     "mobx": "^6.15.0",
     "mobx-react-lite": "^4.1.1",
     "nbranch": "^0.1.1",
@@ -318,7 +322,8 @@
       "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
       "@steipete/sweet-cookie@0.4.4": "patches/@steipete__sweet-cookie@0.4.4.patch",
       "ssh2@1.17.0": "patches/ssh2@1.17.0.patch",
-      "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch"
+      "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch",
+      "vitest@4.1.10": "patches/vitest@4.1.10.patch"
     }
   },
   "optionalDependencies": {

@@ -5,7 +5,7 @@ import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabViewContext } from '../tabs/core/tab-provider';
 import { recentToolPanel, useRecentTools, type RecentTool } from './workspace-recent-tools';
-import { PaneEmptyStateAction, type WorkspacePanelAction } from '../sessions/pane-empty-state';
+import { PaneEmptyStateAction, type WorkspacePanelAction, type WorkspacePanelSection } from '../sessions/pane-empty-state';
 
 type WorkspaceRecentItem = {
   id: string;
@@ -21,22 +21,27 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
+  const sectionLabels: Record<WorkspacePanelSection, string> = {
+    builtin: translate('browser.workspaceBuiltins'),
+    extensions: translate('extensions.appsSection'),
+  };
   return (
     <div className="h-full overflow-auto bg-tab-strip px-6 py-8 [container-type:inline-size]" data-workspace-new-tab-page="">
       <div className="mx-auto flex max-w-[960px] flex-col gap-9">
-        <section aria-label={translate('browser.workspaceTools')} className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-foreground">{translate('browser.workspaceTools')}</h2>
+        {(['builtin', 'extensions'] as const).map((section) => <section key={section}
+          aria-label={sectionLabels[section]} className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-foreground">{sectionLabels[section]}</h2>
           <div className="grid grid-cols-2 gap-2 @max-[260px]:grid-cols-1">
-            {actions.map((item) => <div key={item.id} className="relative min-w-0">
+            {actions.filter((item) => (item.section ?? 'builtin') === section).map((item) => <div key={item.id} className="relative min-w-0">
               <PaneEmptyStateAction icon={item.icon} label={item.label} disabled={item.disabled}
                 shortcutSettingsKey={item.shortcutSettingsKey} title={item.title ?? item.label} onClick={item.onClick}
                 className={`border border-border bg-background text-foreground ${item.trailing ? 'pr-9' : ''}`} />
               {item.trailing && <span className="absolute inset-y-0 right-1 flex items-center">{item.trailing}</span>}
             </div>)}
-            <PaneEmptyStateAction icon={<Plus className="size-3.5" />} label={translate('browser.workspaceAddApp')}
-              onClick={() => navigate('apps')} className="border border-border bg-background" />
+            {section === 'extensions' && <PaneEmptyStateAction icon={<Plus className="size-3.5" />} label={translate('browser.workspaceAddApp')}
+              onClick={() => navigate('apps')} className="border border-border bg-background" />}
           </div>
-        </section>
+        </section>)}
         <section aria-label={translate('browser.workspaceRecent')} className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">{translate('browser.workspaceRecent')}</h2>
           {recent.length ? <div className="grid grid-cols-4 gap-2 @max-[420px]:grid-cols-2">

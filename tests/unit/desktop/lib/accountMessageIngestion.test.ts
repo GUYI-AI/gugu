@@ -6,6 +6,8 @@ import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } fro
 import type { AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { ChatWindowCache } from '../../../../apps/desktop/src/store/chatWindowCache'
 import { bindRepositoryMessageCache } from '../../../../apps/desktop/src/store/chatDiskWindow'
+import { serializeComposerCard, type QuestionCard } from '../../../../packages/core/src/shared/ui/taskCardModels'
+import { messageRevisionWrites } from '../../../../apps/desktop/src/lib/messageRevisionWrites'
 
 const stops: Array<() => void> = []
 afterEach(() => { for (const stop of stops.splice(0)) stop(); vi.useRealTimers() })
@@ -145,4 +147,35 @@ it('membership changes for another member do not revoke this account or suppress
   await r.send(membership('1', true, 'peer'), arrival('2', 'still-authorized'))
   expect(r.repository.snapshot().message.map(message => message.id)).toEqual(['still-authorized'])
   expect(r.notify.mock.calls.map(([message]) => message.id)).toEqual(['still-authorized'])
+})
+
+it('updates the original phone card, preserves it through stale window reads, and never notifies another arrival', async () => {
+  const card: QuestionCard = { v: 1, type: 'question', text: 'Choose', options: ['Yes'], ownerUserId: 'peer',
+    questionId: 'agent-question:card', sessionId: 'session', projectId: 'project', deviceId: 'device', machineLabel: 'Mac' }
+  const before = { ...row('card'), content_type: 'card' as const, content: serializeComposerCard(card) }
+  const after = { ...before, content: serializeComposerCard({ ...card, settled: { state: 'answered', at: 'now', answers: [{ selected: ['Yes'] }] } }) }
+  const r = await rig([arrival('1', 'card', before)])
+  const cache = new ChatWindowCache('viewer')
+  stops.push(bindRepositoryMessageCache(r.repository, cache))
+  r.coordinator.subscribe('chat_changed', vi.fn())
+  const refresh: AccountRevisionOperation = { revision: '2', event: 'chat_changed', payload: { chat_id: 'room', message_id: 'card', message: after } }
+  await r.send(refresh)
+  expect(readMessageWindow(r.repository, 'room')!.messages).toMatchObject([{ id: 'card', seq: 1, content: after.content }])
+  expect(cache.rows('room')).toMatchObject([{ id: 'card', content: after.content }])
+  await replaceMessageWindow(r.repository, 'room', [before])
+  expect(readMessageWindow(r.repository, 'room')!.messages[0].content).toBe(after.content)
+  expect(r.notify).not.toHaveBeenCalled()
+  expect(r.recover).not.toHaveBeenCalled()
+  expect(messageRevisionWrites('viewer', [refresh], '2').revisions).toMatchObject([{ revision: '2', writes: [{ type: 'put', message: { id: 'card', content: after.content } }] }])
+})
+
+it('removes an inaccessible refreshed body and rejects a refresh crossing the chat boundary', async () => {
+  const r = await rig([arrival('1', 'card')])
+  r.coordinator.subscribe('chat_changed', vi.fn())
+  const missing: AccountRevisionOperation = { revision: '2', event: 'chat_changed', payload: { chat_id: 'room', message_id: 'card', message: null } }
+  await r.send(missing)
+  expect(readMessageWindow(r.repository, 'room')!.messages).toEqual([])
+  expect(messageRevisionWrites('viewer', [missing], '2').revisions).toMatchObject([{ writes: [{ type: 'delete', chatId: 'room', id: 'card' }] }])
+  expect(() => messageRevisionWrites('viewer', [{ ...missing, payload: { chat_id: 'wrong-room', message_id: 'card', message: row('card') } }], '2')).toThrow('malformed message')
+  expect(r.notify).not.toHaveBeenCalled()
 })

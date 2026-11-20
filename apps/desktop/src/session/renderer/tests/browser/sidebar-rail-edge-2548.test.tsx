@@ -31,7 +31,7 @@ vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
   const { observable } = await import('mobx');
   return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) };
 });
-vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => null }));
+vi.mock('@renderer/features/global-search/search-session', () => ({ openGlobalSearch: () => {} }));
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellSidebarToggle: () => null }));
 vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: () => {} }));
 vi.mock('@/hooks/useNativeConversationChat', () => ({ useNativeConversationChat: () => null }));
@@ -90,7 +90,9 @@ for (const material of ['native', 'opaque'] as const) {
     const surface = document.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
     const expandedEdge = surfaceEdge(surface);
     const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+    const scheduled = document.querySelector<HTMLElement>('[data-testid="sidebar-scheduled"]')!;
     const history = document.querySelector<HTMLElement>('[data-testid="sidebar-session-history"]')!;
+    const search = document.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!;
     const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
     expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
     // 「«」 in the top band, centred on the avatars' axis (x = 36), right of the icon rail and the traffic lights over it.
@@ -107,7 +109,8 @@ for (const material of ['native', 'opaque'] as const) {
       expect(box.left, state).toBeGreaterThan(lights);
     };
     head('expanded');
-    // 会话历史 is at the band's other end; nothing is left at the bottom: the list runs to the window's bottom edge.
+    expect(scheduled.getBoundingClientRect().left - search.getBoundingClientRect().right).toBe(4);
+    expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
     expect(Math.round(history.getBoundingClientRect().right)).toBe(Math.round(aside.getBoundingClientRect().right) - 12);
     expect(document.querySelector('[data-sidebar-foot]')).toBeNull();
     expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBe(aside.getBoundingClientRect().bottom);
@@ -115,9 +118,9 @@ for (const material of ['native', 'opaque'] as const) {
     fold.click();
     await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
     head('collapsed');
-    // The rail keeps 「»」 and the 「+」; the bell, the search box and 会话历史 are hidden with the names.
+    // The rail keeps 「»」 and 「+」. The other controls fade with the names.
     expect(fold.closest('[inert]')).toBeNull();
-    for (const hidden of [history, document.querySelector('[data-notification-slot="toggle"]')!]) {
+    for (const hidden of [scheduled, history, search, document.querySelector('[data-notification-slot="toggle"]')!]) {
       expect(hidden.closest('[inert]')).not.toBeNull();
       expect(Number(getComputedStyle(hidden.closest('[inert]')!).opacity)).toBe(0);
     }
@@ -184,7 +187,7 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   expect(masks.length).toBeGreaterThan(2);
   expect(scroll.style.maskImage).toMatch(/^linear-gradient\(to right, black 68px, color-mix\(in srgb, black 0(?:\.0+)?%, transparent\) 68px\)/);
   for (const testId of ['sidebar-create-agent', 'sidebar-session-history']) {
-    expect(document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!.style.opacity).toBe('0');
+    expect(getComputedStyle(document.querySelector(`[data-testid="${testId}"]`)!.closest('[inert]')!).opacity).toBe('0');
   }
   document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
@@ -221,4 +224,57 @@ it('the rail flips in the frame the list\'s layer takes the rail\'s width, both 
     expect(flip, `${direction}: ${batches.map((batch) => `${batch.width}${batch.rail ? ' rail' : ''}`).join(' | ')}`).toBe(narrow);
   }
   observer.disconnect();
+});
+
+// Collapsed, the bell keeps a place on the rail: under 「»」 and over the 「+」, on the avatars' axis, one bell at a time.
+// The rail has no room for its list: collapsing closes the list, and opening it from the rail expands the sidebar into it.
+it('collapsed, the rail keeps the bell between 「»」 and the 「+」, and opening it expands the sidebar', async () => {
+  const { setSidebarNotificationsOpen } = await import('@/lib/sidebarChatsBridge');
+  await page.viewport(1000, 700);
+  document.documentElement.dataset.theme = 'light';
+  harness = createReactHarness();
+  await harness.render(
+    <div data-desktop-shell="" style={{ display: 'flex', width: '100vw', height: '100vh' }}>
+      <div className="gugu-skin emlight" style={{ flex: 1, height: '100%' }}>
+        <SessionLocalizationProvider>
+          <WorkspaceLayoutContextProvider>
+            <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full bg-background">history</div>} />
+          </WorkspaceLayoutContextProvider>
+        </SessionLocalizationProvider>
+      </div>
+    </div>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+  const plus = document.querySelector<HTMLElement>('[data-testid="sidebar-create-menu"]')!;
+  const bells = () => [...document.querySelectorAll<HTMLElement>('[data-notification-slot="toggle"]')];
+  const shown = () => bells().filter((slot) => !slot.hidden);
+  const railRow = document.querySelector<HTMLElement>('[data-sidebar-rail-bell]')!;
+  expect(shown()).toHaveLength(1);
+  expect(railRow.contains(shown()[0])).toBe(false);
+  expect(railRow.getBoundingClientRect().height).toBe(0);
+
+  setSidebarNotificationsOpen(true);
+  fold.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
+  await expect.poll(() => railRow.contains(shown()[0] ?? null)).toBe(true);
+  expect(shown()).toHaveLength(1);
+  expect(document.querySelector('[data-notification-slot="list"]:not([hidden])')).toBeNull();
+  const panel = aside.getBoundingClientRect();
+  const bell = railRow.getBoundingClientRect();
+  expect(railRow.closest('[inert]')).toBeNull();
+  // The count stands out over the bell's top-right corner: nothing between the bell and the sidebar clips it.
+  for (let box: HTMLElement | null = railRow; box && box !== aside; box = box.parentElement) expect(getComputedStyle(box).overflowY, box.className).not.toBe('hidden');
+  expect(bell.top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
+  expect(plus.getBoundingClientRect().top).toBeGreaterThanOrEqual(bell.bottom);
+  // The edge lands once it is within SIDEBAR_LANDED_PX of the rail, while the bell's and the 「+」's rows follow the spring's
+  // own progress, whose sub-pixel tail runs on a little longer: both are on the axis where that motion rests.
+  await expect.poll(() => railRow.getBoundingClientRect().left + 20 + 16 - panel.left).toBe(36);
+  await expect.poll(() => plus.getBoundingClientRect().left + 16 - panel.left).toBe(36);
+
+  setSidebarNotificationsOpen(true);
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
+  await expect.poll(() => document.querySelector('[data-notification-slot="list"]:not([hidden])')).not.toBeNull();
+  await expect.poll(() => railRow.getBoundingClientRect().height, { timeout: 3000 }).toBe(0);
+  setSidebarNotificationsOpen(false);
 });

@@ -8,15 +8,15 @@ import {
   writeThemePreference,
 } from '../../../../apps/desktop/src/session/renderer/lib/theme/host-theme'
 
-const bootScript = readFileSync('apps/desktop/index.html', 'utf8')
-  .match(/<script>([\s\S]*?)<\/script>/)![1]!
+// The theme boot script, picked by what it writes: the engine-floor gate runs before it.
+const bootScript = [...readFileSync('apps/desktop/index.html', 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)]
+  .map(m => m[1]!).find(s => s.includes('data-theme-preference'))!
 
 beforeEach(() => {
   localStorage.clear()
   delete document.documentElement.dataset.theme
   delete document.documentElement.dataset.themePreference
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })))
-  vi.stubGlobal('electronAPI', undefined)
 })
 
 afterEach(() => {
@@ -33,12 +33,9 @@ describe('retired plain white theme preference', () => {
     expect(readThemePreference()).toBe('light')
   })
 
-  it('hydrates the legacy value as the ordinary light preference and native scheme', () => {
-    const sync = vi.fn(() => 'light' as const)
-    vi.stubGlobal('electronAPI', { syncThemePreference: sync })
+  it('hydrates the legacy value as the ordinary light preference', () => {
     localStorage.setItem('app-theme', 'plain-white')
     expect(hydrateHostTheme()).toBe('light')
-    expect(sync).toHaveBeenCalledExactlyOnceWith('light')
     expect(readThemePreference()).toBe('light')
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(document.documentElement.dataset.themePreference).toBe('light')

@@ -209,6 +209,16 @@ run(process.execPath, [join(root, 'scripts', 'build', 'build-frpc-bundle.mjs'), 
   cpSync(join(root, 'frpc-bundle', `${miseOs}-${arch}`, 'LICENSE'), join(frpcDir, 'LICENSE'))
 }
 
+// Local protocol conversion for custom models (cc-switch-cli, pinned in scripts/cc-switch-release.json). Placed in
+// app/cc-switch-bundle; conversion-router.ts finds it beside the app. Targets with no pinned binary ship without it.
+run(process.execPath, [join(root, 'scripts', 'build', 'build-cc-switch-bundle.mjs'), '--platform', osName, '--arch', arch], { cwd: root })
+if (existsSync(join(root, 'cc-switch-bundle', `${miseOs}-${arch}`, 'cc-switch'))) {
+  const ccSwitchDir = join(stage, 'app', 'cc-switch-bundle')
+  mkdirSync(ccSwitchDir, { recursive: true })
+  cpSync(join(root, 'cc-switch-bundle', `${miseOs}-${arch}`, 'cc-switch'), join(ccSwitchDir, 'cc-switch'))
+  cpSync(join(root, 'cc-switch-bundle', `${miseOs}-${arch}`, 'LICENSE'), join(ccSwitchDir, 'LICENSE'))
+}
+
 // #1931 助理 App 的规则(上面核过的那一份):离线升级的机器先用它。放在 app/assistant-rules-seed,assistant-rules-root.ts 按应用路径找到。
 if (assistantRulesSeed) {
   cpSync(assistantRulesSeed, join(stage, 'app', 'assistant-rules-seed'), { recursive: true })
@@ -256,6 +266,7 @@ const executables = [
   join(stage, 'app', 'tmux-bundle', 'tmux'),
   join(stage, 'app', 'mise-bundle', `${miseOs}-${arch}`, 'mise', 'bin', 'mise'),
   join(stage, 'app', 'frpc-bundle', 'frpc'),
+  join(stage, 'app', 'cc-switch-bundle', 'cc-switch'),
   join(stage, 'app', 'node_modules', 'node-pty', 'prebuilds', `${osName}-${arch}`, 'spawn-helper'),
 ].filter((file, index) => index < 5 || existsSync(file))
 for (const file of executables) {

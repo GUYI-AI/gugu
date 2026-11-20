@@ -16,7 +16,7 @@ vi.mock('@/lib/assistantSetupRules', async () => {
   const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
   return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
 })
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ assistantHome: f }) }))
+vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ assistantHome: f }) }))
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({}) }))
 vi.mock('@/lib/supabase', () => ({ getCurrentAuthUserId: async () => {
   if (++f.ownerReads === 2 && f.disconnectBeforeRpc) f.online = false
@@ -80,7 +80,7 @@ it('returns to both home choices after a target disconnects before any target RP
   f.disconnectBeforeRpc = true
   await selectServer()
   expect(pendingServerAssistant('owner')).toMatchObject({ installationStarted: false, preparationStarted: false })
-  expect(query('assistant-server-error')?.textContent).toContain('服务器离线')
+  expect(query('assistant-server-error')?.textContent).toContain('服务器已离线')
   await click(back())
   expect(pendingServerAssistant('owner')).toBeNull()
   await click(query('assistant-setup-install-here'))

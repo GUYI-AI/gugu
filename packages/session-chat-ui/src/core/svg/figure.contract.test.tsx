@@ -24,15 +24,48 @@ function load(src: string): Promise<HTMLImageElement> {
 
 describe('svgFigure', () => {
   it('draws at its viewBox size with theme tokens written in', async () => {
-    const figure = svgFigure('<svg viewBox="0 0 400 200"><rect width="10" height="10" fill="var(--c1)"/><text fill="var(--fg, #000)">a</text></svg>', PALETTE);
+    const figure = svgFigure('<svg viewBox="-10 20 400 200" width="80" height="70"><rect width="10" height="10" fill="var(--c1)"/><text fill="var(--fg, #000)">a</text></svg>', PALETTE);
     if (!figure.ok) throw new Error(figure.reason);
     expect([figure.width, figure.height]).toEqual([400, 200]);
     const markup = decoded(figure.src);
+    expect(markup).toContain('viewBox="-10 20 400 200"');
     expect(markup).toContain('fill="#2a78d6"');
     expect(markup).toContain('fill="rgb(1, 2, 3)"');
     expect(markup).toContain('color="rgb(1, 2, 3)"');
     const image = await load(figure.src);
     expect([image.naturalWidth, image.naturalHeight]).toEqual([400, 200]);
+  });
+
+  it.each([
+    'width="240" height="86"',
+    'width=" 2.4e2px " height="86.0px"',
+    'width="240" height="86" viewBox=""',
+    'width="240" height="86" viewBox="0 0 0 10"',
+    'width="240" height="86" viewBox="bad"',
+  ])(
+    'infers a viewBox from %s', async (dimensions) => {
+      const figure = svgFigure(`<svg ${dimensions}><rect width="240" height="86"/></svg>`, PALETTE);
+      if (!figure.ok) throw new Error(figure.reason);
+      expect([figure.width, figure.height]).toEqual([240, 86]);
+      expect(decoded(figure.src)).toContain('viewBox="0 0 240 86"');
+      const image = await load(figure.src);
+      expect([image.naturalWidth, image.naturalHeight]).toEqual([240, 86]);
+    },
+  );
+
+  it.each([
+    '',
+    'height="86"',
+    'height="86" width="0"',
+    'height="86" width="-1"',
+    'height="86" width="1e999"',
+    'height="86" width="100%"',
+    'height="86" width="240oops"',
+    'height="86" width="0x10"',
+    'viewBox="0 0 0 10"',
+    'viewBox="0 0 0 10" width="100%" height="86"',
+  ])('keeps the fallback for unusable SVG sizing (%s)', (attributes) => {
+    expect(svgFigure(`<svg ${attributes}><rect/></svg>`, PALETTE)).toEqual({ ok: false, reason: 'no-viewbox' });
   });
 
   it('leaves an unknown token alone', () => {
@@ -61,8 +94,6 @@ describe('svgFigure', () => {
   });
 
   it('says why it cannot draw', () => {
-    expect(svgFigure('<svg><rect/></svg>', PALETTE)).toEqual({ ok: false, reason: 'no-viewbox' });
-    expect(svgFigure('<svg viewBox="0 0 0 10"/>', PALETTE)).toEqual({ ok: false, reason: 'no-viewbox' });
     expect(svgFigure('<svg viewBox="0 0 10 10"><rect></svg>', PALETTE)).toEqual({ ok: false, reason: 'invalid' });
     expect(svgFigure('<div>no</div>', PALETTE)).toEqual({ ok: false, reason: 'invalid' });
     const big = `<svg viewBox="0 0 10 10"><!--${'x'.repeat(SVG_FIGURE_MAX_BYTES)}--></svg>`;

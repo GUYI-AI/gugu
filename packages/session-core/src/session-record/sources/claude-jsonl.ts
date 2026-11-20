@@ -1,7 +1,6 @@
-import { createReadStream } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { readFirstLines } from '@gugu/core/local/agent/transcriptInventory';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
@@ -36,6 +35,7 @@ import {
   toolKindTable
 } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
+import { ClaudeBranches } from './claude-branches';
 import { withSubagentSources } from './subagent-sources';
 
 
@@ -91,6 +91,14 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private events: SessionRecordSourceEvents | null = null;
   private reader: TailReader | null = null;
   private seenUuids = new Set<string>();
+  /**
+   * Branches a revert abandoned (`claude-branches.ts`). A read of existing lines (whole, or from a resume point)
+   * decodes as always but holds its entries until it ends, then hands on only those not on an abandoned branch.
+   * A live tail that sees a rewind happen keeps the old branch until the next such read.
+   */
+  private branches = new ClaudeBranches();
+  private held: RecordEntry[][] | null = null;
+  private readonly lineOf = new WeakMap<RecordEntry, string>();
   /** 定位出来的那份主文件（分叉链的头）。续读点靠它判「还是不是同一条会话」。 */
   private primaryPath: string | null = null;
   /** 链条当前的末端记录。分叉串联只认它，所以要显式跟着走，❌ 别指望从 Set 里"最后一个"捞。 */
@@ -146,14 +154,19 @@ class ClaudeJsonlSource implements SessionRecordSource {
       this.warn,
       this.options?.fill
     );
+    this.branches = new ClaudeBranches();
+    this.held = [];
     const resumed = this.options?.readMode !== 'snapshot' && resume ? await this.resumeRead(path, resume) : false;
     if (!resumed) {
+      this.branches = new ClaudeBranches();
+      this.held = [];
       // 要过存档、却没能续上 ⇒ **必须**显式告诉上层「你手里装回去的那份作废」。
       // 不说的话:上层带着存档里的去重表,把整份重读的内容一条不剩地当成重复丢掉,
       // 屏幕上就留下一份**过期且永远不会再更新**的历史 —— 不报错、看不出来。
       if (resume) events.onReset('source_replaced');
       await this.fullRead(path);
     }
+    this.releaseHeld(events);
     if (this.options?.readMode === 'snapshot') {
       if (!this.nativeChild && this.options.parentLineage && this.inherited === 0) throw new SessionRecordForkDivergedError();
     } else this.reader.start();
@@ -313,16 +326,34 @@ class ClaudeJsonlSource implements SessionRecordSource {
       Math.max(this.consumedFiles.get(this.reader.currentPath) ?? 0, this.reader.consumedBytes));
     const events = this.events;
     const path = this.reader?.currentPath;
-    emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), this.options?.fill ? (record) => {
+    emitJsonLines(lines, 'claude', this.warn, (entries) => this.held ? this.held.push(entries) : events.onEntries(entries), this.options?.fill ? (record) => {
       // A fill read: every entry carries the state its line was decoded from, so a later read can start at that line.
       const before: ClaudeFillState = { lastUuid: this.lastUuid, launches: this.launches, childRoots: this.childRoots };
-      const entries = this.decodeRecord(record);
+      const entries = this.decodeLine(record);
       for (const entry of entries) entry.state = before;
       return entries;
-    } : (record) => this.decodeRecord(record),
+    } : (record) => this.decodeLine(record),
       offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined,
       // Positions are places in the primary record (`startingAt`); a continuation file's lines have none.
       path === this.primaryPath ? offsets : undefined);
+  }
+
+  private decodeLine(record: Record<string, unknown>): RecordEntry[] {
+    const revertsOwn = this.branches.see(record);
+    const entries = this.decodeRecord(record);
+    if (revertsOwn) return [];
+    if (typeof record.uuid === 'string') for (const entry of entries) this.lineOf.set(entry, record.uuid);
+    return entries;
+  }
+
+  private releaseHeld(events: SessionRecordSourceEvents): void {
+    const held = this.held ?? [];
+    this.held = null;
+    const { abandoned } = this.branches;
+    for (const batch of held) {
+      const kept = abandoned.size ? batch.filter(entry => !abandoned.has(this.lineOf.get(entry) ?? '')) : batch;
+      if (kept.length) events.onEntries(kept);
+    }
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {
@@ -529,21 +560,12 @@ class ClaudeJsonlSource implements SessionRecordSource {
 }
 
 async function readFirstMessageUuid(path: string): Promise<string | null> {
-  const stream = createReadStream(path, { encoding: 'utf8', highWaterMark: 16 * 1024 });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
-  let seen = 0;
-  try {
-    for await (const line of lines) {
-      if (seen >= HEAD_SCAN_MAX_LINES) break;
-      seen += 1;
-      const uuid = parseJson(line)?.uuid;
-      if (typeof uuid === 'string' && uuid) return uuid;
-    }
-  } catch {
-    return null;
-  } finally {
-    lines.close();
-    stream.destroy();
+  // Reuse inventory's bounded positional prefix read (64 KiB blocks, at most 1 MiB).
+  // It uses the common LF/UTF-8 framer, so Unicode separators do not consume the line cap.
+  const lines = await readFirstLines(path, HEAD_SCAN_MAX_LINES);
+  for (const line of lines) {
+    const uuid = parseJson(line)?.uuid;
+    if (typeof uuid === 'string' && uuid) return uuid;
   }
   return null;
 }

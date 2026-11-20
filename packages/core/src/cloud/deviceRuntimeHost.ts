@@ -1,3 +1,4 @@
+import { serverNow } from '../shared/serverClock'
 import { bindBackendProbe, noteBackendAnswer } from './backendReachability'
 import {
   createAgentRuntimeStateReporter,
@@ -128,6 +129,9 @@ export interface DeviceRuntimeHostOptions {
   safetyIntervalMs?: number
   nowMs?: () => number
   authProvider: RuntimeAuthProvider
+  /** Native account-closure admission. A false value pauses this owner's work
+   * without pretending its auth disappeared or stopping another owner's host. */
+  ownerWorkAllowed?: (ownerId: string) => Promise<boolean>
   makeIdentityClient: (accessToken: string) => DeviceRuntimeIdentityClient
   nowIso?: () => string
   capabilities?: DeviceCapabilitiesSource
@@ -221,6 +225,8 @@ export interface DeviceRuntimeHost {
   notifyScheduledTasksChanged: () => void
   start: () => void
   stop: () => Promise<void>
+  /** Caller first persists ownerWorkAllowed=false, then drains admitted IO. */
+  quiesceOwnerForClosure?: (ownerId: string) => Promise<void>
   getDebugSnapshot: () => DeviceRuntimeHostDebugSnapshot
 }
 
@@ -301,6 +307,11 @@ export function createDeviceRuntimeHostLoop(
   options: DeviceRuntimeHostOptions
 ): DeviceRuntimeHost {
   const env = options.env ?? process.env
+  const readWorkAuth = async () => {
+    const auth = await options.authProvider.getAuth()
+    if (auth?.userId && options.ownerWorkAllowed && !await options.ownerWorkAllowed(auth.userId)) return null
+    return auth
+  }
   const intervalMs = options.intervalMs ?? DEVICE_COMMAND_DRAIN_RETRY_INTERVAL_MS
   const superviseIntervalMs = options.superviseIntervalMs ?? DEVICE_SUPERVISE_INTERVAL_MS
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEVICE_HEARTBEAT_INTERVAL_MS
@@ -586,6 +597,26 @@ export function createDeviceRuntimeHostLoop(
   let deviceRemovedNotified = false
   let machineLimitWarned = false
 
+  function noteDeviceRegistrationFailure(error: unknown): void {
+    // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
+    // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
+    if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
+      deviceRemovedNotified = true
+      try {
+        options.onDeviceRemoved?.((error as Error).message)
+      } catch (callbackError) {
+        options.warn?.(`[device-runtime] onDeviceRemoved threw: ${(callbackError as Error).message}`)
+      }
+    }
+    // #6264 这个账号的咕咕 server 数到上限了(库拒收这台的第一次心跳,DEVICE_LIMIT_REACHED)。
+    // 说成人话打一次,❌ 每 30 秒刷一遍同一句;心跳照旧按失败处理,移除一台 / 升级后下一拍自然接上。
+    const refusal = machineLimitRefusalFromError(error)
+    if (refusal && !machineLimitWarned) {
+      machineLimitWarned = true
+      options.warn?.(`[device-runtime] 这台机器没能加入账号:${machineLimitMessage(refusal)}${MACHINE_LIMIT_NEXT_STEP}`)
+    }
+  }
+
   function noteHeartbeatLanded(): void {
     const at = nowMs()
     if (lastHeartbeatLandedAt !== null && at - lastHeartbeatLandedAt > HEARTBEAT_LANDED_GAP_WARN_MS) {
@@ -604,23 +635,7 @@ export function createDeviceRuntimeHostLoop(
     const active = heartbeatFlights.get(heartbeatOptions.userId)
     if (active) return active
     const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).then(noteHeartbeatLanded).catch((error: unknown) => {
-      // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
-      // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
-      if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
-        deviceRemovedNotified = true
-        try {
-          options.onDeviceRemoved?.((error as Error).message)
-        } catch (callbackError) {
-          options.warn?.(`[device-runtime] onDeviceRemoved threw: ${(callbackError as Error).message}`)
-        }
-      }
-      // #6264 这个账号的咕咕 server 数到上限了(库拒收这台的第一次心跳,DEVICE_LIMIT_REACHED)。
-      // 说成人话打一次,❌ 每 30 秒刷一遍同一句;心跳照旧按失败处理,移除一台 / 升级后下一拍自然接上。
-      const refusal = machineLimitRefusalFromError(error)
-      if (refusal && !machineLimitWarned) {
-        machineLimitWarned = true
-        options.warn?.(`[device-runtime] 这台机器没能加入账号:${machineLimitMessage(refusal)}${MACHINE_LIMIT_NEXT_STEP}`)
-      }
+      noteDeviceRegistrationFailure(error)
       throw error
     }).finally(() => {
       if (heartbeatFlights.get(heartbeatOptions.userId) === flight) {
@@ -752,7 +767,7 @@ export function createDeviceRuntimeHostLoop(
     blanketAnnouncementDuringTick = false
     const preClaim = startPreClaimTimer(trigger)
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) {
         unsubscribeCommandWake()
         unsubscribeDeviceRpc()
@@ -923,6 +938,7 @@ export function createDeviceRuntimeHostLoop(
       if (signal.aborted && generation !== lifecycleGeneration) {
         return { skipped: true }
       }
+      noteDeviceRegistrationFailure(err)
       // PERMANENT auth loss: drop subscriptions, raise the distinct one-time signal, and end the tick
       // cleanly (skipped) instead of re-throwing a spin-y error every interval.
       if (handleAuthExpired(err)) {
@@ -1061,7 +1077,7 @@ export function createDeviceRuntimeHostLoop(
 
   async function runScheduledTasksOnce(generation: number): Promise<void> {
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       // 身份边界未确立之前不跑:owner 还没被 tick 认定时,扫到的可能是上一个人的任务。
@@ -1069,14 +1085,15 @@ export function createDeviceRuntimeHostLoop(
       const { nextDueAtMs } = await options.runScheduledTasks!({
         ownerUserId: auth.userId,
         accessToken: auth.accessToken,
-        nowMs: nowMs(),
+        // `next_run_at` is written on the server's clock, by whichever device scheduled it (`@@@server-clock`).
+        nowMs: serverNow(),
         deviceId: lastDeviceId,
       })
       if (generation !== lifecycleGeneration || stopped) return
       clearScheduledTasksTimer()
       if (nextDueAtMs === null || superviseTimer === null) return
       // setTimeout 的上限约 24.8 天;更远的到期时刻由监督 tick 的重排逐步逼近。
-      const delayMs = Math.min(Math.max(0, nextDueAtMs - nowMs()), 2 ** 31 - 1)
+      const delayMs = Math.min(Math.max(0, nextDueAtMs - serverNow()), 2 ** 31 - 1)
       scheduledTasksTimer = setTimeout(() => {
         scheduledTasksTimer = null
         scheduleScheduledTasksRun()
@@ -1094,7 +1111,7 @@ export function createDeviceRuntimeHostLoop(
     if (stopped || !lastDeviceId) return
     const generation = lifecycleGeneration
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped || activeOwnerUserId !== auth.userId || !lastDeviceId) return
       const reading = await reportRuntimeInstanceHeartbeat(
@@ -1139,7 +1156,7 @@ export function createDeviceRuntimeHostLoop(
     if (stopped) return
     const generation = lifecycleGeneration
     try {
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       if (activeOwnerUserId !== auth.userId) return
@@ -1264,6 +1281,7 @@ export function createDeviceRuntimeHostLoop(
   async function maintainLocalAgents(generation: number): Promise<void> {
     const auth = lastAuth
     if (!auth?.accessToken || auth.userId !== activeOwnerUserId) return
+    if (options.ownerWorkAllowed && !await options.ownerWorkAllowed(auth.userId)) return
     // @@@push-fresh-session - owner 的 GoTrue 会话每次续期都轮换,本机 agent 的令牌档跟着换;令牌没变就没有要写的。
     // 有一档没写成就不记账,稍后整批重写。新建的 agent 由 provisioning 自己写它那一档。
     if (auth.accessToken !== runtimeSessionsAccessToken && nowMs() >= runtimeSessionsRetryAt) {
@@ -1282,7 +1300,7 @@ export function createDeviceRuntimeHostLoop(
     lastActivityReconcileAt = nowMs()
     await pruneStaleGuestRecords({ env })
     // lastAuth 是上一轮 tick 拿的:队列空着时 tick 几分钟才一轮,它会过期(#1760)。对账很少跑,现取一份。
-    const current = await options.authProvider.getAuth()
+    const current = await readWorkAuth()
     if (!current?.accessToken || current.userId !== activeOwnerUserId) return
     cloudReconciled = await reconcileWithCloud(current, generation)
   }
@@ -1435,7 +1453,7 @@ export function createDeviceRuntimeHostLoop(
         (id) => !samePublishedStatus(publishedActivity.get(id), publishedStatusOf(agentStatusOf(id))),
       ) || agentUserIds.some(recentActionsChanged) || [...publishedActivity.keys()].some((id) => !agentUserIds.includes(id))
       if (!somethingChanged) return
-      const auth = await options.authProvider.getAuth()
+      const auth = await readWorkAuth()
       if (!auth?.accessToken || !auth.userId) return
       if (generation !== lifecycleGeneration || stopped) return
       if (activeOwnerUserId !== auth.userId) return
@@ -1464,6 +1482,24 @@ export function createDeviceRuntimeHostLoop(
       if (error instanceof RuntimeAuthExpiredError) throw error
       options.warn?.(`[device-runtime] activity edge publish failed: ${String((error as Error)?.message ?? error)}`)
     }
+  }
+
+  async function quiesceOwnerForClosure(ownerId: string): Promise<void> {
+    if (!options.ownerWorkAllowed || await options.ownerWorkAllowed(ownerId)) throw new Error('Account closure work admission is not paused')
+    const detach = () => {
+      if (activeOwnerUserId !== ownerId) return
+      unsubscribeCommandWake(); unsubscribeDeviceRpc(); unsubscribeOwnedAgentChanges()
+      clearScheduledTasksTimer()
+      lastLeaseRenewAt = null
+      if (lastAuth?.userId === ownerId) lastAuth = null
+    }
+    detach()
+    // Do not stop the shared publisher, rewrite its owner or abort a possible B
+    // generation. New A work is refused by the persisted native admission gate.
+    await Promise.allSettled([activeTick, activeScheduledTasksRun, activeLeaseRenewal,
+      activeActivityPublish, activeHeartbeat, ...heartbeatFlights.values()].filter((flight): flight is Promise<void> | Promise<DeviceRuntimeHostTickResult> => flight !== null))
+    if (await options.ownerWorkAllowed(ownerId)) throw new Error('Account closure work admission changed while draining')
+    detach()
   }
 
   async function stop(): Promise<void> {
@@ -1519,7 +1555,8 @@ export function createDeviceRuntimeHostLoop(
       await retireRuntimeInstance(client, instanceId, options.operationTimeouts)
       // 同账号同机的别的实例共用这一行(#5041):它还活着,这台机器就没走 ——
       // ❌ 替它说离线(要等它下一拍心跳才写回在线,中间别的设备都读成离线)。
-      const live = await readLiveDeviceRuntimeInstanceIds(client, deviceId, nowMs(), options.operationTimeouts)
+      // `last_heartbeat_at` is the database's clock (`@@@server-clock`).
+      const live = await readLiveDeviceRuntimeInstanceIds(client, deviceId, serverNow(), options.operationTimeouts)
       live.delete(instanceId)
       if (live.size > 0) return
       await markDeviceOffline(client, deviceId, {
@@ -1579,6 +1616,7 @@ export function createDeviceRuntimeHostLoop(
     },
     start,
     stop,
+    quiesceOwnerForClosure,
     getDebugSnapshot,
   }
 }

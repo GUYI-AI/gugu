@@ -25,6 +25,8 @@ import { BetaRemoteLogins } from './beta-remote'
 import { PASSWORD_AGENT_RPC, remoteOpSchema, type RemoteCaller } from './server-delivery'
 import { agentCredential, planAgentSave, searchCredentials, type CredentialSearch } from './beta-agent-view'
 import type { FillInput } from './beta-runtime-port'
+import { PasswordAccountLifetime } from './account-lifetime'
+import { createVaultPulling } from './pulling'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
@@ -42,9 +44,25 @@ interface NativeHost { window(): BrowserWindow | null; account(): Promise<string
   notify(title: string, body: string): void }
 type Account = Awaited<ReturnType<typeof createAccount>>
 let native: NativeHost | undefined
-let current: Account | undefined
-let creating: Promise<Account> | undefined
 const unavailable = () => new VaultError('UNAVAILABLE')
+const accounts = new PasswordAccountLifetime<Account>({
+  currentOwner: async () => {
+    const owner = await native?.account()
+    if (owner && !/^[a-f0-9-]{36}$/i.test(owner)) throw unavailable()
+    return owner ?? null
+  },
+  create: owner => { if (!native) throw unavailable(); return createAccount(owner, native) },
+  invalidate(value) {
+    value.controller.abort(); value.login.invalidate(); value.saves.invalidate(); value.remote.invalidate()
+    value.sync.sealAdmission()
+  },
+  async dispose(value) {
+    await value.pull.stop()
+    await value.vault.dispose()
+    await value.sync.close()
+  },
+  unavailable,
+})
 const person = Object.freeze({})
 const changed = () => {
   const window = native?.window()
@@ -52,7 +70,7 @@ const changed = () => {
 }
 async function createAccount(ownerId: string, host: NativeHost) {
   const controller = new AbortController(), root = join(privatePasswordVaultDirectory(), ownerId)
-  const assertCurrent = () => { controller.signal.throwIfAborted(); if (current && current.ownerId !== ownerId) throw unavailable() }
+  const assertCurrent = () => { controller.signal.throwIfAborted(); if (accounts.isClosing(ownerId) || accounts.current && accounts.current.ownerId !== ownerId) throw unavailable() }
   const protection = async () => { if ((await protectedPrivateStorageStatus(PASSWORD_VAULT_STORAGE)).status !== 'ready') throw unavailable() }
   await protection()
   const access = createBetaPasswordAccess({ signal: controller.signal, toolScope: guguMcpToolScope,
@@ -104,74 +122,19 @@ async function createAccount(ownerId: string, host: NativeHost) {
   })
   login.bindVault(vault)
   const sync = port.sync = new VaultSync({ root: syncDirectory(privatePasswordVaultDirectory(), ownerId), ownerId, deviceId, keys, changed,
-    rpc: async (name, args) => { assertCurrent(); if (await host.account() !== ownerId) throw unavailable(); return host.rpc(name, args) },
+    rpc: async (name, args) => { assertCurrent(); const currentOwner = await host.account(); assertCurrent(); if (currentOwner !== ownerId) throw unavailable(); return host.rpc(name, args) },
     vault: { syncExport: () => vault.syncExport(person), syncApply: changes => vault.syncApply(person, changes) } })
-  return { ownerId, vault, login, saves, remote, controller, assertCurrent, sync, pull: pulling(sync, host, controller.signal) }
-}
-/** Polls the head revision every 5 seconds (3 while a code is on screen) and pulls when something was written, and every
- * minute regardless. Every step of joining writes, so both devices see the other's step at the next poll. Failures wait
- * for the next round; nothing is shown.
- * A device asking to join is opened on the machine the person is at: at once where they are active, after a pause where
- * the screen is merely unlocked, never where it is locked; an active machine also takes over a request opened elsewhere. */
-function pulling(sync: VaultSync, host: Pick<NativeHost, 'presence' | 'notify'>, signal: AbortSignal) {
-  let timer: ReturnType<typeof setTimeout> | undefined, last = 0, running = false, forced = false
-  const seen = new Map<string, number>()
-  const urgent = () => {
-    const view = sync.view()
-    return view.state === 'joining' && !!view.code || view.state === 'ready' && view.requests.some(request => request.stage === 'waiting' || request.stage === 'compare')
-  }
-  const claim = async () => {
-    const view = sync.view()
-    if (view.state !== 'ready') { seen.clear(); return }
-    for (const id of seen.keys()) if (!view.requests.some(request => request.deviceId === id)) seen.delete(id)
-    const presence = host.presence()
-    for (const request of view.requests) {
-      if (!seen.has(request.deviceId)) { seen.set(request.deviceId, Date.now()); host.notify(`「${request.label || '新设备'}」想用你的密码`, '打开咕咕，核对两台设备上的数字。') }
-      const waited = Date.now() - seen.get(request.deviceId)! > 8_000
-      if (presence !== 'locked' && request.stage === 'new' && (presence === 'active' || waited) || presence === 'active' && request.stage === 'elsewhere')
-        await sync.challenge(request.deviceId).catch(() => {})
-    }
-  }
-  const run = async () => {
-    if (signal.aborted || running) return
-    running = true
-    try {
-      const full = forced || Date.now() - last > 60_000
-      forced = false
-      if (full || await sync.poll()) { last = Date.now(); await sync.refresh() }
-      // Every round, not only after a pull: a request waits out its pause on a merely unlocked machine without any write.
-      await claim()
-    } catch { /* offline or not signed in: the next round retries */ }
-    finally { running = false; schedule(urgent() ? 3_000 : 5_000) }
-  }
-  const schedule = (delay: number) => {
-    if (signal.aborted) return
-    clearTimeout(timer); timer = setTimeout(() => void run(), delay); timer.unref?.()
-  }
-  signal.addEventListener('abort', () => { clearTimeout(timer); sync.dispose() }, { once: true })
-  forced = true; schedule(0)
-  return {
-    /** The settings page or a prompt asked: pull soon, at most every 10 seconds. */
-    soon: () => { if (Date.now() - last > 10_000) { forced = true; schedule(0) } },
-    /** A local save: the first one creates the vault, so pull now. */
-    now: () => { forced = true; schedule(0) },
-  }
+  return { ownerId, vault, login, saves, remote, controller, assertCurrent, sync, pull: createVaultPulling(sync, host, controller.signal) }
 }
 async function account(): Promise<Account> {
   if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
-  const ownerId = await native.account()
-  if (!ownerId || !/^[a-f0-9-]{36}$/i.test(ownerId)) throw unavailable()
-  if (current && current.ownerId !== ownerId) {
-    const old = current; current = undefined; old.controller.abort(); old.login.invalidate(); old.saves.invalidate(); old.remote.invalidate(); await old.vault.dispose()
-  }
-  if (current) return current
-  creating ??= createAccount(ownerId, native)
-  try {
-    current = await creating
-    if (await native.account() !== ownerId) { current.controller.abort(); throw unavailable() }
-    return current
-  }
-  finally { creating = undefined }
+  return accounts.get()
+}
+
+/** Private native cleanup hook. Never disposes another account's vault and
+ * never removes files until both the sync flight and serialized vault IO end. */
+export async function closePasswordVaultForAccountClosure(ownerId: string): Promise<void> {
+  await accounts.close(ownerId)
 }
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
@@ -190,9 +153,12 @@ export function installPasswordBetaHost(host: NativeHost): void {
       return await invokePasswordPerson(value, command)
     } catch { return { ok: false, code: 'UNAVAILABLE' } }
   })
-  app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); current?.saves.invalidate(); current?.remote.invalidate(); void current?.vault.dispose().catch(() => {}) })
+  app.once('before-quit', () => { if (accounts.current) void accounts.close(accounts.current.ownerId).catch(() => {}) })
 }
 async function invokePasswordPerson(value: Account, command: PasswordUiCommand): Promise<PasswordUiReply> {
+  return accounts.run(value, () => invokePasswordCommand(value, command))
+}
+async function invokePasswordCommand(value: Account, command: PasswordUiCommand): Promise<PasswordUiReply> {
   try {
     switch (command?.type) {
       case 'snapshot': value.pull.soon(); break

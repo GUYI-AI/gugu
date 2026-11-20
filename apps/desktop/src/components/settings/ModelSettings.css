@@ -84,3 +84,32 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
 
 .gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }
+
+.gg-model-page .gg-coding-provider { display: flex; flex-direction: column; gap: 20px; }
+.gg-model-page .gg-coding-provider-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
+.gg-model-page .gg-coding-provider-title > :first-child { width: 20px; height: 20px; }
+.gg-model-page .gg-coding-provider .gg-settings-row-title { font-weight: 400; }
+
+.gg-model-page .gg-model-name { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; cursor: text; text-align: left; }
+.gg-model-page .gg-model-name svg { opacity: 0; color: var(--model-settings-source); }
+.gg-model-page .gg-model-subscription-row:hover .gg-model-name svg,
+.gg-model-page .gg-model-name:focus-visible:not([data-pointer-focus]) svg { opacity: 1; }
+
+/* Account columns share one width; SettingsRow's general 60% control cap would wrap the two windows. */
+.gg-model-page .gg-coding-provider { overflow-x: auto; }
+.gg-model-page .gg-model-subscription-row { min-width: 560px; }
+.gg-model-page .gg-model-subscription-row div.gg-settings-row { grid-template-columns: minmax(112px, 1fr) auto; }
+.gg-model-page .gg-model-subscription-row .gg-settings-row-body { flex-wrap: nowrap; }
+.gg-model-page .gg-model-subscription-row .gg-settings-row-title { width: 100%; }
+.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-row .gg-model-name svg { flex-shrink: 0; }
+.gg-model-page .gg-model-subscription-row .gg-settings-row-title > input { width: 100%; max-width: 160px; }
+.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: 328px 56px 28px; align-items: center; gap: 12px; }
+.gg-model-page .gg-model-subscription-usage { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: grid; width: 328px; grid-template-columns: repeat(2, 156px); gap: 16px; }
+.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: 36px 44px 60px; gap: 8px; }
+.gg-model-page .gg-model-subscription-usage [data-window-minutes='300'] { grid-column: 1; }
+.gg-model-page .gg-model-subscription-usage [data-window-minutes='10080'] { grid-column: 2; }
+.gg-model-page .gg-model-subscription-status { display: flex; width: 56px; align-items: center; justify-content: center; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-status > * { width: 100%; flex-shrink: 0; text-align: center; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-remove { display: flex; width: 28px; min-height: 28px; align-items: center; justify-content: center; }

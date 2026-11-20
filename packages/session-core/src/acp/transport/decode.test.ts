@@ -12,9 +12,14 @@ const fixtures: { name: string; update: unknown; event: NormalizedEvent }[] = [
     event: { kind: 'message', role: 'user', messageId: 'inserted', text: 'also print pwd', contentMode: 'replace', content: [{ type: 'text', text: 'also print pwd' }], steering: true, _meta: { guguSteering: true } },
   },
   {
-    name: 'user message without a native id retains its revert anchor',
-    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'edit this' }, _meta: { guguRevertAnchor: 'anchor' } },
+    name: 'user message without a native id retains its revert point',
+    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'edit this' }, _meta: { guguRevert: { before: 'anchor' } } },
     event: { kind: 'message', role: 'user', messageId: null, text: 'edit this', content: [{ type: 'text', text: 'edit this' }], contentMode: 'append', revertAnchor: 'anchor' },
+  },
+  {
+    name: 'a replayed prompt whose revert can restore files says so',
+    update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'edit this' }, _meta: { guguRevert: { before: 'anchor', files: true } } },
+    event: { kind: 'message', role: 'user', messageId: null, text: 'edit this', content: [{ type: 'text', text: 'edit this' }], contentMode: 'append', revertAnchor: 'anchor', revertFiles: true },
   },
   {
     name: 'assistant message keeps the native id',
@@ -76,6 +81,22 @@ const fixtures: { name: string; update: unknown; event: NormalizedEvent }[] = [
     name: 'compaction keeps its own identity and summary',
     update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'completed', summary: [{ type: 'text', text: 'kept fact' }] },
     event: { kind: 'compaction', compactionId: 'compact', status: 'completed', summary: 'kept fact' },
+  },
+  {
+    // The adapter closes a compaction the turn outran (pause / interrupt) with `cancelled`: the context was not compacted.
+    name: 'a cancelled compaction is a failed one',
+    update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'cancelled' },
+    event: { kind: 'compaction', compactionId: 'compact', status: 'failed' },
+  },
+  {
+    name: 'a failed compaction keeps its top-level error',
+    update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'failed', error: 'Not enough messages to compact.' },
+    event: { kind: 'compaction', compactionId: 'compact', status: 'failed', error: 'Not enough messages to compact.' },
+  },
+  {
+    name: 'a compaction status outside the enum never reaches the transcript',
+    update: { sessionUpdate: 'compaction_update', compactionId: 'compact', status: 'paused' },
+    event: { kind: 'ignored' },
   },
   {
     name: 'idle preserves the complete native outcome',

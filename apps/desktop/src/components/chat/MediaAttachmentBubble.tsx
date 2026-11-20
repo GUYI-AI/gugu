@@ -4,13 +4,13 @@ import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
-import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { registerAttachmentImage, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
 import { attachmentState } from '../../lib/attachmentState'
 import { useReplica } from '../../lib/replica'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { useAuth } from '../../store/auth'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
-import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
+import { openImageFromThumb } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
 import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
@@ -50,7 +50,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
   if (metadata.data?.status === 'pending' || metadata.data?.status === 'failed') return <div ref={box} className={FIT_BUBBLE} data-attachment-pending={metadata.data.status === 'pending' || undefined}>
     <FileAttachmentCard file={meta} isMine={isMine} onOpen={upload?.failed ? upload.retry : undefined}
-      details={t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
+      details={(upload?.failed ? upload.reason : undefined) ?? t(upload?.failed && upload.retry ? 'attachmentView.uploadFailed' : metadata.data.status === 'failed' ? 'attachmentView.senderUploadFailed' : pendingLabel(isMine, upload))} />{caption}</div>
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
   if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine}
@@ -95,15 +95,8 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   // 查看器:先拿缩略图打开,翻到这一张再取原图(同一份缓存);卸载时收回 object URL。
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
-    let full: Promise<string> | null = null
-    const unregister = registerFullImage(img.current, () => (full ??= attachmentBytes(meta.source, 'full').then((bytes) => {
-      if (bytes.status !== 'ready') throw new Error('attachment is gone')
-      return URL.createObjectURL(bytes.blob)
-    })), meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined, { name: meta.fileName, contentType: meta.mimeType }, chatId ? { chatId, messageId } : undefined, size)
-    return () => {
-      unregister()
-      void full?.then((url) => URL.revokeObjectURL(url), () => undefined)
-    }
+    return registerAttachmentImage(img.current, meta.source, { name: meta.fileName, contentType: meta.mimeType },
+      chatId ? { chatId, messageId } : undefined, size?.width && size.height ? { width: size.width, height: size.height } : undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId, size?.width, size?.height])
 
@@ -138,7 +131,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
     )
   }
   if (view.status === 'pending') return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} data-attachment-pending
-    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{t(pendingLabel(isMine, upload))}</span></div>
+    className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{(upload?.failed ? upload.reason : undefined) ?? t(pendingLabel(isMine, upload))}</span></div>
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
 }
 

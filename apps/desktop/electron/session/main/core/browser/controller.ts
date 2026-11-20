@@ -1,5 +1,6 @@
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
 import { inspectBrowserAnnotation } from './browser-annotation';
+import { isAnnotationConversation, type AnnotationConversation } from '@shared/browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
   destroyBrowserPage,
@@ -16,6 +17,7 @@ import {
   type BrowserPageCommand,
 } from '@main/core/browser/browser-page-views';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
+import { listPersistedBrowserPartitions } from './browser-partition-cleanup';
 import { controlRemoteTaskPage, sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
 import type { TaskPageControl } from '@shared/browser-task-page';
 import { isBrowserPartition } from '@main/core/browser/webview-security';
@@ -31,8 +33,9 @@ import { createRPCController } from '@shared/lib/ipc/rpc';
 
 export const browserController = createRPCController({
   /** `sessionId`:页签开在哪条会话里(#7191 会话的 agent 据此找到自己的页签);新建任务的草稿面板不带。 */
-  registerSession: (args: { browserId: string; partition: string; sessionId?: string }) => {
-    if (!args.browserId.trim() || !isBrowserPartition(args.partition)) {
+  registerSession: (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation }) => {
+    if (!args.browserId.trim() || !isBrowserPartition(args.partition) || (args.conversation !== undefined && (!isAnnotationConversation(args.conversation)
+      || (args.sessionId && (args.conversation.kind !== 'session' || args.conversation.sessionId !== args.sessionId))))) {
       return { success: false as const, error: 'Invalid browser session' };
     }
     configureBrowserProfileSession(args.partition);
@@ -40,6 +43,7 @@ export const browserController = createRPCController({
       browserId: args.browserId,
       partition: args.partition,
       ...(args.sessionId?.trim() ? { sessionId: args.sessionId } : {}),
+      ...(args.conversation ? { conversation: args.conversation } : {}),
     });
     return { success: true as const };
   },
@@ -131,8 +135,8 @@ export const browserController = createRPCController({
   },
 });
 
-// Every persistent profile partition (default + named) plus any partitions with
-// live sessions, so clearing browsing data covers isolated-per-session tabs too.
+// Explicit browsing-data controls include legacy on-disk partitions too. Their
+// retirement never authorizes startup deletion of cookies or unsaved site data.
 async function collectBrowserPartitions(): Promise<string[]> {
   const browserSettings = await appSettingsService.get('browser');
   const partitions = new Set<string>([browserProfilePartition(DEFAULT_BROWSER_PROFILE_ID)]);
@@ -142,5 +146,6 @@ async function collectBrowserPartitions(): Promise<string[]> {
   for (const partition of browserWebContentsRegistry.registeredPartitions) {
     partitions.add(partition);
   }
+  for (const partition of await listPersistedBrowserPartitions()) partitions.add(partition);
   return [...partitions];
 }

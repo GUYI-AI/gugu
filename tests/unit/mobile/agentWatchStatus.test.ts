@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { sessionPresentation, sessionReading } from '../../../apps/desktop/src/mobile/agent-watch/watch-status'
-import { diffAlerts, statusMapOf } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-alerts'
+import { sessionPresentation, sessionReading } from '../../../apps/desktop/src/lib/agent-wait/watch-status'
+import { diffAlerts, statusMapOf } from '../../../apps/desktop/src/lib/agent-wait/agent-watch-alerts'
 
 const session = (fields: Partial<SessionpageSessionSummary>): SessionpageSessionSummary => ({
   conversationId: 'conversation-1',

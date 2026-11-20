@@ -1,6 +1,7 @@
 import { action, makeAutoObservable, observable } from 'mobx';
 import type { SupportedLocale } from '@gugu/session-shared/format';
 import { enUSAnnotationMessages, zhCNAnnotationMessages } from '../../../localization/messages-annotations';
+import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
 
 export type AnnotationRect = { x: number; y: number; width: number; height: number };
 export type BrowserAnnotationSelection = {
@@ -18,14 +19,6 @@ export type BrowserAnnotationSelection = {
   /** The actual page capture, with this selection's number drawn on it. */
   screenshot: File;
 };
-export type FileAnnotationSelection = {
-  kind: 'file';
-  path: string;
-  startLine: number;
-  endLine: number;
-  text: string;
-  annotation: string;
-};
 export type DiffAnnotationSelection = {
   kind: 'diff';
   path: string;
@@ -37,7 +30,7 @@ export type DiffAnnotationSelection = {
   text: string;
   annotation: string;
 };
-type AnnotationSelection = BrowserAnnotationSelection | FileAnnotationSelection | DiffAnnotationSelection;
+type AnnotationSelection = BrowserAnnotationSelection | DiffAnnotationSelection;
 type AnnotationIdentity = { id: string; number: number };
 export type SessionAnnotation = AnnotationSelection & AnnotationIdentity;
 
@@ -102,10 +95,15 @@ export class SessionAnnotations {
 
 const drafts = new Map<string, SessionAnnotations>();
 export const sessionAnnotations = {
-  forSession(sessionId: string): SessionAnnotations {
-    let draft = drafts.get(sessionId);
-    if (!draft) { draft = new SessionAnnotations(); drafts.set(sessionId, draft); }
+  forConversation(conversation: AnnotationConversation, accountId?: string | null): SessionAnnotations {
+    const identity = annotationConversationKey(conversation);
+    const key = conversation.kind === 'chat' ? JSON.stringify([accountId ?? null, identity]) : identity;
+    let draft = drafts.get(key);
+    if (!draft) { draft = new SessionAnnotations(); drafts.set(key, draft); }
     return draft;
+  },
+  forSession(sessionId: string): SessionAnnotations {
+    return this.forConversation({ kind: 'session', sessionId });
   },
 };
 
@@ -125,13 +123,6 @@ export function annotationPrompt(prompt: string, items: readonly SessionAnnotati
     previousHeading = heading;
   };
   for (const item of items) {
-    if (item.kind === 'file') {
-      append('annotations.prompt.selectedText', [
-        copy('annotations.prompt.fileSelection', { number: item.number }),
-        JSON.stringify({ path: item.path, startLine: item.startLine, endLine: item.endLine, text: item.text, annotation: item.annotation }),
-      ].join('\n'));
-      continue;
-    }
     if (item.kind === 'diff') {
       append('annotations.prompt.allComments', [
         copy('annotations.prompt.userComment', { number: item.number }),

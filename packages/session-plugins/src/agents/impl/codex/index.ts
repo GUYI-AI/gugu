@@ -8,6 +8,7 @@ import {
   type AgentAuthStatus,
   type AgentMemoryDescriptor,
   type SessionBundleDescriptor,
+  guguBridgeRevert,
 } from '@gugu/session-core/agents/plugins';
 import type { AcpPlatformInjection } from '@gugu/session-core/acp';
 import {
@@ -39,6 +40,7 @@ import { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './platform-mo
 import { codexPlatformProviderConfigArgs } from './platform-provider-args';
 import { CODEX_PERMISSION_MODES } from './permission-modes';
 import { codexCredentialInfo } from './auth';
+import { CODEX_NATIVE_AUTH_ROOT, requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
 import { codexSubscriptionBehavior } from './subscription';
 import { codexScopedMcpAdapter } from './mcp-scopes';
 import { CODEX_WIRE_API } from './platform';
@@ -331,6 +333,8 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeCodexSessionBundle,
   },
   acp: {
+    // Gugu's own bridge: `_meta.guguRevert` points, `_session/revert`.
+    revert: guguBridgeRevert,
     // Its session/load replays the user messages it received: canonical evidence of delivered communications.
     // Its record keeps the native prompt (the person's words plus the host's attachment lines): the receipt ties the two.
     historyRecovery: { canonicalReplay: true, promptMeta: nativePromptMeta },
@@ -392,6 +396,7 @@ export const provider = registerPluginBehavior(plugin, {
         env: {
           ELECTRON_RUN_AS_NODE: '1',
           GUGU_CODEX_BIN: codexBin,
+          ...(process.env.GUGU_APP_VERSION ? { GUGU_APP_VERSION: process.env.GUGU_APP_VERSION } : {}),
           // @@@5380 agent 事件 hook 的 `notify` 回调 —— 桥把它并进 thread-open 的 `config`
           // map(与 MCP 同一扇门),❌ 不拼 argv `-c`:#5363 已经把这条腿的 MCP 从 argv 迁走,
           // 再从 argv 递 notify 就是同一个进程两扇门(#5380)。
@@ -487,6 +492,17 @@ export {
 };
 
 async function codexAuthStatus(ctx: AgentAuthContext): Promise<AgentAuthStatus> {
+  if (ctx.env[CODEX_NATIVE_AUTH_ROOT]) {
+    try {
+      const access = await requestNativeCodexAccess(ctx.env);
+      return access ? { kind: 'authenticated', credentialKind: 'subscription', ...(access.account ? { account: access.account } : {}) }
+        : { kind: 'unauthenticated' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Run codex login to sign in again';
+      return /refresh token.*revoked/i.test(message) ? { kind: 'unauthenticated', reason: 'expired', message }
+        : { kind: 'unknown', message };
+    }
+  }
   const envStatus = authenticatedFromEnv(ctx, ['OPENAI_API_KEY']);
   if (envStatus.kind === 'authenticated') return { ...envStatus, credentialKind: 'api-key' };
   const status = await commandAuthStatus({ ...ctx, cli: codexBinaryForSpawn(ctx) }, ['login', 'status'], {

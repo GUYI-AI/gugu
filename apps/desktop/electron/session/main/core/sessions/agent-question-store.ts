@@ -1,5 +1,5 @@
 /** Agent questions are user state, not a disposable transcript cache. Commit before showing or delivering. */
-import { mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveGuguHome } from '@gugu/core/local/state/paths';
@@ -8,6 +8,10 @@ import { restoredAgentQuestion } from './agent-question-delivery';
 import { log } from '@main/lib/logger';
 import { activitySignal } from '../activity/signals';
 import { registerAssistantQuestion, settleAssistantQuestion } from '../../../../sessionpage/assistant-work';
+import type { PublicQuestionCard } from './agent-question-model';
+
+const changes = new Set<() => void>();
+export function onAgentQuestionRecordsChanged(listener: () => void): () => void { changes.add(listener); return () => { changes.delete(listener); }; }
 
 function file(sessionId: string): string {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId)) throw new Error('Invalid question session ID');
@@ -40,10 +44,35 @@ function writeRecords(sessionId: string, items: Settlement[]): void {
   try {
     writeFileSync(temporary, `${JSON.stringify({ version: 2, items })}\n`, { mode: 0o600 });
     renameSync(temporary, target);
+    for (const listener of changes) listener();
   } catch (error) {
     try { unlinkSync(temporary); } catch { /* The original write error remains authoritative. */ }
     throw error;
   }
+}
+
+export function allAgentQuestionRecords(): Array<{ sessionId: string; item: Settlement }> {
+  let names: string[];
+  try { names = readdirSync(join(resolveGuguHome(),'agent-questions')); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
+  return names.filter(name => /^[a-zA-Z0-9_-]{1,128}\.json$/.test(name)).flatMap(name => {
+    const sessionId = name.slice(0,-5);
+    return readAgentQuestionRecords(sessionId).map(item => ({ sessionId,item }));
+  });
+}
+
+/** The posted message is durable before its result is synchronized. Handles answer-before-post races too. */
+export function rememberPublicQuestionCard(sessionId: string, itemId: string, card: PublicQuestionCard): void {
+  const items = readAgentQuestionRecords(sessionId);
+  const item = items.find(row => row.itemId === itemId);
+  if (!item?.origin) throw new Error('Posted question has no durable host record');
+  writeRecords(sessionId,items.map(row => row.itemId === itemId ? { ...row,origin: { ...row.origin!,payload: { ...(row.origin!.payload as object),publicCard: card } } } : row));
+}
+export function markPublicQuestionCardSynced(sessionId: string, itemId: string): void {
+  const items = readAgentQuestionRecords(sessionId);
+  writeRecords(sessionId,items.map(row => row.itemId === itemId ? { ...row,origin: { ...row.origin!,payload: {
+    ...(row.origin!.payload as object),publicCard: { ...(row.origin!.payload as { publicCard: PublicQuestionCard }).publicCard,synced: true },
+  } } } : row));
 }
 export function rememberAgentQuestion(sessionId: string, question: PendingRequest | Settlement): void {
   const pending = 'state' in question ? question : { ...question, state: 'pending' as const, optionId: null, resolvedBy: null, resolvedAt: null };

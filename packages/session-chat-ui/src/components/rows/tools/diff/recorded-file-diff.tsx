@@ -82,7 +82,7 @@ export function mountRecordedFileDiff(parent: HTMLElement, context: ChatContext,
           <Show when={rows.length > 0}>
             <div data-patch-section={index()}>
               <DiffLines layout={{ previewRows: rows, lang, truncated: false }} caches={context.sharedCaches}
-                codeLineHeight={() => theme.fonts.code.lineHeight} showMarkers
+                codeLineHeight={() => theme.fonts.code.lineHeight} showMarkers wrapLines
                 annotationSlots={registerAnnotationSlot && ((row: DiffRow, rowIndex, control, editor) =>
                   registerAnnotationSlot({ patchIndex: index(), rowIndex, control, editor, text: row.text,
                     oldLine: row.oldIdx === undefined ? undefined : row.oldIdx + 1,

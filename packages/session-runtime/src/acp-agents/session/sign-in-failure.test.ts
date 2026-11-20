@@ -79,6 +79,15 @@ describe('isSignInFailure (#6264)', () => {
 });
 
 describe('classifyTurnFailure 带出 signInRequired', () => {
+  it('carries the explicit revoked-token reason through the failed turn, excluding platform credentials', () => {
+    const cause = { name: 'RequestError', message: 'Refresh token was revoked. Please sign in again.', code: -32603 };
+    expect(classifyTurnFailure({ at: 'prompt', cause }).outcome).toMatchObject({
+      kind: 'error', reason: 'prompt_failed', signInRequired: true, signInReason: 'revoked', detail: expect.stringContaining(cause.message),
+    });
+    const platform = classifyTurnFailure({ at: 'prompt', cause, platformCredentials: true }).outcome;
+    expect(platform).not.toHaveProperty('signInRequired');
+    expect(platform).not.toHaveProperty('signInReason');
+  });
   it('登录失效的那一轮:reason 仍是 prompt_failed,多一格 signInRequired,原话照留', () => {
     const { outcome, provisional } = classifyTurnFailure({ at: 'prompt', cause: CODEX_REFRESH_DEAD });
     expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed', signInRequired: true });

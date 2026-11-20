@@ -5,7 +5,13 @@ export function questionAnswerError(questions: readonly SettlementQuestion[], an
   if (answers.length !== questions.length) return '答案份数与题目不一致'
   for (const [index, question] of questions.entries()) {
     const answer = answers[index]
-    if (!answer || !Array.isArray(answer.selected) || answer.selected.some((id) => !question.options.some((option) => option.optionId === id))) return '答案包含失效的选项'
+    if (!answer || !Array.isArray(answer.selected) || (answer.other !== undefined && typeof answer.other !== 'string')
+      || answer.selected.some((id) => !question.options.some((option) => option.optionId === id))) return '答案包含失效的选项'
+    if (answer.skipped !== undefined && answer.skipped !== true) return '跳过标记无效'
+    if (answer.skipped === true) {
+      if (answer.selected.length || answer.other?.trim()) return '跳过的题目不能包含答案'
+      continue
+    }
     if (new Set(answer.selected).size !== answer.selected.length) return '答案包含重复的选项'
     if (!question.multiSelect && answer.selected.length > 1) return '单选题只能选择一项'
     if (!question.multiSelect && !answer.selected.length && !answer.other?.trim()) return '请回答每一道题'
@@ -16,14 +22,16 @@ export function questionAnswerError(questions: readonly SettlementQuestion[], an
 /** An answer in the owner's words — the picks, then what they wrote in; one question after another. Said the same way
  *  on the group's question card and in the session's transcript. */
 export function questionAnswerText(answers: readonly QuestionAnswer[]): string {
-  return answers.map((answer) => [...(answer.selected ?? []), ...(answer.other?.trim() ? [answer.other.trim()] : [])].join(', ')).join(' / ')
+  return answers.map((answer) => answer.skipped === true ? '（已跳过）' : [...(answer.selected ?? []), ...(answer.other?.trim() ? [answer.other.trim()] : [])].join(', ')).join(' / ')
 }
 
 /** 读取保存的答案时只校验数据形状，不替代写入端针对具体题目的校验。 */
 export function parseQuestionAnswers(value: unknown): readonly QuestionAnswer[] | null {
   if (!Array.isArray(value) || value.some((answer) => !answer || typeof answer !== 'object'
     || !Array.isArray(answer.selected) || answer.selected.some((selected: unknown) => typeof selected !== 'string')
-    || (answer.other !== undefined && typeof answer.other !== 'string'))) return null
+    || (answer.other !== undefined && typeof answer.other !== 'string')
+    || (answer.skipped !== undefined && answer.skipped !== true)
+    || (answer.skipped === true && (answer.selected.length > 0 || answer.other?.trim())))) return null
   return value as QuestionAnswer[]
 }
 
@@ -41,6 +49,7 @@ export function readQuestionAnswerDelivery(text: string): { answer: string | nul
   if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined
   const fact = data as { state?: unknown; answers?: unknown }
   if (fact.state === 'withdrawn') return { answer: null }
+  if (fact.state === 'discuss') return { answer: '先讨论' }
   const answers = parseQuestionAnswers(fact.answers)
   return fact.state === 'answered' && answers ? { answer: questionAnswerText(answers) } : undefined
 }

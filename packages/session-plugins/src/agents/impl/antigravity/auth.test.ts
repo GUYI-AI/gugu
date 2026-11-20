@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentAuthContext, PluginFs } from '@gugu/session-core/agents/plugins';
 import { ANTIGRAVITY_CLI_SETTINGS_PATH, antigravityAuthStatus, antigravityCliAuthStatus } from './auth';
@@ -209,10 +212,20 @@ describe('antigravityCliAuthStatus(终端腿的 agy,#6335)', () => {
     ).resolves.toMatchObject({ kind: 'unknown', message: expect.stringContaining('EACCES') });
   });
 
-  it('Windows:没有终端腿 ⇒ unknown,不去问', async () => {
-    const c = managedCtx({ keychain: 'present' });
-    await expect(antigravityCliAuthStatus(c, 'win32')).resolves.toMatchObject({ kind: 'unknown' });
-    expect(c.exec).not.toHaveBeenCalled();
+  it('runs the Windows CLI from a scratch profile, never the managed profile, to check its login', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'agy-win-status-'));
+    try {
+      const geminiHome = join(parent, '.gemini');
+      await mkdir(join(geminiHome, 'antigravity-cli'), { recursive: true });
+      const c = managedCtx({ keychain: 'present', env: { GEMINI_HOME: geminiHome } });
+      await expect(antigravityCliAuthStatus(c, 'win32')).resolves.toMatchObject({ kind: 'authenticated' });
+      const [command, args, opts] = c.exec.mock.calls[0]!;
+      expect([command, args, opts?.timeout]).toEqual([c.cli, ['models'], 15_000]);
+      expect(opts?.env?.HOME).toBe(opts?.env?.USERPROFILE);
+      expect(opts?.env?.HOME).not.toBe(dirname(geminiHome));
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 
   it('GEMINI_HOME 被用户挪走且 fs 锚在真 home ⇒ unknown,不去问', async () => {

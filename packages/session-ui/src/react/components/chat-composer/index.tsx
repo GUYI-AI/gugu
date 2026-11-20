@@ -744,6 +744,7 @@ export function ChatComposer({
     modelCount: modelItems.length,
     effortCount: effortItems.length,
     unlock: Boolean(modelUnlock),
+    notice: Boolean(modelMenuNotice || modelSettingNotice),
   });
 
   // ── Permission mode items ────────────────────────────────────────────────────
@@ -811,6 +812,7 @@ export function ChatComposer({
       placeholder={resolvedPlaceholder}
       disabled={disabled || !!queueEdit?.pending}
       onChange={(text) => { setHasText(!!text.trim()); (queueEdit ? changeQueueEdit : onInputChange)?.(text); }}
+      onDocumentClear={phoneCapsule ? phoneEditor.onDocumentClear : undefined}
       onPasteText={queueEdit ? undefined : handlePastedText}
       clearOnSubmit={queueEdit ? false : (editorOptions?.clearOnSubmit ?? true)}
       hostDropTypes={onDataDropped ? dataDropTypes : undefined}

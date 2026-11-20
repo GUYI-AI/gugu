@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { KeyedMutex } from '@gugu/session-core/lib';
 import { NEW_SESSION_PERMISSION_MODE } from '@gugu/session-core/acp';
 import { createLocalProject } from '@main/core/projects/operations/create-local-project';
 import { ensureRepositoryWorkspace } from '@main/core/projects/operations/ensure-repository-workspace';
@@ -15,6 +16,7 @@ import {
   type ImportLocalSessionParams,
   type ImportLocalSessionResult,
   type LocalSessionEngine,
+  type LocalSessionPreview,
 } from '@shared/core/session-import/session-import';
 import { buildWorkspaceConfigFromPreset } from '@shared/core/workspaces/build-workspace-config-from-preset';
 import { getLocalSessionSource } from './host-source';
@@ -110,6 +112,9 @@ async function resolveImportProject(workingDirectory: string) {
   return await mountImportProject(created.data);
 }
 
+// The database-owning host claims one native session at a time; other native sessions stay independent.
+const importClaims = new KeyedMutex();
+
 export async function importLocalSession(
   params: ImportLocalSessionParams
 ): Promise<ImportLocalSessionResult> {
@@ -120,6 +125,14 @@ export async function importLocalSession(
     engine: params.engine,
   });
 
+  return bindLocalSession(params, preview);
+}
+
+/** Host-only binding after a source reader has validated the native metadata. Never accepts an RPC preview. */
+export async function bindLocalSession(
+  params: ImportLocalSessionParams,
+  preview: Pick<LocalSessionPreview, 'providerSessionId' | 'title' | 'cwd'>,
+): Promise<ImportLocalSessionResult> {
   const providerSessionId = preview.providerSessionId.trim();
   if (!providerSessionId) {
     throw new Error('这条会话没有可用的会话 id，无法恢复原会话');
@@ -133,60 +146,65 @@ export async function importLocalSession(
   // 终端腿 `--resume`、聊天腿 `session/load`,续的都是同一个 provider 会话 id(见 switch-session-runtime)。
   const runtime = params.sessionView === 'code' ? 'pty' : 'acp';
 
-  // 同一条会话只接进来一次：再次导入直接回到已有的那个会话，不建重复的。
-  const [existing] = await db
-    .select({
-      id: sessions.id,
-      projectId: sessions.projectId,
-    })
-    .from(sessions)
-    .where(eq(sessions.providerSessionId, providerSessionId))
-    .limit(1);
-  if (existing) {
-    return {
-      projectId: existing.projectId,
-      sessionId: existing.id,
-      workingDirectory,
-      alreadyImported: true,
-    };
-  }
+  return importClaims.runExclusive(JSON.stringify([provider, providerSessionId]), async () => {
+    // 同一条会话只接进来一次：再次导入直接回到已有的那个会话，不建重复的。
+    const [existing] = await db
+      .select({
+        id: sessions.id,
+        projectId: sessions.projectId,
+      })
+      .from(sessions)
+      .where(and(
+        eq(sessions.provider, provider),
+        eq(sessions.providerSessionId, providerSessionId),
+      ))
+      .limit(1);
+    if (existing) {
+      return {
+        projectId: existing.projectId,
+        sessionId: existing.id,
+        workingDirectory,
+        alreadyImported: true,
+      };
+    }
 
-  const project = await resolveImportProject(workingDirectory);
+    const project = await resolveImportProject(workingDirectory);
 
-  const repositoryWorkspaceId = project.repositoryWorkspaceId ?? ensureRepositoryWorkspace(project);
+    const repositoryWorkspaceId = project.repositoryWorkspaceId ?? ensureRepositoryWorkspace(project);
 
-  const sessionId = sessionIdFor(params.engine, providerSessionId);
-  const title = preview.title.trim() || params.title.trim() || '导入的会话';
+    const sessionId = sessionIdFor(params.engine, providerSessionId);
+    const title = preview.title.trim() || params.title.trim() || '导入的会话';
 
-  const created = await sessionService.createSession({
-    projectId: project.id,
-    sessionConfig: {
-      version: '1',
-      name: title,
-      initialSession: {
-        id: sessionId,
-        provider,
-        // The engine's own title is the name the person knows this session by.
-        title,
-        // 导入是另一个动词:历史本来就在引擎那边，咕咕只是把它认领进来 ——
-        // 带上 provider 自己的会话 id，第一次启动就 resume 它而不是开新的。
-        origin: { kind: 'import', providerSessionId: providerSessionId },
-        type: runtime,
-        // 档位显式写进记录:缺席时终端腿会退回「不加旗标」= harness 自己挑档(#7366)。与新建缺省同一个答案。
-        permissionMode: NEW_SESSION_PERMISSION_MODE,
+    const created = await sessionService.createSession({
+      projectId: project.id,
+      sessionConfig: {
+        version: '1',
+        name: title,
+        initialSession: {
+          id: sessionId,
+          provider,
+          // The engine's own title is the name the person knows this session by.
+          title,
+          // 导入是另一个动词:历史本来就在引擎那边，咕咕只是把它认领进来 ——
+          // 带上 provider 自己的会话 id，第一次启动就 resume 它而不是开新的。
+          origin: { kind: 'import', providerSessionId: providerSessionId },
+          type: runtime,
+          // 档位显式写进记录:缺席时终端腿会退回「不加旗标」= harness 自己挑档(#7366)。与新建缺省同一个答案。
+          permissionMode: NEW_SESSION_PERMISSION_MODE,
+        },
       },
-    },
-    workspaceConfig: buildWorkspaceConfigFromPreset('repo-root', { repositoryWorkspaceId }),
-  });
-  if (!created.success) {
-    // ❌ 别在这里再写一次「导入失败：」——界面已经带了这个前缀，重复一遍只是噪音。
-    throw new Error(`没能建出这条会话（${created.error.type}）`);
-  }
+      workspaceConfig: buildWorkspaceConfigFromPreset('repo-root', { repositoryWorkspaceId }),
+    });
+    if (!created.success) {
+      // ❌ 别在这里再写一次「导入失败：」——界面已经带了这个前缀，重复一遍只是噪音。
+      throw new Error(`没能建出这条会话（${created.error.type}）`);
+    }
 
-  return {
-    projectId: project.id,
-    sessionId,
-    workingDirectory: project.path,
-    alreadyImported: false,
-  };
+    return {
+      projectId: project.id,
+      sessionId,
+      workingDirectory: project.path,
+      alreadyImported: false,
+    };
+  });
 }

@@ -11,6 +11,7 @@ export interface SelfIdentitySnapshot {
   userId: string
   displayName: string | null
   guguNumber: number | null
+  accountKind?: 'personal' | 'team_member' | 'team_login_anchor' | 'unknown'
 }
 
 export interface SelfIdentityBridge {
@@ -39,7 +40,7 @@ const bridge: SelfIdentityBridge = {
 function sameSnapshot(a: SelfIdentitySnapshot | null, b: SelfIdentitySnapshot | null): boolean {
   if (a === b) return true
   if (!a || !b) return false
-  return a.userId === b.userId && a.displayName === b.displayName && a.guguNumber === b.guguNumber
+  return a.userId === b.userId && a.displayName === b.displayName && a.guguNumber === b.guguNumber && a.accountKind === b.accountKind
 }
 
 /** gugu 侧:登录态一变就发布一次;首次调用把桥装到 window 上(幂等)。 */

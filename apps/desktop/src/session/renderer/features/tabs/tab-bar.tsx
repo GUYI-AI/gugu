@@ -22,8 +22,12 @@ export const TabBar = observer(function TabBar({
   leadingReservePx,
   leadingSlot,
   toolsOnly = false,
+  leadingTabsSlot,
+  selectedTabId,
 }: {
   toolsOnly?: boolean;
+  leadingTabsSlot?: ReactNode;
+  selectedTabId?: string;
   /** Rendered immediately after the last tab, before the flexible drop zone. */
   tabTrailingSlot?: ReactNode;
   /** 左端还要让出多宽(单独成窗时让开 mac 的红绿灯)。见 <TabStripShell>。 */
@@ -43,10 +47,13 @@ export const TabBar = observer(function TabBar({
   const active = pane.activeEntry;
   const opener = active?.openerTabId ? pane.entries.get(active.openerTabId) : undefined;
   const ownsFileToolbar = active?.kind === 'file-view' || active?.kind === 'chat-panel' && !!(active.state as { file?: unknown }).file;
-  // File pages own this action in their content toolbar. Other pages keep it in the
-  // pane's ordinary action group, never in the absolute, fixed-width grip slot.
-  const returnConversation = !toolsOnly && !ownsFileToolbar && active && opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation && (pane.navigationOf(active.tabId)?.index ?? 0) === 0
-    ? <Button size="icon-sm" variant="ghost" data-testid="tab-return-conversation" aria-label={translate('tabs.backToConversation')} title={translate('tabs.backToConversation')} onClick={() => void pane.go(active.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
+  // Back: a page reached in place (Review → a file's diff) returns to the page before it; the first page returns to the
+  // conversation it came from, except in the tools strip, which sits beside that conversation. File pages own this
+  // action in their content toolbar. Others keep it in the pane's action group, never in the fixed-width grip slot.
+  const index = active ? pane.navigationOf(active.tabId)?.index ?? 0 : 0;
+  const toConversation = index === 0 && !!opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation;
+  const back = active && !ownsFileToolbar && (index > 0 || (toConversation && !toolsOnly)) ? translate(toConversation ? 'tabs.backToConversation' : 'common.back') : null;
+  const returnBack = back ? <Button size="icon-sm" variant="ghost" data-testid={toConversation ? 'tab-return-conversation' : 'tab-back'} aria-label={back} title={back} onClick={() => void pane.go(active!.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
   // A page in full screen covers the whole workspace: its strip offers a worded way out, whichever page it is (file, App,
   // browser). The tab's own ⤡ and Esc do the same; this is the one a person reads. A narrow strip keeps only its icon (index.css).
   const fullscreen = !toolsOnly && (tabFullscreen.isOn(pane) || (!!side && tabFullscreen.isOn(side.pane)));
@@ -57,7 +64,7 @@ export const TabBar = observer(function TabBar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const order = useTabOrderPreview(pane, scrollContainerRef);
   const entries = [
-    ...resolvedTabs.map((tab) => ({ tab: toolsOnly ? { ...tab, pairRole: undefined } : tab, host: pane, paneId, focused: isFocusedPane })),
+    ...resolvedTabs.map((tab) => ({ tab: toolsOnly ? { ...tab, pairRole: undefined, isActive: selectedTabId ? tab.tabId === selectedTabId : tab.isActive } : tab, host: pane, paneId, focused: isFocusedPane })),
     ...(side?.pane.resolvedTabs.map((tab) => ({ tab, host: side.pane, paneId: side.paneId, focused: !isFocusedPane })) ?? []),
   ];
   const tabsById = new Map(entries.map((entry) => [entry.tab.tabId, entry]));
@@ -119,12 +126,13 @@ export const TabBar = observer(function TabBar({
           />
         ) : null
       }
-      actionsSlot={returnConversation || exitFullscreen ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{exitFullscreen}{returnConversation}{actionsSlot}</div> : actionsSlot}
+      actionsSlot={returnBack || exitFullscreen ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{exitFullscreen}{returnBack}{actionsSlot}</div> : actionsSlot}
       reserveShellRestoreLane={reserveShellRestoreLane}
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
     >
-      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={pane.activeTabId} keepActiveOnResize={toolsOnly}>
+      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={selectedTabId ?? pane.activeTabId} keepActiveOnResize={toolsOnly}>
+      {leadingTabsSlot}
       {stripOrder.map((id) => {
         const entry = tabsById.get(id);
         if (!entry) return null;

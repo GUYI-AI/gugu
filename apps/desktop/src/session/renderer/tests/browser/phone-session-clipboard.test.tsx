@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { page } from 'vitest/browser';
-import { SessionConversation } from '@/mobile/agent-watch/SessionConversation';
-import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
+import { SessionConversation } from '@/components/session-watch/SessionConversation';
+import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { platform } from '@/platform';
 import { getLocaleSnapshot, setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -15,7 +15,7 @@ import '@renderer/index.css';
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
 vi.mock('@/lib/notices', async original => ({ ...(await original<object>()), notify: vi.fn(() => 0) }));
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})),
 }));
 

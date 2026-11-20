@@ -2,7 +2,7 @@ import { memo, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { OFFLINE_SESSION_SLOT_PREFIX, installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { readSessionpageHistory } from '@/lib/sessionpageHistoryBridge'
-import { PeekSessionTimeline } from '@/mobile/agent-watch/PeekSessionTimeline'
+import { PeekSessionTimeline } from '@/components/session-watch/PeekSessionTimeline'
 import { OfflineSessionInput } from './OfflineSessionInput'
 
 installShellSlots()

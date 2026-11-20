@@ -85,6 +85,9 @@ export function createGroupAdmin(client: GroupAdminRpcClient, actor: string) {
     async archive(chatId: string) {
       return object('archive_group_as', client.rpc('archive_group_as', { p_chat_id: chatId, p_as_user_id: actor }), { chat_id: chatId, status: 'archived' })
     },
+    async restore(chatId: string) {
+      return object('restore_group_as', client.rpc('restore_group_as', { p_chat_id: chatId, p_as_user_id: actor }), { chat_id: chatId, status: 'active' })
+    },
     async joinRequests(chatId: string, includeDecided = true) {
       return list('list_group_join_requests', client.rpc('list_group_join_requests', { p_chat_id: chatId, p_include_decided: includeDecided, p_as_user_id: actor }))
     },

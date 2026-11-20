@@ -24,6 +24,8 @@ import { AccountLoginMethods } from './AccountLoginMethods'
 import { PasswordRecoveryGroup } from '../password/PasswordRecovery'
 
 import { ReferralAccountPreview } from '../referralPreview/ReferralPreview'
+import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
 
 const log = rendererLogger('settings/account')
 
@@ -40,6 +42,8 @@ const ACCOUNT_EDIT = { conversation: '', panel: 'settings/account', persist: fal
 export function AccountSection({ user, updateUser, logout, mobile = false }: AccountSectionProps) {
   const { t } = useTranslation('settings')
   const { t: tMain } = useTranslation('main')
+  const { t: tTeam } = useTranslation('team')
+  const teamAccount = hasTeamAccountMarker(user)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Edits not saved yet live in the view-state table (memory only): closing Settings and opening it again keeps them;
@@ -62,7 +66,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   // 身份(product spec:新账号在「认识你」里填,这里能改)。存在账号设置里、只有本人读得到,不进名片。
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
   // 身份是自己那一行设置里的一个键:和首次引导、文件存储等读同一份(lib/ownSettings)。
-  const settingsRow = useReplica(ownSettings, user?.id ? ['user'] : null)
+  const settingsRow = useReplica(ownSettings, user?.id && !teamAccount ? ['user'] : null)
   useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
   const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
   // 改了但还没存的那一份;没有 = 没动过,显示存着的。
@@ -84,7 +88,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
       // Said in words with a retry (the reason goes to the log): ❌ a raw「TypeError: Failed to fetch」.
       ? { kind: 'error' as const, message: t('account.occupationReadFailed') }
       : { kind: 'unknown' as const }
-  const occupationDirty = occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
+  const occupationDirty = !teamAccount && occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
   const occupationInvalid = occupation.kind === 'ready' && occupationDirty && !occupationComplete(occupation.draft)
 
   const dirty = nickname.trim() !== (user?.nickname ?? '') || (bio ?? '') !== (user?.bio ?? '') || occupationDirty
@@ -150,6 +154,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
 
   return (
     <SettingsPage data-testid="settings-account">
+      {teamAccount && <TeamAccountMembership />}
       <SettingsNote>{t('account.intro')}</SettingsNote>
 
       {/* Identity summary and labelled editors retain the original save/upload paths. */}
@@ -169,7 +174,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
               title={t('account.uploadAvatar')}
             >
               <span className="gg-avatar-upload-frame">
-                <Avatar name={resolveOrLoud(user?.nickname, `account nickname ${user?.id}`)} avatarUrl={user?.avatarUrl} seed={user?.id} size="md" />
+                <Avatar name={resolveOrLoud(user?.nickname, `account nickname ${user?.id}`)} avatarUrl={user?.avatarUrl} seed={user?.id} isAgent={false} size="md" />
                 {avatarUploading && (
                   <span className="gg-avatar-upload-busy">
                     <span className="gg-avatar-upload-spinner" />
@@ -214,7 +219,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             />
           )}
         />
-        <SettingsRow
+        {!teamAccount && <SettingsRow
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
@@ -259,6 +264,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             </span>
           )}
         />
+        }
       </SettingsGroup>
 
       {/* 保存:靠右一行,状态(失败 / 已保存)在按钮左边。 */}
@@ -270,11 +276,13 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
         </Button>
       </div>
 
-      {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}
-      {user && <PasswordRecoveryGroup />}
-      <ReferralAccountPreview />
+      {teamAccount ? <TeamAccountMethods /> : <>
+        {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}
+        {user && <PasswordRecoveryGroup />}
+        <ReferralAccountPreview />
+      </>}
 
-      {mobile && officialServicesEnabled() && (
+      {mobile && !teamAccount && officialServicesEnabled() && (
         <SettingsGroup presentation="summary"><GuguSubscriptionRow /></SettingsGroup>
       )}
 
@@ -293,6 +301,8 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             </Button>
           )}
         />
+        <SettingsRow title={tTeam('accountSwitch')} description={tTeam('accountSwitchNote')}
+          control={<Button variant="ghost" size="sm" onClick={() => { void handleLogout() }} disabled={loggingOut}>{tTeam('accountSwitch')}</Button>} />
       </SettingsGroup>
     </SettingsPage>
   )

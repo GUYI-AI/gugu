@@ -25,6 +25,7 @@
     "./acp/native-prompt": "./src/acp/native-prompt.ts",
     "./session-record/contract": "./src/session-record/contract.ts",
     "./session-record/creation-attachment-protocol": "./src/session-record/creation-attachment-protocol.ts",
+    "./session-record/team-credits": "./src/session-record/team-credits.ts",
     "./session-record/window-cache/*": "./src/session-record/window-cache/*.ts",
     "./session-record/conversation-history-clear": "./src/session-record/conversation-history-clear.ts",
     "./session-record/personal-conversation": "./src/session-record/personal-conversation.ts",
@@ -35,6 +36,7 @@
     "./session-record/owner-notifications": "./src/session-record/owner-notifications.ts",
     "./session-record/tool-image": "./src/session-record/tool-image.ts",
     "./session-record/held-turn": "./src/session-record/held-turn.ts",
+    "./session-record/transport-trim": "./src/session-record/transport-trim.ts",
     "./session-record/tool-input-summary": "./src/session-record/tool-input-summary.ts",
     "./session-record/message-preview": "./src/session-record/message-preview.ts",
     "./session-record/live-requests": "./src/session-record/live-requests.ts",
@@ -64,7 +66,8 @@
     "./git/status-worker": "./src/git/status-worker.ts",
     "./lib": "./src/lib/index.ts",
     "./pty": "./src/pty/index.ts",
-    "./acp/commands": "./src/acp/commands.ts"
+    "./acp/commands": "./src/acp/commands.ts",
+    "./acp/models/session": "./src/acp/models/session.ts"
   },
   "scripts": {
     "test": "vitest run"

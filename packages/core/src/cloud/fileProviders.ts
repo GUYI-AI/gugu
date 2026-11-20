@@ -1,6 +1,8 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
-import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
+// Signed-URL expiries are on the backend's clock (`@@@server-clock`).
+import { serverNow } from '../shared/serverClock'
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, relayRefusedError, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
 import type { FileChunkCache } from '../shared/fileCache'
 import { AttachmentsError, attachmentRequest, type AttachmentsEndpoint } from './attachmentsApi'
 import { withBoundedOperation } from './boundedOperation'
@@ -46,7 +48,7 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
           let response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
           const expires = Date.parse(lease!.expires_at ?? '')
           // A valid capability's 403 is a refusal. Only an actually expired lease may be renewed, once per read.
-          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= Date.now()) {
+          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= serverNow()) {
             void response.body?.cancel().catch(() => undefined); renewed = true
             const signed = await sign(true, origin); lease = signed.lease; origin = signed.direct
             response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
@@ -136,7 +138,9 @@ export function cloudFileProviders(deps: {
       const waiting = { ...context, signal: anySignal([context.signal, timeout]) }, requestId = crypto.randomUUID()
       for (;;) {
         waiting.signal.throwIfAborted()
-        const state = await request(waiting, 'file-request', { ref, as: context.actor.actorId, request_id: requestId, download_request_id: downloadRequest }) as { status: string; transfer_status: string; host_label?: string | null; host_online?: boolean; download?: Download | null }
+        const state = await request(waiting, 'file-request', { ref, as: context.actor.actorId, request_id: requestId, download_request_id: downloadRequest }) as { status: string; transfer_status: string; transfer_declined?: string | null; host_label?: string | null; host_online?: boolean; download?: Download | null }
+        // A request ended with a reason (the holder declined it, or the server refused the holder) stops now, with that reason.
+        if (state.status === 'ready' && state.transfer_status === 'retired' && state.transfer_declined) throw relayRefusedError(state.transfer_declined)
         if (state.status !== 'ready' || state.transfer_status === 'retired') throw new Error('File transfer is no longer available')
         if (state.transfer_status === 'ready') {
           combined = state.download !== undefined
@@ -167,9 +171,8 @@ export function cloudFileProviders(deps: {
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
     const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress)
-    // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a save that dies
-    // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once saved they are dropped.
-    const saved = async (target: FileSink) => { const bytes = await target.commit(); await deps.cache.clear(key); return bytes }
+    // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a read that dies
+    // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once it ends they are dropped.
     let dataKey: Uint8Array | undefined
     let sink: FileSink | undefined
     try {
@@ -207,11 +210,8 @@ export function cloudFileProviders(deps: {
         })
         // A saved copy cannot be taken back: a download still waits. Bytes for display are returned now and the
         // acknowledgement follows; whoever shows them takes them down if it fails (`acknowledged`).
-        if (destination) { await acknowledge(); return await saved(sink) }
-        const acknowledged = acknowledge().catch(async error => {
-          if (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) await deps.cache.clear(key)
-          throw error
-        })
+        if (destination) { await acknowledge(); return await sink.commit() }
+        const acknowledged = acknowledge()
         acknowledged.catch(() => undefined)
         return { size: file.size, read: (offset, length) => file.read(offset, length), dispose: () => file.dispose(), acknowledged }
       }
@@ -221,13 +221,12 @@ export function cloudFileProviders(deps: {
       changed(current)
       if (encrypted) await request(context, 'file-read-complete', { download_id: lease!.download_id, as: context.actor.actorId })
       context.signal?.throwIfAborted()
-      return destination ? await saved(sink) : file
-    } catch (error) {
-      await sink?.abort()
-      // An interrupted or abandoned read keeps its chunks, a save included: the next call for the same bytes resumes there.
+      return destination ? await sink.commit() : file
+    } catch (error) { await sink?.abort(); throw error } finally {
+      dataKey?.fill(0); if (lease) delete lease.key; await source.dispose()
+      // The sink holds the bytes once read. Only an interrupted or abandoned read keeps its chunks, to resume from them.
       if (!source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
-      throw error
-    } finally { dataKey?.fill(0); if (lease) delete lease.key; await source.dispose() }
+    }
   }
   const metadata = deps.metadata ?? ((context: FileContext) => request(context, 'file-resolve', { ref: context.ref, as: context.actor.actorId }))
   return {
@@ -258,7 +257,7 @@ export function cloudFileProviders(deps: {
         const lease = signed.lease
         if (video) {
           const expiresAt = Date.parse(lease.expires_at ?? '')
-          if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Invalid video preview lease')
+          if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
           return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
         }
         if (signed.direct || lease.thumb_url) {
@@ -271,7 +270,7 @@ export function cloudFileProviders(deps: {
             if (!renew) {
               const expires = Date.parse(next.lease.expires_at ?? ''), previous = Date.parse(signed.lease.expires_at ?? '')
               if (next.lease.download_id !== signed.lease.download_id || !Number.isFinite(expires) || !Number.isFinite(previous)
-                || origin && expires > previous || expires <= Date.now() || previous <= Date.now()) throw new Error('File thumbnail reservation changed')
+                || origin && expires > previous || expires <= serverNow() || previous <= serverNow()) throw new Error('File thumbnail reservation changed')
               // CDN expiry may retain subsecond precision omitted by an OSS V4 signature.
               next.lease.expires_at = new Date(Math.min(expires, previous)).toISOString()
             }

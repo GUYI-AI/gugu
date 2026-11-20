@@ -40,5 +40,8 @@ export interface LegAdapter {
     | { result: 'channel-lost'; cause: SerializedError }
   >;
   teardown(have: Partial<StageOut>, ctx: { gen: Gen | null }): Promise<void>;
+  /** Native account cleanup also waits for work deliberately detached from a
+   * normal interactive stop (for example a late platform ticket release). */
+  closureDrain?(): Promise<void>;
   onExit(have: Pick<StageOut, 'process'>, cb: (exit: ExitFact) => void): () => void;
 }

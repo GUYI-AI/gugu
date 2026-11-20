@@ -156,6 +156,8 @@ const ptyConfigV1 = z.object({
    * ⚠️ 它记的是**这个 id 的来历**,不是又存一份 id —— id 只有 `session_id` 那一处。
    */
   providerMintedSessionId: z.boolean().optional(),
+  /** 换计费路的重开留下的待办,与 ACP 那份同义(见 ACP 配置的同名字段)。 */
+  forkOnStartProviderSessionId: z.string().optional(),
   /**
    * 资源库 → MCP:新建这条任务时带上的那几台(资源库里「默认启用」的)(名字)。每次开 / 续开按名字现取那台机器列表里的记录,
    * 经会话能力包送进去(`owner: 'integration'`)。缺席 = 一台都没带(或这一格之前的任务)。
@@ -238,6 +240,15 @@ const acpConfigV1 = z.object({
    * 只在「还没认领首启」时有意义:`session_id` 一旦写下,分叉就已经发生过了。
    */
   forkFromProviderSessionId: z.string().optional(),
+  /**
+   * 换计费路的重开(harness 声明 `sourceChangeSession: 'fork'`)留下的待办:下一次启动不续接 `session_id`
+   * 里的这条原生会话,而是在新路的进程里把它**分叉**成一条带着全部历史的新原生会话(同一个 agent,不是新 agent),
+   * 拿回的新 id 写进 `session_id`,这一格随之清掉。
+   *
+   * 记的是那条原生会话的 id,只在它仍等于 `session_id` 时有效 —— `session_id` 被别的写口换掉了,这一格就自然作废。
+   * 起不来也留着:重试仍要分叉,续接原线程在新路上必然被拒。
+   */
+  forkOnStartProviderSessionId: z.string().optional(),
   /**
    * spec `mcp-session-toggle`:用户在 `/mcp` 面板里为**这一条会话**留下的开关。
    *

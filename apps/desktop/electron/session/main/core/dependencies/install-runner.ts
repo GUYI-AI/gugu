@@ -1,9 +1,9 @@
-import type { InstallCommandContext, InstallCommandError } from '@gugu/session-core/deps/runtime';
+import type { InstallCommandContext, InstallCommandError, InstallCommandOutcome } from '@gugu/session-core/deps/runtime';
 import { err, type Result } from '@gugu/session-shared';
 import { ensureUserBinDirsInPath } from '@main/utils/userEnv';
 import { runMiseOperation } from './mise-installer';
 
-export type InstallCommandRunner<TData = void, TError = InstallCommandError> = (
+export type InstallCommandRunner<TData = InstallCommandOutcome, TError = InstallCommandError> = (
   command: string,
   context?: InstallCommandContext,
 ) => Promise<Result<TData, TError>>;

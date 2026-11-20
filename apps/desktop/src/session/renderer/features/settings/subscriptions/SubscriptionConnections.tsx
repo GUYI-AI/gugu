@@ -97,7 +97,7 @@ export function SubscriptionConnections({
   signInRequested,
   description
 }: {
-  modelRows?: { onAddAccount: () => void }
+  modelRows?: boolean
   modelAccount?: { onClose: () => void; onBusyChange?: (busy: boolean) => void }
   /** A fresh object is created only by an explicit press on the transcript's expired-login action. */
   signInRequested?: object
@@ -201,6 +201,13 @@ export function SubscriptionConnections({
       }
     }
   })
+  const rename = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const result = await (await getAgentConfigRuntimeClient(machine)).renameConnection({ providerId: agent.id, connectionId: id, name });
+      if (!result.success) throw new Error(errorText(result.error));
+      await refreshSubscriptionReadings(machine, agent.id);
+    },
+  });
   // 没有连接可管的家只有它 CLI 自己那一份:列着的就是正在用的,选它没有可切的。
   const select = (id: string) => {
     if (form) action.mutate({ kind: 'select', id })
@@ -371,14 +378,14 @@ export function SubscriptionConnections({
       {...(settingsRows ? { onCancel: () => setAdding(false) } : {})}
     />
   )
-  // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
+  // Account sign-in stays reachable even when a revoked token's file still reads as authenticated.
   const current = listed?.find((c) => c.current)
   const currentStatus = useConnectionDetails(
     machine,
     agent.id,
-    current?.kind === 'account' ? current.id : undefined
+    current?.id
   ).data?.status
-  const currentSignIn = canSignIn && current && currentStatus?.kind === 'unauthenticated' && (
+  const currentSignIn = canSignIn && current && !(currentStatus?.kind === 'authenticated' && currentStatus.credentialKind === 'api-key') && (
     <Button
       size={settingsRows ? 'sm' : 'xs'}
       variant="outline"
@@ -387,9 +394,9 @@ export function SubscriptionConnections({
       onClick={() => signIn(current.id)}
     >
       {translate(
-        currentStatus.reason === 'expired'
-          ? 'subscriptions.connections.signInAgain'
-          : 'subscriptions.connections.signIn'
+        currentStatus?.kind === 'unauthenticated' && currentStatus.reason !== 'expired'
+          ? 'subscriptions.connections.signIn'
+          : 'subscriptions.connections.signInAgain'
       )}
     </Button>
   )
@@ -408,9 +415,9 @@ export function SubscriptionConnections({
     ))
   return (
     <>
-      {modelRows ? <>{failure && <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} />}<SubscriptionModelRows agent={agent} machine={machine} connections={listed} busy={action.isPending}
-        onSignIn={id => signIn(id)} onAddAccount={modelRows.onAddAccount} onTest={id => action.mutate({ kind: 'refresh', id })} onRemove={id => action.mutate({ kind: 'remove', id })}
-        onRetry={refresh} error={connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /></> : modelAccount ? <ConnectionForm
+      {modelRows ? <SubscriptionModelRows notice={failure ? <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} /> : undefined} agent={agent} machine={machine} connections={listed} busy={action.isPending || rename.isPending}
+        onSignIn={id => signIn(id)} onRemove={id => action.mutate({ kind: 'remove', id })} onSelect={select} onRename={(id, name) => rename.mutateAsync({ id, name })}
+        onRetry={refresh} error={rename.error ? translate('mcpLibrary.saveFailed') : connections.error || native.error ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /> : modelAccount ? <ConnectionForm
           agent={agent} machine={machine} account={accountMethod} vendorKey={false}
           onCreated={connection => { setModelAccountId(connection.id); onCreated(connection) }} onCliSignIn={signInCli}
           modelAccount={{ connectionId: modelAccountId, onLogin: () => { if (modelAccountId) signIn(modelAccountId) }, onClose: modelAccount.onClose, onBusyChange: modelAccount.onBusyChange }}
@@ -568,8 +575,9 @@ function ConnectionOption({
     usage.data?.kind === 'windows' &&
     usage.data.windows.some((window) => window.usedPercent >= NEARLY_USED_PERCENT)
   const status = details.data?.status
-  const canSignIn =
-    !!onSignIn && connection.kind === 'account' && status?.kind === 'unauthenticated'
+  const canSignIn = !!onSignIn && !(status?.kind === 'authenticated' && status.credentialKind === 'api-key')
+  const signInLabel = translate(status?.kind === 'unauthenticated' && status.reason !== 'expired'
+    ? 'subscriptions.connections.signIn' : 'subscriptions.connections.signInAgain')
   const name =
     connection.kind === 'native' ? translate('subscriptions.connections.existing') : connection.name
   const plan = details.data?.plan
@@ -593,12 +601,12 @@ function ConnectionOption({
     <>
       {canSignIn && (
         <DropdownMenuItem disabled={busy} onClick={onSignIn}>
-          {translate('subscriptions.connections.signIn')}
+          {signInLabel}
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
+      {connection.kind !== 'native' && <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
         {translate('subscriptions.connections.remove')}
-      </DropdownMenuItem>
+      </DropdownMenuItem>}
     </>
   )
   return (
@@ -638,7 +646,7 @@ function ConnectionOption({
         </span>
       </Choice>
       {/* 当前连接也能删(落回原生);「现有 CLI 配置」是 CLI 自己那一份，删不掉。 */}
-      {connection.kind !== 'native' &&
+      {(connection.kind !== 'native' || canSignIn) &&
         (selectItem ? (
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -664,14 +672,7 @@ function ConnectionOption({
               <MoreHorizontal className="size-4" />
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              {canSignIn && (
-                <DropdownMenuItem disabled={busy} onClick={onSignIn}>
-                  {translate('subscriptions.connections.signIn')}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
-                {translate('subscriptions.connections.remove')}
-              </DropdownMenuItem>
+              {options}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         ))}

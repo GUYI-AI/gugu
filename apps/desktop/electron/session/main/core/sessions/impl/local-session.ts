@@ -88,7 +88,8 @@ import {
 } from './keystroke-injection';
 import { drainSessionMessageOutbox } from '../sendMessage';
 import { LocalSessionAdmission } from './local-session-admission';
-import { registerGuguMcpStdioRelayEntry } from '@main/worker-manifest';
+import { guguMcpStdioRelayEntryPath } from '@main/worker-manifest';
+import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
 import {
   replaceLiveWithOfflineForSession,
   registerLocalSessionDelivery,
@@ -342,8 +343,8 @@ export class LocalSessionProvider implements SessionProvider {
       });
       mark('workspace-trust');
       // 随 app 发的程序入口是应用级事实:终端腿的物化器(本次 spawn 前、同一进程里)要把中继的路径写进
-      // 托管的全局 MCP 配置(Antigravity,#6335)。幂等,已有值不覆盖。
-      registerGuguMcpStdioRelayEntry();
+      // 托管的全局 MCP 配置(Antigravity,#6335)。幂等,已有值不覆盖(打包产物或测试可以从外面钉死)。
+      process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV] ||= guguMcpStdioRelayEntryPath();
       const sessionpageHook = getEmdashPtySessionpageHook();
       assertSessionSurfaceDeclared({
         providerId: session.providerId,
@@ -630,6 +631,11 @@ export class LocalSessionProvider implements SessionProvider {
         resumeProviderSessionId: agentSession.isResuming
           ? session.providerSessionId
           : undefined,
+        // 换计费路的重开留下的分叉待办,只在它仍指着要续的这条时成立(见 session-config 同名字段)。
+        ...(agentSession.isResuming && session.providerSessionId
+          && session.forkOnStartProviderSessionId === session.providerSessionId
+          ? { forkKeepsAgent: true }
+          : {}),
         // #6264 TUI 住在 tmux 里 ⇒ 宿主把它的推理后台也放进 tmux(同名配对),活过宿主进程重启。
         ...(tmuxEnabled && process.platform !== 'win32'
           ? { tmuxSessionName: makeTmuxSessionName(ptySessionId) }

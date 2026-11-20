@@ -8,6 +8,55 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="/assets/app/gugu-icon-small.png" />
     <title>咕咕</title>
+    <!-- @@@engine-floor - an engine below ENGINE_FLOOR (scripts/build/engine-floor.mts) stops here, before any stylesheet or
+         module loads, and gets one plain page saying what to update. Above it, the build supplies what the engine lacks
+         (sRGB color fallbacks, core-js polyfills); below it the layout itself is missing. The probe must include the
+         feature that sets the floor (pinned by tests/unit/desktop/engineFloorGate.test.ts). Colors below are sRGB on
+         purpose. On Android the native splash waits for a content frame, so this page reports one through the startup
+         plugin (androidStartupHandoff.ts). -->
+    <script>
+      (function() {
+        if (window.CSS && CSS.supports && CSS.supports('selector(:has(*))') && CSS.supports('container-type', 'inline-size')) return;
+        // Everything after this point, the bundle's module and stylesheet tags included, parses as inert hidden text.
+        // (window.stop() would also prevent loading, but it aborts before <body> and Chromium then never paints.)
+        document.write('<plaintext hidden>');
+        document.addEventListener('DOMContentLoaded', show);
+        function show() {
+          var cap = window.Capacitor;
+          var android = !!(cap && cap.getPlatform && cap.getPlatform() === 'android');
+          var zh = /^zh/i.test(navigator.language || '');
+          var text = zh
+            ? (android
+              ? ['需要更新 Android System WebView', '手机上的 Android System WebView 版本太旧，咕咕无法正常显示。请在应用商店更新“Android System WebView”（有的手机是“Chrome”），然后完全退出咕咕再重新打开。', '去应用商店更新']
+              : ['需要更新浏览器', '当前系统或浏览器版本太旧，咕咕无法正常显示。请更新到最新版本后重新打开。'])
+            : (android
+              ? ['Update Android System WebView', 'Android System WebView on this phone is too old to display Gugu. Update “Android System WebView” (on some phones, “Chrome”) in your app store, then fully close and reopen Gugu.', 'Open app store']
+              : ['Update your browser', 'This system or browser is too old to display Gugu. Update it to the latest version, then reopen Gugu.']);
+          var root = document.documentElement;
+          root.lang = zh ? 'zh-CN' : 'en';
+          var body = document.body;
+          body.setAttribute('style', 'margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 28px;box-sizing:border-box;background:#fff;color:#0a0a0a;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif');
+          var box = body.appendChild(document.createElement('div'));
+          box.setAttribute('style', 'max-width:360px');
+          var title = box.appendChild(document.createElement('h1'));
+          title.setAttribute('style', 'margin:0 0 12px;font-size:20px;line-height:28px;font-weight:600');
+          title.textContent = text[0];
+          var note = box.appendChild(document.createElement('p'));
+          note.setAttribute('style', 'margin:0;color:#4b4c4e');
+          note.textContent = text[1];
+          if (android) {
+            var link = box.appendChild(document.createElement('a'));
+            link.href = 'https://play.google.com/store/apps/details?id=com.google.android.webview';
+            link.setAttribute('style', 'display:block;margin-top:24px;padding:12px 16px;border-radius:12px;background:#3b82f6;color:#fff;text-align:center;text-decoration:none;font-weight:600');
+            link.textContent = text[2];
+            cap.nativePromise('GuguShellChrome', 'startupContext', {}).then(function(context) {
+              if (context && context.enabled)
+                return cap.nativePromise('GuguShellChrome', 'startupContentReady', { attemptId: context.attemptId });
+            });
+          }
+        }
+      })();
+    </script>
     <style>
       html, body { margin: 0; }
       [data-gugu-boot] { position: fixed; inset: 0; z-index: 100; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; overflow: hidden; pointer-events: none; background: #fff; color: #0a0a0a; }
@@ -22,21 +71,29 @@
         [data-gugu-boot] [data-startup-poster-settled] { display: inline; }
       }
     </style>
-    <!-- @@@5293 首帧之前把偏好解析成真值,避免闪一下再改。规则必须与
-         `src/session/renderer/lib/theme/host-theme.ts` 里那份逐字一致:
-         存的是**偏好**(light / dark / system),明暗真值仍是 light / dark;
-         旧 plain-white 按浅色处理,data-theme-preference 同步归一。
-         认不出来的值退回浅色(@@@1424 的默认),❌ 不猜、也❌ 不在这里跟随系统——
-         「跟随系统」只有在用户显式选了 system 时才成立。 -->
+    <!-- @@@5293 首帧之前把偏好解析成真值,避免闪一下再改。偏好从这个壳自己的那一份读(@@@device-preferences,
+         shared/device-preferences.ts):桌面 = preload 交来的主进程首帧答复(guguFirstFrame;主进程没答上来就是出厂值),
+         web / 手机 = localStorage。❌ 桌面读不到再去读 localStorage。规则与 `host-theme.ts` 逐字一致:
+         存的是**偏好**(light / dark / system),明暗真值仍是 light / dark;旧 plain-white 按浅色处理。
+         认不出来的值退回浅色(@@@1424 的默认),❌ 不猜 —— 「跟随系统」只有在用户显式选了 system 时才成立。
+         侧栏渐进底色(@@@sidebar-tint)同理:开着时首帧之前就落上属性,否则会先闪一下未染色的侧栏;
+         只有存下来的字面量是 'true' 才算开。 -->
     <script>
       (function() {
-        var pref = localStorage.getItem('app-theme');
+        var desktop = window.guguFirstFrame;
+        var stored = desktop ? null : localStorage;
+        var prefs = desktop ? desktop.devicePreferences : null;
+        var pref = prefs ? prefs.theme : stored ? stored.getItem('app-theme') : 'light';
+        if (pref === 'plain-white') pref = 'light';
         if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'light';
         var resolved = pref === 'system'
           ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
           : pref;
         document.documentElement.setAttribute('data-theme', resolved);
         document.documentElement.setAttribute('data-theme-preference', pref);
+        if (prefs ? prefs.sidebarTint : stored && stored.getItem('gugu.sidebar-tint') === 'true') {
+          document.documentElement.setAttribute('data-sidebar-tint', 'on');
+        }
       })();
     </script>
     <!-- @@@theme-pack-slots 资源库「主题」选过的配色:首帧之前插上,❌ 先闪咕咕默认色再换。
@@ -52,22 +109,13 @@
         document.head.appendChild(style);
       })();
     </script>
-    <!-- @@@sidebar-tint 同理:侧栏渐进底色开着时,首帧之前就要落上属性,否则会先闪一下
-         未染色的侧栏。规则必须与 `src/lib/sidebarTint.ts` 逐字一致:只有存下来的字面量是
-         'true' 才算开,其余(缺失/旧值/被改过)一律算关。 -->
-    <script>
-      (function() {
-        if (localStorage.getItem('gugu.sidebar-tint') === 'true') {
-          document.documentElement.setAttribute('data-sidebar-tint', 'on');
-        }
-      })();
-    </script>
   </head>
   <body>
     <div data-gugu-boot aria-hidden="true"><!--gugu-startup-poster--></div>
     <div id="root"></div>
     <!-- @@@root-stays-put: portals append to <body>. With this fixed sibling #root is never :last-child or :only-child, so opening any portal cannot restyle the whole app. -->
     <div data-root-sibling hidden></div>
+    <script type="module" src="/src/lib/engine-polyfills.ts"></script>
     <script type="module" src="/src/lib/startup-motion-bootstrap.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -25,6 +25,9 @@ export class ExternalHistoryStore {
     try {
       db.pragma('foreign_keys = ON')
       db.pragma('busy_timeout = 5000')
+      // Our import projection has a writer child and a synchronous UI reader.
+      // WAL keeps readers on the last committed snapshot while that child writes.
+      db.pragma('journal_mode = WAL')
       db.exec(`
         CREATE TABLE IF NOT EXISTS external_history (
           id TEXT PRIMARY KEY,

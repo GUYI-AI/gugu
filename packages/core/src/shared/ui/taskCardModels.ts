@@ -1,4 +1,11 @@
 import { transcriptFileRefSchema } from '@gugu/session-core/acp/client'
+import type { SettlementQuestion } from '@gugu/session-core/session-record/contract'
+import { parseQuestionAnswers, questionAnswerError } from '@gugu/session-core/session-record/question-answer'
+
+export type QuestionCardResult =
+  | { state: 'answered'; answers: NonNullable<ReturnType<typeof parseQuestionAnswers>> }
+  | { state: 'withdrawn' | 'discuss' }
+export type QuestionCardSettlement = QuestionCardResult & { at: string }
 
 /**
  * The cards a person's composer drops into a chat (gugu-dev#181「派任务」): a `content_type='card'` message whose
@@ -44,8 +51,8 @@ export interface ScheduleCard {
 
 /**
  * 「需要你」(gugu-dev#181 ⑨): a question an agent asks its owner, posted by the agent into the group the turn came from,
- * quoting the message it answers. Whether it is still waiting, and what was answered, is read from the session's
- * settlement — never from this message, which nobody edits after it is sent.
+ * quoting the message it answers. Its owner answers through the host settlement; the host then publishes the terminal
+ * result on this original message so every reader sees the same outcome, including after reconnecting.
  */
 export interface QuestionCard {
   v: 1
@@ -54,6 +61,10 @@ export interface QuestionCard {
   text: string
   /** The choices, when one pick answers it (one question, single choice); otherwise empty and it is answered in the session. */
   options: string[]
+  /** All public questions. Missing on older cards. */
+  questions?: readonly SettlementQuestion[]
+  /** The owner's host confirmed this terminal result on the original message. */
+  settled?: QuestionCardSettlement
   /** The person asked (the agent's owner): only their reply answers it. */
   ownerUserId: string
   /** The settlement's item id in that session. */
@@ -68,6 +79,17 @@ export interface QuestionCard {
 export type ComposerCard = TaskCard | ScheduleCard | QuestionCard
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+function isQuestions(value: unknown): value is SettlementQuestion[] {
+  return Array.isArray(value) && value.length > 0 && value.every((question: unknown) => {
+    if (!isObject(question) || !isText(question.question) || typeof question.multiSelect !== 'boolean'
+      || (question.header !== undefined && typeof question.header !== 'string') || !Array.isArray(question.options)) return false
+    return question.options.every((option: unknown) => isObject(option) && isText(option.optionId) && isText(option.name)
+      && (option.description === undefined || typeof option.description === 'string'))
+      && new Set(question.options.map((option: { optionId: string }) => option.optionId)).size === question.options.length
+  })
+}
 
 /** The card in a `content_type='card'` message, or null when it is a card of some other shape. */
 export function parseComposerCard(content: string | null | undefined): ComposerCard | null {
@@ -90,9 +112,22 @@ export function parseComposerCard(content: string | null | undefined): ComposerC
   }
   if (card.type === 'question' && Array.isArray(card.options) && card.options.every(isText) && isText(card.ownerUserId)
     && isText(card.questionId) && isText(card.sessionId) && isText(card.projectId)) {
-    return card as unknown as QuestionCard
+    const clean = { ...card }
+    if (card.questions !== undefined && !isQuestions(card.questions)) {
+      delete clean.questions
+    }
+    const settled = card.settled
+    if (settled !== undefined && (!isQuestionCardSettlement(settled)
+      || (settled.state === 'answered' && isQuestions(clean.questions) && questionAnswerError(clean.questions, settled.answers)))) delete clean.settled
+    return clean as unknown as QuestionCard
   }
   return null
+}
+
+export function isQuestionCardSettlement(value: unknown): value is QuestionCardSettlement {
+  if (!isObject(value) || !isText(value.at)) return false
+  if (value.state === 'answered') return Boolean(parseQuestionAnswers(value.answers)?.length)
+  return (value.state === 'withdrawn' || value.state === 'discuss') && value.answers === undefined
 }
 
 /**
