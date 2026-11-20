@@ -1,4 +1,5 @@
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink'
+import { SESSION_DETAILS_BATCH_SIZE } from '@gugu/session-core/session-record/contract'
 // session_* 域 —— 会话页会话管理的十个原子工具(发现 harness/model、列任务、起子会话、读、停、归档、开 tab)。
 // 与社交域、extension 域注册在同一个会话 MCP server 上;是否注册只取决于这条 grant 是否属于
 // 会话页会话。单 server 下「域」是架构一等公民(#4191):本文件只有这个域的定义,注册机制在
@@ -48,9 +49,7 @@ const keepPinned = (row: Record<string, unknown>, args: Record<string, unknown>)
   args.pinned === undefined || row.pinned === args.pinned
 
 /**
- * session_children 的行。近况(MessagePreview + 最后一轮怎么收的)只给返回的这一页算：每行走 session_get 那个动作 ——
- * 宿主唯一的入口 readSessionPreview 在它后面;别的机器上的行由宿主转给那台去算。归档的不算。
- * 一行读不到就把原因放在这一行，❌ 让整张列表失败。
+ * 先筛元信息和切页，再按机器批量补模型、运行态和预览；不逐行 get 或重新扫描会话表。
  */
 const SESSION_ROWS: SessionpageListSpec = {
   namesOf: (row) => [row.title],
@@ -60,13 +59,31 @@ const SESSION_ROWS: SessionpageListSpec = {
     (row.status !== 'archived' || args.status === 'archived')
     && matchesAgentStatus(row as { status?: string | null; detail?: string | null }, args.status as string | undefined)
     && keepPinned(row, args),
-  eachItem: async (row, call) => {
-    if (row.status === 'archived') return row
-    try {
-      return { ...row, preview: ((await call({ action: 'get', session_id: row.session_id })) as { preview?: unknown }).preview }
-    } catch (error) {
-      return { ...row, preview: { error: { code: 'preview_failed', message: error instanceof Error ? error.message : String(error) } } }
+  eachPage: async (rows, call) => {
+    const enriched = new Map<string, Record<string, unknown>>()
+    const groups = new Map<string, Record<string, unknown>[]>()
+    for (const row of rows) {
+      const device = typeof row.device_id === 'string' ? row.device_id : ''
+      const group = groups.get(device) ?? []; group.push(row); groups.set(device, group)
     }
+    // Finite batch/concurrency even for rows:"all". The public window and its order stay unchanged.
+    for (const [device, group] of groups) for (let offset = 0; offset < group.length; offset += SESSION_DETAILS_BATCH_SIZE) {
+      const batch = group.slice(offset, offset + SESSION_DETAILS_BATCH_SIZE)
+      try {
+        const value = await call({ action: 'get_many', session_ids: batch.map(row => row.session_id), ...(device ? { device } : {}) })
+        if (!Array.isArray(value)) throw new Error('会话批量详情返回格式不正确')
+        const found = new Map(value.map(row => [row.session_id, row]))
+        for (const row of batch) {
+          const details = found.get(row.session_id)
+          enriched.set(String(row.session_id), details ? { ...row, ...details } : { ...row,
+            preview: { error: { code: 'preview_failed', message: '会话批量详情缺少请求的行' } } })
+        }
+      } catch (error) {
+        for (const row of batch) enriched.set(String(row.session_id), { ...row,
+          preview: { error: { code: 'preview_failed', message: error instanceof Error ? error.message : String(error) } } })
+      }
+    }
+    return rows.map(row => enriched.get(String(row.session_id))!)
   },
 }
 
@@ -196,6 +213,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       pinned: pinnedFilterSchema,
     }).strict(),
     action: 'children',
+    dispatchArgs: { metadata_only: true },
     list: SESSION_ROWS,
     present: presentSessionList,
   },

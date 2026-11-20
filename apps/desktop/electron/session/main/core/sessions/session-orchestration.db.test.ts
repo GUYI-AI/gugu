@@ -2398,6 +2398,33 @@ describe('session orchestration', () => {
     ).resolves.toEqual(expect.objectContaining({ status: 'working' }));
   });
 
+  it('#2007 pages child metadata before reading model decisions/runtime/previews and batch-enriches only selected ids', async () => {
+    for (const id of ['selected', 'unselected', 'legacy-child']) insertPtyChild(id, 'idle', 'caller');
+    await recordSessionPlatformModel('selected', { modelId: 'chosen-model' });
+    fixture.sqlite.prepare("UPDATE sessions SET parent_session_id = NULL, config = json_set(config, '$.parentRemote', json_object('deviceId', 'remote-device', 'sessionId', 'caller')) WHERE id = 'legacy-child'").run();
+    const models = await import('./platform-model-selection');
+    const single = vi.spyOn(models, 'sessionPlatformModel');
+    const batch = vi.spyOn(models, 'sessionPlatformModels');
+    mocks.readSessionPreview.mockClear();
+    try {
+      const index = await runSessionAction(context, { action: 'children', metadata_only: true }) as Array<Record<string, unknown>>;
+      expect(index.map(row => row.session_id).sort()).toEqual(['legacy-child', 'selected', 'unselected']);
+      expect(index.every(row => !('model' in row) && !('runtime' in row) && !('preview' in row))).toBe(true);
+      expect(single).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+      expect(mocks.readSessionPreview).not.toHaveBeenCalled();
+      const details = await runSessionAction(context, { action: 'get_many', session_ids: ['selected', 'missing'] });
+      expect(details).toEqual([
+        expect.objectContaining({ session_id: 'selected', model: { source: 'gugu', id: 'chosen-model', spawn_model_id: 'platform:chosen-model' } }),
+        expect.objectContaining({ session_id: 'missing', preview: { error: { code: 'session_not_found', message: expect.any(String) } } }),
+      ]);
+      expect(batch).toHaveBeenCalledExactlyOnceWith(['selected', 'missing']);
+      expect(single).not.toHaveBeenCalled();
+      expect(mocks.readSessionPreview).toHaveBeenCalledExactlyOnceWith('selected');
+      await expect(runSessionAction(context, { action: 'get_many', session_ids: Array.from({ length: 33 }, (_, i) => `id-${i}`) })).rejects.toThrow('at most 32');
+    } finally { single.mockRestore(); batch.mockRestore(); }
+  });
+
   // 被拒停住的 child 在状态上与做完的一模一样(idle):session_get 上的 preview.ended 把两者分开。
   // 宿主的 children 不算近况(#7379 复核):工具层切完窗以后才对窗内的行逐个走 get。
   it('session_get carries how the last turn ended; children reads no preview; an unreadable record is said on its row', async () => {

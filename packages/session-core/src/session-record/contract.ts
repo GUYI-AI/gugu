@@ -587,12 +587,13 @@ export interface SessionTimeline {
 
 export const AGENT_SESSION_ACTIONS = [
   'activity_list', 'activity_context', 'peers', 'locate', 'list_harnesses', 'list_models', 'spawn', 'children', 'message',
-  'get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel', 'app_install', 'app_manage', 'app_call',
+  'get', 'get_many', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel', 'app_install', 'app_manage', 'app_call',
   'project_list', 'project_create', 'project_get', 'project_add_folder', 'project_remove_folder',
   'project_remove_device', 'project_restore_device', 'project_prepare_device', 'project_bind_folder',
 ] as const;
 
 export type AgentSessionActionName = (typeof AGENT_SESSION_ACTIONS)[number];
+export const SESSION_DETAILS_BATCH_SIZE = 32;
 
 /**
  * 发起跨机器 session 动作的那条会话(在另一台机器上)的自述。凡是本机工具从发起方会话行上读的,
