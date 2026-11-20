@@ -627,7 +627,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
 
     // 工具面叫 app_pack,宿主分派器收到的仍是 pack —— ❌ 别让工具面和执行侧各写一份动作名清单。
     expect(seenExtension).toEqual([{ action: 'pack', source_dir: '/apps/notes' }])
-    expect(seenSession).toEqual([{ action: 'children' }])
+    expect(seenSession).toEqual([{ action: 'children', metadata_only: true }])
   })
 
   // F15 (L7-d) app_pack { chat_id } 以 agent 本人往群里发卡片:没有咕咕身份的会话在打包之前就说清楚,❌ 包打出来了再报发不出去。
