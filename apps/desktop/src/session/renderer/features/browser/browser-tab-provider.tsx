@@ -23,14 +23,14 @@ export interface BrowserState {
   ephemeral?: true;
 }
 
-export interface BrowserOpenArgs {
+export type BrowserOpenArgs = {
   initialUrl?: string;
   workspaceStart?: true;
   /** The window the standalone Chrome already created for this tab: the tab shows it instead of loading `initialUrl`. */
   popup?: string;
   /** With `popup`: the tab of the page that opened the window. The window lives in its Chrome, so this tab is in its profile and partition. */
   windowOf?: BrowserWindowOwner;
-}
+};
 
 export const browserTabProvider: TabProvider<
   'browser',
