@@ -16,6 +16,7 @@ import {
   PROVIDER_REVIEW_GATE_STATUS,
 } from '@main/core/sessions/provider-review-gate';
 import { sessionsAliveInTmux } from '@main/core/sessions/session-process';
+import { recordPtyEngineEnd } from '@main/core/sessions/pty-turn-ends';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { clearInterruptedTurn, recordInterruptedTurns } from './interrupted-turns';
@@ -333,6 +334,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         await db.update(sessions)
           .set({ agentStatus: 'idle', agentStatusDetail: 'plain', agentStatusSeen: 1 })
           .where(eq(sessions.id, sessionId));
+        recordPtyEngineEnd(sessionId, this.now(), true);
         recordInterruptedTurns([sessionId], lastExit);
         settled.push(sessionId);
       });
@@ -393,7 +395,11 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
   async settleSessionExited(params: StatusWriteParams): Promise<void> {
     this.providerReviewGates.delete(params.sessionId);
     this.providerBlockers.delete(params.sessionId);
-    await this.interrupt(params);
+    const at = this.now();
+    await this.inOrder(params.sessionId, async () => {
+      recordPtyEngineEnd(params.sessionId, at);
+      await this.apply(params.sessionId, () => [{ kind: 'Interrupted', sessionId: params.sessionId }], at);
+    });
   }
 
   /** 打开会话 = 这一句已读。照常发布:手机列表、宿主按 agent 的流跟着更新。 */

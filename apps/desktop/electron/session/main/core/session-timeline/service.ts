@@ -1,4 +1,6 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
+import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -173,8 +175,19 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
   );
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
   const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
+  const row = readSessionRow(sessionId, { includeArchived: true });
+  const pty = row && row.runtime !== 'acp';
+  // Confirm the engine is gone. An unreadable tmux or a detached survivor must not be converted to a turn end.
+  if (pty && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
+    const latest = readSessionRow(sessionId, { includeArchived: true });
+    if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
+      && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
+      recordPtyEngineEnd(sessionId, Date.now(), true);
+    }
+  }
   return createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
     sessionId,
+    ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });

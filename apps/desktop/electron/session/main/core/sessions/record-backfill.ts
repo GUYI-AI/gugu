@@ -1,4 +1,6 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { applyHostTurnEnd } from '@gugu/session-core/session-record/host-turn-end';
+import { readPtyTurnEnds, recordPtyEngineEnd } from './pty-turn-ends';
 import { createHash } from 'node:crypto';
 import type { SessionRecordLocator, TurnStart } from '@gugu/session-core/session-record/contract';
 import { isAgentActive, parseAgentStatus } from '@gugu/core/shared/agentStatus';
@@ -97,7 +99,20 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
       if (inserted > 0) log.info('[record-backfill] filled in turns from the record', { sessionId, inserted });
       if (!current()) return result('runtime-changed', inserted);
       if (!complete || active()) return result('active', inserted);
-      return result(row.runtime !== 'acp' && !lastSettled && await sessionEngine(sessionId) !== 'gone' ? 'settling' : 'complete', inserted);
+      if (row.runtime !== 'acp' && !lastSettled) {
+        if (await sessionEngine(sessionId) !== 'gone') return result('settling', inserted);
+        if (!current()) return result('runtime-changed', inserted);
+        if (active()) return result('active', inserted);
+        recordPtyEngineEnd(sessionId, Date.now(), true);
+      }
+      if (row.runtime !== 'acp') {
+        const ends = readPtyTurnEnds(sessionId, row.providerSessionId!);
+        for (const one of readUnfinishedRecordRowsNow(sessionId)) {
+          const ended = applyHostTurnEnd(one.turn, ends);
+          if (ended !== one.turn) reviseRecordTurnNow(sessionId, one.seq, ended);
+        }
+      }
+      return result('complete', inserted);
     };
 
     const location = locateRow(row);
@@ -204,6 +219,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
       const second = early ? { from: 0, base: 0 } : { from: plan.from, base };
       let inserted = 0, index = second.base;
       let next: Cursor | null = null;
+      const ends = row.runtime === 'acp' ? [] : readPtyTurnEnds(sessionId, row.providerSessionId);
       const write = (turn: TranscriptTurn, start: TurnStart | null) => {
         const at = index++;
         // An open turn changes identity as it completes: it could not be recognized at the cursor.
@@ -217,7 +233,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         if (!current()) throw new FillStopped('runtime-changed');
         // If a new turn started during an idle snapshot, leave its unproved suffix for the settled edge.
         if (row.runtime !== 'acp' && !committedOnly && active()) throw new FillStopped('active');
-        const kept = elidedAsRefs(turn);
+        const kept = elidedAsRefs(row.runtime === 'acp' ? turn : applyHostTurnEnd(turn, ends));
         if (seq !== undefined) { reviseRecordTurnNow(sessionId, seq, kept); known(seq); }
         else { known(appendRecordTurnNow(sessionId, kept)); inserted++; }
       };

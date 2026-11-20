@@ -370,3 +370,36 @@ it('recognizes a stored image turn in the record by its native prompt receipt, a
   expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
   expect(texts()).toEqual(['question 0 / answer 0', 'question 1 / answer 1', `${words} / Red and blue`]);
 });
+
+
+it('keeps a host-ended PTY record settled across fills and replaces it with its late native outcome (#3374)', async () => {
+  fixture.sqlite.prepare("UPDATE sessions SET provider='codex', provider_session_id=? WHERE id='c1'").run(THREAD);
+  await writeRecord([...qa(0), ...qa(1, false)]);
+  const { recordPtyEngineEnd, readPtyTurnEnds } = await import('./pty-turn-ends');
+  const end = Date.parse('2026-06-18T07:14:00Z');
+  recordPtyEngineEnd('c1', end);
+  expect(await sync()).toEqual({ inserted: 2, status: 'complete' });
+  const closed = JSON.parse(rows()[1].data) as TranscriptTurn;
+  expect(closed).toMatchObject({ outcome: { kind: 'cancelled' }, endedAt: end, hostEnd: { at: end } });
+  expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+  expect(JSON.parse(rows()[1].data)).toEqual(closed);
+  expect(readPtyTurnEnds('c1', 'a-different-native-session')).toEqual([]);
+  await appendRecord([line('event_msg', { type: 'task_complete' })]);
+  expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+  expect(outcomes()).toEqual(['done', 'done']);
+  expect((JSON.parse(rows()[1].data) as TranscriptTurn).hostEnd).toBeUndefined();
+});
+
+it('repairs a legacy unfinished record only after proving the engine is gone, without inventing an end time (#3374)', async () => {
+  fixture.sqlite.prepare("UPDATE sessions SET provider='codex', provider_session_id=? WHERE id='c1'").run(THREAD);
+  await writeRecord([...qa(0), ...qa(1, false)]);
+  state.tmux = true;
+  expect(await sync()).toEqual({ inserted: 2, status: 'settling' });
+  expect(outcomes()).toEqual(['done', undefined]);
+  state.tmux = false;
+  expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+  const ended = JSON.parse(rows()[1].data) as TranscriptTurn;
+  expect(ended.outcome?.kind).toBe('cancelled');
+  expect(ended.endedAt).toBeUndefined();
+  expect(ended.hostEnd?.at).toEqual(expect.any(Number));
+});
