@@ -46,8 +46,7 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
   useEffect(() => {
     if (!user?.id || scopeKey === null) return
     const where = JSON.parse(scopeKey) as StoredFailureScope
-    // A chat with no agent left can still owe its owner a notice about one that was removed; the task page reads only its own.
-    if (where === 'any-chat' && !ids) return
+    if (!ids) return
     let live = true
     let generation = 0
     let retryDelay = 1_000
@@ -55,7 +54,7 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
     const refresh = () => {
       clearTimeout(retryTimer)
       const current = ++generation
-      void readStoredAgentTurnFailures(where, ids ? ids.split(',') : []).then(({ failures: rows }) => {
+      void readStoredAgentTurnFailures(where, ids.split(',')).then(({ failures: rows }) => {
         if (!live || current !== generation) return
         retryDelay = 1_000
         changeDismissals((now) => {

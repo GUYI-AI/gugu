@@ -18,7 +18,7 @@ import { OpenWithPick } from './OpenWithPick'
 const PeekFolderFile = lazy(() => import('../../session/renderer/features/extensions/peek-folder-file').then((m) => ({ default: m.PeekFolderFile })))
 const PeekSessionTimeline = lazy(() => import('../session-watch/PeekSessionTimeline').then((m) => ({ default: m.PeekSessionTimeline })))
 
-export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarget; slotKey: string; beside: boolean; onClose: () => void }) {
+export function AppPeek({ target, slotKey, chatId, beside, onClose }: { target: PeekTarget; slotKey: string; chatId?: string; beside: boolean; onClose: () => void }) {
   const { t } = useTranslation('messaging')
   const mobile = useMobileShell()
   // A chat file nobody here opens is the host's own preview, header and all (its back closes the peek).
@@ -59,7 +59,7 @@ export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarg
           {target.kind === 'chat' ? (
             <ChatFileOpener detail={target.detail} slotId={`${slotKey}#peek`} />
           ) : target.kind === 'folder' ? (
-            <PeekFolderFile target={target} tabId={`peek:${slotKey}`} />
+            <PeekFolderFile target={target} tabId={`peek:${slotKey}`} {...(chatId ? { chatId } : {})} />
           ) : platform.kind === 'electron' ? (
             <SessionPeekBox sessionId={target.sessionId} projectId={target.projectId} />
           ) : (

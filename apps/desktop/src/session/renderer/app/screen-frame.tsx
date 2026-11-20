@@ -5,7 +5,7 @@ import { useGroupRef } from 'react-resizable-panels';
 import { Settings, X } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { observeGroupParticipantWidth } from '@renderer/features/chats/group-participant-width';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
@@ -303,7 +303,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
             isFocusedPane={focused}
             label={label}
             title={tooltip}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={takeAway}
           />
@@ -323,7 +323,6 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {
   const { translate } = useSessionMessages();
   const { chatId, tabKind, itemId, title } = content;
-  const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const slot = `screen:${blockId}`;
   const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, slot), itemId && !installedExtensionsStore.isChatFile(tabKind, title) ? title : (installedExtensionsStore.tabTitle(tabKind) ?? title));
   const corners = screenLayout.corners(blockId);
@@ -354,7 +353,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
             isFocusedPane={screenLayout.focusedBlockId === blockId}
             label={label}
             title={tooltip}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={putBack}
           />

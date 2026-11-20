@@ -561,9 +561,9 @@ function createDeps(context, injected = {}, state = createSessionState()) {
     },
     attachmentsEndpoint: () => attachmentsEndpoint(context, fetchImpl),
     attachments: context.attachments,
-    resolveFile: (ref, actor = context.agentId) => {
+    resolveFile: (ref, actor = context.agentId, options) => {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
-      return context.resolveFile(ref, actor)
+      return context.resolveFile(ref, actor, options)
     },
     ...injected,
     context,
@@ -632,11 +632,11 @@ async function requireChat(args, deps) {
   throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
 }
 
-/** Personal writes use the caller's native session; a DM is only an older spelling of that same destination. */
+/** A session whose page the owner reads takes their writes there; a DM is only an older spelling of it. Elsewhere it is the DM. */
 async function resolveWriteTarget(args, deps) {
   const address = typeof args?.chat_id === 'string' ? args.chat_id.trim() : ''
   if (!address) throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
-  if (deps.context.personalAssistant) return { chatId: await requireChat(args, deps) }
+  if (deps.context.personalAssistant || !deps.context.ownerReadsSession) return { chatId: await requireChat(args, deps) }
   if (/^(aid|user|gugu):/.test(address)) {
     const decoded = decodeIdentityAddress(address, 'chat_id')
     const userId = decoded.kind === 'user' ? decoded.id : (await lookupGuguNumber(decoded.number, deps)).id
@@ -2352,7 +2352,7 @@ async function publishHere(args, deps, chatId, message, next) {
 
 /** A next version that started from a version the file is no longer at: nothing was sent, and what to do. */
 function newerVersionRefusal(file, version) {
-  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file, or workspace__read with save), make your change on it, and send it with that version.`
+  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file), make your change on it, and send it with that version.`
 }
 
 async function sendMessageAsOwner(args, deps, content, extra = {}, outcome = { uncertain: false }) {
@@ -2441,22 +2441,33 @@ async function downloadSourceOf(args, deps) {
   return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
 }
 
-// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:harness 的工具超时到了下载也不停,再调一次就接上。
+// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:一次调用最多等 DOWNLOAD_CALL_BUDGET_MS,
+// 到了就正常返回「还在传」,下载照跑;再调一次就接上。没人等着时失败了,失败留给下一次调用报一次,再下一次重新读。
 const downloading = new Map()
+/** One call's wait, not the download's: about a harness tool timeout, so an agent turn is never held by a long read. */
+export const DOWNLOAD_CALL_BUDGET_MS = 60_000
 
 /** message_download_file:唯一取字节的门。判读者 → resolver(字节从哪来由它定)→ 本机 file-store 的只读副本。 */
 async function downloadFile(args, deps) {
   const source = await downloadSourceOf(args, deps)
   const key = `${source.reader}\n${fileRefKey(source.ref)}`
-  let saving = downloading.get(key)
-  if (!saving) {
-    saving = (async () => {
+  let flight = downloading.get(key)
+  if (flight?.failure) {
+    downloading.delete(key)
+    throw flight.failure
+  }
+  if (!flight) {
+    const started = Date.now()
+    flight = { started, state: 'waiting_sender', waiters: 0, failure: null }
+    const read = flight
+    read.saving = (async () => {
       // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
       const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
-      let file = await deps.resolveFile(source.ref, source.reader)
+      const progress = () => { read.state = 'transferring' }
+      let file = await deps.resolveFile(source.ref, source.reader, { progress })
       while (file.status === 'pending' && Date.now() < until) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
-        file = await deps.resolveFile(source.ref, source.reader)
+        file = await deps.resolveFile(source.ref, source.reader, { progress })
       }
       if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
       if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
@@ -2466,10 +2477,27 @@ async function downloadFile(args, deps) {
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
       const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
-    })().finally(() => downloading.delete(key))
-    downloading.set(key, saving)
+    })()
+    // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
+    // nobody waits for is kept (never an unhandled rejection) for the next call. A finished read leaves its copy in the
+    // file store, where the next call's own read finds it.
+    read.saving.then(() => { downloading.delete(key) }, (error) => {
+      if (read.waiters > 0) downloading.delete(key)
+      else read.failure = error
+    })
+    downloading.set(key, read)
   }
-  return JSON.stringify({ ...source.echo, ...await saving })
+  flight.waiters += 1
+  let budget
+  try {
+    const result = await Promise.race([flight.saving, new Promise((resolve) => { budget = setTimeout(resolve, DOWNLOAD_CALL_BUDGET_MS, null) })])
+    if (result) return JSON.stringify({ ...source.echo, ...result })
+    return JSON.stringify({ ...source.echo, status: 'transferring', state: flight.state, waited_ms: Date.now() - flight.started,
+      next: 'call message_download_file again with the same arguments' })
+  } finally {
+    clearTimeout(budget)
+    flight.waiters -= 1
+  }
 }
 
 /** message_send 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */

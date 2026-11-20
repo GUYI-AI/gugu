@@ -557,7 +557,7 @@ function shadowHomePath(bundle: SessionCapabilityBundle, basename: string): stri
 
 /**
  * 咕咕 MCP 的 stdio ⇄ HTTP 中继(`apps/desktop/electron/runtime/gugu-mcp-stdio-relay.mjs`)的入口 ——
- * 宿主在起终端腿之前登记成进程环境事实(`registerGuguMcpStdioRelayEntry`,与 codex 桥的
+ * 宿主在起终端腿之前登记成进程环境事实(local-session,与 codex 桥的
  * `GUGU_CODEX_APP_SERVER_ACP_ENTRY` 同一个做法)。
  */
 export const GUGU_MCP_STDIO_RELAY_ENTRY_ENV = 'GUGU_MCP_STDIO_RELAY_ENTRY';

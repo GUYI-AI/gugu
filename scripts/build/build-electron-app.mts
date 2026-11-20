@@ -6,6 +6,7 @@
 // 阶段 2 只写 apps/desktop/dist-electron/,谁也不读对方的产物。串行时阶段 2 的 ~10s 整段压在墙钟上。
 // 任一阶段失败即整体非零;两边都等到落定再报,两处失败同时可见(❌ 吞错)。
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -53,6 +54,10 @@ async function mainStage() {
       },
     })
   }
+  // Every worker the main process spawns must have landed beside main.js (desktopWorkerPath resolves it there).
+  const { workerFiles } = await import('./product-build-entries.mts')
+  const missing = workerFiles.filter((file) => !existsSync(join(repoRoot, 'apps/desktop/dist-electron', file)))
+  if (missing.length > 0) throw new Error(`worker files missing from dist-electron: ${missing.join(', ')}`)
   console.log(`[build-electron-app] main stage done at ${elapsed()}`)
 }
 

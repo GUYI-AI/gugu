@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs;运行时 import 可用。
-import { callTool } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { callTool, DOWNLOAD_CALL_BUDGET_MS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
 import { attachmentDownloadName } from '../../../../packages/core/src/shared/attachmentDownloadName.mjs'
 import { createNodeFileResolver } from '../../../../packages/core/src/local/files/fileSnapshots'
@@ -212,6 +212,74 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(a.file_path).toBe(b.file_path)
     // Settled downloads leave the table: a later call reads again (and finds the stored copy).
     await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
+    expect(opened).toBe(2)
+  })
+
+  // A call waits at most its budget: then it answers "still transferring" and the read keeps going; the same call again
+  // joins it. Fake timers only: nothing here waits on a wall clock.
+  test('returns transferring at the call budget, keeps reading, and a repeated call joins the same read', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-budget-')); homes.push(home)
+    let opened = 0, progress: ((done: number, total: number) => void) | undefined
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const context = { agentId: AGENT, guguHome: home, resolveFile: async (_ref: unknown, _actor: unknown, options?: { progress?: (done: number, total: number) => void }) => {
+      opened++; progress = options?.progress; await gate
+      return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
+    } }
+    const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const first = callTool(context, 'message_download_file', args, {})
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
+      expect(JSON.parse(await first)).toEqual({ status: 'transferring', state: 'waiting_sender', waited_ms: DOWNLOAD_CALL_BUDGET_MS,
+        next: 'call message_download_file again with the same arguments' })
+      progress!(1, 5)
+      const second = callTool(context, 'message_download_file', args, {})
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
+      expect(JSON.parse(await second)).toMatchObject({ status: 'transferring', state: 'transferring', waited_ms: 2 * DOWNLOAD_CALL_BUDGET_MS })
+      const third = callTool(context, 'message_download_file', args, {})
+      release()
+      expect(JSON.parse(await third)).toMatchObject({ file_name: 'big.bin', size_bytes: 5 })
+      expect(opened).toBe(1)
+    } finally { vi.useRealTimers() }
+  })
+
+  test('a read that fails after its caller left is reported once to the next call, and the call after that reads afresh', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-late-')); homes.push(home)
+    const unhandled = vi.fn(); process.on('unhandledRejection', unhandled)
+    let opened = 0
+    let refuse!: (error: Error) => void
+    const context = { agentId: AGENT, guguHome: home, resolveFile: async () => {
+      opened++
+      if (opened === 1) return new Promise<never>((_resolve, reject) => { refuse = reject })
+      return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
+    } }
+    const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const first = callTool(context, 'message_download_file', args, {})
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
+      expect(JSON.parse(await first)).toMatchObject({ status: 'transferring' })
+      refuse(Object.assign(new Error("its account's storage is full (quota_full)"), { code: 'quota_full' }))
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
+      expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
+      expect(opened).toBe(2)
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers(); process.off('unhandledRejection', unhandled) }
+  })
+
+  test('a failure while a caller waits goes to that caller, and the next call reads afresh', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-wait-fail-')); homes.push(home)
+    let opened = 0
+    const context = { agentId: AGENT, guguHome: home, resolveFile: async () => {
+      opened++
+      if (opened === 1) throw Object.assign(new Error('(quota_full)'), { code: 'quota_full' })
+      return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
+    } }
+    const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
+    await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
+    expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
     expect(opened).toBe(2)
   })
 

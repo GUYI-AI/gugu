@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,9 +7,11 @@ import type { AgentSessionArchivalOperation } from '@gugu/core/cloud/sessionArch
 
 vi.mock('../../../../apps/desktop/electron/sessionpage/emdash-agent-provisioning', () => ({
   OWNER_CACHE_KEY: 'owner', SESSION_CACHE_KEY: 'session', PARKED_SESSION_CACHE_KEY: 'parked',
-  cacheString: () => '',
+  cacheString: (cache: Record<string, unknown> | null | undefined, key: string) => typeof cache?.[key] === 'string' ? cache[key] as string : '',
 }))
-import { SessionpageAgentArchivalSync, type SessionpageArchivalSyncDeps } from '../../../../apps/desktop/electron/sessionpage/sessionpage-agent-archival'
+import { projectArchivalOntoRoster, SessionpageAgentArchivalSync, type SessionpageArchivalSyncDeps } from '../../../../apps/desktop/electron/sessionpage/sessionpage-agent-archival'
+import { agentsFile, listAgents } from '@gugu/core'
+import { dirname } from 'node:path'
 import { SessionpageLocalDeliveryRouter } from '../../../../apps/desktop/electron/sessionpage/session-injection'
 
 let home: string
@@ -34,6 +36,28 @@ afterEach(async () => { await rm(home, { recursive: true, force: true }) })
 const stored = async () => JSON.parse(await readFile(join(home, 'taskpage-agent-archival-sync.json'), 'utf8'))
 const restore = () => { local = { ...local, revision: 2, archivedAt: null,
   intervals: local.intervals.map((interval) => ({ ...interval, restoredAt: '2026-10-28T09:01:00Z' })) } }
+
+describe('roster projection of session archival', () => {
+  const row = (id: string, cache: Record<string, unknown>, status = 'idle') => ({ name: id, agent_type: 'claude-code', path: home, gugu_user_id: id, prompt: '', status, cache })
+  const statuses = async () => Object.fromEntries((await listAgents({ GUGU_HOME: home })).map((agent) => [agent.gugu_user_id, agent.status]))
+  it('archives the archived session\'s row, restores it on restore, and leaves rows archived for other reasons', async () => {
+    const env = { GUGU_HOME: home }
+    await mkdir(dirname(agentsFile(env)), { recursive: true })
+    await writeFile(agentsFile(env), JSON.stringify({ agents: [
+      row('archived-task', { session: 's', owner: 'owner' }),
+      row('live-task', { session: 'other', owner: 'owner' }),
+      row('ownerless', { session: 'never' }, 'archived'),
+      row('ownerless-restored', { session: 'r' }, 'archived'),
+    ] }))
+    const never = { sessionId: 'never', archivedAt: null, revision: 0, intervals: [] }
+    const restoredOwnerless = { sessionId: 'r', archivedAt: null, revision: 2, intervals: [] }
+    await projectArchivalOntoRoster([local, never, restoredOwnerless], env)
+    expect(await statuses()).toEqual({ 'archived-task': 'archived', 'live-task': 'idle', ownerless: 'archived', 'ownerless-restored': 'archived' })
+    restore()
+    await projectArchivalOntoRoster([local, never, restoredOwnerless], env)
+    expect(await statuses()).toEqual({ 'archived-task': 'idle', 'live-task': 'idle', ownerless: 'archived', 'ownerless-restored': 'archived' })
+  })
+})
 
 describe('durable background session archival synchronization', () => {
   it('refuses direct delivery and every automatic wake while archived', async () => {

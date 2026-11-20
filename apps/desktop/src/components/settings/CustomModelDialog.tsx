@@ -5,7 +5,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
 import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import {
-  Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxList, ComboboxGroup, ComboboxLabel,
+  Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxList, ComboboxGroup,
   ComboboxCollection, ComboboxItem, ComboboxEmpty,
 } from '@renderer/lib/ui/combobox';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
@@ -128,8 +128,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
               <ComboboxContent className="min-w-(--anchor-width)">
                 <ComboboxInput showTrigger={false} placeholder={translate('customModels.searchProviders')} />
                 <ComboboxList>
-                  {(group: { label: string | null; items: string[] }) => <ComboboxGroup key={group.label ?? 'custom'} items={group.items}>
-                    {group.label && <ComboboxLabel>{group.label}</ComboboxLabel>}
+                  {(group: { label: string | null; items: string[] }) => <ComboboxGroup key={group.label ?? 'custom'} items={group.items} label={group.label}>
                     <ComboboxCollection>
                       {(id: string) => <ComboboxItem key={id} value={id}>{providerLabel(id)}</ComboboxItem>}
                     </ComboboxCollection>

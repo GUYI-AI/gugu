@@ -115,9 +115,9 @@ const ROWS: Row[] = [
     en: ['0 files, 3 MB in all.', '1 file, 3 MB in all.', '2 files, 3 MB in all.'],
     zh: (n) => `共 ${n} 个文件，3 MB。`,
   },
-  { ns: 'assistant', key: 'move.doneAccounts', en: ['0 accounts moved (the old home keeps its copy).', '1 account moved (the old home keeps its copy).', '2 accounts moved (the old home keeps its copy).'], zh: (n) => `${n} 个账号已带过去（旧家那份保留）。` },
-  { ns: 'assistant', key: 'move.doneSchedules', en: ['0 schedules set again.', '1 schedule set again.', '2 schedules set again.'], zh: (n) => `${n} 个定时任务已重排。` },
-  { ns: 'assistant', key: 'move.doneFiles', en: ['0 files copied.', '1 file copied.', '2 files copied.'], zh: (n) => `${n} 个文件已拷过去。` },
+  { ns: 'assistant', key: 'move.doneAccounts', en: ['0 accounts migrated (the original environment keeps a copy).', '1 account migrated (the original environment keeps a copy).', '2 accounts migrated (the original environment keeps a copy).'], zh: (n) => `${n} 个账号已迁移（原运行环境保留副本）。` },
+  { ns: 'assistant', key: 'move.doneSchedules', en: ['0 scheduled tasks rescheduled.', '1 scheduled task rescheduled.', '2 scheduled tasks rescheduled.'], zh: (n) => `${n} 个定时任务已重新安排。` },
+  { ns: 'assistant', key: 'move.doneFiles', en: ['0 files copied.', '1 file copied.', '2 files copied.'], zh: (n) => `${n} 个文件已复制。` },
   { ns: 'assistant', key: 'chat.thoughtCount', en: ['0 thinking steps', '1 thinking step', '2 thinking steps'], zh: (n) => `思考 ${n} 次` },
   { ns: 'assistant', key: 'chat.toolCount', en: ['0 tool calls', '1 tool call', '2 tool calls'], zh: (n) => `调用 ${n} 次工具` },
   { ns: 'assistant', key: 'memory.items', en: ['0 items', '1 item', '2 items'], zh: (n) => `${n} 项` },
@@ -125,7 +125,7 @@ const ROWS: Row[] = [
   {
     ns: 'assistant', key: 'closeDialog.deleteStarted',
     en: ['Also delete the sessions it started (0)', 'Also delete the session it started (1)', 'Also delete the sessions it started (2)'],
-    zh: (n) => `一起删掉它开过的会话（${n} 个）`,
+    zh: (n) => `同时删除它发起的会话（${n} 个）`,
   },
 ]
 

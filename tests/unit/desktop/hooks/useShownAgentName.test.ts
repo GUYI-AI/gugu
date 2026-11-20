@@ -27,7 +27,7 @@ afterEach(() => { harness.cleanup(); vi.useRealTimers() })
 it.each(['zh-CN', 'en-US'] as const)('localizes the common placeholder and expires without a name event (%s)', async locale => {
   setLocalePreference(locale)
   await renderWithAppProviders(harness, createElement(Name))
-  expect(harness.container.textContent).toBe(locale === 'zh-CN' ? '正在起名…' : 'Naming the agent…')
+  expect(harness.container.textContent).toBe(locale === 'zh-CN' ? '正在生成名称…' : 'Generating name…')
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
   expect(harness.container.textContent).toBe('Codex 5')
 })
@@ -43,9 +43,9 @@ it('shows a rename immediately and uses the identity clock when mounted after th
 
 it('expires grouped labels in creation order while preserving explicit names', async () => {
   await renderWithAppProviders(harness, createElement(Names))
-  expect(harness.container.textContent).toBe('正在起名… / 正在起名… / Research assistant')
+  expect(harness.container.textContent).toBe('正在生成名称… / 正在生成名称… / Research assistant')
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
-  expect(harness.container.textContent).toBe('Codex 5 / 正在起名… / Research assistant')
+  expect(harness.container.textContent).toBe('Codex 5 / 正在生成名称… / Research assistant')
   await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
   expect(harness.container.textContent).toBe('Codex 5 / Claude 8 / Research assistant')
 })

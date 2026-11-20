@@ -42,8 +42,7 @@ export const WithGroups: Story = {
         <Combobox.Input placeholder="Search foods…" showTrigger showClear />
         <Combobox.Content>
           <Combobox.List>
-            <Combobox.Group>
-              <Combobox.Label>Fruits</Combobox.Label>
+            <Combobox.Group label="Fruits">
               {FRUITS.map((item) => (
                 <Combobox.Item key={item} value={item}>
                   {item}
@@ -51,8 +50,7 @@ export const WithGroups: Story = {
               ))}
             </Combobox.Group>
             <Combobox.Separator />
-            <Combobox.Group>
-              <Combobox.Label>Vegetables</Combobox.Label>
+            <Combobox.Group label="Vegetables">
               {VEGGIES.map((item) => (
                 <Combobox.Item key={item} value={item}>
                   {item}

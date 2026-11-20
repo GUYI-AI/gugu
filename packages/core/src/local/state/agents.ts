@@ -306,6 +306,20 @@ export async function archiveAgents(match: (agent: LocalAgentRecord) => boolean,
   }
 }
 
+/** Return matching archived roster rows to idle under the roster lock: the restore counterpart of archiveAgents. */
+export async function restoreArchivedAgents(match: (agent: LocalAgentRecord) => boolean, env: NodeJS.ProcessEnv = process.env): Promise<LocalAgentRecord[]> {
+  const release = await acquireAgentsLock(env)
+  try {
+    const payload = await loadAgentsPayload(env)
+    const restored = payload.agents.filter((agent) => agent.status === 'archived' && match(agent))
+    for (const agent of restored) agent.status = 'idle'
+    if (restored.length) await saveAgentsPayload(payload, env)
+    return restored
+  } finally {
+    await release()
+  }
+}
+
 // @@@session-identity - the durable RUNTIME identity key: a captured agent stores the provider
 export function cachedProviderSessionId(cache: Record<string, unknown> | null | undefined): string | null {
   const value = cache?.provider_session_id

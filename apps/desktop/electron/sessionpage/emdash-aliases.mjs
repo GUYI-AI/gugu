@@ -1,5 +1,5 @@
-// @@@sessionpage — single source of truth for the app-internal module aliases + worker build inputs,
-// consumed by vite.config.mts (renderer alias table AND the electron-main lib entries), vitest, the
+// @@@sessionpage — single source of truth for the app-internal module aliases,
+// consumed by vite.config.mts (renderer alias table), vitest, the
 // release reachability gate and the storybook configs. It must agree with tsconfig.json `paths`:
 // builds read this side, the typecheck reads that one (tsconfig.json is read with JSON.parse, so the
 // comment lives here).
@@ -42,21 +42,4 @@ export const emdashAliasEntries = [
   ['@session-chat', `${PKGS}/session-chat-ui/src`],
   ['@session-assets', `${SESSION_RENDERER_ROOT}/assets`],
   ['@session-types', `${SESSION_RENDERER_ROOT}/types`],
-]
-
-// Worker utility entries spawned by `child_process.fork` at runtime — each is an entry of the
-// electron-main lib build (vite.config.mts), so it lands as its own file. `out` names MUST equal
-// worker-manifest.ts `desktopWorkers[].file` (minus `.js`), because desktopWorkerPath resolves
-// `new URL('./<out>.js', import.meta.url)` relative to whichever chunk the manifest lands in — all
-// chunks are flat in dist-electron/, so the sibling lookup holds regardless of chunking.
-export const emdashWorkerEntries = [
-  { out: 'cursor-import', src: `${SESSION_MAIN_ROOT}/main/core/session-import/cursor-worker.ts` },
-  { out: 'turn-text-backfill', src: `${SESSION_MAIN_ROOT}/main/db/turn-text-backfill-worker.ts` },
-  { out: 'task-turn-search', src: `${SESSION_MAIN_ROOT}/main/core/search/task-turn-search-worker.ts` },
-  { out: 'acp-runtime', src: `${SESSION_MAIN_ROOT}/main/core/acp/runtime-process/entry.ts` },
-  { out: 'agent-config-runtime', src: `${SESSION_MAIN_ROOT}/main/core/agent-config/runtime-process/entry.ts` },
-  { out: 'fs-watch-runtime', src: `${SESSION_MAIN_ROOT}/main/core/fs-watch/runtime-process/entry.ts` },
-  { out: 'git-status', src: `${SESSION_MAIN_ROOT}/main/core/git/status/worker.ts` },
-  // #6334 用量页 token 扫描 —— worker_threads 线程的入口(不是 fork),同样必须是磁盘上的独立文件。
-  { out: 'usage-token-scan', src: `${SESSION_MAIN_ROOT}/main/core/usage/token-scan-worker/entry.ts` },
 ]

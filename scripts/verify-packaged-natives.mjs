@@ -14,6 +14,7 @@ import { createRequire } from 'node:module'
 // @@@2299 单一来源:bridge 的 external 清单——app 锚点 probe 逐个真 require,新增 external
 // 自动纳入生产路径探测。
 import { EMDASH_EXTERNAL } from '../apps/desktop/electron/sessionpage/sessionpage-main-build.mjs'
+import { workerFiles } from './build/product-build-entries.mts'
 import {
   assertPtySymbolOutput,
   readPtyGlobalSymbols,
@@ -57,6 +58,7 @@ const resourcesDir = process.argv[2]
 const expectedElectron = process.argv[3]
 const expectedArch = process.argv[4]
 const bridgeExternals = process.argv[5].split(',').filter(Boolean)
+const workerFiles = process.argv[6].split(',').filter(Boolean)
 // @@@probe-steps (#4357) — 同 scripts/build/verify-dev-native-probe.cjs:每步开始前往 stderr 报一行,
 // 不设墙钟预算;真挂住由最外层(job 的 timeout-minutes)收场,日志最后一行 step= 就是卡住的位置。
 let currentStep = 'start'
@@ -199,9 +201,9 @@ async function main() {
   const distElectron = path.join(resourcesDir, 'app', 'apps', 'desktop', 'dist-electron')
   const mainPath = path.join(distElectron, 'main.js')
   fs.accessSync(mainPath) // 主进程本体在真实 app/ 目录
-  // 任务页主进程 chunk、三个 fork worker 与用量页的 token 扫描线程(#6334)必须与 main.js 同目录真实存在
+  // 任务页主进程 chunk 与 worker-manifest.ts 里的每个 worker 必须与 main.js 同目录真实存在
   // (worker 按本 chunk 同目录解析,见 worker-manifest.ts)
-  for (const sibling of ['emdash-main-bridge.js', 'acp-runtime.js', 'agent-config-runtime.js', 'fs-watch-runtime.js', 'usage-token-scan.js', 'task-turn-search.js']) {
+  for (const sibling of ['emdash-main-bridge.js', ...workerFiles]) {
     fs.accessSync(path.join(distElectron, sibling))
   }
   await probeAnchor('app-anchor', createRequire(mainPath))
@@ -231,7 +233,7 @@ try {
     }
     assertPtySymbolIsolation(appModulesDir, arch)
     let cmd = bin
-    let args = [probe, resourcesDir, electronPin, arch, EMDASH_EXTERNAL.join(',')]
+    let args = [probe, resourcesDir, electronPin, arch, EMDASH_EXTERNAL.join(','), workerFiles.join(',')]
     if (arch !== process.arch) {
       // 跨架构执行:先 fail-loud 验证翻译层(arm64 宿主验 x64 = Rosetta)可用,再显式 arch 前缀运行。
       try {
