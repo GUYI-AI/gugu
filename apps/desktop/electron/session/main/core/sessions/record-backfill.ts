@@ -25,7 +25,7 @@ export type RecordBackfillResult = {
  * cursor the next fill starts from, and the delivery ids in the record's user messages (null = some cannot be told).
  */
 type Stamp = {
-  record: string; storeHead: number; lastSettled: boolean; cursor?: Cursor; before?: SavedIdentity[]; deliveries?: string[] | null;
+  record: string; storeHead: number; lastSettled: boolean; lastStartedAt?: number; cursor?: Cursor; before?: SavedIdentity[]; deliveries?: string[] | null;
   /** The delivery ids of the turns before the cursor's: a read from the cursor adds what it reads to these. */
   deliveriesBefore?: string[] | null;
 };
@@ -95,11 +95,13 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
     const committedOnly = row.runtime !== 'acp' && active();
     // A terminal reports idle before its buffered record write lands. While its engine runs (owned, or in tmux and
     // not yet reattached after a restart), an unsettled last turn is still being written; once it is gone, the record is final.
-    const finish = async (inserted: number, complete: boolean, lastSettled: boolean) => {
+    const finish = async (inserted: number, complete: boolean, lastSettled: boolean, lastStartedAt?: number) => {
       if (inserted > 0) log.info('[record-backfill] filled in turns from the record', { sessionId, inserted });
       if (!current()) return result('runtime-changed', inserted);
       if (!complete || active()) return result('active', inserted);
-      if (row.runtime !== 'acp' && !lastSettled) {
+      const hostEnded = row.runtime !== 'acp' && lastStartedAt !== undefined
+        && readPtyTurnEnds(sessionId, row.providerSessionId!).some(end => end.cutoff >= lastStartedAt);
+      if (row.runtime !== 'acp' && !lastSettled && !hostEnded) {
         if (await sessionEngine(sessionId) !== 'gone') return result('settling', inserted);
         if (!current()) return result('runtime-changed', inserted);
         if (active()) return result('active', inserted);
@@ -129,7 +131,8 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
     const stamp = await stampOf(probe) ?? await stampOf(createSessionRecordSource(location.locator, { readMode: 'snapshot' }));
     const head = storedHeadNow(sessionId);
     const saved = await stamps.get(sessionId);
-    if (stamp && saved && saved.record === stamp && saved.storeHead === head && !committedOnly) return finish(0, true, saved.lastSettled);
+    if (stamp && saved && saved.record === stamp && saved.storeHead === head && !committedOnly
+      && (saved.lastSettled || saved.lastStartedAt !== undefined)) return finish(0, true, saved.lastSettled, saved.lastStartedAt);
 
     // Identities of the store's newest rows, one row at a time (a row can hold megabytes of pictures); a record's native
     // prompts are matched by the receipts in those rows' messages (`native-prompt.ts`).
@@ -174,7 +177,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         const prefix = committedOnly && read.tail.length > read.committed ? read.tail.slice(0, read.committed) : read.tail;
         prefix.forEach(take);
         read.tail.forEach(note);
-        return { seen, unreceipted, deliveries, from: read.from, complete: prefix.length === read.tail.length, lastSettled: !!prefix.at(-1)?.outcome };
+        return { seen, unreceipted, deliveries, from: read.from, complete: prefix.length === read.tail.length, lastSettled: !!prefix.at(-1)?.outcome, lastStartedAt: prefix.at(-1)?.startedAt };
       };
       // A cursor read sees the turns from the cursor's on; the stamp keeps the identities and delivery ids of the record
       // before them, so matching (and the delivery set) see the whole record as a read from the beginning does.
@@ -209,7 +212,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
       if (found === null && window.rows.length >= STORE_WINDOW) found = matchPlan(seen, storeIdentities(Number.MAX_SAFE_INTEGER).rows, unfinished, identity, true);
       if (found === null) log.warn('[record-backfill] the record and the store diverged; nothing filled in', { sessionId });
       if (found === null || found === 'diverged') return diverged();
-      const plan: Plan = { ...found, from: scanned!.from, complete: scanned!.complete, lastSettled: scanned!.lastSettled };
+      const plan: Plan = { ...found, from: scanned!.from, complete: scanned!.complete, lastSettled: scanned!.lastSettled, lastStartedAt: scanned!.lastStartedAt };
 
       // Second pass: the same start; turns after the anchor are written as they stream, their long pictures as their place
       // in the record (read back when opened). The newest settled turn whose stored row is known becomes the next cursor.
@@ -248,13 +251,13 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         throw error;
       }
       if (inserted < plan.appended) log.warn('[record-backfill] fewer turns than planned', { sessionId, planned: plan.appended, inserted });
-      const done = await finish(inserted, plan.complete, plan.lastSettled);
+      const done = await finish(inserted, plan.complete, plan.lastSettled, plan.lastStartedAt);
       // The cursor holds whatever the status; the stamp lets the next fill skip the record only once this one completed.
       const placed = next as Cursor | null;
       const check = placed ? await probe.checkAt?.(placed.position).catch(() => null) ?? null : null;
       const after: Cursor | null = placed && check ? { ...placed, check } : resumed ? cursor : null;
       await stamps.setOrThrow(sessionId, { record: done.status === 'complete' && stamp ? stamp : '', storeHead: storedHeadNow(sessionId),
-        lastSettled: plan.lastSettled, deliveries, ...(after ? { cursor: after, before: seen.slice(0, after.turn + 1).map(toSaved),
+        lastSettled: plan.lastSettled, lastStartedAt: plan.lastStartedAt, deliveries, ...(after ? { cursor: after, before: seen.slice(0, after.turn + 1).map(toSaved),
           deliveriesBefore: idsOf(scanned!.deliveries.slice(0, after.turn - base)) } : {}) });
       return done;
     } catch (error) {
@@ -344,6 +347,7 @@ type Plan = {
   anchor: { seen: number; seq: number } | null;
   complete: boolean;
   lastSettled: boolean;
+  lastStartedAt?: number;
 };
 
 /**

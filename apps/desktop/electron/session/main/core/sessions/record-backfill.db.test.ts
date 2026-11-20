@@ -384,6 +384,10 @@ it('keeps a host-ended PTY record settled across fills and replaces it with its 
   expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
   expect(JSON.parse(rows()[1].data)).toEqual(closed);
   expect(readPtyTurnEnds('c1', 'a-different-native-session')).toEqual([]);
+  // A new idle engine cannot reopen a prior engine's ended turn or loop the settling watcher.
+  state.process = { home: 'host', start: 'fresh' };
+  expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
+  expect(JSON.parse(rows()[1].data)).toEqual(closed);
   await appendRecord([line('event_msg', { type: 'task_complete' })]);
   expect(await sync()).toEqual({ inserted: 0, status: 'complete' });
   expect(outcomes()).toEqual(['done', 'done']);
