@@ -1,3 +1,4 @@
+import { setImmediate } from 'node:timers/promises';
 import type { NormalizedEvent, NormalizedToolStatus } from '../../acp/reducer/normalized-event';
 import type { WindowCacheContext } from '../window-cache/types';
 import type { EntityContent } from '../../acp/models/entity-content';
@@ -46,6 +47,24 @@ export type SessionRecordSourceOptions = {
 };
 
 export const DEFAULT_POLL_INTERVAL_MS = 500;
+
+/** Longest a source's initial read may hold the event loop before it yields. */
+const READ_SLICE_MS = 20;
+
+/**
+ * @@@read-yields - a source holds a long session's whole initial read and hands it to the timeline in one go. Reduced
+ * synchronously that holds the host's event loop for as long as the history takes (the host's tunnel, realtime and
+ * agent inbox all stall with it). A source awaits the returned `pause()` between deliveries; it yields once a stretch
+ * has run `READ_SLICE_MS`.
+ */
+export function readSlices(): () => Promise<void> {
+  let since = performance.now();
+  return async () => {
+    if (performance.now() - since < READ_SLICE_MS) return;
+    await setImmediate();
+    since = performance.now();
+  };
+}
 
 export function pollInterval(options: SessionRecordSourceOptions | undefined): number {
   const value = options?.pollIntervalMs;

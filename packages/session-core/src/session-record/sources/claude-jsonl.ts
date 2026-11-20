@@ -27,6 +27,7 @@ import {
   parseJson,
   parseTimestamp,
   pollInterval,
+  readSlices,
   warnOf,
   type RecordSourceWarn,
   type SessionRecordSourceOptions,
@@ -81,6 +82,9 @@ export function createClaudeJsonlSource(
 
 /** The decoder state a fill read notes before each line (`RecordEntry.state`) and a fill from there restores. */
 type ClaudeFillState = Pick<ClaudeResumeData, 'lastUuid' | 'launches' | 'childRoots'>;
+
+/** Entries per delivery while releasing the initial read, so one delivery stays short. */
+const RELEASE_BATCH = 64;
 
 class ClaudeJsonlSource implements SessionRecordSource {
   private readonly warn: RecordSourceWarn;
@@ -166,7 +170,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
       if (resume) events.onReset('source_replaced');
       await this.fullRead(path);
     }
-    this.releaseHeld(events);
+    await this.releaseHeld(events);
+    if (this.stopped) return;
     if (this.options?.readMode === 'snapshot') {
       if (!this.nativeChild && this.options.parentLineage && this.inherited === 0) throw new SessionRecordForkDivergedError();
     } else this.reader.start();
@@ -346,13 +351,18 @@ class ClaudeJsonlSource implements SessionRecordSource {
     return entries;
   }
 
-  private releaseHeld(events: SessionRecordSourceEvents): void {
+  /** The whole record is held until its branches are known; it reaches the timeline in slices (see `readSlices`). */
+  private async releaseHeld(events: SessionRecordSourceEvents): Promise<void> {
     const held = this.held ?? [];
     this.held = null;
     const { abandoned } = this.branches;
+    const pause = readSlices();
     for (const batch of held) {
       const kept = abandoned.size ? batch.filter(entry => !abandoned.has(this.lineOf.get(entry) ?? '')) : batch;
-      if (kept.length) events.onEntries(kept);
+      for (let from = 0; from < kept.length && !this.stopped; from += RELEASE_BATCH) {
+        events.onEntries(kept.slice(from, from + RELEASE_BATCH));
+        await pause();
+      }
     }
   }
 
