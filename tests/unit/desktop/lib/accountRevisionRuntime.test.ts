@@ -243,7 +243,8 @@ describe('AccountRevisionRuntime', () => {
     const repository = await openImRepository('account-a', { adapter: createMemoryLocalSyncDb() })
     syncSince
       .mockResolvedValueOnce(page([
-        operation(1, 'chat_changed', { id: 'chat-1', name: 'Chat One' }),
+        // Every chat_changed names its chat (the revision's resource key); the message store reads it.
+        operation(1, 'chat_changed', { id: 'chat-1', name: 'Chat One', chat_id: 'chat-1' }),
         operation(2, 'message_changed', { id: 'message-1', chatId: 'chat-1' }),
       ], true))
       .mockResolvedValueOnce(page([operation(3, 'bad_operation')]))

@@ -50,6 +50,8 @@ beforeEach(async () => {
   registerSshMachinesIpc({ ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler) } as unknown as Electron.IpcMain,
     getWindow: () => null, store: createSshMachineStore(file), currentUserId: async () => host.owner })
   host.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    // Signing out clears this device's stored messages; the store itself is not under test here.
+    if (channel.startsWith('imMessages.')) return channel === 'imMessages.ingest' ? [] : null
     const handler = handlers.get(channel); if (!handler) throw Error(`Unknown test IPC: ${channel}`)
     return handler({}, ...args)
   })

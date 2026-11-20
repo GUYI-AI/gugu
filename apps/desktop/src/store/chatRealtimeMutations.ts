@@ -13,7 +13,6 @@ import { shareRows } from '../lib/chatProjectionAlgebra'
 export type RealtimeMessageMutators = {
   // updater 只走函数式（实时改动都基于前值），chatId 显式（可能是非活动会话缓存，见 setMessagesAndCache 注释）。
   setMessagesAndCache: (updater: (prev: MessageItem[]) => MessageItem[], chatId: string) => void
-  persistWindowToLocalSync: (chatId: string, messages: MessageItem[]) => void
   setThreadMessages: Dispatch<SetStateAction<MessageItem[]>>
 }
 
@@ -25,11 +24,7 @@ export function applyMessageDeletedEvent(
   activeChatId: string,
   m: RealtimeMessageMutators,
 ): void {
-  m.setMessagesAndCache((prev) => {
-    const next = prev.filter((msg) => msg.id !== messageId)
-    if (next.length !== prev.length) m.persistWindowToLocalSync(activeChatId, next)
-    return next
-  }, activeChatId)
+  m.setMessagesAndCache((prev) => prev.filter((msg) => msg.id !== messageId), activeChatId)
   m.setThreadMessages((prev) => prev.filter((msg) => msg.id !== messageId))
 }
 
@@ -38,23 +33,18 @@ export function applyMessageDeletedEvent(
 // my_reaction 由 RLS 按当前用户算准）。只覆盖 reactions，delivery/read 字段各有自己的实时通道、不动。message_id
 // 全局唯一且仅存在于其所属会话缓存 → 按 id patch 无跨会话 bleed。
 //
-// reactorUserId === 当前用户时跳过（对齐 member_read_changed 的 userId 自跳过）：本端 toggleReaction 乐观路径
-// 已走权威 getMessages 刷新，若再自刷一次既多余，又可能与乐观刷新竞态——「加后即撤」时旧 add 事件的重取若落在
-// 撤销之后写回，会复活刚撤销的回应。
-//
-// 已知小缺口（自愈）：两个不同用户在极短时间内对同一条消息各加回应时，两次独立的 overlay 重取的 HTTP 响应若
-// 乱序到达，后写的可能是较早的快照 → 少显一个回应，直到下次重开会话 revalidateWindow 校正。
+// 自己的切换也走这条：每次变更都把更早发起的回应读作废（@@@reaction-read-order，chatMessageRevalidation），
+// 乱序到达的旧读数不再盖掉新值，取消的 👍 不会复活；读数被作废时 reactions 缺席，这里什么都不改，等这次变更自己的读数。
 export async function applyReactionChangedEvent(
-  event: { messageId: string; reactorUserId: string },
+  reactedId: string,
   userId: string,
   activeChatId: string,
   m: RealtimeMessageMutators,
 ): Promise<void> {
-  if (event.reactorUserId === userId) return
-  const reactedId = event.messageId
-  const overlays = await chatService.fetchMessageOverlays([reactedId], userId)
-  const overlay = overlays.get(reactedId)
-  if (!overlay) return
+  const overlays = await chatService.fetchMessageOverlays([{ id: reactedId, chat_id: activeChatId }], userId)
+  const reactions = overlays.get(reactedId)?.reactions
+  if (!reactions) return
+  const overlay = { reactions }
   m.setMessagesAndCache((prev) => {
     let changed = false
     const next = prev.map((msg) => {
@@ -62,9 +52,7 @@ export async function applyReactionChangedEvent(
       changed = true
       return { ...msg, reactions: overlay.reactions }
     })
-    // @@@msg-cache (#621) - write-through 让 L2 持有最新回应（对齐 message_created 的写穿），冷启不必等重开
-    // revalidate 才补上；未命中窗口则不动缓存。
-    if (changed) m.persistWindowToLocalSync(activeChatId, next)
+    // The overlay read already patched the stored row (loadMessageOverlays); this is the view.
     return changed ? next : prev
   }, activeChatId)
   // 话题回复上的回应同样活更新（thread 视图不走 L2 持久化，内存 patch 即可）。

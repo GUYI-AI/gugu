@@ -13,7 +13,7 @@ import { advanceMemberReadSeq, agentReaderUserId, applyDeliveryReceipt } from '@
 import { chatService } from './chat'
 import { UI_EVENTS } from './uiEvents'
 import { rendererLogger } from './log'
-import { persistMessagePatches } from './chatMessageRevalidation'
+import { invalidateReactions, persistMessagePatches } from './chatMessageRevalidation'
 import {
   readDeliveryRevision,
   readMemberReadRevision,
@@ -45,7 +45,6 @@ export type ChatLine = RealtimeMessageMutators & MemberReadSeqsStore & {
   chatId: () => string | null
   maxSeqOf: (chatId: string) => number
   readCommittedMessage: (messageId: string) => MessageItem | undefined
-  hasMessageGap?: (chatId: string) => boolean
   noteCommittedMessages: (chatId: string, messages: readonly MessageItem[]) => void
   getMessageSnapshotEpoch: (chatId: string) => number
   /** readSeqs 为 null = 载荷里没有水位信息,别动成员已读表(空表会被当成「没有其他成员」把圆环全抹掉)。 */
@@ -74,12 +73,13 @@ export function subscribeChatLineRevisions(subscribe: SubscribeAccountRevision, 
         applyMessageDeletedEvent(entityId, chatId, line)
       }
     }),
-    onLine('reaction_changed', async (keys) => {
-      const unique = new Map(keys.map(({ chatId, entityId }) => {
-        if (!entityId) throw new Error('reaction_changed revision requires entity_id')
-        return [`${chatId}:${entityId}`, { chatId, entityId }] as const
-      }))
-      await Promise.all([...unique.values()].map(({ chatId, entityId }) => applyReactionChangedEvent({ messageId: entityId, reactorUserId: '' }, line.userId, chatId, line)))
+    subscribe('reaction_changed', async (operations) => {
+      const keys = operations.map((operation) => readRevisionResourceKey(operation.payload, 'reaction_changed'))
+      for (const { entityId } of keys) if (!entityId) throw new Error('reaction_changed revision requires entity_id')
+      // Every change voids reaction reads begun before it, on screen or not (@@@reaction-read-order).
+      invalidateReactions(keys.map(({ entityId }) => entityId!))
+      const unique = new Map(keys.filter((key) => key.chatId === line.chatId()).map(({ chatId, entityId }) => [`${chatId}:${entityId}`, { chatId, entityId: entityId! }] as const))
+      await Promise.all([...unique.values()].map(({ chatId, entityId }) => applyReactionChangedEvent(entityId, line.userId, chatId, line)))
     }),
     subscribe('delivery_changed', applyDeliveryRevisions(line)),
     // @@@5649 已读水位直接来自事件载荷,不再回读 chat_members。
@@ -168,7 +168,12 @@ function applyDeliveryRevisions(line: ChatLine): AccountRevisionListener {
         if (reader && !(next.readers ?? []).includes(reader)) next.readers = [...(next.readers ?? []), reader]
         return next
       }
-      await persistMessagePatches(line.userId, [delivery.messageId], apply)
+      // The store merges receipts monotonically, so the stored row only takes the facts this receipt adds.
+      await persistMessagePatches(line.userId, [{ chatId, id: delivery.messageId, fields: {
+        delivered: true,
+        ...(deviceId === `gugu-agent:${line.userId}` ? { delivery_status: status } : {}),
+        ...(reader ? { readers: [reader] } : {}),
+      } }])
       line.setMessagesAndCache(prev => prev.map(message => message.id === delivery.messageId ? apply(message) : message), chatId)
     }
     if (needsRevalidate) await line.revalidateWindowOverlays(chatId, true)
@@ -188,7 +193,6 @@ function applyMessageCreatedRevisions(line: ChatLine): AccountRevisionListener {
       const item = line.readCommittedMessage(arrival.messageId)
       if (!item || item.thread_root_id || item.is_thread_root) return line.healMessageGap(chatId, true)
     }
-    if (line.hasMessageGap?.(chatId)) return line.healMessageGap(chatId, true)
     line.noteCommittedMessages(chatId, arrivals.map(arrival => line.readCommittedMessage(arrival.messageId)!))
     // The account transaction already persisted these rows. The shared cache
     // subscription publishes them; no second decode or window write is needed.

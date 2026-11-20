@@ -2,14 +2,14 @@
 // #5610 §2.3:退群 / 被移出的成员没有成员行,投影闭包不再为他索要身份 —— 消息窗口是他的唯一引用方,由它补齐。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { imSelectors, openImRepository, readMessageWindow } from '../../../../apps/desktop/src/lib/imRepository'
+import { imSelectors, openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import type { DisplayIdentity } from '../../../../apps/desktop/src/lib/displayIdentity'
 import { message as messageFixture } from '../../../support/testHarness'
 
 const mocks = vi.hoisted(() => ({ readDisplayIdentities: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDisplayIdentities: mocks.readDisplayIdentities }))
 
-import { closeImRepository, ensureIdentities, publishMessageWindow, subscribeIdentities } from '../../../../apps/desktop/src/lib/chatMessageWindowPublication'
+import { closeImRepository, completeWindowIdentities, ensureIdentities, subscribeIdentities } from '../../../../apps/desktop/src/lib/chatMessageWindowPublication'
 import { publishIdentityDirectory, readIdentityDirectoryBridge, installIdentityDirectoryBridge } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
 
 function identity(id: string): DisplayIdentity {
@@ -23,17 +23,16 @@ function identity(id: string): DisplayIdentity {
 const msg = (id: string, sender: string | null, seq: number, replyTo: string | null = null) =>
   messageFixture({ id, chat_id: 'chat-1', sender_user_id: sender, seq, content: id, reply_to_sender_user_id: replyTo })
 
-describe('publishMessageWindow', () => {
+describe('completeWindowIdentities', () => {
   beforeEach(() => { mocks.readDisplayIdentities.mockReset() })
 
-  it('writes the window and commits identities for senders (and replied-to senders) not yet in the repository', async () => {
+  it('commits identities for senders (and replied-to senders) not yet in the repository', async () => {
     const repository = await openImRepository('account-a', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
     await repository.putIdentities([identity('known')])
     mocks.readDisplayIdentities.mockImplementation(async (ids: string[]) => ids.map(identity))
 
-    await publishMessageWindow(repository, 'chat-1', [msg('m1', 'known', 1), msg('m2', 'former', 2, 'quoted'), msg('m3', null, 3)])
+    await completeWindowIdentities(repository, 'chat-1', [msg('m1', 'known', 1), msg('m2', 'former', 2, 'quoted'), msg('m3', null, 3)])
 
-    expect(readMessageWindow(repository, 'chat-1')?.messages.map((row) => row.id)).toEqual(['m1', 'm2', 'm3'])
     // 只问缺的:已提交的 known 与注销的 null 都不再读。
     expect(mocks.readDisplayIdentities).toHaveBeenCalledTimes(1)
     expect([...mocks.readDisplayIdentities.mock.calls[0][0]].sort()).toEqual(['former', 'quoted'])
@@ -45,7 +44,7 @@ describe('publishMessageWindow', () => {
     await repository.putIdentities([identity('known')])
     mocks.readDisplayIdentities.mockImplementation(async (ids: string[]) => ids.map(identity))
 
-    await publishMessageWindow(repository, 'chat-1', [messageFixture({ id: 'm1', chat_id: 'chat-1', sender_user_id: 'known', seq: 1, content: 'hi', to_user_ids: ['left-agent', '*'] })])
+    await completeWindowIdentities(repository, 'chat-1', [messageFixture({ id: 'm1', chat_id: 'chat-1', sender_user_id: 'known', seq: 1, content: 'hi', to_user_ids: ['left-agent', '*'] })])
 
     // `*` 是「所有人」,不是人,不去读。
     expect(mocks.readDisplayIdentities).toHaveBeenCalledExactlyOnceWith(['left-agent'])
@@ -58,13 +57,13 @@ describe('publishMessageWindow', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.useFakeTimers({ toFake: ['Date'] })
     try {
-      await publishMessageWindow(repository, 'chat-1', [msg('m1', 'vanished', 1)])
-      await publishMessageWindow(repository, 'chat-1', [msg('m1', 'vanished', 1), msg('m2', 'vanished', 2)])
+      await completeWindowIdentities(repository, 'chat-1', [msg('m1', 'vanished', 1)])
+      await completeWindowIdentities(repository, 'chat-1', [msg('m1', 'vanished', 1), msg('m2', 'vanished', 2)])
       expect(mocks.readDisplayIdentities).toHaveBeenCalledTimes(1)
       // 「没读到」可能只是刚建的行短暂读不到:过了重试窗口要再问,❌ 永久拉黑。
       vi.setSystemTime(Date.now() + 5 * 60_000 + 1)
       mocks.readDisplayIdentities.mockResolvedValue([identity('vanished')])
-      await publishMessageWindow(repository, 'chat-1', [msg('m1', 'vanished', 1)])
+      await completeWindowIdentities(repository, 'chat-1', [msg('m1', 'vanished', 1)])
       expect(mocks.readDisplayIdentities).toHaveBeenCalledTimes(2)
       expect(Object.keys(imSelectors.identitiesById(repository.snapshot()))).toEqual(['vanished'])
       // rendererLogger 在非 Electron 环境退化成 console.error(`[scope] msg`, fields)。
@@ -119,7 +118,7 @@ describe('ensureIdentities / identity directory (#6306)', () => {
       publishIdentityDirectory(imSelectors.identitiesById(repository.snapshot()), null)
       const base = notified
       // 一笔与身份无关的写(消息窗口)产出新的快照对象,身份行不变 ⇒ 不通知。
-      await publishMessageWindow(repository, 'chat-1', [msg('m1', 'alice', 1)])
+      await completeWindowIdentities(repository, 'chat-1', [msg('m1', 'alice', 1)])
       publishIdentityDirectory(imSelectors.identitiesById(repository.snapshot()), null)
       expect(notified).toBe(base)
       // 身份行被改写 ⇒ 通知,且快照里是新值。

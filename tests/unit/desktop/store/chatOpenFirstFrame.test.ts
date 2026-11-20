@@ -100,7 +100,12 @@ const { useChatConversation } = await import('../../../../apps/desktop/src/store
 const { chatService } = await import('../../../../apps/desktop/src/lib/chat')
 const { topicService } = await import('../../../../apps/desktop/src/lib/topics')
 const { createMemoryLocalSyncDb } = await import('../../../../apps/desktop/src/lib/localSyncDb')
-const { replaceMessageWindow, ingestAccountMessage } = await import('../../../../apps/desktop/src/lib/imRepository')
+const { ingestMessages, readMessagePage } = await import('../../../../apps/desktop/src/lib/messageIngest')
+// Seeds go through the message store's own entry: a page (no revision) or an account arrival (a revision).
+const seed = (rows: MessageItem[]) => ingestMessages('user1', { writes: rows.map(message => ({ type: 'put' as const, message })), revisions: [] })
+const arrive = (item: MessageItem, revision: string) => ingestMessages('user1', { writes: [], revisions: [{ revision, writes: [{ type: 'put', message: item }] }] })
+const { clearMessageWindows, initializeMessageWindows } = await import('../../../../apps/desktop/src/lib/messageWindows')
+const storedSeqs = async (chatId: string) => (await readMessagePage('user1', { chatId, limit: 500 })).rows.map(row => row.seq)
 
 type Frame = Pick<ChatContextValue, 'activeChatId' | 'messages' | 'loadingMessages' | 'messageWindow' | 'memberReadSeqs'>
 const frames: Frame[] = []
@@ -145,6 +150,9 @@ const framesOf = (chatId: string) => frames.filter((frame) => frame.activeChatId
 
 describe('打开会话的第一帧', () => {
   beforeEach(async () => {
+    // Each case starts on a fresh IndexedDB (tests/support/setup); the in-memory windows over it start fresh too.
+    clearMessageWindows('user1')
+    initializeMessageWindows('user1')
     shell.native = false
     shell.visibleChat = null
     shell.foreground = null
@@ -351,7 +359,7 @@ describe('打开会话的第一帧', () => {
   })
 
   it('盘上有这条会话的窗:网络还没回,第一帧就画出盘上的内容', async () => {
-    await replaceMessageWindow(repository, 'chatA', [msgA1], false)
+    await seed([msgA1])
     const harness = await mount()
     await act(async () => { select('chatA') })
     const first = framesOf('chatA')[0]
@@ -362,7 +370,7 @@ describe('打开会话的第一帧', () => {
   })
 
   it('uses the current account cache after the committed shell activates effects', async () => {
-    await replaceMessageWindow(repository, 'chatA', [msgA1], false)
+    await seed([msgA1])
     const harness = createReactHarness()
     const render = (active: boolean) => renderWithAppProviders(harness,
       createElement(ChatProvider, { active, children: [createElement(Probe, { key: 'probe' }), createElement(Selector, { key: 'selector' })] }), { auth: { id: 'user1' } })
@@ -424,8 +432,7 @@ describe('打开会话的第一帧', () => {
         // This suite replaces the account coordinator. Its line consumers now
         // receive arrivals only after the real account repository commit.
         for (let seq = 2; seq <= 121; seq++) {
-          await repository.transaction(tx => ingestAccountMessage(repository, tx,
-            message({ id: `send-${seq}`, chat_id: 'chatA', seq, sender_user_id: 'a1', content: 'incoming' }), String(seq)))
+          await arrive(message({ id: `send-${seq}`, chat_id: 'chatA', seq, sender_user_id: 'a1', content: 'incoming' }), String(seq))
           for (const listener of revisionListeners.get('message_created')!) await listener([{ event: 'message_created', revision: String(seq), payload: {
           chat_id: 'chatA', entity_id: `send-${seq}`, message: { id: `send-${seq}`, chat_id: 'chatA', seq,
             sender_user_id: 'a1', content: 'incoming', content_type: 'text', created_at: new Date().toISOString() },
@@ -501,7 +508,7 @@ describe('打开会话的第一帧', () => {
   })
 
   it('重选当前会话:视图版本不变(不整列表重挂)', async () => {
-    await replaceMessageWindow(repository, 'chatA', [msgA1], false)
+    await seed([msgA1])
     const harness = await mount()
     await act(async () => { select('chatA') })
     const version = frames.at(-1)?.messageWindow?.viewVersion
@@ -528,7 +535,7 @@ describe('打开会话的第一帧', () => {
   })
 
   it('a topic paints the durable window on its first committed frame without selecting the primary chat', async () => {
-    await replaceMessageWindow(repository, 'chatA', [msgA1], false)
+    await seed([msgA1])
     const harness = await mount()
     await renderWithAppProviders(harness, createElement(ChatProvider, null, createElement(Probe), createElement(ScopedProbe, { chatId: 'chatA' })), { auth: { id: 'user1' } })
     expect(scopedFrames[0]?.ids).toEqual(['msgA1'])
@@ -537,14 +544,13 @@ describe('打开会话的第一帧', () => {
     harness.cleanup()
   })
 
-  it('two scopes share publication, persist their fetches and reopen from memory with the network pending', async () => {
+  it('two scopes share publication and reopen from memory with the network pending', async () => {
     network.resolve()
     const harness = await mount(createElement('div', null, createElement(ScopedProbe, { chatId: 'chatA' }), createElement(ScopedProbe, { chatId: 'chatB' })))
     await vi.waitFor(() => {
       expect(scopedFrames.some((frame) => frame.chatId === 'chatA' && frame.ids.includes('msgA1'))).toBe(true)
       expect(scopedFrames.some((frame) => frame.chatId === 'chatB' && frame.ids.includes('msgB1'))).toBe(true)
     }, WAIT)
-    await vi.waitFor(() => expect(repository.snapshot().message.map((row) => row.id).sort()).toEqual(['msgA1', 'msgB1']), WAIT)
     await renderWithAppProviders(harness, createElement(ChatProvider, null, createElement(Probe)), { auth: { id: 'user1' } })
     network = deferred<void>()
     vi.mocked(chatService.getMessages).mockClear().mockImplementation(async (id) => { await network.promise; return messagesByChat[id] ?? [] })
@@ -581,8 +587,7 @@ describe('打开会话的第一帧', () => {
     try {
       await vi.waitFor(() => expect(revisionListeners.has('message_created')).toBe(true), WAIT)
       await act(async () => {
-        await repository.transaction(tx => ingestAccountMessage(repository, tx,
-          message({ id: 'live-2', chat_id: 'chatA', seq: 2, sender_user_id: 'peer', content: 'arrival' }), '1'))
+        await arrive(message({ id: 'live-2', chat_id: 'chatA', seq: 2, sender_user_id: 'peer', content: 'arrival' }), '1')
         // The UI already observes the account commit while the line's gap
         // repair is pending; coordinator dispatch does not block that paint.
         dispatch = Promise.all([...revisionListeners.get('message_created')!].map(listener => listener([{ event: 'message_created', revision: '1', payload: {
@@ -604,26 +609,25 @@ describe('打开会话的第一帧', () => {
     try {
       await vi.waitFor(() => expect(scopedFrames.some((frame) => frame.ids.includes('msgA1'))).toBe(true), WAIT)
       const emit = async (seq: number) => {
-        await repository.transaction(tx => ingestAccountMessage(repository, tx,
-          message({ id: `stream-${seq}`, chat_id: 'chatA', seq, sender_user_id: 'a1', content: 'stream' }), String(seq)))
+        await arrive(message({ id: `stream-${seq}`, chat_id: 'chatA', seq, sender_user_id: 'a1', content: 'stream' }), String(seq))
         for (const listener of revisionListeners.get('message_created')!) await listener([{ event: 'message_created', revision: String(seq), payload: {
           chat_id: 'chatA', entity_id: `stream-${seq}`, message: { id: `stream-${seq}`, chat_id: 'chatA', seq,
             sender_user_id: 'a1', content: 'stream', content_type: 'text', created_at: new Date().toISOString() },
         } }])
       }
       await act(async () => { for (let seq = 2; seq <= 201; seq++) await emit(seq) })
-      // The window stays at the tail size; the durable copy keeps the last 120 until a fresh snapshot replaces it with the window.
+      // The window stays at the tail size; the store keeps the newest 120 of the stream (the phone's retention).
       const expected = Array.from({ length: 40 }, (_, index) => index + 162)
       const stored = Array.from({ length: 120 }, (_, index) => index + 82)
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
-      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA').map((row) => row.value.seq).sort((a, b) => a - b)).toEqual(stored), WAIT)
+      await vi.waitFor(async () => expect(await storedSeqs('chatA')).toEqual(stored), WAIT)
       messagesByChat.chatA = Array.from({ length: 40 }, (_, index) => message({ id: `stream-${index + 162}`, chat_id: 'chatA', seq: index + 162 }))
       await act(async () => { await sharedAccess.actions('chatA').refreshMessages() })
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
       expect(scopedFrames.at(-1)?.ids).toHaveLength(40)
-      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(40), WAIT)
+      // A fresh snapshot replaces the view's window, never the stored history behind it.
       await renderWithAppProviders(harness, createElement(ChatProvider, null, createElement(Probe)), { auth: { id: 'user1' } })
-      expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(40)
+      expect(await storedSeqs('chatA')).toEqual(stored)
     } finally { harness.cleanup() }
   })
 

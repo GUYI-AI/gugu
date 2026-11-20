@@ -228,11 +228,13 @@ describe('a summary this reader cannot see past is caught up to once', () => {
   // row): the refresh brings nothing newer, and the same summary must not refresh the line again.
   it('refreshes once for a newer summary, however often the source line repeats it', async () => {
     const first = message({ id: 't1', chat_id: 'topic-1', seq: 1, created_at: '2026-09-18T00:00:00.000Z' })
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: first.created_at })])
+    // The open line's chat row makes this reader a member; the topic summary agrees (a disagreement is a revocation
+    // in the message store, which drops the line).
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: true, last_message_at: first.created_at })])
     getMessages.mockResolvedValue([first])
     await openSplit(true)
     const reads = getMessages.mock.calls.length
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: '2026-09-18T00:05:00.000Z' })])
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: true, last_message_at: '2026-09-18T00:05:00.000Z' })])
     for (let i = 0; i < 3; i++) {
       await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
       await act(async () => { await vi.dynamicImportSettled() })

@@ -6,7 +6,6 @@ import { createChatOutbox } from '../../../../apps/desktop/src/store/chatOutbox'
 import { ACCOUNT_REVISION_CURSOR_KEY, createAccountRevisionRuntime } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { assemble } from '../../../../apps/desktop/src/lib/chatProjectionAlgebra'
 import { decodeAccountSnapshot, initializeAccountSync } from '../../../../apps/desktop/src/lib/accountSyncSnapshot'
-import { message } from '../../../support/testHarness'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc }, identityDb: {}, dataClient: {} }))
@@ -106,29 +105,6 @@ describe('account snapshot bootstrap and repair', () => {
     expect(syncSince).toHaveBeenCalledExactlyOnceWith('422010', 100, expect.any(AbortSignal))
     expect(repository.snapshot().view[0]!.value).toBe('422011')
     expect((await adapter.loadAccount('account-a')).sync_state[0]!.value).toEqual({ revision: '422011' })
-  })
-
-  it('discards a missing-stream cache and preserves unsent input atomically', async () => {
-    rpc.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ data: populatedSnapshot(), error: null }) })
-    const cached = await openImRepository('account-a', { adapter })
-    await cached.transaction((tx) => {
-      tx.putMessage(message({ id: 'cached-message', chat_id: 'chat-1', sender_user_id: 'account-a', seq: 1 }))
-      tx.putOutbox(pending)
-      tx.putSyncState(ACCOUNT_REVISION_CURSOR_KEY, { revision: '12' })
-    })
-    await adapter.commit([{ type: 'delete', store: 'stream', key: ['account-a', 'main:chat-1'] }])
-    const repaired = await openImRepository('account-a', { adapter, initialize: initializeAccountSync })
-    expect(repaired.snapshot().message).toEqual([])
-    expect(repaired.snapshot().outbox[0]!.value).toEqual(pending)
-    expect(repaired.snapshot().sync_state[0]!.value).toEqual({ revision: '422010' })
-    expect(repaired.snapshot().chat[0]!.value).toMatchObject({ id: 'chat-1', name: 'Remote group',
-      last_read_seq: 1, unread_count: 2, last_message_preview: 'Remote text', member_user_ids: ['account-a', 'peer'] })
-    expect(repaired.snapshot().identity.find((row) => row.id === 'peer')!.value.display_name).toBe('Remote peer')
-    expect(repaired.snapshot().membership.map((row) => row.identityId).sort()).toEqual(['account-a', 'peer'])
-    const durable = await adapter.loadAccount('account-a')
-    expect(durable.identity[0]!.id).toBe('account-a')
-    expect(durable.outbox[0]!.value).toEqual(pending)
-    expect(durable.sync_state[0]!.value).toEqual({ revision: '422010' })
   })
 
   it('rebuilds a malformed cursor, while a valid warm cursor performs no snapshot RPC', async () => {
