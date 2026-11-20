@@ -2652,6 +2652,43 @@
       },
       "uniqueConstraints": {}
     },
+    "session_turn_payload_inline": {
+      "name": "session_turn_payload_inline",
+      "columns": {
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "session_turn_payload_inline_hash_session_turn_payload_objects_hash_fk": {
+          "name": "session_turn_payload_inline_hash_session_turn_payload_objects_hash_fk",
+          "tableFrom": "session_turn_payload_inline",
+          "tableTo": "session_turn_payload_objects",
+          "columnsFrom": [
+            "hash"
+          ],
+          "columnsTo": [
+            "hash"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    },
     "session_turn_payload_objects": {
       "name": "session_turn_payload_objects",
       "columns": {
@@ -2674,13 +2711,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "inline_data": {
-          "name": "inline_data",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "refs": {

@@ -11,8 +11,9 @@ function state(connection: Database.Database): State {
   let value = states.get(connection);
   if (!value) {
     if (!connection.name || connection.name === ':memory:') throw new Error('Durable turn payloads need a file-backed database');
-    const metadata = connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined,length(inline_data) AS inline_bytes FROM session_turn_payload_objects WHERE hash=?');
-    const inline = connection.prepare('SELECT substr(inline_data,1,65536) AS data FROM session_turn_payload_objects WHERE hash=? AND inline_data IS NOT NULL');
+    const metadata = connection.prepare(`SELECT o.bytes,o.kind,b.hash IS NOT NULL AS inlined,length(b.data) AS inline_bytes
+      FROM session_turn_payload_objects o LEFT JOIN session_turn_payload_inline b ON b.hash=o.hash WHERE o.hash=?`);
+    const inline = connection.prepare('SELECT substr(data,1,65536) AS data FROM session_turn_payload_inline WHERE hash=?');
     const chunks = connection.prepare('SELECT digest FROM session_turn_payload_chunks WHERE hash=? AND ordinal>=? AND ordinal<? ORDER BY ordinal');
     const files = new TurnPayloadFiles(`${connection.name}.turn-payloads`, undefined, {
       alive: () => connection.open,
@@ -39,8 +40,10 @@ export const turnPayloadFiles = (connection: Database.Database): TurnPayloadFile
 
 function prepareStatements(connection: Database.Database) {
   return {
-    put: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind,inline_data) VALUES (?,?,?,?)'),
-    size: connection.prepare('SELECT bytes,kind,inline_data IS NOT NULL AS inlined FROM session_turn_payload_objects WHERE hash=?'),
+    put: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind) VALUES (?,?,?)'),
+    body: connection.prepare('INSERT INTO session_turn_payload_inline(hash,data) VALUES (?,?)'),
+    size: connection.prepare(`SELECT o.bytes,o.kind,b.hash IS NOT NULL AS inlined FROM session_turn_payload_objects o
+      LEFT JOIN session_turn_payload_inline b ON b.hash=o.hash WHERE o.hash=?`),
     chunk: connection.prepare('INSERT OR IGNORE INTO session_turn_payload_chunks(hash,ordinal,digest) VALUES (?,?,?)'),
     children: connection.prepare('SELECT child_hash FROM session_turn_payload_edges WHERE parent_hash=?'),
   };
@@ -60,7 +63,8 @@ export function registerTurnPayloads(connection: Database.Database): void {
   for (const [hash, object] of files.staged) {
     let stored = query.size.get(hash) as { bytes: number; kind: number; inlined: number } | undefined;
     if (!stored) {
-      query.put.run(hash, object.bytes, object.kind, object.bytes <= INLINE_PAYLOAD_BYTES ? object.data : null);
+      query.put.run(hash, object.bytes, object.kind);
+      if (object.bytes <= INLINE_PAYLOAD_BYTES) query.body.run(hash, object.data);
       stored = query.size.get(hash) as { bytes: number; kind: number; inlined: number };
       for (let ordinal = 0; ordinal < object.chunks.length; ordinal++) query.chunk.run(hash, ordinal, object.chunks[ordinal]);
       inserted.add(hash);

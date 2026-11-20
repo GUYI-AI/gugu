@@ -670,11 +670,16 @@ export const sessionTurnFields = sqliteTable('session_turn_fields', {
 export const { sessionWindowCommitReceipts, sessionWindowCommitPositions } = windowCommitTables({ sessionId: sessions.id, rowId: sessionTurns.id });
 export const sessionTurnPayloadObjects = sqliteTable('session_turn_payload_objects', {
   hash: text('hash').primaryKey().notNull(), bytes: integer('bytes').notNull(), kind: integer('kind').notNull(),
-  inlineData: blob('inline_data', { mode: 'buffer' }), refs: integer('refs').notNull().default(0),
+  refs: integer('refs').notNull().default(0),
 }, table => ({ unowned: index('idx_session_turn_payload_unowned').on(table.refs, table.hash),
   kind: check('session_turn_payload_kind', sql`${table.kind} IN (0,2,3)`),
-  storage: check('session_turn_payload_storage', sql`(${table.bytes} BETWEEN 1 AND 65536 AND ${table.inlineData} IS NOT NULL AND length(${table.inlineData})=${table.bytes}) OR (${table.bytes}>65536 AND ${table.inlineData} IS NULL)`),
+  storage: check('session_turn_payload_storage', sql`${table.bytes}>=1`),
   refs: check('session_turn_payload_refs', sql`${table.refs} >= 0`) }));
+// Reference counters stay in narrow rows; adding an owner must not rewrite immutable body pages.
+export const sessionTurnPayloadInline = sqliteTable('session_turn_payload_inline', {
+  hash: text('hash').primaryKey().notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
+  data: blob('data', { mode: 'buffer' }).notNull(),
+}, table => ({ bytes: check('session_turn_payload_inline_bytes', sql`length(${table.data}) BETWEEN 1 AND 65536`) }));
 export const sessionTurnPayloadChunks = sqliteTable('session_turn_payload_chunks', {
   hash: text('hash').notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
   ordinal: integer('ordinal').notNull(), digest: text('digest').notNull(),

@@ -35,12 +35,16 @@ CREATE TABLE session_turn_payload_objects (
   hash TEXT PRIMARY KEY NOT NULL,
   bytes INTEGER NOT NULL,
   kind INTEGER NOT NULL CONSTRAINT session_turn_payload_kind CHECK (kind IN (0,2,3)),
-  inline_data BLOB,
   refs INTEGER NOT NULL DEFAULT 0 CONSTRAINT session_turn_payload_refs CHECK (refs >= 0),
-  CONSTRAINT session_turn_payload_storage CHECK ((bytes BETWEEN 1 AND 65536 AND inline_data IS NOT NULL AND length(inline_data)=bytes) OR (bytes>65536 AND inline_data IS NULL))
+  CONSTRAINT session_turn_payload_storage CHECK (bytes>=1)
 );
 --> statement-breakpoint
 CREATE INDEX idx_session_turn_payload_unowned ON session_turn_payload_objects(refs,hash);
+--> statement-breakpoint
+CREATE TABLE session_turn_payload_inline (
+  hash TEXT PRIMARY KEY NOT NULL REFERENCES session_turn_payload_objects(hash) ON DELETE CASCADE,
+  data BLOB NOT NULL CONSTRAINT session_turn_payload_inline_bytes CHECK (length(data) BETWEEN 1 AND 65536)
+);
 --> statement-breakpoint
 CREATE TABLE session_turn_payload_chunks (
   hash TEXT NOT NULL REFERENCES session_turn_payload_objects(hash) ON DELETE CASCADE,

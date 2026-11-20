@@ -65,7 +65,8 @@ describe('versioned session turn storage', () => {
     const output = JSON.parse(descriptors.find(part => (JSON.parse(part.value) as StoredTurnValue).t === 'text')!.value) as StoredTurnValue;
     if (output.t !== 'text') throw new Error('Expected shared text payload');
     expect(descriptors.some(part => (JSON.parse(part.value) as StoredTurnValue).t === 'json' && part.value.includes(output.ref.hash))).toBe(true);
-    expect(fixture.sqlite.prepare('SELECT bytes,kind,length(inline_data) n FROM session_turn_payload_objects WHERE hash=?').get(output.ref.hash))
+    expect(fixture.sqlite.prepare(`SELECT o.bytes,o.kind,length(b.data) n FROM session_turn_payload_objects o
+      JOIN session_turn_payload_inline b ON b.hash=o.hash WHERE o.hash=?`).get(output.ref.hash))
       .toEqual({ bytes: 20003, kind: 2, n: 20003 });
     expect(files.counters.writtenBytes).toBeLessThan(100000);
     expect(fixture.sqlite.prepare('SELECT max(length(CAST(value AS BLOB))) n FROM session_turn_fields').get()).toMatchObject({ n: expect.any(Number) });
