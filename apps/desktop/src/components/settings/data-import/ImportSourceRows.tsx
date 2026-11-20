@@ -1,3 +1,4 @@
+import { AgentHomePreparationStatus } from './AgentHomePreparationStatus'
 import { ENVIRONMENT_IMPORT_CATEGORIES } from '@shared/core/session-import/environment-import'
 import { categoryLabelKey, groupImportProviders } from './environment-import-view'
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -42,7 +43,9 @@ function ImportProgress({ job, label }: { job: ImportJob; label: string }) {
   const { state } = job
   const pendingCancel = state === 'cancelling'
   const canCancel = state === 'queued' || state === 'running'
-  const stateLabel = state === 'running' && job.total > 0 ? `${job.done}/${job.total}`
+  const stateLabel = state === 'running' && job.preparation?.phase === 'history'
+    ? <AgentHomePreparationStatus preparation={{ phase: 'history', startedAt: job.preparation.startedAt, attempt: 1 }} />
+    : state === 'running' && job.total > 0 ? `${job.done}/${job.total}`
     : state === 'running' ? t('settings.dataImport.reading')
     : state === 'queued' ? t('settings.dataImport.queued')
     : pendingCancel ? t('settings.dataImport.cancelling')

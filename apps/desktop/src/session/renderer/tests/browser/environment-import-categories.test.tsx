@@ -4,6 +4,7 @@ import { i18n } from '@/i18n'
 import { createReactHarness, clickElement } from '../../../../../../../tests/support/testHarness'
 import { LocalImportSources } from '@/components/settings/data-import/ImportSourceRows'
 import { ImportSyncSettings } from '@/components/settings/data-import/ImportSyncSettings'
+import type { ImportJob } from '@/components/settings/data-import/import-queue'
 import type { ImportProvider } from '@/components/settings/data-import/import-providers'
 import { ENVIRONMENT_IMPORT_CATEGORIES } from '@shared/core/session-import/environment-import'
 import '@/i18n/registerMainCatalog'
@@ -99,3 +100,14 @@ it('persists selected sync categories and reads the saved range after remount', 
   await harness.render(<ImportSyncSettings ownerId="fixture" />)
   expect(harness.container.textContent).toContain('已选择 2 个类别')
 })
+
+it('renders the actual preparing-history status while a task import is running', async () => {
+  const job: ImportJob = { id: 'running', ownerId: 'fixture', provider: providers[0]!,
+    devices: [{ deviceId: null, deviceName: 'This computer', count: 1 }], state: 'running', done: 0, total: 1,
+    preparation: { phase: 'history', startedAt: Date.now() - 42_000 } };
+  await harness.render(<LocalImportSources providers={providers} ownerId="fixture" jobs={[job]} />);
+  expect(harness.container.textContent).toContain('正在整理历史');
+  expect(harness.container.textContent).toContain('已用 42 秒');
+  expect(harness.container.textContent).not.toContain('%');
+  await page.screenshot({ path: '../../../../../../../test-results/environment-import-preparing-zh.png', element: harness.container });
+});

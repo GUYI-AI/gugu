@@ -825,7 +825,7 @@ export default {
       "categoryUnavailable": "暂不支持",
       "selectedScopes": "已选择 {{count}} 个类别",
       "scopeCategories": "全部 5 个类别",
-      "categoryResults": "配置导入记录",
+      "categoryResults": "导入结果",
       "configurationImported": "已导入 {{count}} 项配置",
       "configurationOnly": "连接器仅导入配置，登录状态需单独确认",
 

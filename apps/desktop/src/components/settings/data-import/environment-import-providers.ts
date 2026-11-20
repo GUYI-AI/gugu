@@ -4,7 +4,7 @@ import {
   ENVIRONMENT_IMPORT_CATEGORIES,
   type EnvironmentImportCategory, type EnvironmentImportScan, type EnvironmentImportSelection,
 } from '@shared/core/session-import/environment-import'
-import type { ImportProvider, ImportResult } from './import-providers'
+import type { ImportProvider, ImportResult, ImportPreparation } from './import-providers'
 
 const emptyResult = (): ImportResult => ({ imported: [], entities: [], details: [], existing: 0, failed: 0 })
 
@@ -79,7 +79,7 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
     importAll: (deviceId, progress, signal) => run(preview, deviceId, progress, signal),
   }
   async function run(snapshot: CodexTaskScan | undefined, deviceId: string | null,
-    onProgress: (done: number, total: number) => void, signal: AbortSignal): Promise<ImportResult> {
+    onProgress: (done: number, total: number, preparation?: ImportPreparation | null) => void, signal: AbortSignal): Promise<ImportResult> {
     if (deviceId) return transcripts.importAll(deviceId, onProgress, signal)
     if (!snapshot) throw new Error('请先刷新导入来源')
     signal.throwIfAborted()
@@ -87,9 +87,22 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
     const result = emptyResult()
     const cancel = () => { void api.cancelCodexTaskImport().catch(() => {}) }
     result.attempts = Object.fromEntries(snapshot.rows.map(row => [row.id, row.revision]))
+    result.details = snapshot.blocked.map(item => ({ id: item.id, title: item.id, category: 'tasks', status: 'skipped', reason: item.reason }))
     const titles = new Map(snapshot.rows.map(row => [row.id, row.title]))
     onProgress(0, snapshot.rows.length)
     signal.addEventListener('abort', cancel, { once: true })
+    let readingProgress = false
+    let finished = false
+    const readProgress = async () => {
+      if (readingProgress || signal.aborted) return
+      readingProgress = true
+      try {
+        const preparation = await api.codexTaskImportProgress()
+        if (!finished && !signal.aborted) onProgress(0, snapshot.rows.length, preparation)
+      } catch { /* The import request owns its failure; a progress read cannot cancel it. */ }
+      finally { readingProgress = false }
+    }
+    const timer = setInterval(() => { void readProgress() }, 1000)
     try {
       signal.throwIfAborted()
       const read = await api.importCodexTasks(snapshot.rows.map(({ id, revision }) => ({ id, revision })))
@@ -102,7 +115,7 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
       result.failed += snapshot.blocked.length
       onProgress(snapshot.rows.length, snapshot.rows.length)
       return result
-    } finally { signal.removeEventListener('abort', cancel) }
+    } finally { finished = true; clearInterval(timer); signal.removeEventListener('abort', cancel) }
   }
   return provider
 }

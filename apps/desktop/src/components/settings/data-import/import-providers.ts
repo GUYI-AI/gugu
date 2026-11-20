@@ -9,6 +9,7 @@ import {
 } from '@shared/core/session-import/session-import'
 
 export type ImportedSession = { title: string; projectId: string | null; sessionId: string }
+export type ImportPreparation = { phase: 'copying' | 'history' | 'binding'; startedAt: number }
 export type ImportedEntity = { id: string; title: string; category: EnvironmentImportCategory }
 export type ImportOutcome = ImportedEntity & { status: 'imported' | 'existing' | 'conflict' | 'skipped' | 'failed'; reason?: string }
 export type ImportResult = { details?: ImportOutcome[]; imported: ImportedSession[]; entities?: ImportedEntity[]; attempts?: Record<string, string>; existing: number; failed: number }
@@ -29,7 +30,7 @@ export type ImportProvider = {
   listHistory?(deviceId: string | null): Promise<Array<ImportedSession & { importedAt: number }>>
   importAll(
     deviceId: string | null,
-    onProgress: (done: number, total: number) => void,
+    onProgress: (done: number, total: number, preparation?: ImportPreparation | null) => void,
     signal: AbortSignal,
   ): Promise<ImportResult>
 }

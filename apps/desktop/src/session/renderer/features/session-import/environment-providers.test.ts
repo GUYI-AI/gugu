@@ -3,10 +3,10 @@ import type { ImportProvider } from '@/components/settings/data-import/import-pr
 import { codexEnvironmentProviders, withCodexTaskImport } from '@/components/settings/data-import/environment-import-providers';
 import { groupImportProviders, syncCategoryEnabled } from '@/components/settings/data-import/environment-import-view';
 
-const calls = vi.hoisted(() => ({ scan: vi.fn(), run: vi.fn(), cancel: vi.fn(), scanTasks: vi.fn(), tasks: vi.fn(), cancelTasks: vi.fn() }));
+const calls = vi.hoisted(() => ({ scan: vi.fn(), run: vi.fn(), cancel: vi.fn(), scanTasks: vi.fn(), tasks: vi.fn(), cancelTasks: vi.fn(), preparation: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionImport: {
   scanEnvironmentImport: calls.scan, importEnvironmentCategory: calls.run, cancelEnvironmentImport: calls.cancel,
-  scanCodexTasks: calls.scanTasks, importCodexTasks: calls.tasks, cancelCodexTaskImport: calls.cancelTasks,
+  scanCodexTasks: calls.scanTasks, importCodexTasks: calls.tasks, cancelCodexTaskImport: calls.cancelTasks, codexTaskImportProgress: calls.preparation,
 } }) }));
 beforeEach(() => {
   vi.clearAllMocks();
@@ -103,4 +103,21 @@ it('keeps legacy automatic scope limited to tasks and honors an explicitly empty
   expect(syncCategoryEnabled([], 'tasks')).toBe(false);
   expect(syncCategoryEnabled(['skills'], 'skills')).toBe(true);
   expect(syncCategoryEnabled(['skills'], 'projects')).toBe(false);
+});
+
+it('forwards actual history preparation and stops its poll after completion', async () => {
+  vi.useFakeTimers();
+  try {
+    const provider = withCodexTaskImport(transcript());
+    calls.scanTasks.mockResolvedValue({ status: 'ready', rows: [{ id: 'native', revision: 'r1', title: 'Task' }], blocked: [] });
+    calls.preparation.mockResolvedValue({ phase: 'history', startedAt: 123 });
+    let finish!: (value: { items: unknown[] }) => void;
+    calls.tasks.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await provider.scan(null);
+    const report = progress(); const running = provider.capture!().importAll(null, report, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(report).toHaveBeenCalledWith(0, 1, { phase: 'history', startedAt: 123 });
+    finish({ items: [] }); await running;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
 });

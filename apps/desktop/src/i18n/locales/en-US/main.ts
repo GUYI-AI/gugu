@@ -843,7 +843,7 @@ export default {
       "categoryUnavailable": "Not supported",
       "selectedScopes": "{{count}} categories selected",
       "scopeCategories": "All 5 categories",
-      "categoryResults": "Configuration imports",
+      "categoryResults": "Import results",
       "configurationImported": "Imported {{count}} configuration items",
       "configurationOnly": "Connector configuration imported; sign-in must be checked separately",
 

@@ -3,7 +3,7 @@ import { importSourceCounts, importedSourceHistory } from './import-replicas'
 import { updateImportSettings } from './import-sync-preferences'
 import { notify } from '@/lib/notices'
 import { sessionCoordinator } from '@/lib/sessionCoordinator'
-import type { ImportOutcome, ImportedEntity, ImportedSession, ImportProvider } from './import-providers'
+import type { ImportPreparation, ImportOutcome, ImportedEntity, ImportedSession, ImportProvider } from './import-providers'
 
 export type ImportDevice = { deviceId: string | null; deviceName: string; count: number }
 export type ImportedEntry = ImportedSession & { deviceId: string | null; deviceName?: string }
@@ -15,6 +15,7 @@ export type ImportJob = ImportTarget & {
   state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'finished' | 'failed'
   done: number
   total: number
+  preparation?: ImportPreparation | null
   finishedAt?: number
   result?: JobResult
 }
@@ -99,11 +100,11 @@ async function runNext(): Promise<void> {
       let deviceDone = 0
       let deviceTotal = device.count
       try {
-        const read = await job.provider.importAll(device.deviceId, (done, actualTotal) => {
+        const read = await job.provider.importAll(device.deviceId, (done, actualTotal, preparation) => {
           total += actualTotal - deviceTotal
           deviceTotal = actualTotal
           deviceDone = done
-          publish(entry, { done: processed + done, total })
+          publish(entry, { done: processed + done, total, preparation })
         }, controller.signal)
         result.imported.push(...read.imported.map((session) => ({
           ...session, deviceId: device.deviceId, deviceName: device.deviceName,
