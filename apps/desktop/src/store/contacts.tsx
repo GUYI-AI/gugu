@@ -4,6 +4,7 @@ import { rendererLogger } from '../lib/log'
 import { contactsService } from '../lib/contacts'
 import { contactGroupChatsOf, sharedGroupAgentsOf } from '../lib/contactGroupChats'
 import { contactGroups, contactRelations, contactRequests, groupJoinRequests, refreshStrictly, type ContactRelation } from '../lib/contactsReplicas'
+import { joinRequestIdentityIds } from '../lib/groupAgentJoin'
 import { useReplica, useReplicaFetching } from '../lib/replica'
 import { useAuth } from './auth'
 import { useChatStore, useStoreValueBy } from './chatContext'
@@ -138,8 +139,16 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [userId, subscribeAccountRevision])
 
+  // The identities this domain names, all kept by the lifecycle prune: contacts, both ends of every friend request and the
+  // join requesters (their replicas write these identities; ❌ only the contacts — the prune then dropped request senders).
   useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]),
-    () => { const reading = contactRelations.peek(); return reading.state === 'value' ? reading.value.map((relation) => relation.id) : null })
+    () => {
+      const relations = contactRelations.peek()
+      if (relations.state !== 'value') return null
+      const requests = contactRequests.peek()
+      const requestRows = requests.state === 'value' ? [...requests.value.received, ...requests.value.sent] : []
+      return [...relations.value.map((relation) => relation.id), ...requestRows.flatMap((request) => [request.sender_id, request.receiver_id]), ...joinRequestIdentityIds(managedJoinRequests)]
+    })
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const sendRequest = useCallback(
