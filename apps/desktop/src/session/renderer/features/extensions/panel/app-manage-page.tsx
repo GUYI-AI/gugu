@@ -23,6 +23,7 @@ import { AppSettingsForm } from '../app-settings-form';
 import { useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
 import { extensionAgentSkills, extensionAgentTools, extensionDataBytes, marketVersionHistory } from '../market-replicas';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
@@ -332,13 +333,10 @@ export function AppManagePage({
         ? <RefreshFailed reading={tools} /> : null}
       {manifest.contributes.skills ? (
         <Row title={translate('extensions.manageSkills')} testId="app-manage-skills"
-          note={!api.agentSkills ? translate('extensions.addsSkillsText')
-            : skills.state === 'unknown' ? <Unknown className="w-40" />
-            : skills.state === 'error' ? translate('extensions.loadFailed')
-            : skills.value.length > 0 ? translate('extensions.manageSkillsNote', { skills: skills.value.join(listJoin) }) : translate('extensions.addsSkillsText')} />
+          note={!api.agentSkills ? translate('extensions.addsSkillsText') : <ReadingSlot reading={skills} placeholder="w-40" failed={() => translate('extensions.loadFailed')}>
+            {(names) => translate(names.length > 0 ? 'extensions.manageSkillsNote' : 'extensions.addsSkillsText', { skills: names.join(listJoin) })}
+          </ReadingSlot>} />
       ) : null}
-      {manifest.contributes.skills && api.agentSkills && skills.state === 'value'
-        ? <RefreshFailed reading={skills} /> : null}
       {manifest.contributes.instructions ? (
         <Collapsible className="mg-row is-block" data-testid="app-product-instructions">
           <CollapsibleTrigger className="mg-row-toggle">
@@ -359,9 +357,9 @@ export function AppManagePage({
   if (api.appData && onClearData) {
     sections.push({ id: 'data', label: translate('extensions.manageData'), body: (
       <Row title={translate('extensions.manageDataRow')} note={translate('extensions.manageDataNote')} testId="app-manage-data">
-        <span className="mg-value">{dataBytes.state === 'value' ? (dataBytes.value === 0 ? translate('extensions.manageDataNone') : formatSize(dataBytes.value))
-          : dataBytes.state === 'error' ? translate('extensions.manageDataUnreadable') : <Unknown className="w-12" />}</span>
-        {dataBytes.state === 'value' ? <RefreshFailed reading={dataBytes} /> : null}
+        <span className="mg-value"><ReadingSlot reading={dataBytes} placeholder="w-12" failed={() => translate('extensions.manageDataUnreadable')}>
+          {(bytes) => (bytes === 0 ? translate('extensions.manageDataNone') : formatSize(bytes))}
+        </ReadingSlot></span>
         <Button type="button" variant="outline" size="sm" disabled={readOnly} onClick={onClearData} data-testid="app-manage-data-clear">{translate('extensions.manageDataClear')}</Button>
       </Row>
     ) });
