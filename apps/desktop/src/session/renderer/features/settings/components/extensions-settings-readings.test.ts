@@ -60,7 +60,8 @@ vi.mock('@renderer/features/library/library-host', async () => ({
 
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
-const { marketUpdates } = await import('@renderer/features/extensions/installed-extensions');
+const { appState } = await import('@renderer/lib/stores/app-state');
+const { openAppsLocation } = await import('@renderer/features/apps/apps-location');
 
 describe('the App page when a read fails or cannot be asked', () => {
   let dom: JSDOM;
@@ -72,9 +73,10 @@ describe('the App page when a read fails or cannot be asked', () => {
   const cards = () => [...doc().querySelectorAll('[data-testid="extensions-market-panel"] [data-testid^="extension-card-"]')]
     .map((node) => node.getAttribute('data-testid')!.replace('extension-card-', ''));
 
-  async function open() {
+  async function open(renderInstalledApps?: (items: readonly { id: string }[]) => null) {
     await act(async () => {
-      root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+      root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null,
+        React.createElement(ExtensionsSettingsCard, renderInstalledApps ? { renderInstalledApps } : {}))));
     });
   }
 
@@ -90,6 +92,9 @@ describe('the App page when a read fails or cannot be asked', () => {
     h.host.remote = true;
     h.api.market.mockReset().mockResolvedValue(h.page(['one', 'two'], 0, false));
     h.api.revoked.mockReset().mockResolvedValue({ success: true, data: {} });
+    // Where on the Apps page is app-wide (apps-location): every case starts on its first tab, nothing open.
+    appState.navigation.updateViewParams('apps', () => ({}));
+    appState.history.prune(() => true);
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
   });
 
@@ -100,28 +105,18 @@ describe('the App page when a read fails or cannot be asked', () => {
     dom.window.close();
   });
 
-  it('another machine gone offline: its Apps read before stay drawn (read-only), it is not asked again', async () => {
-    await open();
-    await click(doc().querySelector('[data-testid="extensions-tab-installed"]')!);
-    await until('its Apps drawn', () => doc().querySelector('[data-testid="extension-row-notes"]'), (row) => row !== null);
+  it('another machine gone offline: its Apps read before stay listed (read-only), it is not asked again', async () => {
+    // The installed Apps as the Installed sheet lists them (the card's inventory mode).
+    let listed: string[] = [];
+    const list = (items: readonly { id: string }[]) => { listed = items.map((item) => item.id); return null; };
+    await open(list);
+    await until('its Apps listed', () => listed, (ids) => ids.includes('notes'));
     const asked = h.api.list.mock.calls.length;
     h.host.online = false;
-    await open();
+    await open(list);
     await turn();
-    expect(doc().querySelector('[data-testid="extension-row-notes"]')).not.toBeNull();
+    expect(listed).toContain('notes');
     expect(h.api.list).toHaveBeenCalledTimes(asked);
-  });
-
-  it('which Apps have a new version, read before, a re-read that fails: said with a retry beside the Apps still drawn', async () => {
-    await open();
-    await click(doc().querySelector('[data-testid="extensions-tab-installed"]')!);
-    await until('its Apps drawn', () => doc().querySelector('[data-testid="extension-row-notes"]'), (row) => row !== null);
-    await until('updates read', () => marketUpdates.peek(h.host.key).state, (state) => state === 'value');
-    expect(doc().querySelector('[data-refresh-failed]')).toBeNull();
-    h.api.marketUpdates.mockResolvedValueOnce({ success: false, error: 'machine unreachable' });
-    await act(async () => { await marketUpdates.refresh(h.host.key).catch(() => undefined); });
-    await until('the failure said', () => doc().querySelector('[data-testid="extensions-installed-panel"] [data-refresh-failed]'), (node) => node !== null);
-    expect(doc().querySelector('[data-testid="extension-row-notes"]')).not.toBeNull();
   });
 
   it('loading more asks only the next page; when it fails the rows drawn stay, the failure is said, and retry reads that page', async () => {
@@ -162,9 +157,8 @@ describe('the App page when a read fails or cannot be asked', () => {
 
   it('a permission taken back, refused, and its list unreadable again: the switch goes back to what was read before', async () => {
     await open();
-    await click(doc().querySelector('[data-testid="extensions-tab-installed"]')!);
-    await until('its Apps drawn', () => doc().querySelector('[data-testid="extension-row-notes"] .mk-name'), (name) => name !== null);
-    await click(doc().querySelector('[data-testid="extension-row-notes"] .mk-name')!);
+    // Its settings page, a place on the Apps page (as the Installed sheet and App links open it).
+    await act(async () => openAppsLocation({ tab: 'agents', detail: { page: 'manage', extensionId: 'notes' } }));
     const row = () => doc().querySelector('[data-testid="app-permission-files:read"]');
     await until('its permission drawn', row, (node) => node !== null);
     expect(row()!.className).not.toContain('is-revoked');

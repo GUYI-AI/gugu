@@ -13,7 +13,7 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<obj
 vi.mock('@/lib/agentShare', async (original) => ({ ...(await original<object>()), shareAgentWithFriends: vi.fn() }));
 
 const { GroupInviteCard } = await import('@/components/groups/GroupInviteCard');
-const { GroupInviteQrShare, GroupJoinConfirmDialog, GroupInviteJoinModal } = await import('@/components/contacts/GroupInvite');
+const { GroupInviteRow, GroupJoinConfirmDialog, GroupInviteJoinModal } = await import('@/components/contacts/GroupInvite');
 const { ShareAgentModal } = await import('@/components/contacts/ShareAgentModal');
 const { shareAgentWithFriends } = await import('@/lib/agentShare');
 const { chatService } = await import('@/lib/chat');
@@ -111,15 +111,15 @@ describe('share and invite surfaces use the approved roles without changing acti
     expect(onJoin).not.toHaveBeenCalled();
   });
 
-  it('the contacts QR section waits for the group, renders the invite sheet\'s code, and copies the same link', async () => {
+  it('the contacts invite row waits for the group, renders the invite sheet\'s actions, and copies the same link', async () => {
     const settings = deferred<Awaited<ReturnType<typeof chatService.getGroupChatSettings>>>();
     const getSettings = vi.spyOn(chatService, 'getGroupChatSettings').mockReturnValue(settings.promise);
     vi.spyOn(chatService, 'getGroupCollab').mockResolvedValue({ snapshot: { humans: [], agents: [] }, identities: [] } as never);
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
-    // The QR section reads the group's roster through the account's IM library.
+    // The invite row reads the group's roster (for the poster) through the account's IM library.
     const repository = await openImRepository('user-1', { adapter: createMemoryLocalSyncDb() });
     onTestFinished(() => repository.close());
-    await render(createNode(GroupInviteQrShare, { group: { id: group.id, kind: 'group', name: group.name, public_id: 7333, member_count: 3, avatar_url: null, is_muted: false } }));
+    await render(createNode(GroupInviteRow, { group: { id: group.id, kind: 'group', name: group.name, public_id: 7333, member_count: 3, avatar_url: null, is_muted: false } }));
     expect(harness.container.querySelector('[data-testid="group-invite-copy-link"]')).toBeNull();
     await act(async () => settings.resolve({
       my_role: 'member', can_manage: false, can_dissolve: false, can_archive_topic: false,
@@ -128,7 +128,8 @@ describe('share and invite surfaces use the approved roles without changing acti
       agent_join_approval: false, join_mode: 'approval', hide_history: false, avatar_url: null, is_discoverable: false,
       agent_flood_threshold: null, agent_flood_threshold_effective: 5,
     }));
-    await until('the actual QR image loaded', () => !!harness.container.querySelector<HTMLImageElement>('img')?.naturalWidth);
+    await until('the invite actions rendered', () => !!harness.container.querySelector('[data-testid="group-invite-link"][data-layout="bar"]'));
+    expect(harness.container.querySelector('img')).toBeNull();
     expect(getSettings).toHaveBeenCalledWith(group.id);
     const copy = harness.container.querySelector<HTMLButtonElement>('[data-testid="group-invite-copy-link"]')!;
     expect(copy.title).toBe('https://gugu.nextmind.space/j/?7333.ASNFZ4mrze8BI0VniavN7w');

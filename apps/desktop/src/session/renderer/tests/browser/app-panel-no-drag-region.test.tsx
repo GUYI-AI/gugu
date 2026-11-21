@@ -13,7 +13,6 @@
  *     while the conversation column's top band still is one and its buttons (search, gear, expand) are not;
  *   · another App's page keeps the window band above it, as before, and that band still does not reach the page.
  */
-import { motionValue } from 'framer-motion';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,10 +44,6 @@ vi.mock('@renderer/lib/ipc', () => {
 vi.mock('@renderer/lib/layout/navigation-provider', async (original) => ({
   ...await original<typeof import('@renderer/lib/layout/navigation-provider')>(),
   useParams: () => ({ params: { appId: APP }, setParams: () => undefined }),
-}));
-vi.mock('@renderer/lib/layout/layout-provider', async (original) => ({
-  ...await original<typeof import('@renderer/lib/layout/layout-provider')>(),
-  useWorkspaceLayoutContext: () => ({ leftAnimatedWidth: motionValue(0) }),
 }));
 // The App's page itself is the stand-in webview below; the slot only holds its place, as the real one does.
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({

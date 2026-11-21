@@ -11,7 +11,8 @@ import { platform } from '@/platform';
 import { billingLinksAvailable, GUGU_BILLING_URL, GUGU_TOPUP_URL } from '@/lib/appLinks';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@/components/ui/Button';
-import { SubscriptionServiceRow } from './SubscriptionServiceRow';
+import type { ReactNode } from 'react';
+import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives';
 import './subscriptions.css';
 
 const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
@@ -25,7 +26,8 @@ const deviceFreeCredits = replica({
   persist: { maxBytes: 256, maxEntries: 1 },
 });
 
-export function GuguSubscriptionRow() {
+/** Gugu membership: the plan on a summary surface, then its credits as rows. `actions` sit beside top-up (the Settings page's refresh). */
+export function GuguSubscriptionRow({ actions }: { actions?: ReactNode } = {}) {
   const { translate, locale } = useSessionMessages();
   const { t } = useTranslation('settings');
   const { user } = useAuth();
@@ -52,83 +54,44 @@ export function GuguSubscriptionRow() {
             : translate('subscriptions.gugu.noExpiry')
           : translate('subscriptions.payer.unknown');
   return (
-    <SubscriptionServiceRow
-      name={translate('subscriptions.gugu.name')}
-      logo={<img className="subscription-gugu-icon" src={APP_ICON_URL} alt="" width={24} height={24} />}
-      badge={badge}
-      identity={identity}
-      scope={<span className="subscription-credit-scope">{translate('subscriptions.gugu.shared')}</span>}
-      testId="subscription-row-gugu"
-      action={billingLinksAvailable() ? (
-        <Button variant="ghost" size="sm" nativeButton={false} render={<a href={GUGU_BILLING_URL} target="_blank" rel="noreferrer" />}>
-          {translate('subscriptions.gugu.manage')}
-          <ArrowUpRight className="ml-1 size-3" />
-        </Button>
-      ) : undefined}
-    >
-      <div className="subscription-credit-summary">
-        <span className="subscription-credit-label">{translate('subscriptions.gugu.available')}</span>
-        <strong className="subscription-credit-value" data-testid="subscription-credits-balance">
-          {amount(power && formatCredits(power.spendable))}
-        </strong>
-        {power && compareCreditAmounts(power.held, 0) > 0 && <p className="subscription-note">{translate('subscriptions.gugu.reserved', { credits: formatCredits(power.held) })}</p>}
-      </div>
-      <div className="subscription-quota-grid">
-        <div className="subscription-quota" data-testid="subscription-period">
-          <div className="subscription-quota-label">
-            <span>{translate('subscriptions.gugu.period')}</span>
-            <strong>
-              <span data-testid="subscription-period-credits">{amount(period && formatCredits(period.remaining))}</span>
-              {period && <small> / {formatCredits(period.limit)}</small>}
-            </strong>
-          </div>
-          {period && (
-            <>
-              <div
-                className="subscription-meter"
-                role="meter"
-                aria-label={translate('subscriptions.gugu.period')}
-                aria-valuemin={0}
-                aria-valuemax={1}
-                aria-valuenow={creditRatio(period.remaining, period.limit)}
-                aria-valuetext={`${formatCredits(period.remaining)} / ${formatCredits(period.limit)}`}
-              >
-                <i style={{ width: `${creditRatio(period.remaining, period.limit) * 100}%` }} />
-              </div>
-              <p>{translate('subscriptions.gugu.resets', { date: date(period.freesAt) })}</p>
-            </>
-          )}
-          {/* Not read yet: the meter's and the reset line's places are kept (❌ inserted later, pushing the row below down). */}
-          {unknown && (
-            <>
-              <Unknown className="mt-2 block h-[3px] w-full" />
-              <p><Unknown className="w-32" /></p>
-            </>
-          )}
-        </div>
-        <div className="subscription-quota" data-testid="subscription-wallet">
-          <div className="subscription-quota-label subscription-wallet-label">
-            <span>{translate('subscriptions.gugu.wallet')}</span>
-            <strong data-testid="subscription-wallet-credits">{amount(power && formatCredits(power.walletCredits))}</strong>
-          </div>
-        </div>
-      </div>
-      {(balanceError || windowsError) && (
-        <p className="subscription-error" role="status">
-          {translate('subscriptions.unavailable.error', { message: balanceError || windowsError || '' })}
-        </p>
-      )}
-      {deviceFull && !accountError && plan?.tier === 'free' && (
-        <p className="subscription-note">{t('usage.na.deviceFull')}</p>
-      )}
-      {billingLinksAvailable() && <div className="subscription-credit-actions">
-        <Button variant="secondary" size="sm" nativeButton={false}
-          render={<a href={GUGU_TOPUP_URL} target="_blank" rel="noreferrer" />}
-          data-testid="membership-open-web">
-          {t('usage.na.openWebBilling')}
-          <ArrowUpRight className="ml-1 size-3" />
-        </Button>
-      </div>}
-    </SubscriptionServiceRow>
+    <div className="contents" data-testid="subscription-row-gugu">
+      <SettingsGroup presentation="summary">
+        <SettingsRow
+          leading={<img className="subscription-gugu-icon" src={APP_ICON_URL} alt="" width={24} height={24} />}
+          title={<>{translate('subscriptions.gugu.name')}{badge && <span className="subscription-plan-badge">{badge}</span>}</>}
+          description={<>{identity} · {translate('subscriptions.gugu.shared')}</>}
+          control={billingLinksAvailable() ? (
+            <Button variant="secondary" size="sm" nativeButton={false} render={<a href={GUGU_BILLING_URL} target="_blank" rel="noreferrer" />}>
+              {translate('subscriptions.gugu.manage')}<ArrowUpRight className="ml-1 size-3" />
+            </Button>
+          ) : undefined}
+        />
+      </SettingsGroup>
+      <SettingsGroup footer={accountError
+        ? <SettingsNote tone="danger" role="status">{translate('subscriptions.unavailable.error', { message: accountError })}</SettingsNote>
+        : deviceFull && plan?.tier === 'free' ? <SettingsNote>{t('usage.na.deviceFull')}</SettingsNote> : undefined}>
+        <SettingsRow title={translate('subscriptions.gugu.available')}
+          description={power && compareCreditAmounts(power.held, 0) > 0 ? translate('subscriptions.gugu.reserved', { credits: formatCredits(power.held) }) : undefined}
+          control={<span className="subscription-figure" data-testid="subscription-credits-balance">{amount(power && formatCredits(power.spendable))}</span>} />
+        <SettingsRow title={translate('subscriptions.gugu.period')} data-testid="subscription-period"
+          description={period ? <>
+            <span className="subscription-meter" role="meter" aria-label={translate('subscriptions.gugu.period')}
+              aria-valuemin={0} aria-valuemax={1} aria-valuenow={creditRatio(period.remaining, period.limit)}
+              aria-valuetext={`${formatCredits(period.remaining)} / ${formatCredits(period.limit)}`}>
+              <i style={{ width: `${creditRatio(period.remaining, period.limit) * 100}%` }} />
+            </span>
+            {translate('subscriptions.gugu.resets', { date: date(period.freesAt) })}
+          </> : unknown ? <Unknown className="w-32" /> : undefined}
+          control={<span className="subscription-figure"><span data-testid="subscription-period-credits">{amount(period && formatCredits(period.remaining))}</span>
+            {period && <small> / {formatCredits(period.limit)}</small>}</span>} />
+        <SettingsRow title={translate('subscriptions.gugu.wallet')} data-testid="subscription-wallet"
+          control={<span className="subscription-figure" data-testid="subscription-wallet-credits">{amount(power && formatCredits(power.walletCredits))}</span>} />
+        {(billingLinksAvailable() || actions) && <SettingsRow
+          control={<>{actions}{billingLinksAvailable() && <Button variant="secondary" size="sm" nativeButton={false}
+            render={<a href={GUGU_TOPUP_URL} target="_blank" rel="noreferrer" />} data-testid="membership-open-web">
+            {t('usage.na.openWebBilling')}<ArrowUpRight className="ml-1 size-3" />
+          </Button>}</>} />}
+      </SettingsGroup>
+    </div>
   );
 }

@@ -7,7 +7,6 @@ import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { messageForUser } from '@/lib/userFacingError';
 import { Unknown } from '@/components/ui/Unknown';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
   useSessionViewContext,
@@ -27,6 +26,7 @@ import { directToolsUnavailableText } from '@renderer/features/remote-hosts/work
 
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
+import { openAppsLocation } from '@renderer/features/apps/apps-location';
 
 /**
  * @@@sessionpage layout — workspace-pane empty state. The actions and
@@ -220,7 +220,6 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
   entries: WorkspacePanelAction[];
 }) {
   const { translate } = useSessionMessages();
-  const { navigate } = useNavigate();
 
   const builtins = entries.filter((entry) => entry.section !== 'extensions');
   const extensions = entries.filter((entry) => entry.section === 'extensions');
@@ -231,7 +230,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
     (index) => enabledEntries[index]?.onClick()
   );
 
-  const openExtensionsSettings = () => navigate('apps');
+  const openExtensionsSettings = () => openAppsLocation({ tab: 'market' });
 
   const renderAction = (entry: WorkspacePanelAction, className?: string) => {
     if (entry.unknown) return <div className={cn(ACTION_BOX, className)}><Unknown className="w-28" /></div>;

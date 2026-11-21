@@ -109,6 +109,23 @@ describe('native Codex child-thread consumption', () => {
       source: { subAgent: { thread_spawn: { parent_thread_id: 'root', agent_path: '/root/audit', agent_nickname: 'Ada' } } } } });
     expect(spawned()).toMatchObject({ title: 'Ada', description: longPrompt });
   });
+  it('leaves follow-ups and waits on existing children to the parent turn as its own steps', () => {
+    const r = rig(); r.launch();
+    const interacted = { type: 'subAgentActivity', id: 'followup', kind: 'interacted', agentThreadId: 'child', agentPath: '/root/audit' };
+    const wait = { type: 'collabAgentToolCall', id: 'wait', tool: 'wait', senderThreadId: 'root', receiverThreadIds: [], agentsStates: {} };
+    expect(r.send('item/completed', { threadId: 'root', item: interacted })).toBe(false);
+    expect(r.send('item/started', { threadId: 'root', item: { ...wait, status: 'inProgress' } })).toBe(false);
+    expect(r.send('item/completed', { threadId: 'root', item: { ...wait, status: 'completed' } })).toBe(false);
+    expect(r.controller.replayItem(interacted)).toBe(false);
+    expect(r.controller.replayItem(wait)).toBe(false);
+    // A follow-up to a child first seen here (launched before this process) is its card, not also a step.
+    const older = { ...interacted, id: 'f2', agentThreadId: 'older', agentPath: '/root/older' };
+    expect(r.send('item/started', { threadId: 'root', item: older })).toBe(true);
+    expect(r.send('item/completed', { threadId: 'root', item: older })).toBe(true);
+    // A launch is still the child's card, even before it names its receiver.
+    expect(r.send('item/started', { threadId: 'root', item: { type: 'collabAgentToolCall', id: 'spawn', tool: 'spawnAgent', receiverThreadIds: [] } })).toBe(true);
+  });
+
   it('preserves request and model through standard child notifications and keeps native state authoritative', () => {
     const r = rig();
     r.send('item/completed', { threadId: 'root', item: { type: 'collabAgentToolCall', id: 'request',

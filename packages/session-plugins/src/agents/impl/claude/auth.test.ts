@@ -1,6 +1,8 @@
 import type { AgentAuthContext } from '@gugu/session-core/agents/plugins';
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
-import { claudeAuthStatus } from './auth';
+import { buildClaudeLoginCommand, claudeAuthStatus } from './auth';
+import { plugin } from './index';
 
 function ctx(overrides: Partial<AgentAuthContext> = {}): AgentAuthContext {
   return {
@@ -217,4 +219,31 @@ it('reports the configuration file origin when its token overrides inherited env
   context.fs.read = vi.fn(async path => path === '.claude/settings.json'
     ? JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'fixture-config' } }) : null);
   await expect(claudeAuthStatus(context)).resolves.toMatchObject({ kind: 'authenticated', credentialSource: 'config-file' });
+});
+
+describe('buildClaudeLoginCommand', () => {
+  it('macOS:先让系统解锁登录钥匙串,再原样起 `claude auth login`', () => {
+    const command = buildClaudeLoginCommand({ cli: '/opt/claude' }, 'claude-login', 'darwin')!;
+    expect(command.command).toBe('/bin/sh');
+    expect(command.args[1]).toContain('/usr/bin/security unlock-keychain -u');
+    expect(command.args.slice(2)).toEqual(['/opt/claude', 'auth', 'login']);
+    // 解锁那一步失败(人点了取消、没有钥匙串)也照样起登录:结局由 CLI 说。这里没有 /usr/bin/security。
+    if (process.platform !== 'win32') {
+      const output = execFileSync(command.command, [command.args[0]!, command.args[1]!, '/bin/echo', 'auth', 'login'], {
+        encoding: 'utf8',
+      });
+      expect(output).toBe('auth login\n');
+    }
+  });
+
+  it('别的系统不改命令', () => {
+    expect(buildClaudeLoginCommand({ cli: 'claude' }, 'claude-login', 'linux')).toBeNull();
+    expect(buildClaudeLoginCommand({ cli: 'claude.exe' }, 'claude-login', 'win32')).toBeNull();
+  });
+
+  it('登录进程不自己开浏览器:`BROWSER=true`,链接由登录窗口给', () => {
+    const auth = plugin.capabilities.auth;
+    const method = auth?.kind === 'supported' ? auth.methods.find((candidate) => candidate.id === 'claude-login') : undefined;
+    expect(method?.kind === 'cli-login' ? method.env : undefined).toEqual({ BROWSER: 'true' });
+  });
 });

@@ -60,5 +60,5 @@ export const MarketExtensionDevices = observer(function MarketExtensionDevices({
     },
     refresh: ({ host }) => refreshTag(INSTALLED, host.extensions.key),
   });
-  return <MarketDevicePicker {...picker} />;
+  return <MarketDevicePicker {...picker} size="lg" />;
 });

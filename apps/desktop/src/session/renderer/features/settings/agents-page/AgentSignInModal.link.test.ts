@@ -181,6 +181,24 @@ describe('终端登录不摆终端:链接 + 等待 + 填码(#2507)', () => {
     expect(dom.window.document.body.textContent).toContain('agentsPage.signInRetry');
   });
 
+  it('钥匙串锁着、Claude Code 存不下登录 ⇒ 不摆像是码错了的原话,说清楚去解锁再重试', async () => {
+    await render();
+    const tail = "Paste code here if prompted > Login failed: Couldn't save your login. If your Mac's keychain is locked, unlock it and log in again.";
+    await set({ status: { kind: 'unauthenticated' }, login: login({ exit: { exitCode: 1, signal: null, tail } }) });
+    expect(q('agent-sign-in-keychain-locked')?.textContent).toBe('agentsPage.signInKeychainLocked');
+    expect(q('agent-sign-in-failed')?.textContent).not.toContain("Couldn't save your login");
+    expect(dom.window.document.body.textContent).toContain('agentsPage.signInRetry');
+  });
+
+  it('「粘贴」把剪贴板里的码填进框里,交不交由人点', async () => {
+    vi.stubGlobal('navigator', { clipboard: { readText: async () => ' abc123#state\n' } });
+    await render();
+    await set({ status: { kind: 'unauthenticated' }, login: login({ awaitingInput: true, inputPromptCount: 1 }) });
+    await act(async () => q('agent-sign-in-code-paste')!.click());
+    expect((q('agent-sign-in-code-input') as HTMLInputElement).value).toBe('abc123#state');
+    expect(mocks.binding?.sendInput).not.toHaveBeenCalled();
+  });
+
   it('登录起不来 ⇒ 原文进日志,界面只说没登录成功并给「重试」', async () => {
     mocks.startFailure = new Error('host rpc: ECONNRESET at 127.0.0.1:41507');
     await render();

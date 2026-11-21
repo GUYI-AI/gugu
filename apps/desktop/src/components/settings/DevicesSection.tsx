@@ -37,7 +37,6 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu, MenuItem, MenuSeparator } from '../ui/Menu'
-import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { SearchField } from '../ui/SearchField'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { cn } from '../../lib/cn'
@@ -47,7 +46,7 @@ import { supersededBy } from '../../lib/deviceSuperseded'
 import { consumeAddServerIntent } from '../../lib/addServerIntent'
 import { consumeDeviceActionsIntent } from '../../lib/deviceActionsIntent'
 import { useDeviceRemoval } from './useDeviceRemoval'
-import { SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
+import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { DeviceActionsPage } from './DeviceActionsPage'
 import { deviceAcceptsWork } from '@gugu/core/cloud/cloudComputer'
 import { withoutAssistantHome } from '../../lib/assistantHome'
@@ -76,7 +75,7 @@ const log = rendererLogger('devices')
 // ❌ 出现「· 咕咕 0.2.51」那种孤零零挂在行首的分隔符。第一项(状态)用同宽的左内边距占位。
 const META_SEP = "ml-2"
 
-const DEVICE_LIST_CLASS = 'flex flex-col rounded-[var(--radius-document)] bg-foreground/[0.025] p-1 dark:bg-foreground/[0.04]'
+const DEVICE_LIST_CLASS = 'gg-settings-device-list'
 
 export function DevicesSection({
   onUpgrade,
@@ -194,11 +193,6 @@ export function DevicesSection({
 
   return (
     <SettingsPage data-testid={AUTOMATION_TEST_IDS.settingsDevicesPane}>
-      {canAddServer && !addingServer && (
-        <div className="flex justify-end">
-          <AddServerMenu defaultOpen={addMenuFromIntent} onPick={setAddingServer} testId="settings-add-server-button" />
-        </div>
-      )}
 
       {addingServer && (
         <AddServerPanel
@@ -229,7 +223,7 @@ export function DevicesSection({
       {loading && devices.length === 0 && <SettingsNote>{t('devices.loading')}</SettingsNote>}
 
       {thisDevice && canAddServer && (
-        <div className="gg-settings-card window-no-drag-region">
+        <SettingsGroup presentation="navigation">
           <SettingsRow
             data-testid="settings-device-actions-entry"
             leading={<ListChecks size={18} />}
@@ -238,7 +232,7 @@ export function DevicesSection({
             control={<ChevronRight size={16} />}
             onClick={() => setActionsFor(thisDevice.device_id)}
           />
-        </div>
+        </SettingsGroup>
       )}
 
       {showTools && (
@@ -256,24 +250,23 @@ export function DevicesSection({
         </div>
       )}
 
-      <div
-        className={cn(DEVICE_LIST_CLASS, visibleActive.length === 0 && 'hidden')}
-        role="list"
-      >
-        {visibleActive.map(renderRow)}
-      </div>
+      <SettingsGroup>
+        <div className={cn(DEVICE_LIST_CLASS, visibleActive.length === 0 && 'hidden')} role="list">
+          {visibleActive.map(renderRow)}
+        </div>
+        {/* Adding a machine is the group's last row; where this host cannot add one, the row still says what it brings. */}
+        {!addingServer && (canAddServer || !showTools) && (
+          <SettingsRow leading={<Plus size={18} />} data-testid="settings-devices-empty"
+            title={t('devices.addServer.open')}
+            description={!showTools ? t('devices.empty.hint') : undefined}
+            control={canAddServer ? <AddServerMenu defaultOpen={addMenuFromIntent} onPick={setAddingServer} testId="settings-add-server-button" /> : undefined} />
+        )}
+      </SettingsGroup>
 
       <DeviceMachineArchive count={visibleArchived.length} listClassName={DEVICE_LIST_CLASS}>{visibleArchived.map(renderRow)}</DeviceMachineArchive>
 
       {showTools && visible.length === 0 && (
         <div className="text-[length:var(--font-body)] text-[var(--muted-fg)]" data-testid="settings-devices-no-match">{t('devices.noMatch')}</div>
-      )}
-
-      {!loading && !error && !showTools && !addingServer && (
-        <div className="flex flex-col items-center gap-3 py-5" data-testid="settings-devices-empty">
-          <PaneEmptyState caption={devices.some((d) => d.is_current_device) ? t('devices.empty.title') : t('devices.empty.none')} hint={t('devices.empty.hint')} />
-          {canAddServer && <AddServerMenu primary onPick={setAddingServer} />}
-        </div>
       )}
 
       {dialogs}
@@ -560,15 +553,15 @@ function DeviceRow({
       data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
       data-device-id={device.device_id}
       data-kind={model.kind}
-      className="flex items-start gap-3 rounded-[var(--radius-control)] px-3 py-[10px] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--hover)] motion-reduce:transition-none"
+      className="gg-settings-device-row flex items-start gap-3"
     >
       <div className="min-w-0 flex-1">
         {editing ? (
           <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} />
         ) : (
           <div className="flex min-w-0 flex-wrap items-center gap-[7px]">
-            <span className="truncate text-[length:var(--font-body)] font-semibold text-[var(--fg)]">{device.label}</span>
-            {model.kind === 'this' && <Chip tone="accent">{t('devices.current')}</Chip>}
+            <span className="truncate text-[length:var(--font-body)] text-[var(--fg)]">{device.label}</span>
+            {model.kind === 'this' && <Chip>{t('devices.current')}</Chip>}
             {(restarting || hostWaiting) && <Chip tone="accent" data-testid="settings-device-restarting">{t('devices.update.restarting')}</Chip>}
             {!restarting && !hostWaiting && (model.update?.state === 'ready' || model.update?.state === 'downloading') && (
               <Chip

@@ -130,7 +130,7 @@ describe('#2503 用量与订阅积分的诚实性', () => {
       for (const field of ['subscription-credits-balance', 'subscription-period-credits', 'subscription-wallet-credits']) {
         expect(harness.container.querySelector(`[data-testid="${field}"]`)?.textContent?.trim()).toBe('<0.01')
       }
-      expect(harness.container.querySelector('.subscription-credit-summary')?.textContent).toContain('预留 <0.01')
+      expect(harness.container.querySelector('[data-testid="subscription-credits-balance"]')?.closest('.gg-settings-row')?.textContent).toContain('预留 <0.01')
       expect(harness.container.querySelector('[data-testid="subscription-period"]')?.textContent).toContain('/ <0.01')
     } finally { harness.cleanup() }
   })
@@ -294,7 +294,7 @@ describe('#2503 用量与订阅积分的诚实性', () => {
     else vi.mocked(readCreditV2Account).mockResolvedValue(account({ windowsError: new Error('quota unavailable') }))
     const harness = await renderMembership()
     try {
-      expect(document.querySelector('.subscription-error')?.textContent).toContain(`${source} unavailable`)
+      expect(document.querySelector('.gg-settings-note[data-tone="danger"]')?.textContent).toContain(`${source} unavailable`)
       expect(document.querySelector('[data-testid="subscription-credits-balance"]')?.textContent?.trim()).toBe('—')
       expect(document.querySelector('[data-testid="subscription-wallet-credits"]')?.textContent).toBe('—')
     } finally { harness.cleanup() }
@@ -317,7 +317,7 @@ describe('#2503 用量与订阅积分的诚实性', () => {
     try {
       const row = document.querySelector('[data-testid="subscription-row-gugu"]')!
       expect(row.querySelector('.subscription-plan-badge')?.textContent).toBe('Free')
-      expect(row.querySelector('.subscription-service-identity')?.textContent).toBe('无到期日')
+      expect(row.querySelector('.gg-settings-row-description')?.textContent).toMatch(/^无到期日 · /)
     } finally { harness.cleanup() }
   })
 

@@ -1,11 +1,11 @@
 import { Folder, Globe, Plus, X } from '@/lib/icons';
 import { FileIcon } from '@renderer/lib/editor/file-icon';
 import { Button } from '@renderer/lib/ui/button';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabViewContext } from '../tabs/core/tab-provider';
 import { recentToolPanel, useRecentTools, type RecentTool } from './workspace-recent-tools';
 import { PaneEmptyStateAction, type WorkspacePanelAction, type WorkspacePanelSection } from '../sessions/pane-empty-state';
+import { openAppsLocation } from '@renderer/features/apps/apps-location';
 
 type WorkspaceRecentItem = {
   id: string;
@@ -20,7 +20,6 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
   recent: readonly WorkspaceRecentItem[];
 }) {
   const { translate } = useSessionMessages();
-  const { navigate } = useNavigate();
   const sectionLabels: Record<WorkspacePanelSection, string> = {
     builtin: translate('browser.workspaceBuiltins'),
     extensions: translate('extensions.appsSection'),
@@ -39,7 +38,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
               {item.trailing && <span className="absolute inset-y-0 right-1 flex items-center">{item.trailing}</span>}
             </div>)}
             {section === 'extensions' && <PaneEmptyStateAction icon={<Plus className="size-3.5" />} label={translate('browser.workspaceAddApp')}
-              onClick={() => navigate('apps')} className="border border-border bg-background" />}
+              onClick={() => openAppsLocation({ tab: 'market' })} className="border border-border bg-background" />}
           </div>
         </section>)}
         <section aria-label={translate('browser.workspaceRecent')} className="flex flex-col gap-3">
