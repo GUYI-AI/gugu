@@ -132,8 +132,6 @@ const phone: AppsHere = {
 
 export const appsHere: AppsHere | null = platform.kind === 'electron' ? desktop : platform.capabilities.mobileApps ? phone : null
 
-export { HERE_HOST } from './hereHost'
-
 // The phone reads what it has installed once the page is up, so the cards and the panel know it from the start.
 if (appsHere === phone) {
   void phoneApps.ready().catch((error: unknown) => log.error({ error: error instanceof Error ? error.message : String(error) }, 'the phone App store could not be read'))

@@ -18,12 +18,18 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
   ...await importOriginal<typeof import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')>(),
   useInstalledApps: () => ({ state: 'value', stale: false, error: market.installedError, value: { manifests: [manifest], unreadable: null, isEnabled: () => true, isPreinstalled: () => false, mainTabOf: () => null } }),
 }))
+// The catalog's reading, as the page reads it (`useReplica(phoneMarketCatalog, …)`).
+vi.mock('../../../../apps/desktop/src/lib/replica', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../apps/desktop/src/lib/replica')>()
+  const useReplica = ((model, ...rest) => model === ('catalog' as never) ? { state: 'value', stale: false, error: null, value: { entries: [] } } : actual.useReplica(model, ...rest)) as typeof actual.useReplica
+  return { ...actual, useReplica }
+})
 vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () => ({
   PHONE_HOST: 'phone',
   phoneProductApi: {},
   phoneSearchRows: (items: unknown[]) => items,
   useOfferedVersions: () => ({ state: 'value', stale: false, error: null, value: { offered: {}, gone: [] } }),
-  usePhoneMarketPage: () => ({ state: 'value', stale: false, error: null, value: { entries: [] } }),
+  phoneMarketCatalog: 'catalog',
   phoneMarketRows: () => [],
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/AppsSection', () => ({

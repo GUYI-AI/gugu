@@ -14,7 +14,8 @@ import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { ChevronLeft } from '@/lib/icons'
 import { IconButton } from '@/components/ui/IconButton'
 import { SettingsNote } from '@/components/settings/SettingsPrimitives'
-import { usePhoneMarketPage, phoneMarketRows } from '@/components/settings/phoneMarketPage'
+import { phoneMarketCatalog, phoneMarketRows } from '@/components/settings/phoneMarketPage'
+import { useReplica } from '@/lib/replica'
 import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from './PhoneMarketInstallSheet'
 import { usePhoneAgentInstallTargets, usePhoneMarketInstalledAppIds } from './phoneMarketTargets'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
@@ -46,7 +47,7 @@ export const PhoneMarketAgents = observer(function PhoneMarketAgents({ device, t
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<Category>('all')
   const [detail, setDetail] = useState<AgentPayload | null>(null)
-  const market = usePhoneMarketPage()
+  const market = useReplica(phoneMarketCatalog, ['phone'])
   // The assistant's row, once the catalog is read.
   const assistant = !installed && category !== 'coding' && market.state === 'value'
     ? phoneMarketRows(market.value.entries, '').find(item =>

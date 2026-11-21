@@ -35,11 +35,6 @@ export const phoneMarketCatalog = replica({
   watch: { start: () => phoneApps.market.onRefreshed((refreshed) => { if (refreshed.outcome === 'changed') void phoneMarketCatalog.refresh() }) },
 })
 
-export function usePhoneMarketPage(platform: AppPlatform = 'phone'): Reading<{ entries: CloudMarketEntry[] }> {
-  return useReplica(phoneMarketCatalog, [platform])
-}
-
-
 export function phoneMarketRows(entries: Awaited<ReturnType<typeof phoneApps.market.entries>>, query: string): MarketListItem[] {
   const byId = new Map(entries.map((entry) => [entry.manifest.id, entry]))
   const records = entries.map((entry) => ({ ...entry, state: 'market' as const }))
