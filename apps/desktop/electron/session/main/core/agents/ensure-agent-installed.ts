@@ -67,21 +67,21 @@ export function describeAgentInstallFailure(provider: string, error: DependencyI
   const reason = ((): string => {
     switch (error.type) {
       case 'unknown-dependency':
-        return `咕咕不认识这个 agent / unknown agent (${error.id})`;
+        return `咕咕无法识别该 agent / unknown agent (${error.id})`;
       case 'no-install-command':
         return '这台机器的系统上没有可用的安装方式 / no install method for this platform';
       case 'not-detected-after-install':
-        return '安装命令跑完了,但仍找不到它 / installed, but still not found afterwards';
+        return '安装命令已完成,但仍未检测到该 agent / installed, but still not found afterwards';
       case 'unsupported-host':
-        return '这台机器上装不了,请先手动安装 / cannot install here, install it manually';
+        return '无法在这台机器上安装,请先手动安装 / cannot install here; install it manually';
       case 'permission-denied':
-        return '权限不够 / permission denied';
+        return '权限不足 / permission denied';
       case 'stalled':
         return `安装 ${Math.round(error.idleMs / 1000)} 秒没有任何进展,已停止 / install stalled and was stopped`;
       case 'cancelled':
         return '安装被中止 / install was cancelled';
       case 'pty-open-failed':
-        return `开不了终端来跑安装命令 / could not open a terminal: ${error.message}`;
+        return `无法打开终端运行安装命令 / could not open a terminal: ${error.message}`;
       case 'command-failed':
         return '安装命令出错 / install command failed';
     }
@@ -229,6 +229,6 @@ export function isHarnessRuntimeMissing(detail: string): boolean {
 
 /** 同 describeAgentInstallFailure:中文在前、英文在后,原文只进日志。 */
 export function describeHarnessRuntimeMissing(provider: string): string {
-  return `这台机器上的咕咕缺少运行 ${provider} 所需的组件,请把那台机器上的咕咕更新到最新版本后再试 / `
-    + `Gugu on this machine is missing a component ${provider} needs to run; update Gugu on that machine and try again`;
+  return `这台机器上的咕咕缺少运行 ${provider} 所需的组件,请将该设备上的咕咕更新到最新版本后重试 / `
+    + `Gugu on this machine is missing a component ${provider} needs to run. Update Gugu on the device and try again`;
 }

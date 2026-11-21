@@ -299,7 +299,7 @@ export function MemberProfileCard({
   const showEdits = isGroupProfile && !rosterUnknown && (editControls?.canChangeRole || editControls?.canRemove)
   const roleLabel = rosterUnknown ? <Unknown /> : member.role === 'owner' ? t('profile.roles.owner') : member.role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')
 
-  // Listen-mode (倾听模式): agent-only, group scope.
+  // Listen-mode (收听模式): agent-only, group scope.
   // member.listenMode comes from GroupAgentItem.listen_mode via toAgentProfile.
   // Defaults to 'active' when absent (matches DB default). The card mirrors
   // the real state read-only; mutation lives in GroupCollabPanel's own control.
@@ -430,7 +430,7 @@ export function MemberProfileCard({
           Not in prototype visual but preserved for existing tests and data display.
           咕咕号 always rendered — direct profiles need it too (test invariant).
           @@@1344(a) — group-agent 卡隐藏群语境字段(备注/群角色/咕咕号/任务/动作)，保留身份字段
-          (简介/邮箱)、倾听模式与管理区。直接资料卡与群里的人类成员卡保留完整字段。 ─── */}
+          (简介/邮箱)、收听模式与管理区。直接资料卡与群里的人类成员卡保留完整字段。 ─── */}
       {member.bio || member.email || !(isAgent && isGroupProfile) ? (
         <FieldList className={profileFieldsClass}>
           {member.bio ? <DataRow field="bio" label={t('profile.bio')} value={member.bio} /> : null}
@@ -457,7 +457,7 @@ export function MemberProfileCard({
         </FieldList>
       ) : null}
 
-      {/* ── 倾听模式 segmented control (prototype .lm/.lmseg, lines 453-457)
+      {/* ── 收听模式 segmented control (prototype .lm/.lmseg, lines 453-457)
           Agent-only, room scope. The parent supplies onChangeListenMode for the agent owner
           or a current source-group manager. Other viewers retain the read-only projection. ── */}
       {showListenMode ? (

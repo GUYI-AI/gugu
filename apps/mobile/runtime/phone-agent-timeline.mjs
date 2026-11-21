@@ -58,13 +58,13 @@ export function createPhoneTimelineRuntime({ root, store, authorize, historyFloo
     if (job.status === 'queued') return []
     const began = timestamp(job.startedAt ?? job.createdAt)
     const ended = timestamp(job.finishedAt ?? job.startedAt ?? job.createdAt)
-    const recorded = piEntries.some((entry) => (job.inputRecordId && /^pi:([^#]+)#/.exec(entry.key)?.[1] === job.inputRecordId) || entry.event?.kind === 'message' && entry.event.role === 'user' && (entry.at ?? 0) >= (began ?? 0) && (entry.event.text === job.prompt || entry.event.text.startsWith(`${job.prompt}\n\n手机宿主已根据真实主人确认`)))
+    const recorded = piEntries.some((entry) => (job.inputRecordId && /^pi:([^#]+)#/.exec(entry.key)?.[1] === job.inputRecordId) || entry.event?.kind === 'message' && entry.event.role === 'user' && (entry.at ?? 0) >= (began ?? 0) && (entry.event.text === job.prompt || entry.event.text.startsWith(`${job.prompt}\n\nThe phone host handled this action on the real owner's confirmation`)))
     // Completed Pi messages are stamped when the message starts; retry notices can arrive
     // after its end boundary. Keep those notices in their job's recorded turn, without
     // changing their timestamps or inventing another completion boundary.
     const inputIndex = piEntries.findIndex((entry) => job.inputRecordId
       ? /^pi:([^#]+)#/.exec(entry.key)?.[1] === job.inputRecordId
-      : entry.event?.kind === 'message' && entry.event.role === 'user' && (entry.at ?? 0) >= (began ?? 0) && (entry.event.text === job.prompt || entry.event.text.startsWith(`${job.prompt}\n\n手机宿主已根据真实主人确认`)))
+      : entry.event?.kind === 'message' && entry.event.role === 'user' && (entry.at ?? 0) >= (began ?? 0) && (entry.event.text === job.prompt || entry.event.text.startsWith(`${job.prompt}\n\nThe phone host handled this action on the real owner's confirmation`)))
     const inputKey = inputIndex < 0 ? null : /^pi:([^#]+)#/.exec(piEntries[inputIndex].key)?.[1]
     const nextInput = piEntries.findIndex((entry, index) => index > inputIndex && entry.event?.kind === 'message' && entry.event.role === 'user' && /^pi:([^#]+)#/.exec(entry.key)?.[1] !== inputKey)
     const end = job.status === 'done' && inputIndex >= 0

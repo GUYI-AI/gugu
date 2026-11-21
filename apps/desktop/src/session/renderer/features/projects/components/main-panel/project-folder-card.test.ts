@@ -176,7 +176,7 @@ describe('ProjectFolderCard', () => {
     // 最相关的那页压在最上面。
     const top = [...papers()].sort((a, b) => Number(slotOf(b).style.zIndex) - Number(slotOf(a).style.zIndex))[0];
     expect(top.getAttribute('title')).toBe('/www/gugu-supabase');
-    expect(container.textContent).toContain('刚挂上');
+    expect(container.textContent).toContain('刚添加');
     expect(container.textContent).toContain('4 个文件夹');
   });
 
@@ -189,10 +189,10 @@ describe('ProjectFolderCard', () => {
     ]);
     await renderCard(stateOf({}));
     expect(container.textContent).toContain('2 个会话');
-    expect(container.textContent).toContain('1 个在跑');
-    expect(container.textContent).not.toContain('2 个在跑');
-    // 在跑的那个会话从根目录开工 ⇒ 根目录那页写「1 个会话在这儿跑」。
-    expect(papers().find((p) => p.getAttribute('title') === '/www/gugu')?.textContent).toContain('1 个会话在这儿跑');
+    expect(container.textContent).toContain('1 个运行中');
+    expect(container.textContent).not.toContain('2 个运行中');
+    // 在跑的那个会话从根目录开工 ⇒ 根目录那页写「1 个会话在此运行」。
+    expect(papers().find((p) => p.getAttribute('title') === '/www/gugu')?.textContent).toContain('1 个会话在此运行');
     // 头像只来自这个项目自己的会话。
     expect([...container.querySelectorAll('img')].map((img) => img.getAttribute('src')).sort()).toEqual(['avatar:session:s1', 'avatar:session:s2']);
   });
@@ -207,7 +207,7 @@ describe('ProjectFolderCard', () => {
     expect(container.querySelectorAll('.gg-folder-card__agents img')).toHaveLength(6);
     expect(container.querySelector('.gg-folder-card__agents')?.getAttribute('title')).toBe('共 8 个 Agent');
     const more = container.querySelector('.gg-folder-card__more');
-    expect(more?.textContent).toBe('共 8 位');
+    expect(more?.textContent).toBe('共 8 个');
     expect(more?.getAttribute('aria-label')).toBe('另有 2 个 Agent');
     expect(more?.getAttribute('title')).toBe('agent 6\nagent 7');
   });
@@ -217,9 +217,9 @@ describe('ProjectFolderCard', () => {
     await renderCard(stateOf({ folders: [...shown(ROOT, WT), { ...stale, offline: false, deviceId: null }], fresh: stale.workspaceId }));
     // WT 里开过一个会话、此刻歇着:写「1 个会话」,❌「还没有会话」。
     expect(papers().find((p) => p.getAttribute('title') === '/www/gugu-wt')?.textContent).toContain('1 个会话');
-    expect(papers().find((p) => p.getAttribute('title') === '/www/gugu-supabase')?.textContent).toContain('还没有会话');
+    expect(papers().find((p) => p.getAttribute('title') === '/www/gugu-supabase')?.textContent).toContain('暂无会话');
     // 十分钟前挂上的不再标「刚挂上」。
-    expect(container.textContent).not.toContain('刚挂上');
+    expect(container.textContent).not.toContain('刚添加');
   });
 
   it('marks each folder with its own machine, offline ones greyed, and lists every machine on the card', async () => {
@@ -265,7 +265,7 @@ describe('ProjectFolderCard', () => {
     // 摊开不换节点、不挪顺序:同一批 DOM 节点原地变位置,浏览器才有过渡可走(挪动 / 新挂的节点会瞬移)。
     expect(papers().length).toBe(nodesBefore.length);
     expect(papers().every((paper, i) => paper === nodesBefore[i])).toBe(true);
-    expect(container.textContent).toContain('选择新任务的工作目录，再点卡片可收起。');
+    expect(container.textContent).toContain('选择新任务的工作目录，再次点击卡片可收起。');
 
     const extra = papers().find((p) => p.getAttribute('title') === '/www/gugu-web');
     await act(async () => extra?.click());
@@ -332,7 +332,7 @@ describe('ProjectFolderCard', () => {
     const state = stateOf({ folders: null, chosen: null, loadError: true });
     await renderCard(state);
     expect(papers()).toHaveLength(0);
-    expect(container.textContent).toContain('读不到这个项目的文件夹');
+    expect(container.textContent).toContain('无法读取此项目的文件夹');
     expect(container.textContent).not.toContain('0 个文件夹');
     const retry = [...container.querySelectorAll('button')].find((b) => b.textContent === '重试');
     await act(async () => retry?.click());

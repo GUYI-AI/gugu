@@ -57,7 +57,7 @@ describe('missing attachment card shared by desktop and phone', () => {
     expect(harness.container.textContent).not.toContain('暂时打不开')
     expect(harness.container.textContent).not.toContain('重试')
     await act(async () => { fail(new TypeError('Failed to fetch')) })
-    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.textContent).toContain('图片暂时打不开') })
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.textContent).toContain('图片暂时无法打开') })
     expect(harness.container.textContent).not.toContain('已失效')
     expect(harness.container.textContent).not.toContain('重试')
     expect(harness.container.querySelector('button:not(:disabled)')).toBeNull()
@@ -66,7 +66,7 @@ describe('missing attachment card shared by desktop and phone', () => {
   it('the sender\'s own pending image says uploading only while this device uploads it', async () => {
     f.resolve.mockResolvedValue({ status: 'pending', sha256: null })
     await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: image, messageId: 'missing', isMine: true }))
-    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.textContent).toContain('还没传完') })
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.textContent).toContain('尚未上传完成') })
     expect(harness.container.textContent).not.toContain('正在上传')
     await act(async () => { setAttachmentUploadProgress('missing', { loaded: 1, total: 5, attempt: 1 }) })
     expect(harness.container.textContent).toContain('正在上传')

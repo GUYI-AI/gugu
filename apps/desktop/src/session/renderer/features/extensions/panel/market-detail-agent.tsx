@@ -1,4 +1,5 @@
 import { refreshFailure } from '@/lib/replica';
+import { vendorName } from '@/i18n/vendorName';
 import type { ReactNode } from 'react';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Button } from '@renderer/lib/ui/button';
@@ -93,7 +94,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
     <>
       <MarketDetailCard
         name={agent.name}
-        publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: agent.publisher }) : undefined}
+        publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: vendorName(agent.publisher) }) : undefined}
         icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
         actions={actions}
         devices={<MarketAgentDevices agentId={agent.id} />}

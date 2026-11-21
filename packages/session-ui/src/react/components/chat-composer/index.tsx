@@ -731,7 +731,7 @@ export function ChatComposer({
       : null;
   const selectedAgentTitle = selectedAgentItem
     ? agentLocked && !hideLockedAgent
-      ? `${selectedAgentItem.name} — agents can't be switched after a conversation starts`
+      ? `${selectedAgentItem.name}: the agent cannot be changed after a conversation starts`
       : selectedAgentItem.name
     : undefined;
 

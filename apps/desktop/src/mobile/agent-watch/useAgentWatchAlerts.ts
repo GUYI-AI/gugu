@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { useAndroidPushConfirmed } from '../android-push/androidPushState'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -146,7 +147,7 @@ export function useAgentWatchAlerts(devices: readonly Device[]): void {
         onError: (error) => { if (retryScope.current.ownerId === ownerId) updateDeviceSessions(deviceId, { error, ...(error ? { connected: false } : {}) }) },
       })
       if (ownerId) stops.push(registerDeviceSessionsRetry(ownerId, deviceId, () => {
-        if (retryScope.current.ownerId !== ownerId || !retryScope.current.onlineIds.includes(deviceId)) throw new Error('账号或设备连接已改变，请重新打开项目列表。')
+        if (retryScope.current.ownerId !== ownerId || !retryScope.current.onlineIds.includes(deviceId)) throw new Error(mobileWorkspaceText('directory.deviceChanged'))
         sync.reconnect()
       }))
       return sync

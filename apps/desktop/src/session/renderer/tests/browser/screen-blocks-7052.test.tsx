@@ -1,10 +1,11 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { BlockDropPreviewLayer, BlockGrip, ScreenFrame, screenDropHandlers, startSessionBlockDrag } from '@renderer/app/screen-frame';
+import { BlockGrip, ScreenFrame, screenDropHandlers, startSessionBlockDrag } from '@renderer/app/screen-frame';
 import { blockDropPreview, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
 import { clearDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
+import { DropHighlightLayer } from '@renderer/lib/drop-highlight';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import '@/styles/tokens.css';
@@ -56,7 +57,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     ['left', 0.3, 0.4], ['right', 0.7, 0.4], ['top', 0.4, 0.3], ['bottom', 0.6, 0.7],
   ] as const)('previews and splits a task dropped in the chat centre nearest its %s edge', async (edge, x, y) => {
     screenLayout.show({ kind: 'chat', chatId: 'chat-centre' });
-    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /><BlockDropPreviewLayer /></WorkspaceLayoutContextProvider>);
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /><DropHighlightLayer /></WorkspaceLayoutContextProvider>);
     await until('chat block rendered', () => blockWidths().length === 1);
     const blockId = screenLayout.order[0];
     const block = host!.querySelector<HTMLElement>('[data-screen-block]')!;
@@ -67,7 +68,12 @@ describe('一屏几块的骨架 (#7052)', () => {
     const event = { dataTransfer, target: block, clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * y, preventDefault: vi.fn(), stopPropagation: vi.fn() };
     handlers.onDragOverCapture(event as never);
     expect(blockDropPreview.get()).toEqual({ blockId, edge });
-    await until('split preview rendered', () => document.querySelector(`[data-block-drop-preview="${edge}"]`) !== null);
+    // The shared drop highlight springs onto the half that edge splits off (@@@drop-highlight).
+    const half = { left: edge === 'right' ? rect.left + rect.width / 2 : rect.left, top: edge === 'bottom' ? rect.top + rect.height / 2 : rect.top, width: edge === 'left' || edge === 'right' ? rect.width / 2 : rect.width, height: edge === 'top' || edge === 'bottom' ? rect.height / 2 : rect.height };
+    await until('split preview on that half', () => {
+      const box = document.querySelector('[data-drop-highlight="shown"]')?.getBoundingClientRect();
+      return !!box && (['left', 'top', 'width', 'height'] as const).every((key) => Math.abs(box[key] - half[key]) < 1);
+    });
     handlers.onDropCapture(event as never);
     expect(screenLayout.order).toHaveLength(2);
     expect(screenLayout.blockOfSession('incoming')).toBeDefined();

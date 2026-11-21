@@ -36,6 +36,7 @@ import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote';
  * 连「你在这」那枚也常在框外。现在轨道占满这一列,**它的高度决定能站下多少格**,
  * 行高钉死 12px、轮数超了就一格代表多轮(见 session-timeline-geometry 的
  * `railCapacity` / `turnsPerTick` 与 session-timeline-turns 的 `ticksFromTurns`)。
+ * 格数还有固定上限 `MAX_TICKS`:只按列高封顶时,长会话是一整列从顶栏排到输入框的梳子。
  * ❌ 不是把行距压细:那版试过,260 轮时一行 3.3px,owner:「要不弄个上限吧,现在太密了」。
  *
  * Only human inputs are projected onto the rail. Human deliveries keep their

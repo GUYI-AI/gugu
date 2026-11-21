@@ -33,6 +33,7 @@ import { translateSessionMessage } from '@/session/renderer/localization/locale-
 import { MobileTabPager } from '@/mobile/MobileTabPager'
 import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneLayer } from '@/mobile/PhoneLayer'
+import { PhoneChatPage, type PhoneChatPageHandle } from '@/mobile/PhoneChatPage'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import { PhonePartnersPage } from '@/mobile/partners/PhonePartnersPage'
 import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
@@ -352,7 +353,8 @@ function InnerLayout({
   const tabs = mobile ? MOBILE_TABS : SIDEBAR_TABS
   // 手机上 'assistant' / 'tasks' / 'settings' 是推在列表首页上的一层(PhoneLayer,没有底栏);底下的分页器停在推它之前那一格,返回回到那里。
   const phoneLayerOpen = mobile && !MOBILE_TABS.includes(activeTab)
-  const pagerTab = phoneChatShown ? 'chats' : phoneLayerOpen ? phoneRootTab : activeTab
+  const pagerTab = phoneChatShown || phoneLayerOpen ? phoneRootTab : activeTab
+  const phoneChatPage = useRef<PhoneChatPageHandle>(null)
   const exitPhoneLayer = useCallback(() => navigateMobile(() => setActiveTab(phoneRootTab), 'pop'), [setActiveTab, phoneRootTab])
   const exitPhoneSessions = useCallback(() => navigateMobile(() => {
     setActiveTab(watchParentTab ?? phoneRootTab)
@@ -365,12 +367,15 @@ function InnerLayout({
   // 手机「伙伴」(#446):推进去的页没有底栏;「消息」右上「新项目」推进它的新项目页。
   const [partnersPushed, setPartnersPushed] = useState(false)
   // 返回:会话页上压着别的会话时回到它(@@@phone-chat-trail),否则回到会话页的来处(根 tab)。
-  const backFromPhoneChat = useCallback(() => navigateMobile(() => {
+  const leavePhoneChat = useCallback(() => {
     const under = shellTab.popChat()
     if (under && 'chatId' in under) return setActiveChatId(under.chatId)
     shellTab.setChatFrom(null)
     if (under) reopenGlobalSearch()
-  }, 'pop'), [shellTab, setActiveChatId])
+  }, [shellTab, setActiveChatId])
+  const backFromPhoneChat = useCallback(() => {
+    if (!phoneChatPage.current?.back()) navigateMobile(leavePhoneChat, 'pop')
+  }, [leavePhoneChat])
   const [newProjectRequest, setNewProjectRequest] = useState(0)
   const openNewProject = useCallback(() => navigateMobile(() => {
     setActiveTab('contacts')
@@ -1059,7 +1064,7 @@ function InnerLayout({
           mobile={mobile}
           tabs={tabs}
           activeTab={pagerTab}
-          covered={phoneLayerOpen}
+          covered={phoneLayerOpen || phoneChatShown}
           swipeable={tabBarVisible}
           onSettle={selectTab}
           tabBarRef={tabBarRef}
@@ -1069,12 +1074,13 @@ function InnerLayout({
             // 手机壳里它是分页器的一页,不隐藏(横滑时相邻页要看得见),只 inert(MobileTabPager)。
             // gugu-dev#181 桌面上(有会话页)没有单独的聊天页:对话是会话页这屏的一块,列表在会话页侧栏「对话」里。
             chats: !chatsAreBlocks && (
-              <div key="chat" style={{ display: 'flex', flexDirection: mobile ? 'column' : 'row', flex: 1, minWidth: 0, overflow: 'hidden', ...(activeTab === 'chats' || mobile ? undefined : RETAINED_SURFACE_HIDDEN_STYLE) }}>
+              <div key="chat" className="gg-shell-chat-list" data-mobile={mobile || undefined} data-active={activeTab === 'chats' || mobile || undefined}
+                style={activeTab === 'chats' || mobile ? undefined : RETAINED_SURFACE_HIDDEN_STYLE}>
                   {/* #2525 移动端全屏创建页:列表/会话/底部 tab 岛全部让位(display 隐藏而非卸载 ——
                       返回时列表滚动位置与会话状态原样还在),真正的 composer 由下面那份 fixed overlay
                       盖到本页正文槽上。 */}
                   <ResizableChatListPane mobile={mobile}
-                    hidden={chatListHidden}
+                    hidden={mobile && showCreateSurface}
                     width={chatListPaneWidth}
                     onWidthChange={previewChatListPaneWidth}
                     onWidthCommit={commitChatListPaneWidth}
@@ -1095,23 +1101,6 @@ function InnerLayout({
                       onNewProject={mobile ? openNewProject : undefined}
                     />
                   </ResizableChatListPane>
-                  <div data-shell-chat-detail={mobile ? undefined : ''} style={{ flex: '1 1 auto', minWidth: 0, minHeight: 0, position: 'relative', display: mobile && (!phoneChatShown || showCreateSurface) ? 'none' : 'flex' }}>
-                    {/* 创建面打开时聊天区只隐藏不卸载(同 #6158 的常驻面):从前条件卸载,关掉创建面回来 = 整个面板重挂,
-                        消息列表、滚动位置、分栏、群协作状态全部重来一遍,就是那一下白闪。 */}
-                    <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
-                      <ActiveChatArea
-                        imPage
-                        chatId={activeChatId}
-                        navigationTarget={unreadNavigationTarget === 'chat'}
-                        hidden={showCreateSurface || shownChatId !== activeChatId}
-                        mobile={mobile}
-                        openNonce={chatOpenNonce}
-                        onBack={mobile ? pressBack : undefined}
-                        onOpenUserChat={handleOpenProfileChat}
-                        onOpenSessionpageAgentFile={!mobile && sessionHostAvailable ? handleOpenSessionpageAgentFile : undefined}
-                      />
-                    </div>
-                  </div>
                   {mobile && showSessionCreate && (
                     <MobileCreatePage
                       slotRef={composerSlotRef}
@@ -1166,6 +1155,22 @@ function InnerLayout({
             ),
           }}
         />
+
+        {/* The one chat tree stays outside the pager: the actual origin list remains underneath,
+            including a conversation entered from Partners. Resizing never reparents/remounts it. */}
+        {!chatsAreBlocks && <PhoneChatPage ref={phoneChatPage} mobile={mobile}
+          shown={phoneChatShown && !showCreateSurface && !assistantOnPhone}
+          covered={phoneLayerOpen}
+          desktopShown={activeTab === 'chats'}
+          enabled={mobile && !phoneLayerOpen && !showCreateSurface && !shellTab.peekChat()}
+          place={activeChatId} onBack={leavePhoneChat}>
+          <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+            <ActiveChatArea imPage chatId={activeChatId} navigationTarget={unreadNavigationTarget === 'chat'}
+              hidden={showCreateSurface || shownChatId !== activeChatId} mobile={mobile} openNonce={chatOpenNonce}
+              onBack={mobile ? pressBack : undefined} onOpenUserChat={handleOpenProfileChat}
+              onOpenSessionpageAgentFile={!mobile && sessionHostAvailable ? handleOpenSessionpageAgentFile : undefined} />
+          </div>
+        </PhoneChatPage>}
 
         {/* 手机上推在「消息 / 伙伴」首页上的三层(owner 10-26,OpenDCAI/gugu#446):整屏、没有底栏,返回回到推它之前那一格。
             常驻只藏(PhoneLayer):草稿、滚动位置、各自往下钻的层级都在,同从前它们是分页器里的一页。 */}

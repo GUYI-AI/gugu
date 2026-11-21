@@ -392,7 +392,8 @@ beforeEach(() => {
   harness = createReactHarness()
   taskRoute.remote = false
   connectionAuthority.mode = 'legacy'; connectionAuthority.failed = false
-  vi.stubGlobal('matchMedia', () => ({ matches: false }))
+  // Routing assertions commit synchronously in reduced-motion mode; real spring frames are covered in phone-chat-motion.browser.
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)' }))
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
     configurable: true,
     value(this: HTMLElement, { left }: ScrollToOptions) {
@@ -458,10 +459,9 @@ async function renderMainLayoutWithToast(toast = vi.fn(), effectsActive = true) 
   ))
   return { toast }
 }
-// #6158 聊天面那一格 = mock 会话区的祖父(中间一层是 mobilePane 的 display 壳)。
+// The retained detail surface has a stable role independent of pager wrapper depth.
 function chatSurfaceOf(container: HTMLElement): HTMLElement | null {
-  // 聊天区 → 创建面常驻外壳 → 正文槽 → 聊天面。
-  return (container.querySelector('[data-testid="mock-chat-area"]')?.parentElement?.parentElement?.parentElement as HTMLElement | null) ?? null
+  return container.querySelector<HTMLElement>('[data-shell-chat-detail]')
 }
 // 手机上推在列表首页上的一层(咕咕 / 项目 / 我的,PhoneLayer)此刻在不在最上面。
 function layerOpen(testId: string): boolean {
@@ -598,7 +598,8 @@ describe('MainLayout', () => {
     chatStoreMock.activeChatId = 'original-chat'
     chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id })
     await renderMainLayoutWithToast()
-    if (source === 'chat') await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
+    const listRow = harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement
+    if (source === 'chat') await clickElement(listRow)
     const { openOwnedAgentEntry } = await import('../../../../apps/desktop/src/lib/ownedAgentConversation')
     for (const method of ['header', 'native']) {
       await act(async () => { expect(openOwnedAgentEntry('task-dm')).toBe(true) })
@@ -608,7 +609,9 @@ describe('MainLayout', () => {
       else await nativeBack()
       expect(layerOpen('mobile-sessions-layer')).toBe(false)
       expect(chatStoreMock.activeChatId).toBe('original-chat')
-      expect(Boolean(harness.container.querySelector('[data-testid="mock-chat-row"]'))).toBe(source === 'list')
+      expect(harness.container.querySelector('[data-testid="mock-chat-row"]')).toBe(listRow)
+      expect(harness.container.querySelector('[data-mobile-tab-page="chats"]')?.hasAttribute('inert')).toBe(source === 'chat')
+      expect(harness.container.querySelector('nav') !== null).toBe(source === 'list')
       expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
     }
   })
@@ -707,23 +710,22 @@ describe('MainLayout', () => {
       row?.click()
       await Promise.resolve()
     })
-    const chatArea = harness.container.querySelector('[data-testid="mock-chat-area"]') as HTMLElement | null
-    // 聊天区外面多一层创建面常驻外壳;移动端显隐由再外一层的正文槽决定。
-    expect(chatArea?.parentElement?.parentElement?.style.display).toBe('flex')
-    expect(harness.container.textContent).not.toContain('chat-list-panel')
+    // The list stays painted under the detail, but cannot take focus or input.
+    expect(chatSurfaceOf(harness.container)?.style.contentVisibility).toBe('')
+    expect(harness.container.querySelector('[data-mobile-tab-page="chats"]')?.hasAttribute('inert')).toBe(true)
     await act(async () => {
       window.dispatchEvent(new CustomEvent('gugu:native-back'))
       await Promise.resolve()
     })
     expect((window as Window & { __guguNativeBackHandled?: boolean }).__guguNativeBackHandled).toBe(true)
     expect(harness.container.textContent).toContain('chat-list-panel')
-    expect(chatArea?.parentElement?.parentElement?.style.display).toBe('none')
+    expect(chatSurfaceOf(harness.container)?.style.contentVisibility).toBe('hidden')
   })
   // owner 11-14:退群后手机停在桌面的「选择一个会话」空态,没有顶栏、返回、底栏。会话页是盖在来源 tab 上的一层,
   // 它只在当前会话还在列表里时成立(lib/shellTab @@@phone-chat-layer)。
   describe('the phone chat page whose conversation goes away', () => {
     const user = { id: 'user-1', email: 'user@example.com', nickname: 'User' }
-    const chatPageShown = () => (harness.container.querySelector('[data-testid="mock-chat-area"]') as HTMLElement).parentElement?.parentElement?.style.display === 'flex'
+    const chatPageShown = () => chatSurfaceOf(harness.container)?.style.contentVisibility !== 'hidden'
     const tabBarShown = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileMessagesNav}"]`) !== null
     const pageActive = (tab: string) => harness.container.querySelector(`[data-mobile-tab-page="${tab}"]`)?.hasAttribute('inert') === false
     async function openFromList() {
@@ -802,8 +804,7 @@ describe('MainLayout', () => {
       row?.click()
       await Promise.resolve()
     })
-    const chatArea = harness.container.querySelector('[data-testid="mock-chat-area"]') as HTMLElement | null
-    expect(chatArea?.parentElement?.parentElement?.style.display).toBe('flex')
+    expect(chatSurfaceOf(harness.container)?.style.contentVisibility).toBe('')
     // A layer opened after the page registered its handler: the page handler runs first on window and must
     // ask the stack, not rely on listener order (Android WebView does not order capture before bubble).
     const layer = Symbol('open-layer')
@@ -813,8 +814,8 @@ describe('MainLayout', () => {
         window.dispatchEvent(new CustomEvent('gugu:native-back'))
         await Promise.resolve()
       })
-      expect(harness.container.textContent).not.toContain('chat-list-panel')
-      expect(chatArea?.parentElement?.parentElement?.style.display).toBe('flex')
+      expect(harness.container.querySelector('[data-mobile-tab-page="chats"]')?.hasAttribute('inert')).toBe(true)
+      expect(chatSurfaceOf(harness.container)?.style.contentVisibility).toBe('')
     } finally {
       sheetStack.splice(sheetStack.indexOf(layer), 1)
     }
@@ -1253,9 +1254,11 @@ describe('MainLayout', () => {
     platformMock.capabilities.sessionHost = false
     await renderMainLayoutWithToast()
     expect(harness.container.querySelector('[data-mobile-tab-pager]')).toBeNull()
-    const page = chatSurfaceOf(harness.container)?.parentElement as HTMLElement
-    expect(page.style.display).toBe('contents')
-    expect((page.parentElement as HTMLElement).style.display).toBe('contents')
+    const list = harness.container.querySelector<HTMLElement>('.gg-shell-chat-list')!
+    const pagerPage = list.parentElement!
+    expect(pagerPage.style.display).toBe('contents')
+    expect(pagerPage.parentElement!.style.display).toBe('contents')
+    expect(chatSurfaceOf(harness.container)?.parentElement).toBe(pagerPage.parentElement!.parentElement)
   })
   it('reports the selected chat as on screen on the desktop chats tab only', async () => {
     chatStoreMock.chats = [{ id: 'chat-1' }]

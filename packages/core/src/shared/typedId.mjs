@@ -103,7 +103,7 @@ export function decodeIdentityAddress(value, field) {
   // `aid:` 是产品面的写法 —— 分享浮层那一栏原文就叫 **Agent ID**,前缀跟界面上的词对上
   // (owner 2026-09-16 拍板)。`user:` 是它的旧拼法,继续收:线上已经有带 `user:` 的会话记录与
   // 排队中的消息,改名不能让它们当场失效(❌ 只改新的、留旧的自生自灭)。两种解出同一个东西。
-  const forms = 'aid:<Agent ID> or gugu:<咕咕号>'
+  const forms = 'aid:<Agent ID> or gugu:<number>'
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${field}: expected an identity address (${forms}), got ${JSON.stringify(value)}`)
   }
@@ -111,7 +111,7 @@ export function decodeIdentityAddress(value, field) {
   const separator = trimmed.indexOf(':')
   if (separator === -1) {
     throw new Error(
-      `${field}: expected an identity address (${forms}), got the bare value "${trimmed}" — pass the Agent ID with its aid: prefix exactly as a tool returned it, or gugu:<number> for a 咕咕号`,
+      `${field}: expected an identity address (${forms}), got the bare value "${trimmed}" — pass the Agent ID with its aid: prefix exactly as a tool returned it, or gugu:<number> for a gugu number`,
     )
   }
   const prefix = trimmed.slice(0, separator)
@@ -122,7 +122,7 @@ export function decodeIdentityAddress(value, field) {
   }
   if (prefix === 'gugu') {
     if (!/^[1-9][0-9]{0,8}$/.test(raw)) {
-      throw new Error(`${field}: gugu:<咕咕号> needs a positive integer 咕咕号 (1-9 digits), got "${trimmed}"`)
+      throw new Error(`${field}: gugu:<number> needs a positive integer (1-9 digits), got "${trimmed}"`)
     }
     return { kind: 'gugu', number: Number(raw) }
   }

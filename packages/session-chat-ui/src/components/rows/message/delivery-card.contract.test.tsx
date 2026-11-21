@@ -207,7 +207,7 @@ describe('plain session delivery contract', () => {
     const result = await mount(SINGLE, true, input);
     expect(result.computed).toBe(result.dom);
     expect(result.sender).toBe('Alice');
-    expect(result.route).toBe('from 咕咕');
+    expect(result.route).toBe('from Gugu');
     expect(result.factRows).toBeGreaterThan(0);
   });
 

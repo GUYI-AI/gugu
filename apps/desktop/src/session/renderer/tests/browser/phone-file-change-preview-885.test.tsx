@@ -80,7 +80,7 @@ it.each(scenarios.flatMap(scenario => (['zh-CN', 'en-US'] as const).flatMap(loca
       expect(document.body.textContent).not.toContain(contents);
     }
     // Never the opened-file ledger, and never "this session has not opened it".
-    expect(document.body.textContent).not.toContain(locale === 'zh-CN' ? '这条会话还没打开过这个文件。' : "This session hasn't opened this file yet.");
+    expect(document.body.textContent).not.toContain(locale === 'zh-CN' ? '此会话尚未打开该文件。' : 'This session has not opened this file yet.');
     expect(m.ledger).not.toHaveBeenCalled();
     expect(m.call).toHaveBeenLastCalledWith(expect.objectContaining({ extensionId: 'workspace' }), expect.objectContaining({ id: sessionId, deviceId: 'host-device' }),
       'filesRead', expect.objectContaining({ ref: { workspace: `session:${sessionId}`, name: path }, offset: 0 }));

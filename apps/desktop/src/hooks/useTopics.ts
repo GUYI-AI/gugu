@@ -92,22 +92,6 @@ export const topicsOfChat = replica({
   },
 })
 
-/** Where a topic was opened from (@@@5856): `readable`, `gone` (deleted), or `unreadable` (❌ said as deleted). Read on open. */
-export const topicSource = replica({
-  name: 'topicSource',
-  scope: 'account',
-  read: async (_owner: string, topicChatId: string) => {
-    try {
-      return await topicService.getSourceState(topicChatId)
-    } catch (error) {
-      topicsLog.error({ error, topicChatId }, 'topic source message preview failed')
-      throw error
-    }
-  },
-  fresh: 0,
-  keep: 30 * 60_000,
-})
-
 /**
  * @param subscribeAccountRevision 订阅 chat_changed。话题的新建、改名、归档、成员变化和新消息,服务端都会给来源线的
  *   每个成员发一条 chat_changed,entity_id 是那条话题(gugu-supabase 20261106120000)。这里只重读那一条 ——

@@ -6,7 +6,6 @@ import { readComposer } from '../../support/composerEditor'
 import { topicHistoryStub } from '../../support/chatWindowStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../support/testHarness'
-import { topicSourceReading } from '../../support/topicSourceReading'
 
 const { TopicSplitPane } = await import('../../../apps/desktop/src/components/chat/TopicSplitPane')
 
@@ -25,7 +24,6 @@ const baseProps = {
   memberProfiles: {},
   memberReadSeqs: {},
   visibleChats: [],
-  source: topicSourceReading('unknown'),
   onSend: vi.fn(async () => {}),
   onSendAttachments: vi.fn(async () => {}),
   onClose: vi.fn(),

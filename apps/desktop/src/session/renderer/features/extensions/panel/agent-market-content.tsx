@@ -1,3 +1,4 @@
+import { vendorName } from '@/i18n/vendorName';
 import { CircleAlert } from '@/lib/icons';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
@@ -54,7 +55,7 @@ export function AgentMarketContent({
   const activeCategory = choices.some((choice) => choice.value === category) ? category : 'all';
   const matching = rows.filter(({ agent, group, description }) =>
     (activeCategory === 'all' || group === activeCategory) &&
-    (!search || queryScore(search, [agent.name, agent.id, agent.publisher, description].join('\n')))
+    (!search || queryScore(search, [agent.name, agent.id, agent.publisher, agent.publisher && vendorName(agent.publisher), description].join('\n')))
   );
   const title = search ? translate('extensions.searchResults') : activeCategory === 'all'
     ? translate('extensions.allAgents') : categoryLabel(activeCategory);
@@ -83,7 +84,7 @@ export function AgentMarketContent({
       name={agent.name}
       icon={<AppIcon id={agent.id} size={44} />}
       publisher={agent.publisher === '开源' ? translate('extensions.openSourcePublisher')
-        : agent.publisher ? translate('extensions.marketPublisher', { name: agent.publisher }) : undefined}
+        : agent.publisher ? translate('extensions.marketPublisher', { name: vendorName(agent.publisher) }) : undefined}
       category={categoryLabel(group)}
       description={description}
       installed={isInstalledAgent(agent)}

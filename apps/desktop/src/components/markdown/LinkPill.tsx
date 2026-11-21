@@ -18,11 +18,12 @@ import { followLink } from '../../lib/guguLinks'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { Bot, ListChecks, MessageSquare, Reply, User, Users } from '@/lib/icons'
 import { rpcOn } from '@renderer/lib/ipc'
+import { listedSession, useDeviceSessions, useDirectoryDevices } from '../../session/shared/remote-sessions/session-directory'
 
 // Reads are key-only replicas (lib/replica).
 const linkedMessagePrefix = replica({ name: 'link-pill-message-prefix', scope: 'account', keep: 5 * 60_000,
   read: (accountId, chatId: string, prefix: string) => messagesByIdPrefix(chatId, prefix, accountId) })
-// This machine's sessions, as the task list reads them: a session link names one by its title and harness.
+// This machine's sessions, as the task list reads them: a session link names one by its title.
 const localSessions = replica({ name: 'link-pill-sessions', scope: 'account', keep: 60_000,
   read: async () => (await rpcOn(null).sessionTimeline.sessionsList()).sessions })
 
@@ -145,13 +146,23 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
   return <MentionPill href={href} icon={icon} title={unavailable ? t('linkPill.unavailable') : typeof label === 'string' ? label : ''} unavailable={unavailable} onClick={onClick} rest={rest}>{label}</MentionPill>
 }
 
-/** A session (a task): the task mark and its title; one not on this machine is greyed. */
+/**
+ * A session (a task): the task mark and its title. Found where a click finds it: this machine's task list, else the
+ * account's session directory (every machine's list, the one remote hosts and the task tab read). Greyed only once every
+ * machine that could list it has been read and none does; until then it shows the link's own words.
+ */
 function SessionPill({ href, onClick, children, rest, sessionId }: DrawProps & { accountId: string; sessionId: string }) {
   const { t } = useTranslation('messaging')
   const reading = useReplica(localSessions, [])
-  const session = reading.state === 'value' ? reading.value.find((row) => row.conversationId === sessionId) : undefined
-  const unavailable = reading.state === 'error' || (reading.state === 'value' && !session)
-  // Until the list answers, the pill shows the link's own words with no hover title; an unreadable list or a missing task is greyed.
-  return <MentionPill href={href} icon={unavailable ? null : TASK_MARK} title={unavailable ? t('linkPill.unavailable') : session?.title}
-    unavailable={unavailable} onClick={onClick} rest={rest}>{session?.title ?? (unavailable ? t('linkPill.sessionUnavailable') : children)}</MentionPill>
+  const here = reading.state === 'value' ? reading.value.find((row) => row.conversationId === sessionId) : undefined
+  const devices = useDirectoryDevices()
+  const elsewhere = useDeviceSessions((live) => {
+    const found = listedSession(devices, live, sessionId)
+    // No machines yet: the account's device list has not arrived (it always holds this one), so nothing was read.
+    return 'row' in found ? { title: found.row.session.title, reading: false } : { title: null, reading: devices.length === 0 || found.unread.length > 0 }
+  })
+  const title = here?.title ?? elsewhere.title
+  const unavailable = title === null && reading.state !== 'unknown' && !elsewhere.reading
+  return <MentionPill href={href} icon={unavailable ? null : TASK_MARK} title={unavailable ? t('linkPill.unavailable') : title ?? undefined}
+    unavailable={unavailable} onClick={onClick} rest={rest}>{title ?? (unavailable ? t('linkPill.sessionUnavailable') : children)}</MentionPill>
 }

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { rpcOn } from '@/session/renderer/lib/ipc'
-import type { UnavailableProject } from '@/session/shared/projects'
+import type { ProjectRecoveryError, UnavailableProject } from '@/session/shared/projects'
+import { i18n } from '@/i18n/runtime'
 import { replica, useReplica } from './replica'
 import { noteGroupArchived, readArchivedGroups, subscribeArchivedGroups } from './archivedGroupsRead'
 
@@ -33,30 +34,42 @@ export async function readUnavailableProjects(): Promise<UnavailableProject[]> {
   return unavailableProjects.fetch()
 }
 
+type RefusalType = ProjectRecoveryError['type'] | 'state-changed'
+
+/** A refusal the person can act on; its type picks the catalog line, its message stays the diagnostic. */
+export class ProjectRecoveryRefusal extends Error {
+  constructor(readonly type: RefusalType, message: string) { super(message) }
+}
+
+const refusalKeys: Partial<Record<RefusalType, string>> = {
+  'invalid-directory': 'invalidDirectory', 'inspect-failed': 'inspectFailed', 'path-conflict': 'pathConflict', 'state-changed': 'stateChanged',
+}
+
 export function projectRecoveryMessage(error: unknown): string {
-  if (error instanceof Error && error.message.includes('group_recovery_requires_topic_evidence')) return '恢复记录不完整，请联系维护者核对'
-  if (error instanceof Error && ['请选择一个可用的文件夹。', '无法读取这个文件夹，请检查访问权限。', '这个文件夹已属于其他项目，请选择另一个文件夹。', '项目状态已变化，请重新确认。'].includes(error.message)) return error.message
-  return '操作未完成，请检查文件夹访问权限和项目群权限后再试。'
+  const t = (key: string) => i18n.t(`projectRecovery.${key}`, { ns: 'messaging' })
+  if (error instanceof Error && error.message.includes('group_recovery_requires_topic_evidence')) return t('incompleteHistory')
+  const key = error instanceof ProjectRecoveryRefusal ? refusalKeys[error.type] : undefined
+  return t(key ?? 'failed')
 }
 
 async function groupIsArchived(chatId: string): Promise<boolean> {
   const { chatDb } = await import('./supabase')
   const { data, error } = await chatDb.from('chats').select('status').eq('id', chatId).maybeSingle()
-  if (error || !data) throw new Error('无法核对原项目群。')
-  if (data.status !== 'active' && data.status !== 'archived') throw new Error('原项目群暂时不可用。')
+  if (error || !data) throw new Error(`project group ${chatId} could not be read`)
+  if (data.status !== 'active' && data.status !== 'archived') throw new Error(`project group ${chatId} is ${data.status}`)
   return data.status === 'archived'
 }
 
 async function recoverFolder(project: UnavailableProject, path: string): Promise<void> {
   const checked = await local().inspectProjectRecovery(project.id, path)
-  if (!checked.success) throw new Error(checked.error.message)
+  if (!checked.success) throw new ProjectRecoveryRefusal(checked.error.type, checked.error.message)
   // A refusal (including missing topic evidence) must leave the local project unchanged.
   if (project.chatId && await groupIsArchived(project.chatId)) {
     const { currentGroupAdmin } = await import('./groupAdmin')
     await (await currentGroupAdmin()).restore(project.chatId)
   }
   const result = await local().restoreProjectFolder(project.id, path)
-  if (!result.success) throw new Error(result.error.message)
+  if (!result.success) throw new ProjectRecoveryRefusal(result.error.type, result.error.message)
   if (project.chatId) noteGroupArchived(project.chatId, false)
   await refreshProjectRecovery()
 }
@@ -80,7 +93,7 @@ export async function recoverRetainedProjectAtPath(path: string): Promise<string
 export async function archiveUnavailableProjects(confirmed: readonly UnavailableProject[]): Promise<void> {
   const current = await local().listUnavailableProjects()
   const eligible = new Map(current.map(project => [project.id, project]))
-  if (confirmed.some(project => eligible.get(project.id)?.chatId !== project.chatId || eligible.get(project.id)?.path !== project.path)) throw new Error('项目状态已变化，请重新确认。')
+  if (confirmed.some(project => eligible.get(project.id)?.chatId !== project.chatId || eligible.get(project.id)?.path !== project.path)) throw new ProjectRecoveryRefusal('state-changed', 'unavailable projects changed after confirmation')
   const { currentGroupAdmin } = await import('./groupAdmin')
   const admin = await currentGroupAdmin()
   for (const chatId of new Set(confirmed.flatMap(project => project.chatId ? [project.chatId] : []))) {

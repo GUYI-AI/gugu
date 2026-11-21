@@ -244,7 +244,7 @@ describe('#2503 用量与订阅积分的诚实性', () => {
       expect(document.querySelector('[data-testid="subscription-period-credits"]')?.textContent).toBe('0')
       expect(document.querySelector('[data-testid="subscription-wallet-credits"]')?.textContent).toBe('570')
       expect(document.body.textContent).not.toContain('已用完')
-      expect(document.body.textContent).not.toContain('最多能花')
+      expect(document.body.textContent).not.toContain('最多可用')
     } finally { harness.cleanup() }
   })
 
@@ -256,7 +256,7 @@ describe('#2503 用量与订阅积分的诚实性', () => {
       expect(document.querySelector('[data-testid="subscription-period-credits"]')?.textContent).toBe('0')
       expect(document.querySelector('[data-testid="subscription-wallet-credits"]')?.textContent).toBe('0')
       expect(document.querySelector('a[data-testid="membership-open-web"]')?.getAttribute('href')).toMatch(/^https:/)
-      expect(document.body.textContent).not.toContain('最多能花')
+      expect(document.body.textContent).not.toContain('最多可用')
     } finally { harness.cleanup() }
   })
 
@@ -276,8 +276,8 @@ describe('#2503 用量与订阅积分的诚实性', () => {
       expect(document.querySelector('[data-testid="subscription-credits-balance"]')?.textContent?.trim()).toBe('595')
       expect(document.querySelector('[data-testid="subscription-period-credits"]')?.textContent).toBe('25')
       expect(document.querySelector('[data-testid="subscription-wallet-credits"]')?.textContent).toBe('570')
-      expect(document.body.textContent).not.toContain('最多能花')
-      expect(document.body.textContent).not.toContain('周期内怎么花')
+      expect(document.body.textContent).not.toContain('最多可用')
+      expect(document.body.textContent).not.toContain('周期内可自由安排用量')
     } finally { harness.cleanup() }
   })
 
