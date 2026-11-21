@@ -698,12 +698,15 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     },
     reread: async (...args) => {
       const k = requireKey(args)
-      await model.refresh(...args)
-      // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once).
-      const state = queryClient.getQueryState(k)
-      if (state?.data !== undefined && !state.isInvalidated) return state.data as V
-      // Not shown: a read of its own, begun now, ❌ joining one already on its way (it may predate a change). Its answer is
-      // put as a write (@@@write-over-read): the earlier read cannot overwrite it, and of two rereads the later one stays.
+      if (model.isShown(...args)) {
+        await model.refresh(...args)
+        // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once).
+        const state = queryClient.getQueryState(k)
+        if (state?.data !== undefined && !state.isInvalidated) return state.data as V
+      }
+      // Not shown (or the refresh left it unread): a read of its own, begun now, ❌ joining one already on its way (it may
+      // predate a change). Its answer is put as a write (@@@write-over-read): the earlier read cannot overwrite it, and of
+      // two rereads the later one stays.
       const hash = hashKey(k)
       const mine = (rereads.get(hash) ?? 0) + 1
       rereads.set(hash, mine)
