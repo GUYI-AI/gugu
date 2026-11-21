@@ -17,7 +17,7 @@ import { watchTaskPageConnection } from './remote-task-page';
 import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
 import { wireStandalonePageFeatures, type FeatureHost, type FeaturePage } from './standalone-page-features';
 import { kernelAfterCapabilityGate, type CapabilityGateFacts } from './standalone-capability-gate';
-import { TaskPopupClosed } from '../../../../server/task-popups';
+import { TaskPageClosedDuringOpen, TaskPopupClosed } from '../../../../server/task-popups';
 import { remoteBrowserBinding } from './remote-loopback-requests';
 import { appSettingsService } from '../settings/settings-service';
 import { log } from '@main/lib/logger';
@@ -42,6 +42,15 @@ async function newTabSharesBrowser(browserId: string): Promise<boolean> {
   return await kernelAfterCapabilityGate(await standaloneKernelService().selection(), browserId, capabilityFacts) === 'standalone';
 }
 const contents = new Map<string, TaskPageContents>();
+const closedPageAddresses = new WeakMap<TaskPageContents, string>();
+
+function tabState(page: TaskPageContents, screen: TaskPageScreenTarget) {
+  const state = screen.state();
+  const address = closedPageAddresses.get(page);
+  if (address && state.url === 'about:blank') return { ...state, url: address };
+  if (address) closedPageAddresses.delete(page);
+  return state;
+}
 
 /** The same message box the built-in browser puts over the Gugu window for a page's alert and confirm. */
 const askPerson: AskPerson = ({ type, message, signal }) => {
@@ -119,17 +128,24 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
     throw new Error('This standalone browser tab is not registered');
   }
   if (url && url !== 'about:blank' && !/^https?:\/\//i.test(url)) throw new Error('Only web pages open in the standalone browser');
-  const page = await standaloneKernelService().pool.pageFor({ ...binding, url, popup, signal }).catch((error: unknown) => {
-    // The tab was opened for a window that had already closed itself: the tab goes too.
+  const pool = standaloneKernelService().pool;
+  let page: TaskPageContents;
+  try {
+    page = await pool.pageFor({ ...binding, url, popup, signal });
+  } catch (error) {
+    // An adopted window that completed its work still takes its tab with it.
     if (error instanceof TaskPopupClosed) events.emit(browserCloseTabChannel, { browserId });
-    throw error;
-  });
+    if (!(error instanceof TaskPageClosedDuringOpen) || !url || url === 'about:blank') throw error;
+    // Built-in leaves an empty tab at the requested address. Keep that address in the toolbar only.
+    page = await pool.pageFor({ ...binding, url: 'about:blank', signal });
+    closedPageAddresses.set(page, url);
+  }
   if (contents.get(browserId) !== page) {
+    const screen = await pool.existingPage(browserId);
+    if (!screen) throw new Error('The standalone browser page closed');
     contents.set(browserId, page);
     const dialogs = dialogPage(page);
     if (dialogs) wireStandalonePageDialogs(dialogs, askPerson);
-    const screen = await standaloneKernelService().pool.existingPage(browserId);
-    if (!screen) throw new Error('The standalone browser page closed');
     const features = featurePage(page);
     if (features) {
       const host: FeatureHost = {
@@ -137,8 +153,8 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
         newTabSharesBrowser: () => newTabSharesBrowser(browserId),
         chooseFiles,
         closeTab: () => { if (contents.get(browserId) === page) events.emit(browserCloseTabChannel, { browserId }); },
-        faviconsUpdated: favicons => events.emit(browserPageEventChannel, { browserId, type: 'page-favicon-updated', state: screen.state(), detail: { favicons } }),
-        loadFailed: failure => events.emit(browserPageEventChannel, { browserId, type: 'did-fail-load', state: screen.state(), detail: { ...failure, isMainFrame: true } }),
+        faviconsUpdated: favicons => events.emit(browserPageEventChannel, { browserId, type: 'page-favicon-updated', state: tabState(page, screen), detail: { favicons } }),
+        loadFailed: failure => events.emit(browserPageEventChannel, { browserId, type: 'did-fail-load', state: tabState(page, screen), detail: { ...failure, isMainFrame: true } }),
         report: (message, error) => log.warn(message, { browserId, error: String(error) }),
       };
       await wireStandalonePageFeatures(features, host);
@@ -146,7 +162,7 @@ export async function standalonePage(browserId: string, url?: string, signal: Ab
     let loading = false;
     let address = '';
     const report = () => {
-      const state = screen.state();
+      const state = tabState(page, screen);
       const emit = (type: 'dom-ready' | 'did-navigate' | 'did-start-loading' | 'did-stop-loading' | 'page-title-updated') =>
         events.emit(browserPageEventChannel, { browserId, type, state, detail: { url: state.url, title: state.title } });
       if (address !== state.url) { address = state.url; emit('did-navigate'); }
@@ -171,8 +187,8 @@ export async function standaloneScreen(browserId: string): Promise<TaskPageScree
 export async function mountStandalonePage(input: { browserId: string; partition: string; url: string; popup?: string }) {
   if (!browserWebContentsRegistry.isRegistered(input.browserId, input.partition)) throw new Error('Browser profile mismatch');
   const reused = contents.has(input.browserId);
-  await standalonePage(input.browserId, input.url, undefined, input.popup);
-  const state = (await standaloneScreen(input.browserId)).state();
+  const page = await standalonePage(input.browserId, input.url, undefined, input.popup);
+  const state = tabState(page, await standaloneScreen(input.browserId));
   return { success: true as const, reused, ready: !state.isLoading, state };
 }
 

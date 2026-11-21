@@ -14,7 +14,7 @@ import { TaskPageCapture } from './server-task-page-capture';
 import { TaskPageViewport } from './task-page-viewport';
 import { CHROME_ERROR_PAGE_URL, READ_CHROME_ERROR_SCRIPT, taskPageLoadFailure } from './task-page-load-error';
 import { READ_FAVICONS_SCRIPT } from './task-page-favicons';
-import { TaskPopupClosed, TaskPopups } from './task-popups';
+import { TaskPageClosedDuringOpen, TaskPopupClosed, TaskPopups } from './task-popups';
 import { windowPauser, WINDOW_DECISION_MS, type WindowOwner } from './task-window-pause';
 
 /**
@@ -196,6 +196,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
   private readonly windowAddresses = new Map<string, string>();
   /** Gugu is closing this page itself, so Chrome closing it is not the page's doing. */
   private closing = false;
+  closedByPage = false;
   private favicons: string[] = [];
   /** The host's own session: navigation and loading state for the shared navigation guard, never lent. */
   private watchSession: string | null = null;
@@ -235,7 +236,10 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
       return;
     }
     if (message.method === 'Target.targetDestroyed' && message.params?.targetId === this.targetId) {
-      if (!this.closing) this.emit('closed-by-page');
+      if (!this.closing) {
+        this.closedByPage = true;
+        this.emit('closed-by-page');
+      }
       return this.destroy();
     }
     if (message.method === 'Target.targetInfoChanged') {
@@ -722,6 +726,18 @@ export interface ServerTaskBrowser {
   dispose(): Promise<void>;
 }
 
+async function closedDuringWatch(connection: PipeConnection, target: PageTarget, error: unknown): Promise<boolean> {
+  if (target.closedByPage) return true;
+  if (!(error instanceof Error) || connection.closed ||
+    !/^(?:Session with given id not found|No target with given id found)\.?$/.test(error.message)) return false;
+  // The failed command can arrive before targetDestroyed. Verify this exact target, since a live
+  // target can lose one debugging session without closing the page.
+  return connection.send('Target.getTargetInfo', { targetId: target.targetId }).then(
+    () => target.closedByPage,
+    (failure: unknown) => target.closedByPage || failure instanceof Error && /^No target with given id found\.?$/.test(failure.message),
+  );
+}
+
 export function createServerTaskBrowser(options: {
   binary: () => string | null;
   profile: string;
@@ -729,6 +745,8 @@ export function createServerTaskBrowser(options: {
   credentialStore?: 'basic' | 'system';
   /** See `taskBrowserArguments`: the desktop's standalone browser asks for `false`. */
   automationControlled?: boolean;
+  /** Let the desktop keep an empty tab when its new page closes during attachment. */
+  reportInitialPageClose?: boolean;
   /** Runs once the browser is up and before any page is opened, for host-side setup such as download handling. A failure stops the browser. */
   connected?: (connection: PipeConnection) => Promise<void>;
   /** Stands in for starting Chrome, for tests that play the browser themselves. */
@@ -817,7 +835,19 @@ export function createServerTaskBrowser(options: {
       const { targetId } = await connection.send('Target.createTarget', { url: url ?? 'about:blank' }) as { targetId: string };
       target = new PageTarget(connection, targetId);
       target.url = url ?? 'about:blank';
-      await target.watch();
+      try {
+        await target.watch();
+      } catch (error) {
+        if (!options.reportInitialPageClose) throw error;
+        const closed = await closedDuringWatch(connection, target, error);
+        if (!closed && !target.isDestroyed() && !connection.closed) {
+          target.expectClose();
+          void connection.send('Target.closeTarget', { targetId }).catch(() => {});
+        }
+        target.destroy();
+        if (closed) throw new TaskPageClosedDuringOpen(error);
+        throw error;
+      }
     }
     const opened = target;
     opened.on('screen-error', error => options.log.warn('Could not capture the task browser page', { error: String(error) }));
@@ -841,7 +871,8 @@ export function createServerTaskBrowser(options: {
       const target = await page;
       signal.throwIfAborted();
       if (target.isDestroyed()) {
-        pages.delete(sessionId);
+        if (pages.get(sessionId) === page) pages.delete(sessionId);
+        if (options.reportInitialPageClose && target.closedByPage && !target.adoptedWindow) throw new TaskPageClosedDuringOpen();
         return this.pageFor(sessionId, url, signal, popup);
       }
       return target;

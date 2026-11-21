@@ -8,6 +8,13 @@ export class TaskPopupClosed extends Error {
   constructor(readonly url: string) { super(`The window opened for ${url} closed before its tab opened`); }
 }
 
+/** A newly created page closed during attachment, before its desktop tab had a page to show. */
+export class TaskPageClosedDuringOpen extends Error {
+  override name = 'TaskPageClosedDuringOpen';
+
+  constructor(cause?: unknown) { super('The page closed before its tab opened', { cause }); }
+}
+
 /**
  * Windows a page opened (window.open, target=_blank) that Chrome has already created. Gugu shows each one as a new tab:
  * that tab adopts the window instead of loading the address again, so the window keeps `window.opener`, the address is

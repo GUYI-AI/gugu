@@ -48,6 +48,7 @@ class StandaloneKernelService {
     create: ({ profile, executable }) => createServerTaskBrowser({
       binary: () => executable, profile, credentialStore: standaloneBrowserCredentialStore(process.env, app.isPackaged), log,
       automationControlled: false, // A person's browser: pages see navigator.webdriver === false, as in the built-in browser.
+      reportInitialPageClose: true,
       connected: connection => manageDownloads(connection, downloadSaver, tmpdir()),
     }),
   });

@@ -7,18 +7,23 @@ import { TaskPopupClosed } from '../../../../server/task-popups';
 vi.mock('@gugu/core/local/state/agentFileBoundary', () => ({ requireAgentFileTreeAccess: async () => {} }));
 
 /** A Chrome that creates pages on request and reports what a page's `window.open` does, as the real one does. */
-function chrome() {
+function chrome(reportInitialPageClose = false) {
   const connection = Object.assign(new EventEmitter(), {
     closed: null,
     created: [] as string[],
+    createdUrls: [] as string[],
+    loseSessionOnEnable: false,
+    closeOnEnable: false,
+    closeBeforeHistoryReturns: false,
     closedTargets: [] as string[],
     /** Pages that are gone: Chrome has no such target any more, whether or not it has said so yet. */
     gone: new Set<string>(),
     sessions: new Map<string, string>(),
-    send: vi.fn(async (method: string, params: Record<string, unknown> = {}) => {
+    send: vi.fn(async (method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
       if (method === 'Target.createTarget') {
         const targetId = `T${connection.created.length + 1}`;
         connection.created.push(targetId);
+        connection.createdUrls.push(String(params.url));
         return { targetId };
       }
       if (method === 'Target.closeTarget') { connection.closedTargets.push(String(params.targetId)); return { success: true }; }
@@ -28,9 +33,19 @@ function chrome() {
         connection.sessions.set(String(params.targetId), sessionId);
         return { sessionId };
       }
+      if (method === 'Page.enable' && sessionId === 'S-T2' && connection.loseSessionOnEnable) {
+        if (connection.closeOnEnable) connection.gone.add('T2'); // The reply beats Target.targetDestroyed.
+        throw new Error('Session with given id not found.');
+      }
+      if (method === 'Page.getNavigationHistory' && sessionId === 'S-T2' && connection.closeBeforeHistoryReturns) {
+        connection.pageCloses('T2');
+      }
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main', url: 'about:blank' } } };
       if (method === 'Page.getNavigationHistory') return { currentIndex: 0, entries: [{ id: 1, url: 'about:blank' }] };
-      if (method === 'Target.getTargetInfo') return { targetInfo: { targetId: String(params.targetId), url: '', title: '' } };
+      if (method === 'Target.getTargetInfo') {
+        if (connection.gone.has(String(params.targetId))) throw new Error('No target with given id found');
+        return { targetInfo: { targetId: String(params.targetId), url: '', title: '' } };
+      }
       return {};
     }),
     /** The page `opener` calls `window.open(address)`: Chrome says so, then creates the window's page. */
@@ -38,11 +53,12 @@ function chrome() {
       connection.emit('event', { method: 'Page.windowOpen', params: { url: address, windowName: '_blank', userGesture: true }, sessionId: connection.sessions.get(opener) });
       connection.emit('event', { method: 'Target.targetCreated', params: { targetInfo: { targetId: popup, type: 'page', openerId: opener, url: '' } } });
     },
-    pageCloses(targetId: string) { connection.emit('event', { method: 'Target.targetDestroyed', params: { targetId } }); },
+    pageCloses(targetId: string) { connection.gone.add(targetId); connection.emit('event', { method: 'Target.targetDestroyed', params: { targetId } }); },
   });
   const browser = createServerTaskBrowser({
     binary: () => null,
     profile: '/unused',
+    reportInitialPageClose,
     spawn: () => ({ process: { pid: 1, exitCode: null, signalCode: null, kill: vi.fn() } as unknown as ChildProcess, connection: connection as unknown as PipeConnection }),
     log: { info: vi.fn(), warn: vi.fn() },
   });
@@ -113,5 +129,47 @@ describe('a window a page opened is taken by the tab Gugu opened for it, not by 
     const other = await f.open('other-profile-tab', 'http://auth.test/login', 'NOT-HELD-HERE');
     expect(other.targetId).not.toBe('POPUP');
     expect(f.connection.created).toEqual(['T1', 'T2']);
+  });
+});
+
+describe('an independent tab whose initial document closes itself during setup', () => {
+  const address = 'http://site.test/closes-immediately';
+
+  it('identifies a gone target when the first Page command loses its session before the close event arrived', async () => {
+    const f = chrome(true);
+    await f.open('opener', 'http://site.test/');
+    f.connection.loseSessionOnEnable = true;
+    f.connection.closeOnEnable = true;
+    await expect(f.open('plain-tab', address)).rejects.toMatchObject({ name: 'TaskPageClosedDuringOpen' });
+    expect(f.connection.send).toHaveBeenCalledWith('Target.getTargetInfo', { targetId: 'T2' });
+    expect(f.connection.createdUrls.filter(url => url === address)).toHaveLength(1);
+    expect(await f.browser.existingPage('plain-tab')).toBeNull();
+  });
+
+  it('does not replay the initial URL if Chrome reported the target closed while the last watch command was completing', async () => {
+    const f = chrome(true);
+    await f.open('opener', 'http://site.test/');
+    f.connection.closeBeforeHistoryReturns = true;
+    await expect(f.open('plain-tab', address)).rejects.toMatchObject({ name: 'TaskPageClosedDuringOpen' });
+    expect(f.connection.createdUrls.filter(url => url === address)).toHaveLength(1);
+  });
+
+  it('keeps a missing session an error when the target still exists', async () => {
+    const f = chrome(true);
+    await f.open('opener', 'http://site.test/');
+    f.connection.loseSessionOnEnable = true;
+    await expect(f.open('plain-tab', address)).rejects.toMatchObject({ name: 'Error', message: 'Session with given id not found.' });
+    expect(f.connection.createdUrls.filter(url => url === address)).toHaveLength(1);
+    expect(f.connection.closedTargets).toEqual(['T2']);
+    expect(await f.browser.existingPage('opener')).not.toBeNull();
+  });
+
+  it('does not change the shared server behavior when desktop close reporting is off', async () => {
+    const f = chrome();
+    await f.open('opener', 'http://site.test/');
+    f.connection.loseSessionOnEnable = true;
+    f.connection.closeOnEnable = true;
+    await expect(f.open('plain-tab', address)).rejects.toThrow('Session with given id not found.');
+    expect(f.connection.send).not.toHaveBeenCalledWith('Target.getTargetInfo', { targetId: 'T2' });
   });
 });
