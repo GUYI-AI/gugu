@@ -1166,12 +1166,6 @@ class RecordTimeline implements SessionTimeline {
   }
 }
 
-/**
- * 记录里的边界 → reducer 的轮结局。
- *
- * `max_turn_requests` 在三家记录里都没出现过（它是 ACP 侧的说法），留着是因为契约上那一档存在；
- * 真映射不出来的一律落回 `end_turn` —— 一轮结束了是确定的，只是没说清为什么。
- */
 function turnMeta(turn: TranscriptTurn): Omit<TranscriptTurn, 'items'> {
   const { items: _items, ...meta } = turn;
   return meta;
