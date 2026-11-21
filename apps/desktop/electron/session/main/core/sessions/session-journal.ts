@@ -90,6 +90,27 @@ async function rewrite(sessionId: string, lines: Iterable<JournalLine>): Promise
   await rename(tmp, file);
 }
 
+/** The journal's turns, in order (the last line of each id). */
+export async function journalTurns(sessionId: string): Promise<TranscriptTurn[]> {
+  return [...(await readLines(sessionId)).values()].map((line) => line.turn);
+}
+
+/**
+ * Where a resumed runtime numbers its turns from: past every runtime turn the journal names, its own turns and the
+ * turns its owner notifications came from. A notification joins its turn by that id, so a new turn must not take it.
+ */
+export async function journalTurnIndexBase(sessionId: string): Promise<number> {
+  let max = -1;
+  for (const line of (await readLines(sessionId)).values()) {
+    const sources = [line.turn.id, ...line.turn.items.flatMap((item) => item.kind === 'message' && item.ownerNotification?.sourceTurnId ? [item.ownerNotification.sourceTurnId] : [])];
+    for (const id of sources) {
+      const index = /:turn:(\d+)$/.exec(id)?.[1];
+      if (index !== undefined) max = Math.max(max, Number(index));
+    }
+  }
+  return max + 1;
+}
+
 /**
  * A revert to the person's message `anchor`: that turn and every turn after it leave the journal, and the last turn
  * kept says how many went. No such message here (the session's turns are in its agent's record) changes nothing.

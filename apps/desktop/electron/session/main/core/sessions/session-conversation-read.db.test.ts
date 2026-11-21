@@ -85,9 +85,10 @@ describe('native personal conversation unread', () => {
     expect(nativeConversationActivity('s')).toEqual({ text: 'Native answer', at: new Date(at + 1000).toISOString(), turnSeq: 1, activityVersion: 1, activity: { kind: 'sent', id: 'reply', addresses: null } });
     noteNativeConversationReplies('s', { ...record, seq: 0, items: [{ kind: 'message', id: 'old', seq: 0, role: 'user', text: 'Older input', at: at - 1000 }] });
     expect(nativeConversationActivity('s')?.text).toBe('Native answer');
-    truncateNativeConversationRead('s', 2)?.();
+    // A revert cuts by time: from after the reply keeps it, from its turn's start takes it out.
+    truncateNativeConversationRead('s', at + 5000)?.();
     expect(nativeConversationActivity('s')?.text).toBe('Native answer');
-    truncateNativeConversationRead('s', 1)?.();
+    truncateNativeConversationRead('s', at)?.();
     expect(nativeConversationActivity('s')).toBeNull();
   });
   it('does not project delivery envelopes, local attachment instructions or unknown replay clocks as native previews', () => {

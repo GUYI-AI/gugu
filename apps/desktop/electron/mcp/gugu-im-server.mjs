@@ -670,7 +670,7 @@ async function sendOwnerNotification(args, deps, target, recipients, file) {
   const receipt = await deps.context.runHostAction({ action: 'owner-notify', request_id: requestId,
     agent_user_id: deps.context.agentId, text: args.text ?? '', ...(file ? { file } : {}) })
   if (receipt?.status !== 'sent' || receipt.message_id !== requestId || typeof receipt.session_id !== 'string'
-    || !receipt.session_id || !Number.isSafeInteger(receipt.seq) || receipt.seq < 0) throw new Error('The native session did not confirm the owner notification commit')
+    || !receipt.session_id) throw new Error('The native session did not confirm the owner notification commit')
   return JSON.stringify({ ...receipt, delivery: 'owner-native' })
 }
 function normalizeRecipientInput(v) {

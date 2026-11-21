@@ -1061,6 +1061,41 @@ export async function recordHistoryPage(input: {
 }
 
 /**
+ * When the turn opened by the person's message `anchor` started: a revert to it removes that turn and every one after.
+ * Null when the session's history has no such message (nothing of ours to cut).
+ */
+export async function revertPointStartedAt(conversationId: string, anchor: string): Promise<number | null> {
+  const acquired = await acquire(conversationId);
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  try {
+    const timeline = acquired.value.timeline;
+    await timeline.catchUp();
+    const turn = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns
+      .find((one) => one.items.some((item) => item.kind === 'message' && item.role === 'user' && item.revertAnchor === anchor));
+    return turn?.startedAt ?? null;
+  } finally {
+    release(acquired.value);
+  }
+}
+
+/**
+ * Every turn of the session's record as written by now, the cleared part included (what the agent was sent stays
+ * sent); 'no-record' when there is no record to read (a stand-in, a harness without a reader).
+ */
+export async function recordTurns(conversationId: string): Promise<TimelineSnapshot['turns'] | 'no-record'> {
+  const acquired = await acquire(conversationId);
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  try {
+    if (acquired.value.standIn) return 'no-record';
+    const timeline = acquired.value.timeline;
+    await timeline.catchUp();
+    return timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns;
+  } finally {
+    release(acquired.value);
+  }
+}
+
+/**
  * The session index holds this session's turns (`core/session-index`): read its timeline once if nobody has had it
  * open since the index was built. A session with no record to read has none.
  */
