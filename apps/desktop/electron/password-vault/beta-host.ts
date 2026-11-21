@@ -312,7 +312,7 @@ export function passwordBetaRemoteHandlers() {
 }
 
 /** A saved credential as the host's own screens show it: never a secret value. */
-export interface HostCredential { id: string; name: string; origin: string; account?: string; maskedAccount: string }
+export interface HostCredential { id: string; name: string; origin: string; sites: readonly string[]; account?: string; maskedAccount: string }
 /** Whether a credential is for `site` (a bare hostname): its own website or one of its other sites, subdomains included. */
 export const credentialServes = (item: { origin: string; sites: readonly string[] }, site: string) =>
   [item.origin, ...item.sites].some(origin => { const host = new URL(origin).hostname; return host === site || host.endsWith(`.${site}`) })
@@ -325,7 +325,7 @@ export const passwordVaultForHost = Object.freeze({
     const value = await account()
     return accounts.run(value, async () => (await value.vault.list(person))
       .filter(item => site === undefined || credentialServes(item, site))
-      .map(item => ({ id: item.reference.id, name: item.name, origin: item.origin, ...(item.account !== undefined ? { account: item.account } : {}), maskedAccount: item.maskedAccount })))
+      .map(item => ({ id: item.reference.id, name: item.name, origin: item.origin, sites: item.sites, ...(item.account !== undefined ? { account: item.account } : {}), maskedAccount: item.maskedAccount })))
   },
   /** Saves a value the person handed the host (a device-flow token); `credentialId`: over that one. Answers its id. */
   async save(input: { origin: string; name: string; account: string; password: string }, credentialId?: string): Promise<string> {

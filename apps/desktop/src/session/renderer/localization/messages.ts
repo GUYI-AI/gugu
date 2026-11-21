@@ -288,6 +288,11 @@ const enUSCoreMessages = {
   'extensions.permissionsBackground':
     'Keeps a hidden page running while it is enabled, even when none of its tabs are open',
   'extensions.permissionsNetwork': 'Send and receive data over the internet with {hosts}; nowhere else',
+  'extensions.permissionsCredential': 'Use one of your saved {site} credentials: it goes only into the header of requests to {hosts}, and the App never sees it',
+  'extensions.credentialWhich': 'Which saved credential',
+  'extensions.credentialNone': 'None',
+  'extensions.credentialEmpty': 'No {site} credential is saved yet: connect GitHub in Connectors, or save one in Settings › Passwords.',
+  'extensions.credentialUnavailable': 'Saved credentials can’t be read on this computer right now. Open Settings › Passwords to see why.',
   // Each ability names its own bound. "…and nowhere else" is the half that makes
   // the sentence a limit rather than an open question — same shape as the network
   // line above, which was reworded for exactly that reason.
@@ -1643,6 +1648,11 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsNone': '仅读写你用它打开的文件，无法访问其他内容',
   'extensions.permissionsBackground': '启用期间在后台持续运行一个隐藏页面，即使未打开任何标签页',
   'extensions.permissionsNetwork': '通过网络与 {hosts} 收发数据，无法连接其他地址',
+  'extensions.permissionsCredential': '使用你密码库里 {site} 的一份凭据：只放进发往 {hosts} 的请求头，App 自己看不到它',
+  'extensions.credentialWhich': '用哪一份凭据',
+  'extensions.credentialNone': '不用',
+  'extensions.credentialEmpty': '密码库里还没有 {site} 的凭据：先在连接器里连接 GitHub，或在「设置 › 密码」里存一份。',
+  'extensions.credentialUnavailable': '这台电脑现在读不了密码库：到「设置 › 密码」看看原因。',
   'extensions.permissionsThisComputer': '这台电脑',
   'extensions.permissionsOnMachine': '「{machine}」',
   'extensions.permissionsFilesRead': '读取你所在的所有对话中的文件，以及{computer}上各个会话中的文件',

@@ -1,6 +1,7 @@
+import { vaultCredentialOf } from '@main/core/provider-accounts/provider-account-registry';
 import { providerAccountRegistry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { log } from '@main/lib/logger';
-import { moveGitHubTokensIntoVault, type GitHubTokenVault } from './github-accounts';
+import { GITHUB_PROVIDER_ID, moveGitHubTokensIntoVault, toGitHubAccount, type GitHubTokenVault } from './github-accounts';
 
 export const githubTokenVault: GitHubTokenVault = {
   save: async (input, credentialId) =>
@@ -21,4 +22,13 @@ export function ensureGitHubTokensInVault(): Promise<void> {
     }
   );
   return moving;
+}
+
+/** The vault credential behind the connector's default GitHub account on `site`, if its token is kept there. */
+export async function githubDefaultCredential(site: string): Promise<string | null> {
+  await ensureGitHubTokensInVault();
+  const defaultId = await providerAccountRegistry.getDefaultAccountId(GITHUB_PROVIDER_ID);
+  const row = defaultId ? await providerAccountRegistry.getAccount(GITHUB_PROVIDER_ID, defaultId) : null;
+  if (!row || toGitHubAccount(row).host !== site) return null;
+  return vaultCredentialOf(row.credentialRef);
 }
