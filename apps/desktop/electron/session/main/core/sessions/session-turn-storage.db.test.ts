@@ -72,6 +72,50 @@ describe('versioned session turn storage', () => {
     expect(fixture.sqlite.prepare('SELECT max(length(CAST(value AS BLOB))) n FROM session_turn_fields').get()).toMatchObject({ n: expect.any(Number) });
   });
 
+  it.each(['one byte changed', 'one byte appended'] as const)('fails a write that would adopt a damaged stored inline payload (%s)', damage => {
+    const original = turn(), row = insert(original, false), files = turnPayloadFiles(fixture.sqlite);
+    const { hash } = fixture.sqlite.prepare('SELECT hash FROM session_turn_payload_objects WHERE kind=2 AND bytes=20003').get() as { hash: string };
+    const { data } = fixture.sqlite.prepare('SELECT data FROM session_turn_payload_inline WHERE hash=?').get(hash) as { data: Buffer };
+    const damaged = damage === 'one byte changed' ? Buffer.from(data).fill(66, 100, 101) : Buffer.concat([data, Buffer.from('A')]);
+    fixture.sqlite.prepare('UPDATE session_turn_payload_inline SET data=? WHERE hash=?').run(damaged, hash);
+    // A later writer stages the same execute output again; staging no longer asks the registry about inline objects.
+    files.clear();
+    const revised = { ...original, outcome: { kind: 'done' as const } };
+    expect(() => fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, revised, false).commit())()).toThrow('Existing payload integrity check failed');
+    expect(sessionTurnRevision(fixture.sqlite, row)).toBe(0);
+    expect(fixture.sqlite.prepare('SELECT data FROM session_turn_payload_inline WHERE hash=?').get(hash)).toEqual({ data: damaged });
+    // An intact stored copy is adopted without a second insert.
+    fixture.sqlite.prepare('UPDATE session_turn_payload_inline SET data=? WHERE hash=?').run(data, hash);
+    files.clear();
+    fixture.sqlite.transaction(() => prepareSessionTurn(fixture.sqlite, row, revised, false).commit())();
+    expect(readSessionTurn(fixture.sqlite, row)).toEqual(revised);
+  });
+
+  it('reads a stored inline copy back once per writer, never for objects the writer inserted itself', async () => {
+    const connection = fixture.sqlite, prepare = connection.prepare.bind(connection);
+    let copies = 0;
+    // Count the rows the bulk comparison reads; its statement is prepared on first use.
+    connection.prepare = ((sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.includes('FROM session_turn_payload_inline WHERE hash IN')) return statement;
+      const all = statement.all.bind(statement);
+      return Object.assign(statement, { all: (...values: unknown[]) => { const rows = all(...values); copies += rows.length; return rows; } });
+    }) as typeof connection.prepare;
+    const original = turn(), row = await withTurnPayloadWrite(connection, () => insert(original, false));
+    // The commit inserted every object and the settling writer registered again without reading any back.
+    expect(copies).toBe(0);
+    const revised = { ...original, outcome: { kind: 'done' as const } };
+    let committed = 0;
+    await withTurnPayloadWrite(connection, () => {
+      connection.transaction(() => prepareSessionTurn(connection, row, revised, false).commit())();
+      committed = copies;
+    });
+    // A later writer stages the same objects again: each stored copy is compared in its commit, not again on settling.
+    expect(committed).toBeGreaterThan(0);
+    expect(copies).toBe(committed);
+    expect(readSessionTurn(connection, row)).toEqual(revised);
+  });
+
   it('does not attempt object or edge inserts again when a successful writer settles', async () => {
     fixture.sqlite.exec(`CREATE TEMP TABLE payload_insert_attempts(kind TEXT);
       CREATE TEMP TRIGGER count_payload_object BEFORE INSERT ON session_turn_payload_objects

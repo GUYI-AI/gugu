@@ -42,6 +42,7 @@ function prepareStatements() {
   return {
     // One statement per batch width; at most 64 hashes per native call (see runTurnRows).
     sizes: new Map<number, Database.Statement>(),
+    inline: new Map<number, Database.Statement>(),
     children: new Map<number, Database.Statement>(),
   };
 }
@@ -80,6 +81,18 @@ export function registerTurnPayloads(connection: Database.Database): void {
     placeholders => connection.prepare(`SELECT o.hash,o.bytes,o.kind,b.hash IS NOT NULL AS inlined FROM session_turn_payload_objects o
       LEFT JOIN session_turn_payload_inline b ON b.hash=o.hash WHERE o.hash IN (${placeholders})`), hashes).map(row => [row.hash, row]));
   const existing = sizes(staged.map(([hash]) => hash));
+  // Staging an inline object did not look it up. A stored copy must equal the staged bytes, which hash to its name:
+  // a damaged row fails this write instead of being adopted. The extra byte read exposes a longer stored copy.
+  // Compare each object once: the settling writer registers again, and a copy this writer inserted is its own bytes.
+  const adopted = staged.filter(([hash, object]) => object.bytes <= INLINE_PAYLOAD_BYTES && !object.checked && existing.get(hash)?.inlined);
+  const copies = new Map(selectByHash<{ hash: string; data: unknown }>(query.inline, placeholders => connection.prepare(
+    `SELECT hash,substr(data,1,${INLINE_PAYLOAD_BYTES + 1}) AS data FROM session_turn_payload_inline WHERE hash IN (${placeholders})`),
+  adopted.map(([hash]) => hash)).map(row => [row.hash, row.data]));
+  for (const [hash, object] of adopted) {
+    const copy = copies.get(hash);
+    if (!Buffer.isBuffer(copy) || !copy.equals(object.data)) throw new Error('Existing payload integrity check failed');
+    object.checked = true;
+  }
   const missing = staged.filter(([hash]) => !existing.has(hash));
   runTurnRows(connection, 'INSERT OR IGNORE INTO session_turn_payload_objects(hash,bytes,kind) VALUES',
     missing.map(([hash, object]) => [hash, object.bytes, object.kind]));
@@ -94,6 +107,8 @@ export function registerTurnPayloads(connection: Database.Database): void {
     if (!stored || stored.bytes !== object.bytes || stored.kind !== object.kind || Boolean(stored.inlined) !== (object.bytes <= INLINE_PAYLOAD_BYTES))
       throw new Error('Payload registry size or storage mismatch');
   }
+  // Inserted from these staged bytes. After a rollback it is missing again and is inserted again, not compared.
+  for (const hash of inserted) files.staged.get(hash)!.checked = true;
   const parents = staged.filter(([hash, object]) => object.children.size && !inserted.has(hash)).map(([hash]) => hash);
   const known = new Set(selectByHash<{ hash: string; child_hash: string }>(query.children,
     placeholders => connection.prepare(`SELECT parent_hash AS hash,child_hash FROM session_turn_payload_edges WHERE parent_hash IN (${placeholders})`), parents)

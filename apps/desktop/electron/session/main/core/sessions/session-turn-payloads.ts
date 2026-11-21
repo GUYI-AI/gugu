@@ -4,7 +4,9 @@ import { dirname, join } from 'node:path';
 import { directorySyncOpenMode } from '@gugu/session-core/session-record/window-cache/disk-frame';
 
 export type TurnPayloadRef = { hash: string; bytes: number };
-export type TurnPayloadObject = { bytes: number; kind: number; data: Buffer; chunks: string[]; children: Map<string, TurnPayloadRef> };
+export type TurnPayloadObject = { bytes: number; kind: number; data: Buffer; chunks: string[]; children: Map<string, TurnPayloadRef>;
+  /** Its stored copy is known to be these bytes: this writer inserted it, or compared it. */
+  checked?: boolean };
 export type TurnPayloadMetadata = { bytes: number; kind: number; inline: boolean };
 /** Supplied by the existing canonical SQLite gateway; readers never open a second database. */
 export type TurnPayloadAccess = {
@@ -175,9 +177,11 @@ export class TurnPayloadFiles {
     const chunks: string[] = [];
     if (data.length > INLINE_PAYLOAD_BYTES) for (let at = 0; at < data.length; at += PAYLOAD_READ_BYTES) chunks.push(digest(data.subarray(at, at + PAYLOAD_READ_BYTES)));
     const object: TurnPayloadObject = { bytes: data.length, kind, data, chunks, children: new Map() };
-    const prior = this.index?.metadata(ref.hash);
+    // Only a file needs the registry's answer now: an existing one is verified, never rewritten. An inline object asks
+    // nothing here; registerTurnPayloads compares any stored copy with these bytes in the canonical transaction.
+    const prior = data.length > INLINE_PAYLOAD_BYTES ? this.index?.metadata(ref.hash) : undefined;
     if (prior) {
-      if (prior.bytes !== data.length || prior.kind !== kind || prior.inline !== (data.length <= INLINE_PAYLOAD_BYTES)) throw new Error('Payload registry mismatch');
+      if (prior.bytes !== data.length || prior.kind !== kind || prior.inline) throw new Error('Payload registry mismatch');
       this.verifyExisting(ref, prior);
     } else if (data.length > INLINE_PAYLOAD_BYTES) {
       const path = this.path(ref.hash), temporary = `${path}.${randomUUID()}.tmp`;
