@@ -68,6 +68,8 @@ export {
   resolveRealpath,
   runVersionProbe,
   versionLineOf,
+  versionProbeArgs,
+  versionTextOf,
   withProbeSwitches,
 } from './probe';
 export {

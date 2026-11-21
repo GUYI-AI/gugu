@@ -9,7 +9,7 @@
  * 最新那个不设上限。区间互斥 ⇒ 用户的 CLI 版本只落在一个发布里。
  */
 import { z } from 'zod';
-import { versionLineOf } from '@gugu/session-core/deps/runtime';
+import { versionTextOf } from '@gugu/session-core/deps/runtime';
 
 const releaseSchema = z.object({
   version: z.string().min(1),
@@ -45,8 +45,9 @@ const SEMVER = /(\d+)\.(\d+)\.(\d+)/;
 
 /** 从 `--version` 的输出里取第一个 x.y.z(`2.1.282 (Claude Code)` → `2.1.282`)。取不到 = null。 */
 export function parseCliVersion(output: string, versionLine?: RegExp): string | null {
-  // claude 自己那一行(`versionLineOf`):包装器(wcc)先打的 banner 里也有版本号,认不出才照旧取第一个。
-  const m = SEMVER.exec(versionLineOf(output, versionLine) ?? output);
+  // claude 自己那一行(`versionTextOf`):包装器的 banner / 自己的版本号都不算,认不出 = 没读到。
+  const text = versionTextOf(output, versionLine);
+  const m = text === null ? null : SEMVER.exec(text);
   return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
 }
 

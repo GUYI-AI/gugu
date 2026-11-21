@@ -1,5 +1,5 @@
 import semver from 'semver';
-import { resolveCommandPath, versionLineOf, withProbeSwitches } from '../../host-dependencies/runtime';
+import { resolveCommandPath, versionProbeArgs, versionTextOf, withProbeSwitches } from '../../host-dependencies/runtime';
 import type { IExecutionContext } from '../../exec';
 // ⚠️ 直接从无 `node:` 导入的那个模块取,❌ 走 `../../exec` 的 barrel:本文件在 web 构建里(#6390)。
 import {
@@ -189,11 +189,12 @@ function parseRuntimeVersion(output: string, versionLine?: RegExp): string | nul
   // 标点后必须终端,是为了不把 "1.0.82.3" 这类四段版本误配成前三段。
   const versionPattern = /(?:^|\s)v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?=$|\s|[.,;)](?:$|\s))/gm;
   const versionsIn = (text: string) => [...text.matchAll(versionPattern)].map((match) => match[1]);
-  // 这一家自己那一行(`versionLineOf`:包装器的 banner 里也会有版本号);认不出就照旧读法。
-  const own = versionLineOf(output, versionLine);
-  if (own !== null) {
-    const inOwn = versionsIn(own);
-    if (inOwn.length === 1) return inOwn[0];
+  // 声明了自己那一行就只认那一行(`versionTextOf`):认不出 = 没读到,由调用方把原文报出来。
+  const text = versionTextOf(output, versionLine);
+  if (text === null) return null;
+  if (versionLine) {
+    const inOwn = versionsIn(text);
+    return inOwn.length === 1 ? inOwn[0] : null;
   }
   const matches = versionsIn(output);
   if (matches.length === 1) return matches[0];
@@ -406,7 +407,7 @@ export async function resolveSessionRuntimeCompatible(input: {
   // 与真因隔着三层的话(2026-09-18 Windows 真机实撞,codex 的 Code/TUI 会话因此一条都开不起来)。
   // ⇒ 包壳这件事**只有一个属主**:执行上下文自己的 `planDirectSpawn`(见 exec/windows-launcher.ts),
   // 它同时产出 argv 与那组必须一起带上的 spawn 开关。这里递原始路径,让它去包。
-  const probeArgs = [...requirement.versionArgs];
+  const probeArgs = await versionProbeArgs(probeExecutable, requirement.versionArgs, input.executionContext);
   // 这次探测也是一次「跑它」:带上这一家声明的关自更新开关(#6186)。
   const probeEnv = withProbeSwitches(
     input.executionContext,
