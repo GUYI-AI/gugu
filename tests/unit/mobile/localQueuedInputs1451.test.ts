@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { localQueuedInputs } from '../../../apps/desktop/src/components/session-watch/local-queued-inputs'
-import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInputOutbox'
+import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInput'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 
 const input = (id: string, queued = true): SessionInput => ({ id, accountId: 'owner', deviceId: 'host',

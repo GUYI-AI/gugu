@@ -1,5 +1,5 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 import { canReleasePhoneInput } from './phone-input-queue'
 
 export type PhoneQueueSource = { read(): Promise<{ ready: boolean; turns: readonly TranscriptTurn[] }>; dispose(): void }

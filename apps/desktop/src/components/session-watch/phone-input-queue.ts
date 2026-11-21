@@ -1,5 +1,5 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import type { LifeView } from '@/session/shared/core/sessions/session-life'
 

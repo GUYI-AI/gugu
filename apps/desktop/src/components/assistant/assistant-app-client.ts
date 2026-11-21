@@ -4,7 +4,6 @@ import type { ExtensionAgentView } from '../../session/shared/extensions/bridge-
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import type { AppMessageReceipt } from '@gugu/session-core/session-record/contract';
 import type { AssistantAppChange } from '../../session/shared/extensions/assistant-app';
-import type { AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel';
 import { libraryHost } from './assistant-library-client';
 import type { AssistantMachine } from '../../session/renderer/features/assistant/assistant-machine-core';
 import { rendererLogger } from '../../lib/log';
@@ -66,7 +65,7 @@ export async function publishAssistantAppChange(
   change: Omit<AssistantAppChange, 'operationId'> & { operationId?: string },
   assistantId: string | undefined = undefined,
   expectedOwnerId = machine?.panel?.ownerId ?? assistantPanelAccountId() ?? cachedDevicesAccount(),
-): Promise<AssistantPanelReceipt | null> {
+): Promise<void> {
   return requireAssistantPanelBridge().queueNotice({ ...change, operationId: change.operationId ?? crypto.randomUUID() },assistantId,expectedOwnerId);
 }
 
