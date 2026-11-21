@@ -196,8 +196,14 @@ export class RemoteHostsStore {
     startAgentSessionsBridge();
     // The account's record changed (a machine bound or unbound a folder while this one was not connected to it): the
     // machines that are not connected list it.
+    // #3433 One machine merged in ❌ judges another one's folder gone: re-judge once all of them are in.
     reaction(() => groupFoldersStore.account, () => {
-      for (const deviceId of this.hosts.keys()) this.applyAccountFolders(deviceId);
+      this.reconciling = true;
+      try {
+        for (const deviceId of this.hosts.keys()) this.applyAccountFolders(deviceId);
+      } finally {
+        this.reconciling = false;
+      }
       appState.navigation.revalidate();
     });
     subscribeDeviceSessions(() => runInAction(() => (this.directory = liveDeviceSessions())));
