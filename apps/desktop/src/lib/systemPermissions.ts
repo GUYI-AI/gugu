@@ -89,7 +89,11 @@ export const systemPermission = replica({
 })
 
 /** 读系统真值;没有 `systemPermissions` 能力位的宿主什么都不读。`states` 只有读到了的那几项(没读到的由调用方画占位)。 */
-export function useSystemPermissionStates(permissions: readonly SystemPermission[]): { states: SystemPermissionStates; refresh: () => Promise<void>; failed: boolean } {
+export function useSystemPermissionStates(permissions: readonly SystemPermission[]): {
+  states: SystemPermissionStates
+  refresh: () => Promise<void>
+  failed: boolean
+} {
   // 只读宿主报得出的那几项(❌ 试一把再吞掉异常)。
   const key = permissions.filter((permission) => platform.systemPermissions.includes(permission)).join(',')
   const wanted = useMemo(() => (key ? key.split(',') as SystemPermission[] : []), [key])

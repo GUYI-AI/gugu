@@ -11,7 +11,11 @@ const CACHED_DOMAINS = new Set(['integrations'])
 type BodyRow = LocalRow & { scope: string; owner: string; assistant: string; kind: 'body'; value: string; bytes: number }
 type SnapshotRow = LocalRow & { scope: string; owner: string; assistant: string; kind: 'snapshot'; value: unknown; bytes: number }
 
-const encode = (bytes: Uint8Array) => { let value = ''; for (let start = 0; start < bytes.length; start += 8192) value += String.fromCharCode(...bytes.subarray(start, start + 8192)); return btoa(value) }
+const encode = (bytes: Uint8Array) => {
+  let value = ''
+  for (let start = 0; start < bytes.length; start += 8192) value += String.fromCharCode(...bytes.subarray(start, start + 8192))
+  return btoa(value)
+}
 const decode = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
 const scopeOf = (owner: string, assistant: string) => JSON.stringify([owner, assistant])
 const bodyKey = (owner: string, assistant: string, item: Pick<AssistantPanelItem, 'domain' | 'resource_key' | 'body_item_id' | 'body_sha256'>) =>
