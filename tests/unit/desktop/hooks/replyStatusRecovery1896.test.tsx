@@ -69,7 +69,8 @@ describe('automatic reply-status read recovery (#1896)', () => {
       await advance(1)
       expect(read).toHaveBeenCalledTimes(index + 2)
     }
-    expect(log.warn).toHaveBeenCalledTimes(delays.length + 1)
+    // The replica logs a failing entry once until it reads again (❌ one line per retry while offline).
+    expect(log.warn).toHaveBeenCalledTimes(1)
   })
 
   it('starts again at one second after a successful recovery', async () => {
