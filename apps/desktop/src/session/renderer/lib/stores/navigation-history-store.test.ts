@@ -24,4 +24,13 @@ describe('NavigationHistoryStore places', () => {
     expect(history.entries.map((entry) => entry.kind === 'view' && entry.place)).toEqual(['list', 'other page']);
     expect(history.index).toBe(0);
   });
+
+  it('start records where a launch landed only while nothing is recorded, so the first step can go back to it', () => {
+    const history = new NavigationHistoryStore();
+    history.start(apps('landed'));
+    history.push(apps('page'));
+    history.start(apps('ignored'));
+    expect(history.entries.map((entry) => entry.kind === 'view' && entry.place)).toEqual(['landed', 'page']);
+    expect(history.canGoBack).toBe(true);
+  });
 });

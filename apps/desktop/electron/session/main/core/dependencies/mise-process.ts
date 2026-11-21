@@ -56,6 +56,14 @@ export function killAllMiseProcessesSync(): void {
   for (const owned of running) owned.kill('SIGKILL');
 }
 
+/**
+ * Deadline for every mise command except `install` (which has its own idle watchdog). These commands work on local
+ * files only, but the first launch of the bundled mise.exe (106 MB) on Windows waits for Defender to scan it: 13 s
+ * and 32 s on a clean Windows 11 machine, with MsMpEng busy for 9 s and 24 s, against 0.1-0.2 s for every later
+ * launch. A 15 s deadline failed that first launch in 2 of 3 first installs. This one leaves room for a slower machine.
+ */
+export const MISE_COMMAND_TIMEOUT_MS = 120_000;
+
 /** Direct process execution; cancellation waits for the owned process tree to terminate. */
 export function runMiseProcess(command: string, args: string[], options: {
   cwd: string;
