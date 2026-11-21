@@ -163,6 +163,8 @@ it('keeps host-owned unknown retries message-owned even before they enter the lo
     if (channel === 'sessions.lifeRetryUnknown') {
       expect(args[0]).toBe(store.runtimeSessionId); retried.push(args[1]);
       if (refuse) throw new Error('host retry refused');
+      // This RPC now distinguishes completion from a required native-delivery confirmation.
+      return { kind: 'done' };
     }
     return [];
   });
