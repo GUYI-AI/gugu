@@ -184,7 +184,10 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
     return opened
   }
 
-  /** Chats not read yet are read together, in one IndexedDB transaction. */
+  /**
+   * Chats not read yet are read in one IndexedDB transaction. One chat reads its own rows; several (opening an account
+   * publishes every listed chat) read the account's rows once, so the request count does not grow with the chat count.
+   */
   async function load(rows: AccountRows, chatIds: Iterable<string>): Promise<void> {
     const keyOf = (chatId: string) => JSON.stringify([rows.accountId, chatId])
     const missing = [...new Set(chatIds)].filter(chatId => !rows.loaded.has(chatId) && !loads.has(keyOf(chatId)))
@@ -192,14 +195,24 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
       const reading = (async () => {
         const db = await handle.get()
         const transaction = db.transaction(['messages', 'ranges', 'tombstones'], 'readonly')
-        await Promise.all(missing.map(async chatId => {
-          const [messages, ranges, tombstones] = await Promise.all([
-            requestResult(transaction.objectStore('messages').index('chat').getAll([rows.accountId, chatId])) as Promise<MessageRecord[]>,
-            requestResult(transaction.objectStore('ranges').getAll(chatRange(rows.accountId, chatId))) as Promise<RangeRecord[]>,
-            requestResult(transaction.objectStore('tombstones').getAll(chatRange(rows.accountId, chatId))) as Promise<TombstoneRecord[]>,
-          ])
-          rows.fill(chatId, messages, ranges, tombstones)
-        }))
+        const one = missing.length === 1 ? missing[0] : null
+        const [messages, ranges, tombstones] = await Promise.all([
+          requestResult(one ? transaction.objectStore('messages').index('chat').getAll([rows.accountId, one])
+            : transaction.objectStore('messages').getAll(accountRange(rows.accountId))) as Promise<MessageRecord[]>,
+          requestResult(transaction.objectStore('ranges').getAll(one ? chatRange(rows.accountId, one) : accountRange(rows.accountId))) as Promise<RangeRecord[]>,
+          requestResult(transaction.objectStore('tombstones').getAll(one ? chatRange(rows.accountId, one) : accountRange(rows.accountId))) as Promise<TombstoneRecord[]>,
+        ])
+        const byChat = <T extends { chatId: string }>(records: T[]) => {
+          const grouped = new Map<string, T[]>()
+          for (const record of records) {
+            const list = grouped.get(record.chatId)
+            if (list) list.push(record)
+            else grouped.set(record.chatId, [record])
+          }
+          return grouped
+        }
+        const [m, r, t] = [byChat(messages), byChat(ranges), byChat(tombstones)]
+        for (const chatId of missing) rows.fill(chatId, m.get(chatId) ?? [], r.get(chatId) ?? [], t.get(chatId) ?? [])
       })().finally(() => { for (const chatId of missing) loads.delete(keyOf(chatId)) })
       for (const chatId of missing) loads.set(keyOf(chatId), reading)
     }
