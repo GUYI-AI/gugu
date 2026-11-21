@@ -38,6 +38,18 @@ function sourceFiles(dir: string): string[] {
   return out
 }
 
+/** `{ relative path: lines }` for every non-test source file where `linesOf` finds something, sorted by path. */
+function scanSource(linesOf: (path: string, text: string) => number[], root: string): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    if (isTest(rel)) continue
+    const lines = linesOf(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
 /**
  * The exemption categories, a closed list so an exemption is a reason a reviewer can check. Each: what it takes, and what it
  * does not (printed with a finding). Nothing outside these lists is exempt.
@@ -101,16 +113,8 @@ export function markerLines(path: string, text: string): Array<Marker & { line: 
 }
 
 /** Markers that are not valid exemptions, `{ path: lines }`. */
-export function scanMarkers(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const bad = markerLines(rel, readFileSync(path, 'utf8')).filter((marker) => marker.problem).map((marker) => marker.line)
-    if (bad.length > 0) out[rel] = bad
-  }
-  return out
-}
+export const scanMarkers = (root = '.') =>
+  scanSource((path, text) => markerLines(path, text).filter((marker) => marker.problem).map((marker) => marker.line), root)
 
 
 const isFunction = (node: ts.Node): node is ts.FunctionLikeDeclaration =>
@@ -406,28 +410,10 @@ export function literalDefaultLines(path: string, text: string): number[] {
 }
 
 /** `{ relative path: lines }` for every non-test source file with a reading collapsed to a literal default. */
-export function scanLiteralDefaults(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const lines = literalDefaultLines(rel, readFileSync(path, 'utf8'))
-    if (lines.length > 0) out[rel] = lines
-  }
-  return out
-}
+export const scanLiteralDefaults = (root = '.') => scanSource(literalDefaultLines, root)
 
-/** `{ relative path: count }` for every non-test source file that still has the shape, sorted by path. */
-export function scanEffectFetchState(root = '.'): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const count = scanFile(rel, readFileSync(path, 'utf8'))
-    if (count > 0) out[rel] = count
-  }
-  return out
-}
+/** `{ relative path: lines }` for every non-test source file that still has the shape. */
+export const scanEffectFetchState = (root = '.') => scanSource(effectLines, root)
 
 const REPLICA_MODULE = 'apps/desktop/src/lib/replica.ts'
 /**
@@ -469,15 +455,7 @@ export function reactQueryLines(path: string, text: string): number[] {
 }
 
 /** `{ relative path: lines }` for every non-test source file that reaches react-query past the replica. */
-export function scanReactQuery(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    const lines = reactQueryLines(rel, readFileSync(path, 'utf8'))
-    if (lines.length > 0) out[rel] = lines
-  }
-  return out
-}
+export const scanReactQuery = (root = '.') => scanSource(reactQueryLines, root)
 
 /** Props that hand a component its retry: whatever refresh they wrap, it is a retry. */
 const RETRY_PROPS = new Set(['onRetry', 'onReadAgain'])
@@ -521,24 +499,14 @@ export function handRetryLines(path: string, text: string): number[] {
 }
 
 /** `{ relative path: lines }` for every non-test source file with a hand-written retry for a reading. */
-export function scanHandRetries(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const lines = handRetryLines(rel, readFileSync(path, 'utf8'))
-    if (lines.length > 0) out[rel] = lines
-  }
-  return out
-}
+export const scanHandRetries = (root = '.') => scanSource(handRetryLines, root)
 
 if (process.argv[1]?.endsWith('effect-fetch-state.mts')) {
   const report = (title: string, hits: Record<string, number[]>) => {
     for (const [file, lines] of Object.entries(hits)) console.log(`${title}: ${file}: ${lines.join(', ')}`)
     return Object.keys(hits).length
   }
-  const effects = Object.fromEntries(Object.keys(scanEffectFetchState()).map((file) => [file, effectLines(file, readFileSync(file, 'utf8'))]))
-  const found = report('effect fills component state with a read', effects)
+  const found = report('effect fills component state with a read', scanEffectFetchState())
     + report('reading collapsed to a literal default', scanLiteralDefaults())
     + report('react-query reached past the replica', scanReactQuery())
     + report('a reading\'s retry is its own: `<RefreshFailed reading={r} />`, `<ReadingSlot>`, or `r.retry`', scanHandRetries())
