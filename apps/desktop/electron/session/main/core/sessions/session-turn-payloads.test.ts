@@ -115,3 +115,19 @@ it('refuses I/O before allocation when its range exceeds admission', () => {
   expect(budget.counters.sourceBytes).toBe(0);
   expect(reader.counters.readBytes).toBe(0);
 });
+
+it('hands out a staged range as a view that later staging, clearing and new objects never change', () => {
+  const files = new TurnPayloadFiles(root), text = 'stable "body" \\ 中文🙂'.repeat(300), ref = files.putText(text);
+  const small = files.putBytes(Buffer.from('small object, from the shared allocation pool'));
+  const fragment = files.readEncodedTextRange(ref, 7, 4007), smallFragment = files.readBytesRange(small, 3, 20);
+  // Through the directory binding too, as a window reader in the same process sees it.
+  const reader = new TurnPayloadFiles(root), viewed = reader.readEncodedTextRange(ref, 100, 200);
+  const copies = [fragment, smallFragment, viewed].map(one => Buffer.from(one));
+  // Not a copy: the escape count during source construction reads the staged bytes in place.
+  expect(fragment.buffer).toBe(files.staged.get(ref.hash)!.data.buffer);
+  for (let index = 0; index < 300; index++) { files.putText(`other ${index} "`.repeat(index + 90)); files.putBytes(Buffer.alloc(index + 1, index)); }
+  files.clear();
+  for (let index = 0; index < 300; index++) files.putBytes(Buffer.alloc(64, 255 - (index % 256)));
+  [fragment, smallFragment, viewed].forEach((one, index) => expect(one.equals(copies[index])).toBe(true));
+  expect(fragment.equals(Buffer.from(JSON.stringify(text)).subarray(7, 4007))).toBe(true);
+});

@@ -155,12 +155,17 @@ export class TurnPayloadFiles {
       this.counters.readBytes += bytes.length;
       if (this.inlineCache.size < 64) this.inlineCache.set(ref.hash, bytes);
     }
-    return Buffer.from(bytes.subarray(start + 1, end + 1));
+    // A view, not a copy. Nothing writes these bytes after they exist: put() allocates a fresh buffer per object and
+    // better-sqlite3 copies every blob out of SQLite. clear() only drops references, so a view stays valid after it.
+    // Do not cache the view: it keeps the whole object buffer alive. Callers read, hash or copy it at once; a caller
+    // that must keep the bytes copies them first.
+    return bytes.subarray(start + 1, end + 1);
   }
 
+  /** An existing file object: inline objects are compared in bulk by registerTurnPayloads. */
   private verifyExisting(ref: TurnPayloadRef, meta: TurnPayloadMetadata): void {
     this.chunkCache.clear();
-    const bytes = meta.inline ? this.index!.inline(ref.hash) : this.fileRange(ref, meta, 0, meta.bytes);
+    const bytes = this.fileRange(ref, meta, 0, meta.bytes);
     if (bytes.length !== meta.bytes || digest(bytes) !== ref.hash) throw new Error('Existing payload integrity check failed');
   }
 
