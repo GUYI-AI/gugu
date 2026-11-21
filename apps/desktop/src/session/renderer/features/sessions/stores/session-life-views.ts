@@ -107,10 +107,6 @@ export async function readLifeVia(route: LifeRoute, sessionId: string): Promise<
   }
 }
 
-export function sessionLifeViewOf(route: LifeRoute, sessionId: string): LifeView | null {
-  return views.get(viewKey(route.key, sessionId)) ?? null;
-}
-
 export function lifeReadable(route: LifeRoute, sessionId: string): Readable<{ view: LifeView | null; error: string | null }> {
   const key = viewKey(route.key, sessionId);
   return mobxReadable(() => ({ view: views.get(key) ?? null, error: failures.get(key) ?? null }));
