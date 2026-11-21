@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { refreshTag } from '@/lib/replica'
 import { useReplicaPages } from '@/lib/replicaPages'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
-import { TEAM, teamApiKey, teamMembersPage } from './replicas'
+import { TEAM, teamMembersPage } from './replicas'
 import { useTranslation } from 'react-i18next'
 import { Avatar } from '@/components/Avatar'
 import { Button } from '@/components/ui/Button'
@@ -52,12 +52,12 @@ function MemberDialog({ member, onClose, onChanged, onEmail, onDisable, onCap }:
 export function TeamMemberActionsDialog({ member, onClose, onChanged, onCap }: {
   member: TeamMember; onClose: () => void; onChanged: () => Promise<void>; onCap: () => void
 }) {
-  const { t } = useTranslation('team'), api = useTeamApi(), session = useTeamSession()
+  const { t } = useTranslation('team'), session = useTeamSession()
   const admin = session.status === 'ready' && session.context?.role !== 'member'
   const [action, setAction] = useState<'details' | 'email' | 'disable'>('details')
   // Whom a disabled member's work is handed to: the team's active members, read once the disable step opens.
   const candidates = useReplicaPages(teamMembersPage,
-    admin && action === 'disable' && session.context ? [teamApiKey(api), session.context.team_id, 'active' as const] : null, page => page.next_cursor)
+    admin && action === 'disable' && session.context ? [session.context.team_id, 'active' as const] : null, page => page.next_cursor)
   if (!admin) return <PaneEmptyState caption={t('forbidden')} />
   if (action === 'email') return <TeamEmailDialog member={member} onClose={onClose} onSaved={onChanged} />
   if (action === 'disable') {
@@ -80,11 +80,11 @@ function ManagedMemberRow({ member, onSelect }: { member: TeamMember; onSelect: 
 }
 
 export function TeamMembers() {
-  const { t } = useTranslation('team'), api = useTeamApi(), session = useTeamSession()
+  const { t } = useTranslation('team'), session = useTeamSession()
   const [state, setState] = useState<Exclude<TeamMemberState, 'provisioning'>>('active'), [invite, setInvite] = useState(false)
   const [selected, setSelected] = useState<{ member: TeamMember; action: 'details' | 'email' | 'disable' } | null>(null)
   const context = session.context, admin = session.status === 'ready' && context?.role !== 'member'
-  const list = useReplicaPages(teamMembersPage, admin && context ? [teamApiKey(api), context.team_id, state] : null, page => page.next_cursor)
+  const list = useReplicaPages(teamMembersPage, admin && context ? [context.team_id, state] : null, page => page.next_cursor)
   const members = list.pages.flatMap(page => page.members)
   const refresh = async () => { await refreshTag(TEAM) }
   if (!admin) return <PaneEmptyState caption={t('forbidden')} />
