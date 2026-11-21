@@ -4,7 +4,6 @@ import { PasswordSaveError } from './save-error'
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { passwordGrantLevel, type PasswordUiCommand, type PasswordUiReply, type PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
 import { privatePasswordVaultDirectory, PASSWORD_VAULT_STORAGE } from '@gugu/core/local/state/protectedPrivateStorage'
 import { protectedPrivateStorageStatus } from '@gugu/core/local/state/agentFileBoundary'
@@ -115,7 +114,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     assertPrivateStorageReady: protection, keys,
     invalidate: async () => { login.invalidate(); remote.invalidate() },
   }, login.sink, async (operation, signal) => {
-    if (!PASSWORD_BETA_ENABLED || await host.account() !== ownerId) throw unavailable()
+    if (await host.account() !== ownerId) throw unavailable()
     const result = await access.acquireFeatureGuard(operation, signal)
     if (result.status !== 'ready') throw unavailable()
     return result
@@ -127,7 +126,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
   return { ownerId, vault, login, saves, remote, controller, assertCurrent, sync, pull: createVaultPulling(sync, host, controller.signal) }
 }
 async function account(): Promise<Account> {
-  if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
+  if (!native) throw unavailable()
   return accounts.get()
 }
 
@@ -143,7 +142,7 @@ async function snapshot(value: Account): Promise<PasswordSnapshot> {
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
-  if (!PASSWORD_BETA_ENABLED || native) return
+  if (native) return
   native = host
   ipcMain.handle(PASSWORD_UI_CHANNEL, async (event, command: PasswordUiCommand): Promise<PasswordUiReply> => {
     try {
@@ -285,7 +284,6 @@ export function passwordBetaRemoteHandlers() {
     }),
     [PASSWORD_AGENT_RPC]: async (payload: unknown, ctx: { request: { user_id: string } }) => {
       try {
-        if (!PASSWORD_BETA_ENABLED) return fail()
         const op = remoteOpSchema.parse(payload), value = await account()
         if (ctx.request.user_id !== value.ownerId) return fail()
         const caller: RemoteCaller = op.caller, subjects = [`agent:${caller.agentId}`]

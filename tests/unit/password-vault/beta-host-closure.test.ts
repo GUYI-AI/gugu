@@ -14,7 +14,6 @@ import { LocalPasswordVault } from '../../../apps/desktop/electron/password-vaul
 const h = vi.hoisted(() => ({ root: '', handlers: new Map<string, (event: unknown, command: unknown) => Promise<unknown>>(), keys: undefined as unknown as VaultKeyProtector }))
 vi.mock('electron', () => ({ app: { getPath: () => h.root, once() {} }, ipcMain: { handle: (name: string, callback: (event: unknown, command: unknown) => Promise<unknown>) => h.handlers.set(name, callback) } }))
 vi.mock('../../../apps/desktop/electron/password-vault/system-keys', () => ({ systemVaultKeyProtector: () => h.keys }))
-vi.mock('@gugu/core/shared/passwordBeta', async original => ({ ...await original<typeof import('@gugu/core/shared/passwordBeta')>(), PASSWORD_BETA_ENABLED: true }))
 vi.mock('@gugu/core/local/state/agentFileBoundary', async original => ({ ...await original<typeof import('@gugu/core/local/state/agentFileBoundary')>(), protectedPrivateStorageStatus: async () => ({ status: 'ready' }) }))
 vi.mock('../../../apps/desktop/electron/permissions/password-beta-access', () => ({ createBetaPasswordAccess: (options: { signal: AbortSignal }) => ({
   acquireFeatureGuard: async () => ({ status: 'ready', signal: options.signal, assertCurrent: () => options.signal.throwIfAborted() }),
