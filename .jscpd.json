@@ -1,0 +1,25 @@
+{
+  "path": ["apps/desktop", "apps/mobile/runtime", "packages", "scripts"],
+  "format": ["typescript", "tsx", "javascript", "jsx"],
+  "minTokens": 70,
+  "minLines": 6,
+  "mode": "mild",
+  "gitignore": true,
+  "absolute": false,
+  "reporters": ["json", "console"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/dist-electron/**",
+    "**/__generated__/**",
+    "**/*.test.{ts,tsx,mts}",
+    "**/*.spec.{ts,tsx,mts}",
+    "**/*.stories.{ts,tsx}",
+    "**/fixtures/**",
+    "**/__fixtures__/**",
+    "apps/desktop/preinstalled-apps/**",
+    "apps/desktop/session-tooling/node-deps/**",
+    "apps/mobile/android/**",
+    "apps/mobile/ios/**"
+  ]
+}

@@ -151,3 +151,9 @@ apps/desktop/session-tooling/fixtures/*.db-shm
 
 # Generated packaged iOS JavaScriptCore runtime and license inventory.
 /apps/mobile/ios/App/App/HostRuntime/
+# repo-health scan outputs (scripts/checks/repo-health): crapper's report, repowise's index, coverage and Stryker reports.
+/.metrics/
+/.repowise/
+/target/coverage/
+/reports/mutation/
+.stryker-tmp/

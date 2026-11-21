@@ -1,0 +1,14 @@
+{
+  "//": "Python tools for run.mjs, installed by venv.mjs into one venv. The npm tools are pinned in the root package.json.",
+  "python": ">=3.11",
+  "packages": {
+    "crapper": {
+      "spec": "crapper @ git+https://github.com/unclebob/crapper@c757ec79a6c15dc815238bbd9c2f4601eb54d3cc",
+      "pin": "unclebob/crapper@c757ec79a6c15dc815238bbd9c2f4601eb54d3cc"
+    },
+    "repowise": {
+      "spec": "repowise==0.61.0",
+      "pin": "repowise==0.61.0"
+    }
+  }
+}
