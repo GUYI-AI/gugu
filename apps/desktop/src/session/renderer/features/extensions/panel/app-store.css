@@ -1352,13 +1352,15 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   outline-offset: -4px;
 }
 
-/* Desktop marketplace */
+/* Desktop marketplace. The header sits in the window's top band, edge to edge (the Apps view): its end leaves the window
+   controls their room (`--titlebar-controls-width`, the same reserve as the tab strip's, titlebar-actions). */
 .mk-market-header {
   position: sticky;
   z-index: 2;
   top: 0;
   margin-bottom: 18px;
   padding-block: 12px;
+  padding-inline-end: var(--titlebar-controls-width, 0px);
   background: var(--background);
 }
 .mk-market-actions {
