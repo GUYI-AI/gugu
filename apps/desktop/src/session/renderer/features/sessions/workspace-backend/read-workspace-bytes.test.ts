@@ -45,3 +45,11 @@ it('fails, rather than joining two versions, when the file changes size while it
   h.readChunk.mockResolvedValueOnce(chunk(700 * 1024, 512 * 1024)).mockResolvedValueOnce(chunk(800 * 1024, 188 * 1024));
   await expect(readWorkspaceBytes('p', 'w', 'a.pdf')).rejects.toThrow('changed while it was read');
 });
+
+it('takes a first chunk already asked, and asks only the rest', async () => {
+  h.readChunk.mockResolvedValueOnce(chunk(700 * 1024, 188 * 1024));
+  const begun = Promise.resolve({ size: 700 * 1024, bytes: new Uint8Array(512 * 1024), ms: 100 });
+  const parts = await readWorkspaceBytes('p', 'w', 'a.png', Infinity, begun);
+  expect(new Blob(parts).size).toBe(700 * 1024);
+  expect(h.readChunk.mock.calls.map((call) => (call[2] as { offset: number }).offset)).toEqual([512 * 1024]);
+});
