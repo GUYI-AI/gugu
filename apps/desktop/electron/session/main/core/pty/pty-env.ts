@@ -9,7 +9,6 @@ import { loginShellEnv } from '@main/utils/userEnv';
 import { getWindowsEnvValue } from '@main/utils/windows-env';
 import { guguNodeEnv } from './gugu-node';
 import { cliIntegrationPathEnv } from '../integrations/cli/cli-paths';
-import { serverBrowserEnv } from './server-browser-env';
 
 const DISPLAY_ENV_VARS = [
   'DISPLAY', // X11 display server
@@ -160,9 +159,6 @@ export function buildTerminalEnv(
     if (sshAuthSock) env.SSH_AUTH_SOCK = sshAuthSock;
   }
 
-  // #6264 咕咕 server 上起的终端:与 agent 同一组「打开网页转到人那一侧」(server-browser-env.ts)。
-  Object.assign(env, serverBrowserEnv(env.PATH));
-
   return env;
 }
 
@@ -253,9 +249,6 @@ export function buildAgentEnv(options: AgentEnvOptions = {}): Record<string, str
 
   // #7210 资源库里连上的官方命令行(钉钉 dws、企业微信 wecom-cli):agent 敲的就是在咕咕里登录的那一个。
   Object.assign(env, cliIntegrationPathEnv(env.PATH));
-
-  // #6264 咕咕 server 上:程序要「打开网页」时转到人那一侧(server-browser-env.ts;桌面版上是空的)。
-  Object.assign(env, serverBrowserEnv(env.PATH));
 
   Object.assign(env, buildAgentHookEnv(hook));
 

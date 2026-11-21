@@ -64,6 +64,7 @@ import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { withSessionBrowserEnv } from '../../pty/server-browser-env';
 import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
@@ -496,7 +497,8 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     },
     firstTurn: injection.firstTurn,
     mcpServers: injection.mcpServers,
-    capabilitySpawnEnv: injection.spawnEnv,
+    // #6264 咕咕 server 上:这条会话的 agent 打开网页,推给正看着它的桌面(server-browser-env.ts;桌面版上是空的)。
+    capabilitySpawnEnv: withSessionBrowserEnv(input.input.sessionId, injection.spawnEnv),
     capabilitySpawnArgs: injection.spawnArgs,
     sessionPrompt: injection.sessionPrompt,
     sessionMeta: injection.sessionMeta,
