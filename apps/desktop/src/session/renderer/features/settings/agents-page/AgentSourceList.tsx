@@ -21,6 +21,7 @@ import type { AgentPayload, Installation } from '@shared/core/agents/agent-paylo
 import { InstallProgressRow } from './InstallProgressRow';
 import { lastFailureSummary } from './install-failure-summary';
 import { useAgentUninstallConfirmation } from './agent-uninstall-confirmation';
+import { AgentLookupLine } from './agent-lookup-line';
 
 export type SourceKind = 'local' | 'managed' | 'custom';
 export type AgentSourceListProps = {
@@ -186,6 +187,7 @@ export const AgentSourceList = observer(function AgentSourceList({
           />
         ) : (
           <>
+            {!failure && !available && agentPayload?.lookup && <AgentLookupLine lookup={agentPayload.lookup} onCheck={vm.refresh} />}
             {failure?.diagnostic && (
               <details className="mt-1 text-xs text-foreground-muted">
                 <summary className="cursor-pointer">{translate('agentsPage.errorDetails')}</summary>

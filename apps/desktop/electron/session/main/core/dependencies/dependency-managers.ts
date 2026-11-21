@@ -19,7 +19,7 @@ import { agentUpdateService } from './agent-update-service';
 import { hostDependencyLedgerFor, localManagedInstallDirs } from './host-dependency-ledger';
 import { createLocalInstallCommandRunner } from './install-runner';
 import { readManagedLauncherRelease } from './mise-installer';
-import { ensureUserBinDirsInPath } from '@main/utils/userEnv';
+import { ensureUserBinDirsInPath, refreshUserPath } from '@main/utils/userEnv';
 import { AGENT_DEPENDENCIES, getDependencyDescriptor } from './registry';
 
 type DesktopDependencyManager = HostDependencyManager<LocalExecutionContext>;
@@ -130,9 +130,9 @@ async function agentPathsStillConsistent(manager: DesktopDependencyManager): Pro
   if (entry.inFlight) return entry.inFlight;
   if (Date.now() - entry.checkedAt < REVALIDATE_INTERVAL_MS) return true;
 
-  entry.inFlight = Promise.all(
-    offeredAgentDependencies.map((dependency) => revalidate.call(manager, dependency.id))
-  )
+  // The PATH check is a detection too: against the PATH as it is now, so a CLI installed elsewhere shows up.
+  entry.inFlight = refreshUserPath()
+    .then(() => Promise.all(offeredAgentDependencies.map((dependency) => revalidate.call(manager, dependency.id))))
     .then((consistent) => consistent.every(Boolean))
     .finally(() => {
       entry.checkedAt = Date.now();

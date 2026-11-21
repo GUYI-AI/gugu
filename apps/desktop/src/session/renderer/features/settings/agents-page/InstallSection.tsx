@@ -48,6 +48,8 @@ export type AgentInstallationHeader = {
   managedVersions?: ReactNode;
   /** Why the last install or update failed; null once a new attempt starts or one succeeds. */
   failure: AgentInstallErrorPresentation | null;
+  /** Runs a detection again (it re-reads the current PATH first). */
+  check: () => Promise<void>;
 };
 
 export type InstallSectionProps = {
@@ -334,5 +336,6 @@ export const InstallSection = observer(function InstallSection({
     install: managedInstall ? onInstall : undefined,
     managedVersions,
     failure: lastFailureSummary(vm, translate),
+    check: vm.refresh,
   }, settings);
 });
