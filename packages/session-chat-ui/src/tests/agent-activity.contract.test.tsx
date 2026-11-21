@@ -9,7 +9,6 @@ import { createChatState } from '../state/chat-state';
 import { createChatView } from '../chat-view';
 import type { ChatMessage, TranscriptTurn } from '../model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
-import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
 const peer = 'user:11111111-1111-4111-8111-111111111111';
 const me = '22222222-2222-4222-8222-222222222222';
@@ -77,25 +76,30 @@ describe('approved A2A activity', () => {
     expect(t.scroll().scrollHeight).toBe(before);
   });
 
-  it('never pins an activity header that has not been expanded, or has been collapsed again', async () => {
-    const records = [turn('own', [ordinary('Owner question', 'user')]), turn('incoming', [delivery('incoming')]),
-      ...Array.from({ length: 15 }, (_, i) => turn(`later${i}`, [ordinary(`Visible answer ${i}. `.repeat(35))]))];
-    const t = await mount(800, records);
-    const sticky = () => getComputedStyle(t.head()!.closest('[data-index]')!.firstElementChild!).position;
-    expect(sticky()).not.toBe('sticky');
-    const lane = () => t.head()!.closest<HTMLElement>('[data-index]')!;
-    for (const scrollTop of [80, 130, 180]) {
-      t.scroll().scrollTop = scrollTop;
-      await untilStable('closed row scrolling near the top', () => t.head()?.getBoundingClientRect().top);
-      expect(lane().querySelector('[data-chat-pin-backdrop]'), 'closed activity never paints the sticky divider').toBeNull();
+  it('never pins an activity header, closed or opened: only the viewer question sticks above its messages', async () => {
+    // Owner 2026-11-21: an opened exchange pinned its header under the question and cut the next bubble in half.
+    const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'),
+      ...Array.from({ length: 12 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45)))]),
+      turn('conclusion', [ordinary('Following conclusion')])]);
+    const lane = () => t.head()?.closest<HTMLElement>('[data-index]');
+    const unpinned = () => !lane() || (getComputedStyle(lane()!.firstElementChild!).position !== 'sticky' && !lane()!.querySelector('[data-chat-pin-backdrop]'));
+    for (const open of [false, true]) {
+      if (open) { t.button().click(); await untilStable('opened activity settled', () => t.scroll().scrollHeight); }
+      for (const scrollTop of [80, 300, 850]) {
+        t.scroll().scrollTop = scrollTop;
+        await untilStable('scrolled', () => [t.scroll().scrollTop, t.head()?.getBoundingClientRect().top]);
+        expect(unpinned(), `activity header pinned (open: ${open}, scrollTop: ${scrollTop})`).toBe(true);
+      }
     }
-    t.view.scrollToTop();
-    t.button().click();
-    await until('opened activity is sticky eligible', () => sticky() === 'sticky');
-    t.button().click();
-    await untilStable('reclosed activity settled', () => t.scroll().scrollHeight);
-    expect(sticky()).not.toBe('sticky');
-    expect(lane().querySelector('[data-chat-pin-backdrop]')).toBeNull();
+    const own = t.host.querySelector('[data-pin-summary="Owner question"]')!.getBoundingClientRect();
+    expect(own.top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
+    // Every opened message below the question shows its own first line: nothing else is painted over it.
+    const cards = [...t.host.querySelectorAll<HTMLElement>('[data-user-card^="a"]')].filter(card => card.getBoundingClientRect().top >= own.bottom);
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      const r = card.getBoundingClientRect();
+      if (r.top + 4 < t.scroll().getBoundingClientRect().bottom) expect(card.contains(document.elementFromPoint(r.left + 20, r.top + 4)), card.dataset.userCard).toBe(true);
+    }
   });
   it('keeps the owner pinned while reading ordinary reply content beside a closed activity', async () => {
     const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), delivery('incoming'),
@@ -285,24 +289,23 @@ describe('approved A2A activity', () => {
     expect(t.head()!.dataset.agentActivity).toBe(id);
     expect(t.button().getAttribute('aria-expanded')).toBe('true');
   });
-  it.each([390, 1280])('pins the open activity header with an opaque backdrop and collapses to the following message (%i)', async width => {
-    const records = Array.from({ length: 24 }, (_, i) => turn(`a${i}`, [delivery(`a${i}`, `Update ${i}. `.repeat(45))]));
-    const t = await mount(width, [...records, turn('panel', [ordinary('Following conclusion')]), ...Array.from({ length: 15 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))]);
-    t.view.scrollToTop();
-    await until('top header returned', () => !!t.head());
-    t.button().click();
-    await untilStable('open group settled', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('header stuck', () => t.head()?.getBoundingClientRect().top);
-    expect(Math.abs(t.head()!.getBoundingClientRect().top - t.scroll().getBoundingClientRect().top - 8)).toBeLessThan(2);
-    const backdrop = t.head()!.closest('[data-index]')!.querySelector('[data-chat-pin-backdrop]')!;
-    expect(getComputedStyle(backdrop).opacity).toBe('1');
+  it.each([390, 1280])('keeps the following message where it is when an on-screen exchange is collapsed (%i)', async width => {
+    const t = await mount(width, [...Array.from({ length: 4 }, (_, i) => turn(`before${i}`, [ordinary(`Before ${i}. `.repeat(20))])),
+      ...Array.from({ length: 3 }, (_, i) => turn(`a${i}`, [delivery(`a${i}`, `Update ${i}.`)])),
+      turn('panel', [ordinary('Following conclusion')]), ...Array.from({ length: 15 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))]);
+    const top = () => t.head()!.getBoundingClientRect().top - t.scroll().getBoundingClientRect().top;
+    t.scroll().scrollTop += top() - 60;
+    await untilStable('header placed near the top', () => top());
     t.button().click();
     await until('following conclusion mounted', () => !!t.host.querySelector('[data-user-card="Following conclusion"]'));
-    await untilStable('collapse anchor settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
-    const conclusion = t.host.querySelector('[data-user-card="Following conclusion"]')!.getBoundingClientRect();
-    expect(conclusion.top).toBeGreaterThanOrEqual(t.scroll().getBoundingClientRect().top - 1);
-    expect(conclusion.top).toBeLessThan(t.scroll().getBoundingClientRect().bottom);
+    await untilStable('open exchange settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
+    const conclusion = () => t.host.querySelector('[data-user-card="Following conclusion"]')!.getBoundingClientRect().top;
+    const before = conclusion();
+    expect(before, 'the conclusion is on screen').toBeLessThan(t.scroll().getBoundingClientRect().bottom);
+    t.button().click();
+    await untilStable('collapse settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(Math.abs(conclusion() - before), 'the reader keeps the conclusion where it was').toBeLessThan(2);
   });
   it.each([390, 1280])('keeps the clicked line where it is when the following message is off screen (%i)', async width => {
     // Owner 2026-11-12: opened an exchange in the text, closed it again, and the view went from the 11:51 message to
@@ -334,7 +337,8 @@ describe('approved A2A activity', () => {
     const closedHeight = t.scroll().scrollHeight;
     t.button().click();
     await untilStable('all open row heights settled', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 1100;
+    // The reader collapses from the header on screen; nearly all of the opened rows are offscreen below it.
+    t.scroll().scrollTop += t.head()!.getBoundingClientRect().top - t.scroll().getBoundingClientRect().top - 40;
     await untilStable('open scrolled position', () => t.scroll().scrollTop);
     t.button().click();
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -347,242 +351,19 @@ describe('approved A2A activity', () => {
     await untilStable('remount preserved collapsed geometry', () => t.scroll().scrollHeight);
     expect(t.scroll().scrollHeight).toBe(closedHeight);
   });
-  it('keeps the viewer question pinned above the open A2A header, without either covering the other', async () => {
-    const records = [turn('own', [ordinary('Owner question', 'user'), ...Array.from({ length: 24 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45))) ]),
-      turn('conclusion', [ordinary('Following conclusion')])];
-    const t = await mount(800, records);
-    t.button().click();
-    await untilStable('open activity heights settled', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('both sticky lanes settled', () => [t.head()?.getBoundingClientRect().top, t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect().top]);
-    const own = t.host.querySelector('[data-pin-summary="Owner question"]')!.getBoundingClientRect();
-    const activity = t.head()!.getBoundingClientRect();
-    expect(Math.abs(own.top - t.scroll().getBoundingClientRect().top - 8)).toBeLessThan(2);
-    expect(activity.top).toBeGreaterThanOrEqual(own.bottom + 6);
-    expect(activity.top - own.bottom).toBeLessThan(20);
-  });
-  it.each([390, 1280])('pushes the two pinned rows out continuously at the activity end and reverses with the scroll (%i)', async width => {
-    const records = [turn('own', [ordinary('Owner question', 'user'), ...Array.from({ length: 24 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45))) ]),
-      turn('conclusion', [ordinary('Following conclusion. '.repeat(60))]),
-      ...Array.from({ length: 12 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))];
-    const t = await mount(width, records);
-    t.button().click();
-    await untilStable('push-out rows measured', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('push-out lanes mounted', () => t.head()?.getBoundingClientRect().top);
-    const own = () => t.host.querySelector<HTMLElement>('[data-pin-summary="Owner question"]')!;
-    const sample = () => ({ scroll: t.scroll().scrollTop, own: own()?.getBoundingClientRect().top,
-      activity: t.head()?.getBoundingClientRect().top, opaque: t.head() && getComputedStyle(t.head()!.closest('[data-index]')!.querySelector('[data-chat-pin-backdrop]')!).opacity });
-    await untilStable('both pins settled', () => [sample().own, sample().activity]);
-    const pinned = sample();
-    const row = t.head()!.closest<HTMLElement>('[data-index]')!;
-    const end = Number.parseFloat(row.style.top) + Number.parseFloat(row.style.height);
-    const samples = [];
-    for (let delta = -240; delta <= 40; delta += 8) {
-      t.scroll().scrollTop = end + delta;
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      samples.push(sample());
-    }
-    expect(samples.filter(s => s.activity !== undefined && s.activity > 0 && s.activity < 40)).not.toHaveLength(0);
-    for (let i = 1; i < samples.length; i++) {
-      const before = samples[i - 1], after = samples[i];
-      if (before.activity !== undefined && after.activity !== undefined) expect(Math.abs(after.activity - before.activity)).toBeLessThanOrEqual(9);
-    }
-    const middle = samples.find(s => s.activity !== undefined && s.activity > 15 && s.activity < 35)!;
-    t.scroll().scrollTop = middle.scroll;
-    await untilStable('push-out held halfway', () => sample().activity);
-    expect(sample().activity).toBeCloseTo(middle.activity!, 0);
-    const held = sample();
-    await new Promise(resolve => setTimeout(resolve, 90));
-    expect(sample()).toEqual(held);
-    t.scroll().scrollTop = 850;
-    await untilStable('reverse scroll restores the same pins', () => [sample().own, sample().activity]);
-    expect(sample().own).toBe(8);
-    expect(sample().activity).toBe(pinned.activity);
-    expect(sample().opaque).toBe('1');
-  });
-  it.each([true, false])('returns pinned rows during the height collapse without skipping to the final anchor (following conclusion: %s)', async following => {
-    const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), ...Array.from({ length: 24 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45))) ]),
-      ...(following ? [turn('conclusion', [ordinary('Following conclusion. '.repeat(60))]), ...Array.from({ length: 10 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))] : [])]);
-    t.button().click();
-    await untilStable('collapse source measured', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('collapse starts with two pinned rows', () => t.head()?.getBoundingClientRect().top);
-    const own = () => t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect();
-    const start = t.scroll().scrollTop;
-    // Drive the real layout tween with a frame clock. A busy browser can deliver
-    // its next animation frame after the entire 200ms duration has elapsed.
-    let now = performance.now();
-    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const positions: number[] = [];
-    try {
-      t.button().click();
-      for (let frame = 1; frame <= 16; frame++) {
-        now += 16;
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        positions.push(t.scroll().scrollTop);
-        if (frame === 1) expect(own()!.bottom, 'own pin is still visible in the first shrinking frame').toBeGreaterThan(0);
-      }
-    } finally {
-      clock.mockRestore();
-    }
-    await untilStable('collapse and target position settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
-    const end = t.scroll().scrollTop;
-    expect(Math.abs(start - end), 'the fixture really moves to its collapsed anchor').toBeGreaterThan(100);
-    expect(Math.abs(positions[0] - end), 'the first shrinking frame has not already landed on the conclusion')
-      .toBeGreaterThan(1);
-    expect(new Set(positions.map(position => Math.round(position))).size, 'collapse passes through multiple real layout positions').toBeGreaterThan(3);
-    await new Promise(resolve => setTimeout(resolve, 100));
-    expect(t.scroll().scrollTop).toBe(end);
-    if (following) {
-      const conclusion = [...t.host.querySelectorAll<HTMLElement>('[data-agent-conversation-message]')]
-        .find(row => row.dataset.agentConversationMessage?.startsWith('Following conclusion.'))!.getBoundingClientRect();
-      expect(conclusion.top).toBeGreaterThanOrEqual(t.scroll().getBoundingClientRect().top - 1);
-      expect(conclusion.top).toBeLessThan(t.scroll().getBoundingClientRect().bottom);
-    }
-    expect(t.button().getAttribute('aria-expanded')).toBe('false');
-  });
-  it.each(['#ffffff', '#212121'])('paints both pinned lanes opaquely without scroll-state containers (%s)', async background => {
-    const question = 'Owner question';
-    const t = await mount(360, [turn('own', [ordinary(question, 'user'),
-      ...Array.from({ length: 24 }, (_, i) => delivery(`opaque${i}`, `Underlying text ${i}. `.repeat(45)))]),
-      turn('conclusion', [ordinary('Following conclusion. '.repeat(60))])]);
-    t.host.style.setProperty('--chat-bg', background);
-    t.button().click();
-    await untilStable('opaque-lane source measured', () => t.scroll().scrollHeight);
-    // Older Android WebViews do not implement scroll-state queries. Disable
-    // those containers while exercising the real sticky layout and paint.
-    for (const row of t.host.querySelectorAll<HTMLElement>('[data-index] > div')) row.style.containerType = 'normal';
-    const own = () => t.host.querySelector(`[data-pin-summary="${question}"]`)!;
-    const masks = () => [own(), t.head()!].map(row => row.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!);
-    t.scroll().scrollTop = 850;
-    await untilStable('both opaque lanes stuck', () => [own().getBoundingClientRect().top, t.head()?.getBoundingClientRect().top]);
-    for (const mask of masks()) {
-      expect(getComputedStyle(mask).opacity, 'the scrolling body cannot paint through either pinned lane').toBe('1');
-      expect(getComputedStyle(mask).backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
-    }
-    t.scroll().scrollTop = 0;
-    await untilStable('opaque lanes return to ordinary bubbles', () => t.head()?.getBoundingClientRect().top);
-    const headMask = masks()[1];
-    // Both masks turn transparent; the owner pin rests hidden over its own message.
-    expect(getComputedStyle(headMask).opacity).toBe('0');
-    expect(getComputedStyle(masks()[0]).opacity).toBe('0');
-    expect(pinnedSummaryShown(own() as HTMLElement), 'the owner pin is put away').toBe(false);
-  });
-  it.each([
-    ...[
-      { width: 360, background: '#ffffff', endInset: 0 }, { width: 1280, background: '#ffffff', endInset: 15 },
-      { width: 360, background: '#212121', endInset: 0 }, { width: 1280, background: '#212121', endInset: 15 },
-    ].map(value => ({ ...value, classic: false, frameWidth: value.width })),
-    ...['#ffffff', '#212121'].map(background => ({ width: 1280, background, endInset: 0, classic: true, frameWidth: 1280 })),
-    ...[false, true].map(classic => ({ width: 1280, background: '#ffffff', endInset: 0, classic, frameWidth: 960 })),
-  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background/$endInset/classic=$classic/frame=$frameWidth)', async ({ width, background, endInset, classic, frameWidth }) => {
-    if (classic) {
-      // A custom Chromium scrollbar reserves real layout space, including on overlay-scrollbar Macs.
-      const scrollbar = document.head.appendChild(document.createElement('style'));
-      scrollbar.textContent = '[data-chat-scroll]::-webkit-scrollbar { width: 15px; height: 15px; }';
-      cleanup.push(() => scrollbar.remove());
-    }
-    const question = 'A longer owner question above the agent exchange. '.repeat(3);
-    const t = await mount(width, [turn('own', [ordinary(question, 'user'),
-      ...Array.from({ length: 20 }, (_, i) => delivery(`quiet${i}`, `Long underlying message ${i}. `.repeat(45)))]),
-      turn('conclusion', [ordinary('Following conclusion. '.repeat(60))])]);
-    if (frameWidth !== width) {
-      t.host.style.width = `${frameWidth}px`;
-      t.host.style.left = '120px';
-      await untilStable('split conversation geometry settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
-    }
-    if (classic) expect(t.scroll().offsetWidth - t.scroll().clientWidth, 'a real classic scrollbar reserves 15px').toBe(15);
-    // A non-overlay scrollbar consumes an asymmetric trailing gutter. Exercise
-    // the same column offset on overlay-scrollbar platforms as well.
-    t.scroll().style.paddingRight = `${16 + endInset}px`;
-    await untilStable('asymmetric content gutter settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
-    if (background === '#212121') t.host.classList.add('emdark');
-    t.host.style.setProperty('--chat-bg', background);
-    const label = () => t.head()!.lastElementChild as HTMLElement;
-    const typography = () => { const s = getComputedStyle(label()); return [s.fontSize, s.lineHeight, s.fontWeight, s.color]; };
-    const before = typography();
-    t.button().click();
-    await untilStable('long messages expanded', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('long message scrolls under both pins', () => t.head()?.getBoundingClientRect().top);
-    const row = t.head()!.getBoundingClientRect();
-    await cdp().send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: row.left + row.width / 2, y: row.top + row.height / 2 });
-    const inlineStyle = getComputedStyle(label());
-    expect(typography(), 'pinning or touch hover must not promote the text').toEqual(before);
-    expect(inlineStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(inlineStyle.borderRadius).toBe('0px');
-    expect(inlineStyle.borderWidth).toBe('0px');
-    const lane = t.head()!.closest<HTMLElement>('[data-index]')!;
-    const backdrop = lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
-    const paint = backdrop.getBoundingClientRect(), viewport = t.scroll().getBoundingClientRect();
-    console.info('ACTIVITY_PIN_FRAME', JSON.stringify({ width, background, endInset, classic, frameWidth,
-      offsetWidth: t.scroll().offsetWidth, clientWidth: t.scroll().clientWidth,
-      viewport: { left: viewport.left, right: viewport.right }, paint: { left: paint.left, right: paint.right } }));
-    const style = getComputedStyle(backdrop);
-    expect(style.opacity).toBe('1');
-    expect(style.backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
-    const own = t.host.querySelector('[data-pin-summary]')!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.parentElement!.getBoundingClientRect();
-    const ownPaint = t.host.querySelector('[data-pin-summary]')!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.getBoundingClientRect();
-    expect(ownPaint.top, 'the reserved top gap above the owner pin must not expose an older body line').toBeLessThanOrEqual(viewport.top);
-    expect(Math.abs(paint.top - own.bottom), 'the two page-colored pins meet without exposing half a body line in their seam').toBeLessThan(1);
-    expect(Math.abs(paint.bottom - row.bottom), 'no opaque band below the semantic row').toBeLessThan(1);
-    expect(paint.left).toBeLessThanOrEqual(viewport.left);
-    // The strip must reach the right edge of what the scroller paints: its client box. A classic scrollbar (Linux,
-    // Windows) takes the last pixels of the border box and paints over anything beneath; overlay scrollbars take none.
-    const scroller = t.scroll();
-    expect(paint.right).toBeGreaterThanOrEqual(viewport.left + scroller.clientLeft + scroller.clientWidth - 1);
-    expect(getComputedStyle(lane).contain.split(' ')).not.toContain('paint');
-    expect(style.borderTopWidth).toBe('0px');
-    expect(style.borderLeftWidth).toBe('0px');
-    expect(style.borderRightWidth).toBe('0px');
-    expect(style.borderBottomWidth).toBe('1px');
-    if (frameWidth !== width) {
-      expect(paint.left).toBeGreaterThanOrEqual(viewport.left - 1);
-      expect(paint.right).toBeLessThanOrEqual(viewport.right + 1);
-      const column = t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width;
-      t.host.style.width = '1040px';
-      await untilStable('split frame resizes while its content column remains capped', () => [t.scroll().offsetWidth, backdrop.getBoundingClientRect().width]);
-      expect(t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width).toBe(column);
-      const resized = t.scroll().getBoundingClientRect(), resizedPaint = backdrop.getBoundingClientRect();
-      expect(Math.abs(resizedPaint.left - resized.left)).toBeLessThan(1);
-      expect(Math.abs(resizedPaint.right - resized.right)).toBeLessThan(1);
-    }
-  });
-  it.each(['#ffffff', '#212121'])('covers the reserved viewport gap above a standalone opened activity (%s)', async background => {
-    const t = await mount(390, [turn('incoming', Array.from({ length: 16 }, (_, i) => delivery(`standalone${i}`, `Underlying old message ${i}. `.repeat(45)))),
-      turn('after', [ordinary('Following conclusion. '.repeat(40))])]);
-    if (background === '#212121') t.host.classList.add('emdark');
-    t.host.style.setProperty('--chat-bg', background);
-    t.button().click();
-    await untilStable('standalone activity expanded', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 650;
-    await untilStable('standalone activity stuck', () => t.head()?.getBoundingClientRect().top);
-    const mask = t.head()!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
-    expect(getComputedStyle(mask).opacity).toBe('1');
-    expect(getComputedStyle(mask).backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
-    expect(mask.getBoundingClientRect().top, 'the unpaired activity must cover its reserved top gap').toBeLessThanOrEqual(t.scroll().getBoundingClientRect().top);
-    t.button().click();
-    await untilStable('standalone activity closed', () => t.scroll().scrollHeight);
-    expect(t.head()!.closest('[data-index]')!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
-  });
-  it('snaps the pinned exit and manual collapse when reduced motion is enabled', async () => {
+  it('removes the opened content at once on manual collapse when reduced motion is enabled', async () => {
     await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), ...Array.from({ length: 24 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45))) ]),
       turn('conclusion', [ordinary('Following conclusion. '.repeat(60))]), ...Array.from({ length: 10 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))]);
     t.button().click();
     await untilStable('reduced motion open geometry', () => t.scroll().scrollHeight);
-    const row = t.head()!.closest<HTMLElement>('[data-index]')!;
-    t.scroll().scrollTop = Number.parseFloat(row.style.top) + Number.parseFloat(row.style.height) - 80;
-    await untilStable('reduced motion exit', () => t.head()?.getBoundingClientRect().top);
-    expect(getComputedStyle(t.head()!).visibility).toBe('hidden');
-    t.scroll().scrollTop = 850;
-    await untilStable('reduced motion reverse', () => t.head()?.getBoundingClientRect().top);
-    expect(getComputedStyle(t.head()!).visibility).toBe('visible');
+    const top = () => t.head()!.getBoundingClientRect().top;
+    const clicked = top();
     t.button().click();
     await until('reduced motion content immediately removed', () => !t.host.querySelector('[data-user-card="a0"]'));
     await untilStable('reduced motion final anchor', () => t.scroll().scrollTop);
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(Math.abs(top() - clicked), 'the clicked header stays where it was').toBeLessThan(2);
   });
   it('keeps closed activity lanes at header height while idle prefetch measures the surrounding history', async () => {
     const records = Array.from({ length: 18 }, (_, i) => turn(`t${i}`, [delivery(`hidden${i}`, 'A hidden long agent update. '.repeat(100)), ordinary(`Panel reply ${i}`)]));

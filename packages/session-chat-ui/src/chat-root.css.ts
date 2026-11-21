@@ -157,21 +157,16 @@ export const unitRowWrapper = style({
  * the row itself and a shown summary.
  *
  * Every row wrapper is its own stacking context at z-index auto (contain: paint, will-change), so
- * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane. A user
- * lane sits above activity lanes, whose sticky headers reserve room below the user's summary.
+ * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane.
  */
 export const pinLane = style({
   zIndex: 1,
   pointerEvents: 'none',
 });
-export const pinMessageLane = style({ zIndex: 2 });
 /** Whatever the message positions or raises inside itself stays under its own summary. */
 export const pinMessageRow = style({ isolation: 'isolate', marginTop: 'calc(-1 * var(--pin-layer-h))' });
 
-/** The semantic strip reaches the scroller edges, outside the centered text column. */
-export const activityPinLane = style({ contain: 'layout style' });
-
-/** The sticking element inside a lane; its backdrop is opaque only while stuck. */
+/** The user's summary sticking inside its lane; its backdrop is opaque only while stuck. */
 export const pinSticky = style({
   // `top` is per row (ChatRoot): the card lands on the pin line whatever the row's collapsed top gap.
   position: 'sticky',
@@ -211,12 +206,6 @@ export const pinSummaryLayer = style({
 });
 // A message without a bubble (attachments only, or being edited) has nothing to rest behind.
 globalStyle(`[data-pin-stuck="false"] > ${pinSummaryLayer} [data-pin-summary][data-pin-bare]`, { visibility: 'hidden' });
-
-/** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */
-export const activityPinBackdrop = style({
-  right: 'auto', boxShadow: 'none',
-  borderBottom: `1px solid color-mix(in srgb, ${vars.fgMuted} 16%, transparent)`,
-});
 
 /**
  * Default content centering class.

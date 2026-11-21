@@ -100,8 +100,6 @@ import { segmentCtxFor } from './state/segment-ctx';
 import type { LayoutSnapshot } from './state/geometry';
 import { sameRange } from './state/geometry';
 import {
-  activityPinBackdrop,
-  activityPinLane,
   canvas,
   composerSlotAnimatingClass,
   composerSlotCenteredClass,
@@ -117,7 +115,6 @@ import {
   pinBackdrop,
   pinLane,
   pinSticky,
-  pinMessageLane,
   pinMessageRow,
   pinSummaryLayer,
   scrollContainer,
@@ -128,7 +125,6 @@ import {
 } from './chat-root.css';
 import './chat-fonts.css';
 import { vars } from './styles/theme.css';
-import { syncContentColumnGeometry } from './lib/content-column-geometry';
 
 // Centered content column. The scroll container stays full width (so the
 // scrollbar sits at the viewport edge) while rows are measured and laid out
@@ -439,8 +435,6 @@ export function ChatRoot(props: ChatRootProps) {
   const [viewHeight, setViewHeight] = createSignal(600);
   const [containerWidth, setContainerWidth] = createSignal(0);
 
-  // Only the activity pin's backdrop reads this. A custom property on the root would restyle every row on each width change.
-  const [pinFrame, setPinFrame] = createSignal({ left: 0, width: 0 }, { equals: (a, b) => a.left === b.left && a.width === b.width });
   // @@@width-keeps-the-reading-spot — an anchor is a row plus pixels into it. New width rewraps that row, so the same pixels
   // are a different part of it; a long reply makes that many sections. The spot is the same share of the row.
   const setColumnWidth = (width: number) => {
@@ -453,7 +447,10 @@ export function ChatRoot(props: ChatRootProps) {
     measureUnitAt(i);
     if (before > 0 && virt.size(i) !== before) setAnchor({ ...m, offset: (m.offset * virt.size(i)) / before });
   };
-  const updateContentColumnGeometry = () => syncContentColumnGeometry(widthProbeEl, scrollEl, setColumnWidth, setPinFrame);
+  const updateContentColumnGeometry = () => {
+    const width = widthProbeEl?.getBoundingClientRect().width ?? 0;
+    if (width > 0) setColumnWidth(width);
+  };
 
   const updateSlotPadBottom = () => {
     const height = props.composer !== 'slot' || effectiveComposerPlacement() === 'center' ? 0 : composerSlotEl?.getBoundingClientRect().height ?? 0;
@@ -869,7 +866,6 @@ export function ChatRoot(props: ChatRootProps) {
 
   const committedActivityLanes = createMemo(() => { return activityLanes(committedUnits()); });
   const activityLaneRanges = createMemo(() => joinedActivityLanes(committedActivityLanes(), activeUnits(), committedUnits().length));
-  const activityLaneByIndex = createMemo(() => new Map(activityLaneRanges().filter(lane => viewState().isCollapsed(lane.id)).map(lane => [lane.index, lane])));
 
   const [hoveredUtterance, setHoveredUtterance] = createSignal<string>();
   const utteranceAt = (target: EventTarget | null) => target instanceof Element && outerEl?.contains(target)
@@ -939,13 +935,11 @@ export function ChatRoot(props: ChatRootProps) {
   const placeRow = (el: HTMLElement, idx: number, top: number, laneH: number | null) => {
     // Native sticky positioning supplies the reversible push-out. Under reduced motion,
     // hide the complete row as soon as that push starts instead of sliding a partial row.
-    const summary = laneH !== null && pinAnchorSet().has(idx);
-    // Where the sticking element's top rests in the lane: the summary's rest position, or the activity row's top.
-    const lead = summary ? pinRest(idx) : units().at(idx)?.gapBefore ?? 0;
-    const pinLine = laneH === null ? 0 : shadowScrollTop + userTopGap + activityPinOffset(idx) - lead;
+    // The summary's top rests `pinRest` below the lane's top and sticks at the pin line.
+    const pinLine = laneH === null ? 0 : shadowScrollTop + userTopGap - pinRest(idx);
     const stuck = laneH !== null && pinLine > top + 0.5;
     if (el.dataset.pinStuck !== String(stuck)) el.dataset.pinStuck = String(stuck);
-    const leaving = laneH !== null && pinLine > top + laneH - (summary ? lead + pinHeight(idx) : virt.size(idx)) + 0.5;
+    const leaving = laneH !== null && pinLine > top + laneH - pinRest(idx) - pinHeight(idx) + 0.5;
     if (el.dataset.pinLeaving !== String(leaving)) el.dataset.pinLeaving = String(leaving);
     const key = laneH === null ? `t${top}` : `l${top}:${laneH}`;
     if (appliedTop.get(idx) === key) return;
@@ -1161,9 +1155,6 @@ export function ChatRoot(props: ChatRootProps) {
     // range: its user message is the one stuck to the top (see @@@sticky-user-lanes).
     const lane = laneAtTop(st, padTop());
     if (lane >= 0 && lane < start) arr.push(lane);
-    for (const activity of activityLaneRanges()) {
-      if (activity.index < start && virt.top(activity.index) + padTop() <= st && virt.top(activity.end) + padTop() > st) arr.push(activity.index);
-    }
     for (let i = start; i <= visEnd; i++) if (virt.size(i) > 0) arr.push(i);
     arr.sort((a, b) => a - b);
     return arr;
@@ -1247,7 +1238,7 @@ export function ChatRoot(props: ChatRootProps) {
         ? [...committed, ...collectUserTurnUnits([active], makeUnitsView(activeUnits(), NO_ACTIVE_UNITS), { delivered: true }).map((i) => base + i)]
         : committed;
       // Replies and process metadata still belong to the viewer's reading lane.
-      // Only another visible input, or the end of an opened activity, releases it.
+      // Only another visible input releases it.
       const all = makeUnitsView(committedUnits(), active ? activeUnits() : NO_ACTIVE_UNITS);
       ends = ends.filter(index => !all.at(index)?.activityFold);
       // A separately delivered panel reply starts its own reading boundary.
@@ -1255,7 +1246,6 @@ export function ChatRoot(props: ChatRootProps) {
         const row = all.at(i)!, data = row.data as ChatMessage;
         if (!row.activityFold && data.role === 'assistant' && data.conversationPart === 'body' && row.itemId.includes(':sent:')) ends.push(i);
       }
-      for (const lane of activityLaneByIndex().values()) ends.push(lane.end);
       return [...new Set(ends)].sort((a, b) => a - b);
     },
     [],
@@ -1264,21 +1254,8 @@ export function ChatRoot(props: ChatRootProps) {
 
   /** Lane height of an anchor: up to the next anchor (or delivered bubble, see `pinEnds`), or to the end of the content. */
   function laneHeight(idx: number): number {
-    const activity = activityLaneByIndex().get(idx);
-    if (activity) return (activity.end < units().length ? virt.top(activity.end) : virt.total()) - virt.top(idx);
     const next = pinEnds().find((end) => end > idx);
-    // Both sticky rows leave together: reserve the activity header below the own-message lane's end.
-    const tail = [...activityLaneByIndex().values()].find(lane => lane.index > idx && lane.end === (next ?? units().length));
-    return Math.max(virt.size(idx), (next !== undefined ? virt.top(next) : virt.total()) - virt.top(idx) - (tail ? virt.size(tail.index) + userTopGap : 0));
-  }
-
-  function activityPinOffset(idx: number): number {
-    if (!activityLaneByIndex().has(idx)) return 0;
-    const own = [...pinAnchorSet()].findLast(index => {
-      const end = pinEnds().find(boundary => boundary > index);
-      return index < idx && (end === undefined || end > idx);
-    });
-    return own === undefined ? 0 : pinHeight(own) + userTopGap;
+    return Math.max(virt.size(idx), (next !== undefined ? virt.top(next) : virt.total()) - virt.top(idx));
   }
 
   /** The anchor whose lane covers the viewport top (its row is the stuck one), or -1. */
@@ -1350,7 +1327,7 @@ export function ChatRoot(props: ChatRootProps) {
   const [anchor, setAnchorSignal] = createSignal<ScrollMode>(untrack(state).scroll.get(), {
     equals: sameScrollMode,
   });
-  let activityCollapse: { model: ChatState; id: string; itemId: string; height: number; fromOffset: number } | null = null;
+  let activityCollapse: { model: ChatState; id: string; itemId: string } | null = null;
 
   // Persist intent to ChatState and update the local signal atomically.
   const setAnchor = (m: ScrollMode) => {
@@ -1423,16 +1400,12 @@ export function ChatRoot(props: ChatRootProps) {
       const i = unitIndexOf(m.itemId, m.edge);
       if (i >= 0) {
         const rowTop = virt.top(i) + padTop();
-        let offset = m.offset;
+        const offset = m.offset;
         if (activityCollapse) {
+          // The reader's row holds still through the content-height tween, including offscreen children.
           const collapse = activityCollapse, lane = activityLaneRanges().find(lane => lane.id === collapse.id);
-          if (collapse.model === state() && collapse.itemId === m.itemId && m.edge === 'top' && lane) {
-            const remaining = Math.max(0, virt.top(lane.end) - virt.top(lane.index + 1));
-            // Follow the existing content-height tween, including offscreen children. The
-            // first frame keeps the reader's position; only the last frame lands the conclusion.
-            offset += (collapse.fromOffset - offset) * Math.min(1, remaining / collapse.height);
-            if (remaining < 0.5) activityCollapse = null;
-          } else activityCollapse = null;
+          if (!(collapse.model === state() && collapse.itemId === m.itemId && m.edge === 'top' && lane)
+            || virt.top(lane.end) - virt.top(lane.index + 1) < 0.5) activityCollapse = null;
         }
         const target =
           m.edge === 'top' ? rowTop + offset : rowTop + virt.size(i) - viewHeight() + padBottom() + offset;
@@ -1788,7 +1761,7 @@ export function ChatRoot(props: ChatRootProps) {
     const anchors = pinAnchorSet();
     for (const idx of nextVisible) {
       const el = rowEls.get(idx);
-      if (el) placeRow(el, idx, virt.top(idx) + pt, anchors.has(idx) || activityLaneByIndex().has(idx) ? laneHeight(idx) : null);
+      if (el) placeRow(el, idx, virt.top(idx) + pt, anchors.has(idx) ? laneHeight(idx) : null);
     }
 
     lastLayout = next;
@@ -2316,27 +2289,23 @@ export function ChatRoot(props: ChatRootProps) {
         // ⇒ 让开关自己说出「我住在哪一行」(`data-collapse-anchor`),没说的照旧用 id 本身。
         const anchorId = collapseTarget.dataset.collapseAnchor ?? id;
         const idx = unitIndexOf(anchorId);
-        const activity = activityLaneByIndex().get(idx);
+        const activity = activityLaneRanges().find(lane => lane.index === idx);
         if (activity && viewState().isCollapsed(id)) {
           const next = units().at(activity.end);
           if (scrollEl) {
             const height = virt.top(activity.end) - virt.top(activity.index + 1);
             const following = next ? scrollEl.scrollTop - virt.top(activity.end) - padTop() : null;
             // A conclusion already on screen keeps its reading position (behavior agent-activity-folding).
-            // Otherwise the line the reader clicked stays where they see it: in the text, or on the pin line it was
-            // stuck to, the content closing up under it. ❌ bringing an off-screen conclusion up to the top: that is
-            // the jump the spec forbids (owner 2026-11-12, opened and closed an exchange: 11:51 -> 11:53).
-            const header = units().at(activity.index);
+            // Otherwise the header the reader clicked stays where they see it, the content closing up under it.
+            // ❌ bringing an off-screen conclusion up to the top: that is the jump the spec forbids
+            // (owner 2026-11-12, opened and closed an exchange: 11:51 -> 11:53).
             const headerOffset = scrollEl.scrollTop - virt.top(activity.index) - padTop();
-            const pinLine = userTopGap + activityPinOffset(activity.index) - (header?.gapBefore ?? 0);
-            const [itemId, fromOffset, offset] = following !== null && -following >= userTopGap && -following < viewHeight() - padBottom()
-              ? [next!.itemId, following, following]
-              : [header?.itemId ?? id, headerOffset, Math.min(headerOffset, -pinLine)];
+            const [itemId, offset] = following !== null && -following >= userTopGap && -following < viewHeight() - padBottom()
+              ? [next!.itemId, following]
+              : [units().at(activity.index)?.itemId ?? id, headerOffset];
             abortSmoothScroll();
             setAnchor({ kind: 'anchor', itemId, edge: 'top', offset });
-            if (height > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-              activityCollapse = { model: state(), id, itemId, height, fromOffset };
-            }
+            if (height > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) activityCollapse = { model: state(), id, itemId };
           }
           else setAnchor({ kind: 'anchor', itemId: id, edge: 'top', offset: -userTopGap });
           viewState().toggleCollapsed(id);
@@ -2495,14 +2464,13 @@ export function ChatRoot(props: ChatRootProps) {
                           const unit = u();
                           return unit ? activeTurnItemIds().has(unit.itemId) : false;
                         };
-                        const isActivityPin = () => activityLaneByIndex().has(unitIndex);
-                        const isPinAnchor = () => pinAnchorSet().has(unitIndex) || isActivityPin();
+                        const isPinAnchor = () => pinAnchorSet().has(unitIndex);
 
                         return (
                           <Show when={u()}>
                             <div
                               class={unitRowWrapper}
-                              classList={{ [pinLane]: isPinAnchor(), [activityPinLane]: isActivityPin(), [pinMessageLane]: pinAnchorSet().has(unitIndex) }}
+                              classList={{ [pinLane]: isPinAnchor() }}
                               ref={(el) => {
                                 rowEls.set(unitIndex, el);
                                 // Seed the placement; commit() reconciles on each frame.
@@ -2528,14 +2496,7 @@ export function ChatRoot(props: ChatRootProps) {
                                   <PinnedUserSummary item={u()!.data as ChatMessage} ctx={measureContext()} vars={UNIT_REGISTRY.message!.vars as MessageVars} />
                                 </div>
                               </Show>
-                              {/* An opened activity sticks its own header row, on the pin line whatever its collapsed top gap is. */}
-                              <div
-                                classList={{ [pinSticky]: isActivityPin(), [pinMessageRow]: pinAnchorSet().has(unitIndex) }}
-                                style={isActivityPin() ? { top: `${userTopGap + activityPinOffset(unitIndex) - (u()?.gapBefore ?? 0)}px` } : { 'pointer-events': 'auto' }}
-                              >
-                              <Show when={isActivityPin()}><div class={`${pinBackdrop} ${activityPinBackdrop}`}
-                                style={{ top: `${(u()?.gapBefore ?? 0) - userTopGap}px`, left: `${pinFrame().left}px`, width: `${pinFrame().width}px` }}
-                                data-chat-pin-backdrop="" aria-hidden="true" /></Show>
+                              <div classList={{ [pinMessageRow]: isPinAnchor() }} style={{ 'pointer-events': 'auto' }}>
                               <UnitRow
                                 unit={u()!}
                                 index={unitIndex}
