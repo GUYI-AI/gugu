@@ -1514,17 +1514,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             <MarketExtensionDetail
               item={marketItem}
               installedVersion={marketInstalled?.version}
-              icon={apps!.appIcons[marketItem.manifest.id]}
+              icon={apps?.appIcons[marketItem.manifest.id]}
               lifecycle={marketAction}
               pending={pending[marketItem.manifest.id]}
               pendingPercent={downloadPercent[marketItem.manifest.id]}
-              canChangeVersion={!apps!.isPreinstalled(marketItem.manifest.id)}
+              // What is installed unread (its read failed, the shelf read): no version is changed from here.
+              canChangeVersion={apps ? !apps.isPreinstalled(marketItem.manifest.id) : false}
               onInstall={(ref, confirm) => void installFromShelf(ref, marketItem.manifest.id, { confirm })}
               onLifecycle={() => {
                 if (marketAction?.kind === 'open') closeMarketDetail();
                 runLifecycle(marketItem.manifest.id, marketItem);
               }}
-              onUninstall={marketInstalled && !apps!.isPreinstalled(marketInstalled.id)
+              onUninstall={marketInstalled && apps && !apps.isPreinstalled(marketInstalled.id)
                 ? () => void uninstall({ id: marketInstalled.id, name: localizedManifestText(marketInstalled, locale).name })
                 : undefined}
             />
