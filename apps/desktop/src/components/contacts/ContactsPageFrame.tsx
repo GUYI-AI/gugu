@@ -32,7 +32,8 @@ export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDra
   return (
     <div className="flex h-full min-w-0 flex-1 overflow-hidden">
       <Pane paneRole="detail" data-testid={testId}>
-        <PaneHeader divider title={title} subtitle={subtitle} actions={actions} />
+        {/* With the drawer shown it is the window's right column; otherwise this header is. */}
+        <PaneHeader divider atWindowEdge={!drawer && owner === null} title={title} subtitle={subtitle} actions={actions} />
         <div className="flex-1 overflow-y-auto !px-6 !pb-6">
           <DrawerContext.Provider value={slot}>{children}</DrawerContext.Provider>
         </div>

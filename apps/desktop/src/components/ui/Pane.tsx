@@ -50,12 +50,14 @@ export interface PaneHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   mobile?: boolean
   /** 底部分隔线(会话头需要,导航列头不需要——列头下面紧接搜索框)。 */
   divider?: boolean
+  /** The header reaches the window's right edge: its end leaves the window controls their room (`--titlebar-controls-width`). */
+  atWindowEdge?: boolean
   /** Give phone conversation titles identical space on both sides. */
   centered?: boolean
   className?: string
 }
 
-export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading, actions, mobile, divider, centered, className, children, ...rest }: PaneHeaderProps) {
+export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading, actions, mobile, divider, atWindowEdge, centered, className, children, ...rest }: PaneHeaderProps) {
   const centerTitle = mobile && centered
   const structuredTitle = centerTitle || titleLevel !== undefined || subtitle !== undefined || titleLeading !== undefined
   return (
@@ -64,6 +66,7 @@ export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading,
       data-slot="pane-header"
       data-mobile={mobile || undefined}
       data-divider={divider || undefined}
+      data-window-edge={atWindowEdge || undefined}
       data-centered={centerTitle || undefined}
       data-inline={mobile && Boolean(leading) || undefined}
       className={cn('gg-pane-header window-drag-region', className)}
