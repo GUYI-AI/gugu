@@ -14,8 +14,6 @@ import { formatCalendarDay } from '@/i18n/format'
 import { recentChatActivity, searchContacts, type ContactSearchHit } from '../../lib/contactSearch'
 import { displayName, getPinyinInitial } from '../../lib/contactsListSort'
 import { rendererLogger } from '../../lib/log'
-import { contactRelations } from '../../lib/contactsReplicas'
-import { useReplicaFetching } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { useContactsStore } from '../../store/contactsContext'
@@ -69,17 +67,16 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   usePhoneTaskDirectory()
   const { t } = useTranslation('contacts')
   const mobile = useMobileShell()
-  const { contacts, contactsStatus, loadingContacts: listRead, refreshContacts } = useContactsStore()
+  const { contacts, contactsStatus, loadingContacts, refreshContacts } = useContactsStore()
   const currentUserId = useAuth().user?.id ?? null
   const { chats } = useChatStore('chats')
   const devices = useDisplayDevices(useDevicesStore().devices)
   const live = useLiveDeviceSessions()
   const [openedAt] = useState(() => Date.now())
 
-  // 打开时再取一次权威快照(contactRelations 没有 fresh),在第一次渲染里就发出(❌ 等挂载后的 effect)。
-  useState(() => { void contactRelations.prefetch() })
-  const loadingContacts = useReplicaFetching(contactRelations, []) || listRead
   const reload = useCallback(() => refreshContacts().catch((error: unknown) => log.error({ error: String(error) }, 'refresh contacts failed')), [refreshContacts])
+  // 打开时再取一次权威快照(通讯录那份 replica 经它的 store 读),在第一次渲染里就发出(❌ 等挂载后的 effect)。
+  useState(() => { void reload() })
 
   const model = useMemo(
     () => pickerModel({ contacts, currentUserId, devices, live, recentChats: recentChatActivity(chats), now: openedAt, withPeople: !peopleDenied }),
