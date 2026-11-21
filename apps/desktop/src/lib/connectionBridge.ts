@@ -1,7 +1,7 @@
 import { useEffect,useMemo,useSyncExternalStore,useCallback } from 'react'
 import { connectionReadDelay } from '@/components/connections/connection-read-policy'
 import { useConnectionReadNotice } from '@/components/connections/useConnectionReadNotice'
-import { replica,replicaAccount,useReplica } from '@/lib/replica'
+import { refreshFailure,replica,replicaAccount,useReplica } from '@/lib/replica'
 import type { ConnectionClient } from '@gugu/core/cloud/connections'
 import { ConnectionError } from '@gugu/core/cloud/connections'
 import type { ConnectionMetadataStore } from '@/components/connections/connection-metadata'
@@ -64,7 +64,7 @@ export function useConnectionAuthority() {
   const owner = useSyncExternalStore(subscribeAccount,accountId,() => null)
   const reading = useReplica(connectionRoute,owner ? [] : null)
   const route = reading.state === 'value' ? reading.value : undefined
-  const error = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error ?? undefined : undefined
+  const error = refreshFailure(reading) ?? undefined
   // The notice is for an empty read episode: said once the retries are spent and nothing was ever read.
   useConnectionReadNotice(`authority:${owner}`,!!route,reading.state === 'error' ? Infinity : 0)
   const reload = useCallback(() => connectionRoute.refresh(),[])

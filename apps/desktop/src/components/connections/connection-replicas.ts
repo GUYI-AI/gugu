@@ -2,6 +2,7 @@ import { isAssistantPanelReadRetryable, retryAssistantPanelRead } from '@gugu/co
 import { isCloudComputerNotOpen } from '@gugu/core/cloud/cloudComputer'
 import type { ChatChannelList } from '@gugu/core/cloud/chatChannels'
 import { ConnectionError } from '@gugu/core/cloud/connections'
+import { useMemo } from 'react'
 import { rendererChatChannelsClient } from '@/lib/chatChannels'
 import { connectionBridge, connectionRoute } from '@/lib/connectionBridge'
 import { refreshTag, refreshTagOn, replica, useReplica, type Reading } from '@/lib/replica'
@@ -59,6 +60,19 @@ export const chatChannels = replica({
     },
   },
 })
+/**
+ * The chat channels for a surface that changes them: the client (null: no cloud computer here), the list (null: none, or
+ * not read yet), and `apply` for a change's answer, which lands after an await in the account this render drew (❌
+ * whichever account is signed in when it answers).
+ */
+export function useChatChannelList() {
+  const client = useMemo(() => rendererChatChannelsClient(), [])
+  const reading = useReplica(chatChannels, [])
+  // No cloud computer (`absent`): no channels, nothing to connect.
+  const list = reading.state === 'value' && !('absent' in reading.value) ? reading.value : null
+  const entry = chatChannels.key() ? chatChannels.at() : null
+  return { client, reading, list, apply: (next: ChatChannelList) => { entry?.set(next) }, refresh: () => chatChannels.refresh() }
+}
 
 function ownerRoute(epoch: string) {
   const route = connectionBridge().routing.peek()

@@ -5,7 +5,7 @@ import type { ConnectionMetadataSnapshot } from '@/components/connections/connec
 import { chatChannels, configuredConnections, CONNECTIONS_ON_HOST, integrationsCatalog, integrationStatuses, useOwnerConnectionsReading } from '@/components/connections/connection-replicas';
 import { EMPTY_INTEGRATION_SUMMARIES,useAssistantIntegrationSummaries } from '@/components/assistant/useAssistantIntegrationSummaries';
 import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRead';
-import { refreshTag, useReplica } from '@/lib/replica';
+import { refreshFailure, refreshTag, useReplica } from '@/lib/replica';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { keepLibraryHost, useLibraryHost } from '@renderer/features/library/library-host';
 import { registerIssueMentionIcons } from '@renderer/lib/chat/chat-mention-provider';
@@ -113,10 +113,9 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
 
   const statusData = ownerMode ? ownerView?.statuses ?? null : statusReading.state === 'value' ? statusReading.value : null;
   const configuredData = ownerMode ? ownerView?.configured ?? null : configuredReading.state === 'value' ? configuredReading.value : null;
-  const errorOf = (reading: { state: string; error?: Error | null }) => reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null;
-  const connectionReadError = ownerMode ? errorOf(ownerReading) : errorOf(statusReading);
-  const configuredConnectionsError = ownerMode ? errorOf(ownerReading) : errorOf(configuredReading);
-  const listError = ownerMode ? null : errorOf(listReading);
+  const connectionReadError = refreshFailure(ownerMode ? ownerReading : statusReading);
+  const configuredConnectionsError = refreshFailure(ownerMode ? ownerReading : configuredReading);
+  const listError = ownerMode ? null : refreshFailure(listReading);
 
   const invalidateStatuses = useCallback(() => {
     // A completed authorization invalidates both the file snapshot and all visible consumers.

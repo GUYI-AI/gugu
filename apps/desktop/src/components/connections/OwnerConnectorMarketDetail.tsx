@@ -1,10 +1,6 @@
 import type { AssistantConnectedApp } from '@/components/assistant/assistant-app-connections';
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon';
-import type { ChatChannelList } from '@gugu/core/cloud/chatChannels';
-import { rendererChatChannelsClient } from '@/lib/chatChannels';
-import { useReplica } from '@/lib/replica';
-import { useMemo } from 'react';
-import { chatChannels } from './connection-replicas';
+import { chatChannels, useChatChannelList } from './connection-replicas';
 import { WechatConnectDialog } from '@/components/settings/channels/WechatConnectDialog';
 import { useOwnerConnectionStore } from '@/lib/connectionBridge';
 import { useDevicesStore } from '@/store/devicesContext';
@@ -30,15 +26,7 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const data = useIntegrationsContext();
-  const client = useMemo(() => rendererChatChannelsClient(), []);
-  const reading = useReplica(chatChannels, []);
-  // No cloud computer (`absent`): no channels, nothing to connect.
-  const list = reading.state === 'value' && !('absent' in reading.value) ? reading.value : null;
-  // A change answers with the whole list after an await: it goes into the account this render drew.
-  const owner = chatChannels.key()?.[1] ?? null;
-  const entry = useMemo(() => (owner ? chatChannels.at() : null), [owner]);
-  const apply = (next: ChatChannelList) => { entry?.set(next); };
-  const refresh = () => chatChannels.refresh();
+  const { client, list, apply, refresh } = useChatChannelList();
   const metadata = app.integration;
   const platform = keptByPlatform(metadata);
   const wechatReady = !!client && !!list?.kinds.includes('wechat');
