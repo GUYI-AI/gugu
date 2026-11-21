@@ -12,6 +12,8 @@ export const ct = i18n.getFixedT(null, 'contacts')
 // 详情面排版。几何一律取 tokens,❌ 字面量像素。
 // 名字(人 / Agent / 群)在资料卡与详情标题里最多两行,再长省略号,悬停 title 看全名;页头与列表行是一行(.gg-pane-title / .gg-list-row-title)。
 export const nameClampClass = 'line-clamp-2 [overflow-wrap:anywhere]'
+// 资料卡所在的那块(Agent / 人 / 群同一张卡):居中、上方留白一致,三种对象打开时卡片落在同一处。
+export const profileBodyClass = 'flex flex-1 items-start justify-center overflow-y-auto !px-6 !pb-6 !pt-[calc(var(--spacing-2xl)*2)]'
 export const rowAvatarClass =
   'gg-c-av flex h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 items-center justify-center overflow-hidden rounded-full'
 // 行内改名/备注输入:控件高与 Button/Field 同一把尺子(--control-h-md)。

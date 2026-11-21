@@ -65,6 +65,9 @@ const styles = {
     'gg-c-cpane-del !-ml-3 !mt-5 inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border-0 bg-transparent !px-3 !py-2 text-sm font-medium text-[var(--danger-fg)] [font-family:inherit] hover:bg-[var(--danger-tint)]',
 } as const
 
+/** The profile card's one visual language: agent, person and group cards all draw with these. */
+export const profileCardStyles = styles
+
 const avatarClass = () => cn(styles.avatarBase, styles.avatarRound)
 
 // @@@2175 与 ContactsPanel 行同款。降暗(.standby)= 静默态(pending/offline);其余不降暗(要显眼)。

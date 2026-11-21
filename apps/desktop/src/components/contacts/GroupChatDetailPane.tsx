@@ -14,7 +14,6 @@ import { groupRoster } from '../../hooks/useRoomCollab'
 import { useReplica } from '../../lib/replica'
 import { chatPublicId } from '../../lib/contactsListSort'
 import { useShownAgentContactStatus } from '../contactAgentTone'
-import { ActionButton, FieldList, FieldRow } from '../contactsDetailControls'
 import { Avatar } from '../Avatar'
 import { CopyValue } from '../CopyValue'
 import { Pane, PaneHeader } from '../ui/Pane'
@@ -23,7 +22,8 @@ import { PaneBackButton } from './ContactDetail'
 import { ContactGroupAvatar } from './ContactSearch'
 import { GroupInviteRow } from './GroupInvite'
 import { useGroupProject } from './groupRowFacts'
-import { ct, detailCaptionClass, detailPlaceholderClass, detailSectionClass, detailTitleClass } from './contactsPanelStyles'
+import { ct, detailCaptionClass, detailPlaceholderClass, nameClampClass, profileBodyClass } from './contactsPanelStyles'
+import { profileCardStyles as card } from './ContactProfileCard'
 
 // 群资料:桌面通讯录的抽屉与手机群列表点进去的是同一份。头部(群头像 · 名字 · 项目群 · 人数 · 进入群聊)、
 // 群号与项目文件夹、成员按「人 / Agent」分开列;我自己的 Agent 说它在哪台机器、此刻在做什么。
@@ -73,49 +73,50 @@ function GroupDetail({ group, mobile, onBack, onOpenGroupChat }: { group: Contac
         leading={mobile && onBack ? <PaneBackButton label={ct('panel.backToGroupList')} onBack={onBack} /> : undefined}
       />
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <section className={cn(detailSectionClass(mobile), 'flex items-start gap-4 border-b border-[var(--border)]')}>
-          <ContactGroupAvatar group={group} size="lg" />
-          <div className="min-w-0 flex-1">
-            <h2 className={detailTitleClass}>{groupDisplayName(group)}</h2>
-            <div className="!mt-1 text-sm text-[var(--muted-fg)]">
+      {/* The same card as an agent's or a person's (profileCardStyles): centred avatar, name, count, one faint line for the
+          number, one row of light actions; members below under their section titles only. */}
+      <div className={cn(profileBodyClass, mobile && '!pb-[max(24px,env(safe-area-inset-bottom))]')}>
+        <div className="w-full max-w-[480px]">
+          <div className={card.card}>
+            <ContactGroupAvatar group={group} size={96} />
+            <div className={card.name}><span className={nameClampClass} title={groupDisplayName(group)}>{groupDisplayName(group)}</span></div>
+            <div className={card.statusBase}>
               {[bound ? ct('groupDetail.projectGroup') : null, ct('groupDetail.memberCount', { count: group.member_count })].filter(Boolean).join(' · ')}
             </div>
-            <div className="!mt-4 flex flex-wrap gap-2">
-              <ActionButton primary icon={<MessageCircle size={15} />} label={ct('panel.enterGroup')} onClick={() => onOpenGroupChat?.(group)} />
+            {chatPublicId(group) ? (
+              <div className={card.guguNumber}>
+                <span className={card.guguNumberLabel}>{ct('groupDetail.number')}</span>
+                <CopyValue value={chatPublicId(group)!} message={ct('groupDetail.copiedNumber')} />
+              </div>
+            ) : null}
+            {bound ? <div className={cn(card.guguNumber, 'max-w-full')}><span className="truncate">{[folderMachine, bound.project.rootPath].filter(Boolean).join(' · ')}</span></div> : null}
+            <div className={cn(card.actions, 'flex-wrap justify-center')}>
+              <button type="button" className={card.action} onClick={() => onOpenGroupChat?.(group)}>
+                <MessageCircle size={19} />{ct('panel.enterGroup')}
+              </button>
+              <GroupInviteRow group={group} />
             </div>
           </div>
-        </section>
 
-        <section className={cn(detailSectionClass(mobile), 'border-b border-[var(--border)]')}>
-          <FieldList className="max-w-[620px]">
-            <FieldRow
-              label={ct('groupDetail.number')}
-              value={chatPublicId(group) ? <CopyValue value={chatPublicId(group)!} message={ct('groupDetail.copiedNumber')} /> : ct('common.unassigned')}
-            />
-            {bound ? <FieldRow label={ct('groupDetail.folder')} value={[folderMachine, bound.project.rootPath].filter(Boolean).join(' · ')} /> : null}
-            <GroupInviteRow group={group} />
-          </FieldList>
-        </section>
-
-        <section className={cn(detailSectionClass(mobile), mobile && '!pb-[max(24px,env(safe-area-inset-bottom))]')}>
-          {roster.state !== 'value' || visible.length === 0 ? (
-            <div className="text-sm text-[var(--muted-fg)]" role={roster.state === 'error' ? 'alert' : undefined}>
-              {roster.state === 'unknown' ? <Unknown className="w-40" /> : roster.state === 'error' ? roster.error.message : ct('groupDetail.emptyMembers')}
-            </div>
-          ) : (
-            <>
-              <MemberList label={ct('groupDetail.people')} total={roster.value.humans.length} members={visible.filter((m) => m.type !== 'agent')} />
-              <MemberList label={ct('groupDetail.agents')} total={roster.value.agents.length} members={visible.filter((m) => m.type === 'agent')} />
-              {members && members.length > visible.length ? (
-                <div className={cn(detailCaptionClass, '!mt-3')}>{ct('groupDetail.remainingMembers', { count: members.length - visible.length })}</div>
-              ) : null}
-              {members && group.member_count > members.length ? (
-                <div className={cn(detailCaptionClass, '!mt-3')}>{ct('groupDetail.pendingSync', { count: group.member_count - members.length })}</div>
-              ) : null}
-            </>
-          )}
-        </section>
+          <div className="!mt-8">
+            {roster.state !== 'value' || visible.length === 0 ? (
+              <div className="text-sm text-[var(--muted-fg)]" role={roster.state === 'error' ? 'alert' : undefined}>
+                {roster.state === 'unknown' ? <Unknown className="w-40" /> : roster.state === 'error' ? roster.error.message : ct('groupDetail.emptyMembers')}
+              </div>
+            ) : (
+              <>
+                <MemberList label={ct('groupDetail.people')} total={roster.value.humans.length} members={visible.filter((m) => m.type !== 'agent')} />
+                <MemberList label={ct('groupDetail.agents')} total={roster.value.agents.length} members={visible.filter((m) => m.type === 'agent')} />
+                {members && members.length > visible.length ? (
+                  <div className={cn(detailCaptionClass, '!mt-3')}>{ct('groupDetail.remainingMembers', { count: members.length - visible.length })}</div>
+                ) : null}
+                {members && group.member_count > members.length ? (
+                  <div className={cn(detailCaptionClass, '!mt-3')}>{ct('groupDetail.pendingSync', { count: group.member_count - members.length })}</div>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </Pane>
   )
