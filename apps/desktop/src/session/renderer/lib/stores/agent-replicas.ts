@@ -84,8 +84,6 @@ export const targetModelCatalog = replica({
   ...ofMachine,
   read: (_owner, machine: Machine, providerId: string, leg: SessionpageLeg, model: string) =>
     rpcOn(machine).agents.targetModelCatalog(providerId, leg, model),
-  // A mounted target asks again, as the former query's refetchOnMount: 'always' did.
-  fresh: 0,
   refreshOnFocus: false,
 });
 

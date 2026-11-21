@@ -86,5 +86,4 @@ export const sessionCreateOptions = replica({
   scope: 'account',
   read: (_owner, deviceId: string, via: 'machine' | 'phone'): Promise<SessionpageSessionCreateOptions> =>
     via === 'phone' ? fetchPhoneCreateOptions(deviceId) : fetchCreateOptions(deviceId),
-  fresh: 0,
 })

@@ -41,7 +41,6 @@ export const teamSession = replica({
       || profile.membership.revision !== context.membership_revision) throw new TeamApiError('version_conflict')
     return { context, profile }
   },
-  fresh: 0,
   refreshOnFocus: true,
   refreshEvery: 30_000,
   watch: { start: () => {
@@ -61,7 +60,6 @@ export const teamDirectoryPage = replica({
     if (page.team_id !== teamId) throw new TeamApiError('team_identity_required')
     return page
   },
-  fresh: 0,
   refreshEvery: 30_000,
 })
 
@@ -72,7 +70,6 @@ export const teamMembersPage = replica({
   tags: [TEAM],
   read: (_owner, apiKey: string, _teamId: string, state: Exclude<TeamMemberState, 'provisioning'>, cursor: string | null) =>
     apiOf(apiKey).members({ state, cursor: cursor ?? undefined, limit: 50 }),
-  fresh: 0,
 })
 
 /** One page of the member's own usage this period; page by cursor (null = the first). */
@@ -82,7 +79,6 @@ export const teamUsagePage = replica({
   tags: [TEAM],
   read: (_owner, apiKey: string, _teamId: string, _scope: string, cursor: string | null) =>
     apiOf(apiKey).myUsage({ cursor: cursor ?? undefined, limit: 50 }),
-  fresh: 0,
 })
 
 /** The price of a top-up of this many credits (with a coupon). */
@@ -92,7 +88,6 @@ export const teamTopupQuote = replica({
   tags: [TEAM],
   read: (_owner, apiKey: string, teamId: string, _revision: number, credits: number, couponCode: string) =>
     apiOf(apiKey).topupQuote({ teamId, credits, couponCode: couponCode || undefined }),
-  fresh: 0,
 })
 
 /** A top-up order this window started, checked against what it was started for; read every 3 s until it is settled. */
@@ -105,6 +100,5 @@ export const teamTopupOrder = replica({
     if (value.id !== orderId || value.amountCny !== amountCny || value.credits !== credits) throw new TeamCheckoutError('invalid_response')
     return value
   },
-  fresh: 0,
   refreshEvery: (value) => (value?.status && value.status !== 'pending' ? false : 3000),
 })
