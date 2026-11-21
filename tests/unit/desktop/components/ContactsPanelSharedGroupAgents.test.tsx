@@ -11,36 +11,39 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
 afterEach(() => { harness.cleanup() })
 
-describe('ContactsPanel shared-group Agent cloud projection', () => {
-  it('renders another user\'s Agent in cloud and opens the common group without DM or selection actions', async () => {
+describe('ContactsPanel and somebody else\'s Agent', () => {
+  const sharedAgent = contact({
+    id: 'shared-agent', type: 'agent', display_name: 'Shared Agent',
+    owner_user_id: 'other-owner', device_id: 'their-device', agent_public: true,
+  })
+  const sharedGroup = {
+    id: 'shared-group', kind: 'group' as const, name: 'Owner + Agent + Me', avatar_url: null,
+    member_count: 3, is_muted: false, member_user_ids: ['owner-1', 'other-owner', sharedAgent.id],
+  }
+  const render = (props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(ContactsPanel, props), { shellTab: 'contacts',
+    auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
+    contacts: { contacts: [{ ...sharedAgent, id: 'befriended-agent' }], sharedGroupAgents: [sharedAgent], groupChats: [sharedGroup] },
+    chat: { chats: [] },
+  })
+
+  it('lists only my own agents: no section for other people\'s agents, the shared group stays under Groups', async () => {
+    await render({})
+    const keys = [...harness.container.querySelectorAll<HTMLElement>('[data-testid="contacts-section-nav"]')].map((row) => row.dataset.sectionKey)
+    expect(keys).toEqual(['unknown', 'people', 'groups'])
+    expect(harness.container.querySelector('[data-contact-id="shared-agent"], [data-contact-id="befriended-agent"]')).toBeNull()
+    await clickElement(harness.container.querySelector('[data-section-key="groups"]') as HTMLElement)
+    expect(harness.container.querySelector('[data-testid="contacts-section-pane"] [data-group-id="shared-group"]')).toBeTruthy()
+  })
+
+  it('still opens it from a group (its profile with the common group), without DM', async () => {
     const onOpenGroupChat = vi.fn()
     const onSwitchToChat = vi.fn()
-    const sharedAgent = contact({
-      id: 'shared-agent', type: 'agent', display_name: 'Shared Agent',
-      owner_user_id: 'other-owner', device_id: 'their-device', agent_public: true,
-    })
-    const sharedGroup = {
-      id: 'shared-group', kind: 'group' as const, name: 'Owner + Agent + Me', avatar_url: null,
-      member_count: 3, is_muted: false, member_user_ids: ['owner-1', 'other-owner', sharedAgent.id],
-    }
-    await renderWithAppProviders(harness, createNode(ContactsPanel, { onOpenGroupChat, onSwitchToChat }), { shellTab: 'contacts',
-      auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
-      contacts: { sharedGroupAgents: [sharedAgent], groupChats: [sharedGroup] },
-      chat: { chats: [] },
-    })
-
-    // 别人的 Agent 归「咕咕云」分组:像用户一样在左栏点开这一组,右边铺开它
-    await clickElement(harness.container.querySelector('[data-section-key="cloud"]') as HTMLElement)
-    const row = () => harness.container.querySelector('[data-testid="contacts-section-pane"] [data-contact-id="shared-agent"]') as HTMLElement | null
-    expect(row()).toBeTruthy()
-    await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.contactsSelectModeButton}"]`) as HTMLElement)
-    expect(row()?.hasAttribute('data-contact-option')).toBe(false)
-    await clickElement(row()!)
+    await render({ onOpenGroupChat, onSwitchToChat, externalContactId: 'shared-agent' })
     const openGroup = harness.container.querySelector('[data-testid="contact-shared-agent-primary-action"]') as HTMLButtonElement | null
     expect(openGroup?.textContent).toContain('打开群聊')
     expect(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.contactsDetailSendMessageButton}"]`)).toBeNull()
-    expect(onSwitchToChat).not.toHaveBeenCalled()
     await clickElement(openGroup!)
     expect(onOpenGroupChat).toHaveBeenCalledWith(sharedGroup)
+    expect(onSwitchToChat).not.toHaveBeenCalled()
   })
 })
