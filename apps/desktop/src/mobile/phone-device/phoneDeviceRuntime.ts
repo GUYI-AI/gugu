@@ -80,8 +80,6 @@ export const RECENT_CALLS_LIMIT = 30
 
 export interface PhoneDeviceSnapshot {
   link: PhoneDeviceLink
-  /** 系统此刻给了什么;还没读到 = null。 */
-  info: PhoneDeviceInfo | null
   deviceId: string | null
   /** 最近一次心跳成功的时刻。 */
   lastHeartbeatAt: number | null
@@ -89,7 +87,7 @@ export interface PhoneDeviceSnapshot {
   host: PhoneAgentHostState | null
 }
 
-const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, info: null, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
+const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
 let snapshot: PhoneDeviceSnapshot = OFF
 let osReadRevision = 0
 const listeners = new Set<() => void>()
@@ -395,7 +393,7 @@ export function startPhoneDevice(options: {
       })
       await readCurrentOs()
       if (!alive) return
-      publish({ info, deviceId })
+      publish({ deviceId })
       rebuildCapability()
       await beat()
       if (!alive) return
@@ -483,7 +481,7 @@ export function startPhoneDevice(options: {
       if (session === current) session = null
       previousSessionDrain = current.drain()
       // 系统权限的读数留着(phoneOsState):设置页关掉总开关之后仍要显示各组「系统给没给」。
-      publish({ ...OFF, info: snapshot.info })
+      publish(OFF)
     },
     refresh: refreshOs,
     drain: async () => {
