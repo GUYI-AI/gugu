@@ -47,7 +47,7 @@ import {
 } from '@shared/extensions/app-runtime-protocol';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
-import { fetchInstalledApps, LOCAL_HOST, marketUpdates, peekInstalledApps, type InstalledApps } from './installed-extensions';
+import { fetchInstalledApps, peekInstalledApps, type InstalledApps } from './installed-extensions';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
 import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
@@ -428,10 +428,8 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
    * 这份 handler,等于把它塞进每一条走 extensions 通道的路径。❌ 别改成顶层 import。
    */
   [EXTENSION_INSTALLED_CHANGED_METHOD]: async (): Promise<{ ok: true }> => {
-    const { registerInstalledExtensionTabs } = await import('./register-extension-tabs');
-    await registerInstalledExtensionTabs();
-    // What the market has to say is about what is installed: an App updated by itself (auto-update-apps.ts) has no update now.
-    void marketUpdates.refresh(LOCAL_HOST);
+    const { resyncInstalledExtensionTabs } = await import('./register-extension-tabs');
+    await resyncInstalledExtensionTabs();
     return { ok: true };
   },
   /** Members' faces (`lib/memberFaces.ts`). Imported when asked, as above. */
