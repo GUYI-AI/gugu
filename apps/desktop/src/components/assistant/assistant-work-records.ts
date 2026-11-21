@@ -46,7 +46,7 @@ export const assistantWork=replica({
 })
 
 type Landed={args:string[];reading:{state:string;error?:Error|null};fetching:boolean}
-type WorkModel={refresh(...args:string[]):Promise<void>;subscribe(args:string[],listener:(entry:Landed)=>void):()=>void;entries(...args:string[]):Landed[]}
+type WorkModel={refresh(...args:string[]):Promise<void>;subscribe(args:[string],listener:(entry:Landed)=>void):()=>void;entries(assistantId:string):Landed[]}
 
 /** While shown: the signal reads the model again; a failed entry is read again after WORK_RETRY_MS, each on its own. */
 function watchWork(model:WorkModel,owner:string,assistantId:string):()=>void {
