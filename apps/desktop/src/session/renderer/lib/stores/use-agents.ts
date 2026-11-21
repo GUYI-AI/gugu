@@ -1,38 +1,27 @@
 import { useReplica, type Reading } from '@/lib/replica';
-import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { AgentIconAsset, AgentPayload } from '@shared/core/agents/agent-payload';
+import { useHostMachine, useHostReplica } from './host-replica';
 import { agentIcons, agentMetadata, agentsMetadata, managementAgent, managementAgents } from './agent-replicas';
-
-/**
- * The library host's machine (null = this computer); one not connected is not asked (its last answer stays drawn).
- */
-function useHostMachine(): { machine: string | null; online: boolean } {
-  const remote = useLibraryHost().remote;
-  return { machine: remote?.deviceId ?? null, online: remote?.online !== false };
-}
 
 /**
  * The agents offered for new tasks on the host's machine (name, description, icon, capabilities).
  * #6264 会话 / 新建框在别的机器上:名单与装没装都是那台机器的(一套工作台,同一个控制器)。
  */
 export function useAgents(): Reading<AgentPayload[]> {
-  const { machine, online } = useHostMachine();
-  return useReplica(agentsMetadata, [machine], { read: online });
+  return useHostReplica(agentsMetadata, []);
 }
 
 /**
  * 资源库 →「智能体」那张列表 —— 与 composer 同一份上架名单（#6099）。
  * #6264 资源库选了别的机器时,问的是那台机器(见 features/library/library-host.ts);离线时不问,手上有上次的就照旧画。
  */
-export function useManagementAgents() {
-  const { machine, online } = useHostMachine();
-  const reading = useReplica(managementAgents, [machine], { read: online });
-  return { reading, refetch: () => managementAgents.refresh(machine) };
+export function useManagementAgents(): Reading<AgentPayload[]> {
+  return useHostReplica(managementAgents, []);
 }
 
-export function useAgent(id: string) {
-  const reading = useReplica(agentMetadata, [id]);
-  return { reading, refetch: () => agentMetadata.refresh(id) };
+/** One agent's metadata on this computer. */
+export function useAgent(id: string): Reading<AgentPayload | null> {
+  return useReplica(agentMetadata, [null, id]);
 }
 
 /** Until its own answer lands, the library list's row stands in (the detail opens at once). */
@@ -59,7 +48,7 @@ export function useManagementAgent(id: string) {
  */
 export function useAgentIcon(id: string, enabled = true): AgentIconAsset | null | undefined {
   // `enabled: false`: the caller already holds the asset (a catalog row), so the table is not asked for.
-  const icons = useReplica(agentIcons, enabled ? [] : null);
+  const icons = useReplica(agentIcons, enabled ? [null] : null);
   if (icons.state === 'unknown') return undefined;
   return icons.state === 'value' ? icons.value[id] ?? null : null;
 }

@@ -1,7 +1,7 @@
 import { assistantPanelCollection, type AssistantPanelDomain, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
 import type { AssistantPanelReadCache } from '@gugu/core/cloud/assistantPanelCache'
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
-import { replica, useReplica, type Reading } from '@/lib/replica'
+import { replica } from '@/lib/replica'
 import { assistantPanelBodies, readAssistantPanelSnapshotCopy, writeAssistantPanelSnapshotCopy } from '@/lib/assistantPanelBodies'
 import { rendererLogger } from '@/lib/log'
 import { requireAssistantPanelBridge } from '@/lib/assistantPanelBridge'
@@ -30,10 +30,6 @@ export const assistantPanel = replica({
   watch: { group: (assistantId) => assistantId, start: (owner, assistantId) => watchPanel(owner, assistantId) },
 })
 
-export function useAssistantPanel(ownerId: string | null, assistantId: string | null): Reading<AssistantPanelSnapshot> {
-  return useReplica(assistantPanel, ownerId && assistantId ? [assistantId] : null)
-}
-
 /** A panel's revision moved or it left; ❌ every cache event (readers that re-read on change would feed themselves). */
 export function onAssistantPanelChanged(assistantId: string | undefined, listener: () => void): () => void {
   const seen = new Map<string, string | null>()
@@ -58,8 +54,8 @@ const preparing = (value: AssistantPanelSnapshot | null) =>
 
 function watchPanel(ownerId: string, assistantId: string): () => void {
   let settle: ReturnType<typeof setTimeout> | undefined
-  // prefetch too: the panel files may hold it with no surface subscribed (they peek the entry).
-  const readAgain = () => { void assistantPanel.refresh(assistantId); void assistantPanel.prefetch(assistantId) }
+  // Shown or not: the panel files may hold it with no surface subscribed (they peek the entry).
+  const readAgain = () => { void assistantPanel.reread(assistantId).catch(() => undefined) }
   const refresh = () => {
     clearTimeout(settle)
     const shown = assistantPanel.peek(assistantId)

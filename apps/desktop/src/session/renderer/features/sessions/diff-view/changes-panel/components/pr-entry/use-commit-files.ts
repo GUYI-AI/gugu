@@ -1,5 +1,5 @@
 import type { GitChange } from '@gugu/session-core/git';
-import { replica, useReplica, type Reading } from '@/lib/replica';
+import { replica } from '@/lib/replica';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 
 /** A commit never changes: read once, kept a while after it is folded. */
@@ -15,6 +15,3 @@ export const commitFiles = replica({
   keep: 5 * 60_000,
 });
 
-export function useCommitFiles(projectId: string, workspaceId: string, commitHash: string): Reading<GitChange[]> {
-  return useReplica(commitFiles, [projectId, workspaceId, commitHash]);
-}

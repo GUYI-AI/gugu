@@ -1,75 +1,24 @@
 /**
  * The one mermaid renderer every surface draws with: transcript blocks and their viewer, documents, and the App
- * runtime's `gugu.markdown()`. Official mermaid, loaded on first use, `securityLevel: 'strict'`, one diagram at a time.
+ * runtime's `gugu.markdown()`. Pele, each diagram type loaded on first use. The SVG takes its colours and fonts from the
+ * `--pele-*` variables each surface maps to its theme, so one drawing serves light and dark. Pele escapes the text and
+ * filters styles; links and images are off, so a diagram fetches and opens nothing. The result is an SVG string.
  */
-import type { MermaidConfig } from 'mermaid';
+import { renderAsync } from 'pele/lazy';
 
-let idCounter = 0;
-let renderQueue: Promise<void> = Promise.resolve();
-let lastInitializedConfigKey: string | null = null;
-
-export type MermaidTheme = NonNullable<MermaidConfig['theme']>;
-
-interface MermaidRenderRequest {
-  id: string;
-  chart: string;
-  theme: MermaidTheme;
-  /** Aborted once the caller no longer wants this diagram; a queued request is then skipped, never rendered. */
-  signal?: AbortSignal;
-}
-
-export function createMermaidRenderId(): string {
-  idCounter += 1;
-  return `emdash-mermaid-${idCounter}`;
-}
-
-export async function renderMermaidDiagram({
-  id,
-  chart,
-  theme,
-  signal,
-}: MermaidRenderRequest): Promise<string> {
-  const render = async () => {
-    // One queue serves every surface, so a render nobody waits for any more (a streaming block's earlier source, a
-    // re-clicked viewer) would hold up every diagram behind it.
-    signal?.throwIfAborted();
-    const mermaid = (await import('mermaid')).default;
-    const config: MermaidConfig = {
-      startOnLoad: false,
-      htmlLabels: false,
-      securityLevel: 'strict',
-      suppressErrorRendering: true,
-      theme,
-      flowchart: {
-        htmlLabels: false,
-      },
-    };
-    const configKey = JSON.stringify(config);
-
-    if (lastInitializedConfigKey !== configKey) {
-      mermaid.initialize(config);
-      lastInitializedConfigKey = configKey;
-    }
-
-    const { svg } = await mermaid.render(id, chart);
-    return svg;
-  };
-
-  const result = renderQueue.then(render, render);
-  renderQueue = result.then(
-    () => undefined,
-    () => undefined
-  );
-  return result;
-}
-
-/** The theme matching the host's light/dark truth, `<html data-theme>` (written only by host-theme.ts). */
-export function readMermaidTheme(): MermaidTheme {
-  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'neutral';
-}
-
-export function subscribeMermaidTheme(onChange: () => void): () => void {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  return () => observer.disconnect();
+/** Rejects when pele cannot draw the source, or when `signal` aborted first. */
+export async function renderMermaidDiagram(chart: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  // Text is measured in the face the diagram is drawn in, as pele's own mount() reads it.
+  const root = getComputedStyle(document.documentElement);
+  const font = (name: string) => root.getPropertyValue(name).trim() || undefined;
+  const { svg } = await renderAsync(chart, {
+    fontFamily: font('--pele-font'),
+    fontFamilyMono: font('--pele-font-mono'),
+    links: false,
+    images: false,
+    // No inline size: each surface's own CSS fits the SVG into its box.
+    responsive: false,
+  });
+  return svg;
 }

@@ -746,8 +746,6 @@ async function applyContext(ctx) {
     // The same place, more said of it (its path, its machine): the line that says where it is says so.
     renderCrumbs()
     if (restored && inWorkspace() && !ctx.file) void listDownTo(state.folder ?? '')
-    // Shown again in another tab (closed, then opened again): read again, what was shown staying until the answer.
-    else if (previous && previous.tabId !== ctx.tabId && inGroup && canRead() && !ctx.file) void refreshList()
   }
   // The host hands this page a file when it picked this App for it (真源 §2.6: a click goes to the host,
   // which picks the most specific claim; .md and plain .json are this App's). The host's header then has
@@ -839,7 +837,6 @@ async function refreshList(readPreferences = false) {
   // The whole tree read before is from before now: the next search reads it again (what it holds is shown meanwhile).
   if (state.whole === true) state.whole = null
   let listError = null
-  let kept = false
   try {
     const place = rootPlace()
     const [, preferences] = await Promise.all([
@@ -854,32 +851,14 @@ async function refreshList(readPreferences = false) {
       state.folder = null
       return refreshList(readPreferences)
     }
+    if (state.listing === asked) forgetListed()
     listError = error.code === 'denied' ? state.t.denied : failureText(error)
-    // What was read before stays, the failure said over it with 重试 (❌ kept as if read now, with nothing said).
-    kept = error.code !== 'denied' && state.listed.has(state.folder ?? '')
-    if (state.listing === asked && !kept) forgetListed()
   }
   if (state.listing !== asked) return
   state.listing = null
-  state.listError = kept ? null : listError
+  state.listError = listError
   for (const change of asked.heard) take(change)
   showList()
-  if (kept) failedOverKept(listError, () => void refreshList())
-}
-
-/**
- * A folder read before whose read again failed: what was read stays, the failure said over it in the list banner with
- * 重试; 重试, or the network back, reads it again (❌ the old rows shown as if read now).
- */
-function failedOverKept(message, again) {
-  const retry = () => {
-    window.removeEventListener('online', retry)
-    hideBanner()
-    again()
-  }
-  showBanner(message, 'error', true)
-  $('list-banner').append(' ', Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: retry }))
-  window.addEventListener('online', retry, { once: true })
 }
 
 // 「附件」 by its path: the database finds it by its role, whatever it is called on screen.
@@ -964,9 +943,7 @@ function readChatFolder(folderId) {
   void readFolders([folderId], null).catch((error) => {
     // Late, for a list no longer on screen: it has no say in the one that is.
     if (inWorkspace() || state.ctx?.chat?.id !== chat) return
-    const message = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
-    if (error.code !== 'denied' && state.listed.has(folderId)) return failedOverKept(message, () => readChatFolder(folderId))
-    state.listError = message
+    state.listError = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
     showList()
   })
 }
@@ -991,12 +968,10 @@ async function listFolder(folder, again = false) {
     listed = await gugu.files.list({ workspace, folder })
   } catch (error) {
     if (!inWorkspace() || copyOf()?.id !== workspace) return
-    const message = error.code === 'denied' ? state.t.denied
+    state.listError = error.code === 'denied' ? state.t.denied
       : copy.machine && error.code === 'unavailable' ? fmt(state.t.folderMachineOffline, { machine: copy.machine })
         : copy.machine && error.code === 'not-found' && !folder ? fmt(state.t.folderGone, { machine: copy.machine })
           : failureText(error)
-    if (error.code !== 'denied' && state.listed.has(folder)) return failedOverKept(message, () => void listFolder(folder, true))
-    state.listError = message
     return showList()
   }
   if (!inWorkspace() || copyOf()?.id !== workspace) return
@@ -1185,7 +1160,6 @@ function renderList() {
   if (state.folder && !state.listing && heardOf && !state.entries.some((e) => e.id === state.folder)) state.folder = null
   renderCrumbs()
   if (!state.root) return
-  $('files-retry').hidden = true
   const choosing = inWorkspace() && !copyOf()
   document.querySelector('.files').classList.toggle('choosing-folder', choosing)
   if (choosing) {
@@ -2918,24 +2892,6 @@ function offerRetry(handed, maxBytes) {
   const retry = Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: again })
   $('doc-message').append(document.createElement('br'), retry)
   state.retryWatch = handed.workspace ? gugu.files.onChanged({ workspace: handed.workspace, id: handed.id }, (change) => { if (change.kind === 'resync') again() }) : null
-}
-
-// No context yet (the host could not read this page's chat — offline, say): where the list would be, why, and a way to try
-// again — and again by itself when the network is back. ❌ Said in the hidden document pane, which left the page blank.
-function contextUnread(error, failed) {
-  const again = () => {
-    window.removeEventListener('online', again)
-    $('files-retry').hidden = true
-    $('files-empty').hidden = true
-    gugu.getContext().then(applyContext).catch(failed)
-  }
-  window.addEventListener('online', again)
-  $('file-list').replaceChildren()
-  $('files-empty-progress').hidden = $('empty-upload').hidden = true
-  $('files-empty-message').textContent = failureText(error)
-  $('files-empty-detail').textContent = ''
-  Object.assign($('files-retry'), { textContent: state.t.retry, onclick: again, hidden: false })
-  $('files-empty').hidden = false
 }
 
 function stopRetry() {
@@ -4679,8 +4635,7 @@ function start() {
   window.addEventListener('pagehide', () => { for (const one of [state.current, ...state.parked.values()]) one?.source?.flush() })
   gugu.onLink(goTo)
   setMode(state.mode)
-  // A context read before stays drawn, the failure said next to it; none read yet: the list's place says so (contextUnread).
-  const contextFailed = (error) => (state.ctx ? showBanner(failureText(error), 'error') : contextUnread(error, contextFailed))
+  const contextFailed = (error) => showDocMessage(failureText(error))
   gugu.onContextChanged((ctx) => applyContext(ctx).catch(contextFailed))
   gugu.getContext().then(applyContext).catch(contextFailed)
   const bar = document.querySelector('.files-toolbar')

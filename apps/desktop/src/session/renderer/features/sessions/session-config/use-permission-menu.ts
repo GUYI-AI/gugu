@@ -11,7 +11,6 @@ const permissionMenu = replica({
   scope: 'account',
   read: (_owner, machine: string | null, provider: string, leg: 'acp' | 'tui', model: string | null, _preference: unknown) =>
     rpcOn(machine).sessionTimeline.sessionCreateModels({ harness: provider, sessionView: leg === 'acp' ? 'general' : 'code', ...(model ? { model } : {}) }),
-  fresh: 0,
 });
 
 /** The same model/connection read and option source for every session lifecycle. */

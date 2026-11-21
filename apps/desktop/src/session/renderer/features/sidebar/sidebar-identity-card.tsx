@@ -10,7 +10,8 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { getPortalContainer } from '@renderer/lib/portal-container';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
-import { rpc } from '@renderer/lib/ipc';
+import { useReplica, valueOf } from '@/lib/replica';
+import { homeDirectory } from '@renderer/lib/machine-paths';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { getWorkspaceForSession } from '@renderer/features/sessions/stores/session-selectors';
@@ -65,9 +66,6 @@ const COPIED_MS = 1600;
  */
 class SidebarIdentityCardStore {
   activeSessionId: string | null = null;
-  /** 本机主目录(文件夹那一行把它缩成 `~`);第一次开卡时问一次主进程,之后不变。 */
-  localHome: string | null = null;
-  private homeAsked = false;
   /**
    * 刚被点过、指针还没离开的那一行:它的悬浮不开卡。记在全局而不是行的 ref 上 —— 点开会话会让侧栏
    * 重渲,行节点可能换掉,新节点在指针下一动就收到一次 pointerenter,ref 记的会跟着旧节点丢掉。
@@ -85,21 +83,6 @@ class SidebarIdentityCardStore {
 
   open(sessionId: string): void {
     this.activeSessionId = sessionId;
-    this.askLocalHome();
-  }
-
-  private askLocalHome(): void {
-    if (this.homeAsked) return;
-    this.homeAsked = true;
-    // 包一层 then:没有主进程可问时(浏览器测试)rpc 是同步抛的,❌ 让它绕过下面的 catch 把开卡这一下打断。
-    Promise.resolve()
-      .then(() => rpc.app.getHomeDirectory())
-      .then((home) => this.setLocalHome(home))
-      .catch((error: unknown) => log.warn({ error }, 'identity card: home directory unavailable; folder shown in full'));
-  }
-
-  setLocalHome(home: string): void {
-    this.localHome = home;
   }
 
   suppress(sessionId: string): void {
@@ -233,11 +216,13 @@ export const SidebarIdentityCard = observer(function SidebarIdentityCard({
   const rows: RowSpec[] = [{ key: 'sessionName', label: translate('identityCard.sessionName'), value: title, display: displayTitle }];
   // 在哪:设备 + 文件夹。别的机器上的会话没挂载时没有工作区,只知道项目目录(会话目录那一行不带 cwd)。
   const machine = machineRegistry.machineOf(projectId);
+  // This computer's home (the folder row shortens it to `~`); unread or unreadable, the folder is shown in full.
+  const localHome = valueOf(useReplica(homeDirectory, machine ? null : [])) ?? null;
   const place = identityPlace({
     deviceLabel: machine ? (remoteHostsStore.device(machine)?.label ?? machine) : translate('task.deviceLocal'),
     workspacePath: getWorkspaceForSession(projectId, sessionId)?.path,
     projectPath: getProjectStore(projectId)?.data?.path,
-    home: machine ? remoteHostsStore.homeDir(machine) : sidebarIdentityCard.localHome,
+    home: machine ? remoteHostsStore.homeDir(machine) : localHome,
   });
   rows.push(
     { key: 'device', label: translate('identityCard.device'), value: place.device },

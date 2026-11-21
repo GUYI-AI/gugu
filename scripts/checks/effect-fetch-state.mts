@@ -6,11 +6,12 @@
 // same component. Until it answers, the component draws the state's initial value as if
 // it were the stored one — that is what flickers when a surface opens.
 //
-// An effect that is not a read of what a surface shows says which kind it is on the line above:
-// `@@@effect-flow(<category>) - <reason>`; a reading defaulted on purpose likewise: `@@@reading-default(<category>) -
-// <reason>`. The categories are the fixed lists below (EXEMPTIONS); a marker without one, with one not listed, or without
-// a reason is itself a finding, and the finding prints what the category takes and what it does not. A read put into
-// component state fits no category: it goes through a replica.
+// An effect of that shape that is not a read of what a surface shows, and a reading defaulted on purpose, are listed in
+// effect-fetch-state-exemptions.txt beside this file, one line each: `<path>: effect-flow(<category>) - <reason>` or
+// `<path>: reading-default(<category>) - <reason>`. Per file and kind there are as many entries as findings: one more
+// finding is not exempt, one fewer is a stale entry. The categories are the fixed lists below (EXEMPTIONS); an entry
+// without one, with one not listed, or without a reason is itself a finding, printed with what each category takes and
+// what it does not. A read put into component state fits no category: it goes through a replica.
 //
 // A hard rule (there is no baseline): no source file has the shape, no reading is collapsed to a
 // literal default (`--defaults`), and nothing outside lib/replica.ts reaches react-query directly — its read hooks, the
@@ -38,6 +39,18 @@ function sourceFiles(dir: string): string[] {
   return out
 }
 
+/** `{ relative path: lines }` for every non-test source file where `linesOf` finds something, sorted by path. */
+function scanSource(linesOf: (path: string, text: string) => number[], root: string): Record<string, number[]> {
+  const out: Record<string, number[]> = {}
+  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
+    const rel = relative(root, path).split('\\').join('/')
+    if (isTest(rel)) continue
+    const lines = linesOf(rel, readFileSync(path, 'utf8'))
+    if (lines.length > 0) out[rel] = lines
+  }
+  return out
+}
+
 /**
  * The exemption categories, a closed list so an exemption is a reason a reviewer can check. Each: what it takes, and what it
  * does not (printed with a finding). Nothing outside these lists is exempt.
@@ -61,57 +74,46 @@ export const EXEMPTIONS = {
   },
 } as const
 
-type MarkerKind = keyof typeof EXEMPTIONS
-/** A marker as written: its kind, category and reason, and what is wrong with it (null = a valid exemption). */
-export type Marker = { kind: MarkerKind; category: string | null; reason: string; problem: string | null }
-
-const MARKER = /@@@(effect-flow|reading-default)(?:\(([^)]*)\))?(?:\s*-\s*(.*))?/
-
-/** Parse the marker in a comment, if any. */
-export function parseMarker(comment: string): Marker | null {
-  const match = MARKER.exec(comment)
-  if (!match) return null
-  const kind = match[1] as MarkerKind
-  const category = match[2]?.trim() || null
-  const reason = (match[3] ?? '').replace(/\*\/\s*$/, '').trim()
-  const categories = EXEMPTIONS[kind] as Record<string, readonly [string, string]>
-  let problem: string | null = null
-  if (!category) problem = 'no category'
-  else if (!(category in categories)) problem = `category "${category}" is not one of ${Object.keys(categories).join(', ')}`
-  else if (!reason) problem = 'no reason'
-  else if (kind === 'reading-default' && category === 'paired' && !/`[^`]+`/.test(reason)) problem = 'a paired exemption names its flag in backticks'
-  return { kind, category, reason, problem }
-}
+export type ExemptionKind = keyof typeof EXEMPTIONS
+const EXEMPTIONS_FILE = 'scripts/checks/effect-fetch-state-exemptions.txt'
+const FINDING = { 'effect-flow': 'an effect fills component state with a read', 'reading-default': 'a reading collapsed to a literal default' }
+const ENTRY = /^(.+?): (effect-flow|reading-default)\(([^)]*)\) - ?(.*)$/
 
 /** What each category takes and does not, for a finding. */
-export function categoryHelp(kind: MarkerKind): string {
-  return Object.entries(EXEMPTIONS[kind] as Record<string, readonly [string, string]>)
-    .map(([name, [takes, not]]) => `  ${kind}(${name}): takes ${takes}; ${not}.`).join('\n')
-}
+export const categoryHelp = (): string => Object.entries(EXEMPTIONS).flatMap(([kind, categories]) => Object.entries(categories)
+  .map(([name, [takes, not]]) => `  ${kind}(${name}): takes ${takes}; ${not}.`)).join('\n')
 
-/** The markers of a file with their 1-based lines (every one, flagged by the scans or not). */
-export function markerLines(path: string, text: string): Array<Marker & { line: number }> {
-  const out: Array<Marker & { line: number }> = []
-  text.split('\n').forEach((line, index) => {
-    if (!line.includes('@@@effect-flow') && !line.includes('@@@reading-default')) return
-    const marker = parseMarker(line)
-    if (marker) out.push({ ...marker, line: index + 1 })
-  })
-  return out
-}
+/** The entries of the exemption list (a line starting with `#` is a comment). */
+export const readExemptions = (root = '.'): string[] =>
+  readFileSync(join(root, EXEMPTIONS_FILE), 'utf8').split('\n').filter((line) => line.trim() && !line.startsWith('#'))
 
-/** Markers that are not valid exemptions, `{ path: lines }`. */
-export function scanMarkers(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const bad = markerLines(rel, readFileSync(path, 'utf8')).filter((marker) => marker.problem).map((marker) => marker.line)
-    if (bad.length > 0) out[rel] = bad
+/**
+ * What is wrong between the findings (`{ kind: { repo path: lines } }`) and the list: an entry that is not in a listed
+ * category with a reason, and per file and kind a count that differs from the findings'.
+ */
+export function exemptionProblems(found: Record<ExemptionKind, Record<string, number[]>>, entries: string[]): string[] {
+  const problems: string[] = []
+  const listed = new Map<string, number>()
+  for (const entry of entries) {
+    const match = ENTRY.exec(entry)
+    if (!match) { problems.push(`not \`<path>: <kind>(<category>) - <reason>\`: ${entry}`); continue }
+    const [, path, kind, category, reason] = match as unknown as [string, string, ExemptionKind, string, string]
+    const categories = EXEMPTIONS[kind] as Record<string, readonly [string, string]>
+    if (!(category in categories)) problems.push(`${path}: ${kind} category "${category}" is not one of ${Object.keys(categories).join(', ')}`)
+    else if (!reason.trim()) problems.push(`${path}: ${kind}(${category}) has no reason`)
+    else if (category === 'paired' && !/`[^`]+`/.test(reason)) problems.push(`${path}: a paired exemption names its flag in backticks`)
+    listed.set(`${path}: ${kind}`, (listed.get(`${path}: ${kind}`) ?? 0) + 1)
   }
-  return out
+  const keys = new Set(listed.keys())
+  for (const [kind, hits] of Object.entries(found)) for (const path of Object.keys(hits)) keys.add(`${path.slice(SOURCE_ROOT.length + 1)}: ${kind}`)
+  for (const key of [...keys].sort()) {
+    const [path, kind] = key.split(': ') as [string, ExemptionKind]
+    const lines = found[kind][`${SOURCE_ROOT}/${path}`] ?? [], count = listed.get(key) ?? 0
+    if (lines.length > count) problems.push(`${key} at line ${lines.join(', ')}: ${lines.length} found, ${count} listed (${FINDING[kind]})`)
+    if (lines.length < count) problems.push(`${key}: ${count} listed, ${lines.length} found: remove the stale entry`)
+  }
+  return problems
 }
-
 
 const isFunction = (node: ts.Node): node is ts.FunctionLikeDeclaration =>
   ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
@@ -205,35 +207,6 @@ function setsStateAfterRead(callback: ts.Node, setters: Set<string>, readers: Re
   return found
 }
 
-/** In an `event` effect: a setter handed over as a callback, or a listener's argument put into a setter. */
-function eventSetsData(callback: ts.Node, setters: Set<string>): boolean {
-  let found = false
-  const mentions = (node: ts.Node, names: Set<string>): boolean => {
-    if (ts.isIdentifier(node) && names.has(node.text)) return true
-    return ts.forEachChild(node, (child) => mentions(child, names) || undefined) ?? false
-  }
-  const visit = (node: ts.Node, payloads: Set<string>): void => {
-    if (found) return
-    if (ts.isCallExpression(node)) {
-      if (node.arguments.some((argument) => ts.isIdentifier(argument) && setters.has(argument.text))) { found = true; return }
-      const name = calleeName(node)
-      if (name && setters.has(name) && payloads.size > 0 && node.arguments.some((argument) => mentions(argument, payloads))) { found = true; return }
-      for (const argument of node.arguments) {
-        if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) {
-          const params = new Set(payloads)
-          for (const param of argument.parameters) if (ts.isIdentifier(param.name)) params.add(param.name.text)
-          visit(argument.body, params)
-        } else visit(argument, payloads)
-      }
-      visit(node.expression, payloads)
-      return
-    }
-    ts.forEachChild(node, (child) => visit(child, payloads))
-  }
-  visit(callback, new Set())
-  return found
-}
-
 /** The 1-based lines of the effects of that shape in a file. */
 export function effectLines(path: string, text: string): number[] {
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
@@ -246,28 +219,12 @@ export function effectLines(path: string, text: string): number[] {
       if (node !== fn && isFunction(node) && !isEffectCallback(node)) return
       if (ts.isCallExpression(node) && (calleeName(node) === 'useEffect' || calleeName(node) === 'useLayoutEffect')) {
         const callback = node.arguments[0]
-        const marker = markedFlow(node)
-        const shaped = callback && setsStateAfterRead(callback, setters, readers)
-        // An `event` exemption puts no pushed data in state: a setter handed to a listener, or a listener's payload put
-        // into a setter, is the shape again whatever the marker says.
-        if (callback && (shaped || marker?.category === 'event') && (!marker || (marker.category === 'event' && eventSetsData(callback, setters)))) {
-          lines.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1)
-        }
+        if (callback && setsStateAfterRead(callback, setters, readers)) lines.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1)
         return
       }
       ts.forEachChild(node, walk)
     }
     if (fn.body) walk(fn.body)
-  }
-  /** The valid `@@@effect-flow(<category>)` exemption on the line above the effect, if any. */
-  const markedFlow = (call: ts.Node): Marker | null => {
-    let statement: ts.Node = call
-    while (statement.parent && !ts.isExpressionStatement(statement) && !ts.isBlock(statement.parent)) statement = statement.parent
-    for (const range of ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []) {
-      const marker = parseMarker(text.slice(range.pos, range.end))
-      if (marker?.kind === 'effect-flow' && !marker.problem) return marker
-    }
-    return null
   }
   const isEffectCallback = (node: ts.Node) => ts.isCallExpression(node.parent) && node.parent.arguments[0] === node
     && ['useEffect', 'useLayoutEffect'].includes(calleeName(node.parent) ?? '')
@@ -277,11 +234,6 @@ export function effectLines(path: string, text: string): number[] {
   }
   visit(source)
   return [...new Set(lines)]
-}
-
-/** Count the effects of that shape in a file. */
-export function scanFile(path: string, text: string): number {
-  return effectLines(path, text).length
 }
 
 /**
@@ -385,13 +337,7 @@ export function literalDefaultLines(path: string, text: string): number[] {
     ts.forEachChild(node, bind)
   }
   bind(source)
-  // A justified exception says why on the line above: `@@@reading-default(<category>) - <reason>` (EXEMPTIONS).
-  const marked = (node: ts.Node) => {
-    let statement: ts.Node = node
-    while (statement.parent && !ts.isBlock(statement.parent) && !ts.isSourceFile(statement.parent)) statement = statement.parent
-    return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? []).some((range) => { const marker = parseMarker(text.slice(range.pos, range.end)); return marker?.kind === 'reading-default' && !marker.problem })
-  }
-  const hit = (node: ts.Node) => { if (!marked(node)) lines.add(source.getLineAndCharacterOfPosition(node.getStart()).line + 1) }
+  const hit = (node: ts.Node) => { lines.add(source.getLineAndCharacterOfPosition(node.getStart()).line + 1) }
   const visit = (node: ts.Node): void => {
     if (ts.isConditionalExpression(node)) {
       const check = valueCheck(node.condition)
@@ -405,29 +351,11 @@ export function literalDefaultLines(path: string, text: string): number[] {
   return [...lines].sort((a, b) => a - b)
 }
 
-/** `{ relative path: lines }` for every non-test source file with a reading collapsed to a literal default. */
-export function scanLiteralDefaults(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const lines = literalDefaultLines(rel, readFileSync(path, 'utf8'))
-    if (lines.length > 0) out[rel] = lines
-  }
-  return out
-}
+/** `{ relative path: lines }` for every non-test source file with a reading collapsed to a literal default (listed or not). */
+export const scanLiteralDefaults = (root = '.') => scanSource(literalDefaultLines, root)
 
-/** `{ relative path: count }` for every non-test source file that still has the shape, sorted by path. */
-export function scanEffectFetchState(root = '.'): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const count = scanFile(rel, readFileSync(path, 'utf8'))
-    if (count > 0) out[rel] = count
-  }
-  return out
-}
+/** `{ relative path: lines }` for every non-test source file that has the shape (listed or not). */
+export const scanEffectFetchState = (root = '.') => scanSource(effectLines, root)
 
 const REPLICA_MODULE = 'apps/desktop/src/lib/replica.ts'
 /**
@@ -469,15 +397,7 @@ export function reactQueryLines(path: string, text: string): number[] {
 }
 
 /** `{ relative path: lines }` for every non-test source file that reaches react-query past the replica. */
-export function scanReactQuery(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    const lines = reactQueryLines(rel, readFileSync(path, 'utf8'))
-    if (lines.length > 0) out[rel] = lines
-  }
-  return out
-}
+export const scanReactQuery = (root = '.') => scanSource(reactQueryLines, root)
 
 /** Props that hand a component its retry: whatever refresh they wrap, it is a retry. */
 const RETRY_PROPS = new Set(['onRetry', 'onReadAgain'])
@@ -521,41 +441,19 @@ export function handRetryLines(path: string, text: string): number[] {
 }
 
 /** `{ relative path: lines }` for every non-test source file with a hand-written retry for a reading. */
-export function scanHandRetries(root = '.'): Record<string, number[]> {
-  const out: Record<string, number[]> = {}
-  for (const path of sourceFiles(join(root, SOURCE_ROOT)).sort()) {
-    const rel = relative(root, path).split('\\').join('/')
-    if (isTest(rel)) continue
-    const lines = handRetryLines(rel, readFileSync(path, 'utf8'))
-    if (lines.length > 0) out[rel] = lines
-  }
-  return out
-}
+export const scanHandRetries = (root = '.') => scanSource(handRetryLines, root)
 
 if (process.argv[1]?.endsWith('effect-fetch-state.mts')) {
   const report = (title: string, hits: Record<string, number[]>) => {
     for (const [file, lines] of Object.entries(hits)) console.log(`${title}: ${file}: ${lines.join(', ')}`)
     return Object.keys(hits).length
   }
-  const effects = Object.fromEntries(Object.keys(scanEffectFetchState()).map((file) => [file, effectLines(file, readFileSync(file, 'utf8'))]))
-  const found = report('effect fills component state with a read', effects)
-    + report('reading collapsed to a literal default', scanLiteralDefaults())
-    + report('react-query reached past the replica', scanReactQuery())
+  const problems = exemptionProblems({ 'effect-flow': scanEffectFetchState(), 'reading-default': scanLiteralDefaults() }, readExemptions())
+  for (const problem of problems) console.log(`exemption: ${problem}`)
+  if (problems.length > 0) console.log(categoryHelp())
+  const found = problems.length + report('react-query reached past the replica', scanReactQuery())
     + report('a reading\'s retry is its own: `<RefreshFailed reading={r} />`, `<ReadingSlot>`, or `r.retry`', scanHandRetries())
-  const markers = scanMarkers()
-  for (const [file, lines] of Object.entries(markers)) {
-    const text = readFileSync(file, 'utf8')
-    for (const marker of markerLines(file, text).filter((item) => lines.includes(item.line))) {
-      console.log(`exemption marker: ${file}:${marker.line}: ${marker.problem}\n${categoryHelp(marker.kind)}`)
-    }
-  }
-  if (process.argv.includes('--table')) {
-    for (const path of sourceFiles(SOURCE_ROOT).sort()) {
-      if (isTest(path)) continue
-      for (const marker of markerLines(path, readFileSync(path, 'utf8'))) console.log(`| ${path}:${marker.line} | ${marker.kind}(${marker.category ?? '—'}) | ${marker.reason.replace(/\|/g, '/')} |`)
-    }
-  }
-  if (found + Object.keys(markers).length > 0) {
+  if (found > 0) {
     console.log('Read what a surface shows through a replica (lib/replica.ts); branch on unknown / value / error — docs/design/client-state-model.md')
     process.exit(1)
   }

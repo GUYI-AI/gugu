@@ -1,4 +1,4 @@
-import { chatOwnSettings, readOwnSettings, updateOwnSettings } from './ownSettings'
+import { readOwnSettings, updateOwnSettings } from './ownSettings'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from './realtimeChannel'
 
 export type ChatPinSettings = { topicIds: string[] }
@@ -32,8 +32,8 @@ export async function setChatPinPreference(userId: string, chatId: string, id: s
 
 /** One account channel and reconnecting; a return to the app reads the pins again by their model (`refreshOnFocus`). */
 export function watchChatPinSettings(userId: string, chatId: string, read: () => void): () => void {
-  // Each of these says the row may have changed elsewhere: the next read asks the server, ❌ the shared reading.
-  const refresh = () => { void chatOwnSettings.refresh(scopeOf(chatId)); read() }
+  // Each of these says the row may have changed elsewhere: read it again.
+  const refresh = () => { read() }
   const handle = subscribePrivateUserEventBus(userId, 'setting_changed', (payload) => {
     const setting = (payload as { setting?: { user_id?: string; scope?: string } } | null)?.setting
     if (setting?.user_id === userId && setting.scope === scopeOf(chatId)) refresh()

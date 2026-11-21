@@ -17,23 +17,20 @@ import {
 } from './automation-replicas';
 
 function machineOf(host: AutomationsHost): AutomationMachine {
-  return host.remote?.deviceId ?? 'local';
+  return host.remote?.deviceId ?? null;
 }
 
-/** 别的机器离线就不问(问不到,只会挂满超时),照旧画上次读到的(#6264)。 */
-function useMachineReplica<A extends [AutomationMachine, ...unknown[]], V>(
-  model: Replica<A, V>,
-  host: AutomationsHost,
-  args: A | null
-): Reading<V> {
-  return useReplica(model, args, { read: host.remote?.online !== false });
+/** A reading of the automations host's machine (its first argument). 别的机器离线就不问(问不到,只会挂满超时),照旧画上次读到的(#6264)。 */
+function useMachineReplica<R extends unknown[], V>(model: Replica<[AutomationMachine, ...R], V>, rest: R): Reading<V> {
+  const host = useAutomationsHost();
+  return useReplica(model, [machineOf(host), ...rest], { read: host.remote?.online !== false });
 }
 
 export function useAutomations() {
   const host = useAutomationsHost();
   const api = host.api;
   const machine = machineOf(host);
-  const automations = useMachineReplica(automationsModel, host, [machine]);
+  const automations = useMachineReplica(automationsModel, []);
   const refreshList = () => automationsModel.refresh(machine);
 
   const create = useMutation({
@@ -92,23 +89,19 @@ export function useAutomations() {
 }
 
 export function useScheduledAutomationRun(automationId: string) {
-  const host = useAutomationsHost();
-  return useMachineReplica(automationNextRun, host, [machineOf(host), automationId]);
+  return useMachineReplica(automationNextRun, [automationId]);
 }
 
 export function useLatestAutomationRun(automationId: string) {
-  const host = useAutomationsHost();
-  return useMachineReplica(automationLatestRun, host, [machineOf(host), automationId]);
+  return useMachineReplica(automationLatestRun, [automationId]);
 }
 
 export function useAutomationRunsPaginated(automationId: string, page: number, status: RunStatusFilter) {
-  const host = useAutomationsHost();
-  return useMachineReplica(automationRunPage, host, [machineOf(host), automationId, page, status]);
+  return useMachineReplica(automationRunPage, [automationId, page, status]);
 }
 
 export function useAutomationRunCounts(automationId: string) {
-  const host = useAutomationsHost();
-  return useMachineReplica(automationRunCounts, host, [machineOf(host), automationId]);
+  return useMachineReplica(automationRunCounts, [automationId]);
 }
 
 export function useRetryAutomationRuns(automationId: string) {

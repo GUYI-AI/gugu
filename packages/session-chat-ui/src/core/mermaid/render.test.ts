@@ -1,40 +1,24 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { renderMermaidDiagram } from './render'
 
-const drawn: string[] = []
-let release: (() => void) | null = null
-vi.mock('mermaid', () => ({
-  default: {
-    initialize: vi.fn(),
-    render: vi.fn(async (_id: string, chart: string) => {
-      // the first diagram holds the queue until the test lets it go
-      if (drawn.length === 0) await new Promise<void>((resolve) => (release = resolve))
-      drawn.push(chart)
-      return { svg: `<svg>${chart}</svg>` }
-    })
-  }
-}))
+describe('renderMermaidDiagram', () => {
+  it('draws one SVG that takes its colours from the theme variables', async () => {
+    const svg = await renderMermaidDiagram('flowchart LR\n  A --> B')
+    expect(svg).toMatch(/^<svg [^>]*class="pele pele-flowchart"/)
+    expect(svg).toContain('var(--pele-fg')
+  })
 
-const { createMermaidRenderId, renderMermaidDiagram } = await import('./render')
-const request = (chart: string, signal?: AbortSignal) =>
-  renderMermaidDiagram({ id: createMermaidRenderId(), chart, theme: 'neutral', signal })
+  it('rejects a source it cannot draw, and one aborted before it started', async () => {
+    await expect(renderMermaidDiagram('!!! not a diagram !!!')).rejects.toThrow()
+    const aborted = new AbortController()
+    aborted.abort()
+    await expect(renderMermaidDiagram('graph TD; A-->B;', aborted.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  })
 
-describe('renderMermaidDiagram queue', () => {
-  it('skips requests aborted while they waited, and renders the rest in order', async () => {
-    const first = request('first')
-    const stale = [new AbortController(), new AbortController(), new AbortController()]
-    const staleResults = stale.map((c, i) => request(`stale-${i}`, c.signal).then(() => 'drawn', (e: Error) => e.name))
-    const latest = request('latest', new AbortController().signal)
-
-    // the earlier versions of a streaming block are abandoned while the first diagram still renders
-    for (const c of stale) c.abort()
-    await vi.waitUntil(() => release !== null)
-    release!()
-
-    expect(await first).toBe('<svg>first</svg>')
-    expect(await latest).toBe('<svg>latest</svg>')
-    expect(await Promise.all(staleResults)).toEqual(['AbortError', 'AbortError', 'AbortError'])
-    expect(drawn).toEqual(['first', 'latest'])
+  it('draws no link or image a reader could open or a page could fetch', async () => {
+    const svg = await renderMermaidDiagram('flowchart LR\n  A --> B\n  click A "https://example.com"\n  B@{ img: "https://example.com/a.png" }')
+    expect(svg).not.toMatch(/<a\b|<image\b|example\.com/)
   })
 })

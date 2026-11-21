@@ -13,7 +13,7 @@ import type { AgentModelSelection } from '@gugu/core/shared/agentModelSelection'
 import { cloudMoveModel, moveModelSelection, sameMoveModel } from './assistant-move-model';
 import { knownCloudDeviceId, provisionCloudComputer, readCloudSnapshotNow, wakeCloudComputer } from '@/lib/cloudComputer';
 import { contactsService } from '@/lib/contacts';
-import { refreshMyAssistant } from '@/lib/myAssistant';
+import { myAssistant } from '@/lib/myAssistant';
 import { replica } from '@/lib/replica';
 import { desktopIpc } from '@/platform/desktopIpc';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
@@ -404,7 +404,7 @@ export function buildMoveDeps(
           return (await homeDeviceOf(env.assistantId)) === snapshot.deviceId ? snapshot.deviceId : null;
         });
         await cloudDeviceReady(deviceId);
-        void refreshMyAssistant();
+        void myAssistant.refresh();
       },
       async openTarget() {
         // 接着搬时 isAdopted 直接为真、不会走 adopt 里的叫醒:云上那台可能已经睡了,先醒着、连上再往里拷。
@@ -469,7 +469,7 @@ export function buildMoveDeps(
       if (phase === 'awaiting_terminal') throw new Error('the assistant is still starting on this computer');
       if (phase === 'failed') throw new Error(result.outcome.member.error ?? 'adopt failed');
       completedSingleProvisionSession(result);
-      void refreshMyAssistant();
+      void myAssistant.refresh();
     },
     restart: () => restartAssistant(env.assistantId),
     restoreOnline: () => restoreOnlineAssistant(env.assistantId),

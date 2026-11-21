@@ -3,7 +3,7 @@ import { chatActor } from '@renderer/lib/chat/actor-identity'
 import { chatDisplayName } from '@renderer/lib/chat/chat-name'
 import { readChatSummary, resolveChatId } from '@/lib/chatSummariesBridge'
 import { translateSessionMessage } from '../../localization/locale-store'
-import { replica, useReplica, type Reading } from '@/lib/replica'
+import { refreshFailure, replica, useReplica, valueOf } from '@/lib/replica'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
@@ -137,31 +137,11 @@ function useIdentities() {
  * merged list is newest first too; there is no other order.
  */
 export function useGlobalSearch(text: string, chips: readonly SearchChip[], facet: SearchFacet, tasks: boolean): SearchView {
-  const context: SearchContext = { summaries: useChatSummaries(), identities: useIdentities(), me: useSelfId(), online: useNetworkOnline() }
+  const summaries = useChatSummaries()
+  const identities = useIdentities()
+  const me = useSelfId()
+  const online = useNetworkOnline()
   const typed = useDebounce(text, 100)
-  const current = useSearchView({ typed, chips }, facet, tasks, context, true)
-  // The last words whose results were all in: shown, marked stale, while the next words' are on their way.
-  const [held, setHeld] = useState<SearchWords | null>(null)
-  const settled = current.hits !== null
-  // Only non-empty results are held; chips compared by content (a render may hand the same chips as a new array).
-  if (settled && current.hits!.length > 0 && (held?.typed !== typed || JSON.stringify(held.chips) !== JSON.stringify(chips))) setHeld({ typed, chips })
-  const previous = useSearchView(held ?? { typed, chips }, facet, tasks, context, false)
-  const view = !settled && held && previous.hits !== null
-    ? { ...current, hits: previous.hits, counts: previous.counts, capped: previous.capped, stale: true }
-    : current
-  return { ...view, loading: view.loading || text !== typed }
-}
-
-type SearchWords = { typed: string; chips: readonly SearchChip[] }
-type SearchContext = {
-  summaries: ReturnType<typeof useChatSummaries>
-  identities: ReturnType<typeof useIdentities>
-  me: string | null
-  online: boolean
-}
-
-/** `read: false` shows what is there only. */
-function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks: boolean, { summaries, identities, me, online }: SearchContext, read: boolean): SearchView {
 
   const scopes: SearchChip[] = [...chips]
   let unresolved: string | null = null
@@ -196,12 +176,12 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
 
   const messagesApply = runnable && !inTask
   const turnsApply = runnable && !!query && tasks && !inChat && !from && kinds.length === 0
-  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null, clears] : null, { read })
-  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null, clears] : null, { read })
+  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null, clears] : null, { keepPrevious: true })
+  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null, clears] : null, { keepPrevious: true })
   const messages = localScope ? stored : cloud
   // The same words everywhere, for the line that says how many more the in: chip is hiding (the unscoped search).
-  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null, clears] : null, { read })
-  const turns = useReplica(taskTurnSearch, turnsApply ? [query, clears] : null, { read })
+  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null, clears] : null, { keepPrevious: true })
+  const turns = useReplica(taskTurnSearch, turnsApply ? [query, clears] : null, { keepPrevious: true })
   const storedRows = stored.state === 'value' ? stored.value : null
   useEffect(() => {
     if (!storedRows) return
@@ -214,15 +194,18 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
   // Messages that cannot be asked now are said (❌ placeholders for ever): no account to search for, or the cloud offline.
   const unasked = !messagesApply ? null : messageSearch.key(query, null, clears) === null ? 'globalSearch.signedOut' as const
     : !localScope && !online && messages.state === 'unknown' ? 'globalSearch.offline' as const : null
-  const pending = (messagesApply && messages.state === 'unknown') || (turnsApply && turns.state === 'unknown')
-  const messageRows = answered(messagesApply ? [messages] : [])
-  const turnHits = answered(turnsApply ? [turns] : [])
-  const messageHits: SearchHit[] = messageRows.flat()
+  const applied = [...(messagesApply ? [messages] : []), ...(turnsApply ? [turns] : [])]
+  const pending = applied.some((reading) => reading.state === 'unknown')
+  // A reading held from the previous words while these words' are on their way (`keepPrevious`), or read again past `fresh`.
+  const stale = applied.some((reading) => reading.state === 'value' && reading.stale)
+  const messageRows = (messagesApply ? valueOf(messages) : undefined) ?? []
+  const turnHits = (turnsApply ? valueOf(turns)?.hits : undefined) ?? []
+  const messageHits: SearchHit[] = messageRows
     .filter(shownRow)
     .map((row) => ({ kind: 'message', id: `m:${row.id}`, group: row.chat_id, chatId: row.chat_id, messageId: row.id, senderId: row.sender_user_id,
       sender: row.sender_user_id === null ? null : localScope ? identities[row.sender_user_id]?.display_name ?? row.sender_name : row.sender_name,
       text: excerpt(parseAttachmentContent(row.content)?.fileName ?? renderMentionTokens(row.content ?? ''), query), at: row.created_at, file: row.file_item_id !== null }))
-  const taskHits: SearchHit[] = turnHits.flatMap((answer) => answer.hits)
+  const taskHits: SearchHit[] = turnHits
     .filter((hit) => !inTask || hit.sessionId === inTask.taskId)
     .map((hit) => {
       const activity = activityPreviewLabel(hit.activity, { actor: chatActor, viewerId: me ?? undefined, chatName: chatDisplayName,
@@ -241,27 +224,20 @@ function useSearchView({ typed, chips }: SearchWords, facet: SearchFacet, tasks:
     file: messageHits.filter((hit) => hit.kind === 'message' && hit.file).length,
   }
   const shown = facet === 'all' ? all : all.filter((hit) => facet === 'task' ? hit.kind === 'task' : hit.kind === 'message' && (facet === 'message' || hit.file))
-  const known = !runnable || !pending
+  // Only results with rows are held: an empty one held would say 「nothing found」 for words not searched yet.
+  const known = !runnable || (!pending && !(stale && all.length === 0))
   return {
     query, scopes, unresolved,
     hits: !runnable ? [] : known ? shown : null,
     counts: !runnable ? { all: 0, message: 0, task: 0, file: 0 } : known ? counts : null,
-    capped: messageRows.some((rows) => rows.length >= SEARCH_LIMIT) || turnHits.some((answer) => answer.hits.length >= SEARCH_LIMIT),
+    capped: messageRows.length >= SEARCH_LIMIT || turnHits.length >= SEARCH_LIMIT,
     elsewhere: runnable && query && inChat && everywhere.state === 'value' ? {
       count: everywhere.value.filter((row) => row.chat_id !== inChat.chatId && shownRow(row)).length,
       capped: everywhere.value.length >= SEARCH_LIMIT,
     } : null,
-    loading: runnable && pending,
-    error: unasked ? new Error(translateSessionMessage(unasked)) : errorOf(messagesApply ? messages : null) ?? errorOf(everywhere) ?? errorOf(turnsApply ? turns : null),
+    loading: (runnable && (pending || stale)) || text !== typed,
+    error: unasked ? new Error(translateSessionMessage(unasked)) : (messagesApply ? refreshFailure(messages) : null) ?? refreshFailure(everywhere) ?? (turnsApply ? refreshFailure(turns) : null),
     taskIndex: turnsApply && turns.state === 'value' ? turns.value.index : undefined,
-    stale: false,
+    stale: runnable && known && stale,
   }
-}
-
-function answered<V>(readings: Reading<V>[]): V[] {
-  return readings.filter((reading): reading is Extract<Reading<V>, { state: 'value' }> => reading.state === 'value').map((reading) => reading.value)
-}
-
-function errorOf(reading: Reading<unknown> | null): Error | null {
-  return reading?.state === 'error' || reading?.state === 'value' ? reading.error : null
 }

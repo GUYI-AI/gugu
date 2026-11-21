@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, MoreHorizontal, X } from '@/lib/icons'
 import { useAuth } from '../../store/auth'
+import { useOnChange } from '../../hooks/useOnChange'
 import { declaredMenuCommands, declaredToolbarCommands, runExtensionCommand } from '../../session/renderer/features/extensions/extension-commands'
 import { extensionSurfaceStore, extensionTabTitle } from '../../session/renderer/features/extensions/extension-surface-store'
 import { useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
@@ -14,7 +15,7 @@ import { installPackageOf, packageKey, type SharedPackage } from '../extensionBu
 import { sharedAppPackages } from '../extensionBundle/packageReplicas'
 import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
-import { useMarketOffers } from './marketOffers'
+import { marketOffers } from './marketOffers'
 import { parseExtensionTabKind, type ExtensionManifest } from '../../session/shared/extensions/manifest'
 import type { ExtensionOrigin } from '../../session/shared/extensions/upgrade'
 import { availableInstallOffers, type AppInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
@@ -140,7 +141,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   const sharedReading = useReplica(sharedAppPackages, appsHere && user?.id ? [chatId] : null)
   const shared = sharedReading.state === 'value' ? sharedReading.value : null
   const typedName = item.kind ? item.typedName ?? null : null
-  const marketReading = useMarketOffers(!!appsHere && !!typedName)
+  const marketReading = useReplica(marketOffers, appsHere && typedName ? [] : null)
   // The market unreadable (null): offered from what is shared in this chat only.
   const market = marketReading.state === 'value' ? marketReading.value : null
   const marketKnown = marketReading.state !== 'unknown'
@@ -160,18 +161,14 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   // a card in the chat alike (摩擦单 F15, L5 S1): the same tab, now in that App.
   // Only a change of the Apps that are on decides it (❌ the list as the tab opens: the person may have picked another App).
   const enabledHere = installed ? enabledApps(installed).map((manifest) => `${manifest.id}@${manifest.version}`).join(' ') : null
-  const enabledBefore = useRef(enabledHere)
-  useEffect(() => {
-    const before = enabledBefore.current
-    enabledBefore.current = enabledHere
+  useOnChange(enabledHere, (before) => {
     const typed = item.typedName
-    if (!appsHere || !typed || !item.itemId || !installed || before === null || before === enabledHere) return
+    if (!appsHere || !typed || !item.itemId || !installed || before === null) return
     const choice = openerChoice(typed, enabledApps(installed), 'chat', (key) => rememberedOpener(installed, key))
     if (choice.kind === 'one' && choice.candidate.tabKind !== item.kind) {
       replacePanelItem(chatId, tabId, { kind: choice.candidate.tabKind, itemId: item.itemId, typedName: typed, title: displayNameOf(item.fileName ?? item.title, choice.candidate.suffix), fileName: item.fileName })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `enabledHere` is the list's identity for this decision
-  }, [chatId, tabId, item, enabledHere])
+  })
 
   // On the phone the tab is a whole page (#6815): its way out is the top-left back, and the back key is that back.
   useBackLayer(back, mobile)
@@ -217,12 +214,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   // #7050 左栏「退出」了这里开着的 App:它的这一枚跟着关掉。
   // Only the turn to quit closes it (❌ quit as it opens: main takes the quit back when its page is asked for).
   const shownQuit = shownApp && installed ? installed.quit.includes(shownApp) : null
-  const quitBefore = useRef(shownQuit)
-  useEffect(() => {
-    const before = quitBefore.current
-    quitBefore.current = shownQuit
-    if (shownQuit === true && before === false) closeChatTab(chatId, tabId)
-  }, [shownQuit, chatId, tabId])
+  useOnChange(shownQuit, (before) => { if (shownQuit === true && before === false) closeChatTab(chatId, tabId) })
   const sharedHere = shownApp && shared ? shared.find((pkg) => pkg.appId === shownApp) : undefined
   const shownVersion = shownApp && installed ? installed.manifestFor(shownApp)?.version : undefined
   const update =
@@ -232,7 +224,6 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   /** What the update without a click came to, for which package (`installed` false: refused — the bar asks the person). */
   const [held, setHeld] = useState<{ key: string; installed: boolean } | null>(null)
   const updateKey = update ? packageKey(update.card) : null
-  // @@@effect-flow(command) - asks main to update the App on screen from a newer package shared here; its outcome is whether to show the update bar
   useEffect(() => {
     if (!update || !updateKey) return undefined
     let live = true

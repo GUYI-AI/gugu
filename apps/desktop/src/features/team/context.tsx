@@ -9,8 +9,8 @@ import { teamApi } from './runtime'
 import { hasTeamAccountMarker } from './accountKind'
 import { teamErrorCopy } from './copy'
 import type { CurrentTeamContext, TeamApi, TeamProfile } from './types'
-import { refreshFailure, useReplica } from '@/lib/replica'
-import { teamApiKey, teamSession } from './replicas'
+import { refreshFailure, retryOf, useReplica } from '@/lib/replica'
+import { teamSession } from './replicas'
 import './catalog'
 import './team.css'
 
@@ -29,12 +29,12 @@ export interface TeamSessionState {
 }
 const SessionContext = createContext<TeamSessionState>({ status: 'personal', retry() {} })
 export const useTeamSession = () => useContext(SessionContext)
-function TeamSession({ user, children }: { user: AuthUser; children: ReactNode }) {
-  const api = useTeamApi()
+/** Team reads are account replicas: no team data survives an identity switch (the replica leaves with the account). */
+export function TeamProvider({ user, children }: { user: AuthUser; children: ReactNode }) {
   const { updateUser } = useAuth()
   const teamMarked = hasTeamAccountMarker(user)
   // Read while this account is marked a team member (an identity switch takes the reading with the account).
-  const reading = useReplica(teamSession, teamMarked ? [teamApiKey(api)] : null)
+  const reading = useReplica(teamSession, teamMarked ? [] : null)
   const data = reading.state === 'value' ? reading.value : undefined
   const failure = refreshFailure(reading)
   // Canonical team profile owns its display email; the internal Auth principal email is never shown. Projected once per
@@ -52,15 +52,8 @@ function TeamSession({ user, children }: { user: AuthUser; children: ReactNode }
   }, [data, failure, updateUser, user])
   const state: TeamSessionState = !teamMarked ? { status: 'personal', retry() {} }
     : { status: failure ? 'error' : data ? 'ready' : 'loading', ...data,
-      error: failure ?? undefined, retry: () => { if (reading.state !== 'unknown') void reading.retry?.() } }
+      error: failure ?? undefined, retry: retryOf(reading) ?? (() => {}) }
   return <SessionContext.Provider value={state}>{children}</SessionContext.Provider>
-}
-
-/** Team reads are account replicas: no team data survives an identity switch (the replica leaves with the account). */
-export function TeamProvider({ user, api = teamApi, children }: { user: AuthUser; api?: TeamApi; children: ReactNode }) {
-  return <TeamApiProvider api={api}>
-    <TeamSession user={user}>{children}</TeamSession>
-  </TeamApiProvider>
 }
 
 export function TeamAccessGate({ children }: { children: ReactNode }) {

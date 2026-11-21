@@ -13,14 +13,8 @@ const log = rendererLogger('agent/stored-turn-failure')
 export const storedAgentTurnFailures = replica({
   name: 'storedAgentTurnFailures',
   scope: 'account',
-  read: async (_owner: string, scopeKey: string, idsKey: string): Promise<StoredAgentTurnFailure[]> => {
-    try {
-      return (await readStoredAgentTurnFailures(JSON.parse(scopeKey) as StoredFailureScope, idsKey.split(','))).failures
-    } catch (error) {
-      log.error({ scope: JSON.parse(scopeKey) as StoredFailureScope, error: String(error) }, 'could not read agent reply outcome')
-      throw error
-    }
-  },
+  read: async (_owner: string, scopeKey: string, idsKey: string): Promise<StoredAgentTurnFailure[]> =>
+    (await readStoredAgentTurnFailures(JSON.parse(scopeKey) as StoredFailureScope, idsKey.split(','))).failures,
   retry: true,
   retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 30_000),
   // Back in the app after having left (lib/foregroundReturn.ts): read again, ❌ on every focus (switching Gugu windows).

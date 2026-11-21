@@ -54,6 +54,24 @@ describe('readings', () => {
     expect(model.peek()).toMatchObject({ state: 'value', value: 1, error: { message: 'offline' } })
   })
 
+  it('reread on an entry nobody shows answers a read begun after it, not the one already on its way', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let calls = 0
+    let answerFirst: (value: string) => void = () => {}
+    const model = rm.replica({
+      name: 'test-reread-unshown', scope: 'account', fresh: Infinity,
+      read: () => { calls += 1; return calls === 1 ? new Promise<string>((resolve) => { answerFirst = resolve }) : Promise.resolve('after') },
+    })
+    const first = model.fetch()
+    // Answered without waiting for the read on its way; that read, landing later, does not overwrite it.
+    await expect(model.reread()).resolves.toBe('after')
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'after' })
+    answerFirst('before')
+    await expect(first).resolves.toBe('after')
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'after' })
+    expect(calls).toBe(2)
+  })
+
   it('a read that never leaves this device reads while the browser is offline; others wait for the network', async () => {
     const { onlineManager } = await import('@tanstack/react-query')
     rm.followRendererSession('SIGNED_IN', 'alice')

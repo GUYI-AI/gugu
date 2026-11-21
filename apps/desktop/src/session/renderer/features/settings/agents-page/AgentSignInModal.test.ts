@@ -21,7 +21,7 @@ vi.mock('./AcpAuthenticateSignIn', () => ({
   },
 }));
 // 这一家声明了几种登录方法,弹窗靠它决定要不要先让人挑。
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: (id: string) => ({ reading: { state: 'value', value: mocks.agents[id] ?? null, stale: false, error: null } }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: (id: string) => ({ state: 'value', value: mocks.agents[id] ?? null, stale: false, error: null }) }));
 // 远端登录(#6264)那一支用到的设置页零件会在导入时读 `window`(平台适配层);这里只验本机几步怎么接。
 vi.mock('@/components/settings/addServer/CommandBlock', () => ({ CommandBlock: () => null }));
 vi.mock('@/i18n/registerSettingsCatalog', () => ({}));

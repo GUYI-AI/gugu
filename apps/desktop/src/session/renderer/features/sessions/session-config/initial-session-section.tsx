@@ -96,7 +96,6 @@ import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentsMetadata, harnessModelCatalog } from '@renderer/lib/stores/agent-replicas';
 import { useTranslation } from 'react-i18next';
-import { agentsAnswerAwaited } from '@renderer/lib/stores/agents-answer';
 import { openAgentAppDetail } from '@renderer/features/apps/agent-app-detail-navigation';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
@@ -1111,7 +1110,7 @@ export function useInitialSessionState(
     title: common('staleRead.failed'), tier: 'warning', diagnostic: keptReadFailure.message,
     action: { label: common('staleRead.retry'), onClick: () => {
       void agentsMetadata.refresh(machine);
-      if (providerId) void harnessModelCatalog.refresh(providerId, sessionpageSurface, machine);
+      if (providerId) void harnessModelCatalog.refresh(machine, providerId, sessionpageSurface);
     } },
   } : null);
 
@@ -1446,8 +1445,9 @@ export function InitialSessionField({
   const agents = agentsReading.state === 'value' ? agentsReading.value : null;
   const remoteHost = useLibraryHost().remote;
   const remoteCreateForActions = remoteHost !== null;
-  // #6264 a machine not connected is not asked: nothing is held for it (why it is unreachable is the machine's notice).
-  const agentOptionsLoading = !state.providerKnown && agentsAnswerAwaited(agentsReading, remoteHost);
+  // Whether the agent list will answer here (a place is held for it). #6264 a machine not connected is not asked: nothing
+  // is held for it (why it is unreachable is the machine's notice).
+  const agentOptionsLoading = !state.providerKnown && agentsReading.state !== 'error' && remoteHost?.online !== false;
   const { byEngine: agentCreationToolsByEngine, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
   const selectedAgentName = composerOwnTierAgentName(agents, state.provider);
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。

@@ -1,11 +1,11 @@
-import { useReplica, useReplicaFetching } from '@/lib/replica'
+import { refreshFailure, useReplica, useReplicaFetching } from '@/lib/replica'
 import { connectionAvailability } from './subscription-queries'
 
 /** Same auth reading used by the harness model-credential predicate; payer is not a credential. */
 export function useConnectionAvailability(providerId: string, machine: string | null, missingProgram = false) {
   const reading = useReplica(connectionAvailability, [machine, providerId])
   const auth = reading.state === 'value' ? reading.value : undefined
-  const error = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
+  const error = refreshFailure(reading)
   const credentialState =
     auth?.kind === 'authenticated'
       ? 'usable'

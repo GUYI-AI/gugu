@@ -10,11 +10,11 @@ import { PaneEmptyState } from '@/components/ui/PaneEmptyState'
 import { MoreHorizontal } from '@/lib/icons'
 import { formatCredits } from '@/lib/billing/spendingPowerCopy'
 import { creditUnits } from '@gugu/core/billing/creditAmount'
-import { useTeamApi, useTeamSession } from './context'
+import { useTeamSession } from './context'
 import { refreshTag } from '@/lib/replica'
 import { useReplicaPages } from '@/lib/replicaPages'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
-import { TEAM, teamApiKey, teamDirectoryPage } from './replicas'
+import { TEAM, teamDirectoryPage } from './replicas'
 import { teamFailureCopy, teamRoleLabel } from './copy'
 import { TeamCheckbox, TeamDialog, TeamReadingState } from './TeamPrimitives'
 import { CapDialog, type CapTarget } from './TeamCredits'
@@ -26,7 +26,7 @@ import './team.css'
 export function TeamPage({ onTopUp }: {
   onTopUp?: () => void
 }) {
-  const { t } = useTranslation('team'), { user } = useAuth(), session = useTeamSession(), api = useTeamApi()
+  const { t } = useTranslation('team'), { user } = useAuth(), session = useTeamSession()
   const context = session.context, admin = session.status === 'ready' && context?.role !== 'member'
   const [topup, setTopup] = useState(false)
   const [query, setQuery] = useState(''), [invite, setInvite] = useState(false), [manage, setManage] = useState(false)
@@ -34,7 +34,7 @@ export function TeamPage({ onTopUp }: {
   const [actions, setActions] = useState<TeamDirectoryUsageMember | null>(null), [editing, setEditing] = useState<CapTarget[] | null>(null)
   const search = useDeferredValue(query.trim())
   const directory = useReplicaPages(teamDirectoryPage,
-    session.status === 'ready' && context ? [teamApiKey(api), context.team_id, context.membership_revision, context.role, search] : null,
+    session.status === 'ready' && context ? [context.team_id, context.membership_revision, context.role, search] : null,
     page => page.next_cursor)
   if (session.status !== 'ready' || !context) return null
   const summary = directory.pages[0], rows = directory.pages.flatMap(page => page.members)

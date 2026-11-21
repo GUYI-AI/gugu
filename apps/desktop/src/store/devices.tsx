@@ -28,7 +28,15 @@ import { SERVER_SSH_MACHINES_CHANNELS } from '../lib/serverSshMachines'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { useMyAssistant } from '../lib/myAssistant'
 import { machineRpc } from '../components/session-watch/sessionpage-rpc'
-import { cloudComputer, cloudComputerPollMs, cloudSnapshotOf, knownCloudDeviceId, useCloudComputer, useWakeRefusal, withCloudComputerPresence } from '../lib/cloudComputer'
+import {
+  cloudComputer,
+  cloudComputerPollMs,
+  cloudSnapshotOf,
+  knownCloudDeviceId,
+  useCloudComputer,
+  useWakeRefusal,
+  withCloudComputerPresence,
+} from '../lib/cloudComputer'
 
 // #1749 设备 store：list(chatService.listDevices，含本机 self-merge) + 排序 + durable revision 刷新
 // (注册/心跳状态翻转/改名/删除都重拉) + rename/remove 动作。面板与 selector 共用这一份状态。

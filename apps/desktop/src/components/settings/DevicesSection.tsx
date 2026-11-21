@@ -1,6 +1,6 @@
 import { notifyCopied } from '@/lib/copyFeedback'
 import { billingLinksAvailable } from '../../lib/appLinks'
-import { useReplica, type Reading, retryOf } from '../../lib/replica'
+import { refreshFailure, useReplica, type Reading, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -219,7 +219,7 @@ export function DevicesSection({
         </SettingsNote>
       )}
 
-      {sshMachines.state !== 'unknown' && sshMachines.error && (
+      {refreshFailure(sshMachines) && (
         <SettingsNote tone="danger">
           {t('devices.sshListFailed')}
           <Button variant="ghost" size="sm" onClick={retryOf(sshMachines)} className="ml-2">{t('devices.retry')}</Button>
@@ -378,7 +378,6 @@ function useNameWhenAppears(devices: readonly Device[], rename: (deviceId: strin
     return () => clearTimeout(timer)
   }, [pending])
 
-  // @@@effect-flow(command) - renaming the machine just added once its row appears.
   useEffect(() => {
     if (!pending || targetLabel === null) return
     if (targetLabel === pending.name) { setPending(null); return }

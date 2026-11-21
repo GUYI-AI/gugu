@@ -28,6 +28,9 @@ import { InstallationOverrideCard } from './InstallationOverrideCard';
 import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from './agent-source-actions';
 import { ManagedVersionsRow } from './ManagedVersionsRow';
 import { useLibraryHost } from '@renderer/features/library/library-host';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import type { AgentInstallErrorPresentation } from './agent-install';
+import { lastFailureSummary } from './install-failure-summary';
 
 export type AgentInstallationHeader = {
   version: string | null;
@@ -43,6 +46,8 @@ export type AgentInstallationHeader = {
   install: (() => void) | undefined;
   /** Existing cleanup UI for the active managed mise copy, reused by the compact details dialog. */
   managedVersions?: ReactNode;
+  /** Why the last install or update failed; null once a new attempt starts or one succeeds. */
+  failure: AgentInstallErrorPresentation | null;
 };
 
 export type InstallSectionProps = {
@@ -68,6 +73,7 @@ export const InstallSection = observer(function InstallSection({
 }: InstallSectionProps) {
   const vm = useAgentInstallationStatus(agentId, agentPayload);
   const host = useLibraryHost();
+  const { translate } = useSessionMessages();
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
   /**
    * 只展示各源版本和平台可用性。选源属于实际安装，不依赖设置页是否打开过。
@@ -327,5 +333,6 @@ export const InstallSection = observer(function InstallSection({
     uninstall: canUninstall ? vm.uninstall : undefined,
     install: managedInstall ? onInstall : undefined,
     managedVersions,
+    failure: lastFailureSummary(vm, translate),
   }, settings);
 });

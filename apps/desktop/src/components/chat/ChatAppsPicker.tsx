@@ -2,7 +2,7 @@ import type { ComponentProps, RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LayoutGrid, X } from '@/lib/icons'
 import { useInstalledApps, type InstalledApps, type RailApp } from '../../session/renderer/features/extensions/installed-extensions'
-import { RefreshFailed } from '../ui/RefreshFailed'
+import { ReadingSlot } from '../ui/ReadingSlot'
 import { RailAppIcon } from '../RailAppIcon'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
@@ -71,9 +71,7 @@ export function ChatAppsPicker({ chatId, onOpen, mobile, anchor, onClose }: {
         <IconButton size="sm" aria-label={t('common.close')} onClick={onClose}><X /></IconButton>
       </div>
       {!HERE_HOST ? <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('header.noApps')}</p>
-        : installed.state === 'value' ? <ChatAppRows chatId={chatId} installed={installed.value} onOpen={onOpen} onClose={onClose} />
-        : installed.state === 'error' ? <div className="px-2 py-2"><RefreshFailed reading={installed} /></div>
-        : <div className="px-2 py-2"><Unknown className="w-32" /></div>}
+        : <ReadingSlot reading={installed} placeholder="m-2 w-32">{(value) => <ChatAppRows chatId={chatId} installed={value} onOpen={onOpen} onClose={onClose} />}</ReadingSlot>}
     </div>
   )
   return mobile ? <Sheet onClose={onClose} finalFocus={anchor} mobileFitContent ariaLabel={t('header.apps')}>{body}</Sheet> : (

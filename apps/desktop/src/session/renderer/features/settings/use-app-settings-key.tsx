@@ -2,16 +2,14 @@ import { useMutation } from '@tanstack/react-query';
 import { queryClient, useReplica, type Reading } from '@/lib/replica';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 import {
-  beginAppSettingsWrite,
   getAppSettingValueSnapshot,
   invalidateAppSettingsKey,
   mergeAppSettingsValue,
   writeAppSetting,
-  LOCAL_SETTINGS_HOST_KEY,
-  settingsModelOf,
+  appSettingsModel,
+  settingsRpcOn,
   type SettingsMeta,
 } from './app-settings-client';
-import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { useSettingsHost } from './settings-host';
 
 export { getAppSettingValueSnapshot };
@@ -27,37 +25,31 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
   // ❌ 动本机那一份(整个窗口都在读)。那台机器离线就不问(问不到,只会挂满超时),上次读到的照画(只读)。
   const host = useSettingsHost();
   const remote = host.remote;
-  const model = settingsModelOf(host.key);
-  const settings = useReplica(model, [key, host.key], { read: !remote || remote.online }) as Reading<SettingsMeta<K>>;
+  const settings = useReplica(appSettingsModel, [key, host.key], { read: !remote || remote.online }) as Reading<SettingsMeta<K>>;
   const current = settings.state === 'value' ? settings.value : undefined;
-  const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
+  const api = settingsRpcOn(host.key);
 
-  // Every write of this window holds the key against its own broadcast until its own read settles it.
-  const holdWrite = () => (host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {});
-  const settle = (_d: unknown, _e: unknown, _v: unknown, ctx?: { done: () => void }) => { ctx?.done(); invalidateAppSettingsKey(key, host.key); };
   const updateMutation = useMutation<void, Error, Partial<AppSettings[K]>>({
     mutationFn: (partial) => {
-      const reading = model.peek(key, host.key);
+      const reading = appSettingsModel.peek(key, host.key);
       if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
       return writeAppSetting(key, mergeAppSettingsValue<K>((reading.value as SettingsMeta<K>).value, partial), host.key);
     },
   }, queryClient);
 
-  const resetMutation = useMutation<void, Error, void, { done: () => void }>({
+  const resetMutation = useMutation<void, Error, void>({
     mutationFn: () => api.reset(key) as Promise<void>,
-    onMutate: () => ({ done: holdWrite() }),
-    onSettled: settle,
+    onSuccess: () => invalidateAppSettingsKey(key, host.key),
   }, queryClient);
 
-  const resetFieldMutation = useMutation<void, Error, keyof AppSettings[K], { done: () => void }>({
+  const resetFieldMutation = useMutation<void, Error, keyof AppSettings[K]>({
     mutationFn: (field) => api.resetField(key, field as string) as Promise<void>,
-    onMutate: () => ({ done: holdWrite() }),
-    onSettled: settle,
+    onSuccess: () => invalidateAppSettingsKey(key, host.key),
   }, queryClient);
 
   return {
     settings,
-    refresh: () => model.refresh(key, host.key),
+    refresh: () => appSettingsModel.refresh(key, host.key),
     /** Another machine cannot act now: offline, or its read failed (server too old / unreachable). Rows stay, controls grey. */
     unavailable: !!remote && (!remote.online || settings.state === 'error'),
     isSaving: updateMutation.isPending || resetMutation.isPending || resetFieldMutation.isPending,

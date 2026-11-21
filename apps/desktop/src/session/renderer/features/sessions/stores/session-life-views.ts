@@ -65,8 +65,11 @@ function newEpoch(route: LifeRoute, entry: MachineEntry, open: boolean): void {
   entry.waiting.clear();
 }
 
-/** `wanted`: whether a session must be read again when the link comes back. Subscribe before any read (a push may beat it). */
-export function watchLife(route: LifeRoute, sessionId: string, wanted: () => boolean): () => void {
+/**
+ * `wanted`: whether a session must be read again when the link comes back. Subscribe before any read (a push may beat it).
+ * `sessionId` null: the machine's pushes only, no session read again on a new link (the desktop's mirror, read on demand).
+ */
+export function watchLife(route: LifeRoute, sessionId: string | null, wanted: () => boolean = () => false): () => void {
   let entry = machines.get(route.key);
   if (!entry) {
     const created: MachineEntry = { readers: 0, stop: () => undefined, epoch: 0, connected: true, wants: new Map(), waiting: new Set() };
@@ -78,11 +81,13 @@ export function watchLife(route: LifeRoute, sessionId: string, wanted: () => boo
   }
   const active = entry;
   active.readers += 1;
-  const wants = active.wants.get(sessionId) ?? new Set();
-  active.wants.set(sessionId, wants.add(wanted));
+  const wants = sessionId === null ? null : active.wants.get(sessionId) ?? new Set<() => boolean>();
+  if (wants && sessionId !== null) active.wants.set(sessionId, wants.add(wanted));
   return () => {
-    wants.delete(wanted);
-    if (!wants.size) active.wants.delete(sessionId);
+    if (wants && sessionId !== null) {
+      wants.delete(wanted);
+      if (!wants.size) active.wants.delete(sessionId);
+    }
     // Nobody follows that machine's pushes: what is kept could go stale unnoticed.
     if (--active.readers === 0) { active.stop(); machines.delete(route.key); dropMachine(route.key); }
   };
@@ -102,10 +107,6 @@ export async function readLifeVia(route: LifeRoute, sessionId: string): Promise<
   }
 }
 
-export function sessionLifeViewOf(route: LifeRoute, sessionId: string): LifeView | null {
-  return views.get(viewKey(route.key, sessionId)) ?? null;
-}
-
 export function lifeReadable(route: LifeRoute, sessionId: string): Readable<{ view: LifeView | null; error: string | null }> {
   const key = viewKey(route.key, sessionId);
   return mobxReadable(() => ({ view: views.get(key) ?? null, error: failures.get(key) ?? null }));
@@ -120,11 +121,14 @@ function desktopRoute(machine: string | null): LifeRoute {
   };
 }
 
-/** False while that machine has no bridge yet: its page already says the link is down, and the next ask listens. */
+/**
+ * False while that machine has no bridge yet: its page already says the link is down, and the next ask listens.
+ * Followed for the page's life (never released, like the page): its sessions are read again when next asked.
+ */
 function listenOn(machine: string | null): boolean {
   if (machines.has(machine ?? '')) return true;
   if (machine && !machineClient(machine)) return false;
-  watchLife(desktopRoute(machine), '', () => false);
+  watchLife(desktopRoute(machine), null);
   return true;
 }
 

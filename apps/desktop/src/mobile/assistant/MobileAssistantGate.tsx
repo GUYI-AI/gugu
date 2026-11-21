@@ -9,7 +9,7 @@ import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar'
 import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look'
 import { canSetUpCloudAssistant, useCloudComputer } from '@/lib/cloudComputer'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
-import { refreshMyAssistant } from '@/lib/myAssistant'
+import { myAssistant } from '@/lib/myAssistant'
 import { ChevronLeft } from '@/lib/icons'
 import { useAuth } from '@/store/auth'
 import { useDevicesStore } from '@/store/devicesContext'
@@ -54,7 +54,7 @@ export function MobileAssistantGate({ stage, name, ownerName, onExit }: { stage:
             <h1 className="ta-intro-title">{t('identity.title')}</h1>
             <p className="ta-intro-body" role={stage.state === 'unreadable' ? 'alert' : 'status'}>{t(`identity.${stage.state}`)}</p>
             {stage.state === 'unreadable' ? (
-              <Button variant="ghost" className="ta-pill-btn" onClick={() => void refreshMyAssistant()} data-testid="mobile-assistant-identity-retry">
+              <Button variant="ghost" className="ta-pill-btn" onClick={() => void myAssistant.refresh()} data-testid="mobile-assistant-identity-retry">
                 {t('machine.retry')}
               </Button>
             ) : null}

@@ -4,7 +4,7 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { log } from '@renderer/utils/logger';
 import { extensionsQuitChangedChannel } from '@shared/extensions/marketEvents';
 import { extensionViewStore } from './extension-view-store';
-import { fetchInstalledApps, LOCAL_HOST, peekInstalledApps, putInstalled, writeInstalled, type InstalledApps } from './installed-extensions';
+import { fetchInstalledApps, installedExtensions, LOCAL_HOST, peekInstalledApps, writeInstalled, type InstalledApps } from './installed-extensions';
 import { openInWindow, returnToScreen, revealAppBlock, takeAppOffScreen } from '@renderer/app/screen-layout-actions';
 import { appPlacementStore } from './app-placement-store';
 
@@ -48,7 +48,6 @@ export function appIsRunning(apps: InstalledApps, extensionId: string): boolean 
  */
 export function openApp(extensionId: string, tab?: string): LinkPlace | 'own' {
   const apps = peekInstalledApps(LOCAL_HOST);
-  // @@@reading-default(moment) - a click, one moment: the list not read yet opens the App's own page, which waits for it (as an App not placed anywhere)
   const main = !apps ? null : tab ? apps.allTabContributions.find((entry) => entry.extensionId === extensionId && entry.kind === `${extensionId}.${tab}`) ?? null : apps.mainTabOf(extensionId);
   // 它正自己占着一块(spec session-page「一屏几块」):去会话页、看那一块。
   if (main && revealAppBlock(main.kind)) return 'own';
@@ -111,7 +110,7 @@ export async function quitApp(extensionId: string): Promise<void> {
   const result = await rpc.extensions.quit({ extensionId });
   if (!result.success || !result.data) throw new Error(result.error ?? 'the App was not quit');
   const { quit } = result.data;
-  putInstalled(LOCAL_HOST, (list) => ({ ...list, quit }));
+  installedExtensions.set([LOCAL_HOST], (list) => list && { ...list, quit });
   // The places above unmount on the next render; only then are its pages idle, and those go.
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   for (const { kind } of kinds) extensionViewStore.forgetIdle(kind);
@@ -119,5 +118,5 @@ export async function quitApp(extensionId: string): Promise<void> {
 
 /** Main says which Apps are quit whenever that changes — reopened from anywhere (a tab, a file, the rail) included. */
 export function wireAppQuit(): () => void {
-  return events.on(extensionsQuitChangedChannel, ({ quit }) => putInstalled(LOCAL_HOST, (list) => ({ ...list, quit })));
+  return events.on(extensionsQuitChangedChannel, ({ quit }) => installedExtensions.set([LOCAL_HOST], (list) => list && { ...list, quit }));
 }

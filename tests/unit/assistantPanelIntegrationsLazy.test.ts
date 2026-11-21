@@ -97,8 +97,8 @@ it('reads a selected entry from its current catalog body for the locale asked (s
  const collection=vi.fn(async()=>[{resource_key:'catalog:custom',body_sha256:'one',data:{providerId:'custom'}}])
  const body=vi.fn(async()=>new TextEncoder().encode(JSON.stringify({version:1,en:{id:'custom',name:'Company app',auth:{methods:[]}},'zh-CN':{id:'custom',name:'公司应用',auth:{methods:[]}}})))
  const panel={collection,body} as unknown as AssistantPanelFiles
- expect((await readAssistantPanelIntegration(panel,'custom','en-US','one')).name).toBe('Company app')
- expect((await readAssistantPanelIntegration(panel,'custom','zh-CN','one')).name).toBe('公司应用')
+ expect((await readAssistantPanelIntegration(panel,'custom','en-US')).name).toBe('Company app')
+ expect((await readAssistantPanelIntegration(panel,'custom','zh-CN')).name).toBe('公司应用')
 })
 
 
@@ -128,8 +128,8 @@ it('reads a valid published catalog after a collection publication error without
  expect(await readAssistantPanelIntegration(panel,'custom','en-US')).toMatchObject({name:'Company app'})
  expect(body).toHaveBeenCalledOnce()
  row.body_sha256='v2';Object.assign(row,{stale_at:'2026-10-27'})
- await expect(readAssistantPanelIntegration(panel,'custom','en-US','v2')).rejects.toMatchObject({code:'stale'})
+ await expect(readAssistantPanelIntegration(panel,'custom','en-US')).rejects.toMatchObject({code:'stale'})
  Object.assign(row,{stale_at:null});snapshot.application.push({domain:'integrations',resourceKey:'catalog:custom',status:'failed'})
- await expect(readAssistantPanelIntegration(panel,'custom','en-US','v2')).rejects.toMatchObject({code:'application-failed'})
+ await expect(readAssistantPanelIntegration(panel,'custom','en-US')).rejects.toMatchObject({code:'application-failed'})
  expect(body).toHaveBeenCalledOnce()
 })

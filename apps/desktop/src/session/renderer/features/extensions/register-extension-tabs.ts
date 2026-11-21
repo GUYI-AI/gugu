@@ -1,7 +1,7 @@
 import { log } from '@renderer/utils/logger';
 import { sessionTabRegistry } from '@renderer/features/sessions/session-tab-registry';
 import { createExtensionTabProvider } from './extension-tab-provider';
-import { installedExtensions, marketUpdates, peekInstalledApps, watchInstalled, LOCAL_HOST, type InstalledApps } from './installed-extensions';
+import { installedExtensions, marketUpdates, peekInstalledApps, LOCAL_HOST, type InstalledApps } from './installed-extensions';
 import { extensionTabKind, type ExtensionManifest } from '@shared/extensions/manifest';
 
 // The tab providers follow what is installed here (a flow diffing each value with the one before). Refs #2374.
@@ -25,28 +25,29 @@ function follow(apps: InstalledApps | null): void {
   }
 }
 
-let stopFollowing: (() => void) | null = null;
+let following = false;
 
 function ensureFollowing(): void {
-  if (stopFollowing) return;
-  const stop = watchInstalled(LOCAL_HOST, follow);
-  stopFollowing = () => { stop(); stopFollowing = null; followed = null; };
+  if (following) return;
+  following = true;
+  installedExtensions.subscribe([LOCAL_HOST], () => follow(peekInstalledApps(LOCAL_HOST)));
   follow(peekInstalledApps(LOCAL_HOST));
 }
 
-export function wireInstalledExtensionTabs(): () => void {
-  ensureFollowing();
+export function wireInstalledExtensionTabs(): void {
   void registerInstalledExtensionTabs().catch((error: unknown) => log.warn('Installed extensions could not be read:', error));
-  return () => stopFollowing?.();
 }
 
+/** Reads what is installed here again, now; the tab providers follow it. */
 export async function registerInstalledExtensionTabs(): Promise<void> {
   ensureFollowing();
-  await installedExtensions.refresh(LOCAL_HOST);
-  await installedExtensions.fetch(LOCAL_HOST);
+  await installedExtensions.reread(LOCAL_HOST);
 }
 
-/** #6264 Another desktop changed what is installed here. */
+/**
+ * What is installed here changed (here, or #6264 from another desktop). What the market has to say is about what is
+ * installed: an App updated by itself (auto-update-apps.ts) has no update now.
+ */
 export async function resyncInstalledExtensionTabs(): Promise<void> {
   await registerInstalledExtensionTabs();
   void marketUpdates.refresh(LOCAL_HOST);

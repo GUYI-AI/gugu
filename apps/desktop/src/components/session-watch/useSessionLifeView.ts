@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { sessionLifeViewChannel } from '@/session/shared/core/sessions/sessionEvents'
 import { onMachineEvent as onLocalMachineEvent } from '@renderer/lib/ipc'
-import { lifeReadable, readLifeVia, sessionLifeViewOf, watchLife, type LifeRoute } from '@renderer/features/sessions/stores/session-life-views'
+import { lifeReadable, readLifeVia, watchLife, type LifeRoute } from '@renderer/features/sessions/stores/session-life-views'
 import { useSelect } from '@/lib/selectStore'
 import { messageForUser } from '@/lib/userFacingError'
 import { machineRpc, onLinkChange, onMachineEvent } from './sessionpage-rpc'
@@ -21,7 +21,8 @@ export function phoneLifeRoute(deviceId: string, local: boolean): LifeRoute {
 /** Same host lifecycle as the desktop (session-life-views); a link that comes back is a new epoch, read when the page wants. */
 export function useSessionLifeView(deviceId: string, sessionId: string, local: boolean, enabled: boolean, readInitial = true) {
   const route = useMemo(() => phoneLifeRoute(deviceId, local), [deviceId, local])
-  const life = useSelect(useMemo(() => lifeReadable(route, sessionId), [route, sessionId]), (value) => value)
+  const readable = useMemo(() => lifeReadable(route, sessionId), [route, sessionId])
+  const life = useSelect(readable, (value) => value)
   const wantsRead = useRef(readInitial)
   wantsRead.current = readInitial
   useEffect(() => (enabled ? watchLife(route, sessionId, () => wantsRead.current) : undefined), [route, sessionId, enabled])
@@ -34,6 +35,6 @@ export function useSessionLifeView(deviceId: string, sessionId: string, local: b
     void readLifeVia(route, sessionId).catch(() => undefined)
   }, [enabled, readInitial, key, route, sessionId])
   useEffect(() => { if (!enabled) asked.current = null }, [enabled])
-  const current = () => (enabled ? sessionLifeViewOf(route, sessionId) : null)
+  const current = () => (enabled ? readable.get().view : null)
   return { view: enabled ? life.view : null, error: enabled && life.error ? messageForUser(new Error(life.error)) : null, current }
 }

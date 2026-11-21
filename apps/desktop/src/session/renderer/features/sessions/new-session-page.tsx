@@ -4,10 +4,9 @@ import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar'
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { useReplica } from '@/lib/replica';
-import { getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
+import { asMounted, getGitRepositoryStore, getProjectStore } from '@renderer/features/projects/stores/project-selectors';
 import { useCreateSessionCallback } from '@renderer/features/sessions/create-session-modal/use-create-session-callback';
 import { useCreateSessionState } from '@renderer/features/sessions/create-session-modal/use-create-session-state';
-import { useProjectGitContext } from '@renderer/features/sessions/create-session-modal/use-project-git-context';
 import { useSessionSettings, type NewTaskSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
 import { Unknown } from '@/components/ui/Unknown';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
@@ -120,7 +119,7 @@ const NewSessionComposerReady = observer(function NewSessionComposerReady({
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { repositoryWorkspaceId } = useProjectGitContext(projectId);
+  const repositoryWorkspaceId = (projectId ? asMounted(getProjectStore(projectId)) : undefined)?.data.repositoryWorkspaceId ?? null;
   // Repository store warms lazily; touching it keeps parity with the project home / modal.
   if (projectId) void getGitRepositoryStore(projectId);
 

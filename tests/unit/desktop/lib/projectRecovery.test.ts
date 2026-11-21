@@ -11,7 +11,7 @@ vi.mock('@/session/renderer/lib/ipc', () => ({ rpcOn: () => ({ projects: {
   inspectProjectRecovery: state.inspect,
   restoreProjectFolder: state.save,
 } }) }))
-vi.mock('@/lib/replica', () => ({ replica: () => ({ refresh: state.invalidate }), useReplica: () => ({ state: 'unknown' }) }))
+vi.mock('@/lib/replica', () => ({ replica: () => ({ refresh: state.invalidate, reread: async () => state.rows }), useReplica: () => ({ state: 'unknown' }) }))
 vi.mock('@/lib/archivedGroupsRead', () => ({ noteGroupArchived: state.changed, readArchivedGroups: () => new Set(), subscribeArchivedGroups: () => () => {} }))
 vi.mock('@/lib/groupAdmin', () => ({ currentGroupAdmin: async () => ({ restore: state.restore, archive: state.archive }) }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { status: state.status }, error: null }) }) }) }) } }))

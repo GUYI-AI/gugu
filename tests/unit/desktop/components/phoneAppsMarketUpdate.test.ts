@@ -37,7 +37,8 @@ const { useOfferedVersions } = await import('../../../../apps/desktop/src/compon
 const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
 const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
-const { definePhoneInstalledList, definePhoneMarketUpdates, marketUpdates, tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const { marketUpdates, installedExtensions, useInstalledApps } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const { definePhoneStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/extensions-api')
 
 // What is installed on this phone, as the phone's App store keeps it (phoneApps.ts `listed`), told to the replica on a change.
 const app = (id: string, name: string) => ({ id, name, version: '1.0.0', apiVersion: 4, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name }] } })
@@ -52,16 +53,18 @@ const listed = () => ({
   disabled: [...store.disabled], autoUpdateOff: [...store.autoUpdateOff], quit: [], disclosure: {}, origins: { ...store.origins }, openWith: {},
   publishers: { notes: { id: 'gugu' }, vote: { id: 'alice', name: 'Alice' } }, unreadable: null,
 }) as never
-definePhoneInstalledList(async () => { await phone.ready(); return listed() })
-definePhoneMarketUpdates(async () => {
-  const result = (await phone.marketUpdates()) as { success: boolean; data?: never; error?: string }
-  if (!result.success) throw new Error(result.error)
-  return result.data!
+definePhoneStore({
+  list: async () => { await phone.ready(); return listed() },
+  marketUpdates: async () => {
+    const result = (await phone.marketUpdates()) as { success: boolean; data?: never; error?: string }
+    if (!result.success) throw new Error(result.error)
+    return result.data!
+  },
 })
 /** phoneApps' `tell` as played here: the list told to the replica, and the market asked again when a version changed (that
  * the store itself asks on a version change is measured on the real store, phoneApps76). */
 const tell = (versionChanged = false) => {
-  tellInstalled('phone', listed())
+  installedExtensions.set(['phone'], listed())
   if (versionChanged) void marketUpdates.refresh('phone')
 }
 
@@ -99,9 +102,10 @@ const page = (selector: string) => harness.container.ownerDocument.querySelector
 /** The section as the phone's App page holds it: the list, and an App's settings page over it. */
 function Apps() {
   const offered = useOfferedVersions()
+  const installed = useInstalledApps('phone')
   const [manage, setManage] = useState<string | null>(null)
   return createElement(Fragment, null,
-    createElement(AppsSection, { offered, onManage: setManage }),
+    installed.state === 'value' ? createElement(AppsSection, { installed: installed.value, offered, onManage: setManage }) : null,
     manage ? createElement(PhoneAppManage, { extensionId: manage, updateVersion: offered.state === 'value' ? offered.value.offered[manage] : undefined, gone: offered.state === 'value' && offered.value.gone.includes(manage), onClose: () => setManage(null), onViewInMarket: () => setManage(null) }) : null)
 }
 const open = async (id: string) => {

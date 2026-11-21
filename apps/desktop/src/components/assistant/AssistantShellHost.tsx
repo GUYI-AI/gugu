@@ -17,18 +17,19 @@ import {
   type AssistantSetupStep,
 } from '../../lib/assistantShellBridge'
 import { canSetUpCloudAssistant, cloudComputer, cloudFailureOf, cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
-import { assistantIdentityState, refreshMyAssistant, useMyAssistantContact } from '../../lib/myAssistant'
+import { assistantIdentityState, myAssistant, useMyAssistantContact } from '../../lib/myAssistant'
 import { assistantHomePlace, withoutAssistantHome } from '../../lib/assistantHome'
 import { readSetupStep, subscribeSetupStep, writeSetupStep } from '../../lib/assistantSetupState'
 import { pendingLocalAssistant, resumeLocalAssistant, setupStillStarting } from '../../lib/assistantSetup'
 import { keepFinishingLocalAssistant } from '../../lib/assistantSetupFinish'
 import { requestAssistantClose } from '../../lib/assistantClose'
-import { useSpendingPower } from '../../lib/billing/useSpendingPower'
+import { isMember, useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
 import { rendererLogger } from '../../lib/log'
 import { installShellSlots } from '../../lib/shellSlots'
 import { platform } from '../../platform'
-import { useAssistantRulesState, useAssistantRulesStuckNotice } from '../../lib/assistantRulesState'
+import { assistantRulesState, useAssistantRulesStuckNotice } from '../../lib/assistantRulesState'
+import { useReplica } from '../../lib/replica'
 import { AssistantOnboarding } from './AssistantOnboarding'
 import { QuickChatSettingsGroup } from './ComputerHomeSettings'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
@@ -151,7 +152,7 @@ export function AssistantShellHost() {
   useEffect(() => {
     // A retry completes the same provision and identity: the contacts key can
     // remain unchanged. Re-read its marker when the host reports completion.
-    if (ownerUserId && readyCloudDeviceId) void refreshMyAssistant()
+    if (ownerUserId && readyCloudDeviceId) void myAssistant.refresh()
   }, [ownerUserId, readyCloudDeviceId])
   useEffect(() => {
     const bridge = readAssistantShellBridge()
@@ -180,7 +181,7 @@ export function AssistantShellHost() {
   const assistantState = assistantIdentityState(contact !== null, mine.reading, contactsStatus)
   // 会员档:最左栏入口在「还没有咕咕」时按它写提示;没读到、读不到 = null(不当成非会员)。
   const spending = useSpendingPower(user)
-  const member = teamAccount ? null : spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
+  const member = teamAccount ? null : isMember(spending)
   // 本机正在给它安家:那一次的恢复记录在(建好或失败才清);云上正在开 = 管家说 provisioning。
   const [localPreparing, setLocalPreparing] = useState(false)
   useEffect(() => {
@@ -200,7 +201,7 @@ export function AssistantShellHost() {
     return () => window.clearInterval(timer)
   }, [contact, ownerUserId])
   const preparing = !contact && (snapshot?.state === 'provisioning' || localPreparing)
-  const rules = useAssistantRulesState()
+  const rules = useReplica(assistantRulesState, [])
   useAssistantRulesStuckNotice(rules.state === 'value' && rules.value.stuck)
   // 它已经有了、这台电脑上那一次开通却没走完(开通页没等到它起来):接着推完,让它先开口(见 lib/assistantSetupFinish)。
   const contactId = contact?.id ?? null
@@ -211,7 +212,7 @@ export function AssistantShellHost() {
       resume: async (record) => {
         await resumeLocalAssistant(record)
         writeSetupStep(ownerUserId, 'connect')
-        await refreshMyAssistant()
+        await myAssistant.refresh()
       },
       // 只有「还没起来」值得过一会儿再推;别的失败(真失败、那一单已被收回……)再推也一样,停下、原因进日志,下次打开 App 再试。
       isFinal: (error) => !setupStillStarting(error),

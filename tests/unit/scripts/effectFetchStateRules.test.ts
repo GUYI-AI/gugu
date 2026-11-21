@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { EXEMPTIONS, handRetryLines, literalDefaultLines, parseMarker, reactQueryLines, scanEffectFetchState, scanFile, scanHandRetries, scanLiteralDefaults, scanMarkers, scanReactQuery } from '../../../scripts/checks/effect-fetch-state.mts'
+import { effectLines, exemptionProblems, handRetryLines, literalDefaultLines, reactQueryLines, readExemptions, scanEffectFetchState, scanHandRetries, scanLiteralDefaults, scanReactQuery } from '../../../scripts/checks/effect-fetch-state.mts'
 
 /**
- * @@@client-state-model hard rules (there is no baseline): no effect reads
- * into component state, no reading collapsed to a literal default, nothing outside lib/replica.ts reaches react-query.
+ * @@@client-state-model hard rules (there is no baseline): no effect reads into component state and no reading collapsed
+ * to a literal default but what effect-fetch-state-exemptions.txt lists, nothing outside lib/replica.ts reaches react-query.
  * The source is clean, and each rule still catches what it is for (the cases below are injected into it).
  */
 describe('the source', () => {
   const rule = 'read what a surface shows through a replica (lib/replica.ts) and branch on unknown / value / error — @@@client-state-model, docs/design/client-state-model.md'
-  it('has no effect that fills component state with a read', () => { expect(scanEffectFetchState(), rule).toEqual({}) })
-  it('has no reading collapsed to a literal default', () => { expect(scanLiteralDefaults(), rule).toEqual({}) })
+  it('has no effect that fills component state with a read and no reading collapsed to a literal default but the listed', () => {
+    expect(exemptionProblems({ 'effect-flow': scanEffectFetchState(), 'reading-default': scanLiteralDefaults() }, readExemptions()), rule).toEqual([])
+  })
   it('reaches react-query only through the replica', () => { expect(scanReactQuery(), rule).toEqual({}) })
   it('hands no reading a retry written by hand', () => { expect(scanHandRetries(), rule).toEqual({}) })
-  it('has every exemption marker in a listed category, with its reason', () => { expect(scanMarkers(), 'see EXEMPTIONS in scripts/checks/effect-fetch-state.mts').toEqual({}) })
 })
 
 describe('react-query past the replica (what counts)', () => {
@@ -52,21 +52,22 @@ describe('what counts', () => {
       useEffect(() => { ${effect} }, [])
       return value
     }`
+  const count = (code: string) => effectLines('a.tsx', code).length
   it('an effect that puts an asynchronous answer into state', () => {
-    expect(scanFile('a.tsx', component('read().then((v) => setValue(v))'))).toBe(1)
-    expect(scanFile('a.tsx', component('void (async () => { setValue(await read()) })()'))).toBe(1)
+    expect(count(component('read().then((v) => setValue(v))'))).toBe(1)
+    expect(count(component('void (async () => { setValue(await read()) })()'))).toBe(1)
   })
   // The acceptance probe found these passing the first version of the check.
   it('a setter handed to the continuation, and a function of the component that reads into state', () => {
-    expect(scanFile('a.tsx', component('read().then(setValue)'))).toBe(1)
-    expect(scanFile('a.tsx', component('void load()', 'const load = async () => setValue(await read())'))).toBe(1)
-    expect(scanFile('a.tsx', component('load()', 'const load = useCallback(async () => { setValue(await read()) }, [])'))).toBe(1)
-    expect(scanFile('a.tsx', component('load()', 'function load() { read().then(setValue) }'))).toBe(1)
-    expect(scanFile('a.tsx', component('outer()', 'const inner = async () => setValue(await read()); const outer = () => { void inner() }'))).toBe(1)
+    expect(count(component('read().then(setValue)'))).toBe(1)
+    expect(count(component('void load()', 'const load = async () => setValue(await read())'))).toBe(1)
+    expect(count(component('load()', 'const load = useCallback(async () => { setValue(await read()) }, [])'))).toBe(1)
+    expect(count(component('load()', 'function load() { read().then(setValue) }'))).toBe(1)
+    expect(count(component('outer()', 'const inner = async () => setValue(await read()); const outer = () => { void inner() }'))).toBe(1)
   })
   it('a setter handed to a helper, and useReducer dispatch', () => {
-    expect(scanFile('a.tsx', component('load(setValue)'))).toBe(1)
-    expect(scanFile('a.tsx', `
+    expect(count(component('load(setValue)'))).toBe(1)
+    expect(count(`
     import { useEffect, useReducer } from 'react'
     export function Row() {
       const [value, dispatch] = useReducer(reduce, null)
@@ -75,21 +76,9 @@ describe('what counts', () => {
     }`)).toBe(1)
   })
   it('not a synchronous update, nor an answer that goes elsewhere', () => {
-    expect(scanFile('a.tsx', component('reset()', 'const reset = () => setValue(null)'))).toBe(0)
-    expect(scanFile('a.tsx', component('setValue(1)'))).toBe(0)
-    expect(scanFile('a.tsx', component('read().then((v) => store.put(v))'))).toBe(0)
-  })
-  it('a flow says its category and reason; a marker without either still counts', () => {
-    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow(command) - signing in'))).toBe(0)
-    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow'))).toBe(1)
-    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow - signing in'))).toBe(1)
-    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow(sync) - signing in'))).toBe(1)
-    expect(scanFile('a.tsx', component('start().then((v) => setValue(v))', '// @@@effect-flow(command) -'))).toBe(1)
-  })
-  it('an event exemption puts no pushed data in state (a setter handed to a listener, or its payload set, counts)', () => {
-    expect(scanFile('a.tsx', component('return bus.on(setValue)', '// @@@effect-flow(event) - the share sheet'))).toBe(1)
-    expect(scanFile('a.tsx', component('return bus.on((payload) => setValue(payload.rows))', '// @@@effect-flow(event) - a revision listener'))).toBe(1)
-    expect(scanFile('a.tsx', component('return bus.on(() => setValue(true))', '// @@@effect-flow(event) - a local flag when the share sheet opens'))).toBe(0)
+    expect(count(component('reset()', 'const reset = () => setValue(null)'))).toBe(0)
+    expect(count(component('setValue(1)'))).toBe(0)
+    expect(count(component('read().then((v) => store.put(v))'))).toBe(0)
   })
 })
 
@@ -116,38 +105,36 @@ describe('a reading collapsed to a literal default (@@@client-state-model)', () 
     expect(lines("const hosts = r.state === 'value' ? r.value : null\nconst n = hosts?.length ?? 0")).toEqual([2])
     expect(lines("const v = r.state === 'value' ? r.value : null\nconst list = v || []")).toEqual([2])
   })
-  it('not null (unknown in the consumer), not a value, and not a marked exception', () => {
+  it('not null (unknown in the consumer), not a value', () => {
     expect(lines("const xs = r.state === 'value' ? r.value : null")).toHaveLength(0)
     expect(lines("const x = r.state === 'value' ? r.value : other")).toHaveLength(0)
-    expect(lines("// @@@reading-default(moment) - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(0)
-    expect(lines("// @@@reading-default\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
-    expect(lines("// @@@reading-default - a lookup outside React\nconst xs = r.state === 'value' ? r.value : []")).toHaveLength(1)
     // `??` on what is not a reading: an ordinary default.
     expect(lines("const value = props.value ?? ''\nconst xs = list ?? []")).toHaveLength(0)
     expect(lines("const fonts = r.state === 'value' ? r.value : null\nconst shown = fonts ?? null")).toHaveLength(0)
   })
 })
 
-describe('exemption markers (coordinator 2026-11-16: a fixed list of categories)', () => {
-  it('no category, a category not in the list, an empty reason: each is a finding', () => {
-    expect(parseMarker('// @@@effect-flow - signing in')?.problem).toBe('no category')
-    expect(parseMarker('// @@@reading-default - a lookup')?.problem).toBe('no category')
-    expect(parseMarker('// @@@effect-flow(subscribe) - a listener')?.problem).toMatch(/not one of/)
-    expect(parseMarker('// @@@reading-default(contract) - a list')?.problem).toMatch(/not one of/)
-    expect(parseMarker('// @@@effect-flow(command) - ')?.problem).toBe('no reason')
-    expect(parseMarker('// @@@reading-default(moment)')?.problem).toBe('no reason')
+describe('the exemption list (per file and kind, one entry per finding)', () => {
+  const at = (lines: number[]): Record<string, number[]> => lines.length ? { 'apps/desktop/src/a.tsx': lines } : {}
+  const found = (flows: number[], defaults: number[] = []) => ({ 'effect-flow': at(flows), 'reading-default': at(defaults) })
+  const flow = 'a.tsx: effect-flow(command) - signing in', moment = 'a.tsx: reading-default(moment) - a lookup outside React'
+  it('as many entries as findings is clean', () => {
+    expect(exemptionProblems(found([3, 9], [5]), [flow, flow, moment])).toEqual([])
+    expect(exemptionProblems(found([]), [])).toEqual([])
   })
-  it('a paired exemption names its flag', () => {
-    expect(parseMarker('// @@@reading-default(paired) - the list carries a status')?.problem).toMatch(/flag/)
-    expect(parseMarker('// @@@reading-default(paired) - `known` says whether it was read')?.problem).toBeNull()
+  it('one finding more than listed is not exempt; one entry more than found is stale', () => {
+    expect(exemptionProblems(found([3, 9]), [flow])).toEqual(['a.tsx: effect-flow at line 3, 9: 2 found, 1 listed (an effect fills component state with a read)'])
+    expect(exemptionProblems(found([], [5]), [])).toEqual(['a.tsx: reading-default at line 5: 1 found, 0 listed (a reading collapsed to a literal default)'])
+    expect(exemptionProblems(found([3]), [flow, flow])).toEqual(['a.tsx: effect-flow: 2 listed, 1 found: remove the stale entry'])
+    expect(exemptionProblems(found([3]), [flow, moment])).toEqual(['a.tsx: reading-default: 1 listed, 0 found: remove the stale entry'])
   })
-  it('each listed category is a valid exemption', () => {
-    const legal: Record<string, string> = { paired: '`ready` says whether it was read' }
-    for (const [kind, categories] of Object.entries(EXEMPTIONS)) {
-      for (const category of Object.keys(categories)) {
-        expect(parseMarker(`// @@@${kind}(${category}) - ${legal[category] ?? 'a reason'}`), `${kind}(${category})`).toMatchObject({ category, problem: null })
-      }
-    }
+  it('a category not in the list, no reason, a paired entry without its flag, a line not in the form', () => {
+    expect(exemptionProblems(found([3]), ['a.tsx: effect-flow(sync) - signing in'])[0]).toMatch(/"sync" is not one of render, dom/)
+    expect(exemptionProblems(found([], [5]), ['a.tsx: reading-default(contract) - a list'])[0]).toMatch(/"contract" is not one of moment/)
+    expect(exemptionProblems(found([3]), ['a.tsx: effect-flow(command) -'])).toEqual(['a.tsx: effect-flow(command) has no reason'])
+    expect(exemptionProblems(found([], [5]), ['a.tsx: reading-default(paired) - the list carries a status'])).toEqual(['a.tsx: a paired exemption names its flag in backticks'])
+    expect(exemptionProblems(found([], [5]), ['a.tsx: reading-default(paired) - `known` says whether it was read'])).toEqual([])
+    expect(exemptionProblems(found([]), ['a.tsx: effect-flow - signing in'])[0]).toMatch(/^not `<path>/)
   })
 })
 

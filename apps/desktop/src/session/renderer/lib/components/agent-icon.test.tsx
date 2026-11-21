@@ -32,7 +32,7 @@ const ICONS: Record<string, AgentIconAsset> = {
 
 function render(node: ReactElement, icons: Record<string, AgentIconAsset> | null = ICONS): string {
   queryClient.clear();
-  if (icons) agentIcons.set([], icons);
+  if (icons) agentIcons.set([null], icons);
   const container = document.createElement('div');
   const root = createRoot(container);
   act(() => root.render(node));

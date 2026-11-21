@@ -60,20 +60,18 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
   async function run(work: (controller: AccountLinking) => Promise<void>) {
     const controller = service.current
     if (!controller || busy) return
-    const shown = loginMethodsModel.at() // bound to the account that acts: a read that answers after a switch lands there
     setBusy(true); setError(''); setMessage('')
     try { await work(controller) }
     catch (reason) {
       setError(reason instanceof AccountLinkingError ? t(`loginMethods.errors.${reason.code}`) : userVisibleAuthError(reason))
       if (reason instanceof AccountLinkingError && reason.code === 'verifyRequired') { setStage('verify'); setSent(false); setCode('') }
       // A successful server mutation followed by a failed notice/sign-out must remain visible.
-      try { shown.set(viewOf(await controller.read())) } catch { /* Preserve the operation's actionable error. */ }
+      try { await loginMethodsModel.reread() } catch { /* Preserve the operation's actionable error. */ }
     } finally { setBusy(false) }
   }
-  async function refreshed(controller: AccountLinking, noticeSaved = true) {
-    const shown = loginMethodsModel.at()
-    const latest = await controller.read()
-    shown.set(viewOf(latest)); onEmailChanged(latest.email ?? '')
+  async function refreshed(noticeSaved = true) {
+    const latest = await loginMethodsModel.reread()
+    onEmailChanged(latest.email ?? '')
     setStage('idle'); setCode('')
     setMessage(t(noticeSaved ? 'loginMethods.saved' : 'loginMethods.noticeFailed'))
   }
@@ -82,7 +80,7 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
     setCode('')
     if (action === 'link') {
       setGooglePending(true)
-      try { await refreshed(controller, await controller.linkGoogle()) } finally { setGooglePending(false) }
+      try { await refreshed(await controller.linkGoogle()) } finally { setGooglePending(false) }
     }
     else setStage(action === 'email' ? 'email' : 'unlink')
   }
@@ -136,7 +134,7 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
         {button(t('loginMethods.sendCode'), () => { void run(async controller => {
           const result = await controller.changeEmail(email)
           setEmail(result.email)
-          if (result.complete) await refreshed(controller, result.noticeSaved)
+          if (result.complete) await refreshed(result.noticeSaved)
           else { setStage('email-code'); setCode(''); setConfirmation('new') }
         }) }, !email.trim())}
       </div>} />}
@@ -149,7 +147,7 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
         <input id="account-email-code" className="gg-settings-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} />
         {button(t('loginMethods.confirmEmail'), () => { void run(async controller => {
           const result = await controller.confirmEmail(email, code, confirmation === 'new' ? email : methods.email)
-          if (result.complete) await refreshed(controller, result.noticeSaved)
+          if (result.complete) await refreshed(result.noticeSaved)
           else { setCode(''); setConfirmation(confirmation === 'new' ? 'current' : 'new'); setMessage(t('loginMethods.secondCode')) }
         }) }, code.length !== 6)}
       </div>} />}

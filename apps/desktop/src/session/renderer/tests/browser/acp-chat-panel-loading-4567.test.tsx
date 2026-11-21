@@ -79,7 +79,7 @@ vi.mock('@renderer/features/library/prompts/use-prompt-library', () => ({
 
 vi.mock('@renderer/lib/stores/use-agents', () => ({
   useAgents: () => ({ state: 'value', value: [], stale: false, error: null }),
-  useAgent: () => ({ reading: { state: 'unknown' } }),
+  useAgent: () => ({ state: 'unknown' }),
   useAgentIcon: () => undefined,
 }));
 

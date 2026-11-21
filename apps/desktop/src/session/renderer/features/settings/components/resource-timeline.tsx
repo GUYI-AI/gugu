@@ -77,7 +77,6 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
     seenTick.current = tick;
     void resourceHistory.refresh(range);
   }, [tick, range]);
-  useEffect(() => { if (historyReading.state === 'error') log.error({ error: historyReading.error }, 'resource history request failed'); }, [historyReading]);
   const shownError = error || (historyReading.state === 'error' ? messageForUser(historyReading.error) : '');
   const action = async (kind: 'export' | 'clear') => {
     try {

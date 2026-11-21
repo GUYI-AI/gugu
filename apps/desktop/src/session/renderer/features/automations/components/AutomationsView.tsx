@@ -34,6 +34,7 @@ import { AutomationTemplatesEmptyState } from './AutomationTemplatesEmptyState';
 import { CreateAutomationView } from './CreateAutomationView';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { refreshFailure } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 
 /**
@@ -102,7 +103,7 @@ function AutomationsViewBody() {
   const currentPage = Math.min(page, lastPage);
   if (effectiveAutomations && page !== currentPage) setPage(currentPage);
   const pageAutomations = effectiveAutomations?.slice(currentPage * pageSize, (currentPage + 1) * pageSize) ?? null;
-  const readError = automations.state === 'error' ? automations.error : automations.state === 'value' ? automations.error : null;
+  const readError = refreshFailure(automations);
   // 看的是别的机器、它此刻给不出东西:说一句人话;离线时照旧画上次读到的、只读。
   const notice = deviceScopeNotice(
     { remote: host.remote, error: readError, hasData: automationData !== null, now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
@@ -171,7 +172,7 @@ function AutomationsViewBody() {
               />
               {notice && <DeviceScopeNoticeLine notice={notice} onRetry={retry} />}
             </DeviceScopeProvider>
-            {!notice && readError ? <RefreshFailed error={readError} onRetry={retry} /> : null}
+            {!notice ? <RefreshFailed reading={automations} /> : null}
             {effectiveAutomations === null || pageAutomations === null ? (
               automations.state === 'unknown' && !notice ? (
                 <div className="flex flex-col gap-1" aria-busy="true">

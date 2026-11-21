@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { messageItemFromRow, MESSAGES_VIEW_SELECT } from '@gugu/core/cloud/messageItem'
 import type { ExtensionManifest } from '@shared/extensions/manifest'
 import { MessageBubble } from '../../../../apps/desktop/src/components/chat/MessageBubble'
-import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { createNode, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 // This device's Apps are the desktop's: their names are read from what is installed here.
 vi.mock('../../../../apps/desktop/src/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
-const installApps = (extensions: ExtensionManifest[]) => tellInstalled('local', { extensions, invalid: [] } as never)
+const installApps = (extensions: ExtensionManifest[]) => installedExtensions.set(['local'], { extensions, invalid: [] } as never)
 
 // #6835 App 用 gugu.send 以人的名义发的悄悄话:发送人自己的气泡写「由『X』应用代你发送」,收件人的气泡写「由『X』应用代 A 发送」,
 // 不然人会以为那句是 A 亲手打的。判据只有 via_app;X 是 manifest 里的名字,本机没装这个 App(手机、别的机器)就写 id。

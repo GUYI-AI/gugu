@@ -10,7 +10,7 @@ import { fetchInstalledApps, installedExtensions, PHONE_HOST, setAutoUpdate, use
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host'
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere'
 import { setExtensionEnabled } from '@renderer/features/extensions/set-extension-enabled'
-import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
+import { marketDeviceHost } from '@/mobile/market/marketDeviceHost'
 import { AppManagePage } from '@/session/renderer/features/extensions/panel/app-manage-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { InstalledRowNotice } from '@/session/renderer/features/extensions/panel/installed-extension-row'
@@ -99,9 +99,9 @@ export function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onVi
           if (phone.unreadable) throw new Error('Unreadable phone App inventory')
           return phone.manifests.map(app => app.id)
         }
-        const result = await machineRpc(deviceId).extensions.list()
-        if (!result.success || !result.data) throw new Error(result.error ?? 'Unreadable App inventory')
-        return result.data.extensions.map(app => app.id)
+        // That computer's installed list, read again now (its host routes the phone's pipe to it).
+        const device = remote.devices.find(one => one.device_id === deviceId)!
+        return (await installedExtensions.reread(marketDeviceHost(device).extensions.key)).extensions.map(app => app.id)
       },
     })
     const result = await remote.host.api.uninstall({ extensionId, lastAnywhere })

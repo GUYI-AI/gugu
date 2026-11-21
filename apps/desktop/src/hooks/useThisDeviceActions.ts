@@ -1,11 +1,8 @@
 import { useCallback } from 'react'
 import { DEVICE_ACTIONS_CHANNELS, type DeviceActionsState } from '../lib/deviceActionsIpc'
-import { rendererLogger } from '../lib/log'
-import { replica, useReplica } from '../lib/replica'
+import { refreshFailure, replica, useReplica } from '../lib/replica'
 import { messageForUser } from '../lib/userFacingError'
 import { desktopIpc } from '../platform/desktopIpc'
-
-const log = rendererLogger('device-actions')
 
 /** 这台电脑「能做的事」(主进程现读,device;推送 `changed` 喂的)。只在桌面上有;不持久化。 */
 const thisDeviceActions = replica({
@@ -14,12 +11,7 @@ const thisDeviceActions = replica({
   read: async (): Promise<DeviceActionsState> => {
     const ipc = desktopIpc()
     if (!ipc) throw new Error('This device has no device actions')
-    try {
-      return await ipc.invoke(DEVICE_ACTIONS_CHANNELS.state) as DeviceActionsState
-    } catch (error) {
-      log.error({ error: String(error) }, 'this device actions state read failed')
-      throw error
-    }
+    return await ipc.invoke(DEVICE_ACTIONS_CHANNELS.state) as DeviceActionsState
   },
   fresh: Infinity,
   watch: { start: () => desktopIpc()!.eventOn(DEVICE_ACTIONS_CHANNELS.changed, () => { void thisDeviceActions.refresh() }) },
@@ -30,9 +22,10 @@ export function useThisDeviceState(): { state: DeviceActionsState | null; readEr
   const desktop = desktopIpc() !== null
   const reading = useReplica(thisDeviceActions, desktop ? [] : null)
   const reload = useCallback(() => { void thisDeviceActions.refresh() }, [])
+  const failure = refreshFailure(reading)
   return {
     state: reading.state === 'value' ? reading.value : null,
-    readError: reading.state === 'error' ? messageForUser(reading.error) : reading.state === 'value' && reading.error ? messageForUser(reading.error) : null,
+    readError: failure ? messageForUser(failure) : null,
     reload,
   }
 }

@@ -1,30 +1,19 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { Sheet } from '@/components/ui/Sheet'
-import { replica, useReplica } from '@/lib/replica'
+import { useReplica } from '@/lib/replica'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
-import { readAgentHome, readAgentHomeDiff } from '@renderer/features/settings/subscriptions/ensure-agent-home'
+import { agentHome, readAgentHomeDiff } from '@renderer/features/settings/subscriptions/ensure-agent-home'
 import { ReimportDialog } from '@renderer/features/settings/subscriptions/ReimportDialog'
 import { AgentHomeSkippedFiles } from './AgentHomeSkippedFiles'
 import type { AgentHomeDiff, AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 
-const configHome = replica({
-  name: 'configImportHome',
-  scope: 'device',
-  read: (_device: string, providerId: string) => readAgentHome(providerId, null),
-})
-
 export function AgentConfigImport({ providerId }: { providerId: string }) {
   const { t } = useTranslation('main')
   const titleId = useId()
-  const reading = useReplica(configHome, [providerId])
+  const reading = useReplica(agentHome, [null, providerId])
   const preparing = reading.state === 'value' && Boolean(reading.value?.migrationPreparation)
-  useEffect(() => {
-    if (!preparing) return
-    const timer = setInterval(() => { void configHome.refresh(providerId).catch(() => {}) }, 1000)
-    return () => clearInterval(timer)
-  }, [preparing, providerId])
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [picked, setPicked] = useState<Set<string>>()
@@ -51,7 +40,7 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
       const result = await client.importAgentHome({ providerId: home.providerId, groups: groupIds })
       if (!result.success) throw new Error('Could not import local configuration')
       setIssues(result.data.issues)
-      await configHome.refresh(providerId)
+      await agentHome.refresh(null, providerId)
     } catch {
       setFailed(true)
     } finally {
@@ -61,7 +50,7 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
 
   function finishReimport() {
     setDiff(null)
-    void configHome.refresh(providerId).catch(() => setFailed(true))
+    void agentHome.refresh(null, providerId).catch(() => setFailed(true))
   }
 
   return <section className="gg-import-history" data-testid={`${providerId}-config-import`}>

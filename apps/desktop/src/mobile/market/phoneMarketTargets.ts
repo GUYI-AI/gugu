@@ -3,7 +3,8 @@ import { useReplicas, type Reading as ReplicaReading } from '@/lib/replica'
 import { marketDeviceReading, readOnDevicesWith } from '@renderer/features/extensions/market-device-readings'
 import { PHONE_HOST } from '@renderer/features/extensions/extensions-api'
 import { installedExtensions, useInstalledApps, type InstalledExtensionsList } from '@renderer/features/extensions/installed-extensions'
-import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas'
+import { marketEntry } from '@renderer/features/extensions/market-replicas'
+import { managementAgent, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas'
 import { askInShell, installConsentPrompt } from '@renderer/features/extensions/install-consent'
 import { isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order'
 import { marketAgentInstallPlan } from '@renderer/features/extensions/panel/market-agent-install-plan'
@@ -24,14 +25,10 @@ type Plans<T> = {
   describe(value: T, target: Target): Reading
 }
 
-/** The devices by id: a model's arguments are data. */
-const devicesById = new Map<string, Device>()
-
 function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
-  for (const device of devices) devicesById.set(device.device_id, device)
   const readKey = `phone:${plans.key}`
   readOnDevicesWith(readKey, (deviceId) => {
-    const device = devicesById.get(deviceId)
+    const device = devices.find((one) => one.device_id === deviceId)
     if (!device) throw new Error(`No device ${deviceId}`)
     return plans.read({ device, host: marketDeviceHost(device) })
   })
@@ -44,7 +41,6 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
     const query = device.is_online ? readings[next++]! as ReplicaReading<T> : null
     const reading = query?.state === 'value' ? plans.describe(query.value, target) : null
     const unavailable = !query ? 'offline' : query.state === 'error' ? 'unavailable' : query.state === 'unknown' ? 'checking' : null
-    // @@@reading-default(paired) - a device not read yet is not among the ones it is installed on; its row says so by `status` ('checking')
     const present = reading?.present ?? false
     return {
       id: device.device_id,
@@ -54,9 +50,9 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
       install: !unavailable && reading?.install ? async () => {
         const installed = await reading.install!()
         if (installed) {
+          // What the reading is made of first (the device's installed list, its agents), then the reading.
+          await Promise.all([installedExtensions.refresh(target.host.extensions.key), refreshAgentReadings(device.device_id)])
           await marketDeviceReading.refresh(readKey, device.device_id)
-          void refreshAgentReadings(device.device_id)
-          void installedExtensions.refresh(target.host.extensions.key)
         }
         return installed
       } : undefined,
@@ -66,15 +62,13 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
 
 type AppReading = { installedVersion?: string; preinstalled: boolean; offered: MarketListItem | null }
 
+/** What a device has and is offered, through that host's installed list and market entry. */
 async function readApplication({ host }: Target, id: string): Promise<AppReading> {
-  const { api } = host.extensions
-  const [inventory, market] = await Promise.all([api.list(), api.marketEntry({ extensionId: id })])
-  if (!inventory.success || !inventory.data) throw new Error(inventory.error)
-  if (!market.success) throw new Error(market.error)
+  const [inventory, offered] = await Promise.all([installedExtensions.fetch(host.extensions.key), marketEntry.fetch(host.extensions.key, id)])
   return {
-    installedVersion: inventory.data.extensions.find(item => item.id === id)?.version,
-    preinstalled: inventory.data.origins?.[id] === 'preinstalled',
-    offered: market.data ?? null,
+    installedVersion: inventory.extensions.find(item => item.id === id)?.version,
+    preinstalled: inventory.origins?.[id] === 'preinstalled',
+    offered,
   }
 }
 
@@ -111,7 +105,7 @@ export function usePhoneAppInstallTargets(id: string, devices: readonly Device[]
 export function usePhoneAgentInstallTargets(id: string, devices: readonly Device[]) {
   return usePhoneMarketTargets(devices, {
     key: `agent:${id}`,
-    read: ({ host }) => host.agents.getManagement(id),
+    read: ({ device }) => managementAgent.fetch(device.device_id, id),
     describe: (agent: AgentPayload | null, { host }) => {
       if (!agent?.reading) return { status: 'unavailable' }
       const present = isInstalledAgent(agent)

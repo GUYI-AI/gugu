@@ -9,7 +9,7 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal'
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel'
-import { SUBSCRIPTIONS, subscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries'
+import { SUBSCRIPTIONS, connectionDetails } from '@renderer/features/settings/subscriptions/subscription-queries'
 // A provider's subscription readings on this machine (the replicas' keys: [model, device, machine, provider, …]).
 const readingsOf = (id: string) => ({ predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[2] === null && q.queryKey[3] === id })
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
@@ -168,7 +168,12 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
       resize: () => {},
       markUrlHandled: () => {},
       dispose: () => {},
-      status: { current: () => ({ status: { kind: 'unauthenticated' }, login: null }) }
+      status: {
+        follow: (listener: (state: unknown) => void) => {
+          listener({ status: { kind: 'unauthenticated' }, login: null })
+          return () => {}
+        }
+      }
     })
   }
 }))
@@ -276,7 +281,7 @@ it.each([1440, 390])(
         // 状态那一行换了说法(谁在付钱):字数不同、窄屏可能多折一行,当前连接那一格不缩、不挪到别的列、一直能点。
         for (const payer of ['api-key', 'unknown', 'subscription']) {
           control.payer = payer
-          await subscriptionPlan.refresh(null, id)
+          await connectionDetails.refresh(null, id, 'native')
           await untilStable('payer layout settled', () => box(detail.element()))
           const { x, width } = box(connection.element())
           expect({ x, width }).toEqual({ x: connectionBox.x, width: connectionBox.width })

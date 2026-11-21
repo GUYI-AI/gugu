@@ -1,5 +1,5 @@
 // The personal assistant marker (replica `myAssistant`, signal tier): this device's own provision / move / close writes
-// read it again (`refreshMyAssistant`), a refresh during an older read reads once more, and it follows the account.
+// read it again (`myAssistant.refresh`), a refresh during an older read reads once more, and it follows the account.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantProvisionRow } from '@/lib/assistantProvision'
 
@@ -15,7 +15,7 @@ vi.mock('@/lib/supabase', () => ({
 }))
 vi.mock('@/store/auth', () => ({ useAuth: () => ({ user: null }) }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }))
-const { myAssistant, refreshMyAssistant } = await import('@/lib/myAssistant')
+const { myAssistant } = await import('@/lib/myAssistant')
 const { publishRendererSession } = await import('@/lib/sessionPublication')
 const signIn = (id: string) => publishRendererSession('SIGNED_IN', { user: { id }, access_token: 't' } as never)
 const row = (phase: AssistantProvisionRow['phase']): AssistantProvisionRow => ({
@@ -34,7 +34,7 @@ describe('assistant identity completion refresh', () => {
     // Fresh for a minute: without the completion refresh the next look would not read again.
     await myAssistant.fetch()
     expect(reads).toHaveLength(1)
-    await refreshMyAssistant()
+    await myAssistant.refresh()
     const after = myAssistant.fetch()
     reads[1]!.finish([row('completed')])
     await after
@@ -43,7 +43,7 @@ describe('assistant identity completion refresh', () => {
 
   it('a completion refresh during an older read reads once more (❌ dropped behind it)', async () => {
     const first = myAssistant.fetch().catch(() => undefined)
-    const refreshed = refreshMyAssistant()
+    const refreshed = myAssistant.refresh()
     reads[0]!.finish([row('failed')])
     await first
     await vi.waitFor(() => expect(reads).toHaveLength(2))
@@ -67,7 +67,7 @@ describe('assistant identity completion refresh', () => {
     reads[0]!.finish([row('completed')])
     await first
     expect(agentNow()).toBe('same-agent')
-    await refreshMyAssistant()
+    await myAssistant.refresh()
     const again = myAssistant.fetch()
     reads[1]!.finish([{ ...row('completed'), agent: { removed_at: '2026-11-02T15:06:41Z' } }])
     await again

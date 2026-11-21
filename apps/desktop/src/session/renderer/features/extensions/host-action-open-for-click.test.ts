@@ -26,8 +26,8 @@ vi.mock('./extension-surface-store', () => ({
 
 const { WorkspaceViewModel } = await import('@renderer/features/sessions/stores/workspace-view-model');
 const { applyExtensionHostAction } = await import('./host-action-handlers');
-const { tellInstalled } = await import('./installed-extensions');
-beforeEach(() => { vi.clearAllMocks(); chatPageOrigin.mockReset(); publishChatSummaries([]); tabs.length = 0; projects.clear(); tellInstalled('local', { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {} } as never); });
+const { installedExtensions } = await import('./installed-extensions');
+beforeEach(() => { vi.clearAllMocks(); chatPageOrigin.mockReset(); publishChatSummaries([]); tabs.length = 0; projects.clear(); installedExtensions.set(['local'], { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {} } as never); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('an App browser open keeps the host-stamped source', () => {

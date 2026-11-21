@@ -3,6 +3,7 @@ import { notify } from '@/lib/notices'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { openShellSettings } from '@renderer/lib/open-shell-settings'
+import { replica } from '@/lib/replica'
 
 const shown = new Set<string>()
 
@@ -12,6 +13,13 @@ export async function readAgentHomeUpgradeResults(): Promise<AgentHomeScan[]> {
   if (!result.success) throw new Error('Could not read configuration migration results')
   return result.data.filter(({ upgraded, migrationSpace, migrationPreparation, nativeHistory }) => upgraded || migrationSpace || migrationPreparation || nativeHistory)
 }
+
+/** The configuration homes an upgrade changed: the first-run notice and the data-import page read this one. */
+export const agentHomeUpgradeResults = replica({
+  name: 'agentHomeUpgradeResults',
+  scope: 'device',
+  read: readAgentHomeUpgradeResults,
+})
 
 export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): void {
   const codex = homes.find(home => home.providerId === 'codex' && home.upgraded

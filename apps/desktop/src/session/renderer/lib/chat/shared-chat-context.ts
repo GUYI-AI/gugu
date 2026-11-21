@@ -1,8 +1,9 @@
 import { createChatContext, DEFAULT_CONFIG, type ChatConfig, type ChatContext } from '@gugu/session-chat-ui';
 import { subscribeLocale } from '@/i18n';
-import { LOCAL_HOST, peekInstalledApps, watchInstalled } from '@renderer/features/extensions/installed-extensions';
+import { installedExtensions, LOCAL_HOST, peekInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
-import { rpc } from '@renderer/lib/ipc';
+import { integrationsCatalog } from '@/components/connections/connection-replicas';
+import { LOCAL_HOST_KEY } from '@renderer/features/library/library-host';
 import { advertisedCommandProvider } from './advertised-command-provider';
 import { senderAvatarUrl, subscribeSenderAvatars } from './sender-avatar';
 import { SESSION_CHAT_FONT_STACK } from './font-stack';
@@ -82,7 +83,7 @@ export function createSessionChatContext(): ChatContext {
       return installed ? installed.appName(appId) : undefined;
     },
     subscribeAppNames: (listener) => {
-      const stopList = watchInstalled(LOCAL_HOST, () => listener());
+      const stopList = installedExtensions.subscribe([LOCAL_HOST], () => listener());
       const stopLocale = subscribeLocale(listener);
       return () => { stopList(); stopLocale(); };
     },
@@ -108,7 +109,7 @@ function preloadIssueMentionIcons(): void {
   // 那一抛越过下面的 catch,把 initSharedChatContext 整个抛掉 —— 手机上第一次展开的思考行因此一直空白,
   // 第二次才好(第二次 didPreload 已为真,跳过了这一步;2026-10-02 真机)。
   void Promise.resolve()
-    .then(() => rpc.integrations.list())
+    .then(() => integrationsCatalog.fetch(LOCAL_HOST_KEY, getSessionLocaleSnapshot().resolvedLocale))
     .then(registerIssueMentionIcons)
     .catch(() => {
       // IntegrationsProvider also refreshes the registry after React mounts.

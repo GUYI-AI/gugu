@@ -1,7 +1,5 @@
-import { useReplica } from '@/lib/replica';
 import { rpcOn } from '@renderer/lib/ipc';
 import { rendererLogger } from '@/lib/log';
-import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { HarnessCatalogState } from '@main/core/agents/harness-model-catalog';
 import type { AgentModelCatalogAnswer } from '@main/core/agents/platform-model-catalog-hook';
 
@@ -26,6 +24,7 @@ import { isAuthExpired, withAuthExpiry } from './harness-auth-expiry';
 import { useAgentAuthStatus } from './use-agent-auth-status';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import { harnessModelCatalog } from './agent-replicas';
+import { useHostMachine, useHostReplica } from './host-replica';
 
 /**
  * 这家 harness 现在能跑哪些模型 —— 问 harness 自己(the `harnessModelCatalog` replica, agent-replicas.ts).
@@ -54,18 +53,18 @@ export async function forceRefreshHarnessModelCatalog(
   leg: SessionpageLeg = 'acp',
   machine: string | null = null
 ): Promise<void> {
-  const entry = harnessModelCatalog.at(providerId, leg, machine);
+  const entry = harnessModelCatalog.at(machine, providerId, leg);
   try {
     entry.set((await rpcOn(machine).agents.modelCatalog(providerId, leg, true)) as AgentModelCatalogAnswer);
   } catch (error) {
     rendererLogger('agents/model-catalog').warn({ error, providerId, leg, machine }, 'forced model catalog refresh failed');
-    await harnessModelCatalog.refresh(providerId, leg, machine);
+    await harnessModelCatalog.refresh(machine, providerId, leg);
     return;
   }
   // 另一条腿的那份也要重问(#6246):主进程对大多数家两条腿共用一份目录,这次 force 探的结果也属于它;
   // 渲染层不知道哪家共用,所以这一家在这台机器上的其余腿一律重问。
   const otherLegs = (['acp', 'tui'] as const).filter((other) => other !== leg);
-  await Promise.all(otherLegs.map((other) => harnessModelCatalog.refresh(providerId, other, machine)));
+  await Promise.all(otherLegs.map((other) => harnessModelCatalog.refresh(machine, providerId, other)));
 }
 
 export function useHarnessModelCatalog(
@@ -74,11 +73,9 @@ export function useHarnessModelCatalog(
   leg: SessionpageLeg
 ) {
   // #6264 会话 / 新建框在别的机器上:问那台机器的同一个控制器(一套工作台)。
-  const host = useLibraryHost().remote;
-  const machine = host?.deviceId ?? null;
   // 那台机器没连上就不问:问不到只会落一个「读取失败」,而那不是这家 agent 的问题;连上时自己重取。
-  const args: [string, SessionpageLeg, typeof machine] | null = providerId && host?.online !== false ? [providerId, leg, machine] : null;
-  const reading = useReplica(harnessModelCatalog, providerId ? [providerId, leg, machine] : null, { read: host?.online !== false });
+  const { machine, online } = useHostMachine();
+  const reading = useHostReplica(harnessModelCatalog, providerId ? [providerId, leg] : null);
   const probed: HarnessCatalogState = reading.state === 'value'
     ? reading.value.state
     : reading.state === 'error' ? { kind: 'unavailable', reason: errorReason(reading.error) } : { kind: 'unknown' };
@@ -93,9 +90,9 @@ export function useHarnessModelCatalog(
     refreshFailed: reading.state === 'value' ? reading.error : null,
     /** Opening the model menu asks the host once more (it decides whether to probe again); a read on its way is joined. */
     preparation: reading.state === 'value' && reading.value.refreshing ? reading.value.preparation : undefined,
-    refresh: () => { if (args) void harnessModelCatalog.refresh(...args); },
+    refresh: () => { if (providerId && online) void harnessModelCatalog.refresh(machine, providerId, leg); },
     /** The person asked again after a failed read: past the main process's cache, on this list's machine and leg. */
-    retry: () => { if (args) void forceRefreshHarnessModelCatalog(...args); },
+    retry: () => { if (providerId && online) void forceRefreshHarnessModelCatalog(providerId, leg, machine); },
     // 后台还在探也算「在读」—— 手上这份可能是陈的,调用方有权知道它还会变。
     isLoading: reading.state === 'unknown' || (reading.state === 'value' && reading.value.refreshing),
   };

@@ -58,7 +58,6 @@ export function ServerUninstallDialog({
   const runIdRef = useRef<string | null>(null)
   const removeStarted = useRef(false)
 
-  // @@@effect-flow(command) - following the uninstall run this dialog started (its progress events).
   useEffect(() => {
     const electron = api()
     if (!electron) return
@@ -101,7 +100,6 @@ export function ServerUninstallDialog({
   }, [state?.failure, state?.target])
 
   // 卸完 ⇒ 从列表移除(带上智能体的级联选择)。
-  // @@@effect-flow(command) - removing the machine once its uninstall finished.
   useEffect(() => {
     if (phase !== 'done' || removeStarted.current) return
     removeStarted.current = true

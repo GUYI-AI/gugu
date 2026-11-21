@@ -12,11 +12,11 @@ import {
   type CheckRun,
   type CheckRunBucket,
 } from '@renderer/utils/github';
-import { getPrNumber, type PullRequest, type PullRequestComment } from '@shared/core/pull-requests/pull-requests';
+import type { PullRequest, PullRequestComment } from '@shared/core/pull-requests/pull-requests';
 import type { Reading } from '@/lib/replica';
 import { CommentsList } from './comments-list';
 import { buildPullRequestSessionItems, type PullRequestSessionItem } from './pull-request-session';
-import { pullRequestComments, usePullRequestComments } from './use-pull-request-comments';
+import { usePullRequestComments } from './use-pull-request-comments';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 const NO_COMMENTS: PullRequestComment[] = [];
@@ -130,10 +130,6 @@ export const PrChecksList = observer(function PrChecksList({
     if (comments.state !== 'value') return comments;
     return { ...comments, value: buildPullRequestSessionItems(pr, comments.value) };
   }, [pr, comments]);
-  const retryComments = () => {
-    const prNumber = getPrNumber(pr);
-    if (prNumber !== null) void pullRequestComments.refresh(projectId, pr.repositoryUrl, prNumber);
-  };
 
   if (checks.length === 0 && sessionItems.state === 'value' && sessionItems.value.length === 0) {
     return (
@@ -154,7 +150,7 @@ export const PrChecksList = observer(function PrChecksList({
       </section>
       <section>
         <MicroLabel className="px-3 pb-1">{translate('pr.comments')}</MicroLabel>
-        <CommentsList comments={sessionItems} onRetry={retryComments} />
+        <CommentsList comments={sessionItems} />
       </section>
     </div>
   );

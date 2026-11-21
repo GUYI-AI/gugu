@@ -19,7 +19,7 @@ import { projectRpcOn } from './projectRpc'
 import { Unknown } from '@/components/ui/Unknown'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { useReplica } from '@/lib/replica'
-import { LOCAL_SETTINGS_HOST_KEY, settingsModelOf } from '@/session/renderer/features/settings/app-settings-client'
+import { LOCAL_SETTINGS_HOST_KEY, appSettingsModel } from '@/session/renderer/features/settings/app-settings-client'
 import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
@@ -69,7 +69,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const folderPath = existingFolder && existingFolder.deviceId === deviceId ? existingFolder.path : null
   // 那台机器的默认项目目录(它自己的设置,同电脑设置 → 机器 → 默认项目目录):那台机器的设置 replica,这台手机的线路。
   const host = device ? (device.is_current_device ? LOCAL_SETTINGS_HOST_KEY : device.device_id) : null
-  const settings = useReplica(settingsModelOf(host ?? LOCAL_SETTINGS_HOST_KEY), host ? ['localProject', host] : null)
+  const settings = useReplica(appSettingsModel, host ? ['localProject', host] : null)
   const shownDirectory = settings.state === 'value'
     ? { path: (settings.value.value as { defaultProjectsDirectory?: string }).defaultProjectsDirectory?.trim() || null } : null
   // Not read, or read before and read again failed: said under the rows with a retry (❌ 「没有默认目录」, ❌ the kept one as current).

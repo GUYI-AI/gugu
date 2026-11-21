@@ -1,26 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PendingPrompt } from '@gugu/session-chat-ui'
 import { lifeIsStarting, type LifeView } from '@/session/shared/core/sessions/session-life'
 import { canStartFreshSession } from '@/session/shared/core/sessions/session-recovery'
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox'
 import { messageForUser } from '@/lib/userFacingError'
 import { machineRpc } from './sessionpage-rpc'
-import { replica, useReplica } from '@/lib/replica'
-import { useSelect } from '@/lib/selectStore'
-import { lifeReadable, readLifeVia, watchLife } from '@renderer/features/sessions/stores/session-life-views'
-import { phoneLifeRoute } from './useSessionLifeView'
 import { recoverTimelineRead } from './timeline-read-recovery'
-
-/** A session's row on its machine, as far as a restart needs it. */
-const restartSessionRow = replica({
-  name: 'restartSessionRow',
-  scope: 'account',
-  read: async (_owner: string, deviceId: string, local: boolean, projectId: string, sessionId: string) => {
-    const [row] = await machineRpc(deviceId, local).sessions.getUnarchivedSession(projectId, sessionId)
-    return row ? { providerSessionState: row.providerSessionState, firstUtterance: row.firstUtterance } : null
-  },
-  fresh: 0,
-})
 
 type RestartAttempt = { key: string; afterVersion: number }
 
@@ -37,23 +22,26 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   const inFlight = useRef<RestartAttempt | null>(null)
   const observed = useRef<RestartAttempt | null>(null)
   const restarted = useRef<RestartAttempt | null>(null)
-  const route = useMemo(() => phoneLifeRoute(deviceId, local), [deviceId, local])
-  // Whether "start fresh" is offered derives from the session's row and its lifecycle.
-  const asking = missing && online
-  const rowReading = useReplica(restartSessionRow, asking ? [deviceId, local, projectId, sessionId] : null)
-  const lifeNow = useSelect(useMemo(() => lifeReadable(route, sessionId), [route, sessionId]), (value) => value.view)
-  useEffect(() => (asking ? watchLife(route, sessionId, () => true) : undefined), [asking, route, sessionId])
-  useEffect(() => { if (asking) void readLifeVia(route, sessionId).catch(() => undefined) }, [asking, route, sessionId])
-  const sessionRow = rowReading.state === 'value' ? rowReading.value : null
-  const absent = sessionRow !== null && lifeNow !== null && (sessionRow.providerSessionState === 'missing' || lifeNow.kind === 'dormant')
-  const eligible = asking && absent && lifeNow !== null && !lifeIsStarting(lifeNow) && lifeNow.kind !== 'ready'
-    && canStartFreshSession('provider_session_missing', sessionRow?.firstUtterance) ? key : null
+  const baseline = useRef<{ key: string; version: number } | null>(null)
+  const [eligible, setEligible] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<RestartAttempt | null>(null)
   const [view, setView] = useState<{ key: string; value: LifeView } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<{ key: string; message: string } | null>(null)
 
-  // @@@effect-flow(command) - waits for the restart command to settle: its lifecycle (read through the one life mirror) passes the clicked version
+  useEffect(() => {
+    if (!missing || !online) { setEligible(null); return }
+    let active = true
+    const host = machineRpc(deviceId, local)
+    void Promise.all([host.sessions.getUnarchivedSession(projectId, sessionId), host.sessions.lifeView(sessionId)]).then(([rows, life]) => {
+      if (active) baseline.current = { key, version: life.version }
+      const absent = rows[0]?.providerSessionState === 'missing' || life.kind === 'dormant'
+      if (active) setEligible(absent && !lifeIsStarting(life) && life.kind !== 'ready'
+        && canStartFreshSession('provider_session_missing', rows[0]?.firstUtterance) ? key : null)
+    }, () => { if (active) setEligible(null) })
+    return () => { active = false }
+  }, [deviceId, projectId, sessionId, missing, online, local, key])
+
   useEffect(() => {
     if (attempt?.key !== key || !online) return
     let active = true
@@ -61,7 +49,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     let timer: ReturnType<typeof setTimeout> | undefined
     const poll = async () => {
       try {
-        const next = await recoverTimelineRead(() => readLifeVia(route, sessionId), recoveryAbort.signal)
+        const next = await recoverTimelineRead(() => machineRpc(deviceId, local).sessions.lifeView(sessionId), recoveryAbort.signal)
         if (!active) return
         if (next.version > attempt.afterVersion) {
           observed.current = attempt
@@ -88,12 +76,11 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     }
     void poll()
     return () => { active = false; recoveryAbort.abort(); clearTimeout(timer) }
-  }, [attempt, key, sessionId, online, route])
+  }, [attempt, key, deviceId, sessionId, online, local])
 
   const start = async (fresh: boolean) => {
     if (inFlight.current?.key === key || !online || (fresh && eligible !== key)) return
-    // @@@reading-default(moment) - the version a restart must pass (a one-moment decision at the click): none seen yet = 0
-    const afterVersion = view?.key === key ? view.value.version : lifeNow ? lifeNow.version : 0
+    const afterVersion = view?.key === key ? view.value.version : baseline.current?.key === key ? baseline.current.version : 0
     const request = { key, afterVersion }
     inFlight.current = request
     setAttempt(request)

@@ -16,14 +16,14 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
     onMarketChanged: (listener: () => void) => { host.listeners.add(listener); return () => { host.listeners.delete(listener) } },
   },
 }))
-const { useMarketOffers, marketOffers } = await import('../../../../apps/desktop/src/components/appSlot/marketOffers')
-const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
+const { marketOffers } = await import('../../../../apps/desktop/src/components/appSlot/marketOffers')
+const { queryClient, useReplica } = await import('../../../../apps/desktop/src/lib/replica')
 
 const offer = (id: string) => ({ manifest: { id }, version: '1.0.0' })
 let root: Root
-let seen: ReturnType<typeof useMarketOffers>
+let seen: ReturnType<typeof marketOffers.peek>
 function Probe({ asked }: { asked: boolean }) {
-  seen = useMarketOffers(asked)
+  seen = useReplica(marketOffers, asked ? [] : null)
   return null
 }
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })

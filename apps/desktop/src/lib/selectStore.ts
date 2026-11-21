@@ -15,6 +15,8 @@ export type SelectStore<T> = {
   publish: (value: T) => void
   /** Layout phase: tell readers that did not render in this pass. */
   notify: () => void
+  /** Outside render (an event, an answer): publish and tell at once. */
+  set: (value: T) => void
 }
 
 /**
@@ -29,20 +31,32 @@ export function createSelectStore<T>(initial: T, options: { scope?: 'account' } 
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     publish: (next) => { value = next },
     notify: () => { for (const listener of [...listeners]) listener() },
+    set: (next) => { value = next; store.notify() },
   }
   if (options.scope === 'account') onAccountChange(() => { if (value !== initial) { value = initial; store.notify() } })
   return store
 }
 
-/** One key of a record store, set or (`undefined`) removed, and its readers told: ❌ the spread / rest by hand at each caller. */
-export function patch<T extends Record<string, unknown>>(store: SelectStore<T>, key: string, next: T[string] | undefined): void {
-  const now = store.get()
-  if (next === undefined ? !(key in now) : Object.is(now[key], next)) return
+/** One key of a record or Map store, set or (`undefined`) removed, and its readers told: ❌ the spread / rest by hand at each caller. */
+export function patch<T extends Record<string, unknown>>(store: SelectStore<T>, key: string, next: T[string] | undefined): void
+export function patch<K, V>(store: SelectStore<ReadonlyMap<K, V>>, key: K, next: V | undefined): void
+export function patch<T>(store: SelectStore<T>, key: unknown, next: unknown): void {
+  const now: unknown = store.get()
+  if (now instanceof Map) {
+    if (next === undefined ? !now.has(key) : Object.is(now.get(key), next)) return
+    const copy = new Map(now)
+    if (next === undefined) copy.delete(key)
+    else copy.set(key, next)
+    store.set(copy as T)
+    return
+  }
+  const record = now as Record<string, unknown>
+  const name = key as string
+  if (next === undefined ? !(name in record) : Object.is(record[name], next)) return
   if (next === undefined) {
-    const { [key]: _removed, ...rest } = now
-    store.publish(rest as T)
-  } else store.publish({ ...now, [key]: next })
-  store.notify()
+    const { [name]: _removed, ...rest } = record
+    store.set(rest as T)
+  } else store.set({ ...record, [name]: next } as T)
 }
 
 /** Same own keys, each `Object.is`; anything else `Object.is`. */

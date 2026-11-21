@@ -11,16 +11,20 @@ import { Unknown } from './Unknown'
  * reading's own retry; read, `children(value)`, and a refresh that failed over it said below with the same retry.
  * The one place a surface's three states are drawn: ❌ a hand-written branch per surface with its own 「重试」.
  */
-export function ReadingSlot<V>({ reading, placeholder, failed, children }: {
+export function ReadingSlot<V>({ reading, placeholder, failed, className, children }: {
   reading: Reading<V>
-  placeholder?: string
-  /** What an unreadable reading says (default: the error, for a person). */
-  failed?: (error: Error) => string
+  /** Not read yet: the classes of `<Unknown>` sized like the value, or the element that stands for it (a skeleton row). */
+  placeholder?: string | ReactNode
+  /** What an unreadable reading says (default: the error, for a person): a line with the retry, or an element of its own. */
+  failed?: (error: Error, retry: (() => void) | undefined) => ReactNode
+  /** The failure line's classes (its padding where the slot sits). */
+  className?: string
   children: (value: V) => ReactNode
 }) {
-  if (reading.state === 'unknown') return <Unknown className={placeholder} />
+  if (reading.state === 'unknown') return typeof placeholder === 'string' || placeholder === undefined ? <Unknown className={placeholder} /> : <>{placeholder}</>
   if (reading.state === 'error') {
-    return <ReadFailedLine message={failed ? failed(reading.error) : messageForUser(reading.error)} onRetry={retryOf(reading)} />
+    const said = failed ? failed(reading.error, retryOf(reading)) : messageForUser(reading.error)
+    return typeof said === 'string' ? <ReadFailedLine message={said} onRetry={retryOf(reading)} className={className} /> : <>{said}</>
   }
   return <>{children(reading.value)}<RefreshFailed reading={reading} /></>
 }

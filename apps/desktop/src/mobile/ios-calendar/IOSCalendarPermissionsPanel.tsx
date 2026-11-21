@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { platform } from '@/platform'
-import { IOSCalendarPermissionError, type IOSCalendarSnapshot } from './iosCalendarPermissions'
-import { iosCalendarClient, iosCalendarConnection } from './iosCalendarConnection'
+import { IOSCalendarPermissionError, iosCalendarPermissions as client, type IOSCalendarSnapshot } from './iosCalendarPermissions'
+import { iosCalendarConnection } from './iosCalendarConnection'
 import { useReplica } from '@/lib/replica'
 import { waitForCalendarAppActive } from './waitForCalendarAppActive'
 
@@ -82,7 +82,6 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
     mutation.current = request
     setChange({ ownerId: startedFor, kind: 'changing', operation })
     let recoveryController: AbortController | undefined
-    const client = iosCalendarClient()
     try {
       const status = await client[operation](current.status.binding)
       if (!still()) return

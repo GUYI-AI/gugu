@@ -1,16 +1,9 @@
 import type { SessionpageSessionCreateOptions, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
-import { useEffect } from 'react'
 import { fetchCreateOptions, fetchPhoneCreateOptions } from '@/components/session-watch/sessionpage-rpc'
 import { fetchPlatformModelCatalog, fetchSessionCreateModels, readAgentModelSelection, type SessionCreateVia } from './agentModelSelection'
-import { replica, useReplica, type Reading } from './replica'
+import { replica } from './replica'
 import { rendererLogger } from './log'
 import { PLATFORM_MODELS_CHANGED_EVENT } from '@shared/core/agents/platform-model'
-import type { PlatformCatalogModel } from './agentModelSelection'
-
-/** The catalog as read, with every row's menu details (❌ one restored from the snapshot, which carries none). */
-export function catalogDetailed(models: readonly PlatformCatalogModel[]): boolean {
-  return models.every((model) => model.creditMultipliers !== undefined && model.reasoningEfforts !== undefined)
-}
 
 /** The account's platform model catalog. */
 export const platformModels = replica({
@@ -49,17 +42,6 @@ export function followCatalogChanges(refresh: () => void): () => void {
   }
 }
 
-/** The catalog for a surface that draws its menu details: a restored value (none carried) is unknown to it, and the read is asked now. */
-export function useDetailedPlatformCatalog(wanted: boolean): Reading<PlatformCatalogModel[]> {
-  const reading = useReplica(platformModels, wanted ? [] : null)
-  const restored = reading.state === 'value' && !catalogDetailed(reading.value)
-  useEffect(() => {
-    if (restored) void platformModels.refresh()
-  }, [restored])
-  if (!restored) return reading
-  return reading.state === 'value' && reading.error ? { state: 'error', error: reading.error } : { state: 'unknown' }
-}
-
 /** What one agent is set to use (desired / applied / the device's refusal), as the cloud row says. */
 export const agentModelSelection = replica({
   name: 'agentModelSelection',
@@ -86,5 +68,4 @@ export const sessionCreateOptions = replica({
   scope: 'account',
   read: (_owner, deviceId: string, via: 'machine' | 'phone'): Promise<SessionpageSessionCreateOptions> =>
     via === 'phone' ? fetchPhoneCreateOptions(deviceId) : fetchCreateOptions(deviceId),
-  fresh: 0,
 })

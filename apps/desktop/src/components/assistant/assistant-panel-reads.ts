@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import type { AssistantPanelDomain, AssistantPanelItem } from '@gugu/core/cloud/assistantPanel'
 import { readableAssistantPanelCollection } from '@gugu/core/cloud/assistantPanelFiles'
-import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
+import { isAssistantPanelReadRetryable, withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
 import { replica, useReplica, type Reading } from '@/lib/replica'
 import { assistantPanelBodies } from '@/lib/assistantPanelBodies'
 import { readMemoryEntry, type AssistantMachine, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
@@ -9,7 +9,7 @@ import type { IntegrationMetadata } from '@/session/renderer/features/integratio
 import { connectionMetadataKey, type ConnectionMetadataStore } from '../connections/connection-metadata'
 import { CONNECTIONS_CHANGED, peekOwnerConnectionMetadata, readOwnerConnectionMetadata } from '../connections/owner-connection-metadata'
 import { peekAssistantPanelIntegration, peekAssistantPanelIntegrations, readAssistantPanelIntegration, readAssistantPanelIntegrations } from './assistant-panel-integrations'
-import { onAssistantPanelChanged, useAssistantPanel } from './assistant-panel-replica'
+import { assistantPanel, onAssistantPanelChanged } from './assistant-panel-replica'
 
 // Live objects (stores, machines) the key-only replicas below find by key; an unregistered key is a failed read (❌ a hang).
 const stores = new Map<string, ConnectionMetadataStore>()
@@ -42,7 +42,10 @@ function machineOf(key: string): AssistantMachine {
 
 type ConnectionList = Awaited<ReturnType<typeof readAssistantPanelIntegrations>>
 
-/** The applications a connection store lists. Signal tier: its panel's changes and `CONNECTIONS_CHANGED` (`useConnectionList`). */
+/**
+ * The applications a connection store lists: the one reading of an assistant panel's list (the phone, the App counts and
+ * the desktop's IntegrationsProvider). Signal tier: its panel's changes and `CONNECTIONS_CHANGED` (`watch`).
+ */
 export const connectionList = replica({
   name: 'connectionList',
   scope: 'account',
@@ -57,39 +60,33 @@ export const connectionList = replica({
   },
   retry: 2,
   refreshOnFocus: true,
+  // A panel whose computer is still waking (a retryable failure): asked again while shown, as no push says it woke.
+  refreshEvery: (_value, error, _storeKey, owned) => (!owned && error && isAssistantPanelReadRetryable(error) ? 30_000 : false),
+  watch: {
+    group: (storeKey) => storeKey,
+    start: (_owner, storeKey) => {
+      const store = storeOf(storeKey)
+      const refresh = () => { void connectionList.refresh(storeKey) }
+      const stopPanel = store.assistantId ? onAssistantPanelChanged(store.assistantId, refresh) : () => undefined
+      window.addEventListener(CONNECTIONS_CHANGED, refresh)
+      return () => { stopPanel(); window.removeEventListener(CONNECTIONS_CHANGED, refresh) }
+    },
+  },
 })
-
-const listWatches = new Map<string, { users: number; stop: () => void }>()
-function watchConnectionList(store: ConnectionMetadataStore): () => void {
-  const key = connectionMetadataKey(store)
-  let entry = listWatches.get(key)
-  if (!entry) {
-    const refresh = () => { void connectionList.refresh(key) }
-    const stopPanel = store.assistantId ? onAssistantPanelChanged(store.assistantId, refresh) : () => undefined
-    window.addEventListener(CONNECTIONS_CHANGED, refresh)
-    entry = { users: 0, stop: () => { stopPanel(); window.removeEventListener(CONNECTIONS_CHANGED, refresh) } }
-    listWatches.set(key, entry)
-  }
-  const active = entry
-  active.users++
-  return () => { if (--active.users === 0 && listWatches.get(key) === active) { active.stop(); listWatches.delete(key) } }
-}
 
 export function useConnectionList(store: ConnectionMetadataStore | undefined, owned: boolean, locale: string, enabled = true): Reading<ConnectionList> {
   const key = store ? registerConnectionStore(store) : null
-  const reading = useReplica(connectionList, key && enabled ? [key, owned, locale] : null)
-  useEffect(() => (store && enabled ? watchConnectionList(store) : undefined), [store, enabled])
-  return reading
+  return useReplica(connectionList, key && enabled ? [key, owned, locale] : null)
 }
 
 /** One application's full catalog entry, content-addressed by `catalogVersion` (read once). */
 export const assistantIntegrationDetail = replica({
   name: 'assistantIntegrationDetail',
   scope: 'account',
-  read: async (_owner: string, storeKey: string, id: string, catalogVersion: string | null, locale: string): Promise<IntegrationMetadata> => {
+  read: async (_owner: string, storeKey: string, id: string, _catalogVersion: string | null, locale: string): Promise<IntegrationMetadata> => {
     const store = storeOf(storeKey)
     await assistantPanelBodies.ready
-    return withAssistantPanelReadDeadline(() => readAssistantPanelIntegration(store, id, locale, catalogVersion ?? undefined))
+    return withAssistantPanelReadDeadline(() => readAssistantPanelIntegration(store, id, locale))
   },
   local: (_owner: string, storeKey: string, id: string, _catalogVersion: string | null, locale: string) =>
     peekAssistantPanelIntegration(stores.get(storeKey), id, locale),
@@ -123,7 +120,7 @@ export function useAssistantMemoryBody(machine: AssistantMachine | undefined, en
 export function useAssistantPanelCollection<T>(machine: AssistantMachine | null | undefined, domain: AssistantPanelDomain,
   derive: (rows: AssistantPanelItem[]) => T): Reading<T> {
   const panel = machine?.panel
-  const reading = useAssistantPanel(panel?.ownerId ?? null, panel?.assistantId ?? null)
+  const reading = useReplica(assistantPanel, panel?.ownerId && panel.assistantId ? [panel.assistantId] : null)
   const deviceId = panel?.deviceId ?? null
   return useMemo((): Reading<T> => {
     if (reading.state !== 'value' || deviceId === null) return reading.state === 'error' ? reading : { state: 'unknown' }

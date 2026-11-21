@@ -11,7 +11,7 @@ import { comparer, computed, makeAutoObservable, observable, reaction, runInActi
 import { deviceMachines } from '@gugu/core/shared/deviceMachines';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import type { SessionHostClient } from '@shared/lib/ipc/session-host-client';
-import { onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
+import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import type { EventDefinition } from '@shared/lib/ipc/events';
 import {
   projectCreatedChannel,
@@ -76,7 +76,7 @@ import { platform } from '@/platform';
 import { agentStatusText } from '@/lib/agentStatusText';
 import { diffAlerts, statusMapOf, type AgentWatchStatusMap } from '@/lib/agent-wait/agent-watch-alerts';
 import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner';
-import type { SettingsMeta } from '@renderer/features/settings/app-settings-client';
+import { fetchAppSettingValue } from '@renderer/features/settings/app-settings-client';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 
 const REMOTE_PREFIX = 'remote:';
@@ -767,8 +767,7 @@ export class RemoteHostsStore {
     const alerts = diffAlerts(this.waitReadings.get(deviceId) ?? {}, sessions, () => false);
     this.waitReadings.set(deviceId, statusMapOf(sessions));
     if (alerts.length === 0) return;
-    void rpc.appSettings.getWithMeta('notifications').then((meta) => {
-      const { enabled, sound } = (meta as SettingsMeta<'notifications'>).value;
+    void fetchAppSettingValue('notifications').then(({ enabled, sound }) => {
       if (!enabled) return;
       for (const alert of alerts) {
         const title = i18n.t('agentWatch.notify.status', { ns: 'main', name: alert.title, status: agentStatusText(alert.label) });

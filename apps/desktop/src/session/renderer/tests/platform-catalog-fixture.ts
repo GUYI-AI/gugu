@@ -50,6 +50,6 @@ export function seedPlatformCatalog(input: {
   followRendererSession('SIGNED_IN', input.account ?? 'account-1');
   platformModels.set([], accountCatalogRows(input.rows));
   for (const provider of input.providers) {
-    for (const leg of ['acp', 'tui'] as const) harnessModelCatalog.set([provider, leg, input.machine ?? null], harnessAnswer());
+    for (const leg of ['acp', 'tui'] as const) harnessModelCatalog.set([input.machine ?? null, provider, leg], harnessAnswer());
   }
 }

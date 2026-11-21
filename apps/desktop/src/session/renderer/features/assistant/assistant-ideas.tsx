@@ -5,7 +5,7 @@ import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { ideaGroups, type TodayIdea, type TodayRead } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
-import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
 import type { Reading } from '@/lib/replica';
 
 /**
@@ -33,7 +33,6 @@ export function IdeasEntry({ assistantId, busy, onOpen, label, icon }: { assista
 
 export function IdeasPanel({
   today,
-  retry,
   assistantId,
   name,
   askInChat,
@@ -41,7 +40,6 @@ export function IdeasPanel({
   layout,
 }: {
   today: Reading<TodayRead>;
-  retry: () => void;
   assistantId: string;
   name: string;
   askInChat: (draft: string) => void;
@@ -95,63 +93,50 @@ export function IdeasPanel({
           </div>
         </div>
       ) : null}
-      <IdeasBody today={today} retry={retry} name={name} fill={fill} />
+      <IdeasBody today={today} name={name} fill={fill} />
     </div>
   );
 }
 
-function IdeasBody({ today, retry, name, fill }: { today: Reading<TodayRead>; retry: () => void; name: string; fill: (draft: string) => void }) {
-  const { t } = useTranslation('assistant');
-  if (today.state === 'unknown')
-    return (
-      <div className="ta-card">
-        <AssistantEmpty>
-          <span className="inline-flex items-center gap-2">
-            <LoadingIndicator size="inline" />
-            {t('ideas.loading')}
-          </span>
-        </AssistantEmpty>
-      </div>
-    );
-  if (today.state === 'error')
-    return (
-      <div className="ta-card" data-testid="assistant-ideas-unreadable">
-        <AssistantEmpty
-          action={
-            <button type="button" className="ta-pill-btn" onClick={retry}>
-              {t('machine.retry')}
-            </button>
-          }
-        >
-          {t('ideas.unreadable')}
-        </AssistantEmpty>
-      </div>
-    );
-  // Its last refresh failed: the ideas read before stay, and the failure is said above them (❌ old ideas as if current).
+function Note({ children, action, testId }: { children: ReactNode; action?: { label: string; onClick?: () => void }; testId?: string }) {
   return (
-    <>
-      <RefreshFailed reading={today} />
-      <IdeasRead read={today.value} name={name} fill={fill} />
-    </>
+    <div className="ta-card" data-testid={testId}>
+      <AssistantEmpty
+        action={
+          action ? (
+            <button type="button" className="ta-pill-btn" onClick={action.onClick}>
+              {action.label}
+            </button>
+          ) : undefined
+        }
+      >
+        {children}
+      </AssistantEmpty>
+    </div>
+  );
+}
+
+function IdeasBody({ today, name, fill }: { today: Reading<TodayRead>; name: string; fill: (draft: string) => void }) {
+  const { t } = useTranslation('assistant');
+  return (
+    <ReadingSlot reading={today}
+      placeholder={<Note><span className="inline-flex items-center gap-2"><LoadingIndicator size="inline" />{t('ideas.loading')}</span></Note>}
+      failed={(_error, retry) => (
+        <Note action={{ label: t('machine.retry'), onClick: retry }} testId="assistant-ideas-unreadable">
+          {t('ideas.unreadable')}
+        </Note>
+      )}>
+      {(value) => <IdeasRead read={value} name={name} fill={fill} />}
+    </ReadingSlot>
   );
 }
 
 function IdeasRead({ read, name, fill }: { read: TodayRead; name: string; fill: (draft: string) => void }) {
   const { t } = useTranslation('assistant');
   const note = (body: ReactNode, action?: { label: string; draft: string }, testId?: string) => (
-    <div className="ta-card" data-testid={testId}>
-      <AssistantEmpty
-        action={
-          action ? (
-            <button type="button" className="ta-pill-btn" onClick={() => fill(action.draft)}>
-              {action.label}
-            </button>
-          ) : undefined
-        }
-      >
-        {body}
-      </AssistantEmpty>
-    </div>
+    <Note action={action && { label: action.label, onClick: () => fill(action.draft) }} testId={testId}>
+      {body}
+    </Note>
   );
   if (read.state === 'invalid') return note(t('today.invalid', { name, problem: read.problem }), { label: t('today.fix', { name }), draft: t('today.fixPrompt', { problem: read.problem }) }, 'assistant-ideas-invalid');
   const part = read.state === 'ok' ? read.file.ideas : ({ state: 'none' } as const);

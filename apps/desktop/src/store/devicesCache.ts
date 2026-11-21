@@ -27,18 +27,12 @@ export const devicesModel = replica({
 /** The last known machines of the signed-in account; empty until this device ever read them. For logic outside React. */
 export function readCachedDevices(): Device[] {
   const reading = devicesModel.peek()
-  // @@@reading-default(moment) - only callers outside rendering (a protocol check, a poll interval): a device not found is a device not known, read or not
   return reading.state === 'value' ? [...reading.value] : []
 }
 
 /** Whose machines `readCachedDevices` are: the account the replica follows (null = nobody yet). */
 export function cachedDevicesAccount(): string | null {
   return replicaAccount().id
-}
-
-/** The machines changed (a read, a heartbeat flip folded in, an account switch). */
-export function subscribeCachedDevices(listener: () => void): () => void {
-  return devicesModel.subscribe([], () => listener())
 }
 
 /** Rows kept from before for the account signed in now (as the snapshot's copy: shown at once, read again by the next reader). */

@@ -77,6 +77,7 @@ import { db } from '@main/db/client';
 import { sessions, projects, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { events, tapMainEvents } from '@main/lib/events';
+import { onNativeMessagePreviewChanged, readNativeActiveMessagePreview } from './native-preview-events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
   automationChangedChannel,
@@ -1306,10 +1307,32 @@ export async function stopBackgroundTask(input: {
   }
 }
 
-/**
- * 订阅。`emit` 是这条传输自己的推送口（设备 RPC 的 broadcast / 桌面的 IPC）。
- * 同一个 subscriptionId 再订阅 = 顶掉前一条（重连时手机会带着同一个 id 回来）。
- */
+/** Native card subscriptions observe identity-only invalidations, never a full timeline/live model. */
+export async function subscribePreview(
+  input: SessionpageSessionSubscribeRequest,
+  changed: () => void,
+): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
+  const row = readSessionRow(input.conversationId);
+  if (!row || row.runtime !== 'acp') return subscribe(input, changed);
+  const subscriptionId = input.subscriptionId?.trim();
+  if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId 是必填的');
+  unsubscribe(subscriptionId);
+  let stopped = false;
+  const notify = () => { if (!stopped) changed(); };
+  const stops = [
+    onNativeMessagePreviewChanged(id => { if (id === undefined || id === input.conversationId) notify(); }),
+    tapMainEvents((channel, data) => {
+      if (channel === sessionChangedChannel.name && (data as { sessionId?: string }).sessionId === input.conversationId) notify();
+    }),
+  ];
+  subscriptions.set(subscriptionId, { conversationId: input.conversationId, stop: () => {
+    stopped = true;
+    for (const stop of stops) stop();
+  } });
+  return { ok: true, value: { subscriptionId } };
+}
+
+/** 订阅正文；同一个 subscriptionId 重连会替换前一条。预览使用上面的独立入口。 */
 export async function subscribe(
   input: SessionpageSessionSubscribeRequest,
   emit: (event: SessionpageSessionEvent) => void
@@ -1812,7 +1835,18 @@ export async function changeQueue(input: { conversationId: string; action: impor
   }
 }
 
-const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, withTimeline });
+const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, activePreview: readNativeActiveMessagePreview, withTimeline,
+  async withArchive<T>(conversationId: string, read: (historyFloor: string | null) => T | Promise<T>): Promise<SessionTimelineResult<T>> {
+    try {
+      const floor = await nativeConversationHistoryFloor(conversationId);
+      const value = await read(floor);
+      return { ok: true as const, value: clearedHistoryResult(value, floor) };
+    } catch (error) {
+      return fail('code' in Object(error) && (error as { code: unknown }).code === 'history_epoch_unstable' ? 'history_epoch_unstable' : 'timeline_failed', (error as Error)?.message ?? String(error));
+    }
+  },
+});
 export const nativeRecord = nativeRecordReader.snapshot;
+export const compactNativeRecord = nativeRecordReader.preview;
 export const nativeToolImage = nativeRecordReader.image;
 export { nativeAttachment } from './native-attachment';

@@ -16,7 +16,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { serverNow } from '@gugu/core/shared/serverClock'
 import { rendererCloudComputerClient } from './cloudComputerClient'
 import { rendererLogger } from './log'
-import { onAccountChange, replica, useReplica, type Reading } from './replica'
+import { onAccountChange, refreshFailure, replica, useReplica, type Reading } from './replica'
 import { createSelectStore, patch, useSelect } from './selectStore'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { readCachedDevices } from '../store/devicesCache'
@@ -47,12 +47,9 @@ async function readCloudComputer(): Promise<CloudComputerState> {
     return { available: true, snapshot }
   } catch (error) {
     // 门说「环境未配置可选云电脑服务」:整块不显示(❌ 给所有人报「读不到云电脑的状态」);配上以后再问到就出现。
-    if (isCloudComputerNotOpen(error)) {
-      log.info({ code: 'not_open' }, 'cloud computer manager is not configured on this backend')
-      return { available: false }
-    }
-    log.warn({ err: String((error as Error)?.message ?? error) }, 'cloud computer state failed')
-    throw error
+    if (!isCloudComputerNotOpen(error)) throw error
+    log.info({ code: 'not_open' }, 'cloud computer manager is not configured on this backend')
+    return { available: false }
   }
 }
 
@@ -105,7 +102,6 @@ export function useCloudComputer(): Reading<CloudComputerState> {
   return useReplica(cloudComputer, [])
 }
 
-/** For logic outside React (a link's reachability). */
 /** 读到的那份管家快照;还没读到、读不到、或没有云电脑这项服务 = null(调用方据此不补「收回着 / 醒着」)。 */
 export function cloudSnapshotOf(reading: Reading<CloudComputerState>): CloudComputerSnapshot | null {
   return reading.state === 'value' && reading.value.available ? reading.value.snapshot : null
@@ -113,9 +109,8 @@ export function cloudSnapshotOf(reading: Reading<CloudComputerState>): CloudComp
 
 /** 最近一次问管家没问到是哪一类(问到了 = null;原文进日志)。 */
 export function cloudFailureOf(reading: Reading<CloudComputerState>): CloudComputerFailureKind | null {
-  if (reading.state === 'error') return cloudComputerFailureKind(reading.error)
-  if (reading.state === 'value' && reading.error) return cloudComputerFailureKind(reading.error)
-  return null
+  const failure = refreshFailure(reading)
+  return failure ? cloudComputerFailureKind(failure) : null
 }
 
 /** Feature visibility is not readiness: an unread or failed status cannot enable cloud setup. */
@@ -178,9 +173,8 @@ function requireClient() {
 
 /** 现问一次管家,返回此刻的快照;没有这项服务 = null,问不到就抛。 */
 export async function readCloudSnapshotNow(): Promise<CloudComputerSnapshot | null> {
-  // A decision asks the cloud computer now (the held value may be minutes old): marked stale at once, then read (or joined).
-  void cloudComputer.refresh()
-  const value = await cloudComputer.fetch()
+  // A decision asks the cloud computer now (the held value may be minutes old).
+  const value = await cloudComputer.reread()
   return value.available ? value.snapshot : null
 }
 

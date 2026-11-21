@@ -290,7 +290,7 @@ function ConnectionDetailsFixture() {
   </SessionLocalizationProvider></QueryClientProvider>;
 }
 function ConnectionDetailsList() {
-  const { reading } = useManagementAgents();
+  const reading = useManagementAgents();
   const data = reading.state === 'value' ? reading.value : undefined;
   return <>{data?.filter(agent => agent.id !== 'pi').map(agent => <div key={agent.id} data-testid={`subscription-row-${agent.id}`}>
     {agentOffersConnections(agent) && <AgentConnectionDetails agent={agent} machine={null} embedded />}

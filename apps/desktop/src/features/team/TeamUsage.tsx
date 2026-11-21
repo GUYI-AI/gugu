@@ -1,11 +1,11 @@
 import { useReplicaPages } from '@/lib/replicaPages'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
-import { teamApiKey, teamUsagePage } from './replicas'
+import { teamUsagePage } from './replicas'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { PaneEmptyState } from '@/components/ui/PaneEmptyState'
 import { formatCredits } from '@/lib/billing/spendingPowerCopy'
-import { useTeamApi, useTeamSession } from './context'
+import { useTeamSession } from './context'
 import { TeamReadingState } from './TeamPrimitives'
 import { teamFailureCopy } from './copy'
 import type { TeamStopReason } from './types'
@@ -22,8 +22,8 @@ export function TeamPauseState({ reason, onUsage, onContact, onTopUp }: { reason
 
 export function TeamUsage({ onPause }: { onPause: (reason: TeamStopReason) => void }) {
   const { t, i18n } = useTranslation('team')
-  const api = useTeamApi(), session = useTeamSession(), context = session.context
-  const list = useReplicaPages(teamUsagePage, session.status === 'ready' && context ? [teamApiKey(api), context.team_id, context.scope.label] : null,
+  const session = useTeamSession(), context = session.context
+  const list = useReplicaPages(teamUsagePage, session.status === 'ready' && context ? [context.team_id, context.scope.label] : null,
     page => page.next_cursor)
   if (list.first.state !== 'value') return <TeamReadingState reading={list.first} />
   const usage = list.first.value, records = list.pages.flatMap(page => page.records)

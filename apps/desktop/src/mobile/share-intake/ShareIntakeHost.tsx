@@ -13,19 +13,17 @@ import { ShareIntakeContent } from './ShareIntakeSheet'
  */
 /** The share last sent here and not finished: this device's, owned by the host below; the newest wins. */
 const pending = createSelectStore<IncomingShare | (() => void) | null>(null)
-const put = (share: IncomingShare | (() => void) | null) => { pending.publish(share); pending.notify() }
 
 export function ShareIntakeHost({ active }: { active: boolean }) {
   const { t } = useTranslation('messaging')
   const share = useSelect(pending, (value) => value, Object.is)
-  // @@@effect-flow(event) - receives share intents from the OS (one-shot events) into the pending share above
   useEffect(() => {
     if (!active || !platform.subscribeIncomingShares) return
-    return platform.subscribeIncomingShares((incoming) => put(incoming))
+    return platform.subscribeIncomingShares((incoming) => pending.set(incoming))
   }, [active])
-  const done = useCallback((afterClose?: () => void) => put(afterClose ?? null), [])
+  const done = useCallback((afterClose?: () => void) => pending.set(afterClose ?? null), [])
   const incoming = share && typeof share !== 'function' ? share : null
-  return <Sheet open={incoming !== null} onClose={done} onClosed={() => { if (typeof share === 'function') { share(); put(null) } }} fullScreenMobile testId="share-intake-sheet" ariaLabel={t('shareIntake.title')}>
+  return <Sheet open={incoming !== null} onClose={done} onClosed={() => { if (typeof share === 'function') { share(); pending.set(null) } }} fullScreenMobile testId="share-intake-sheet" ariaLabel={t('shareIntake.title')}>
     {incoming ? <ShareIntakeContent share={incoming} onDone={done} /> : null}
   </Sheet>
 }

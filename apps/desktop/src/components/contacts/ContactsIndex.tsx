@@ -134,7 +134,6 @@ export function ContactsIndex({ title, subtitle, summaryLabel, headerActions, mo
       .sections.filter((section) => section.agents.length > 0)
       .map((section) => ({
         letter: section.scope === 'local' ? t('panel.localDeviceSectionTitle')
-          : section.scope === 'cloud' ? t('panel.cloudDeviceSectionTitle')
           : section.scope === 'device' ? (section.displayLabel ?? section.key)
           : t('panel.agentSectionTitle'),
         items: section.agents,

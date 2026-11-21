@@ -18,7 +18,7 @@ vi.mock('@/components/appSlot/appsHere', () => ({
 // This device's Apps are the desktop's.
 vi.mock('@/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
 const { ChatAppsPicker } = await import('@/components/chat/ChatAppsPicker')
-const { tellInstalled, putInstalled } = await import('@/session/renderer/features/extensions/installed-extensions')
+const { installedExtensions } = await import('@/session/renderer/features/extensions/installed-extensions')
 const { EXTENSION_API_VERSION, parseExtensionManifest } = await import('@/session/shared/extensions/manifest')
 
 const manifest = (id: string, tab: Record<string, unknown>) =>
@@ -28,7 +28,7 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   files.byApp = { tictactoe: 1 }; files.asked = []
   harness = createReactHarness()
-  tellInstalled('local', {
+  installedExtensions.set(['local'], {
     extensions: [
       manifest('board', {}),
       manifest('tictactoe', { opensFiles: { chat: ['.tictactoe.json'] } }),
@@ -40,7 +40,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   harness.cleanup()
-  tellInstalled('local', { extensions: [], invalid: [], disabled: [] } as never)
+  installedExtensions.set(['local'], { extensions: [], invalid: [], disabled: [] } as never)
 })
 
 const onOpen = vi.fn()
@@ -75,7 +75,7 @@ describe('the group\'s App list holds the group game an agent installed', () => 
   })
 
   it('a switched-off game is not listed', async () => {
-    putInstalled('local', (list) => ({ ...list, disabled: ['tictactoe'] }))
+    installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['tictactoe'] }))
     expect(await picker()).toEqual(['board'])
   })
 })

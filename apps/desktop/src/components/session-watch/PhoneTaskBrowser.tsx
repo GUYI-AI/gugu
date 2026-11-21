@@ -30,7 +30,6 @@ export const PhoneTaskBrowser = observer(function PhoneTaskBrowser({ deviceId, s
   const draft = sessionAnnotations.forSession(sessionId);
   const submission = useRef(draft.submissionVersion);
   useEffect(() => { if (draft.submissionVersion !== submission.current) onSent(); }, [draft.submissionVersion, onSent]);
-  // @@@effect-flow(lifecycle) - mounts the live browser projection stream into this element and closes it on hide (a stream mount)
   useEffect(() => {
     if (!visibility.shown || !picture.current) return;
     setState('connecting'); setError(null);
@@ -48,7 +47,6 @@ export const PhoneTaskBrowser = observer(function PhoneTaskBrowser({ deviceId, s
     return () => observer.disconnect();
   }, []);
   const control = useCallback((control: TaskPageControl) => { void transport.control(control).catch(error => setError(messageForUser(error))); }, [transport]);
-  // @@@effect-flow(command) - tells the remote page its viewport size (a command); the error is that command's outcome
   useEffect(() => {
     if (!visibility.shown || state !== 'live' || size.width < 100 || size.height < 100) return;
     const timer = setTimeout(() => control({ action: 'resize', width: Math.round(size.width), height: Math.round(size.height), scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)) }), 120);

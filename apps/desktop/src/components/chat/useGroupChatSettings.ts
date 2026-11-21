@@ -1,6 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { replica, useReplica } from '../../lib/replica'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { replica, useEntry, useReplica } from '../../lib/replica'
 import { useTranslation } from 'react-i18next'
 import type { GroupChatSettings, GroupCollabSnapshot, UpdateGroupChatSettingsInput } from '@gugu/core/shared/types/chat'
 import { chatService } from '../../lib/chat'
@@ -54,13 +54,7 @@ export const groupSettings = replica({
     const w = writesOf(chatId)
     const seqAtStart = w.seq
     const startedDuringWrite = w.inFlight > 0
-    let loaded: GroupChatSettings
-    try {
-      loaded = await chatService.getGroupChatSettings(chatId)
-    } catch (error) {
-      settingsLog.error({ error, chatId }, 'group settings load failed')
-      throw error
-    }
+    const loaded = await chatService.getGroupChatSettings(chatId)
     const shown = groupSettings.peek(chatId)
     if ((startedDuringWrite || w.seq !== seqAtStart) && shown.state === 'value') {
       if (w.inFlight > 0) w.rereadAfter = true
@@ -153,8 +147,7 @@ export function useGroupChatSettings(chatId: string | null, revision?: string, a
   }, [chatId, t])
 
   // Called after the upload's await: bound to the account this render drew.
-  const owner = chatId ? groupSettings.key(chatId)?.[1] ?? null : null
-  const entry = useMemo(() => (chatId && owner ? groupSettings.at(chatId) : null), [chatId, owner])
+  const entry = useEntry(groupSettings, chatId ? [chatId] : null)
   const setAvatarUrl = useCallback((avatarUrl: string | null) => {
     if (!chatId || !entry) return
     writesOf(chatId).seq += 1

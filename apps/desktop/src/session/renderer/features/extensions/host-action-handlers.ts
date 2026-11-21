@@ -47,7 +47,7 @@ import {
 } from '@shared/extensions/app-runtime-protocol';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
-import { fetchInstalledApps, LOCAL_HOST, marketUpdates, peekInstalledApps, type InstalledApps } from './installed-extensions';
+import { fetchInstalledApps, peekInstalledApps, type InstalledApps } from './installed-extensions';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
 import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
@@ -170,7 +170,6 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       return openLinkTarget(action.target, action.source);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
-      // @@@reading-default(moment) - a toast now, one moment: an App the list does not name (not read yet, or gone) is said by its id
       const app = peekInstalledApps()?.manifestFor(action.extensionId)?.name ?? action.extensionId;
       toast({
         title: translateSessionMessage('extensions.notGivenAt', { app, chat: action.chat.name }),
@@ -428,10 +427,8 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
    * 这份 handler,等于把它塞进每一条走 extensions 通道的路径。❌ 别改成顶层 import。
    */
   [EXTENSION_INSTALLED_CHANGED_METHOD]: async (): Promise<{ ok: true }> => {
-    const { registerInstalledExtensionTabs } = await import('./register-extension-tabs');
-    await registerInstalledExtensionTabs();
-    // What the market has to say is about what is installed: an App updated by itself (auto-update-apps.ts) has no update now.
-    void marketUpdates.refresh(LOCAL_HOST);
+    const { resyncInstalledExtensionTabs } = await import('./register-extension-tabs');
+    await resyncInstalledExtensionTabs();
     return { ok: true };
   },
   /** Members' faces (`lib/memberFaces.ts`). Imported when asked, as above. */

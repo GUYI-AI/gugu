@@ -1,10 +1,9 @@
 import type { Result } from '@gugu/session-shared';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { Unknown } from '@/components/ui/Unknown';
-import { replica, useReplica, type Reading } from '@/lib/replica';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import { replica, useReplica, valueOf, type Reading } from '@/lib/replica';
 import { useWorkspace } from '@renderer/features/sessions/session-view-context';
-import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { MicroLabel } from '@renderer/lib/ui/label';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import {
@@ -16,6 +15,7 @@ import { gitRefToString } from '@shared/core/git/utils';
 import type { ActiveFile } from '@shared/view-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
+import { IMAGE_RETRY_DELAYS_MS, workspaceImage, type WorkspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
 
 interface ImageDiffViewProps {
   projectId: string;
@@ -83,28 +83,6 @@ function loadFromRef(
   );
 }
 
-async function loadFromDisk(
-  projectId: string,
-  workspaceId: string,
-  filePath: string
-): Promise<SideState> {
-  const res = await workspaceRpc(projectId).files.readImage(projectId, workspaceId, filePath);
-  if (!res.success) throw new TransientImageError('Failed to read image', { cause: res.error });
-  const image = res.data;
-  if (!image?.success) {
-    const error = image?.error ?? '';
-    if (/not found/i.test(error)) return { status: 'missing' };
-    throw new TransientImageError(error || 'Failed to read image');
-  }
-  if (!image.dataUrl) throw new TransientImageError('The image read carried no data');
-  return {
-    status: 'ready',
-    dataUrl: image.dataUrl,
-    mimeType: image.mimeType ?? 'application/octet-stream',
-    size: image.size ?? 0,
-  };
-}
-
 type ImageFile = { path: string; group: ActiveFile['group']; originalRef: string; modifiedRef: string | null };
 
 function loadOriginal(
@@ -123,22 +101,18 @@ async function loadModified(
 ): Promise<SideState> {
   const state = await (() => {
     switch (activeFile.group) {
-      case 'disk':
-        return loadFromDisk(projectId, workspaceId, activeFile.path);
       case 'staged':
         return loadGitImage(() =>
           workspaceRpc(projectId).gitWorktree.getImageAtIndex(projectId, workspaceId, activeFile.path)
         );
-      case 'git':
-      case 'pr':
+      // 'disk' is read through workspaceImage (the component's own reading); a ref otherwise.
+      default:
         return loadFromRef(projectId, workspaceId, activeFile.path, activeFile.modifiedRef ?? gitRefToString(HEAD_REF));
     }
   })();
   if (state.status === 'unavailable' && state.reason === 'git-error') throw new TransientImageError('Preview unavailable');
   return state;
 }
-
-export const IMAGE_RETRY_DELAYS_MS = [120, 300, 600];
 
 /** Keyed by what names its bytes; bytes that change in place add the worktree's status revision. */
 export const imageDiffSide = replica({
@@ -152,8 +126,13 @@ export const imageDiffSide = replica({
   retryDelay: (attempt) => IMAGE_RETRY_DELAYS_MS[Math.min(attempt, IMAGE_RETRY_DELAYS_MS.length - 1)]!,
 });
 
-function ImageSidePanel({ label, reading, side, onRetry }: { label: string; reading: Reading<SideState>; side: Side; onRetry: () => void }) {
-  const state = reading.state === 'value' ? reading.value : null;
+function sideOf(reading: Reading<WorkspaceImage | null>): Reading<SideState> {
+  if (reading.state !== 'value') return reading;
+  return { ...reading, value: reading.value ? { status: 'ready', ...reading.value } : { status: 'missing' } };
+}
+
+function ImageSidePanel({ label, reading, side }: { label: string; reading: Reading<SideState>; side: Side }) {
+  const state = valueOf(reading);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-baseline gap-2 border-b border-border px-3 py-2">
@@ -166,16 +145,10 @@ function ImageSidePanel({ label, reading, side, onRetry }: { label: string; read
         )}
       </div>
       <div className="flex flex-1 items-center justify-center overflow-auto p-4">
-        {reading.state === 'unknown' ? (
-          <Unknown className="h-40 w-40" />
-        ) : reading.state === 'error' ? (
-          <ReadFailedLine
-            message={reading.error instanceof TransientImageError ? unavailableMessage('git-error') : reading.error.message}
-            onRetry={onRetry}
-          />
-        ) : (
-          <ImageSideContent state={reading.value} side={side} />
-        )}
+        <ReadingSlot reading={reading} placeholder="h-40 w-40"
+          failed={(error) => (error instanceof TransientImageError ? unavailableMessage('git-error') : error.message)}>
+          {(value) => <ImageSideContent state={value} side={side} />}
+        </ReadingSlot>
       </div>
     </div>
   );
@@ -240,21 +213,23 @@ export const ImageDiffView = observer(function ImageDiffView({
     modifiedRef: activeFile.modifiedRef ? gitRefToString(activeFile.modifiedRef) : null,
   };
 
-  // For disk/staged groups the bytes can change without the file changing
-  // (in-place overwrite, re-stage). Pinning to statusRevision reruns the
+  // For disk/staged groups a ref's bytes can change without the file changing
+  // (a commit moving HEAD, a re-stage). Pinning to statusRevision reruns the
   // load whenever GitWorktreeStore observes an fs-watch or index event.
   const reactiveRevision =
     activeFile.group === 'disk' || activeFile.group === 'staged' ? git.statusRevision : 0;
 
   const original = useReplica(imageDiffSide, [projectId, workspaceId, 'original', file, reactiveRevision]);
-  const modified = useReplica(imageDiffSide, [projectId, workspaceId, 'modified', file, reactiveRevision]);
-  const retry = (side: Side) => () => void imageDiffSide.refresh(projectId, workspaceId, side, file, reactiveRevision);
+  // The working tree's image is the workspace's own (one read, kept current by the file feed); a ref's is the diff's.
+  const onDisk = useReplica(workspaceImage, file.group === 'disk' ? [projectId, workspaceId, file.path] : null);
+  const atRef = useReplica(imageDiffSide, file.group === 'disk' ? null : [projectId, workspaceId, 'modified', file, reactiveRevision]);
+  const modified = file.group === 'disk' ? sideOf(onDisk) : atRef;
 
   return (
     <div className="flex h-full min-h-0 w-full">
-      <ImageSidePanel label={translate('diff.original')} reading={original} side="original" onRetry={retry('original')} />
+      <ImageSidePanel label={translate('diff.original')} reading={original} side="original" />
       <div className="w-px shrink-0 bg-border" />
-      <ImageSidePanel label={translate('diff.modified')} reading={modified} side="modified" onRetry={retry('modified')} />
+      <ImageSidePanel label={translate('diff.modified')} reading={modified} side="modified" />
     </div>
   );
 });

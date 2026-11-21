@@ -133,7 +133,6 @@ function DocxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExte
   // The body is docx-preview's own rendering target; its zoom is set where it is filled, not as a JSX style.
   useEffect(() => { if (bodyRef.current) bodyRef.current.style.zoom = String(zoom) }, [zoom])
 
-  // @@@effect-flow(render) - renders the docx bytes in hand into its DOM target
   useEffect(() => {
     let active = true
     const body = bodyRef.current
@@ -179,7 +178,6 @@ function PptxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExte
   const [rendering, setRendering] = useState(true)
   const [error, setError] = useState<string>()
 
-  // @@@effect-flow(render) - renders the pptx bytes in hand into its DOM target
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -243,7 +241,6 @@ function XlsxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExte
   const [error, setError] = useState<string>()
   const [truncated, setTruncated] = useState(false)
 
-  // @@@effect-flow(render) - renders the xlsx bytes in hand into its viewer
   useEffect(() => {
     const container = containerRef.current
     if (!container) return

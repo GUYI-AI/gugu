@@ -4,7 +4,7 @@ import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/sh
 import { invokePhoneHost } from '../../mobile/local-agent/phoneHostRpc'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import { rendererLogger } from '@/lib/log'
-import { readCachedDevices, subscribeCachedDevices } from '@/store/devicesCache'
+import { devicesModel, readCachedDevices } from '@/store/devicesCache'
 import { cloudComputer, cloudSnapshotOf } from '@/lib/cloudComputer'
 import { remoteHostReachable } from '@/session/shared/remote-hosts'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
@@ -83,7 +83,7 @@ function host(deviceId: string): SessionHostClient {
       peerVersion: () => readCachedDevices().find(device => device.device_id === deviceId)?.capabilities?.app_version ?? null,
       subscribeReachability: (listener) => {
         const stopCloud = cloudComputer.subscribe([], () => listener())
-        const stopDevices = subscribeCachedDevices(listener)
+        const stopDevices = devicesModel.subscribe([], () => listener())
         return () => { stopCloud(); stopDevices() }
       },
       subscribeEvents: true,

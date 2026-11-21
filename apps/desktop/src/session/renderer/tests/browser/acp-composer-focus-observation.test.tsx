@@ -30,7 +30,7 @@ vi.mock('@renderer/lib/chat/use-session-chat-layout', () => ({ useSessionChatLay
 vi.mock('@renderer/features/integrations/use-connected-issue-providers', () => ({ useConnectedIssueProviders: () => ({ connectedProviders: [], isProviderUsable: () => false }) }))
 vi.mock('@renderer/features/library/prompts/use-prompt-library', () => ({ usePromptLibrary: () => ({ value: [] }) }))
 vi.mock('@renderer/lib/stores/use-agents', () => ({
-  useAgents: () => ({ state: 'value', value: [], stale: false, error: null }), useAgent: () => ({ reading: { state: 'unknown' } }), useAgentIcon: () => undefined,
+  useAgents: () => ({ state: 'value', value: [], stale: false, error: null }), useAgent: () => ({ state: 'unknown' }), useAgentIcon: () => undefined,
 }))
 
 Object.defineProperty(window, 'electronAPI', {

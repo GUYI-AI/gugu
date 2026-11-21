@@ -108,7 +108,7 @@ describe('SSH registry after desktop authentication (#1387)', () => {
     host.owner = 'owner'
     host.invoke.mockRejectedValueOnce(new Error('IPC channel unavailable'))
     await expect(ssh.sshMachinesReady()).rejects.toThrow('IPC channel unavailable')
-    expect(host.warn).toHaveBeenCalledWith(expect.objectContaining({ error: 'IPC channel unavailable' }), expect.any(String))
+    expect(host.warn).toHaveBeenCalledWith(expect.objectContaining({ model: 'sshMachineAddresses', error: expect.stringContaining('IPC channel unavailable') }), expect.any(String))
     await ssh.sshMachinesReady()
     expect(host.invoke).toHaveBeenCalledTimes(2)
     expect(ssh.isSshMachine('remote-host')).toBe(true)

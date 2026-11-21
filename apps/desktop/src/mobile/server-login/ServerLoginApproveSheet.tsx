@@ -24,14 +24,7 @@ type View =
 const serverLoginRequest = replica({
   name: 'serverLoginRequest',
   scope: 'account',
-  read: async (_owner: string, code: string): Promise<ServerLoginRequest> => {
-    try {
-      return await readServerLoginRequest(code)
-    } catch (error) {
-      log.error({ error: error instanceof Error ? error.message : String(error) }, 'server-login view failed')
-      throw error
-    }
-  },
+  read: (_owner: string, code: string): Promise<ServerLoginRequest> => readServerLoginRequest(code),
 })
 
 type Decision = { code: string; busy: boolean; error: string | null; final: { state: Exclude<ServerLoginState, 'pending'>; refusal: MachineLimitRefusal | null } | null }
