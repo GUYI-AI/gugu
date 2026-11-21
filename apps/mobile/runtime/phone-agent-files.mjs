@@ -176,9 +176,8 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
         let ref, name
         if (args.source_message_id) {
           const id = uuid(String(args.source_message_id).replace(/^msg:/, ''), 'source_message_id')
-          if (await cloud.rpc('chat', 'can_read_message', { p_message_id: id, p_user_id: agent.agentUserId }) !== true) throw new Error('This attachment message is not visible to you')
-          const { data: message, error } = await cloud.chat.from('messages').select('id,chat_id,content,content_type,file_item_id,file_version,file_blob_id').eq('id', id).single()
-          if (error) throw new Error(error.message)
+          const [message] = await cloud.rpc('chat', 'messages_by_id_as', { p_as: agent.agentUserId, p_id: id }) ?? []
+          if (!message) throw new Error('This attachment message is not visible to you')
           const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
           if (!attachment) throw new Error('This message has no attachment')
           ref = { message_id: id }; name = attachment.fileName
