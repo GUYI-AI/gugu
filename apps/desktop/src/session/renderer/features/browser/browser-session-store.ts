@@ -17,18 +17,21 @@ import {
 } from '@shared/browser';
 
 export type BrowserSessionCreateInput = {
+  kernel?: 'builtin' | 'standalone';
   projectId: string;
   workspaceId: string;
   sessionId: string;
   browserId?: string;
   profileId?: BrowserProfileSelection;
+  /** Only for a tab that must live in another tab's browser (a sign-in window of the standalone browser); otherwise it follows from the identity and profile. */
+  partition?: string;
   initialUrl?: string;
 };
 
 export type BrowserSessionUpdate = Partial<
   Pick<
     BrowserSessionSnapshot,
-    'canGoBack' | 'canGoForward' | 'isLoading' | 'title' | 'zoomFactor' | 'zoomSource'
+    'canGoBack' | 'canGoForward' | 'isLoading' | 'title' | 'zoomFactor' | 'zoomSource' | 'kernel'
   >
 > & {
   currentUrl?: string;
@@ -76,7 +79,9 @@ export class BrowserSessionStore {
     });
     const snapshot = createBrowserSessionSnapshot({
       identity,
+      kernel: input.kernel,
       profileId: input.profileId,
+      partition: input.partition,
       currentUrl: input.initialUrl,
     });
     this.sessions.set(snapshot.browserId, snapshot);
@@ -91,6 +96,7 @@ export class BrowserSessionStore {
     const profileId = normalizeBrowserProfileSelection(snapshot.profileId, profiles);
     const restored: BrowserSessionSnapshot = {
       ...snapshot,
+      kernel: snapshot.kernel === 'standalone' ? 'standalone' : 'builtin',
       profileId,
       partition: browserPartitionForProfile(snapshot, profileId),
       currentUrl: normalized.ok ? normalized.url : BROWSER_DEFAULT_URL,

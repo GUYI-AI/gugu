@@ -28,6 +28,7 @@ import {
 import { decideBrowserReload } from './browser-navigation-controls';
 import { fitBrowserPageToPane } from './browser-page-fit';
 import { browserSessionStore } from './browser-session-store';
+import { popupClaims } from './browser-popup-claims';
 import { installedExtensionsStore } from '../extensions/installed-extensions-store';
 import { ExtensionMark, TabKindMark } from '../extensions/extension-mark';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -42,6 +43,7 @@ import { BrowserUrlResolverContext } from './browser-url-resolver';
 import { canOpenBrowserUrlExternally, openBrowserUrlExternally } from './browser-toolbar-actions';
 import { createBrowserPageAdapter, type BrowserPageHandle } from './browser-page-handle';
 import { BrowserPageSurface } from './browser-page-surface';
+import { StandaloneBrowserPageSurface } from './standalone-browser-page-surface';
 import type { BrowserTabResource } from './browser-tab-resource';
 import { bindBrowserPageEvents } from './browser-webview-events';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
@@ -202,6 +204,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   /** 网页还没挂好时要去的地址:挂好立刻载入。 */
   const pendingLoad = useRef<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
+  const BrowserSurface = session?.kernel === 'standalone' ? StandaloneBrowserPageSurface : BrowserPageSurface;
   const resolveUrl = useContext(BrowserUrlResolverContext);
   /** 有地址改写时,页签自带的首个地址先记在这里,挂好之后经改写再加载(见下方 loadUrl 之后那一段)。 */
   const pendingInitialUrl = useRef<string | null>(null);
@@ -255,11 +258,18 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       .registerSession({
         browserId: sessionBrowserId,
         partition: sessionPartition,
+        kernel: session?.kernel,
+        url: session?.currentUrl,
         ...(conversation ? { conversation } : {}),
+        // A tab opened to show a window the standalone Chrome made stays standalone: no built-in tab can show that window.
+        ...(popupClaims.has(sessionBrowserId) ? { adoptsWindow: true } : {}),
       })
       .then((result) => {
-        if (!disposed) setIsRegistered(result.success);
-      });
+        if (!disposed) {
+          if (result.success) browserSessionStore.updateSession(sessionBrowserId, { kernel: result.kernel });
+          setIsRegistered(result.success);
+        }
+      }).catch(reportRecentToolError);
     return () => {
       disposed = true;
       setIsRegistered(false);
@@ -498,7 +508,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
         {pageMount && isRegistered ? (
           // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
           // 会话的 agent 也一直有页面可操作(#7191)。被这些盖住时网页自己让开(见 browser-page-occlusion.ts)。
-          <BrowserPageSurface
+          <BrowserSurface
             key={`${pageMount.browserId}:${pageMount.partition}`}
             browserId={pageMount.browserId}
             partition={pageMount.partition}

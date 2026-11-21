@@ -27,31 +27,42 @@ import {
   DEFAULT_BROWSER_PROFILE_ID,
   isBrowserDataClearKind,
   isBrowsingDataKind,
+  isNamedBrowserProfileId,
   type BrowserDataClearKind,
 } from '@shared/browser';
 import { createRPCController } from '@shared/lib/ipc/rpc';
+import type { BrowserKernelAction, BrowserKernelKind } from '@shared/browser-kernel';
+import { standaloneKernelService } from './standalone-kernel-service';
+import { browserKernelBindings, copyStandaloneScreenshot, isStandalonePage, measureStandalonePage,
+  mountStandalonePage, registerBrowserKernel, snapshotStandalonePage, standaloneCommand, standaloneHostCommand,
+  standaloneScreen, unregisterBrowserKernel, watchStandalonePage, setStandalonePageZoom } from './standalone-page-runtime';
 
 export const browserController = createRPCController({
+  kernelStatus: () => standaloneKernelService().status(),
+  kernelAction: (action: BrowserKernelAction) => standaloneKernelService().action(action),
   /** `sessionId`:页签开在哪条会话里(#7191 会话的 agent 据此找到自己的页签);新建任务的草稿面板不带。 */
-  registerSession: (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation }) => {
+  registerSession: async (args: { browserId: string; partition: string; sessionId?: string; conversation?: AnnotationConversation; kernel?: BrowserKernelKind; url?: string; adoptsWindow?: boolean }) => {
     if (!args.browserId.trim() || !isBrowserPartition(args.partition) || (args.conversation !== undefined && (!isAnnotationConversation(args.conversation)
       || (args.sessionId && (args.conversation.kind !== 'session' || args.conversation.sessionId !== args.sessionId))))) {
       return { success: false as const, error: 'Invalid browser session' };
     }
-    configureBrowserProfileSession(args.partition);
+    if (args.kernel !== undefined && args.kernel !== 'builtin' && args.kernel !== 'standalone') throw new Error('Invalid browser kernel');
+    if (args.adoptsWindow !== undefined && typeof args.adoptsWindow !== 'boolean') throw new Error('Invalid browser registration');
+    const { kernel } = await registerBrowserKernel(args);
+    if (kernel === 'builtin') configureBrowserProfileSession(args.partition);
     browserWebContentsRegistry.registerSession({
       browserId: args.browserId,
       partition: args.partition,
       ...(args.sessionId?.trim() ? { sessionId: args.sessionId } : {}),
       ...(args.conversation ? { conversation: args.conversation } : {}),
     });
-    return { success: true as const };
+    return { success: true as const, kernel };
   },
 
-  unregisterSession: (browserId: string) => {
+  unregisterSession: async (browserId: string) => {
     // 页签关了:它的网页当场关掉(❌ 留一块没主的网页 view 在窗口里)。
     destroyBrowserPage(browserId);
-    browserWebContentsRegistry.unregisterSession(browserId);
+    await unregisterBrowserKernel(browserId);
     return { success: true as const };
   },
 
@@ -59,23 +70,41 @@ export const browserController = createRPCController({
    * #7274 页签的网页(主进程持有的 WebContentsView,见 browser-page-views.ts)。页签那边只有一块占位:
    * 挂上 / 报位置 / 卸下,以及代它向网页发的那几样操作。
    */
-  mountPage: (args: { browserId: string; partition: string; url: string; windowName: string }) => mountBrowserPage(args),
-  ensureAgentPage: (args: { browserId: string; partition: string; url: string }) => ensureAgentBrowserPage(args),
-  layoutPage: (args: Parameters<typeof layoutBrowserPage>[0]) => ({ success: layoutBrowserPage(args) }),
+  mountPage: (args: { browserId: string; partition: string; url: string; windowName: string; popup?: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : mountBrowserPage(args),
+  ensureAgentPage: (args: { browserId: string; partition: string; url: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : ensureAgentBrowserPage(args),
+  watchStandalonePage,
+  layoutPage: (args: Parameters<typeof layoutBrowserPage>[0]) => ({ success: isStandalonePage(args.browserId) || layoutBrowserPage(args) }),
   releasePage: (browserId: string) => {
     releaseBrowserPage(browserId);
     return { success: true as const };
   },
-  navigatePage: (args: { browserId: string; url: string }) => ({ success: navigateBrowserPage(args.browserId, args.url) }),
-  pageCommand: (args: { browserId: string; command: BrowserPageCommand }) => ({
-    success: runBrowserPageCommand(args.browserId, args.command),
+  navigatePage: async (args: { browserId: string; url: string }) => {
+    if (isStandalonePage(args.browserId)) { await (await standaloneScreen(args.browserId)).control({ action: 'navigate', url: args.url }); return { success: true }; }
+    return { success: navigateBrowserPage(args.browserId, args.url) };
+  },
+  pageCommand: async (args: { browserId: string; command: BrowserPageCommand }) => ({
+    success: isStandalonePage(args.browserId) ? await standaloneCommand(args.browserId, args.command) : runBrowserPageCommand(args.browserId, args.command),
   }),
-  setPageZoom: (args: { browserId: string; factor: number }) => ({ success: setBrowserPageZoom(args.browserId, args.factor) }),
-  measurePage: async (browserId: string) => ({ layout: await measureBrowserPage(browserId) }),
-  snapshotPage: async (browserId: string) => ({ dataUrl: await snapshotBrowserPage(browserId) }),
-  inspectAnnotation: inspectBrowserAnnotation,
+  setPageZoom: async (args: { browserId: string; factor: number }) => {
+    if (!isStandalonePage(args.browserId)) return { success: setBrowserPageZoom(args.browserId, args.factor) };
+    if (!Number.isFinite(args.factor) || args.factor < 0.25 || args.factor > 5) throw new Error('Invalid browser zoom');
+    await setStandalonePageZoom(args.browserId, args.factor);
+    return { success: true };
+  },
+  measurePage: async (browserId: string) => ({ layout: await (isStandalonePage(browserId) ? measureStandalonePage(browserId) : measureBrowserPage(browserId)) }),
+  snapshotPage: async (browserId: string) => ({ dataUrl: await (isStandalonePage(browserId) ? snapshotStandalonePage(browserId) : snapshotBrowserPage(browserId)) }),
+  inspectAnnotation: async (args: Parameters<typeof inspectBrowserAnnotation>[0]) => {
+    if (!isStandalonePage(args.browserId)) return inspectBrowserAnnotation(args);
+    if (!browserKernelBindings.belongsTo(args.browserId, args.conversation)) throw new Error('This conversation has no selected browser page');
+    const binding = browserKernelBindings.get(args.browserId);
+    const screen = await standaloneScreen(args.browserId);
+    const result = await screen.control({ action: 'annotate', query: args.query, capture: args.capture });
+    if (!result) throw new Error('The browser annotation could not be read');
+    if (browserKernelBindings.get(args.browserId) !== binding || screen.state().url !== result.target.url) throw new Error('The page changed during selection');
+    return result;
+  },
   setAnnotationBrowsing: (args: { browserId: string; browsing: boolean }) => ({
-    success: browserWebContentsRegistry.setAnnotationBrowsing(args.browserId, args.browsing),
+    success: isStandalonePage(args.browserId) || browserWebContentsRegistry.setAnnotationBrowsing(args.browserId, args.browsing),
   }),
   /**
    * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
@@ -101,7 +130,9 @@ export const browserController = createRPCController({
   /** #7191「从默认浏览器导入登录」:它的全部 cookie 一次导进这份浏览器配置。 */
   importDefaultBrowserCookies: async (profileId: string) => {
     try {
-      return await importDefaultBrowserCookies(profileId);
+      const service = standaloneKernelService();
+      return await importDefaultBrowserCookies(profileId,
+        await service.selection() === 'standalone' ? service.profileData.cookies(browserProfilePartition(profileId)) : undefined);
     } catch (error) {
       return { ok: false as const, browser: defaultBrowser().name, reason: 'other' as const, detail: error instanceof Error ? error.message : String(error) };
     }
@@ -112,24 +143,33 @@ export const browserController = createRPCController({
   }),
 
   captureScreenshot: async (browserId: string) => ({
-    success: await browserWebContentsRegistry.captureScreenshotToClipboard(browserId),
+    success: await (isStandalonePage(browserId) ? copyStandaloneScreenshot(browserId) : browserWebContentsRegistry.captureScreenshotToClipboard(browserId)),
   }),
 
   clearData: async (browserId: string, kind: BrowserDataClearKind) => {
     if (!isBrowserDataClearKind(kind)) {
       return { success: false as const, error: 'Invalid browser data clear kind' };
     }
+    if (isStandalonePage(browserId)) {
+      // Like the built-in engine, "storage" empties the whole profile this tab belongs to, cookies included.
+      if (kind === 'storage') await standaloneKernelService().profileData.clear(browserKernelBindings.get(browserId)!.partition, 'all');
+      else await standaloneHostCommand(browserId, kind === 'cookies' ? 'Network.clearBrowserCookies' : 'Network.clearBrowserCache');
+      return { success: true };
+    }
     return { success: await browserWebContentsRegistry.clearData(browserId, kind) };
   },
 
-  clearProfileStorage: async (profileId: string) => ({
-    success: await browserWebContentsRegistry.clearProfileStorage(profileId),
-  }),
+  clearProfileStorage: async (profileId: string) => {
+    // A profile may hold data in both engines, whichever one is selected now.
+    if (isNamedBrowserProfileId(profileId)) await standaloneKernelService().profileData.clear(browserProfilePartition(profileId), 'all');
+    return { success: await browserWebContentsRegistry.clearProfileStorage(profileId) };
+  },
 
   clearBrowsingData: async (kind: string) => {
     if (!isBrowsingDataKind(kind)) {
       return { success: false as const, error: 'Invalid browsing data kind' };
     }
+    await standaloneKernelService().profileData.clearAll(kind);
     const partitions = await collectBrowserPartitions();
     return { success: await browserWebContentsRegistry.clearBrowsingData(kind, partitions) };
   },

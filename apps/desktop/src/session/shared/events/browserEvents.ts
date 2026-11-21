@@ -1,11 +1,20 @@
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
 import type { TaskPageState } from '@shared/browser-task-page';
 import { defineEvent } from '@shared/lib/ipc/events';
+import type { BrowserKernelKind } from '@shared/browser-kernel';
+
+/** Emitted only after the device-local preference commits, including completion after settings was closed. */
+export const browserKernelSelectionChannel = defineEvent<{ kernel: BrowserKernelKind }>('browser:kernel-selection');
 
 export const browserOpenInNewTabChannel = defineEvent<{
   sourceBrowserId: string;
   url: string;
+  /** The window the standalone Chrome already created for this tab: the tab shows that window instead of loading `url`. */
+  popup?: string;
 }>('browser:open-in-new-tab');
+
+/** 页签里的网页自己关了(窗口里的 `window.close()`,登录弹窗收尾就是这样):页签跟着关。 */
+export const browserCloseTabChannel = defineEvent<{ browserId: string }>('browser:close-tab');
 
 /**
  * 用户点进了这个网页。点进网页的按下、聚焦都发生在网页自己的进程里,咕咕的界面收不到,

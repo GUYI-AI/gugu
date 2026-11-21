@@ -2,8 +2,9 @@ import { makeObservable, observable, runInAction } from 'mobx';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browserDiagnosticsStore } from '@renderer/features/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@renderer/features/browser/browser-session-store';
+import { popupClaims } from '@renderer/features/browser/browser-popup-claims';
 import { events } from '@renderer/lib/ipc';
-import { browserOpenInNewTabChannel } from '@shared/events/browserEvents';
+import { browserCloseTabChannel, browserOpenInNewTabChannel } from '@shared/events/browserEvents';
 import type { ExtensionTabDescriptor, TabDescriptor } from '@shared/view-state';
 
 vi.mock('@renderer/lib/ipc', () => ({
@@ -595,6 +596,46 @@ describe('PaneStore browser tabs', () => {
     expect(browserResource(manager.resolvedTabs[1])?.session?.currentUrl).toBe(
       'https://target.example/path'
     );
+  });
+
+  it('opens the tab for a window Chrome already created so that only that tab claims the window', () => {
+    const listeners: Array<(event: { sourceBrowserId: string; url: string; popup?: string }) => void> = [];
+    vi.mocked(events.on).mockImplementation((channel, listener) => {
+      if (channel === browserOpenInNewTabChannel) listeners.push(listener as (typeof listeners)[number]);
+      return () => {};
+    });
+    const manager = createTabManager();
+    manager.open('browser', { initialUrl: 'https://source.example/' }, { from: null, intent: 'newTab' });
+    const browserIds = () => manager.resolvedTabs.map(tab => browserResource(tab)?.browserId ?? '');
+    const sourceBrowserId = browserIds()[0]!;
+
+    listeners[0]?.({ sourceBrowserId, url: 'about:blank', popup: 'WINDOW-1' });
+    const windowsTab = browserIds().find(id => id !== sourceBrowserId)!;
+    manager.open('browser', { initialUrl: 'about:blank' }, { from: null, intent: 'newTab' }); // The person's own blank tab.
+    const personsTab = browserIds().find(id => id !== sourceBrowserId && id !== windowsTab)!;
+
+    expect(manager.resolvedTabs).toHaveLength(3);
+    expect(popupClaims.take(personsTab)).toBeUndefined();
+    expect(popupClaims.take(sourceBrowserId)).toBeUndefined();
+    expect(popupClaims.take(windowsTab)).toBe('WINDOW-1');
+  });
+
+  it('closes a browser tab when the page it shows closes itself, and leaves the others', async () => {
+    const listeners: Array<(event: { browserId: string }) => void> = [];
+    vi.mocked(events.on).mockImplementation((channel, listener) => {
+      if (channel === browserCloseTabChannel) listeners.push(listener as (event: { browserId: string }) => void);
+      return () => {};
+    });
+    const manager = createTabManager();
+    manager.open('browser', { initialUrl: 'https://source.example/' }, { from: null, intent: 'newTab' });
+    manager.open('browser', { initialUrl: 'https://popup.example/' }, { from: null, intent: 'newTab' });
+    expect(manager.resolvedTabs).toHaveLength(2);
+    const popupBrowserId = browserResource(manager.resolvedTabs[1])?.browserId ?? '';
+
+    for (const listener of listeners) listener({ browserId: popupBrowserId });
+
+    await vi.waitFor(() => expect(manager.resolvedTabs).toHaveLength(1));
+    expect(browserResource(manager.resolvedTabs[0])?.session?.currentUrl).toBe('https://source.example/');
   });
 });
 

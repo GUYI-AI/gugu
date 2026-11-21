@@ -14,6 +14,8 @@ import { log } from '@main/lib/logger';
 import type { TaskPageNative, TaskPageRect } from './extension-task-pages';
 import { taskPageViewport } from '@shared/extensions/task-page-viewport';
 import { readTaskFilePayloads, taskFilePayloadSource } from './task-file-payloads';
+import { browserKernelBindings, closeStandalonePage, isStandalonePage, standalonePage } from '../browser/standalone-page-runtime';
+import { standaloneKernelService } from '../browser/standalone-kernel-service';
 
 /** The host chooses one task page. Apps never supply contents IDs or partitions. */
 export const extensionTaskPages = new ExtensionTaskPages(extensionId => {
@@ -34,6 +36,22 @@ export const extensionTaskPages = new ExtensionTaskPages(extensionId => {
   if (!context || context.projectId !== projectId) throw new Error('The task has no page on this computer');
   const browserId = await openTaskBrowserPane({ projectId, sessionId }, url ?? 'about:blank', signal);
   signal.throwIfAborted();
+  if (isStandalonePage(browserId)) {
+    const binding = browserKernelBindings.get(browserId);
+    if (!binding || !browserWebContentsRegistry.isRegisteredForSession(browserId, sessionId, binding.partition)) {
+      throw new Error('The task has no standalone page in this conversation');
+    }
+    const contents = await standalonePage(browserId, url, signal) as unknown as WebContents;
+    const { protocol, cleanup } = leasePageProtocol(contents, { ready: Promise.resolve(),
+      capture: params => {
+        const page = contents as unknown as import('../../../../server/server-task-browser').TaskPageContents;
+        if (!page.hostCommand) throw new Error('The standalone browser host connection closed');
+        return page.hostCommand('Page.captureScreenshot', params);
+      },
+    });
+    return { projectId, title: contents.getTitle(), url: contents.getURL(), protocol, cleanup,
+      presentation: () => null, onPresentation: () => () => {}, setActive: () => {}, release: () => {} };
+  }
   const selected = browserWebContentsRegistry.browsersOfSession(sessionId).find(page => page.browserId === browserId);
   if (!selected || selected.webContents.isDestroyed()) throw new Error('The task page was closed before it could be leased');
   const page = acquireBrowserPage(selected.webContents);
@@ -69,6 +87,9 @@ async (caller, refs, signal) => readTaskFilePayloads(caller, refs, signal, await
 sessionEvents.on('session:archived', sessionId => {
   extensionTaskPages.closeScope({ sessionId });
   if (serverBrowser) void serverBrowser.closeTask(sessionId);
+  for (const tab of browserKernelBindings.forSession(sessionId)) {
+    if (tab.kernel === 'standalone') void closeStandalonePage(tab.browserId).catch(error => log.warn('Standalone task page cleanup failed', { error: String(error) }));
+  }
 });
 projectEvents.on('project:deleted', projectId => extensionTaskPages.closeScope({ projectId }));
 
@@ -76,6 +97,8 @@ let serverBrowser: ServerTaskBrowser | null = null;
 
 /** A task's page on this Gugu server, for another computer to watch and take over; null when it has none. */
 export async function taskPageForScreen(sessionId: string): Promise<TaskPageScreenTarget | null> {
+  const selected = browserWebContentsRegistry.preferredBrowserOfSession(sessionId);
+  if (selected && isStandalonePage(selected)) return standaloneKernelService().pool.existingPage(selected);
   return serverBrowser ? serverBrowser.existingPage(sessionId) : (await import('../browser/native-task-page-screen')).nativeTaskPageForScreen(sessionId);
 }
 

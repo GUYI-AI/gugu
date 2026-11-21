@@ -41,6 +41,7 @@ import {
   type BrowsingDataKind,
 } from '@shared/browser';
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
+import { BrowserKernelSettingsConnected } from './BrowserKernelSettingsConnected';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
@@ -166,6 +167,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
   return (
     <>
       <SettingsGroup>
+      <BrowserKernelSettingsConnected />
       <SettingsRow
         title={translate('browserSettings.defaultProfile')}
         description={translate('browserSettings.defaultProfileDescription')}

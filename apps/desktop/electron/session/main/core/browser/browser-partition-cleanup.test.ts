@@ -74,7 +74,7 @@ describe('migrateLegacyBrowserPartitionDirs', () => {
 });
 
 describe('explicit browsing-data cleanup', () => {
-  it('retains every old partition and includes it only when the person clears browsing data', async () => {
+  it('retains every old partition during explicit cleanup, and also clears the standalone profiles', async () => {
     const dir = partitionsDir({
       'emdash-browser-tab-1': 'x',
       'gugu-browser-tab-2': 'x',
@@ -103,6 +103,7 @@ describe('explicit browsing-data cleanup', () => {
     ]);
 
     const clear = vi.fn(async (_kind: string, _partitions: readonly string[]) => true);
+    const clearStandalone = vi.fn(async (_kind: string) => {});
     const inert: unknown = new Proxy(function () { return inert; }, {
       get: (_target, key) => key === 'then' ? undefined : key === Symbol.iterator ? function* () {} : inert,
     });
@@ -112,6 +113,7 @@ describe('explicit browsing-data cleanup', () => {
       '@main/core/settings/settings-service': { appSettingsService: { get: async () => ({ profiles: [{ id: 'work' }] }) } },
       '@main/core/browser/browser-webcontents-registry': { browserWebContentsRegistry: { registeredPartitions: ['persist:gugu-browser-isolated-live'], clearBrowsingData: clear } },
       './browser-partition-cleanup': { listPersistedBrowserPartitions: () => listPersistedBrowserPartitions(dir) },
+      './standalone-kernel-service': { standaloneKernelService: () => ({ profileData: { clearAll: clearStandalone } }) },
     };
     const entry = join(__dirname, 'controller.ts');
     const compiled = ts.transpileModule(readFileSync(entry, 'utf8'), {
@@ -128,6 +130,7 @@ describe('explicit browsing-data cleanup', () => {
     });
     expect(clear).not.toHaveBeenCalled();
     expect(await module.exports.browserController.clearBrowsingData('all')).toEqual({ success: true });
+    expect(clearStandalone).toHaveBeenCalledExactlyOnceWith('all');
     expect(clear).toHaveBeenCalledOnce();
     expect(clear).toHaveBeenCalledWith('all', expect.arrayContaining([
       ...persisted, 'persist:gugu-browser-profile-work', 'persist:gugu-browser-isolated-live',

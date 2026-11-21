@@ -75,6 +75,8 @@ export type BrowserLoadError = {
 export type BrowserZoomSource = 'auto' | 'user';
 
 export type BrowserSessionSnapshot = BrowserSessionIdentity & {
+  /** Missing until a new tab snapshots the device preference; legacy restores use built-in. */
+  kernel?: 'builtin' | 'standalone';
   profileId: BrowserProfileSelection;
   partition: string;
   currentUrl: string;
@@ -313,6 +315,37 @@ export function browserPartitionForProfile(
   return browserProfilePartition(profileId);
 }
 
+/** `persist:gugu-browser-isolated-…`: the partition of one session's isolated browser. */
+export function isIsolatedBrowserPartition(partition: string): boolean {
+  return partition.startsWith(`${BROWSER_PARTITION_PREFIX}-isolated-`);
+}
+
+/**
+ * Whether the tab a new tab opens for a page of `sourcePartition` is in that same partition, which the standalone browser keeps in
+ * one Chrome process. A new tab is opened in the profile chosen in Settings (`defaultProfileId`, already normalized), whatever
+ * profile the page's own tab is on; an isolated one is the partition of the session, which the new tab shares with the page.
+ */
+export function newTabSharesPartition(sourcePartition: string, defaultProfileId: BrowserProfileSelection): boolean {
+  if (defaultProfileId === BROWSER_ISOLATED_PROFILE_ID) return isIsolatedBrowserPartition(sourcePartition);
+  return sourcePartition === browserProfilePartition(defaultProfileId);
+}
+
+/** The profile and partition of the tab whose standalone Chrome created the window a new tab is opened for. */
+export type BrowserWindowOwner = { profileId: BrowserProfileSelection; partition: string };
+
+/**
+ * The profile of a new tab. It is the profile chosen in Settings, whatever profile the tab of the page that opened it is on. The one
+ * exception is a tab opened to show a window the standalone Chrome already created for that page (a sign-in window): the window
+ * lives in the Chrome of the page's tab, so the tab is in that profile and partition. The built-in browser has no such tab.
+ */
+export function profileForNewTab(
+  settings: { defaultProfileId?: string; profiles?: readonly BrowserProfile[] } | undefined,
+  windowOf?: BrowserWindowOwner
+): { profileId: BrowserProfileSelection; partition?: string } {
+  if (windowOf) return { profileId: windowOf.profileId, partition: windowOf.partition };
+  return { profileId: normalizeBrowserProfileSelection(settings?.defaultProfileId, settings?.profiles) };
+}
+
 export function isNamedBrowserProfileId(value: string): boolean {
   return value !== BROWSER_ISOLATED_PROFILE_ID && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value);
 }
@@ -344,7 +377,10 @@ export function browserProfileLabel(
 
 export function createBrowserSessionSnapshot(input: {
   identity: BrowserSessionIdentity;
+  kernel?: 'builtin' | 'standalone';
   profileId?: BrowserProfileSelection;
+  /** Only a tab that must live in another tab's browser says so (see `profileForNewTab`); every other tab's is worked out from its identity and profile. */
+  partition?: string;
   currentUrl?: string;
   now?: number;
 }): BrowserSessionSnapshot {
@@ -356,8 +392,9 @@ export function createBrowserSessionSnapshot(input: {
   );
   return {
     ...input.identity,
+    ...(input.kernel ? { kernel: input.kernel } : {}),
     profileId,
-    partition: browserPartitionForProfile(input.identity, profileId),
+    partition: input.partition ?? browserPartitionForProfile(input.identity, profileId),
     currentUrl: normalized.ok ? normalized.url : BROWSER_DEFAULT_URL,
     title: '',
     isLoading: false,

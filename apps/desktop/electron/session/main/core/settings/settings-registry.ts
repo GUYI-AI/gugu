@@ -78,6 +78,7 @@ export const SETTINGS_DEFAULTS = {
     enabled: true
   },
   browser: {
+    kernel: 'builtin',
     defaultProfileId: DEFAULT_BROWSER_PROFILE_ID,
     relaxCorsForLocalhost: false,
     profiles: DEFAULT_BROWSER_PROFILES
