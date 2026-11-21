@@ -1,3 +1,4 @@
+import { installerEnvironment } from './egress/installer'
 // 两样随包工具,给 claude 桥接(acp-bridge/claude-bridge-deps.ts)在后台装用户那份 Claude 配对的桥接用:
 //   · execWithStallWatch:跑一个子进程,盯工作目录的字节进展,连续零进展就杀掉并报错(#2004 §3);
 //   · resolveBundledNpmInvocation:用 Electron 内嵌的 node 跑随 App 交付的 npm。
@@ -263,6 +264,6 @@ export async function resolveBundledNpmInvocation(
   return {
     command: execPath,
     args: [npmCli],
-    env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+    env: { ...await installerEnvironment(env.npm_config_registry ?? env.NPM_CONFIG_REGISTRY ?? 'https://registry.npmjs.org', env), ELECTRON_RUN_AS_NODE: '1' },
   }
 }

@@ -33,7 +33,7 @@ function scopeNow(): PushScope | null {
 function scopedClient(scope: PushScope, schema: 'identity' | 'chat') {
   const current = scopeNow(); const token = getRendererSession()?.access_token
   if (!token || current?.ownerId !== scope.ownerId || current.sessionId !== scope.sessionId) throw new Error('Android push login changed')
-  return createGuguSupabaseClient({ schema, accessToken: async () => token, fetch: authBoundedFetch })
+  return createGuguSupabaseClient({ schema, accessToken: async () => token, wrapFetch: next => (input, init) => authBoundedFetch(input, init, next) })
 }
 function binding(value: PushBinding, scope: PushScope): PushBinding {
   if (value.ownerId !== scope.ownerId || !UUID.test(value.installationId)

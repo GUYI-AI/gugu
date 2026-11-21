@@ -264,7 +264,7 @@ function createSessionStub() {
       unhandle: (_scheme: string): void => {}
     },
     clearCache: async (): Promise<void> => {},
-    // 无头宿主没有 Chromium 的代理配置:它的代理只能是环境变量,本来就在 process.env 里(systemProxyEnv.ts)。
+    // 无头宿主没有 Chromium 的代理配置；egress 的 Node 后端逐次读取用户环境里的代理。
     resolveProxy: async (_url: string): Promise<string> => 'DIRECT',
     clearStorageData: async (_options?: unknown): Promise<void> => {},
     clearData: async (_options?: unknown): Promise<void> => {},
@@ -327,7 +327,9 @@ export const protocol = {
 }
 
 export const net = {
+  // A headless host has no Chromium: its network is the runtime's own (proxies come from its environment).
   fetch: (...args: Parameters<typeof globalThis.fetch>): Promise<Response> =>
+    // eslint-disable-next-line no-restricted-properties -- this IS the runtime fetch net.fetch stands for here
     globalThis.fetch(...args),
   request: (_options: unknown): never => {
     throw new Error('net.request is unavailable in the headless session host — use net.fetch()')

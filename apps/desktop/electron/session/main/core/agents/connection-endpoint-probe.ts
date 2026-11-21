@@ -2,7 +2,7 @@ import type { ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { requestEndpoint } from './connection-endpoint-request';
 import type { ConnectionModelList, CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config';
 
-type Fetch = typeof fetch;
+type Fetch = typeof globalThis.fetch;
 type Endpoint = { endpoint: string; apiKey: string; protocol: ModelProtocol; env?: NodeJS.ProcessEnv };
 
 function endpointRequest(input: Endpoint) {
@@ -28,7 +28,7 @@ function endpointRequest(input: Endpoint) {
  */
 export async function listEndpointModels(
   input: Endpoint,
-  fetchImpl: Fetch = fetch
+  fetchImpl?: Fetch
 ): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
   const result = await requestEndpoint<ConnectionModelList>(fetchImpl, root + '/models', { headers }, input.env, async (response) => {
@@ -59,7 +59,7 @@ export async function listEndpointModels(
 }
 
 /** Try a tiny request only after the person asks to test a named model. */
-export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl: Fetch = fetch): Promise<ConnectionModelList> {
+export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl?: Fetch): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
@@ -84,7 +84,7 @@ export type ProtocolProbe = CustomModelProtocolProbe;
 type ProbeReason = ProtocolProbe['failures'][number]['reason'];
 
 /** The smallest generating request each protocol accepts; any 2xx proves the address speaks it. */
-async function sendMinimal(fetchImpl: Fetch, input: Endpoint, modelId: string): Promise<'connected' | ProbeReason> {
+async function sendMinimal(fetchImpl: Fetch | undefined, input: Endpoint, modelId: string): Promise<'connected' | ProbeReason> {
   const { root, headers } = endpointRequest(input);
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
@@ -114,7 +114,7 @@ async function sendMinimal(fetchImpl: Fetch, input: Endpoint, modelId: string): 
  */
 export async function probeEndpointProtocols(
   input: { baseUrl: string; apiKey: string; modelId?: string; hint?: ModelProtocol; env?: NodeJS.ProcessEnv },
-  fetchImpl: Fetch = fetch,
+  fetchImpl?: Fetch,
 ): Promise<ProtocolProbe> {
   const base = input.baseUrl.trim().replace(/\/+$/, '');
   const openaiBases = /\/v\d+(?:beta)?$/.test(base) ? [base] : [`${base}/v1`, base];

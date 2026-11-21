@@ -1,3 +1,4 @@
+import { egress } from '../shared/egress'
 import { withBoundedOperation } from './boundedOperation'
 import { createGuguSupabaseClient } from './supabase'
 import { configuredEndpoint, placeAttachment, uploadAttachmentBytes } from './attachmentsApi'
@@ -25,9 +26,9 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 
 /** Every network stage has a deadline, including direct object bytes. */
 function panelEndpoint(token: string, parentSignal?: AbortSignal) {
-  return { ...configuredEndpoint(token),fetch: ((url,init) => withBoundedOperation(30_000,() => new AssistantPanelError('body-timeout','PANEL_BODY_TIMEOUT'),signal => fetch(url,{ ...init,
+  return { ...configuredEndpoint(token),fetch: ((url,init) => withBoundedOperation(30_000,() => new AssistantPanelError('body-timeout','PANEL_BODY_TIMEOUT'),signal => egress.fetch(url,{ ...init,
     signal: anySignal([signal, parentSignal, init?.signal]),
-  }))) as typeof fetch }
+  }))) as typeof globalThis.fetch }
 }
 
 /** A body is an immutable byte snapshot, never a live document: the attachment service turns an upload whose name or

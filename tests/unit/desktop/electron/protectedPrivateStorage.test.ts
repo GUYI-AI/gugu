@@ -21,6 +21,8 @@ const outputs: string[] = []
 
 beforeEach(async () => {
   vi.resetModules()
+  const { installEgress, runtimeEgress } = await import('@gugu/core/shared/egress')
+  installEgress(runtimeEgress())
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-protected-storage-')))
   vi.stubEnv('HOME', home)
   vi.stubEnv('GUGU_HOME', path.join(home, 'host-state'))

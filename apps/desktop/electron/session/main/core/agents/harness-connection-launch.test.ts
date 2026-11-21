@@ -34,7 +34,8 @@ describe('connection launch credentials', () => {
       pinnedEnv: {},
       extraArgs: [],
     };
-    expect(composeAgentSpawnEnv(context)).toEqual({ PATH: '/bin' });
+    const loopback = 'localhost,127.0.0.1,::1';
+    expect(composeAgentSpawnEnv(context)).toEqual({ PATH: '/bin', NO_PROXY: loopback, no_proxy: loopback });
     expect(
       composeAgentSpawnEnv(context, { hostInjections: [{ ANTHROPIC_API_KEY: 'platform' }] }).ANTHROPIC_API_KEY
     ).toBe('platform');

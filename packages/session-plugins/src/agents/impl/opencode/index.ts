@@ -258,7 +258,10 @@ export const provider = registerPluginBehavior(plugin, {
       const endpoint = sourceSession.providerSessionEndpoint?.replace(/\/$/, '')
       if (endpoint) {
         const path = `/session/${encodeURIComponent(sourceProviderSessionId)}/fork`
-        const response = await fetch(`${endpoint}${path}`, { method: 'POST' })
+        // The endpoint is the local OpenCode process (loopback), not the network. Loaded on use: the renderer also
+        // imports this registry, and the loopback transport is Node only.
+        const { loopbackFetch } = await import('@gugu/core/local/loopback')
+        const response = await loopbackFetch(`${endpoint}${path}`, { method: 'POST' })
         const body = await response.text()
         if (!response.ok) {
           throw new Error(

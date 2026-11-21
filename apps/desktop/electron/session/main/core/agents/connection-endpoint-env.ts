@@ -1,11 +1,9 @@
 import { buildUserShellBaseEnv } from '@main/utils/childProcessEnv';
-import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 
-/** Same shell/process precedence and system-proxy fallback as buildAgentEnv, without changing process.env. */
+/** Same shell/process precedence as buildAgentEnv, without changing process.env. */
 export function connectionProbeEnv(): NodeJS.ProcessEnv {
-  const env = buildUserShellBaseEnv({ loginShellEnv: loginShellEnv() });
-  return { ...env, ...systemProxyFill(env) };
+  return buildUserShellBaseEnv({ loginShellEnv: loginShellEnv() });
 }
 
 /** A worker has no login-shell provider; transfer only the resolved proxy values at spawn. */

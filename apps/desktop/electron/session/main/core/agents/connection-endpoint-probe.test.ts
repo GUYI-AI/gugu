@@ -73,6 +73,8 @@ async function listen(server: Server): Promise<string> {
   return `http://127.0.0.1:${address.port}`;
 }
 
+const PROXIED_ORIGIN = 'origin.test';
+
 async function origin(status = 200) {
   const requests: { url: string; key?: string }[] = [];
   const server = createServer((req, res) => {
@@ -80,7 +82,9 @@ async function origin(status = 200) {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ data: [{ id: 'local-model' }] }));
   });
-  return { url: await listen(server), requests };
+  const url = await listen(server);
+  // Loopback always goes direct through the egress; the proxy tests ask for this name, which only the test proxy knows.
+  return { url, named: url.replace('127.0.0.1', PROXIED_ORIGIN), requests };
 }
 
 async function proxy() {
@@ -91,8 +95,8 @@ async function proxy() {
     tunnels.push(req.url ?? '');
     const [host, port] = (req.url ?? '').split(':');
     // This test proxy must never open a non-loopback connection.
-    if (host !== '127.0.0.1') { client.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'); return; }
-    const upstream = connect(Number(port), host);
+    if (host !== PROXIED_ORIGIN) { client.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'); return; }
+    const upstream = connect(Number(port), '127.0.0.1');
     for (const socket of [client, upstream]) {
       sockets.add(socket as Socket);
       socket.on('error', () => { client.destroy(); upstream.destroy(); });
@@ -115,8 +119,8 @@ it.each(['HTTP_PROXY', 'http_proxy', 'ALL_PROXY'] as const)('uses %s for real re
   const dispatcher = getGlobalDispatcher();
   const originalFetch = globalThis.fetch;
   const env = { [name]: gateway.url };
-  expect(await listEndpointModels({ ...target, endpoint: upstream.url, env })).toEqual({ kind: 'listed', models: ['local-model'] });
-  expect(gateway.tunnels).toEqual([new URL(upstream.url).host]);
+  expect(await listEndpointModels({ ...target, endpoint: upstream.named, env })).toEqual({ kind: 'listed', models: ['local-model'] });
+  expect(gateway.tunnels).toEqual([new URL(upstream.named).host]);
   expect(upstream.requests).toEqual([{ url: '/models', key: 'Bearer dummy-key' }]);
   expect(env).toEqual({ [name]: gateway.url });
   expect(getGlobalDispatcher()).toBe(dispatcher);
@@ -125,7 +129,7 @@ it.each(['HTTP_PROXY', 'http_proxy', 'ALL_PROXY'] as const)('uses %s for real re
 
 it('uses HTTPS_PROXY for an HTTPS destination instead of attempting DNS/direct access', async () => {
   const gateway = await proxy();
-  expect(await listEndpointModels({ ...target, env: { HTTPS_PROXY: gateway.url } })).toEqual({ kind: 'unlisted', reason: 'unreachable' });
+  expect(await listEndpointModels({ ...target, env: { HTTPS_PROXY: gateway.url } })).toEqual({ kind: 'unlisted', reason: 'proxy' });
   expect(gateway.tunnels).toEqual(['provider.test:443']);
 });
 
@@ -141,7 +145,7 @@ it('fails at the configured proxy when old global fetch would silently reach a l
   expect(direct.status).toBe(401); // Negative control: the old fetch ignores this env.
   await direct.body?.cancel();
   expect(upstream.requests).toHaveLength(1);
-  expect(await listEndpointModels({ ...target, endpoint: upstream.url, env: { HTTP_PROXY: badProxy } })).toEqual({ kind: 'unlisted', reason: 'connection-refused' });
+  expect(await listEndpointModels({ ...target, endpoint: upstream.named, env: { HTTP_PROXY: badProxy } })).toEqual({ kind: 'unlisted', reason: 'connection-refused' });
   expect(upstream.requests).toHaveLength(1); // No silent direct fallback or credential delivery.
   expect(await listEndpointModels({ ...target, env: { HTTPS_PROXY: badProxy } })).toEqual({ kind: 'unlisted', reason: 'connection-refused' });
 });
@@ -151,17 +155,19 @@ it('obeys NO_PROXY and lowercase precedence, and does not borrow ambient proxy v
   const gateway = await proxy();
   vi.stubEnv('HTTP_PROXY', 'http://127.0.0.1:1');
   vi.stubEnv('NO_PROXY', '*');
-  expect(await listEndpointModels({ ...target, endpoint: upstream.url, env: { http_proxy: gateway.url, HTTP_PROXY: 'http://127.0.0.1:1', no_proxy: '', NO_PROXY: '*' } })).toMatchObject({ kind: 'listed' });
+  expect(await listEndpointModels({ ...target, endpoint: upstream.named, env: { http_proxy: gateway.url, HTTP_PROXY: 'http://127.0.0.1:1', no_proxy: '', NO_PROXY: '*' } })).toMatchObject({ kind: 'listed' });
   expect(gateway.tunnels).toHaveLength(1);
-  expect(await listEndpointModels({ ...target, endpoint: upstream.url, env: { HTTP_PROXY: gateway.url, NO_PROXY: '127.0.0.1' } })).toMatchObject({ kind: 'listed' });
+  // Bypassed or unset, the request goes direct: the name does not resolve, and neither the gateway nor the ambient
+  // (refusing) proxy sees it.
+  expect(await listEndpointModels({ ...target, endpoint: upstream.named, env: { HTTP_PROXY: gateway.url, NO_PROXY: PROXIED_ORIGIN } })).toEqual({ kind: 'unlisted', reason: 'dns' });
   expect(gateway.tunnels).toHaveLength(1);
-  expect(await listEndpointModels({ ...target, endpoint: upstream.url, env: {} })).toMatchObject({ kind: 'listed' });
-  expect(upstream.requests).toHaveLength(3);
+  expect(await listEndpointModels({ ...target, endpoint: upstream.named, env: {} })).toEqual({ kind: 'unlisted', reason: 'dns' });
+  expect(upstream.requests).toHaveLength(1);
 });
 
-it.each(['socks5://127.0.0.1:1', 'not a proxy URL'])('refuses unsupported proxy %s without falling back to direct access', async (value) => {
+it.each(['ftp://127.0.0.1:1', 'not a proxy URL'])('refuses unsupported proxy %s without falling back to direct access', async (value) => {
   const upstream = await origin();
-  expect(await listEndpointModels({ ...target, endpoint: upstream.url, env: { ALL_PROXY: value } })).toEqual({ kind: 'unlisted', reason: 'proxy' });
+  expect(await listEndpointModels({ ...target, endpoint: upstream.named, env: { ALL_PROXY: value } })).toEqual({ kind: 'unlisted', reason: 'proxy' });
   expect(upstream.requests).toHaveLength(0);
 });
 
