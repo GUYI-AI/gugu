@@ -19,7 +19,7 @@ import { foldItem, finalizeItems, type FoldEvent } from './item-fold';
 import { projectSubagentProgress } from './subagent-progress';
 import { findSubagentStep, foldSubagentStep, patchSubagentStep } from './subagent-steps';
 import type { NormalizedEvent } from './normalized-event';
-import { findEntityOwner } from './entity-owner';
+import { committedSlotsWith, findEntityOwner } from './entity-owner';
 import { withReferencedTerminals } from '../models/terminals';
 
 type SynthesizedSegmentKind = 'message:user' | 'message:assistant' | 'thinking';
@@ -470,7 +470,7 @@ function reduceSubagentStream(
   const inner = stream.event;
   const active = s.transcript.active;
   const launch = active && findToolCallNode(active.items, owner.toolCallId) ? active
-    : s.transcript.committed.find((turn) => findToolCallNode(turn.items, owner.toolCallId));
+    : oldestCommittedWith(s.transcript.committed, owner.toolCallId);
 
   if (inner.kind === 'agent_state') {
     const ids = { toolCallId: owner.toolCallId, agentId: owner.agentId, subagentSessionId: stream.subagentSessionId };
@@ -619,6 +619,12 @@ function patchToolCallInTurns(
     return items === turn.items ? turn : { ...turn, items };
   });
   return hit ? next : null;
+}
+
+/** The oldest committed turn holding this call, by id rather than by walking every committed turn. */
+function oldestCommittedWith(committed: readonly TranscriptTurn[], toolCallId: string): TranscriptTurn | undefined {
+  const slot = committedSlotsWith(committed, toolCallId)[0];
+  return slot === undefined ? undefined : committed[slot];
 }
 
 function findToolCallNodeInTurns(

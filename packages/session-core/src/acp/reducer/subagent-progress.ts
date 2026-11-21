@@ -1,13 +1,13 @@
 import type { AgentState } from '../models/agents';
 import type { ToolNode, TranscriptItem, TranscriptTurn } from '../models/turns';
 import type { ParserState } from './reducer';
-import { entityIndex } from './entity-owner';
+import { committedSlotsWith } from './entity-owner';
 
 /**
  * Project a native child's current facts onto its original launch row without changing that call's outcome.
  *
  * `previous`: the state this one was reduced from, already projected. A committed turn it already held only needs
- * projecting again when it launched an agent that changed since; without this a replay walks every committed item on
+ * projecting again when it launched an agent that changed since; without this a replay walks every committed turn on
  * every event.
  */
 export function projectSubagentProgress(state: ParserState, previous?: ParserState): ParserState {
@@ -43,12 +43,23 @@ export function projectSubagentProgress(state: ParserState, previous?: ParserSta
   }
   const kept = new Set(previous?.agents);
   const relaunched = state.agents.filter((agent) => agent.subagentSessionId && !kept.has(agent)).map((agent) => agent.toolCallId);
-  const settled = (value: TranscriptTurn, index: number): boolean => previous?.transcript.committed[index] === value
-    && !relaunched.some((id) => entityIndex(value).toolCallIds.has(id));
-  const committed = previous?.transcript.committed === state.transcript.committed && relaunched.length === 0
-    ? state.transcript.committed
-    : state.transcript.committed.map((value, index) => settled(value, index) ? value : turn(value));
-  const changed = committed !== state.transcript.committed && committed.some((value, index) => value !== state.transcript.committed[index]);
+  const current = state.transcript.committed;
+  const before = previous?.transcript.committed;
+  let committed = current;
+  if (before !== current || relaunched.length > 0) {
+    // Turns the previous state did not hold, and the turns launching an agent that changed: found by slot and by id,
+    // so a subagent event does not visit every committed turn.
+    const due = new Set<number>();
+    for (let index = 0; index < current.length; index++) if (before?.[index] !== current[index]) due.add(index);
+    for (const id of relaunched) for (const index of committedSlotsWith(current, id)) due.add(index);
+    let next: TranscriptTurn[] | null = null;
+    for (const index of due) {
+      const projected = turn(current[index]);
+      if (projected !== current[index]) (next ??= [...current])[index] = projected;
+    }
+    if (next) committed = next;
+  }
+  const changed = committed !== current;
   const active = state.transcript.active ? turn(state.transcript.active) : null;
   return !changed && active === state.transcript.active ? state : { ...state, transcript: {
     committed: changed ? committed : state.transcript.committed, active,

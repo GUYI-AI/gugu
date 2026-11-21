@@ -65,23 +65,70 @@ export function entityIndex(turn: TranscriptTurn): EntityIndex {
  * backward scan above probed every committed turn: still O(events x turns) per replay. The union of the committed turns'
  * indexes answers "in none of them" with one probe. It is kept per session (keyed by the first turn) and only grows, so
  * after a revert it may still hold ids of turns that are gone: a hit then falls through to the exact scan, a miss never lies.
+ * `turnsOf` keeps, per tool call id, the seqs of the committed turns that held it, for `committedSlotsWith`.
  */
-const unions = new WeakMap<TranscriptTurn, { index: EntityIndex; members: WeakSet<TranscriptTurn> }>();
-const synced = new WeakMap<readonly TranscriptTurn[], EntityIndex>();
+type Union = { index: EntityIndex; members: WeakSet<TranscriptTurn>; turnsOf: Map<string, number[]>; last: readonly TranscriptTurn[] };
+const unions = new WeakMap<TranscriptTurn, Union>();
+const synced = new WeakMap<readonly TranscriptTurn[], Union>();
 
 function committedUnion(committed: readonly TranscriptTurn[]): EntityIndex {
+  return syncUnion(committed).index;
+}
+
+function syncUnion(committed: readonly TranscriptTurn[]): Union {
   const known = synced.get(committed);
   if (known) return known;
   let union = unions.get(committed[0]);
-  if (!union) unions.set(committed[0], union = { index: { ids: new Set(), local: new Set(), toolCallIds: new Set(), planIds: new Set() }, members: new WeakSet() });
-  for (const turn of committed) {
-    if (union.members.has(turn)) continue;
+  if (!union) unions.set(committed[0], union = { index: { ids: new Set(), local: new Set(), toolCallIds: new Set(), planIds: new Set() },
+    members: new WeakSet(), turnsOf: new Map(), last: [] });
+  // A new history array is the last one with a turn appended or one turn replaced: comparing slots skips the rest cheaply.
+  const { last } = union;
+  for (let i = 0; i < committed.length; i++) {
+    const turn = committed[i];
+    if (turn === last[i] || union.members.has(turn)) continue;
     union.members.add(turn);
     const index = entityIndex(turn);
     for (const key of ['ids', 'local', 'toolCallIds', 'planIds'] as const) for (const id of index[key]) union.index[key].add(id);
+    for (const id of index.toolCallIds) {
+      const seqs = union.turnsOf.get(id);
+      if (!seqs) union.turnsOf.set(id, [turn.seq]);
+      else if (!seqs.includes(turn.seq)) seqs.push(turn.seq);
+    }
   }
-  synced.set(committed, union.index);
-  return union.index;
+  union.last = committed;
+  synced.set(committed, union);
+  return union;
+}
+
+/**
+ * Where in `committed` the turns holding a call with this id (`findToolCallNode` would find it) are, oldest first. A
+ * subagent's events land on its launch card in an old turn: looking that turn up by id keeps a replay from scanning every
+ * committed turn per subagent event. Same answer as filtering `committed` by `entityIndex(turn).toolCallIds`.
+ */
+export function committedSlotsWith(committed: readonly TranscriptTurn[], toolCallId: string): number[] {
+  if (committed.length === 0) return [];
+  const seqs = syncUnion(committed).turnsOf.get(toolCallId);
+  if (!seqs) return [];
+  const slots: number[] = [];
+  for (const seq of seqs) {
+    const slot = slotOfSeq(committed, seq);
+    if (slot >= 0 && entityIndex(committed[slot]).toolCallIds.has(toolCallId)) slots.push(slot);
+  }
+  return slots.length > 1 ? slots.sort((a, b) => a - b) : slots;
+}
+
+/** Committed turns are sorted by seq (`assertTranscriptInvariants`). */
+function slotOfSeq(committed: readonly TranscriptTurn[], seq: number): number {
+  let low = 0;
+  let high = committed.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const at = committed[middle].seq;
+    if (at === seq) return middle;
+    if (at < seq) low = middle + 1;
+    else high = middle - 1;
+  }
+  return -1;
 }
 
 /** `contains` for a committed turn, by its index. Message and thinking ids are `${turn.id}:<local>` unless a client id. */
