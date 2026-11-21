@@ -38,6 +38,11 @@ describe('approved compact account closure dialog', () => {
     await clickElement(harness.container.querySelector('button')!)
     expect(onOpen).toHaveBeenCalledOnce()
   })
+  it('dims the Settings page behind it like the other dialogs opened from Settings', async () => {
+    await render(view())
+    const backdrop = [...document.body.querySelectorAll('.gg-sheet-backdrop')].at(-1)
+    expect(backdrop?.getAttribute('style')).toContain('var(--bg-overlay-modal)')
+  })
   it('shows the two effects, one credit waiver and one code field in a single dialog', async () => {
     await render(view())
     const text = dialog().textContent!

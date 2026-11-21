@@ -30,7 +30,7 @@ export function PersonalAccountDeletion({ view, onCancel }: { view: AccountDelet
               : view.phase === 'local-pending' ? 'phoneLocalPending' : null
   return <Sheet onClose={() => { if (canCancel) onCancel() }} onEscape={() => !canCancel}
     closeOnBackdrop={canCancel} desktopWidth="400px" mobileFitContent
-    ariaLabel={t('accountDeletion.entry')} zIndex="var(--z-settings-modal)">
+    ariaLabel={t('accountDeletion.entry')} dimNested zIndex="var(--z-settings-modal)">
     <form className="gg-account-deletion-dialog" onSubmit={event => {
       event.preventDefault()
       if (canSubmit || view.phase === 'unconfirmed' || view.phase === 'local-pending') primary()
