@@ -20,7 +20,8 @@ export function recordIdentityFor(harness: string | null | undefined): RecordIde
 
 /**
  * 一轮里 agent 自己发的编号:provider 的消息 id、工具调用 id。条目 id 是 `${回合 id}:message:${消息 id}`,
- * 回合 id 在库里重编号过、在记录里另有一套,只认 `:turn:<序号>:` 之后那一截。归约器合成的(`auto:`)不是身份。
+ * 回合 id 在库里重编号过、在记录里另有一套(记录按自己的行 id 命名回合),只认第一个 `:message:` / `:thinking:` 之后那一截。
+ * 归约器合成的(`auto:`)不是身份。
  */
 export function turnIdentityKeys(turn: TranscriptTurn): Set<string> {
   const keys = new Set<string>();
@@ -28,7 +29,7 @@ export function turnIdentityKeys(turn: TranscriptTurn): Set<string> {
     if (item.toolCallId) keys.add(`tool:${item.toolCallId}`);
     if ((item.kind === 'message' || item.kind === 'thinking') && item.id) {
       const native = item.role === 'user' ? item._meta?.guguNativeMessageId : undefined;
-      const own = typeof native === 'string' ? native : /:turn:[^:]+:(?:message|thinking):(.+)$/.exec(item.id)?.[1];
+      const own = typeof native === 'string' ? native : /^.*?:(?:message|thinking):(.+)$/.exec(item.id)?.[1];
       if (own && !own.startsWith('auto:')) keys.add(`message:${own}`);
     }
     for (const child of item.children ?? []) visit(child as typeof item);

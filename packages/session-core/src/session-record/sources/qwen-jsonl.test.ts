@@ -87,6 +87,19 @@ describe('qwen jsonl 记录源', () => {
     expect(keys.some((key) => key.startsWith('qwen:note-0001'))).toBe(false);
   });
 
+  it('the session context Gugu sent in front of the first prompt, kept joined into one part, is not what the person said', async () => {
+    const { root, file, id } = await stage();
+    const leaf = (await records()).at(-1)!;
+    const context = '<gugu_platform>\nRules that mention `<thread_context>`.\n</gugu_platform>\n<agent_identity>\nid\n</agent_identity>';
+    await appendFile(file, `${JSON.stringify({ uuid: 'user-0002', parentUuid: leaf.uuid, sessionId: id, timestamp: '2026-10-17T08:00:00.000Z',
+      type: 'user', provenance: 'real_user', message: { role: 'user', parts: [{ text: `${context} <b>hello</b>` }] } })}\n`);
+    const { entries, started } = collect(createQwenJsonlSource({ harness: 'qwen', providerSessionId: id, roots: [root] }));
+    await started;
+    const opening = entries.find((entry) => entry.key === 'qwen:user-0002#0');
+    expect(opening?.event).toMatchObject({ kind: 'message', role: 'user', text: '<b>hello</b>' });
+    expect(opening?.turn).toBe('user-0002');
+  });
+
   it('找不到就响亮地失败', async () => {
     const { root } = await stage();
     await expect(

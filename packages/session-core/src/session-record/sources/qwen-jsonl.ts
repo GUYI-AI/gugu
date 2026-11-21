@@ -30,6 +30,8 @@ export function createQwenJsonlSource(locator: SessionRecordLocator, options?: S
       typeof raw.uuid === 'string'
         ? { id: raw.uuid, parentId: typeof raw.parentUuid === 'string' ? raw.parentUuid : null, raw }
         : null,
+    // 人说的话开一轮，也是 `/rewind` 另起一支的地方(通知、定时任务是 qwen 替人塞的，不算)。
+    kind: (node) => node.raw.type === 'user' && node.raw.provenance === 'real_user' ? 'prompt' : 'line',
     decode
   });
 }

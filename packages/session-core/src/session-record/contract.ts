@@ -166,8 +166,10 @@ export type RecordBoundary = { messageId?: string } & (
  * （不进时间线，只关掉当前这一轮）。❌ 不许一条同时是两者 —— 那样"这条要不要去重"没有答案。
  */
 export type RecordEntry =
-  | { key: string; at?: number; position?: number; state?: unknown; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
-  | { key: string; at?: number; position?: number; state?: unknown; boundary: RecordBoundary; event?: never; imageOrigins?: never };
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: string; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: never; boundary: RecordBoundary; event?: never; imageOrigins?: never };
+// `turn`: this entry is the person's message that starts a turn; the record line's tree id (`record-tree.ts`), which
+// is also the turn's id. A turn a record opens otherwise takes the key of the entry that opened it.
 // `position`: where the record line (or row) that produced the entry starts, as `SessionRecordSource.startingAt` takes it.
 // `state` (a fill read only): the source's decoder state before that line, so a read started there decodes as this one.
 

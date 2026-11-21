@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
-import { isSessionContextText } from '../../acp/session-context';
 
 import type { RecordEntry, SessionRecordLocator, SessionRecordSource } from '../contract';
 import { findUnder } from './find-file';
@@ -30,14 +29,16 @@ export function createCodebuddyJsonlSource(locator: SessionRecordLocator, option
       typeof raw.id === 'string' && typeof raw.type === 'string' && CONVERSATION_TYPES.has(raw.type)
         ? { id: raw.id, parentId: typeof raw.parentId === 'string' ? raw.parentId : null, raw }
         : null,
+    kind: (node) => node.raw.type === FORK_NOTICE ? 'rewind'
+      : node.raw.type === 'message' && node.raw.role === 'user' && isRealUserMessage(node.raw) ? 'prompt' : 'line',
     decode
   });
 }
 
 /**
  * A rollback (`_codebuddy.ai/session/rollback`, 2.184.0) appends one `resend-fork-notice` whose `parentId` is the point kept
- * (none = back to the start) and moves the lane tip there; later items hang off it. It is a node with no content, so the
- * path root→leaf drops the rolled-back tail at once instead of after the next prompt.
+ * (none = back to the start) and moves the lane tip there; later items hang off it. It is a node with no content that
+ * forks by itself (`record-tree.ts`), so the rolled-back tail is dropped at once instead of after the next prompt.
  */
 const FORK_NOTICE = 'resend-fork-notice';
 const CONVERSATION_TYPES = new Set(['message', 'reasoning', 'function_call', 'function_call_result', FORK_NOTICE]);
@@ -116,9 +117,9 @@ function isRealUserMessage(record: Record<string, unknown>): boolean {
     && typeof data?.compactType !== 'string' && data?.isMeta !== true && typeof asRecord(data?.teammateMessage)?.from !== 'string';
 }
 
-/** 首轮输入里不是人说的那几块:咕咕的会话级背景(③)和 CodeBuddy 自己插的 `<system-reminder>`。 */
+/** 首轮输入里 CodeBuddy 自己插的 `<system-reminder>` 不是人说的(咕咕的会话级背景由 `markTurn` 去掉)。 */
 function isPersonText(text: string): boolean {
-  return !isSessionContextText(text) && !/^\s*<system-reminder\b/.test(text);
+  return !/^\s*<system-reminder\b/.test(text);
 }
 
 function texts(content: unknown, type: string): string[] {
