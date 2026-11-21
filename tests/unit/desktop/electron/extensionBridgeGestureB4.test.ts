@@ -34,7 +34,7 @@ type Host = {
   showSession(id: string): Promise<unknown>
   dispatch(text: string, options?: Record<string, unknown>): Promise<unknown>
   clipboard: { writeText(text: string): Promise<unknown> }
-  appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
+  appFiles: Record<'openWith' | 'pick' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   credentials: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
@@ -49,6 +49,8 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   taskMessage: () => host.taskMessage({ intent: 'pause' }),
   filesOpenWith: () => host.appFiles.openWith({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesUpload: () => host.appFiles.upload({}),
+  // 62: the host's sheet of a chat's files.
+  filesPick: () => host.appFiles.pick({ place: { chat: 'chat-1' } }),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
   filesOpenIn: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).openIn!({ ref: { workspace: 'session:s-1', id: 'a.md' }, app: 'finder' }),

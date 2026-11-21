@@ -121,6 +121,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   filesUpload: { pick: true },
   filesDownload: { ref: { name: 'a.md' } },
   filesForward: { refs: [{ name: 'a.md' }] },
+  filesPick: { place: { chat: 'c' } },
   filesOpenIn: { ref: { name: 'a.md' }, app: 'finder' },
   showMessage: { id: 'msg-1' },
   showSession: { id: 's-1' },

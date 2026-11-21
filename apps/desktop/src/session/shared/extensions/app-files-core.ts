@@ -85,6 +85,9 @@ export interface FileSurface {
   extensionId: string;
   /** The chat file the host handed this page (`ctx.file`), if any: it needs no capability. */
   itemId: string | null;
+  /** API 62: the chat files the person picked for this page in the host's sheet (`files.pick`): readable with no
+   * capability, as `itemId` is; writing one still needs `files:write` — a pick is not an edit. */
+  picked?: ReadonlySet<string>;
   /**
    * 摩擦单 F16 An App's program opening the file one of this person's agents handed it: the agent (a uuid) it acts
    * as — the file is read as that agent (it must be in the group itself; the person may not be) and its sync rides the
@@ -94,6 +97,12 @@ export interface FileSurface {
   /** A program's existing host-stamped call owns its cancellable read snapshots. */
   callId?: string;
   signal?: AbortSignal;
+}
+
+/** Whether the host handed this page that chat file to read — its `ctx.file`, or one the person picked for it — so reading it
+ * needs no capability. Writing needs no capability only for `ctx.file` (`resolve`'s `handedOver`). */
+export function handedTo(surface: Pick<FileSurface, 'itemId' | 'picked'>, itemId: string): boolean {
+  return itemId === surface.itemId || surface.picked?.has(itemId) === true;
 }
 
 export interface FilesPlatform {
@@ -737,7 +746,7 @@ export async function resourceChatIdOf(token: string, chatId: string, actor: str
 }
 
 /** Resolve `ref` in the resource container it names. Not-there and not-yours read the same. */
-async function resolve(surface: FileSurface, account: { token: string; userId: string }, ref: ChatFileRef): Promise<{ row: ItemRow; handedOver: boolean }> {
+async function resolve(surface: FileSurface, account: { token: string; userId: string }, ref: ChatFileRef): Promise<{ row: ItemRow; handedOver: boolean; picked: boolean }> {
   const { token } = account;
   const actor = surface.asAgent ?? account.userId;
   if ('id' in ref) {
@@ -747,14 +756,14 @@ async function resolve(surface: FileSurface, account: { token: string; userId: s
     if (ref.chat !== undefined && row.chat_id !== ref.chat && row.chat_id !== await resourceChatIdOf(token, ref.chat, actor)) {
       throw new AppFileError('invalid', `File ${ref.id} is in chat ${row.chat_id}, not ${ref.chat}: pass the entry or ctx.file as it is`);
     }
-    return { row, handedOver: row.id === surface.itemId };
+    return { row, handedOver: row.id === surface.itemId, picked: surface.picked?.has(row.id) === true };
   }
   const rows = await itemsByPath(token, ref.chat, ref.name, actor);
   if (rows.length === 0) throw new AppFileError('not-found', `No file named ${JSON.stringify(ref.name)} in that chat`);
   if (rows.length > 1) {
     throw new AppFileError('ambiguous', `${rows.length} files are named ${JSON.stringify(ref.name)}; pass an entry from gugu.files.list({ chat }) instead`);
   }
-  return { row: rows[0]!, handedOver: rows[0]!.id === surface.itemId };
+  return { row: rows[0]!, handedOver: rows[0]!.id === surface.itemId, picked: surface.picked?.has(rows[0]!.id) === true };
 }
 
 /** A live text file: what `files.create` makes, and what an upload of a text file becomes (F19). A name another file of
@@ -856,7 +865,7 @@ export function createAppFiles(platform: FilesPlatform) {
     // A program call's reads end with the call.
     const held = entry;
     surface.signal?.addEventListener('abort', () => { held.leases = 0; void disposeSnapshot(key, held); }, { once: true });
-    entry.needs = itemId === surface.itemId ? null : has(surface.extensionId, 'files:read') ? 'files:read' : 'files:write';
+    entry.needs = handedTo(surface, itemId) ? null : has(surface.extensionId, 'files:read') ? 'files:read' : 'files:write';
     touch(key, entry);
     return entry;
   };
@@ -888,7 +897,7 @@ export function createAppFiles(platform: FilesPlatform) {
     if (!file && localOnly) return null;
     if (!file) throw new AppFileError('failed', 'Verified file resolver is not installed');
     if (file.status !== 'ready') throw new AppFileError('not-found', `The file has no bytes${version === undefined ? '' : ` for version ${version}`}`);
-    if (file.revision.item_id !== surface.itemId && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
+    if (!handedTo(surface, file.revision.item_id ?? '') && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
       await file.dispose(); throw new AppFileError('denied', 'Opening or saving this file needs "files:read" or "files:write"');
     }
     return file;
@@ -937,7 +946,7 @@ export function createAppFiles(platform: FilesPlatform) {
     if (!('id' in ref) || !Number.isSafeInteger(ref.version) || ref.version! < 1 || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0 || length > FILE_CHUNK_BYTES) {
       throw new AppFileError('invalid', 'A file range needs its opened version, a non-negative offset, and at most 512 KiB.');
     }
-    if (ref.id !== surface.itemId && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
+    if (!handedTo(surface, ref.id) && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
       throw new AppFileError('denied', 'Reading this file needs "files:read" or "files:write"');
     }
     const held = snapshot(surface, ref.id, ref.version!);
@@ -1059,6 +1068,9 @@ export function createAppFiles(platform: FilesPlatform) {
     } else if (has(surface.extensionId, 'files:read') || has(surface.extensionId, 'files:write')) {
       access = 'ro';
       needs = has(surface.extensionId, 'files:read') ? 'files:read' : 'files:write';
+    } else if (resolved!.picked) {
+      access = 'ro';
+      needs = null;
     } else {
       throw new AppFileError('denied', 'Not permitted: opening a file other than the one this page was opened for needs "files:read" or "files:write"');
     }
@@ -1082,7 +1094,7 @@ export function createAppFiles(platform: FilesPlatform) {
   }
   /** The check `readable` makes, before anything is read: a file other than the page's own needs `files:read`/`:write`. */
   function mayName(surface: FileSurface, itemId: string, what: 'saving' | 'opening' | 'forwarding'): void {
-    if (itemId !== surface.itemId && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
+    if (!handedTo(surface, itemId) && !has(surface.extensionId, 'files:read') && !has(surface.extensionId, 'files:write')) {
       throw new AppFileError('denied', `Not permitted: ${what} a file other than the one this page was opened for needs "files:read" or "files:write"`);
     }
   }

@@ -164,7 +164,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
 // `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
 // App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
-export const EXTENSION_API_VERSION = 61;
+// 62 (app-file-pick-core.ts): `files.pick(place, { suffixes, multiple, title, action, upload })`, the person picks chat files
+// of the page's own chat in the host's sheet; the picked ones are readable by that page with no capability (writing needs
+// `files:write`). `pickAgent({ include })` may also offer the
+// page's chat members (`people`, `all`); a person picked answers `{ member }`.
+export const EXTENSION_API_VERSION = 62;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1052,6 +1056,12 @@ export const BRIDGE_VERBS = {
    * The answer is whom, or that they cancelled.
    */
   pickAgent: { needs: null, gesture: true, only: 'page', toAgent: { answer: { cancelled: true } } },
+  /**
+   * API 62: the person picks files of the page's chat in the host's sheet (`app-file-pick-core.ts`). No capability: the App
+   * sees only what was picked, and the pick is the consent to read those (as `ctx.file`); writing one needs `files:write`. The sheet's 「从电脑添加…」 row
+   * is there only for an App holding `files:write`, the rule `files.upload` has.
+   */
+  filesPick: { needs: null, gesture: true, only: 'page', toAgent: { answer: [] } },
   /**
    * The agents at work, and how each one is doing.
    *

@@ -371,27 +371,28 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   create and upload take \`folder\` too (made if missing); \`gugu.files.mkdir({ chat, path })\`,
   \`gugu.files.move(entry, { folder, name })\`; remove takes a whole folder. A name the folder has (any case):
   a new file gets \` (2)\`, a rename or move is \`name-taken\`. 「附件」 (\`systemRole\`) stays put.
-  \`files.create(place, content, { ifExists: 'use' })\` (API 39): the file already there instead (two at once: both get one).
-- A session's working copy, listing and changing it on its own machine: \`apps-working-copy\` doc.
+  \`files.create(place, content, { ifExists: 'use' })\` (API 39): the existing one instead (two at once: one file).
+- A session's working copy: \`apps-working-copy\` doc.
 - \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.
   \`intent\`: \`'navigate'\` (default), \`'newTab'\` (double-click), \`'beside'\`.
   \`{ at }\`: opener's \`link\` place. Unclaimed: preview, or details/download. \`{ peek: true }\`: beside this page
   (always for project files). Gone/unreadable: \`not-found\`.
-- \`gugu.files.openWith(entry, { tab: 'explore' })\`: your own tab claiming the chat file in \`opensFiles.chat\`;
-  no picker/default read or write. \`at\`/\`peek\` work. Invalid/empty/missing/unclaimed tab, \`ask\`, workspace/local:
-  \`invalid\`. Gesture/read permissions remain. Old hosts ignore \`tab\` (ordinary opener); no feature detection.
+- \`gugu.files.openWith(entry, { tab: 'explore' })\`: your own tab claiming it in \`opensFiles.chat\`; no picker.
+  \`at\`/\`peek\` work; a bad tab, \`ask\` or workspace: \`invalid\`. Old hosts ignore \`tab\`.
 - \`gugu.files.upload(place)\` (\`files:write\`, a click or key) opens the picker → the new entries (\`[]\`);
   a File: uploaded (≤ 25 MB, else \`too-large\`). \`gugu.files.download(entry)\` (a click or key) asks where
   to save → \`true\` saved; \`gugu.files.forward(entry|[…])\`: the forward page (working copy ≤ 512 MiB, else \`too-large\`).
+- \`gugu.files.pick({ chat }, { suffixes?, multiple?, upload? })\` (62, click/key, no capability): the host's
+  sheet for the page's own chat → the picks (\`[]\`), readable as \`ctx.file\`; writing needs \`files:write\`, as \`upload\` does.
 - Media opens read-only: \`URL.createObjectURL(await f.blob())\`; \`files.replace(entry,
   blob, { expectedVersion: entry.version })\` makes its next version (needed; else \`content-changed\`).
   \`files.versions(entry)\` / \`files.readVersion(entry, n)\`: its history.
 - Entry: \`{id,chat|workspace,name,savedName,contentType,type,parentId,path,systemRole,size,version,
-  createdAt,updatedAt,createdBy,updatedBy,sourceMessageIds,metadata}\`. \`gugu.files.canDelete(entry|[…])\` → [bool]: as its menu opens, or before a program deletes several.
+  createdAt,updatedAt,createdBy,updatedBy,sourceMessageIds,metadata}\`. \`gugu.files.canDelete(entry|[…])\` → [bool], for menus and batch deletes.
   23: \`savedName\`: save name. Authors: \`{id,name,kind:human|agent|system}\` or null.
 - API 19: \`keep: {expiresAt,mine}|null\`; \`gugu.files.keep(entry, 'temporary'|'permanent')\`; 20: [], as download.
-- Entries/versions: optional \`availability: available|expired|deleted|unavailable\`, \`expiredAt: ISO|null\`. Old services omit; offline devices stay available.
+- Entries/versions: optional \`availability: available|expired|deleted|unavailable\`, \`expiredAt: ISO|null\`; offline devices stay available.
 
 ## Every opened handle
 

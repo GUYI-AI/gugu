@@ -151,6 +151,8 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     download?(args: { ref: AppFileRef; folder?: boolean; transferId?: string } | { refs: AppFileRef[] }): Promise<boolean | number>;
     downloadStop?(args: { transferId: string }): Promise<void>;
     forward?(args: { refs: AppFileRef[] }): Promise<void>;
+    /** API 62: the person picks chat files in the host's sheet, inside a gesture; `[]` when they cancel. */
+    pick?(args: { place: AppPlace; suffixes?: string[]; multiple?: boolean; title?: string; action?: string; upload?: boolean }): Promise<AppFileEntry[]>;
   };
   readonly clipboard?: {
     writeText(text: string): Promise<void>;

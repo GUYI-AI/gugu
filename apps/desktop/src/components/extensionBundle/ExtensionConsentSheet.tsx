@@ -18,6 +18,7 @@ import { remoteHostsStore } from '../../session/renderer/features/remote-hosts/r
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Check } from '../../lib/icons'
 import { DispatchSheet } from '../chat/DispatchSheet'
+import { FilePickSheet } from '../chat/FilePickSheet'
 import { FileSelectionLayer } from '../../session/renderer/features/sessions/annotations/file-selection-overlay'
 
 type Ask = Extract<ExtensionConsentEventDetail, { type: 'ask' }>
@@ -52,12 +53,14 @@ function RequesterFace({ requester }: { requester: ExtensionConsentRequester }) 
  * they answer they are where they were. The session page asks through EXTENSION_CONSENT_EVENT.
  */
 export function ExtensionConsentSheet() {
-  // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`), and an App page's selection menu: the same
-  // shell, so what they send goes the way typed words go.
+  // And whom a dispatch goes to when the App did not say (`gugu.dispatch(text)`), which chat files an App's page asks the
+  // person to pick (`gugu.files.pick`), and an App page's selection menu: the same shell, so what they send goes the way
+  // typed words go.
   return (
     <>
       <InstallConsentSheet />
       <DispatchSheet />
+      <FilePickSheet />
       <FileSelectionLayer />
     </>
   )

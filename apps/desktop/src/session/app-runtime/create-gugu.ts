@@ -111,7 +111,7 @@ export function createGugu(
   }
 
   // The gesture halves, where the host has them: a page's (`VerbFacts.only`), never a background page's or a program's.
-  const { upload, download, openWith, forward } = host.appFiles;
+  const { upload, download, openWith, forward, pick } = host.appFiles;
   /**
    * `files.replace(file, blob, { expectedVersion })` (G1): a stored file's next version; nothing to pick, so no gesture.
    * A chat's file needs `expectedVersion` (the entry's `version` as read): `content-changed` if it was replaced since,
@@ -249,6 +249,10 @@ export function createGugu(
         options.signal?.removeEventListener('abort', stop);
       });
     }) } : {}),
+    // API 62: the person picks files of a chat in the host's sheet → the entries picked (`[]`: cancelled). Those open for
+    // this page with no capability: the pick is the consent.
+    ...(pick ? { pick: (place: unknown, options?: { suffixes?: string[]; multiple?: boolean; title?: string; action?: string; upload?: boolean }) =>
+      withPlace(place, (where) => pick({ ...options, place: where })) } : {}),
     ...(host.appFiles.reveal ? { reveal: (file: unknown) => withRef(file, (ref) => host.appFiles.reveal!({ ref })) } : {}),
     ...(host.appFiles.openIn ? { openInApps: () => host.appFiles.openInApps!({}), openIn: (file: unknown, app: string) => withRef(file, (ref) => host.appFiles.openIn!({ ref, app })) } : {}),
   });

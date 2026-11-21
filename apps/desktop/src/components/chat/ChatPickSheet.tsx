@@ -17,6 +17,8 @@ export interface ChatPickRow {
   id: string
   name: ReactNode
   avatar?: AvatarProps
+  /** Drawn where the avatar goes when there is none: a file's mark (FilePickSheet). Neither: the topic mark. */
+  mark?: ReactNode
   /** After the name: a mark such as 「项目」. */
   badge?: ReactNode
   /** On the right: such as 「6 人」. */
@@ -79,7 +81,7 @@ const TOPIC_MARK = <MessageSquare size={13} className="shrink-0 self-center" sty
 /**
  * Pick chats, several at once, in the invite picker's (MemberPicker) clothes: a title, a search field, the picked as chips,
  * each chat with a round tick and its topics under it. The forward sheet (ForwardMessageDialog), 「添加群或项目」 (AppPlaces)
- * and an App's dispatch (DispatchSheet) are this one sheet; which rows a search leaves, what a row says and what the pick is
+ * an App's dispatch (DispatchSheet) and its file pick (FilePickSheet) are this one sheet; which rows a search leaves, what a row says and what the pick is
  * for are the caller's. Each row carries its chat id in `data-pick-row`.
  */
 export function ChatPickSheet(props: ChatPickSheetProps) {
@@ -99,7 +101,7 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
           mobile={mobile}
           style={topic ? TOPIC_ROW_STYLE : undefined}
           onClick={() => props.onToggle(row.id)}
-          leading={<>{single ? null : <SelectionCheckbox checked={selected.has(row.id)} />}{row.avatar ? <Avatar size={mobile ? 'md' : 'sm'} {...row.avatar} /> : TOPIC_MARK}</>}
+          leading={<>{single ? null : <SelectionCheckbox checked={selected.has(row.id)} />}{row.avatar ? <Avatar size={mobile ? 'md' : 'sm'} {...row.avatar} /> : row.mark ?? TOPIC_MARK}</>}
           title={row.name}
           accessory={row.badge}
           meta={row.trailing}
@@ -151,7 +153,7 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
           <div className={cn('flex shrink-0 gap-2 overflow-x-auto !pb-2', mobile ? '!px-3' : '!px-5')}>
             {chips.map((row) => (
               <Button key={row.id} variant="secondary" size="sm" onClick={() => props.onToggle(row.id)} className="shrink-0 gap-2 !rounded-[var(--radius-capsule)] !pl-1">
-                {row.avatar ? <Avatar {...row.avatar} size="xs" /> : TOPIC_MARK}
+                {row.avatar ? <Avatar {...row.avatar} size="xs" /> : row.mark ?? TOPIC_MARK}
                 <span className="max-w-[160px] truncate">{row.name}</span><X size={12} />
               </Button>
             ))}
