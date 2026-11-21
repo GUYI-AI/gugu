@@ -744,6 +744,21 @@ export function useReplicas<A extends unknown[], V>(model: Replica<A, V>, argsLi
   return results.map((result, index) => (keys[index] ? readingOf(result, keys[index]!) : UNKNOWN))
 }
 
+let readsOnce = 0
+/**
+ * One read that is not kept (a file's bytes for one preview, a one-off check), retried as a model's reads are: ❌ a hand
+ * loop with timers. Nothing is cached: the next call reads again.
+ */
+export function readOnce<V>(read: () => Promise<V>, options: { retry?: number; retryDelay?: (attempt: number) => number } = {}): Promise<V> {
+  return queryClient.fetchQuery({
+    queryKey: ['read-model:once', ++readsOnce],
+    queryFn: read,
+    gcTime: 0,
+    retry: options.retry ?? 0,
+    ...(options.retryDelay ? { retryDelay: options.retryDelay } : {}),
+  })
+}
+
 /** Test seam: the live session as the replica sees it. */
 export function replicaAccount(): AccountState { return account }
 
