@@ -40,14 +40,14 @@ export function createSelectStore<T>(initial: T, options: { scope?: 'account' } 
 /** One key of a record or Map store, set or (`undefined`) removed, and its readers told: ❌ the spread / rest by hand at each caller. */
 export function patch<T extends Record<string, unknown>>(store: SelectStore<T>, key: string, next: T[string] | undefined): void
 export function patch<K, V>(store: SelectStore<ReadonlyMap<K, V>>, key: K, next: V | undefined): void
-export function patch(store: SelectStore<Record<string, unknown> | ReadonlyMap<unknown, unknown>>, key: unknown, next: unknown): void {
-  const now = store.get()
+export function patch<T>(store: SelectStore<T>, key: unknown, next: unknown): void {
+  const now: unknown = store.get()
   if (now instanceof Map) {
     if (next === undefined ? !now.has(key) : Object.is(now.get(key), next)) return
     const copy = new Map(now)
     if (next === undefined) copy.delete(key)
     else copy.set(key, next)
-    store.set(copy)
+    store.set(copy as T)
     return
   }
   const record = now as Record<string, unknown>
@@ -55,8 +55,8 @@ export function patch(store: SelectStore<Record<string, unknown> | ReadonlyMap<u
   if (next === undefined ? !(name in record) : Object.is(record[name], next)) return
   if (next === undefined) {
     const { [name]: _removed, ...rest } = record
-    store.set(rest)
-  } else store.set({ ...record, [name]: next })
+    store.set(rest as T)
+  } else store.set({ ...record, [name]: next } as T)
 }
 
 /** Same own keys, each `Object.is`; anything else `Object.is`. */
