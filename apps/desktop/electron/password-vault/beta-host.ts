@@ -13,7 +13,7 @@ import type { PermissionPolicy } from '../permissions/rules'
 import { guguMcpToolScope, passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
-import { macVaultKeyProtector } from './mac'
+import { systemVaultKeyProtector } from './system-keys'
 import { VaultError, type CredentialGrant } from './contracts'
 import { httpsOrigin } from './schema'
 import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
@@ -105,7 +105,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     } })
   const saves = new BetaPasswordSaves({ deviceId, changed, describe, deliver: host.deliverSave })
   const remote = new BetaRemoteLogins({ deviceId, changed })
-  const keys = macVaultKeyProtector(reason => host.verifyOwner(reason))
+  const keys = systemVaultKeyProtector(process.platform === 'darwin' ? reason => host.verifyOwner(reason) : null)
   // The vault publishes through this port before each local commit; the engine exists once the vault does.
   const port: { sync?: VaultSync } = {}
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),

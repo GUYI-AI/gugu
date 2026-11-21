@@ -9,7 +9,7 @@ export type VaultFeatureGuardProvider = NonNullable<VaultDependencies['acquireFe
 export type VaultStoragePorts = Readonly<{ vault: LocalPasswordVault; outcomeAudit: FixedOutcomeAuditPort }>
 
 /** Fixed desktop-host construction only. No default readiness, registration, new custodian or lock state.
- * The native factory supplies macVaultKeyProtector(), trusted identities, the protected root and live readers.
+ * The native factory supplies systemVaultKeyProtector(), trusted identities, the protected root and live readers.
  * Wire the returned audit port into the unique handoff registry before issuing any use capability.
  */
 export function createVaultStorage(dependencies: VaultStorageDependencies, browser: VaultBrowserSink,

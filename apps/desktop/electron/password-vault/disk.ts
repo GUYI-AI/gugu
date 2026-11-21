@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readdir, rename, unlink } from 'node:fs/promises'
-import { dirname, isAbsolute, join, parse as parsePath, resolve } from 'node:path'
+import { dirname, isAbsolute, join, parse as parsePath, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { VaultError } from './contracts'
@@ -8,6 +8,9 @@ import type { VaultFeatureOperation } from './feature-guard'
 
 const MAX_BYTES = 32 * 1024 * 1024
 const absent = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT'
+// @@@windows-disk - Windows has no POSIX mode bits and cannot open a directory to fsync it: there the per-user
+// profile's ACL guards the root, and a rename is the last step.
+const posix = process.platform !== 'win32'
 const diskError = (error: unknown) => error instanceof VaultError && ['UNAVAILABLE', 'CANCELLED'].includes(error.code) ? error : new VaultError('STORAGE_FAILED')
 /** One Electron-main writer. All temporary bytes are already ciphertext under the registered root. */
 export class VaultDisk {
@@ -21,12 +24,12 @@ export class VaultDisk {
   private beforeWrite(): void { this.feature?.beforeWrite() }
   private path(relative: string): string {
     const path = resolve(this.root, relative)
-    if (!path.startsWith(this.root + '/')) throw new VaultError('INVALID_INPUT')
+    if (!path.startsWith(this.root + sep)) throw new VaultError('INVALID_INPUT')
     return path
   }
   private async directory(path: string, create: boolean): Promise<void> {
     let cursor = parsePath(path).root
-    for (const part of path.slice(cursor.length).split('/').filter(Boolean)) {
+    for (const part of path.slice(cursor.length).split(sep).filter(Boolean)) {
       cursor = join(cursor, part)
       let info
       try { info = await lstat(cursor); this.current() }
@@ -37,7 +40,7 @@ export class VaultDisk {
         this.current(); info = await lstat(cursor); this.current()
       }
       if (!info.isDirectory() || info.isSymbolicLink()) throw new VaultError('STORAGE_FAILED')
-      if (cursor === this.root || cursor.startsWith(this.root + '/')) {
+      if (posix && (cursor === this.root || cursor.startsWith(this.root + sep))) {
         if ((info.mode & 0o077) !== 0) throw new VaultError('STORAGE_FAILED')
       }
     }
@@ -52,7 +55,7 @@ export class VaultDisk {
       let bytes: Buffer
       try {
         this.current(); const info = await handle.stat(); this.current()
-        if (!info.isFile() || info.nlink !== 1 || info.size > MAX_BYTES || (info.mode & 0o077) !== 0) throw new VaultError('STORAGE_FAILED')
+        if (!info.isFile() || info.nlink !== 1 || info.size > MAX_BYTES || posix && (info.mode & 0o077) !== 0) throw new VaultError('STORAGE_FAILED')
         bytes = await handle.readFile()
         try { this.current() } catch (error) { bytes.fill(0); throw error }
         if (bytes.length > MAX_BYTES) { bytes.fill(0); throw new VaultError('STORAGE_FAILED') }
@@ -85,9 +88,7 @@ export class VaultDisk {
       this.beforeWrite()
       await rename(temporary, path)
       this.current()
-      const directory = await open(dirname(path), constants.O_RDONLY)
-      try { this.current(); await directory.sync(); this.current() } finally { await directory.close() }
-      this.current()
+      await this.syncDirectory(dirname(path))
     } catch (error) { throw diskError(error) }
     finally { await unlink(temporary).catch(error => { if (!absent(error)) throw new VaultError('STORAGE_FAILED') }) }
   }
@@ -98,9 +99,13 @@ export class VaultDisk {
     bytes.fill(0)
     try {
       this.beforeWrite(); await unlink(this.path(relative)); this.current()
-      const directory = await open(dirname(this.path(relative)), constants.O_RDONLY)
-      try { this.current(); await directory.sync(); this.current() } finally { await directory.close() }
-      this.current()
+      await this.syncDirectory(dirname(this.path(relative)))
     } catch (error) { throw diskError(error) }
+  }
+  private async syncDirectory(path: string): Promise<void> {
+    if (!posix) return
+    const directory = await open(path, constants.O_RDONLY)
+    try { this.current(); await directory.sync(); this.current() } finally { await directory.close() }
+    this.current()
   }
 }
