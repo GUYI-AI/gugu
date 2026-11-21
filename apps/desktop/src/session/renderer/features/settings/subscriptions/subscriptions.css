@@ -1,24 +1,8 @@
-article.subscription-service {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 20px 18px;
-  padding: 24px;
-  min-width: 0;
-}
-.subscription-service + article.subscription-service { border-top: 1px solid var(--border); }
-.subscription-service-logo { display: flex; align-items: center; justify-content: center; height: 32px; }
 .subscription-gugu-icon { display: block; width: 24px; height: 24px; object-fit: contain; }
-.subscription-service-heading { min-width: 0; }
-.subscription-service-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 24px; }
-.subscription-service-title h3 { margin: 0; font-size: var(--font-title); font-weight: 550; line-height: 1.5; }
 .subscription-plan-badge { padding: 1px 6px; border-radius: 4px; background: var(--hover); color: var(--muted-fg); font-size: var(--font-caption); line-height: 1.5; }
-.subscription-service-identity, .subscription-scope, .subscription-note { color: var(--muted-fg); font-size: var(--font-body); line-height: 1.6; overflow-wrap: anywhere; }
-.subscription-service-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.subscription-service-notice, .subscription-service-details { grid-column: 2 / -1; min-width: 0; }
-.subscription-quota-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; }
+.subscription-note { color: var(--muted-fg); font-size: var(--font-body); line-height: 1.6; overflow-wrap: anywhere; }
 .subscription-quota { min-width: 0; }
 .subscription-quota-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--muted-fg); font-size: var(--font-body); }
-.subscription-wallet-label { justify-content: flex-start; flex-wrap: wrap; }
 .subscription-quota-label strong { color: var(--fg); font-size: 20px; font-weight: 550; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .subscription-quota-label small { color: var(--muted-fg); font-size: var(--font-caption); font-weight: 400; }
 .subscription-quota p { margin: 7px 0 0; font-size: var(--font-body); line-height: 1.6; color: var(--muted-fg); }
@@ -29,7 +13,6 @@ article.subscription-service {
 .subscription-error { color: var(--danger-fg); font-size: var(--font-body); line-height: 1.6; overflow-wrap: anywhere; }
 .subscription-switch-refusal { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .subscription-switch-refusal > button { flex-shrink: 0; }
-.subscription-connection-list { display: flex; flex-direction: column; gap: 0; }
 .subscription-connection-menu { width: 340px; max-width: calc(100vw - 32px); }
 .subscription-connection-option { display: flex; align-items: stretch; }
 .subscription-connection-choice { flex: 1; min-width: 0; padding-block: 10px; }
@@ -41,7 +24,6 @@ article.subscription-service {
 .subscription-connection-description { color: var(--muted-fg); font-size: var(--font-body); overflow-wrap: anywhere; margin-top: 4px; }
 .subscription-connection-quota { color: var(--muted-fg); font-size: var(--font-body); font-variant-numeric: tabular-nums; margin-top: 4px; }
 .subscription-connection-quota[data-warning] { color: var(--warn-fg); }
-.subscription-connection-controls { display: flex; align-items: center; gap: 4px; }
 .subscription-connection-form { display: flex; flex-direction: column; gap: 16px; }
 .subscription-connection-form label,
 .subscription-connection-models { display: flex; flex-direction: column; gap: 6px; color: var(--muted-fg); font-size: var(--font-body); }
@@ -49,28 +31,11 @@ article.subscription-service {
 .subscription-connection-models > .subscription-connection-description { margin-top: 0; }
 /* 表单底部:与「来源 → 自定义路径」那格同一种排法 —— 主按钮、「取消」同一行靠行尾,间距 8。 */
 .subscription-connection-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-@container gg-settings (max-width: 520px) {
-  article.subscription-service { padding: 20px 16px; gap: 16px 12px; }
-  .subscription-quota-grid { gap: 20px; }
-}
-@container gg-settings (max-width: 380px) {
-  article.subscription-service { grid-template-columns: 28px minmax(0, 1fr); }
-  .subscription-service-actions { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-  .subscription-service-notice, .subscription-service-details { grid-column: 1 / -1; }
-}
-@container gg-settings (max-width: 440px) {
-  .subscription-quota-grid { grid-template-columns: minmax(0, 1fr); }
-}
 
-.subscription-reading-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; color: var(--muted-fg); font-size: var(--font-caption); line-height: 1.6; }
-.subscription-reading-footer > div { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 
-.subscription-credit-summary { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
-.subscription-credit-label { color: var(--muted-fg); font-size: var(--font-body); }
-.subscription-credit-value { color: var(--fg); font-family: var(--font-mono); font-size: calc(var(--font-size-xl) * 1.4); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; line-height: 1.2; overflow-wrap: anywhere; }
-.subscription-credit-summary .subscription-note { margin: 0; }
-.subscription-credit-actions { display: flex; justify-content: flex-start; margin-top: 20px; }
-.subscription-credit-scope { font-size: var(--font-caption); }
 .subscription-status-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 /* 「连接」那一块与下面的额度条隔开一档(与资源库详情同一块,#2507)。 */
-.subscription-service-details > .agent-connection-rows { margin-bottom: 16px; }
+/* Settings-primitive form: figures are row values in the body type, tabular. */
+.subscription-figure { color: var(--fg); font-size: var(--font-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.subscription-figure small { color: var(--muted-fg); font-size: var(--font-caption); }
+.gg-settings-row-description .subscription-meter { display: block; width: 240px; max-width: 100%; margin: 6px 0 4px; }

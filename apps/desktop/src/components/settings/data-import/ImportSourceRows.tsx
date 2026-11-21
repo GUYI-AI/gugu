@@ -3,12 +3,13 @@ import { ENVIRONMENT_IMPORT_CATEGORIES } from '@shared/core/session-import/envir
 import { categoryLabelKey, groupImportProviders } from './environment-import-view'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronRight, Clock, X } from '@/lib/icons'
+import { Check, ChevronDown, Clock, X } from '@/lib/icons'
 import { useReplicas } from '@/lib/replica'
 import { importSourceCounts } from './import-replicas'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
-import { MachineList } from '@/components/ui/MachineList'
+import { IconButton } from '@/components/ui/IconButton'
+import { SettingsGroup, SettingsNote, SettingsRow, type SettingsRowProps } from '../SettingsPrimitives'
 import { Collapse } from '@/components/ui/Collapse'
 import { AppIcon } from '@renderer/lib/components/app-icon'
 import { AgentIcon } from '@renderer/lib/components/agent-icon'
@@ -33,7 +34,7 @@ function useSources(providers: readonly ImportProvider[], deviceId: string | nul
 export function ImportSourceIcon({ provider }: { provider: ImportProvider }) {
   return (
     <span aria-hidden="true" className="gg-import-icon">
-      <AppIcon id={provider.iconId} size={24} />
+      <AppIcon id={provider.iconId} size={18} />
     </span>
   )
 }
@@ -100,34 +101,30 @@ function SourceAction({ provider, reading, ownerId, deviceId, deviceName, job }:
   )
 }
 
-function ImportCard({ icon, name, description, open, onToggle, children }: {
-  icon: ReactNode; name: string; description: ReactNode; open: boolean
-  onToggle: () => void; children: ReactNode
+/**
+ * A settings row whose detail rows fold out beneath it (a source's categories, a past import's items). The detail rows
+ * are plain settings rows, indented to the row's title column.
+ */
+export function FoldingRow({ label, open, onToggle, children, control, className, ...row }: Omit<SettingsRowProps, 'control'> & {
+  label: string; open: boolean; onToggle: () => void; control?: ReactNode; children: ReactNode
 }) {
   const id = useId()
   return (
-    <article className="gg-import-card">
-      <Button variant="ghost" className="gg-import-card-trigger" aria-expanded={open} aria-controls={id} onClick={onToggle}>
-        {icon}
-        <span className="gg-import-copy">
-          <span className="gg-import-name">{name}</span>
-          <span className="gg-import-meta">{description}</span>
-        </span>
-        <ChevronRight size={16} className="gg-import-chevron" />
-      </Button>
-      <Collapse id={id} open={open} className="gg-import-collapse">
+    <>
+      <SettingsRow {...row} className={className}
+        control={<>{control}<IconButton aria-label={label} aria-expanded={open} aria-controls={id} onClick={onToggle}>
+          <ChevronDown size={16} className="gg-import-chevron" data-open={open || undefined} /></IconButton></>} />
+      <Collapse id={id} open={open} onOpenChange={(next) => { if (next !== open) onToggle() }}>
         <div className="gg-import-details">{children}</div>
       </Collapse>
-    </article>
+    </>
   )
 }
 
-function ImportRow({ label, job, children, summary }: { label: ReactNode; job?: ImportJob; children: ReactNode; summary?: boolean }) {
+function ImportRow({ label, job, children }: { label: ReactNode; job?: ImportJob; children: ReactNode }) {
   return (
-    <div className="gg-import-row" data-summary={summary || undefined} data-cancellable={job?.state === 'running' || job?.state === 'queued' || undefined}>
-      <div className="gg-import-row-label">{label}</div>
-      {children}
-    </div>
+    <SettingsRow title={label} control={children}
+      data-cancellable={job?.state === 'running' || job?.state === 'queued' || undefined} className="gg-import-row" />
   )
 }
 
@@ -137,7 +134,7 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
   const sources = useSources(providers, null, true)
   const groups = groupImportProviders(providers)
   return (
-    <div className="gg-import-stack">
+    <SettingsGroup title={t('settings.dataImport.appTab')}>
       {groups.map(group => {
         const rows = group.providers.map(provider => sources.find(source => source.provider.id === provider.id)!)
         if (rows.every(({ reading }) => reading?.state === 'value' && reading.value === null)) return null
@@ -149,24 +146,23 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
         const active = jobs.some(job => isActiveImport(job) && group.providers.some(provider => provider.id === job.provider.id))
         const first = group.providers[0]!
         return (
-          <ImportCard key={group.id} name={group.label}
+          <FoldingRow key={group.id} label={group.label} title={group.label} className="gg-import-source"
             description={!settled ? t('settings.dataImport.reading')
               : failed ? t('settings.dataImport.sourceIncomplete') : total === undefined ? t('settings.dataImport.categoryUnavailable') : t(first.historyOnly ? 'settings.dataImport.readOnlyHistory' : 'settings.dataImport.environmentAvailable', { count: total })}
-            icon={<ImportSourceIcon provider={first} />} open={open === group.id}
-            onToggle={() => setOpen(open === group.id ? null : group.id)}>
-            <ImportRow summary label={total === undefined ? t('settings.dataImport.scopeAll') : t('settings.dataImport.allCount', { count: total })}>
+            leading={<ImportSourceIcon provider={first} />} open={open === group.id}
+            onToggle={() => setOpen(open === group.id ? null : group.id)}
+            control={
               <Button variant="secondary" size="sm" disabled={!ready || !total || active}
                 onClick={() => rows.forEach(({ provider, reading }) => {
                   const count = sourceCount(reading)
                   if (count) enqueueImport(ownerId, { devices: [{ deviceId: null, deviceName: t('settings.dataImport.thisComputer'), count }], provider }, t)
-                })}>{t('settings.dataImport.importAll')}</Button>
-            </ImportRow>
+                })}>{t('settings.dataImport.importAll')}</Button>}>
             {(first.historyOnly ? ['tasks'] as const : ENVIRONMENT_IMPORT_CATEGORIES).map(category => {
               const source = rows.find(({ provider }) => (provider.category ?? 'tasks') === category)
               const job = source ? findJob(jobs, source.provider.id, null) : undefined
               const count = sourceCount(source?.reading)
               return (
-                <ImportRow key={category} label={<>{t(first.historyOnly ? 'settings.dataImport.sessions' : categoryLabelKey(category))} {count === undefined ? '' : `(${count})`}</>} job={job}>
+                <ImportRow key={category} label={<>{t(first.historyOnly ? 'settings.dataImport.sessions' : categoryLabelKey(category))}<span className="gg-settings-row-value">{count === undefined ? '' : count}</span></>} job={job}>
                   {source ? source.reading?.state === 'error' ? (
                     <Button variant="secondary" size="sm" title={importFailureDescription(source.reading.error) ?? t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
                       {t('settings.dataImport.refresh')}
@@ -177,10 +173,10 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
                 </ImportRow>
               )
             })}
-          </ImportCard>
+          </FoldingRow>
         )
       })}
-    </div>
+    </SettingsGroup>
   )
 }
 
@@ -201,33 +197,29 @@ function RemoteImportDevice({ machine, providers, ownerId, jobs }: RowsProps & {
   }), { done: 0, total: 0 })
 
   const scanning = visible.some(({ reading }) => !reading || reading.state === 'unknown' || (reading.state === 'value' && reading.value?.pending))
+  if (!online) return <SettingsRow title={t('settings.dataImport.deviceUnavailable')} />
   return (
-    <div className="gg-import-remote-content" data-offline={!online || undefined}>
-      {!online ? <p className="gg-import-unavailable">{t('settings.dataImport.deviceUnavailable')}</p> : (
-        <>
-          <ImportRow summary label={t('settings.dataImport.allCount', { count: total })}>
-            {active.length > 0 ? <span className="gg-import-progress" role="status">
-              {activeProgress.total > 0 ? `${activeProgress.done}/${activeProgress.total}` : t('settings.dataImport.remoteRunning')}
-              <LoadingIndicator size="inline" />
-            </span> : (
-              <Button variant="secondary" size="sm" disabled={scanning || total === 0}
-                onClick={() => targets.forEach(({ provider, device }) => enqueueImport(ownerId, { provider, devices: [device] }, t))}>
-                {t('settings.dataImport.importAll')}
-              </Button>
-            )}
-          </ImportRow>
-          {visible.map(({ provider, reading }) => {
-            const count = sourceCount(reading)
-            const job = findJob(jobs, provider.id, machine.id)
-            return (
-              <ImportRow key={provider.id} job={job} label={<><span className="gg-import-remote-icon"><AgentIcon id={provider.iconId} size={18} /></span>{provider.label} {count === undefined ? sourceDescription(t, reading) : `(${count})`}</>}>
-                <SourceAction provider={provider} reading={reading} ownerId={ownerId} deviceId={machine.id} deviceName={machine.label} job={job} />
-              </ImportRow>
-            )
-          })}
-        </>
-      )}
-    </div>
+    <>
+      <SettingsRow title={t('settings.dataImport.allCount', { count: total })}
+        control={active.length > 0 ? <span className="gg-import-progress" role="status">
+          {activeProgress.total > 0 ? `${activeProgress.done}/${activeProgress.total}` : t('settings.dataImport.remoteRunning')}
+          <LoadingIndicator size="inline" />
+        </span> : (
+          <Button variant="secondary" size="sm" disabled={scanning || total === 0}
+            onClick={() => targets.forEach(({ provider, device }) => enqueueImport(ownerId, { provider, devices: [device] }, t))}>
+            {t('settings.dataImport.importAll')}
+          </Button>
+        )} />
+      {visible.map(({ provider, reading }) => {
+        const job = findJob(jobs, provider.id, machine.id)
+        return (
+          <SettingsRow key={provider.id} leading={<span className="gg-import-icon"><AgentIcon id={provider.iconId} size={18} /></span>}
+            title={provider.label} description={sourceDescription(t, reading)}
+            data-cancellable={job?.state === 'running' || job?.state === 'queued' || undefined} className="gg-import-row"
+            control={<SourceAction provider={provider} reading={reading} ownerId={ownerId} deviceId={machine.id} deviceName={machine.label} job={job} />} />
+        )
+      })}
+    </>
   )
 }
 
@@ -235,12 +227,16 @@ export function RemoteImportSources({ machines, ...props }: RowsProps & { machin
   const { t } = useTranslation('main')
   const [selected, setSelected] = useState<string | null>(null)
   const machine = machines.find(({ id }) => id === selected) ?? machines[0]
-  if (!machine) return <p className="gg-import-empty">{t('settings.dataImport.noDevices')}</p>
+  if (!machine) return <SettingsNote>{t('settings.dataImport.noDevices')}</SettingsNote>
   return (
-    <div className="gg-import-remote-panel">
-      <MachineList compact label={t('settings.dataImport.machineList')} machines={machines} selected={machine.id}
-        onlineLabel={t('settings.dataImport.onlineStatus')} offlineLabel={t('settings.dataImport.offlineStatus')} onSelect={setSelected} />
+    <SettingsGroup title={t('settings.dataImport.deviceTab')} note={t('settings.dataImport.remoteDescription')}>
+      <SettingsRow title={t('settings.dataImport.machineList')}
+        description={machine.isOnline ? t('settings.dataImport.onlineStatus') : t('settings.dataImport.offlineStatus')}
+        control={<select className="gg-settings-select" aria-label={t('settings.dataImport.machineList')} value={machine.id}
+          onChange={(event) => setSelected(event.target.value)}>
+          {machines.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+        </select>} />
       <RemoteImportDevice key={machine.id} {...props} machine={machine} />
-    </div>
+    </SettingsGroup>
   )
 }
