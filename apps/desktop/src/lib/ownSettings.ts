@@ -19,10 +19,11 @@ const isChatScope = (scope: Scope) => scope.startsWith('chat:')
  * The signed-in account's own settings rows (identity.user_settings), one reading per scope. Occupation, first-run
  * progress and hints, file storage, the product tour and the sample project are keys of the same rows: their readers
  * share one read (a read on its way serves everyone who asks meanwhile), and a write puts the row the server saved back,
- * so the next reader needs no read at all.
+ * so the next reader needs no read at all. A group's own row (`chat:<id>`, its pinned topics) is the replica `chatPins`'s
+ * (components/chat/useChatPinSettings): read and kept there, ❌ a second copy of it here.
  */
-const ownRows = (name: string) => replica({
-  name,
+export const ownSettings = replica({
+  name: 'ownSettings',
   scope: 'account',
   read: readRow,
   fresh: 10_000,
@@ -32,21 +33,16 @@ const ownRows = (name: string) => replica({
   persist: { maxBytes: 1024, maxEntries: 4 },
 })
 
-export const ownSettings = ownRows('ownSettings')
-/** A group's own row (its pinned topics), kept apart: groups opened cold ❌ push the account's rows out of the snapshot. */
-export const chatOwnSettings = ownRows('chatOwnSettings')
+/** The replica holds the signed-in account's own rows except a group's (that one is `chatPins`'s). */
+const held = (userId: string, scope: Scope) => replicaAccount().id === userId && !isChatScope(scope)
 
-const modelOf = (scope: Scope) => (isChatScope(scope) ? chatOwnSettings : ownSettings)
-
-const mine = (userId: string) => replicaAccount().id === userId
-
-/** One row's config. The replica holds the signed-in account's rows; any other id reads the table. */
+/** One row's config. The replica holds the signed-in account's rows; any other id (or a group's row) reads the table. */
 export function readOwnSettings(userId: string, scope: Scope): Promise<Record<string, unknown>> {
-  return mine(userId) ? modelOf(scope).fetch(scope) : readRow(userId, scope)
+  return held(userId, scope) ? ownSettings.fetch(scope) : readRow(userId, scope)
 }
 
 function saved(userId: string, row: GuguSettingsRow): GuguSettingsRow {
-  if (mine(userId)) modelOf(row.scope).set([row.scope], row.config)
+  if (held(userId, row.scope)) ownSettings.set([row.scope], row.config)
   return row
 }
 

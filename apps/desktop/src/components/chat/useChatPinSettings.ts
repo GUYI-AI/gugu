@@ -7,7 +7,10 @@ import { queryClient, replica, useReplica } from '@/lib/replica'
 import { useAuth } from '@/store/auth'
 import { useToast } from '../toastContext'
 
-/** The topics this account pinned in a chat (its own settings row per chat); a change elsewhere arrives by the watch. */
+/**
+ * The topics this account pinned in a chat (its own settings row per chat, read here and nowhere else: ❌ a second copy of
+ * the row in ownSettings); a change elsewhere arrives by the watch.
+ */
 export const chatPins = replica({
   name: 'chatPins',
   scope: 'account',
@@ -16,6 +19,9 @@ export const chatPins = replica({
   fresh: Infinity,
   // Back in the app after having left: read again (❌ on every focus of the main window: switching Gugu windows).
   refreshOnFocus: true,
+  // The first frame of a group revisited after a restart. Its own model, so its own entry limit: groups opened cold ❌ push
+  // the account's own rows (ownSettings) out of the snapshot.
+  persist: { maxBytes: 1024, maxEntries: 4 },
   watch: { group: (chatId) => chatId, start: (owner, chatId) => watchChatPinSettings(owner, chatId, () => { void chatPins.refresh(chatId) }) },
 })
 
