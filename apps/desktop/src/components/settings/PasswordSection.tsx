@@ -8,6 +8,7 @@ import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type Passwo
 import { passwordSaveDraft, passwordVault } from '@/lib/passwordBetaNotifications'
 import { refreshFailure, useReplica, type Reading, retryOf } from '@/lib/replica'
 import { Unknown } from '../ui/Unknown'
+import { ReadingSlot } from '../ui/ReadingSlot'
 import { ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, Trash, X } from '@/lib/icons'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { useSettingsDetail } from './SettingsDetailNavigation'
@@ -134,11 +135,9 @@ function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: strin
     return <CredentialForm item={item} request={{ id: requestId, draft: draft.value }} {...props} />
   }
   return <RequestWaiting requestId={requestId} go={props.go}>
-    {draft.state === 'error' ? <>
-      <SettingsNote tone="danger" role="alert">{draft.error.message}</SettingsNote>
-      <Button variant="secondary" onClick={retryOf(draft)}>{t('passwords.retry')}</Button>
-    </> : draft.state === 'value' && !draft.value ? <SettingsNote>{t('passwords.requestHandled')}</SettingsNote>
-      : <Unknown className="h-40 w-full" />}
+    <ReadingSlot reading={draft} placeholder="h-40 w-full">
+      {value => value ? <Unknown className="h-40 w-full" /> : <SettingsNote>{t('passwords.requestHandled')}</SettingsNote>}
+    </ReadingSlot>
   </RequestWaiting>
 }
 
