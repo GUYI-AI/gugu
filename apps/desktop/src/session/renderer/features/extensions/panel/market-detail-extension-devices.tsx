@@ -62,5 +62,5 @@ export const MarketExtensionDevices = observer(function MarketExtensionDevices({
       await host.extensions.store.checkUpdates();
     },
   });
-  return <MarketDevicePicker {...picker} />;
+  return <MarketDevicePicker {...picker} size="lg" />;
 });

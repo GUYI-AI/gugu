@@ -139,7 +139,7 @@ vi.mock('@renderer/features/sessions/acp/acp-chat-store', () => ({
 }));
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
-  appState: {},
+  appState: { navigation: { viewParamsStore: {} } },
   sidebarStore: {},
 }));
 
@@ -1721,6 +1721,7 @@ describe('InitialSessionField', () => {
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
     expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      location: { tab: 'agents', installed: undefined },
       agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });

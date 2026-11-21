@@ -5,24 +5,6 @@
  * reflow. Refs #5265 (state-change review).
  */
 
-const ROW_WIDTHS = ['is-w2', 'is-w3', 'is-w1'] as const;
-
-export function InstalledRowsSkeleton({ label }: { label: string }) {
-  return (
-    <ul className="xp-rows" role="status" aria-label={label} aria-busy="true">
-      {ROW_WIDTHS.map((width, index) => (
-        <li key={index} className="xp-row is-skeleton" aria-hidden>
-          <span className="xp-skel xp-skel-glyph" />
-          <div className="xp-copy">
-            <span className={`xp-skel xp-skel-line ${width}`} />
-            <span className="xp-skel xp-skel-line is-w4 is-dim" />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 const CARD_WIDTHS = ['is-w2', 'is-w1', 'is-w3', 'is-w2', 'is-w3', 'is-w1'] as const;
 
 export function ShelfSkeleton({ label }: { label: string }) {

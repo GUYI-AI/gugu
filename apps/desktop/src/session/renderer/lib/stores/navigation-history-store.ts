@@ -4,13 +4,14 @@ import type { ViewId, WrapParams } from '@renderer/app/view-registry';
 const MAX_STACK_SIZE = 50;
 
 export type HistoryEntry =
-  | { kind: 'view'; viewId: ViewId; params: WrapParams<ViewId> }
+  /** `place`: where inside the view (view-registry `placeParams`); visits to different places are different steps. */
+  | { kind: 'view'; viewId: ViewId; params: WrapParams<ViewId>; place?: string }
   | { kind: 'tab'; projectId: string; sessionId: string; tabId: string };
 
 function entriesEqual(a: HistoryEntry, b: HistoryEntry): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'view' && b.kind === 'view') {
-    if (a.viewId !== b.viewId) return false;
+    if (a.viewId !== b.viewId || a.place !== b.place) return false;
     // The session view is parameterized by sessionId — different sessions are distinct entries.
     if (a.viewId === 'session') {
       const ap = a.params as { sessionId?: string };
@@ -81,6 +82,14 @@ export class NavigationHistoryStore {
     } else {
       this.index++;
     }
+  }
+
+  /** The step you are on moved within its view (a segment switched in place): it now records where you are. */
+  replaceCurrent(entry: HistoryEntry): void {
+    if (this.navigating) return;
+    const current = this.entries[this.index];
+    if (current?.kind !== 'view' || entry.kind !== 'view' || current.viewId !== entry.viewId) return;
+    this.entries[this.index] = entry;
   }
 
   back(apply: (entry: HistoryEntry) => void): void {
