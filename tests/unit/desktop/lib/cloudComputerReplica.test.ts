@@ -30,6 +30,8 @@ const { CloudComputerError } = await import('@gugu/core/cloud/cloudComputer')
 const signIn = (id: string) => publishRendererSession('SIGNED_IN', { user: { id }, access_token: 't' } as never)
 const snap = (state: CloudComputerSnapshot['state']): CloudComputerSnapshot => ({ state, deviceId: 'dev-cloud', error: null, since: null })
 const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
+/** `readCloudSnapshotNow` asks after its refresh settles: wait for the n-th ask before answering it. */
+const asked = (n: number) => vi.waitFor(() => expect(calls).toHaveLength(n))
 
 describe('cloudComputer read', () => {
   beforeEach(() => {
@@ -41,11 +43,13 @@ describe('cloudComputer read', () => {
 
   it('那扇门说「这里没开放」(503 not_open):整块不显示、❌ 报读不到;配上以后问到就出现', async () => {
     const closed = readCloudSnapshotNow()
+    await asked(1)
     rejects[0]!(new CloudComputerError(503, 'not_open', '云电脑暂未开放'))
     await expect(closed).resolves.toBeNull()
     expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { available: false }, error: null })
 
     const opened = readCloudSnapshotNow()
+    await asked(2)
     calls[1]!({ ...snap('none'), deviceId: null })
     await opened
     expect(cloudComputer.peek()).toMatchObject({ state: 'value', value: { available: true, snapshot: { state: 'none' } } })
@@ -53,6 +57,7 @@ describe('cloudComputer read', () => {
 
   it('连不上管家(502)、云端函数没部署(404)是读数里的错误(还没读到过 = 整份是错误)', async () => {
     const down = readCloudSnapshotNow()
+    await asked(1)
     rejects[0]!(new CloudComputerError(404, 'http_404', 'Function not found'))
     await expect(down).rejects.toThrow()
     expect(cloudComputer.peek().state).toBe('error')
@@ -62,16 +67,19 @@ describe('cloudComputer read', () => {
   it('a failed read cannot make cloud setup selectable; a real successful state read can', async () => {
     expect(canSetUpCloudAssistant(cloudComputer.peek())).toBe(false) // not read yet
     const closed = readCloudSnapshotNow()
+    await asked(1)
     rejects[0]!(new CloudComputerError(503, 'not_open', 'not open'))
     await closed
     expect(canSetUpCloudAssistant(cloudComputer.peek())).toBe(false)
 
     const recovered = readCloudSnapshotNow()
+    await asked(2)
     calls[1]!({ ...snap('none'), deviceId: null })
     await recovered
     expect(canSetUpCloudAssistant(cloudComputer.peek())).toBe(true)
 
     const failed = readCloudSnapshotNow()
+    await asked(3)
     rejects[2]!(new CloudComputerError(0, 'network', 'connection reset'))
     await expect(failed).rejects.toThrow('connection reset')
     // The value stays shown, the failure is said with it; not ready to select.
@@ -105,6 +113,7 @@ describe('destroyCloudComputer', () => {
 
   it('关掉成功当场就是「没有」;之后那次 /state 问到的接着落', async () => {
     const before = readCloudSnapshotNow()
+    await asked(1)
     calls[0]!(snap('awake'))
     await before
     const closing = destroyCloudComputer()

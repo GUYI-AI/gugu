@@ -1,6 +1,7 @@
 import { reportHandledError } from '@/lib/errorSummaryReporting';
 import { rendererLogger } from '@/lib/log';
 import { replica } from '@/lib/replica';
+import { writeOver } from '@/lib/replicaWrite';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import { appSettingsChangedChannel } from '@shared/events/appEvents';
 import { newSessionMemoryChangedChannel } from '@shared/core/sessions/sessionEvents';
@@ -47,11 +48,16 @@ export function routeRemoteSettings(route: (host: string) => SettingsRpc): void 
   remoteSettingsRoute = route;
 }
 
+/** The one route to a host's settings: reads, writes and resets all go through it (❌ a write on another pipe than its read). */
+export function settingsRpcOn(host: string): SettingsRpc['appSettings'] {
+  return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : remoteSettingsRoute(host)).appSettings;
+}
+
 /** Another machine's settings (#6264): ❌ persisted — they would push this device's keys out of the snapshot. */
 export const remoteAppSettingsModel = replica({
   name: 'remoteAppSettings',
   scope: 'account',
-  read: async (_device, key: AppSettingsKey, host: string) => await remoteSettingsRoute(host).appSettings.getWithMeta(key) as SettingsMeta<AppSettingsKey>,
+  read: async (_device, key: AppSettingsKey, host: string) => await settingsRpcOn(host).getWithMeta(key) as SettingsMeta<AppSettingsKey>,
   fresh: 5 * 60_000,
   retry: (failures: number, _error: Error, key: AppSettingsKey) => key === 'browser' && failures < 3,
 });
@@ -131,32 +137,27 @@ export function setAppSettingsValueInCache<K extends AppSettingsKey>(key: K, val
 }
 
 export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
-  return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.update(key, value as never) as Promise<void>;
+  return settingsRpcOn(host).update(key, value as never) as Promise<void>;
 }
 
 /** The one write of a settings key; read again when it settles — broadcasts dropped meanwhile may carry another window's change (I4). */
-export function writeAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
-  const reading = settingsModelOf(host).peek(key, host);
-  if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
-  const prev = (reading.value as SettingsMeta<K>).value;
+export async function writeAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
   const done = host === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {};
-  setAppSettingsValueInCache(key, value, host);
-  return updateAppSettingsRequest(key, value, host)
-    .catch((error: unknown) => {
-      setAppSettingsValueInCache(key, prev, host);
-      settingsLog.error({ key, error: String(error) }, `settings ${key}: main refused the write; the shown value is put back`);
-      throw error;
-    })
-    .finally(() => {
-      done();
-      invalidateAppSettingsKey(key, host);
-    });
+  try {
+    await writeOver(settingsModelOf(host), [key, host], (old) => old && { ...old, value } as SettingsMeta<AppSettingsKey>,
+      () => updateAppSettingsRequest(key, value, host));
+  } catch (error) {
+    settingsLog.error({ key, error: String(error) }, `settings ${key}: main refused the write; the stored value is shown again`);
+    throw error;
+  } finally {
+    done();
+    invalidateAppSettingsKey(key, host);
+  }
 }
 
 /** Even with no surface showing it: logic outside React decides on these values. */
 export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K, host = LOCAL_SETTINGS_HOST_KEY): void {
-  const model = settingsModelOf(host);
-  void model.refresh(key, host).then(() => model.prefetch(key, host));
+  void settingsModelOf(host).reread(key, host).catch(() => undefined);
 }
 
 /** Main writes the new-session memory itself after a switched model's first reply (#3293): the box reads it fresh. */

@@ -9,9 +9,9 @@ import {
   writeAppSetting,
   LOCAL_SETTINGS_HOST_KEY,
   settingsModelOf,
+  settingsRpcOn,
   type SettingsMeta,
 } from './app-settings-client';
-import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { useSettingsHost } from './settings-host';
 
 export { getAppSettingValueSnapshot };
@@ -30,7 +30,7 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
   const model = settingsModelOf(host.key);
   const settings = useReplica(model, [key, host.key], { read: !remote || remote.online }) as Reading<SettingsMeta<K>>;
   const current = settings.state === 'value' ? settings.value : undefined;
-  const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
+  const api = settingsRpcOn(host.key);
 
   // Every write of this window holds the key against its own broadcast until its own read settles it.
   const holdWrite = () => (host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {});

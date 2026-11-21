@@ -1,7 +1,6 @@
-import { useMutation } from '@tanstack/react-query'
 import { QUICK_CHAT_CHANNELS, shortcutLabel, type QuickChatState } from '../../lib/quickChatIpc'
 import { rendererLogger } from '../../lib/log'
-import { queryClient, replica, useReplica, type Reading } from '../../lib/replica'
+import { replica, useReplica, type Reading } from '../../lib/replica'
 import { readRendererPlatform } from '../../lib/window-chrome'
 import { desktopIpc } from '../../platform/desktopIpc'
 
@@ -25,16 +24,12 @@ export const quickChatState = replica({
 export function useQuickChatState(): { available: boolean; reading: Reading<QuickChatState>; setEnabled: (on: boolean) => void } {
   const available = desktopIpc() !== null
   const reading = useReplica(quickChatState, available ? [] : null)
-  const toggle = useMutation({
-    mutationFn: async (on: boolean) => {
-      const ipc = desktopIpc()
-      if (!ipc) throw new Error('quick chat lives in the desktop app')
-      const entry = quickChatState.at()
-      entry.set((await ipc.invoke(QUICK_CHAT_CHANNELS.setEnabled, on)) as QuickChatState)
-    },
-    onError: (error) => log.warn({ error: String(error) }, '快速聊天的开关没改成'),
-  }, queryClient)
-  return { available, reading, setEnabled: (on) => toggle.mutate(on) }
+  const setEnabled = (on: boolean) => {
+    const entry = quickChatState.at()
+    void desktopIpc()?.invoke(QUICK_CHAT_CHANNELS.setEnabled, on)
+      .then((next) => entry.set(next as QuickChatState), (error: unknown) => log.warn({ error: String(error) }, '快速聊天的开关没改成'))
+  }
+  return { available, reading, setEnabled }
 }
 
 export function quickChatShortcutLabel(state: QuickChatState): string {

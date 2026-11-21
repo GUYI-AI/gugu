@@ -31,7 +31,7 @@ export const assistantWorkRecords=replica({
  fresh:60_000,
  refreshJoinsRead:true,
  refreshOnFocus:true,
- watch:{group:(assistantId)=>assistantId,start:(owner,assistantId)=>watchWork(assistantWorkRecords,owner,assistantId)},
+ watch:{group:(assistantId)=>assistantId,start:(owner,assistantId):(()=>void)=>watchWork(assistantWorkRecords,owner,assistantId)},
 })
 
 /** One work and its events (serves the window and the chat rows). */
@@ -42,7 +42,7 @@ export const assistantWork=replica({
  fresh:60_000,
  refreshJoinsRead:true,
  refreshOnFocus:true,
- watch:{group:(assistantId)=>assistantId,start:(owner,assistantId)=>watchWork(assistantWork,owner,assistantId)},
+ watch:{group:(assistantId)=>assistantId,start:(owner,assistantId):(()=>void)=>watchWork(assistantWork,owner,assistantId)},
 })
 
 type Landed={args:string[];reading:{state:string;error?:Error|null};fetching:boolean}
