@@ -19,7 +19,6 @@ import {
   installedExtensions,
   marketUpdates,
   peekInstalledApps,
-  putInstalled,
   setAutoUpdate,
   setDisclosure as setDisclosureOn,
   updateCountOf,
@@ -959,7 +958,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const result = await api.setTabHidden({ extensionId: manifest.id, tab: name, hidden });
       if (!result.success || !result.data) throw new Error(result.error ?? '');
       const hiddenTabs = result.data;
-      putInstalled(host.key, (list) => ({ ...list, hiddenTabs }));
+      installedExtensions.set([host.key], (list) => list && { ...list, hiddenTabs });
     } catch (error) {
       log.error('hidden tab refused:', error);
       toast({ title: translate('extensions.tabHiddenFailed'), description: messageForUser(error), tier: 'error' });

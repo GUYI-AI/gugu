@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
-import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 
 /**
  * A file clicked in an App's page beside a chat (the chat's folder, an App's list): main hands the window a link to it
@@ -67,7 +67,7 @@ const history = () => chatPaneOf(chat, folder)!.navigationOf(folder)!
 
 beforeEach(async () => {
   harness = createReactHarness()
-  tellInstalled('local', { extensions: ['workspace', 'notes'].map(id => ({ id, name: id, version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'file', title: id }] } })), invalid: [] } as unknown as InstalledExtensionsList)
+  installedExtensions.set(['local'], { extensions: ['workspace', 'notes'].map(id => ({ id, name: id, version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'file', title: id }] } })), invalid: [] } as unknown as InstalledExtensionsList)
   chat = `app-opening-${++serial}`; other = `app-opening-other-${serial}`
   held.clear(); outcomes.clear(); noted.mockClear(); viewed.mockClear()
   vi.mocked(appsHere!.groupFileOpener).mockReset().mockImplementation(({ itemId }) => new Promise((resolve) => held.set(itemId, (how) => resolve(('error' in how ? { success: false, ...how } : { success: true, data: how }) as never))))

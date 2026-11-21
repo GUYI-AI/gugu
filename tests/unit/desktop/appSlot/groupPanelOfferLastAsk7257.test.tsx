@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
-import { peekInstalledApps, tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { peekInstalledApps, installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
@@ -40,7 +40,7 @@ function slides(version: string) {
 }
 const workspace = { id: 'workspace', name: 'Workspace', version: '1.0.0', apiVersion: 4, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Workspace', opensFiles: { chat: ['.json'] } }] } }
 const install = (manifests: unknown[]) =>
-  act(() => tellInstalled('local', { extensions: manifests, invalid: [] } as unknown as InstalledExtensionsList))
+  act(() => installedExtensions.set(['local'], { extensions: manifests, invalid: [] } as unknown as InstalledExtensionsList))
 
 const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 // The chat's shared packages are an account replica: read for a signed-in account, as in the product.

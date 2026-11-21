@@ -9,7 +9,7 @@ import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNav
 import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
-import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 
 export interface ChatTabsProps {
   chatId: string
@@ -63,7 +63,7 @@ export async function expectSharedPackagesLive(render: (node: ReturnType<typeof 
   sharedCards.answer = () => new Promise((resolve) => { answer = resolve })
   try {
     // What is installed here is known (nothing): only the shared packages decide whether the page waits.
-    act(() => tellInstalled('local', { extensions: [], invalid: [] } as unknown as InstalledExtensionsList))
+    act(() => installedExtensions.set(['local'], { extensions: [], invalid: [] } as unknown as InstalledExtensionsList))
     await render(chatTabs({ chatId }))
     act(() => { openPanelItem(chatId, { kind: 'office.main', itemId: 'doc', title: 'doc' }) })
     const held = () => document.querySelector('[data-testid="group-app-slot-raw-folded"]') !== null

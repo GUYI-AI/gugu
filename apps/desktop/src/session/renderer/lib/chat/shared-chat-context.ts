@@ -1,6 +1,6 @@
 import { createChatContext, DEFAULT_CONFIG, type ChatConfig, type ChatContext } from '@gugu/session-chat-ui';
 import { subscribeLocale } from '@/i18n';
-import { LOCAL_HOST, peekInstalledApps, watchInstalled } from '@renderer/features/extensions/installed-extensions';
+import { installedExtensions, LOCAL_HOST, peekInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { rpc } from '@renderer/lib/ipc';
 import { advertisedCommandProvider } from './advertised-command-provider';
@@ -82,7 +82,7 @@ export function createSessionChatContext(): ChatContext {
       return installed ? installed.appName(appId) : undefined;
     },
     subscribeAppNames: (listener) => {
-      const stopList = watchInstalled(LOCAL_HOST, () => listener());
+      const stopList = installedExtensions.subscribe([LOCAL_HOST], () => listener());
       const stopLocale = subscribeLocale(listener);
       return () => { stopList(); stopLocale(); };
     },

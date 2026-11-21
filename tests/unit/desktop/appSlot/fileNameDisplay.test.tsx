@@ -17,7 +17,7 @@ vi.mock('@/lib/fileAccess', async importOriginal => ({
   fileMetadata: vi.fn(async () => ({ status: 'gone', sha256: null })),
 }));
 const { ask, chatTabs, shownItem } = await import('./chatTabsHarness');
-const { tellInstalled } = await import('@/session/renderer/features/extensions/installed-extensions');
+const { installedExtensions } = await import('@/session/renderer/features/extensions/installed-extensions');
 const { GroupFileName } = await import('@/components/markdown/GroupFileName');
 const { OpenWithPick } = await import('@/components/appSlot/OpenWithPick');
 const workspace = { id: 'workspace', name: 'Folder', version: '1.0.0', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Folder', opensFiles: { chat: ['.md', '.json'] } }] } };
@@ -30,7 +30,7 @@ beforeEach(() => {
   followRendererSession('SIGNED_IN', 'user-1');
   harness = createReactHarness();
   HTMLElement.prototype.checkVisibility = () => false;
-  act(() => tellInstalled('local', { extensions: [workspace, vote], invalid: [] } as never));
+  act(() => installedExtensions.set(['local'], { extensions: [workspace, vote], invalid: [] } as never));
 });
 // Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
 // the setup above, whose closing of tabs is itself remembered).
@@ -38,7 +38,7 @@ beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) 
 afterEach(() => {
   harness.cleanup();
   HTMLElement.prototype.checkVisibility = originalCheckVisibility;
-  act(() => tellInstalled('local', { extensions: [], invalid: [] } as never));
+  act(() => installedExtensions.set(['local'], { extensions: [], invalid: [] } as never));
 });
 
 describe('stored file names on message, tab, and chooser surfaces', () => {

@@ -135,7 +135,7 @@ it('before the App is in: 聊天 as ever, the sections say it is being prepared;
 // over it by the ensure step, so the sections say it is being prepared, not stuck. Only the person's own copy (from a chat,
 // switched off) is left as it is, and said stuck. Control (the parent commit): any App holding the id was said stuck.
 it('an untrusted copy holding the id: gugu\'s market copy is being replaced (preparing); the person\'s own is stuck', async () => {
-  const { installedExtensions, tellInstalled } = await import('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+  const { installedExtensions } = await import('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
   const { queryClient } = await import('../../../apps/desktop/src/lib/replica')
   state.entry = { entry: 'built-in', reason: 'not the trusted App' }
   const copy = { manifest: { id: 'gugu-assistant', version: '0.9.0' }, origin: 'market', marketSource: null, manifestDigest: 'd', activeVariant: 'upstream', enabled: true, mainTabKind: null }
@@ -146,7 +146,7 @@ it('an untrusted copy holding the id: gugu\'s market copy is being replaced (pre
   }
   try {
     // The Apps on this phone are read (what `held` names is the test's own).
-    tellInstalled('phone', { extensions: [], invalid: [] } as never)
+    installedExtensions.set(['phone'], { extensions: [], invalid: [] } as never)
     state.held = copy
     expect(await stuckShown()).not.toBe('true')
     state.held = { ...copy, origin: 'attachment' }

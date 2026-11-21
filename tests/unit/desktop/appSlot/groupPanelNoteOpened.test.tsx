@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
 import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
-import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { act } from 'react'
 import { toJS } from 'mobx'
 import { createReactHarness } from '../../../support/testHarness'
@@ -41,7 +41,7 @@ beforeEach(() => {
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
   // What is installed here is read (as main tells it at start): nothing.
-  tellInstalled('local', { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
+  installedExtensions.set(['local'], { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
   rpc.mockClear(); local.mockReset().mockResolvedValue(null)
 })
 // Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after

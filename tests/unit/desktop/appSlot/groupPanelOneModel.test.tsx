@@ -9,7 +9,7 @@ import { chatLayoutOf, chatPaneOf, infoTabOf, openInfoTab, openPanelItem, panelF
 import { tabFullscreen } from '../../../../apps/desktop/src/session/renderer/features/tabs/tab-fullscreen'
 import { extensionSurfaceStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-surface-store'
 import { extensionViewStore, residentPageKey, residentPlace } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store'
-import { tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { ask, chatTabs, linkShell, pill, shownItem, type ChatTabsProps } from './chatTabsHarness'
 
 // 最近打开: an open is kept through the chat database (useChatOpener `noteOpened`); never the network here.
@@ -50,7 +50,7 @@ beforeEach(() => {
   // jsdom has no checkVisibility: an unseen slot claims no page, which is all this file needs of it.
   HTMLElement.prototype.checkVisibility = () => false
   // What is installed here is read (nothing, unless a test installs): a file's page waits for it before it is claimed.
-  tellInstalled('local', { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
+  installedExtensions.set(['local'], { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
 })
 // Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
 // the setup above, whose closing of tabs is itself remembered).
@@ -129,7 +129,7 @@ describe('the slot header', () => {
   // The board App came from a card in a chat (the only kind a group's newer package may replace, E-05), unless said.
   const install = (toolbar: { id: string; title: string }[], menu: { id: string; title: string }[], version = '1.0.0', origin = 'attachment') =>
     act(() =>
-      tellInstalled('local', {
+      installedExtensions.set(['local'], {
         extensions: toolbar === NONE ? [] : [{ id: 'board', name: 'Board', version, defaultLocale: 'en', contributes: { tabs: [{ name: 'main', title: 'Board', toolbar, menu }] } }],
         invalid: [],
         origins: { board: origin },
@@ -198,7 +198,7 @@ describe('the slot header', () => {
 // went to its files — one with none opened nothing at all.
 describe('an App opened in the group (「在本群打开」)', () => {
   const installTabs = (tabs: { name: string; title: string; opensFiles?: Record<string, string[]>; chatFile?: string }[]) =>
-    act(() => tellInstalled('local', { extensions: [{ id: 'board', name: 'Board', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs } }], invalid: [] } as unknown as InstalledExtensionsList))
+    act(() => installedExtensions.set(['local'], { extensions: [{ id: 'board', name: 'Board', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs } }], invalid: [] } as unknown as InstalledExtensionsList))
 
   it('the folder asked for is a tab of its own beside the chat, pushing the App back into the strip, with no Back', async () => {
     const chatId = 'folder-entry-7590'

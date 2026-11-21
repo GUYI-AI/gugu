@@ -20,7 +20,7 @@ import type { FileOpenContext } from '@shared/extensions/manifest';
 import type { MarketUpdatesSummary } from '@shared/extensions/market';
 import type { ExtensionOrigin } from '@shared/extensions/upgrade';
 import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
-import { extensionsApiOf, LOCAL_HOST, PHONE_HOST } from './extensions-api';
+import { extensionsApiOf, INSTALLED, LOCAL_HOST, PHONE_HOST, phoneStore, unwrap } from './extensions-api';
 
 // @@@installed-extensions — what a host (`local`, `remote:<deviceId>` #6264, `phone`) has installed (@@@client-state-model).
 
@@ -63,25 +63,12 @@ export interface RailApp {
   iconDataUrl: string | null;
 }
 
-let phoneList: (() => Promise<InstalledExtensionsList>) | null = null;
-export function definePhoneInstalledList(read: () => Promise<InstalledExtensionsList>): void {
-  phoneList = read;
-}
-
-async function readList(hostKey: string): Promise<InstalledExtensionsList> {
-  if (hostKey === PHONE_HOST) {
-    if (!phoneList) throw new Error('The phone App store is not loaded');
-    return phoneList();
-  }
-  const result = await extensionsApiOf(hostKey).list();
-  if (!result.success || !result.data) throw new Error(result.error ?? 'Failed to list extensions');
-  return result.data;
-}
-
 export const installedExtensions = replica({
   name: 'installedExtensions',
+  tags: [INSTALLED],
   scope: 'device',
-  read: (_owner: string, hostKey: string): Promise<InstalledExtensionsList> => readList(hostKey),
+  read: async (_owner: string, hostKey: string): Promise<InstalledExtensionsList> =>
+    hostKey === PHONE_HOST ? phoneStore('list')() : unwrap(await extensionsApiOf(hostKey).list(), 'The extensions list'),
   fresh: Infinity,
 });
 
@@ -281,7 +268,6 @@ export function peekInstalledApps(hostKey: string = LOCAL_HOST): InstalledApps |
 export async function fetchInstalledApps(hostKey: string = LOCAL_HOST): Promise<InstalledApps> {
   const now = peekInstalledApps(hostKey);
   if (now) return now;
-  if (installedExtensions.peek(hostKey).state === 'value') await installedExtensions.refresh(hostKey);
   return appsOf(await installedExtensions.fetch(hostKey), getLocaleSnapshot().resolvedLocale);
 }
 
@@ -301,18 +287,6 @@ export function peekInstalledAppsTracked(hostKey: string = LOCAL_HOST): Installe
   return peekInstalledApps(hostKey);
 }
 
-export function watchInstalled(hostKey: string, listener: (apps: InstalledApps | null) => void): () => void {
-  return installedExtensions.subscribe([hostKey], () => listener(peekInstalledApps(hostKey)));
-}
-
-export function putInstalled(hostKey: string, patch: (list: InstalledExtensionsList) => InstalledExtensionsList): void {
-  installedExtensions.at(hostKey).set((old) => old && patch(old));
-}
-
-export function tellInstalled(hostKey: string, list: InstalledExtensionsList): void {
-  installedExtensions.at(hostKey).set(list);
-}
-
 export function writeInstalled<R>(
   hostKey: string,
   optimistic: ((list: InstalledExtensionsList) => InstalledExtensionsList) | null,
@@ -324,26 +298,23 @@ export function writeInstalled<R>(
 }
 
 export async function setAutoUpdate(hostKey: string, extensionId: string, on: boolean): Promise<void> {
-  await writeInstalled(hostKey, null, async () => {
-    const result = await extensionsApiOf(hostKey).setAutoUpdate({ extensionId, on });
-    if (!result.success || !result.data) throw new Error(result.error ?? 'auto-update switch refused');
-    return result.data.autoUpdateOff;
-  }, (autoUpdateOff) => (list) => ({ ...list, autoUpdateOff }));
+  await writeInstalled(hostKey, null,
+    async () => unwrap(await extensionsApiOf(hostKey).setAutoUpdate({ extensionId, on }), 'The auto-update switch').autoUpdateOff,
+    (autoUpdateOff) => (list) => ({ ...list, autoUpdateOff }));
 }
 
 export async function setDisclosure(hostKey: string, extensionId: string, level: ExtensionDisclosureLevel): Promise<void> {
   const apps = peekInstalledApps(hostKey);
   if (!apps?.disclosure[extensionId]) throw new Error(`${extensionId} gives agents no tools`);
-  await writeInstalled(hostKey, (list) => ({ ...list, disclosure: { ...list.disclosure, [extensionId]: level } }), async () => {
-    const result = await extensionsApiOf(hostKey).setDisclosure({ extensionId, level });
-    if (!result.success || !result.data) throw new Error(result.error ?? '');
-    return result.data.level;
-  }, (settledLevel) => (list) => ({ ...list, disclosure: { ...list.disclosure, [extensionId]: settledLevel } }));
+  await writeInstalled(hostKey, (list) => ({ ...list, disclosure: { ...list.disclosure, [extensionId]: level } }),
+    async () => unwrap(await extensionsApiOf(hostKey).setDisclosure({ extensionId, level }), 'The disclosure switch').level,
+    (settledLevel) => (list) => ({ ...list, disclosure: { ...list.disclosure, [extensionId]: settledLevel } }));
 }
 
 /** A 「始终用它」 kept (or, `null`, let go — 摩擦单 F73). */
 export function noteOpenWithDefault(hostKey: string, key: string, tabKind: string | null): void {
-  putInstalled(hostKey, (list) => {
+  installedExtensions.set([hostKey], (list) => {
+    if (!list) return list;
     const { [key]: _dropped, ...rest } = list.openWith ?? {};
     return { ...list, openWith: tabKind === null ? rest : { ...rest, [key]: tabKind } };
   });
@@ -352,27 +323,16 @@ export function noteOpenWithDefault(hostKey: string, key: string, tabKind: strin
 /** `offered`: update version per App; `gone`: no longer in the market; `summary` absent = restored (only the first two kept). */
 export type MarketUpdates = { offered: Record<string, string>; gone: string[]; summary?: MarketUpdatesSummary };
 
-let phoneUpdates: (() => Promise<MarketUpdatesSummary>) | null = null;
-export function definePhoneMarketUpdates(read: () => Promise<MarketUpdatesSummary>): void {
-  phoneUpdates = read;
-}
-
-async function readUpdates(hostKey: string): Promise<MarketUpdatesSummary> {
-  if (hostKey === PHONE_HOST) {
-    if (!phoneUpdates) throw new Error('The phone App store is not loaded');
-    return phoneUpdates();
-  }
-  const result = await extensionsApiOf(hostKey).marketUpdates();
-  if (!result.success || !result.data) throw new Error(result.error ?? 'update check failed');
-  return result.data;
-}
-
-/** What the market says of a host's installed Apps (#5410). Push-fed; ❌ polled. */
+/**
+ * What the market says of a host's installed Apps (#5410): a newer version, this one withdrawn, deprecated. Read at start
+ * and when the App page opens, and again when the catalog in hand changed (wire-market-refresh.ts); ❌ polled.
+ */
 export const marketUpdates = replica({
   name: 'marketUpdates',
+  tags: [INSTALLED],
   scope: 'device',
   read: async (_owner: string, hostKey: string): Promise<MarketUpdates> => {
-    const summary = await readUpdates(hostKey);
+    const summary = hostKey === PHONE_HOST ? await phoneStore('marketUpdates')() : unwrap(await extensionsApiOf(hostKey).marketUpdates(), 'The update check');
     return { offered: Object.fromEntries(Object.entries(summary.updates).map(([id, update]) => [id, update.version])), gone: summary.gone ?? [], summary };
   },
   fresh: Infinity,

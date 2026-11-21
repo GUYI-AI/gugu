@@ -7,7 +7,7 @@ import { createReactHarness, renderWithAppProviders } from '../../../../../../..
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import { ChatAppsPicker } from '@/components/chat/ChatAppsPicker';
 import { Popover } from '@/components/ui/Popover';
-import { tellInstalled, type InstalledExtensionsList } from '../../features/extensions/installed-extensions';
+import { installedExtensions, type InstalledExtensionsList } from '../../features/extensions/installed-extensions';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../shared/extensions/manifest';
 import '@/i18n/registerMessagingCatalog';
 import '@/styles/tokens.css';
@@ -25,7 +25,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   harness.cleanup();
-  tellInstalled('local', nothingInstalled);
+  installedExtensions.set(['local'], nothingInstalled);
   await i18n.changeLanguage(language); await page.viewport(viewport.width, viewport.height);
 });
 
@@ -38,7 +38,7 @@ function Picker() {
 }
 
 async function measure(name: string) {
-  tellInstalled('local', {
+  installedExtensions.set(['local'], {
     extensions: [parseExtensionManifest({ id: 'width-app', name, version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name }] } })],
     invalid: [],
     disabled: [],

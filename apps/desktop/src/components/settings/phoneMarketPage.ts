@@ -2,7 +2,7 @@ import { replica, useReplica, type Reading } from '../../lib/replica'
 import { useEffect } from 'react'
 import { marketUpdates, PHONE_HOST, type MarketUpdates } from '@/session/renderer/features/extensions/installed-extensions'
 import type { CloudMarketEntry, MarketListItem } from '@/session/shared/extensions/market'
-import { definePhoneMarket } from '@/session/renderer/features/extensions/market-replicas'
+import { definePhoneStore } from '@/session/renderer/features/extensions/extensions-api'
 import { keepShelf, keptShelfItems } from '@/session/renderer/features/extensions/panel/kept-shelf'
 import { searchApps } from '@/session/shared/extensions/app-search'
 import { marketCategoryOf, marketCategoryRank } from '@/session/shared/extensions/catalog'
@@ -94,7 +94,7 @@ export function useOfferedVersions(): Reading<MarketUpdates> {
   return reading
 }
 
-definePhoneMarket({
+definePhoneStore({
   marketListing: phoneProductApi.marketListing,
   marketHistory: phoneProductApi.marketHistory,
   onRefreshed: (listener) => phoneApps.market.onRefreshed(listener),

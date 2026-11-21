@@ -63,7 +63,7 @@ vi.mock('@/components/assistant/AssistantSettingsPage', () => ({ AssistantSettin
 } }));
 
 const { AppWorkLedgerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppWorkLedgerHost');
-const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
 const { AppHostLayerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppHostLayerHost');
 const { forgetPushedWorkForTest, pushedRowsOf } = await import('../../../../apps/desktop/src/components/appSlot/appWorkLedger');
 const { forgetReportedHostLayersForTest } = await import('../../../../apps/desktop/src/components/appSlot/appHostLayer');
@@ -101,7 +101,7 @@ const render = async (visible = true) => act(async () => {
   state.tick += 1;
   for (const listener of state.ticks) listener();
   // What main lists as installed here, as the test's state says it now.
-  tellInstalled('local', { extensions: state.inventory, invalid: [], disabled: state.disabled } as never);
+  installedExtensions.set(['local'], { extensions: state.inventory, invalid: [], disabled: state.disabled } as never);
   root.render(<><AppWorkLedgerHost /><AppHostLayerHost visible={visible} /></>);
 });
 const settle = () => act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); });
