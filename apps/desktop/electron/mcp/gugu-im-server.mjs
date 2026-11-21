@@ -395,7 +395,7 @@ export function restWriteError(what, status, body) {
  * 归档 agent 照收、只给它记 refusal;从来不是成员的 id 才拒,带 hint recipient_not_member、details 列出这些 id。
  * 发送者自己没权限仍是 RLS 的 42501,不会走到这里。把这种拒绝还原成给 agent 看得懂的一句,其余原样抛。
  */
-function recipientRefusal(error, chatId) {
+async function recipientRefusal(error, chatId, deps) {
   // 附件走 attachments 函数:同一个拒绝变成 HTTP 400 { error: 'recipient_not_member', details } (gugu-supabase#242),
   // 悄悄话的变成 400 invalid、原文照带。
   const viaAttachments = error instanceof AttachmentsError
@@ -405,7 +405,16 @@ function recipientRefusal(error, chatId) {
   const notMember = error?.hint === 'recipient_not_member' || (viaAttachments && error.code === 'recipient_not_member')
   if (!notMember && !whisper) return error
   const ids = whisper ? [whisper[1]] : String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
-  return new Error(`Recipients are not members of chat ${chatId}: ${ids.join(', ')}. Look up current members with message_members and send again.`)
+  return new Error(`Recipients are not members of chat ${chatId}: ${ids.join(', ')}. ${await addressableMembers(chatId, deps)}`)
+}
+/** Who a refused send can go to instead, so the agent corrects the address from the refusal itself rather than guessing. */
+async function addressableMembers(chatId, deps) {
+  const ids = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id)).filter((id) => id !== deps.context.agentId)
+  const names = new Map((await restGetInBatches(ids, (batch) =>
+    deps.restGet(`users?id=in.(${batch.map(enc).join(',')})&select=id,display_name`, 'identity'))).map((user) => [user.id, user.display_name]))
+  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (aid:${id})` : `aid:${id}`)
+  const more = ids.length > shown.length ? ` and ${ids.length - shown.length} more (message_members lists them all)` : ''
+  return `Members you can address: ${shown.join(', ') || 'none besides you'}${more}. Send again to one of these addresses.`
 }
 async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {
   const accessToken = await context.getAccessToken()
@@ -1662,7 +1671,7 @@ async function handleMessage(args, deps) {
         fileReceipt = await sendFileMessage(args, deps, { chatId, messageId: row.id, toUserIds: row.to_user_ids, replyToMessageId,
           isWhisper, threadRootId: sessionThread, caption: row.content })
       } else {
-        await postCommandMessageRow(deps, row).catch((error) => { throw recipientRefusal(error, chatId) })
+        await postCommandMessageRow(deps, row).catch(async (error) => { throw await recipientRefusal(error, chatId, deps) })
       }
       sentKind = kind
     }
@@ -2564,7 +2573,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     throw new Error(`message_send: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
   }
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
-  const refused = (error) => { throw recipientRefusal(error, chatId) }
+  const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
   const said = String(caption ?? '').trim()
   const meta = { to_user_ids: toUserIds ?? [], thread_root_id: threadRootId, ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}), ...(said ? { caption: said } : {}) }
   let message
@@ -2589,7 +2598,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
     const reason = String(error?.message ?? error)
     if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
-    refused(error)
+    await refused(error)
   }))) {
     fileName = resolveUploadName(args)
   } else {
@@ -2625,7 +2634,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       }
       await deps.attachments.drop(messageId)
       if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
-      refused(error)
+      await refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
       const mismatch = error instanceof AttachmentsError && error.code === 'upload_mismatch'

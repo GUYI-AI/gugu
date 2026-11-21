@@ -1140,13 +1140,17 @@ function itemTool(item, terminalId = item?.id) {
   if (type === 'webSearch') {
     return { title: 'Web search', kind: 'search', rawInput: { query: item.query, action: item.action } }
   }
+  if (type === 'subAgentActivity' && item.kind === 'interacted') {
+    // Codex's follow-up to one of its sub-agents; the message itself reaches the app-server only encrypted.
+    return { title: `Message ${item.agentPath}`, kind: 'other', rawInput: item.agentPath }
+  }
   if (type === 'collabAgentToolCall') {
-    const { type: _type, id: _id, tool: _tool, status: _status, agentsStates, ...input } = item
+    // The row's one-line summary is its input: the call's name (`wait`), not thread ids nobody can read.
     return {
       title: item.tool || 'Agent collaboration',
       kind: 'other',
-      rawInput: input,
-      rawOutput: agentsStates ?? undefined,
+      rawInput: item.tool || undefined,
+      rawOutput: item.agentsStates ?? undefined,
     }
   }
   return null

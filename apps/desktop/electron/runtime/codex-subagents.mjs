@@ -57,20 +57,27 @@ export function createCodexSubagents({ rootId, emit, request, itemTool, reasonin
       if (!child) return false
       if (reportState && item.kind === 'completed') state(id, 'completed')
       if (reportState && item.kind === 'interrupted') state(id, 'cancelled')
-      return true
+      // Handing more work to a child the parent already has is one of the parent's own steps, not a lifecycle report.
+      // A child first seen through this very item (its launch predates this process) gets its card instead, as before;
+      // the item arrives twice (started, completed), so it is matched by id, not by whether the child is known yet.
+      return item.kind !== 'interacted' || child.launchToolCallId === item.id
     }
     if (item.type !== 'collabAgentToolCall') return false
+    // Only a launch becomes a child's card (its item/started has no receivers yet). Waiting on or messaging children it
+    // already has stays a step of the parent's turn; swallowed, a turn spent waiting on its children showed no steps at all.
+    let launched = item.tool === 'spawnAgent'
     for (const id of item.receiverThreadIds ?? []) {
       const child = children.get(id) ?? register(id, parent, {
         name: shortName(item.prompt), task: item.prompt, model: item.model,
         request: item.prompt, launchToolCallId: item.id,
       })
       if (!child) continue
+      launched ||= child.launchToolCallId === item.id
       const reported = item.agentsStates?.[id]
       const outcome = terminalState(reported?.status)
       if (reportState && outcome) state(id, outcome, { summary: reported.message })
     }
-    return true
+    return launched
   }
 
   function wholeItem(id, item, completed, replaying = false) {
@@ -107,8 +114,8 @@ export function createCodexSubagents({ rootId, emit, request, itemTool, reasonin
     }
     const id = params.threadId
     if (id !== rootId() && !children.has(id)) return false
-    if ((method === 'item/started' || method === 'item/completed') && activity(id, params.item ?? {})) return true
-    if (id === rootId()) return false
+    // A child's items reach `activity` through `wholeItem`; the root's go through it here and render on the parent otherwise.
+    if (id === rootId()) return (method === 'item/started' || method === 'item/completed') && activity(id, params.item ?? {})
     const child = children.get(id)
     if (method === 'turn/started') {
       child.turnId = params.turn?.id
