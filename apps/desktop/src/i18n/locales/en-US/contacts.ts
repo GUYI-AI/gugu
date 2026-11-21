@@ -302,7 +302,6 @@ export default {
     "contactSectionTitle": "People",
     "createAgent": "Create agent",
     "createGroup": "Create group chat",
-    "enterGroup": "Open group chat",
     "groupCount": "{{count}} groups",
     "groupCount_one": "{{count}} group",
     "groupCount_other": "{{count}} groups",

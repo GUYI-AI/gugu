@@ -302,7 +302,6 @@ export default {
     "contactSectionTitle": "个人",
     "createAgent": "创建智能体",
     "createGroup": "创建群聊",
-    "enterGroup": "进入群聊",
     "groupCount": "{{count}} 个群组",
     "groupCount_one": "{{count}} 个群组",
     "groupCount_other": "{{count}} 个群组",
