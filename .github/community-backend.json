@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "29c051cf3490fc3c146a9f9d356d535327344044",
-  "status": "Backend #364 merged on dev: Android provider channels and FCM. Isolated CI fixture; staging and physical delivery acceptance are pending."
+  "ref": "b6edd8814e91c4575dd41247549414e6da8f47d1",
+  "status": "Backend PR #386 (presence last_interacted_at) head, unmerged: the client sends p_last_interacted_at. Move to its merge commit once #386 lands on dev."
 }
