@@ -36,10 +36,9 @@ beforeAll(async () => {
 afterAll(() => { style.remove(); });
 
 it('reads no image of a working copy on another machine for its thumbnail', async () => {
-  // Long enough for the rows on screen to have asked for their pictures, were they going to.
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  expect(open).not.toHaveBeenCalled();
   const marks = [...document.querySelectorAll('li.file[data-id] .file-mark')];
   expect(marks).toHaveLength(2);
-  expect(marks.filter((mark) => mark.classList.contains('has-thumb'))).toEqual([]);
+  // No mark waits to be seen for its picture (`thumbInto`), so none is read when it is.
+  expect(marks.filter((mark) => 'thumbWanted' in mark)).toEqual([]);
+  expect(open).not.toHaveBeenCalled();
 });
