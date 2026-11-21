@@ -35,7 +35,7 @@ vi.mock('@renderer/features/integrations/use-connected-issue-providers', () => (
 vi.mock('@renderer/features/library/prompts/use-prompt-library', () => ({ usePromptLibrary: () => ({ value: [] }) }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
   AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'],
-  useAgents: () => ({ state: 'value', value: active.agents, stale: false, error: null }), useAgent: () => ({ reading: { state: 'unknown' } }), useAgentIcon: () => undefined,
+  useAgents: () => ({ state: 'value', value: active.agents, stale: false, error: null }), useAgent: () => ({ state: 'unknown' }), useAgentIcon: () => undefined,
 }));
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', async importOriginal => ({
   ...await importOriginal<typeof import('@renderer/features/sessions/session-config/platform-model-catalog')>(),

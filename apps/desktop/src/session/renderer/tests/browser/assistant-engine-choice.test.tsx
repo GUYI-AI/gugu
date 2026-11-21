@@ -39,7 +39,9 @@ vi.mock('@renderer/lib/ipc', async original => {
   const agents = { get: async (id: string) => agent(id), getManagement: async (id: string) => agent(id),
     listIcons: async () => ({}), getSettings: async () => null,
     modelCatalog: async () => ({ state: { kind: 'ready', models: [] }, refreshing: false }) };
-  return { ...actual, rpc: new Proxy({}, { get: (_, key) => key === 'agents' ? agents : new Proxy({}, { get: () => pending }) }) };
+  const rpc = new Proxy({}, { get: (_, key) => key === 'agents' ? agents : new Proxy({}, { get: () => pending }) });
+  // This computer's readings go through `rpcOn(null)` (the agent readings take the machine first).
+  return { ...actual, rpc, rpcOn: (machine: string | null) => machine === null ? rpc : actual.rpcOn(machine) };
 });
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({

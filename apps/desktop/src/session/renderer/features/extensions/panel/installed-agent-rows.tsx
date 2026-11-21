@@ -21,7 +21,7 @@ export function useInstalledAgentRows(query: string) {
   const uninstalling = useUninstallingAgents();
   // Until the install statuses are read, each agent's own payload says whether it is installed.
   const statuses = operations.reading.state === 'value' ? new Map(operations.reading.value.map((reading) => [reading.id, reading])) : null;
-  const agents = inventory.reading.state === 'value' ? inventory.reading.value : [];
+  const agents = inventory.state === 'value' ? inventory.value : [];
   const installed = agents
     .map((agent) => ({ agent, reading: statuses?.get(agent.id) ?? agent }))
     .filter(({ reading }) => isInstalledAgent(reading))

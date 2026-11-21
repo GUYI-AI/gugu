@@ -25,7 +25,7 @@ import {
   useInstalledApps,
   type ExtensionDisclosureLevel,
 } from '@renderer/features/extensions/installed-extensions';
-import { useReplica, refreshFailure } from '@/lib/replica';
+import { useReplica, refreshFailure, retryOf } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -1402,17 +1402,17 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             {/* Which Apps have a new version (the rows' update marks, the tab's dot) could not be read again: said with a retry. */}
             {!machineOffline ? <RefreshFailed reading={updatesReading} /> : null}
 
-            {(installed.state === 'unknown' || installedAgents.inventory.reading.state === 'unknown') && installedCount === 0 && (
+            {(installed.state === 'unknown' || installedAgents.inventory.state === 'unknown') && installedCount === 0 && (
               <div className="mk-sec">
                 <InstalledRowsSkeleton label={translate('extensions.loading')} />
               </div>
             )}
 
-            {installedAgents.inventory.reading.state === 'error' && !notice && (
+            {installedAgents.inventory.state === 'error' && !notice && (
               <div className="mk-status" role="alert">
                 <CircleAlert className="size-4 shrink-0" />
                 <span className="min-w-0">{translate('extensions.agentInventoryFailed')}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void installedAgents.inventory.refetch()}>
+                <Button type="button" variant="ghost" size="sm" onClick={retryOf(installedAgents.inventory)}>
                   {translate('extensions.retry')}
                 </Button>
               </div>
@@ -1480,7 +1480,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </ul>
               </section>
             )}
-            {apps && installedAgents.inventory.reading.state === 'value' && installedCount === 0 && (
+            {apps && installedAgents.inventory.state === 'value' && installedCount === 0 && (
               <div className="mk-empty">
                 {query.trim() === '' ? translate('extensions.empty') : translate('extensions.noMatch', { query: query.trim() })}
                 {query.trim() === '' && (

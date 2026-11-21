@@ -159,8 +159,8 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     expect(agents.listAgentInstallationStatus).toHaveBeenCalled();
     expect(local.listManagement).not.toHaveBeenCalled();
     expect(local.listAgentInstallationStatus).not.toHaveBeenCalled();
-    expect(api?.list.reading).toMatchObject({ state: 'value' });
-    expect(api?.list.reading.state === 'value' && api.list.reading.value.map((a) => [a.id, a.reading])).toEqual([['claude', 'installed']]);
+    expect(api?.list).toMatchObject({ state: 'value' });
+    expect(api?.list.state === 'value' && api.list.value.map((a) => [a.id, a.reading])).toEqual([['claude', 'installed']]);
   });
 
   it('点「安装」装在那台机器上;进行中只挂在那台机器的网格上', async () => {
@@ -188,7 +188,7 @@ describe('资源库选了别的机器时,取数与动作都去那台机器(#6264
     await settle();
     expect(agents.listManagement).not.toHaveBeenCalled();
     expect(agents.listAgentInstallationStatus).not.toHaveBeenCalled();
-    expect(api?.list.reading).toEqual({ state: 'unknown' });
+    expect(api?.list).toEqual({ state: 'unknown' });
   });
 
   it('没有挂资源库的机器(composer、会话页)= 本机,照旧问本机', async () => {
