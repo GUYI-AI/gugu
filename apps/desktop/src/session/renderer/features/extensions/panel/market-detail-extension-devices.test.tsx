@@ -25,7 +25,10 @@ const mocks = vi.hoisted(() => {
   };
   const store = { load: vi.fn(async () => {}), checkUpdates: vi.fn(async () => {}) };
   const backupApi = { ...api, list: vi.fn(), installFromMarket: vi.fn() };
-  return { online, offline, current, backup, api, backupApi, store, toast: vi.fn(), offlineRead: vi.fn() };
+  const offlineRead = vi.fn();
+  // Each device's App API, behind its host key: installs ask it, the installed list and the market entry are read through it.
+  const apiOf = (key: string) => (key === 'remote:studio' ? api : key === 'remote:backup' ? backupApi : { list: offlineRead });
+  return { online, offline, current, backup, api, backupApi, store, toast: vi.fn(), offlineRead, apiOf };
 });
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
   remoteHostsStore: {
@@ -35,13 +38,9 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
   },
 }));
 vi.mock('@renderer/features/library/library-host', () => ({
-  machineLibraryHost: ({ deviceId }: { deviceId: string }) => ({
-    extensions: {
-      api: deviceId === 'studio' ? mocks.api : deviceId === 'backup' ? mocks.backupApi : { list: mocks.offlineRead },
-      store: mocks.store,
-    },
-  }),
+  machineLibraryHost: ({ deviceId }: { deviceId: string }) => ({ extensions: { key: `remote:${deviceId}`, api: mocks.apiOf(`remote:${deviceId}`), store: mocks.store } }),
 }));
+vi.mock('../extensions-api', async (importOriginal) => ({ ...await importOriginal<typeof import('../extensions-api')>(), extensionsApiOf: mocks.apiOf }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: mocks.toast }));
 
 const manifest = parseExtensionManifest({

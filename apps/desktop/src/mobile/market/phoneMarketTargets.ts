@@ -3,6 +3,7 @@ import { useReplicas, type Reading as ReplicaReading } from '@/lib/replica'
 import { marketDeviceReading, readOnDevicesWith } from '@renderer/features/extensions/market-device-readings'
 import { PHONE_HOST } from '@renderer/features/extensions/extensions-api'
 import { installedExtensions, useInstalledApps, type InstalledExtensionsList } from '@renderer/features/extensions/installed-extensions'
+import { marketEntry } from '@renderer/features/extensions/market-replicas'
 import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas'
 import { askInShell, installConsentPrompt } from '@renderer/features/extensions/install-consent'
 import { isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order'
@@ -49,9 +50,9 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
       install: !unavailable && reading?.install ? async () => {
         const installed = await reading.install!()
         if (installed) {
+          // What the reading is made of first (the device's installed list, its agents), then the reading.
+          await Promise.all([installedExtensions.refresh(target.host.extensions.key), refreshAgentReadings(device.device_id)])
           await marketDeviceReading.refresh(readKey, device.device_id)
-          void refreshAgentReadings(device.device_id)
-          void installedExtensions.refresh(target.host.extensions.key)
         }
         return installed
       } : undefined,
@@ -61,15 +62,13 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
 
 type AppReading = { installedVersion?: string; preinstalled: boolean; offered: MarketListItem | null }
 
+/** What a device has and is offered, through that host's installed list and market entry. */
 async function readApplication({ host }: Target, id: string): Promise<AppReading> {
-  const { api } = host.extensions
-  const [inventory, market] = await Promise.all([api.list(), api.marketEntry({ extensionId: id })])
-  if (!inventory.success || !inventory.data) throw new Error(inventory.error)
-  if (!market.success) throw new Error(market.error)
+  const [inventory, offered] = await Promise.all([installedExtensions.fetch(host.extensions.key), marketEntry.fetch(host.extensions.key, id)])
   return {
-    installedVersion: inventory.data.extensions.find(item => item.id === id)?.version,
-    preinstalled: inventory.data.origins?.[id] === 'preinstalled',
-    offered: market.data ?? null,
+    installedVersion: inventory.extensions.find(item => item.id === id)?.version,
+    preinstalled: inventory.origins?.[id] === 'preinstalled',
+    offered,
   }
 }
 
