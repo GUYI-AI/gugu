@@ -862,10 +862,11 @@ describe('SidebarStore keeps what the user folded folded', () => {
     } finally { sessionRegistry.release(page); }
   });
 
-  it('a blob written by the old desktop sidebar (section folds, 项目 | 对话 layout and page) still restores; those fields are ignored (#2548)', () => {
+  it('a blob written by the old desktop sidebar (section folds, 项目 | 对话 layout and page, sessionSortBy) still restores; those fields are ignored (#2548)', () => {
     const restored = twoProjects();
     restored.restoreSnapshot({
       expandedProjectIds: ['project-a'],
+      sessionSortBy: 'updated-at',
       pinnedCollapsed: true,
       projectsCollapsed: true,
       sessionsCollapsed: true,
@@ -881,7 +882,6 @@ describe('SidebarStore keeps what the user folded folded', () => {
       'idleExpandedProjectIds',
       'projectOrder',
       'sessionOrderByProject',
-      'sessionSortBy',
     ]);
   });
 });

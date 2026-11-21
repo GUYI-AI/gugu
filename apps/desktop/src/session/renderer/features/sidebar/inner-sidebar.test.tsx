@@ -398,7 +398,6 @@ describe('inner sidebar', () => {
     openProject('p-shop');
     await render();
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
-    expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).not.toContain('sidebar.needsYou');
     expect(agentsCount()).toBe('13');
     expect(sessionRows()).toEqual([...Array.from({ length: 5 }, (_, index) => `idle-${index}`), ...Array.from({ length: 5 }, (_, index) => `run-${index}`), 'asks']);
     expect(moreRows()).toEqual(['sidebar.showMore:2']);

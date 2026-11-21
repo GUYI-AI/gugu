@@ -69,7 +69,6 @@ const enUSCoreMessages = {
   'sidebar.sessionBranchCount': '{count} descendant sessions',
   'sidebar.addProject': 'Add project',
   'sidebar.remoteFolder': 'Use remote folder',
-  'sidebar.needsYou': 'Needs you',
   // 分组标题与每一格的状态词同一个说法(common:agentStatus.running,#6448 owner 定表)。
   'sidebar.working': 'Running',
   'sidebar.chats': 'Chats',
@@ -1430,7 +1429,6 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'sidebar.sessionBranchCount': '{count} 个子会话（不含自身）',
   'sidebar.addProject': '添加项目',
   'sidebar.remoteFolder': '使用远程文件夹',
-  'sidebar.needsYou': '需要你',
   'sidebar.working': '运行中',
   'sidebar.chats': '对话',
   'sidebar.newGroupChat': '新建群聊',
