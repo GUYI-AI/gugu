@@ -147,7 +147,8 @@ export function LoginPage() {
                 <GoogleMark />{t(google.busy && google.phase !== 'failed' ? 'auth.google.cancel' : 'auth.google.signIn')}
             </Button>}
             {google.busy && google.phase !== 'failed' && <p role="status" className="gugu-auth-status">{t(google.phase === 'authorizing' ? 'auth.google.waiting' : 'auth.google.exchanging')}</p>}
-            {google.failure && <LoginError message={t(`auth.google.${google.failure}`)} />}
+            {/* 用户自己退出(取消键、Google 页上取消、关掉授权浏览器)只是回到原样,❌ 报错。 */}
+            {google.failure && google.failure !== 'cancelled' && <LoginError message={t(`auth.google.${google.failure}`)} />}
             {google.notice && <LoginError message={t('auth.google.staleCallback')} />}
             {!registering && googleLogin.available && googleEnabled && <div className="gugu-auth-divider">{t('auth.or')}</div>}
             <label htmlFor="gugu-auth-email" className="gugu-auth-label">{t('auth.emailLabel')}</label>

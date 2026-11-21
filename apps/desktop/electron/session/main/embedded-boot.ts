@@ -144,6 +144,7 @@ import {
 import { claimInterruptedDeferredMessages, installDeferredMessageDelivery } from '@main/core/sessions/session-deferred-messages'
 import { hydrateSession } from '@main/core/sessions/hydrateSession'
 import { recordLiveModelSwitch } from '@main/core/sessions/live-model-switch'
+import { armSwitchedModelMemory } from '@main/core/sessions/switched-model-memory'
 import { readSessionOptions, SessionOptionsError } from '@main/core/session-timeline/live-options'
 import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } from '@shared/platform-model-id'
 import { searchService } from '@main/core/search/search-service'
@@ -229,6 +230,7 @@ import {
 } from '@main/core/agent-config/controller'
 import { acpAgentStatusBridge } from '@main/core/acp/agent-status-bridge'
 import {
+  activeSessionStates,
   listSessionStates,
   setConnectionConfigRootResolver,
   setSessionStatusFeed,
@@ -270,6 +272,7 @@ export {
   setProbePlatformEnvResolver,
   type ProbePlatformEnvResolver,
 } from '@main/core/agents/harness-model-catalog'
+export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native-history'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。
@@ -371,7 +374,7 @@ import { installSessionLife, sessionLife } from '@main/core/sessions/session-lif
 import { hydrateLife, shouldStartOnHydrate } from '@gugu/core/local/session-life/step'
 import { admitCreationTurns, bindIdentityThenCreate, claimIdentityCreation } from '@main/core/sessions/session-life-creation'
 import { unbindSessionAgent } from '@main/core/sessionpage/sessionpage-session-agent'
-import { isLifeSession, lifeSessions, lifeStore } from '@main/core/sessions/session-pending'
+import { isLifeSession, lifePending, lifeSessions, lifeStore } from '@main/core/sessions/session-pending'
 import { sessionLifeSources } from '@main/core/sessions/session-life-host'
 import { nativePendingInputLookup } from '@main/core/sessions/session-pending-history'
 import { createAcpLegAdapter } from '@main/core/acp/session-life-acp'
@@ -383,6 +386,7 @@ import { guguNodeTarget, installGuguNode } from './core/pty/gugu-node'
 import { createStageLedger, type StageLedger } from '@main/lib/stage-ledger'
 import { withRpcLogging } from '@main/lib/rpc-logging'
 import { pluginIdForAgentType } from '@gugu/core/agentTypes'
+import { lastModelSource } from '@main/core/usage/model-source-recorder'
 
 // The full router, re-exported so the host's renderer IPC bridge can type the surface.
 export const emdashRpcRouter = rpcRouter
@@ -543,8 +547,14 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
   await initializeDatabase()
-  const { migrateCustomModelConnections } = await import('./core/agents/custom-models')
+  const { migrateCustomModelConnections, dropRemovedConnectionKeys } = await import('./core/agents/custom-models')
   migrateCustomModelConnections()
+  // #3428:先前删掉的连接只打了「已删除」,key 还留在加密存储里。幂等,失败不拦启动。
+  try {
+    await dropRemovedConnectionKeys()
+  } catch (e: unknown) {
+    log.warn('failed to drop the keys of removed connections', e)
+  }
   // #609 已有的、登记在 ~ / task-home / GUGU_HOME 底下的项目改成 workspace(会话随之列进「任务」);幂等,失败不拦启动。
   try {
     const demoted = migrateProjectKind(path.join(app.getPath('userData'), 'project-kind-migration.json'))
@@ -1165,7 +1175,14 @@ export type ReloadNativeSession = 'issued' | 'preserved' | 'replaced' | 'route-s
  * 没有 provider 会话 id 的会话(从没起来过)没有历史可续、也没有进程可停:带着新模型 / 档位来的,只把选择落进记录
  * 并答 `not-started`,由调用方走正常首启(#7092:会员模型首启被拒,换个模型再起);其余(MCP 开关、手动重开)直接拒。
  */
-export async function reloadEmdashSession(input: {
+export async function reloadEmdashSession(input: Parameters<typeof reloadEmdashSessionNow>[0]): ReturnType<typeof reloadEmdashSessionNow> {
+  const reloaded = await reloadEmdashSessionNow(input)
+  // #3293 A model switched to by a reload: its first successful reply makes it the new-session memory's last-used one.
+  if (typeof input.model === 'string' && input.model.trim()) armSwitchedModelMemory(input.sessionId)
+  return reloaded
+}
+
+async function reloadEmdashSessionNow(input: {
   sessionId: string
   /** 为什么重载(换模型 / 改 MCP 开关 …)。进日志,也是 UI 上那句「正在重连」的由来。 */
   reason: string
@@ -1288,7 +1305,7 @@ export async function reloadEmdashSession(input: {
     const nextEffort = typeof input.effort === 'string' && input.effort.trim() ? input.effort.trim() : null
     let configBeforePatch: typeof sessions.$inferSelect.config | null = null
     const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
-    const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
+    const sourceChanged = crossesBillingSource(sessionId, nextModel, input)
     const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
     const forkProviderSession = sourceChanged && sourceChangeSession === 'fork'
     let platformWritten = false
@@ -1478,7 +1495,7 @@ export async function reloadEmdashSession(input: {
    */
   const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
   // 原生会话续接还是换新,由 descriptor 的 `sourceChangeSession` 按腿回答。
-  const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
+  const sourceChanged = crossesBillingSource(sessionId, nextModel, input)
   let platformWritten = false
   if (nextModel) {
     await recordSessionPlatformModel(
@@ -1658,23 +1675,18 @@ async function dropRecordedModel(
 }
 
 /**
- * 这次重开把会话放到哪条计费路上。清模型 = 回到自己那条路(harness 自家默认 + 用户自己的凭据),
- * 所以从平台清回「你自己的模型(默认)」与换成一个自己的模型一样,是一次换计费路(#6210)。
+ * 这次重开换没换计费路:与这条会话**上一次启动实际走的那条路**比(用量底账,见 `lastModelSource`),❌ 与 composer
+ * 那份记录比 —— 没经过 composer 的会话(派生、自动化、导入)没有那份记录,走的是 agent 级默认。清模型 = 回到自己
+ * 那条路(harness 自家默认 + 用户自己的凭据),与换成一个自己的模型一样是一次换路(#6210)。底账出现之后还没启动过 = 说不出,按没换。
  */
-function reloadTargetSource(
+function crossesBillingSource(
+  sessionId: string,
   nextModel: string | null,
   input: { modelSource?: 'platform' | 'own'; resetModel?: boolean },
-): 'platform' | 'own' | null {
-  if (nextModel) return input.modelSource ?? null
-  return input.resetModel ? 'own' : null
-}
-
-/** `undefined` = 存量会话没有平台记录,说不出换没换路 —— 按没换处理(与改动前一致)。 */
-function crossesBillingSource(
-  platformBefore: SessionPlatformModel | null | undefined,
-  target: 'platform' | 'own' | null,
 ): boolean {
-  return target !== null && platformBefore !== undefined && (platformBefore !== null) !== (target === 'platform')
+  const target = nextModel ? input.modelSource : input.resetModel ? 'own' : undefined
+  const before = lastModelSource(sessionId)
+  return !!target && !!before && (before === 'gugu') !== (target === 'platform')
 }
 
 /**
@@ -2432,10 +2444,9 @@ export { captureSessionpageProjectionViewer } from './core/extensions/extension-
  * 一概不进 —— 「内容不在手机落库」那条边界没有放开,放开的只是「离线时也知道它卡在哪儿」。
  *
  * 同步函数:心跳那头要的就是「此刻这台机器上是什么样」,而 listSessionStates 读的是本地库,本来就是同步的。
- * ❌ 不在这里排序取前 N —— 上限由心跳侧统一施加(DEVICE_SESSION_DIGEST_LIMIT),两处各定一个数
- * 迟早对不上。这里只保证「最近动过的排在前面」。
+ * 条数由心跳侧给(DEVICE_SESSION_DIGEST_LIMIT),在库里就截(#3340:每一拍不随会话数长);最近动过的排在前面。
  */
-export function sessionpageSessionDigest(): Array<{
+export function sessionpageSessionDigest(limit: number): Array<{
   nativeInputVersion?: 1 | 2
   /** Client identity survives host queue admission and provider transcript IDs. */
   nativeInputIdentity?: true
@@ -2458,11 +2469,10 @@ export function sessionpageSessionDigest(): Array<{
 }> {
   refreshDigestAgents()
   const agents = digestAgents
-  const { projects, sessions } = listSessionStates()
+  const { projects, sessions } = listSessionStates(limit)
   // #609 workspace(任务工作区、替人登记的 ~)不是项目:摘要里不带它的名字,读方据此把它的会话列进「任务」。
   const projectName = new Map(projects.filter((project) => project.kind !== 'workspace').map((project) => [project.id, project.name]))
-  return [...sessions]
-    .sort((a, b) => (b.lastInteractedAt ?? '').localeCompare(a.lastInteractedAt ?? ''))
+  return sessions
     .map((session) => ({
       nativeInputVersion: session.nativeInputVersion,
       ...(session.nativeInputIdentity ? { nativeInputIdentity: true as const } : {}),
@@ -2508,17 +2518,6 @@ function refreshDigestAgents(): void {
     })
 }
 
-/**
- * #6264 server 换版时这台机器(这个账号)算不算忙 —— 写进 activity.json 的 busy,守护进程据此决定现在换还是等空闲。
- * 只数账号进程一重启就会被打断的会话(`busyForVersionSwitch`,「会不会被打断」读 `sessionProcess(id).home`);
- * tmux 里的终端会话换版后照名字接回,不拦换版。未结束的集成授权和可自动恢复的待投递工作同样计入。
- * 本机读数,❌ 进云端摘要。
- */
-export function sessionpageBusyForVersionSwitch(): boolean {
-  return sessionpageVersionSwitchActivity().busy
-}
-
-/** One reading supplies both the existing idle policy and its visible agent count. */
 /** Same heartbeat, same ledger; discard tasks archived/deleted through any entry point. */
 export function sessionpageBootFailures() {
   const failures = sessionBootTasks.snapshot()
@@ -2536,18 +2535,20 @@ export function sessionpageBootFailures() {
   return sessionBootTasks.snapshot()
 }
 
+/**
+ * #6264 server 换版时这台机器(这个账号)算不算忙 —— 写进 activity.json 的 busy,守护进程据此决定现在换还是等空闲。
+ * 只数账号进程一重启就会被打断的会话(`busyForVersionSwitch`,「会不会被打断」读 `sessionProcess(id).home`);
+ * tmux 里的终端会话换版后照名字接回,不拦换版。未结束的集成授权和可自动恢复的待投递工作同样计入。
+ * 只读可能忙的那几行(在干活的、Life 里压着待投递的),每一拍不随闲着的会话数长(#3340)。本机读数,❌ 进云端摘要。
+ */
 export function sessionpageVersionSwitchActivity(): { busy: boolean; busyAgents: number } {
-  const sessions = new Map(listSessionStates().sessions.map(session => [session.conversationId, session]))
-  const life = new Set(lifeSessions())
-  const busyAgents = [...new Set([...sessions.keys(), ...life])].filter(sessionId => {
-    const session = sessions.get(sessionId)
-    if (session && busyForVersionSwitch(parseAgentStatusView(session.status ?? null), session.runtime, sessionProcess(sessionId)?.home ?? null)) return true
-    if (!life.has(sessionId)) return false
-    const pending = lifeStore.pending(sessionId)
-    return pending.dispatching.length > 0 || (pending.queued.length > 0
-      && shouldStartOnHydrate(hydrateLife(lifeStore.read(sessionId)), pending))
-  }).length
-  return { busy: hasAgentInstallsInProgress() || integrationConnectionService.hasPendingAuthorizations() || busyAgents > 0, busyAgents }
+  const busy = new Set(activeSessionStates()
+    .filter(session => busyForVersionSwitch(parseAgentStatusView(session.status ?? null), session.runtime, sessionProcess(session.conversationId)?.home ?? null))
+    .map(session => session.conversationId))
+  for (const [sessionId, pending] of lifePending()) {
+    if (pending.dispatching.length > 0 || shouldStartOnHydrate(hydrateLife(lifeStore.read(sessionId)), pending)) busy.add(sessionId)
+  }
+  return { busy: hasAgentInstallsInProgress() || integrationConnectionService.hasPendingAuthorizations() || busy.size > 0, busyAgents: busy.size }
 }
 
 /** Refresh the account heartbeat at authorization boundaries, without waiting

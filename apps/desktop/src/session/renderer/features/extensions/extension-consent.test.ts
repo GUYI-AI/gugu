@@ -35,9 +35,9 @@ describe('a capability is one sentence wherever the App works', () => {
   });
 
   it('the sentences say the whole reach: every chat you are in, this computer\'s sessions; the narrow agents words, its own', () => {
-    expect(zhCNMessages['extensions.permissionsFilesRead']).toBe('读你所在的所有对话里的文件，和{computer}上各个会话里的文件');
+    expect(zhCNMessages['extensions.permissionsFilesRead']).toBe('读取你所在的所有对话中的文件，以及{computer}上各个会话中的文件');
     expect(enUSMessages['extensions.permissionsChatRelay']).toContain('any chat you are in');
-    expect(zhCNMessages['extensions.permissionsAgentsRead']).toContain('这个应用自己起的');
+    expect(zhCNMessages['extensions.permissionsAgentsRead']).toContain('此应用启动的');
   });
 });
 
@@ -174,7 +174,7 @@ describe('chat:work says what the App sees and what it does not', () => {
     });
     expect(describeCapability('chat:work', working, translate)).toBe('extensions.permissionsChatWork');
     expect(describePermissions(working, translate).split('\n')).toEqual(['extensions.permissionsChatUnread', 'extensions.permissionsChatWork']);
-    expect(zhCNMessages['extensions.permissionsChatWork']).toBe('查看你的助理派出的任务（标题和进度），并在它的面板里显示某个任务的对话，它看不到这段对话');
+    expect(zhCNMessages['extensions.permissionsChatWork']).toBe('查看你的助理分派的任务（标题和进度），并在其面板中显示某个任务的对话；应用无法查看该对话');
     expect(enUSMessages['extensions.permissionsChatWork']).toBe('See the tasks your assistant handed out, their titles and progress, and show a task\'s conversation in its panel; the App cannot see that conversation');
   });
 });

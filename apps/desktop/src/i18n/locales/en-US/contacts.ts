@@ -65,9 +65,9 @@ export default {
   },
   "confirmations": {
     "archiveAgent": "Archive task for Agent “{{name}}”? Its conversation history, files and configuration are kept.",
-    "archiveAgentNoTask": "This agent no longer has a task; only removing it from groups and contacts.",
+    "archiveAgentNoTask": "This Agent no longer has a task. It will only be removed from groups and contacts.",
     "deleteAgent": "Archive session",
-    "deleteContact": "Delete contact “{{name}}”? This ends the friendship.",
+    "deleteContact": "Delete contact “{{name}}”? This also removes them from your friends.",
     "dissolveGroup": "Dissolving this group removes every member. Continue?",
     "leaveGroup": "Leave this group chat?"
   },
@@ -147,7 +147,7 @@ export default {
     "guguNumberUnassigned": "Gugu ID not assigned",
     "guguNumberValue": "Gugu ID {{number}}",
     "noResults": "No users found",
-    "notePlaceholder": "Add a note or introduce yourself (optional)",
+    "notePlaceholder": "Add a note explaining your request (optional)",
     "requestTitle": "Send friend request",
     "requestToJoin": "Request to join",
     "searchPlaceholder": "Search by user, Gugu ID, or email",
@@ -184,7 +184,7 @@ export default {
     "typeLabel": "Group type"
   },
   "groupInvite": {
-    "approvalHint": "An admin must approve this group request.",
+    "approvalHint": "This group requires admin approval. You will join once your request is approved.",
     "confirmTitle": "Confirm joining group chat",
     "creator": "Created by {{name}}",
     "groupNumber": "Group ID {{number}}",
@@ -228,7 +228,7 @@ export default {
     "clearSearch": "Clear contact search",
     "dialogLabel": "Invite people to use Agent",
     "empty": "No contacts available to invite",
-    "failedFor": "Couldn’t invite {{names}}.",
+    "failedFor": "Could not invite {{names}}.",
     "invitationNote": "{{owner}} shared {{agent}} with you.",
     "invite": "Invite",
     "noResults": "No contacts found",
@@ -243,7 +243,7 @@ export default {
     "title": "Invite people to use {{name}}"
   },
   "joinGroup": {
-    "alreadyMember": "You are already in this group",
+    "alreadyMember": "You are already a member of this group",
     "joined": "Joined",
     "looking": "Looking up\u2026",
     "lookupFailed": "Group lookup failed. Try again.",
@@ -251,14 +251,32 @@ export default {
     "pending": "Pending review",
     "request": "Request to join",
     "refusedInviteOnly": "This group is invite-only",
-    "refusedNotFound": "That group ID no longer exists",
-    "refusedSelfServeClosed": "The owner has not opened self-serve joining \u2014 ask a member to invite you",
+    "refusedNotFound": "This group ID no longer exists",
+    "refusedSelfServeClosed": "The owner has not enabled self-serve joining. Ask a member to invite you",
     "requestFailedFallback": "Request failed. Try again.",
-    "requested": "Request sent \u2014 waiting for the group owner to approve",
+    "requested": "Request sent. Waiting for the group owner to approve",
     "searchPlaceholder": "Enter group ID",
     "summary_one": "Group ID {{number}}, {{count}} member",
     "summary_other": "Group ID {{number}}, {{count}} members",
     "title": "Join a group"
+  },
+  "requestsPane": {
+    "empty": "No new requests",
+    "nonePending": "No pending requests",
+    "pending_one": "{{count}} pending",
+    "pending_other": "{{count}} pending"
+  },
+  "searchPane": {
+    "count_one": "{{count}} result",
+    "count_other": "{{count}} results",
+    "empty": "Nothing found for “{{query}}”",
+    "title": "Search “{{query}}”"
+  },
+  "sectionPane": {
+    "agents": "Agents",
+    "count_one": "{{count}} contact",
+    "count_other": "{{count}} contacts",
+    "groups": "Groups"
   },
   "panel": {
     "addContact": "Add contact",
@@ -267,6 +285,7 @@ export default {
     "allContacts": "All contacts",
     "backToContactList": "Back to contact list",
     "backToContacts": "Back to contacts",
+    "jumpToLetter": "Jump to letter",
     "backToGroupList": "Back to group chat list",
     "contactCountSummary": "{{count}} contacts total",
     "contactCountSummary_one": "{{count}} contact total",
@@ -344,7 +363,7 @@ export default {
     "publicValue": "Public; people can request to join",
     "removed": "Removed",
     "removeFromGroup": "Remove from group chat",
-    "agentLeaveGroup": "Take it out of this group",
+    "agentLeaveGroup": "Remove the Agent from this group",
     "roles": {
       "admin": "Admin",
       "member": "Member",
@@ -359,7 +378,7 @@ export default {
     "shareUnavailable": "A Gugu ID is required to share this profile",
     "source": "Source",
     "unconfigured": "Not configured",
-    "findMessages": "Find their messages",
+    "findMessages": "Find this member's messages",
     "viewProfile": "View {{name}} profile",
     "whisper": "Whisper"
   },

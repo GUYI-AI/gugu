@@ -1,5 +1,7 @@
 import { basename } from 'node:path';
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
+import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -23,7 +25,7 @@ import { ownerNotificationHead, ownerNotificationFile } from '../sessions/owner-
 import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, notInArray, type SQL } from 'drizzle-orm';
 import { isTaskHomeFolder, listFolders, listUnboundFolders } from '@main/core/folders/folders';
 import { sessionWorkspaceId } from '@main/core/sessions/utils';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
@@ -76,6 +78,7 @@ import { db } from '@main/db/client';
 import { sessions, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/workspaces/resolve-workspace';
 import { events, tapMainEvents } from '@main/lib/events';
+import { onNativeMessagePreviewChanged, readNativeActiveMessagePreview } from './native-preview-events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
   automationChangedChannel,
@@ -174,11 +177,30 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
   );
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
   const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
-  return createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
+  const row = readSessionRow(sessionId, { includeArchived: true });
+  const pty = row && row.runtime !== 'acp';
+  const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
     sessionId,
+    ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });
+  try {
+    // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
+    const last = timeline.getSnapshot().turns.at(-1);
+    if (pty && last && !last.outcome && last.startedAt !== undefined
+      && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
+      const latest = readSessionRow(sessionId, { includeArchived: true });
+      if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
+        && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
+        recordPtyEngineEnd(sessionId, Date.now(), true, last.startedAt);
+      }
+    }
+    return timeline;
+  } catch (error) {
+    timeline.dispose();
+    throw error;
+  }
 };
 
 let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;
@@ -229,12 +251,14 @@ const subscriptions = new Map<string, ActiveSubscription>();
  * 早先这里只选了列表要显示的那几列，再把它 `as Conversation` 递给注入路径 —— 那是一句
  * 类型上的谎：注入路径哪天多读一个字段，拿到的是 undefined 而类型说它在，静默走错。
  */
-function readSessionRows(includeArchived = false, id?: string): SessionRow[] {
+function readSessionRows(includeArchived = false, where?: SQL, limit?: number): SessionRow[] {
   return db
     .select()
     .from(sessions)
     // 归档的会话不上这张面 —— 与 `getSessions()` 同一条口径:归属键是**会话自己**那一列(spec session-graph)。
-    .where(and(includeArchived ? undefined : isNull(sessions.archivedAt), id === undefined ? undefined : eq(sessions.id, id)))
+    .where(and(includeArchived ? undefined : isNull(sessions.archivedAt), where))
+    .orderBy(desc(sessions.lastInteractedAt))
+    .limit(limit ?? Number.MAX_SAFE_INTEGER)
     .all();
 }
 
@@ -250,8 +274,7 @@ function folderSummaries(): SessionpageProjectSummary[] {
 
 export function readSessionRow(conversationId: string, options: { includeArchived?: boolean } = {}): SessionRow | null {
   return (
-    readSessionRows(options.includeArchived, conversationId).find((row) => row.id === conversationId) ??
-    null
+    readSessionRows(options.includeArchived, eq(sessions.id, conversationId)).find((row) => row.id === conversationId) ?? null
   );
 }
 
@@ -708,18 +731,25 @@ export async function sessionOfAgent(agentUserId: string): Promise<{ sessionId: 
   return row ?? null;
 }
 
-/** 同一份列表,同步、不读名录(行上不带 agent):心跳的离线摘要与换版忙不忙只要状态。 */
-export function listSessionStates(): SessionpageSessionsListResult {
-  return sessionList(null);
+/** 同一份列表(最近动过的在前),同步、不读名录(行上不带 agent):心跳的离线摘要只要前 `limit` 条,在库里截(#3340)。 */
+export function listSessionStates(limit?: number): SessionpageSessionsListResult {
+  return sessionList(null, limit);
 }
 
-function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null): SessionpageSessionsListResult {
-  const rows = readSessionRows();
+/** 可能在忙的会话(状态既不是空闲也不是出错):换版忙不忙只看这几行,每一拍不随闲着的会话数长(#3340)。 */
+export function activeSessionStates(): Array<Pick<SessionpageSessionSummary, 'conversationId' | 'runtime' | 'status'>> {
+  return db.select().from(sessions).where(and(isNull(sessions.archivedAt), notInArray(sessions.agentStatus, ['idle', 'error']))).all()
+    .map((row) => ({ conversationId: row.id, runtime: summaryRuntime(row.runtime), status: statusFieldsOf(row).status }));
+}
+
+function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null, limit?: number): SessionpageSessionsListResult {
+  const rows = readSessionRows(false, undefined, limit);
   const folders = folderSummaries();
   const projectById = new Map<string, SessionpageProjectSummary>();
-  const sessions: SessionpageSessionSummary[] = [];
-  const schedules = schedulesBySession(listSessionSchedules());
-  const answered = readAnsweredAsks();
+  const summaries: SessionpageSessionSummary[] = [];
+  const ids = limit === undefined ? undefined : rows.map((session) => session.id);
+  const schedules = schedulesBySession(listSessionSchedules(ids));
+  const answered = readAnsweredAsks(ids);
   const folderById = new Map(folders.map((folder) => [folder.id, folder]));
 
   for (const session of rows) {
@@ -729,7 +759,7 @@ function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: stri
       ?? (summary.cwd ? { id: summary.projectId, name: basename(summary.cwd) || summary.cwd, path: summary.cwd } : undefined);
     if (!folder) continue;
     projectById.set(folder.id, folder);
-    sessions.push(summary);
+    summaries.push(summary);
   }
   // 还没开过会话的文件夹也要列:手机新建会话只能挑这里列出的(#6985:在手机上给一台刚加的机器开第一条会话)。
   // 任务 home 不算一个文件夹(侧栏也不列它),它只在里面有会话时随会话出现。
@@ -738,13 +768,13 @@ function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: stri
     if (!projectById.has(folder.id)) projectById.set(folder.id, folder);
   }
 
-  return { projects: [...projectById.values()], sessions };
+  return { projects: [...projectById.values()], sessions: summaries };
 }
 
 /** 一条会话的摘要,与 `listSessions` 同一个投影;建会话时交回发起方,它就不用自己拼一份「不知道」的。 */
 export async function sessionSummary(conversationId: string): Promise<SessionpageSessionSummary | null> {
   const [row] = db.select().from(sessions).where(eq(sessions.id, conversationId)).limit(1).all();
-  return row ? summaryOf(row, await sessionAgents(process.env), schedulesBySession(listSessionSchedules()), readAnsweredAsks()) : null;
+  return row ? summaryOf(row, await sessionAgents(process.env), schedulesBySession(listSessionSchedules([row.id])), readAnsweredAsks([row.id])) : null;
 }
 
 /**
@@ -1278,10 +1308,32 @@ export async function stopBackgroundTask(input: {
   }
 }
 
-/**
- * 订阅。`emit` 是这条传输自己的推送口（设备 RPC 的 broadcast / 桌面的 IPC）。
- * 同一个 subscriptionId 再订阅 = 顶掉前一条（重连时手机会带着同一个 id 回来）。
- */
+/** Native card subscriptions observe identity-only invalidations, never a full timeline/live model. */
+export async function subscribePreview(
+  input: SessionpageSessionSubscribeRequest,
+  changed: () => void,
+): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
+  const row = readSessionRow(input.conversationId);
+  if (!row || row.runtime !== 'acp') return subscribe(input, changed);
+  const subscriptionId = input.subscriptionId?.trim();
+  if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId 是必填的');
+  unsubscribe(subscriptionId);
+  let stopped = false;
+  const notify = () => { if (!stopped) changed(); };
+  const stops = [
+    onNativeMessagePreviewChanged(id => { if (id === undefined || id === input.conversationId) notify(); }),
+    tapMainEvents((channel, data) => {
+      if (channel === sessionChangedChannel.name && (data as { sessionId?: string }).sessionId === input.conversationId) notify();
+    }),
+  ];
+  subscriptions.set(subscriptionId, { conversationId: input.conversationId, stop: () => {
+    stopped = true;
+    for (const stop of stops) stop();
+  } });
+  return { ok: true, value: { subscriptionId } };
+}
+
+/** 订阅正文；同一个 subscriptionId 重连会替换前一条。预览使用上面的独立入口。 */
 export async function subscribe(
   input: SessionpageSessionSubscribeRequest,
   emit: (event: SessionpageSessionEvent) => void
@@ -1784,7 +1836,18 @@ export async function changeQueue(input: { conversationId: string; action: impor
   }
 }
 
-const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, withTimeline });
+const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, activePreview: readNativeActiveMessagePreview, withTimeline,
+  async withArchive<T>(conversationId: string, read: (historyFloor: string | null) => T | Promise<T>): Promise<SessionTimelineResult<T>> {
+    try {
+      const floor = await nativeConversationHistoryFloor(conversationId);
+      const value = await read(floor);
+      return { ok: true as const, value: clearedHistoryResult(value, floor) };
+    } catch (error) {
+      return fail('code' in Object(error) && (error as { code: unknown }).code === 'history_epoch_unstable' ? 'history_epoch_unstable' : 'timeline_failed', (error as Error)?.message ?? String(error));
+    }
+  },
+});
 export const nativeRecord = nativeRecordReader.snapshot;
+export const compactNativeRecord = nativeRecordReader.preview;
 export const nativeToolImage = nativeRecordReader.image;
 export { nativeAttachment } from './native-attachment';

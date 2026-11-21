@@ -148,7 +148,7 @@ test('phone attachment preparation validates every artifact and revokes only new
   const fx = await fixture()
   try {
     const args = { to: [`session:${fx.receiver.sessionId}`], text: 'two files', files: [{ file_path: fx.artifact.file_path }, { file_path: '/unregistered' }] }
-    await assert.rejects(fx.send.execute('invalid', args), /登记/)
+    await assert.rejects(fx.send.execute('invalid', args), /registered/)
     assert.equal(fx.requests.length, 0)
     fx.failSecond(); args.files[1].file_path = fx.artifact.file_path
     await assert.rejects(fx.send.execute('partial', args), /refused second/)

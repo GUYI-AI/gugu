@@ -493,7 +493,7 @@ test('an expired network wait is disclosed once; a lost delivery acknowledgment 
     assert.equal(turns, 0)
     assert.equal(fx.sessionReplies.length, 1)
     original = fx.sessionReplies[0].args[1]
-    assert.equal(original.text, '这次手机任务没能完成，网络连接反复中断。')
+    assert.equal(original.text, 'This phone task could not finish: the network connection kept dropping.')
     assert.doesNotMatch(original.text, /job|fetch|重发|[\da-f]{8}-/)
     journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
     const job = Object.values(journal.jobs)[0]
@@ -599,7 +599,7 @@ test('host authentication recovery publishes an already journaled reply with its
 test('a local create runs its first input directly and reads the actual Pi result without any DM messages', async () => {
   const fx = await fixture(async (command, hooks) => {
     assert.equal(command.prompt, '直接在任务页查日程')
-    assert.match(hooks.systemPrompt, /本轮来源是 task/)
+    assert.match(hooks.systemPrompt, /This turn's source is task/)
     await recordTurn(command, hooks, '任务页真实结果')
     return { status: 'done', text: '任务页真实结果' }
   })
@@ -1034,7 +1034,7 @@ test('native hostCall creation reuses clientRequestId across transports and repo
     await fx.host.handle({ type: 'host_call', ownerId, id: randomUUID(), channel: 'sessionTimeline.sessionCreate', args })
     assert.equal(fx.commands.length, 1)
     assert.equal(fx.calls.filter(([name]) => name === 'add_group_agent').length, 1)
-    await assert.rejects(fx.host.invoke('sessionTimeline.sessionCreate', [{ ...args[0], prompt: 'changed intent' }], randomUUID()), /不能更换/)
+    await assert.rejects(fx.host.invoke('sessionTimeline.sessionCreate', [{ ...args[0], prompt: 'changed intent' }], randomUUID()), /cannot change/)
   } finally { await fx.close() }
 })
 
@@ -1136,7 +1136,7 @@ test('phone provision retry regrants only a durable failed member and keeps its 
 test('phone provision reply-loss recovery does not retry an awaiting command or resurrect a removed identity', async () => {
   const fx = provisionCase({ commandResults: ['pending', 'done'] })
   const action = { clientRequestId: randomUUID(), harness: 'pi', prompt: 'recover an awaiting task' }
-  await assert.rejects(fx.provision(randomUUID(), action), /尚未完成/)
+  await assert.rejects(fx.provision(randomUUID(), action), /has not finished/)
   await fx.provision(randomUUID(), action)
   assert.equal(fx.commands.length, 1)
   assert.deepEqual(fx.calls.filter(([name]) => name === 'claim_provision_slots').map(([, args]) => args.p_retry_provision_ids), [null])
@@ -1144,7 +1144,7 @@ test('phone provision reply-loss recovery does not retry an awaiting command or 
   const removed = provisionCase({ commandResults: ['error'] })
   await assert.rejects(removed.provision(randomUUID(), action), /agent_create_command_error/)
   removed.row.agent_user_id = null
-  await assert.rejects(removed.provision(randomUUID(), action), /已被移除/)
+  await assert.rejects(removed.provision(randomUUID(), action), /was removed/)
   assert.equal(removed.calls.filter(([name]) => name === 'claim_provision_slots').length, 1)
   assert.equal(removed.identities, 1)
 })
@@ -1169,7 +1169,7 @@ test('phone provision preserves the durable intent check for concurrent calls wi
   const [first, second] = await Promise.allSettled([fx.provision(randomUUID(), action), fx.provision(randomUUID(), { ...action, prompt: 'different task' })])
   assert.equal(first.status, 'fulfilled')
   assert.equal(second.status, 'rejected')
-  assert.match(second.reason.message, /不能更换/)
+  assert.match(second.reason.message, /cannot change/)
   assert.notEqual(second.reason.code, 'phone_create_rejected')
   assert.equal(fx.identities, 1)
   assert.equal(fx.commands.length, 1)
@@ -1267,7 +1267,7 @@ test('same-phone delegated input and queued timeline retain host proofs and fail
     assert.equal(recipientTurns, 0)
     const failed = (await readJournal()).jobs[queued.id]
     assert.equal(failed.errorCode, 'revoked')
-    assert.match(failed.error, /未执行这条输入/)
+    assert.match(failed.error, /this input was not run/)
     assert.deepEqual(failed.inputDataProof, queued.inputDataProof)
   } finally { release(); await fx.close() }
 })
@@ -1758,7 +1758,7 @@ test('a failed heartbeat changes admission state and other healthy signals canno
     await fx.authChanged({ access_token: 'valid', refresh_token: 'valid', expires_at: 9999999999 })
     assert.equal(fx.host.state().ready, false)
     assert.match(fx.host.state().error, /heartbeat unreachable/)
-    await assert.rejects(fx.host.invoke('sessionTimeline.sessionsList', []), /尚未就绪/)
+    await assert.rejects(fx.host.invoke('sessionTimeline.sessionsList', []), /not ready/)
     fail = false
     await fx.host.handle({ type: 'configure', config: fx.config })
     assert.equal(fx.host.state().ready, true)
@@ -1804,8 +1804,8 @@ for (const mode of ['cancel', 'stop', 'timeout']) test(`${mode} during a confirm
   const fx = await fixture(async (command, hooks) => {
     if (++turns === 1) await hooks.extraTools.find((tool) => tool.name === 'phone_call').execute('confirm-write', { name: 'calendar.events.create', args: { title: 'private-old-calendar-title-7521', start: '2026-10-21T14:00:00+08:00', end: '2026-10-21T14:30:00+08:00' } })
     else {
-      assert.match(hooks.systemPrompt, /宿主持久记录显示/)
-      assert.match(hooks.systemPrompt, /No result provided 不代表操作未执行/)
+      assert.match(hooks.systemPrompt, /durable record shows/)
+      assert.match(hooks.systemPrompt, /No result provided, does not mean the action did not run/)
       assert.doesNotMatch(hooks.systemPrompt, /private-old-calendar-title-7521/)
     }
     await recordTurn(command, hooks, '请检查任务记录')
@@ -1827,9 +1827,9 @@ for (const mode of ['cancel', 'stop', 'timeout']) test(`${mode} during a confirm
     await until(() => fx.events.some((event) => event.type === 'turn_failed' && event.code === 'execution_unknown'), fx.events)
     const failure = fx.events.find((event) => event.type === 'turn_failed' && event.code === 'execution_unknown')
     assert.equal(failure.status, cancelled ? 'cancelled' : 'interrupted')
-    assert.match(failure.error, /结果尚未确认.*不能自动重复执行/)
+    assert.match(failure.error, /result is not confirmed.*must not be repeated automatically/)
     assert.equal(turns, 1)
-    assert.match(fx.host.state().sessions[0].lastError, /结果尚未确认/)
+    assert.match(fx.host.state().sessions[0].lastError, /result is not confirmed/)
     if (mode !== 'stop') {
       await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: '先核对实际结果', clientRequestId: randomUUID() }], randomUUID())
       await until(() => turns === 2 && fx.host.state().sessions[0].lastJobStatus === 'done', fx.events)
@@ -1847,7 +1847,7 @@ test('a cold host preserves running jobs and executing confirmations as interrup
   const fx = await fixture(async (command, hooks) => {
     turns++
     assert.equal(command.prompt, '先核对实际结果')
-    assert.match(hooks.systemPrompt, /宿主持久记录显示.*结果尚未确认/)
+    assert.match(hooks.systemPrompt, /durable record shows.*results unconfirmed/)
     assert.doesNotMatch(hooks.systemPrompt, /private-interrupted-input|private-interrupted-args/)
     await recordTurn(command, hooks, '已提示核对')
     return { status: 'done', text: '已提示核对' }
@@ -1877,8 +1877,8 @@ test('native Skill settings reach Pi progressively, reject remote/busy writes an
     const list = hooks.extraTools.find((tool) => tool.name === 'phone_skills_list')
     const read = hooks.extraTools.find((tool) => tool.name === 'phone_skills_read')
     const listing = await list.execute('discover-skills', {})
-    assert.match(hooks.systemPrompt, /调用 phone_memory_search/)
-    assert.match(hooks.systemPrompt, /才用 phone_memory_save/)
+    assert.match(hooks.systemPrompt, /call phone_memory_search/)
+    assert.match(hooks.systemPrompt, /use phone_memory_save only/)
     assert.doesNotMatch(hooks.systemPrompt, /private-skill-body-marker/)
     assert.doesNotMatch(JSON.stringify(listing), /private-skill-body-marker/)
     if (commands.length === 2) {
@@ -2058,14 +2058,14 @@ test('startup imports acknowledged legacy work and queues host failure through t
     }
     const body=`Original task\n\n<gugu_work>\n${JSON.stringify({work_id:workId,coordinator:`session:${coordinator}`,report:'Report results'})}\n</gugu_work>`
     const directory=join(root,'hosts',ownerId);await mkdir(directory,{recursive:true})
-    await writeFile(join(directory,'host.json'),JSON.stringify({version:1,ownerId,agents:{[agentId]:{agentUserId:agentId,sessionId,displayName:'Legacy task',status:'error',caller,modelId:'free'}},jobs:{[messageId]:{id:messageId,agentUserId:agentId,status:'failed',createdAt:'2026-10-20T08:00:00Z',finishedAt:'2026-10-20T08:01:00Z',error:'这次手机任务没能完成，网络连接反复中断。',sent:[],route:{kind:'session-direct',caller,sourceMessageId:messageId},prompt:buildSessionDirectEnvelope({senderSessionId:coordinator,senderTitle:'Assistant',messageId,content:body,at:'2026-10-20T08:00:00Z'})}},outbox:{},requests:{},leases:{}}))
+    await writeFile(join(directory,'host.json'),JSON.stringify({version:1,ownerId,agents:{[agentId]:{agentUserId:agentId,sessionId,displayName:'Legacy task',status:'error',caller,modelId:'free'}},jobs:{[messageId]:{id:messageId,agentUserId:agentId,status:'failed',createdAt:'2026-10-20T08:00:00Z',finishedAt:'2026-10-20T08:01:00Z',error:'This phone task could not finish: the network connection kept dropping.',sent:[],route:{kind:'session-direct',caller,sourceMessageId:messageId},prompt:buildSessionDirectEnvelope({senderSessionId:coordinator,senderTitle:'Assistant',messageId,content:body,at:'2026-10-20T08:00:00Z'})}},outbox:{},requests:{},leases:{}}))
   }})
   try{
     await until(()=>fx.cloud.workEvents?.length===1,fx.events)
     assert.equal(imported,true)
     assert.equal(fx.cloud.workEvents[0].kind,'progress')
     assert.equal(fx.cloud.workEvents[0].reason_code,'HOST_FAILURE')
-    assert.equal(fx.cloud.workEvents[0].content,'这次手机任务没能完成，平台已单独发出失败说明，不用再转告。')
+    assert.equal(fx.cloud.workEvents[0].content,'This phone task could not finish. The platform sent a separate failure notice; no need to pass it on.')
     assert.doesNotMatch(fx.cloud.workEvents[0].content,/网络连接|主人/)
     assert.equal(fx.sessionReplies.length,0)
     const journal=JSON.parse(await readFile(join(fx.root,'hosts',ownerId,'host.json'),'utf8'))

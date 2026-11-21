@@ -1,4 +1,5 @@
 import type { AgentInstallErrorPresentation, Translate } from './agent-install'
+import type { HostDependencyInstallation } from '@renderer/lib/stores/use-agent-installation-statuses'
 
 /** The dialog shows a short cause; full host messages and paths stay in details. */
 export function installFailureSummary(
@@ -25,4 +26,13 @@ export function installFailureSummary(
             ? 'agentsPage.failureNetwork'
             : 'agentsPage.failureIncomplete'
   return { message: translate(key, { operation }), diagnostic }
+}
+
+/** The last install or update failure on this agent, summarized; null when there is none. */
+export function lastFailureSummary(
+  vm: Pick<HostDependencyInstallation, 'lastInstallError' | 'lastUpdateError'>,
+  translate: Translate
+): AgentInstallErrorPresentation | null {
+  const failure = vm.lastInstallError ?? vm.lastUpdateError
+  return failure && installFailureSummary(failure, translate, !vm.lastInstallError)
 }

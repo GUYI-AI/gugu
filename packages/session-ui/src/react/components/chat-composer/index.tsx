@@ -728,7 +728,7 @@ export function ChatComposer({
       : null;
   const selectedAgentTitle = selectedAgentItem
     ? agentLocked && !hideLockedAgent
-      ? `${selectedAgentItem.name} — agents can't be switched after a conversation starts`
+      ? `${selectedAgentItem.name}: the agent cannot be changed after a conversation starts`
       : selectedAgentItem.name
     : undefined;
 
@@ -812,6 +812,7 @@ export function ChatComposer({
       placeholder={resolvedPlaceholder}
       disabled={disabled || !!queueEdit?.pending}
       onChange={(text) => { setHasText(!!text.trim()); (queueEdit ? changeQueueEdit : onInputChange)?.(text); }}
+      onDocumentClear={phoneCapsule ? phoneEditor.onDocumentClear : undefined}
       onPasteText={queueEdit ? undefined : handlePastedText}
       clearOnSubmit={queueEdit ? false : (editorOptions?.clearOnSubmit ?? true)}
       hostDropTypes={onDataDropped ? dataDropTypes : undefined}

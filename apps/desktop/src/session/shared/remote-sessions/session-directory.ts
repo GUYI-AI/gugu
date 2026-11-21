@@ -59,7 +59,7 @@ export function registerDeviceSessionsRetry(ownerId: string, deviceId: string, r
 /** A stale page from another account or a stopped device cannot reconnect that device. */
 export async function retryDeviceSessions(ownerId: string, deviceId: string): Promise<void> {
   const entry = directoryState().retries.get(deviceId)
-  if (!ownerId || !entry || entry.ownerId !== ownerId) throw new Error('当前账号没有这台设备的可重试连接。')
+  if (!ownerId || !entry || entry.ownerId !== ownerId) throw new Error('The current account has no retryable connection for this device.')
   await entry.run()
 }
 

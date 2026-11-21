@@ -6,13 +6,14 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { nativeHomeRoots } from '@gugu/session-core/agents/plugins/helpers';
 import { requireNativeHome } from '@gugu/session-plugins/agents';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import { MAX_SESSION_TITLE_LENGTH } from '@shared/core/sessions/sessions';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { sessionWorkspaceManager } from './session-workspace-manager';
 import { buildSessionRow } from './build-session-row';
 import { taskName } from './task-name';
@@ -41,7 +42,10 @@ type SessionRow = typeof sessions.$inferSelect;
 const SCAN_MIN_INTERVAL_MS = 5_000;
 const lastScanAt = new Map<string, number>();
 const inFlight = new Set<string>();
-const recurringScans = new Map<string, NodeJS.Timeout>();
+/** 每个文件夹一个扫描器,一趟扫完它挂载着的会话(#3340:❌ 一条会话一个定时器、各读一遍)。 */
+const folderScans = new Map<string, NodeJS.Timeout>();
+/** 挂载着的会话 → 它的扫描器(拆下时文件夹行可能已经不在,不能再查)。 */
+const scanFolderOf = new Map<string, string>();
 const codexTranscriptCache = new Map<string, CodexForkTranscript | null>();
 /**
  * 每份 Claude 记录的开头只读一次:第一条消息与 forkedFrom 一经写下就不会再变。没有它,每 5 秒
@@ -78,24 +82,23 @@ export function tombstoneDeletedSession(providerSessionIds: Array<string | null 
 /**
  * spec session-fork-share:用户在 TUI 里(claude `/fork` 复制成后台会话、`/branch`、
  * `--resume <源> --fork-session`,codex `/fork`)fork 出的会话不走咕咕的路,咕咕只能轮询发现。
- * 轮询按会话:一趟只盯**这一条、未归档**的会话,只列文件名,只有「首条消息对得上它」的新记录才算候选;与它无关的记录(同目录下
- * 别的会话、别的咕咕实例的会话)读一次开头就再也不碰。同目录里咕咕**自己管着**的别的会话(产品分叉就住在那儿,#6269)
- * 算「已知」、也进候选池认父亲,但登记归父亲那一条的那一趟。
+ * 轮询按文件夹:一趟盯这个文件夹里挂载着的(再加上 `sessionId` 这一条)**未归档**会话,一个工作目录只列一次文件名,
+ * 只有「首条消息对得上它们」的新记录才算候选;与它们无关的记录(别的咕咕实例的会话)读一次开头就再也不碰。
+ * 同目录里咕咕**自己管着**、这一趟没盯的会话(产品分叉就住在那儿,#6269)算「已知」、也进候选池认父亲,但不替它登记。
  */
-export function scheduleExternalForkCapture(sessionId: string): void {
-  const key = sessionId;
+export function scheduleExternalForkCapture(folderId: string, sessionId?: string): void {
   const now = Date.now();
-  if (inFlight.has(key)) return;
-  const last = lastScanAt.get(key);
+  if (inFlight.has(folderId)) return;
+  const last = lastScanAt.get(folderId);
   if (last !== undefined && now - last < SCAN_MIN_INTERVAL_MS) return;
-  lastScanAt.set(key, now);
-  inFlight.add(key);
-  void captureExternalForks(sessionId)
+  lastScanAt.set(folderId, now);
+  inFlight.add(folderId);
+  void captureExternalForks(...sessionWorkspaceManager.sessionsOf(folderId), ...(sessionId ? [sessionId] : []))
     .catch((error) => {
-      log.warn('forkCapture: scan failed', { sessionId, error: String(error) });
+      log.warn('forkCapture: scan failed', { folderId, error: String(error) });
     })
     .finally(() => {
-      inFlight.delete(key);
+      inFlight.delete(folderId);
     });
 }
 
@@ -216,7 +219,7 @@ async function captureCodexForks(
   sessionPath: string,
   rows: SessionRow[],
   knownProviderSessionIds: Set<string>,
-  unclaimedForkSourceIds: Set<string>,
+  unclaimedForkSourceIds: () => Set<string>,
   env: NodeJS.ProcessEnv
 ): Promise<void> {
   // 出生时 sessionId = 行 id 的会话还没拿到 codex 线程 id,不可能已经被 fork。
@@ -261,7 +264,7 @@ async function captureCodexForks(
     if (transcriptPath !== sessionPath) continue;
     // 这条 rollout 的来源会话上还挂着一条待认领的产品 fork ⇒ 它可能正是那条 fork 的 child,
     // 归属未定,留到下一趟(认领落定后它要么已知、要么才算真外部)。
-    if (unclaimedForkSourceIds.has(parent.id)) continue;
+    if (unclaimedForkSourceIds().has(parent.id)) continue;
     const parentConfig = parent.config?.type === 'pty' ? parent.config : undefined;
     const [inserted] = await db
       .insert(sessions)
@@ -484,48 +487,37 @@ async function resolveForkParent(
   return best ? (sameRoot.find((c) => c.sessionId === best.sessionId) ?? null) : null;
 }
 
-export async function captureExternalForks(sessionId: string): Promise<void> {
-  const [workspace] = await db
-    .select({
-      id: workspaces.id,
-      path: workspaces.path,
-      type: workspaces.type,
-      location: workspaces.location,
-    })
-    .from(sessions)
-    .innerJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
-    .where(eq(sessions.id, sessionId))
-    .limit(1);
-  if (!workspace?.path || isRetiredRemoteWorkspace(workspace)) return;
-
-  // Claude slugs its transcript dir from the session cwd AFTER resolving symlinks — on
-  // macOS a /tmp/... workspace records under /private/tmp/... (verified live). Canonicalize
-  // before slugging or the scan reads an empty dir and silently finds nothing.
-  const workspacePath = workspace.path;
-  const sessionPath = await realpath(workspacePath).catch(() => workspacePath);
-
-  // 「这条记录咕咕认不认识」按**这个工作目录里的全部会话**问,「谁能当父亲」只看这一条。两件事的范围不同:
+export async function captureExternalForks(...sessionIds: string[]): Promise<void> {
+  // 「这条记录咕咕认不认识」按盯着的会话所在**工作目录里的全部会话**问,「谁能当父亲」只看这一趟盯着的会话。两件事的范围不同:
   // 产品分叉是独立会话、与来源共用工作目录(#6269)⇒ 两边的记录在同一个目录里、还共享开头;
-  // 只拿这一条当「已知」,来源那一趟会把分叉的记录当成外部 fork 再登记一遍,分叉那一趟
-  // 又会把来源的记录认成自己的 fork。咕咕管着的任何会话,都不是「外部」。
-  const workspaceRows = await db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.workspaceId, workspace.id));
-
+  // 只拿盯着的当「已知」,来源那一趟会把分叉的记录当成外部 fork 再登记一遍,分叉那一趟
+  // 又会把来源的记录认成自己的 fork。咕咕管着的任何会话,都不是「外部」。认不认识只读这几列;带 config 的整行
+  // 只在真有不认识的记录时才读(#3340:稳态下每一趟的开销不随文件夹里的会话数长)。
+  if (sessionIds.length === 0) return;
+  const watchedIds: string[] = [];
+  const watchedWorkspaceIds = new Set<string>();
+  for (const row of db.select({ id: sessions.id, workspaceId: sessions.workspaceId, provider: sessions.provider, archivedAt: sessions.archivedAt })
+    .from(sessions).where(inArray(sessions.id, [...new Set(sessionIds)])).all()) {
+    // spec session-graph:归档只问会话自己那一列。已归档的会话仍算「已知」—— 它的记录不许被当成新 fork
+    // 再登记一遍 —— 但不再监测它派生出的 fork。两家的会话都跑在用户自己的配置根上(#26),记录也在那里。
+    if (!row.workspaceId || row.archivedAt || (row.provider !== 'claude' && row.provider !== 'codex')) continue;
+    watchedIds.push(row.id);
+    watchedWorkspaceIds.add(row.workspaceId);
+  }
+  if (watchedIds.length === 0) return;
   const knownProviderSessionIds = new Set<string>(tombstonedProviderSessionIds);
-  for (const row of workspaceRows) {
+  for (const row of db.select({ id: sessions.id, providerSessionId: sessions.providerSessionId })
+    .from(sessions).where(inArray(sessions.workspaceId, [...watchedWorkspaceIds])).all()) {
     knownProviderSessionIds.add(row.id);
     if (row.providerSessionId) knownProviderSessionIds.add(row.providerSessionId);
   }
-  // spec session-graph:归档只问会话自己那一列。已归档的会话仍算「已知」—— 它的记录不许被当成新 fork
-  // 再登记一遍 —— 但不再监测它派生出的 fork。
-  const managed = workspaceRows.filter((row) => row.id === sessionId && !row.archivedAt);
-  if (managed.length === 0) return;
-  const owner = managed[0]!;
-  if (owner.provider !== 'claude' && owner.provider !== 'codex') return;
-  // 两家的会话都跑在用户自己的配置根上(#26),记录也在那里,换了默认订阅也不挪。
-  const transcriptEnv = process.env;
+  const watched = db.select().from(sessions).where(inArray(sessions.id, watchedIds)).all();
+  const workspaceRowsById = new Map<string, SessionRow[]>();
+  const readWorkspaceRows = (workspaceId: string) => () => {
+    let rows = workspaceRowsById.get(workspaceId);
+    if (!rows) workspaceRowsById.set(workspaceId, rows = db.select().from(sessions).where(eq(sessions.workspaceId, workspaceId)).all());
+    return rows;
+  };
   // 运行时自己 fork 出、只活在运行时里的会话(#4236)不进侧栏 —— 这一条的、同目录别的会话的都一样。
   // ❌ 以前遇到「别的会话的」就抛错:而一个工作目录挂多条会话是常态,于是每一趟都在半路
   // 抛错退出,外部 fork 永远认领不到(正式版日志每小时 1400+ 条 `forkCapture: scan failed`)。
@@ -533,9 +525,24 @@ export async function captureExternalForks(sessionId: string): Promise<void> {
     knownProviderSessionIds.add(runtimeFork.providerSessionId);
     knownProviderSessionIds.add(runtimeFork.runtimeSessionId);
   }
+  const workspaceRows = await db.select({ id: workspaces.id, path: workspaces.path, type: workspaces.type, location: workspaces.location })
+    .from(workspaces).where(inArray(workspaces.id, [...watchedWorkspaceIds]));
+  for (const workspace of workspaceRows) {
+    if (!workspace.path || isRetiredRemoteWorkspace(workspace)) continue;
+    const managed = watched.filter((row) => row.workspaceId === workspace.id);
+    await captureWorkspaceForks({ id: workspace.id, path: workspace.path }, managed, readWorkspaceRows(workspace.id), knownProviderSessionIds);
+  }
+}
 
-  // 待认领的产品分叉是别的会话(#6269),它的来源却是这一条 —— 所以也按整个工作目录找。
-  const unclaimedForkSourceIds = unclaimedProductForkSourceIds(workspaceRows);
+/** 一个工作目录里盯着的会话一趟扫完:记录目录只列一次。 */
+async function captureWorkspaceForks(workspace: { id: string; path: string }, managed: SessionRow[],
+  readWorkspaceRows: () => SessionRow[], knownProviderSessionIds: Set<string>): Promise<void> {
+  // 待认领的产品分叉是别的会话(#6269),它的来源却是盯着的这些 —— 所以按整个工作目录找。
+  const unclaimedForkSourceIds = () => unclaimedProductForkSourceIds(readWorkspaceRows());
+  // Claude slugs its transcript dir from the session cwd AFTER resolving symlinks — on
+  // macOS a /tmp/... workspace records under /private/tmp/... (verified live). Canonicalize
+  // before slugging or the scan reads an empty dir and silently finds nothing.
+  const sessionPath = await realpath(workspace.path).catch(() => workspace.path);
 
   await captureCodexForks(
     workspace.id,
@@ -543,22 +550,23 @@ export async function captureExternalForks(sessionId: string): Promise<void> {
     managed,
     knownProviderSessionIds,
     unclaimedForkSourceIds,
-    transcriptEnv
+    process.env
   );
 
   if (!managed.some((row) => row.provider === 'claude')) return;
-  const files = await listSessionTranscriptFiles(sessionPath, transcriptEnv);
+  const files = await listSessionTranscriptFiles(sessionPath, process.env);
   await bindProviderContinuations(sessionPath, managed, files, knownProviderSessionIds);
 
+  // 稳态下目录里的记录都认识:不必为每条在管会话读锚(#3340)。
+  if (files.every((file) => knownProviderSessionIds.has(file.providerSessionId))) return;
   const fileByProviderSessionId = new Map(files.map((file) => [file.providerSessionId, file]));
-  // 候选父亲 = 这个目录里咕咕在管的**全部**会话,不只这一条:产品分叉是独立会话、与来源同目录
+  // 候选父亲 = 这个目录里咕咕在管的**全部**会话,不只这一趟盯着的:产品分叉是独立会话、与来源同目录
   // (#6269),在分叉的终端里再 `/fork` 一次,真父亲是那条分叉 —— 候选池里没有它,这一趟就会把孙子
-  // 错认成来源的儿子,而 config.forkedFrom 一经写下就是永久的。父亲认准之后**由父亲那一条的那一趟登记**,
+  // 错认成来源的儿子,而 config.forkedFrom 一经写下就是永久的。父亲认准之后**由盯着父亲的那一趟登记**,
   // 别的会话只让它进池(好让它的后代也认对父亲),不替人落行。
-  const lineageRows = workspaceRows.filter((row) => !row.archivedAt);
-  const foreignLineageIds = new Set(
-    lineageRows.filter((row) => row.id !== sessionId).map((row) => row.id)
-  );
+  const managedById = new Map(managed.map((row) => [row.id, row]));
+  const lineageRows = readWorkspaceRows().filter((row) => !row.archivedAt).map((row) => managedById.get(row.id) ?? row);
+  const foreignLineageIds = new Set(lineageRows.filter((row) => !managedById.has(row.id)).map((row) => row.id));
   const pool: LineageCandidate[] = [];
   for (const row of lineageRows) {
     if (row.provider !== 'claude') continue;
@@ -601,7 +609,7 @@ export async function captureExternalForks(sessionId: string): Promise<void> {
   fresh.sort((a, b) => a.mtimeMs - b.mtimeMs);
   // 待认领的产品 fork 会遮住一整条谱系,不只遮一个 transcript:被推迟的那条自己也进候选池,
   // 于是「被推迟者的后代」会挑中它而不是错认成祖父 —— 错认写进 config.forkedFrom 是永久的。
-  const unclaimedLineageIds = new Set(unclaimedForkSourceIds);
+  const unclaimedLineageIds = unclaimedForkSourceIds();
   for (const transcript of fresh) {
     const parent = await resolveForkParent(transcript, pool);
     if (!parent) continue;
@@ -665,7 +673,7 @@ export async function captureExternalForks(sessionId: string): Promise<void> {
     const session = sessionBorn(inserted, 'forkCapture');
     events.emit(sessionCreatedChannel, { session });
     log.info('forkCapture: registered external fork', {
-      sessionId,
+      workspaceId: workspace.id,
       providerSessionId: transcript.providerSessionId,
       forkedFrom: parent.sessionId,
     });
@@ -676,19 +684,19 @@ export async function captureExternalForks(sessionId: string): Promise<void> {
 // the workspace (and its transcript dir) is actually resolvable. The list-RPC trigger alone
 // misses the common boot path where sidebar conversations arrive preloaded in bulk and
 // getUnarchivedSession never fires (verified live: boot → zero scans).
-sessionWorkspaceManager.hooks.on('session:provisioned', ({ sessionId }) => {
-  scheduleExternalForkCapture(sessionId);
-  const key = sessionId;
-  if (recurringScans.has(key)) return;
-  const timer = setInterval(() => scheduleExternalForkCapture(sessionId), 5_000);
-  timer.unref();
-  recurringScans.set(key, timer);
+sessionWorkspaceManager.hooks.on('session:provisioned', ({ sessionId, workspaceId }) => {
+  const folderId = rootFolderOf(workspaceId)?.id;
+  if (!folderId) return;
+  scanFolderOf.set(sessionId, folderId);
+  scheduleExternalForkCapture(folderId, sessionId);
+  if (!folderScans.has(folderId)) folderScans.set(folderId, setInterval(() => scheduleExternalForkCapture(folderId), SCAN_MIN_INTERVAL_MS).unref());
 });
 
 sessionWorkspaceManager.hooks.on('session:torn-down', ({ sessionId }) => {
-  const key = sessionId;
-  const timer = recurringScans.get(key);
-  if (timer) clearInterval(timer);
-  recurringScans.delete(key);
-  lastScanAt.delete(key);
+  const folderId = scanFolderOf.get(sessionId);
+  scanFolderOf.delete(sessionId);
+  if (!folderId || sessionWorkspaceManager.sessionsOf(folderId).length > 0) return;
+  clearInterval(folderScans.get(folderId));
+  folderScans.delete(folderId);
+  lastScanAt.delete(folderId);
 });

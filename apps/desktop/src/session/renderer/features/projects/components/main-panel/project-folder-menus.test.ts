@@ -89,7 +89,7 @@ describe('project home menus open for real', () => {
     ));
     await until(() => menuItems().length > 0 || thrown.length > 0, 'detach menu');
     expect(thrown).toEqual([]);
-    expect(menuItems()).toEqual(['从群里摘下']);
+    expect(menuItems()).toEqual(['从群中移除']);
     await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
     expect(detach).toHaveBeenCalledWith(ROOT);
     const undo = feedback.toast.mock.calls[0][0].action.onClick;
@@ -122,7 +122,7 @@ describe('project home menus open for real', () => {
     expect(menuItems()).toEqual([
       expect.stringContaining('根文件夹'),
       expect.stringContaining('gugu-wt'),
-      expect.stringContaining('挂'),
+      expect.stringContaining('添加文件夹'),
     ]);
   });
 });

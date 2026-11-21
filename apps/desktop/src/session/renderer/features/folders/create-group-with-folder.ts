@@ -3,6 +3,7 @@ import { rpcOn } from '@renderer/lib/ipc';
 import { carryRunMachine } from '@renderer/features/projects/components/main-panel/project-run-machine';
 import { rememberFolderChoice } from './group-folders';
 import { groupFoldersStore } from './group-folders-store';
+import { recoverRetainedFolderAtPath } from '@/lib/projectRecovery';
 
 /** The machine is not connected: nothing can be bound there now (the dialog says so, ❌ binding later). */
 export class FolderMachineOfflineError extends Error {
@@ -16,7 +17,8 @@ export class FolderMachineOfflineError extends Error {
  * 「新建群（同时新建一个文件夹）」/「用现有文件夹新建群」: the group is created first (online), then the folder at `path` on
  * `machine` (null = this computer) is bound to it — `create` makes the directory there first. A machine that is not
  * connected is refused before the group is made (❌「bind first, make the group later」). Returns the new group's chat id.
- * The folder is what a new task in that group starts in.
+ * The folder is what a new task in that group starts in. An existing folder of this computer whose group was cleaned up
+ * (archived while the directory was gone) brings that group back instead (#3158): same group, same folder.
  */
 export async function createGroupWithFolder({ name, machine, path, create = false }: {
   name: string;
@@ -25,6 +27,13 @@ export async function createGroupWithFolder({ name, machine, path, create = fals
   create?: boolean;
 }): Promise<string> {
   if (machine && machineLinkState(machine) !== 'open') throw new FolderMachineOfflineError(machine);
+  if (!machine && !create) {
+    const restored = await recoverRetainedFolderAtPath(path);
+    if (restored) {
+      void groupFoldersStore.readMachine(null);
+      return restored;
+    }
+  }
   // Loaded when used: importing the cloud client with this module would create it wherever the group page is imported.
   const [{ chatService }, { getCurrentAuthUserId }] = await Promise.all([import('@/lib/chat'), import('@/lib/supabase')]);
   const created = await chatService.createGroupChat(name, await getCurrentAuthUserId(), []);

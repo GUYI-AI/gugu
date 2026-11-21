@@ -29,8 +29,6 @@ import {
 import { workspaceEvents, workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 
 const TOO_MANY_FILES_MSG = 'Too many files changed to display';
-/** 工作目录不是 git 仓库时状态里的那个原因码(别的机器上的会话由 remote-git-adapter 报)。 */
-export const NOT_REPOSITORY = 'not-repository';
 
 export class GitWorktreeStore {
   private readonly status = new ModelMirror<GitStatusModel>();
@@ -229,9 +227,7 @@ export class GitWorktreeStore {
   get problem(): { kind: 'too-many-files' } | { kind: 'not-repository' } | { kind: 'failed'; message: string } | null {
     const status = this.effectiveStatus;
     if (status?.kind === 'too-many-files') return { kind: 'too-many-files' };
-    if (status?.kind === 'error') {
-      return status.message === NOT_REPOSITORY ? { kind: 'not-repository' } : { kind: 'failed', message: status.message };
-    }
+    if (status?.kind === 'error') return { kind: 'failed', message: status.message };
     if (!this.hasData && this.syncStatus === 'error') {
       // 宿主对没有 git 工作树的工作区(#2358 非 git 项目、没选文件夹时的隐藏任务工作区)答 `not_found`:
       // 说「不是 git 仓库」,❌ 把原因码 not_found 原样摆给人看。

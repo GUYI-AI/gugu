@@ -1130,7 +1130,7 @@ async function atFreeName(folder: string, name: string, make: (at: string) => Pr
   const { name: stem, ext } = path.parse(name);
   for (let n = 1; ; n++) {
     const at = entryPath(folder, n === 1 ? name : `${stem} (${n})${ext}`);
-    if (!at) throw new AppFileError('invalid', `"${name}" can't be saved here: it is a path, not a file name`);
+    if (!at) throw new AppFileError('invalid', `"${name}" cannot be saved here: it is a path, not a file name`);
     try {
       await make(at);
       return at;

@@ -105,7 +105,7 @@ export async function ensureAcpSessionLive(sessionId: string): Promise<void> {
   if (!sessionWake) {
     throw new SessionWriteError(
       'session_not_live',
-      '这条会话在那台机器上已经没有在跑的 agent,而这台机器没有接唤醒通道'
+      '该会话在该设备上已没有运行中的 agent,且这台机器未接入唤醒通道'
     );
   }
   try {

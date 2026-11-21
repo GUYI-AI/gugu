@@ -6,8 +6,8 @@ import { createWindowBudget } from '@gugu/session-core/session-record/window-cac
 import type { WindowBudget, WindowIoCounters } from '@gugu/session-core/session-record/window-cache/types';
 import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
 import { advanceWindowCommitProjection, readWindowCommitProjection } from './window-commit-projection';
-import { advanceCommitContainerIndex, readIndexedCommitContainerPage, type CommitContainerIndex } from './window-commit-container-index';
-import { commitChildArray, commitRootArray, openCommitEntity, readCommitEntityPublication } from './window-commit-entity';
+import { advanceCommitContainerIndex, type CommitContainerIndex } from './window-commit-container-index';
+import { commitChildArray, commitRootArray, openCommitEntity, readCommitEntityPublication, type CommitArrayAnchor } from './window-commit-entity';
 import { publishCommitEntity } from './window-commit-entity-publication';
 import { assertWindowCommitSource } from './window-commit-source';
 import { publishCommitHeader } from './window-commit-header';
@@ -97,7 +97,7 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
     await step(b => immutable(c, `${h.buildId}:node:${ordinal}`, task(t, ordinal), b)); h.nodes++;
     return ordinal;
   }
-  async function advance(c: Context, h: Head, signal?: AbortSignal) {
+  async function advance(c: Context, h: Head, array: { current?: { at: string; anchor: CommitArrayAnchor; index: CommitContainerIndex } }, signal?: AbortSignal) {
     const ctx = { ...c, buildId: h.buildId };
     if (h.stage === 'structure') {
       const built = await step(b => advanceWindowCommitProjection(ctx, b, signal));
@@ -111,33 +111,36 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
     }
     const selected = h.task;
     if (!selected) return;
-    const root = await step(b => readWindowCommitProjection(ctx, b, signal)); if (root.kind !== 'projection') throw new Error('Missing durable root');
-    const parent = selected.parent ? await step(b => readCommitEntityPublication(directory, receipts, c.receipt, selected.parent!, b, signal)) : null;
-    if (parent && (parent.kind !== 'entity' || parent.rootBuildId !== h.buildId)) throw new Error('Missing durable parent entity');
-    const anchor = parent?.kind === 'entity' ? commitChildArray(parent.facts) : commitRootArray(root.root, selected.entity);
-    if (!anchor || parent && selected.entity !== 'item') throw new Error('Invalid publisher parent');
-    const index: CommitContainerIndex = { buildId: selected.parent ? hash([h.buildId, selected.parent, 'children'])
-      : `${h.buildId}-${selected.entity === 'item' ? 'items' : 'terminals'}`, kind: 'array', range: { ...anchor.range } };
-    for (;;) {
-      const built = await step(b => advanceCommitContainerIndex({ ...c, binding: c.receipt.binding, source: c.receipt.source, index }, b, signal));
-      if (built.kind === 'rebuild') throw new Error('Child array needs a new build'); if (built.kind === 'complete') break;
-      await setImmediate(undefined, { signal });
+    // The array (root, parent, anchor, completed index) depends only on parent
+    // and entity: read it once per array, not once per member.
+    const at = `${selected.parent}:${selected.entity}`;
+    if (array.current?.at !== at) {
+      const root = await step(b => readWindowCommitProjection(ctx, b, signal)); if (root.kind !== 'projection') throw new Error('Missing durable root');
+      const parent = selected.parent ? await step(b => readCommitEntityPublication(directory, receipts, c.receipt, selected.parent!, b, signal)) : null;
+      if (parent && (parent.kind !== 'entity' || parent.rootBuildId !== h.buildId)) throw new Error('Missing durable parent entity');
+      const anchor = parent?.kind === 'entity' ? commitChildArray(parent.facts) : commitRootArray(root.root, selected.entity);
+      if (!anchor || parent && selected.entity !== 'item') throw new Error('Invalid publisher parent');
+      const index: CommitContainerIndex = { buildId: selected.parent ? hash([h.buildId, selected.parent, 'children'])
+        : `${h.buildId}-${selected.entity === 'item' ? 'items' : 'terminals'}`, kind: 'array', range: { ...anchor.range } };
+      for (;;) {
+        const built = await step(b => advanceCommitContainerIndex({ ...c, binding: c.receipt.binding, source: c.receipt.source, index }, b, signal));
+        if (built.kind === 'rebuild') throw new Error('Child array needs a new build'); if (built.kind === 'complete') break;
+        await setImmediate(undefined, { signal });
+      }
+      array.current = { at, anchor, index };
     }
-    const page = await step(b => readIndexedCommitContainerPage({ ...c, binding: c.receipt.binding, source: c.receipt.source, index }, selected.page, b, signal));
-    if (page.kind === 'end') { h.task = await pop(c, h, selected.next); return; }
-    if (page.kind !== 'page' || !page.page.members[selected.member]) throw new Error('Invalid publisher array position');
+    const { anchor, index } = array.current;
     const opened = await step(b => openCommitEntity(directory, c.receipt, anchor, index, selected.page, selected.member,
       hash([h.buildId, selected.parent, selected.entity, selected.page, selected.member]), b, signal));
+    if (opened.kind === 'end') { h.task = await pop(c, h, selected.next); return; }
     if (opened.kind !== 'position') throw new Error('Missing actual entity position');
     const built = await publishCommitEntity({ ...c, rootBuildId: h.buildId, position: opened.position, observed: ports.observed, report }, signal);
     if (built.kind !== 'published') throw new Error('Entity publication needs a new build');
-    const entity = await step(b => readCommitEntityPublication(directory, receipts, c.receipt, built.entityId, b, signal));
-    if (entity.kind !== 'entity') throw new Error('Missing durable entity');
     const row: Row = { version: 1, ordinal: h.count, entityId: built.entityId, parent: selected.parent };
     await step(b => immutable(c, `${h.buildId}:row:${h.count}`, row, b));
-    const continuation = selected.member + 1 < page.page.members.length ? { ...selected, member: selected.member + 1 }
-      : page.next !== null ? { ...selected, page: page.next, member: 0 } : null;
-    if (commitChildArray(entity.facts)) {
+    const continuation = selected.member + 1 < opened.members ? { ...selected, member: selected.member + 1 }
+      : opened.next !== null ? { ...selected, page: opened.next, member: 0 } : null;
+    if (commitChildArray(built.facts)) {
       const next = continuation ? await push(c, h, continuation) : selected.next;
       h.task = { parent: built.entityId, entity: 'item', page: 0, member: 0, next };
     } else h.task = continuation ?? await pop(c, h, selected.next);
@@ -156,9 +159,10 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
         const h: Head = previous?.headers === 1 ? previous : { version: 1, headers: 1, sourceId: c.receipt.sourceId, buildId: randomUUID().replaceAll('-', ''),
           stage: 'structure', count: 0, nodes: 0, task: null };
         if (previous !== h) await writeWindowFrame(directory, key(c, 'job', true), encode(h));
+        const array = {};
         while (h.stage !== 'complete') {
           const previous = encode(h);
-          await advance(c, h, signal); signal?.throwIfAborted(); committed(c);
+          await advance(c, h, array, signal); signal?.throwIfAborted(); committed(c);
           if (h.stage === 'entities' && !h.task) {
             const p = publication(c, { version: 1, sourceId: h.sourceId, buildId: h.buildId,
               projectionId: `${h.sourceId}/${h.buildId}`, count: h.count, nodes: h.nodes });

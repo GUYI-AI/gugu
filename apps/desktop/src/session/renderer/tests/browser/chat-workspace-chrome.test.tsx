@@ -17,6 +17,7 @@ import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context'
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { edgeFirst } from '@renderer/features/tabs/pane-edge-drop';
+import { i18n } from '@/i18n';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
@@ -46,6 +47,8 @@ function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children
 }
 
 async function mountWorkspace() {
+  // The tab labels asserted below are the zh-CN catalog's.
+  await i18n.changeLanguage('zh-CN');
   await page.viewport(1220, 790);
   const view = harness = createReactHarness();
   view.container.classList.add('emlight', 'gugu-skin');

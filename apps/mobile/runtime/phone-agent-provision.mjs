@@ -16,16 +16,16 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, worksp
     let request = store.state.requests[requestId]
     try {
       const harness = action.harness ?? 'pi'
-      if (harness !== 'pi') throw new Error('这台手机只提供 pi，请显式传 harness:"pi"')
-      if (action.transport && action.transport !== 'acp') throw new Error('手机 Agent 只提供通用会话，不提供终端会话')
-      if (action.sessionView && action.sessionView !== 'general') throw new Error('手机 Agent 只提供通用会话')
-      if (action.permissionMode || action.effort) throw new Error('手机 Agent 尚未提供权限模式和思考档位选择')
-      if ([action.projectId, action.workspaceId].some((id) => id && id !== workspaceId) || [action.cwd, action.projectPath].some((path) => path && path !== root)) throw new Error('手机 Agent 只能在这台手机的 App 私有工作目录中运行')
+      if (harness !== 'pi') throw new Error('This phone offers only pi; pass harness:"pi" explicitly')
+      if (action.transport && action.transport !== 'acp') throw new Error('Phone agents offer only general sessions, not terminal sessions')
+      if (action.sessionView && action.sessionView !== 'general') throw new Error('Phone agents offer only general sessions')
+      if (action.permissionMode || action.effort) throw new Error('Phone agents do not offer permission mode or thinking level choices yet')
+      if ([action.projectId, action.workspaceId].some((id) => id && id !== workspaceId) || [action.cwd, action.projectPath].some((path) => path && path !== root)) throw new Error('Phone agents can only run in the App\'s private working directory on this phone')
       if (options.deferFirstInput) validateCreationAttachmentRequest(action)
       const prompt = options.deferFirstInput && typeof action.prompt === 'string' ? action.prompt.trim() : required(action.prompt, 'prompt')
       const requestedGroup = action.chat_id ?? action.chatId ?? null
       const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, projectId: action.projectId ?? action.workspaceId ?? null, projectPath: action.projectPath ?? action.cwd ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}), ...(options.deferFirstInput ? { attachmentIntent: creationAttachmentIntentIdentity(ownerId, deviceId, action) } : {}) })
-      if (request?.inputFingerprint && request.inputFingerprint !== inputFingerprint) throw new Error('同一个创建请求不能更换任务、名字、群或模型；请开始一条新的创建请求')
+      if (request?.inputFingerprint && request.inputFingerprint !== inputFingerprint) throw new Error('One create request cannot change its task, name, group or model; start a new create request')
       if (request?.result) return request.result
       if (!request) {
         let birthGroupChatId = null
@@ -33,7 +33,7 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, worksp
           const query = cloud.chat.from('chats').select('id,kind,status')
           const { data, error } = /^\d+$/.test(requestedGroup) ? await query.eq('public_id', Number(requestedGroup)).single() : await query.eq('id', uuid(requestedGroup, 'birth group chat_id')).single()
           if (error) throw new Error(error.message)
-          if (!data || data.kind !== 'group' || data.status === 'archived') throw new Error('新 Agent 只能申请加入主人所在的有效群聊')
+          if (!data || data.kind !== 'group' || data.status === 'archived') throw new Error('A new agent can only ask to join an active group chat its owner is in')
           birthGroupChatId = data.id
         }
         const modelId = await models.resolve(action.model ?? caller?.platformModel)
@@ -55,30 +55,30 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, worksp
     const readProvision = async () => {
       const { data, error } = await cloud.identity.from('agent_provisions').select('*').eq('id', request.provisionId).single()
       if (error) throw new Error(error.message)
-      if (!data) throw new Error('正式 Agent 创建的持久记录不存在，未申请创建名额')
+      if (!data) throw new Error('The durable record of this agent creation does not exist; no creation slot was requested')
       return data
     }
     let row = await readProvision()
-    if (row.provisioned_agent_user_id && !row.agent_user_id) throw new Error('这次创建绑定的 Agent 已被移除，不能通过重试重新创建身份')
+    if (row.provisioned_agent_user_id && !row.agent_user_id) throw new Error('The agent bound to this creation was removed; a retry cannot recreate its identity')
     if (row.phase === 'queued' || row.phase === 'failed') {
       // The DB grants retries only for an explicitly selected, truly failed member. Reuse
       // its operation, provision and immutable Agent/DM binding, as the desktop saga does.
       const retry = row.phase === 'failed'
       const claimed = await cloud.rpc('identity', 'claim_provision_slots', { p_operation_id: request.operationId, p_limit: 1, p_retry_provision_ids: retry ? [request.provisionId] : null })
       row = (Array.isArray(claimed) ? claimed.find((item) => item.id === request.provisionId) : null) ?? await readProvision()
-      if (row.phase !== 'preparing') throw new Error('正式 Agent 创建尚未获得运行名额，请继续同一次创建')
+      if (row.phase !== 'preparing') throw new Error('This agent creation has no runtime slot yet; continue the same creation')
     }
     if (row.phase === 'preparing') row = first(await cloud.rpc('identity', 'prepare_agent_provision', { p_provision_id: row.id, p_operation_id: row.operation_id, p_member_key: row.member_key, p_device_id: row.device_id, p_display_name: row.display_name, p_agent_type: row.agent_type, p_project_path: row.project_path, p_avatar: row.avatar, p_special_focus: row.special_focus, p_initial_message_id: row.initial_message_id ?? null, p_initial_message_text: row.initial_message_text ?? null }))
-    if (!row?.agent_user_id || !row.create_command_id) throw new Error('正式 Agent 创建没有返回身份或设备命令')
+    if (!row?.agent_user_id || !row.create_command_id) throw new Error('Agent creation returned no identity or device command')
     await tick()
     const { data: command, error: commandError } = await cloud.identity.from('gugu_device_commands').select('status,error').eq('id', row.create_command_id).single()
     if (commandError) throw new Error(commandError.message)
-    if (command.status !== 'done' && command.status !== 'error') throw new Error('手机 Agent 创建尚未完成，请先检查 session_children 再重试')
+    if (command.status !== 'done' && command.status !== 'error') throw new Error('Phone agent creation has not finished; check session_children before retrying')
     row = first(await cloud.rpc('identity', 'settle_agent_provision_terminal', { p_provision_id: row.id }))
-    if (row.phase === 'failed') throw new Error(row.error || '手机 Agent 创建失败')
+    if (row.phase === 'failed') throw new Error(row.error || 'Phone agent creation failed')
     await cloud.rpc('identity', 'complete_agent_provision', { p_provision_id: row.id })
     const agent = store.state.agents[row.agent_user_id]
-    if (!agent) throw new Error('Agent 创建命令已完成，但手机会话不存在')
+    if (!agent) throw new Error('The agent create command finished, but the phone session does not exist')
     if(request.assistantWork && agent.sessionId!==request.assistantWork.child_session_id) {
       if(Object.values(store.state.jobs).some(job=>job.agentUserId===agent.agentUserId)
         || Object.values(store.state.agents).some(other=>other!==agent && other.sessionId===request.assistantWork.child_session_id)) throw new Error('Assistant work seat ID belongs to an existing phone conversation')
@@ -93,7 +93,7 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, worksp
       try {
         // The UI acts as the owner; an Agent caller must retain its own group authority.
         const joined = await cloud.rpc('chat', 'add_group_agent', { p_chat_id: request.birthGroupChatId, p_agent_user_id: agent.agentUserId, p_message: null, p_as_user_id: caller?.agentUserId ?? ownerId, p_as_task: true })
-        if (!joined || !['joined', 'pending_approval'].includes(joined.status)) throw new Error('群聊没有确认 Agent 加入或待审批的状态')
+        if (!joined || !['joined', 'pending_approval'].includes(joined.status)) throw new Error('The group chat did not confirm the agent as joined or pending approval')
         agent.birthGroup = { chatId: request.birthGroupChatId, status: joined.status }
       } catch (error) { agent.birthGroup = { chatId: request.birthGroupChatId, status: 'failed', error: error.message } }
     }

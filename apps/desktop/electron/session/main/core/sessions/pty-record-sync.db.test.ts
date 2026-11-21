@@ -1,10 +1,11 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
+import type { AppDb } from '@main/db/client';
 
-const state = vi.hoisted(() => ({ sqlite: null as Database.Database | null, sync: vi.fn(), watch: vi.fn(),
+const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: null as Database.Database | null, sync: vi.fn(), watch: vi.fn(),
   status: null as ((change: { sessionId: string; reading: { running: boolean } }) => void) | null }));
-vi.mock('@main/db/client', () => ({ db: undefined, get sqlite() { return state.sqlite; } }));
+vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() { return state.sqlite; } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('./record-backfill', () => ({ syncStoredHistoryFromRecord: state.sync }));
 vi.mock('@main/core/session-timeline/service', () => ({ watchRecordSettled: state.watch }));
@@ -21,7 +22,7 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const settled = () => vi.waitFor(() => expect(state.sync).toHaveBeenCalled());
 
 beforeEach(async () => {
-  fixture = await openFixture('empty'); state.sqlite = fixture.sqlite;
+  fixture = await openFixture('empty'); state.sqlite = fixture.sqlite; state.db = fixture.db;
   fixture.sqlite.exec(`INSERT INTO projects(id,name,path) VALUES ('p','P','/repo');
     INSERT INTO sessions(id,project_id,title,runtime,agent_status) VALUES ('s','p','S','pty','idle');`);
   state.sync.mockReset().mockResolvedValue({ inserted: 0, status: 'complete' });
@@ -87,4 +88,19 @@ it('stops following records and edges when it is stopped', async () => {
   stop(); stop = () => {};
   expect(signal.aborted).toBe(true);
   expect(state.status).toBeNull();
+});
+
+
+it('syncs on an actual engine end even when its status was already idle (#3374)', async () => {
+  fixture.sqlite.exec("UPDATE sessions SET provider='claude',provider_session_id='native-3374' WHERE id='s'");
+  const { recordPtyEngineEnd } = await import('./pty-turn-ends');
+  stop = startPtyRecordSync([]);
+  expect(state.sync).not.toHaveBeenCalled();
+  recordPtyEngineEnd('s', 1000);
+  await settled();
+  expect(state.sync).toHaveBeenCalledExactlyOnceWith('s', { runtime: 'pty' });
+  stop();
+  recordPtyEngineEnd('s', 2000);
+  await flush();
+  expect(state.sync).toHaveBeenCalledTimes(1);
 });

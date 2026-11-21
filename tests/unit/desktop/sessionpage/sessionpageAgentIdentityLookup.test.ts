@@ -8,7 +8,7 @@ vi.mock('../../../../apps/desktop/electron/supabase', () => ({
       const calls: Array<[string, unknown[]]> = [['from', fromArgs]]
       state.queries.push(calls)
       const query: Record<string, unknown> = {}
-      for (const method of ['select', 'eq', 'in']) {
+      for (const method of ['select', 'eq', 'in', 'is']) {
         query[method] = (...args: unknown[]) => {
           calls.push([method, args])
           return query
@@ -49,6 +49,9 @@ describe('session-page canonical identity lookup', () => {
       expect(ids.length).toBeLessThanOrEqual(IN_FILTER_CHUNK)
       expect(calls).toContainEqual(['eq', ['owner_user_id', 'owner-1']])
       expect(calls).toContainEqual(['eq', ['type', 'agent']])
+      // An archived session's identity is not in the live directory; the binding still resolves through identity.users.
+      expect(calls).toContainEqual(['from', ['users']])
+      expect(calls).toContainEqual(['is', ['removed_at', null]])
     }
     expect(out.map((row) => row.id)).toEqual(asked)
   })

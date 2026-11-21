@@ -76,7 +76,7 @@ describe('MemberJoinNotice', () => {
       chat: { identitiesById: { 'u-b': displayIdentity('u-b', { type: 'agent', display_name: 'Claude 5', created_at: '2026-11-02T08:00:00.000Z' }) } },
     })
     const button = harness.container.querySelector<HTMLElement>('[data-testid="member-join-mention"]')!
-    expect(button.textContent).toBe('正在起名…')
+    expect(button.textContent).toBe('正在生成名称…')
     await clickElement(button)
     expect(onMention).toHaveBeenCalledExactlyOnceWith({ id: 'u-b', name: 'Claude 5' })
   })

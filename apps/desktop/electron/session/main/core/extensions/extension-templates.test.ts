@@ -210,7 +210,7 @@ describe('group-json template: the skeleton runs as written', () => {
     const inSession = fakeFile({});
     await load(async () => inSession.file, 'zh-CN', { ...IN_SESSION, file: { session: 'task-1', id: 'TODO.md' } });
     inSession.emit('status', 'gone');
-    expect(status().textContent).toContain('在磁盘上被删了');
+    expect(status().textContent).toContain('已在磁盘上删除');
     expect(status().textContent).not.toContain('群');
     expect(app().inert).toBe(true);
     expect(document.body.dataset.file).toBe('gone');
@@ -223,7 +223,7 @@ describe('group-json template: the skeleton runs as written', () => {
     const inGroup = fakeFile({});
     await load(async () => inGroup.file);
     inGroup.emit('status', 'gone');
-    expect(status().textContent).toBe('This file is gone: it was deleted, or you left its chat.');
+    expect(status().textContent).toBe('This file is unavailable: it was deleted, or you are no longer in its chat.');
     expect(app().inert).toBe(true);
   });
 
@@ -241,7 +241,7 @@ describe('group-json template: the skeleton runs as written', () => {
       // The agent re-claims: TODO.md in a task. Nothing in glue.js changes, and the page says the new claim.
       manifest.contributes.tabs = [{ name: 'main', title: 'Board', entry: 'main.html', opensFiles: { session: ['TODO.md', '.todo.md'] } }];
       await expect(load(unasked, 'zh-CN', IN_SESSION)).rejects.toMatchObject({ code: 'not-found' });
-      expect(status().textContent).toBe('这个页面没有打开文件：在文件列表里点 TODO.md 或一个 .todo.md 文件，用这个应用打开。');
+      expect(status().textContent).toBe('此页面未打开文件：请在文件列表中点击 TODO.md 或一个 .todo.md 文件，用此应用打开。');
 
       // What it claims nowhere here, or a manifest it cannot read, is not made up.
       await expect(load(unasked, 'en', { chat: CHAT })).rejects.toMatchObject({ code: 'not-found' });

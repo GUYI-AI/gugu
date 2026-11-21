@@ -1,10 +1,9 @@
 import type { IFileSystem } from '@gugu/session-core/files';
 import type { CanonicalPath } from '@gugu/session-core/files';
-import type { IGitRepository, IGitRuntime } from '@gugu/session-core/git';
+import type { IGitRuntime } from '@gugu/session-core/git';
 import { err, ok, type Lease, type Result } from '@gugu/session-shared';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
-import { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
-import { GitRepositoryService } from '@main/core/git/repository/service';
+import { DirectoryGit } from '@main/core/git/repository/directory-git';
 import { folderGitHubAccountBackfillService } from '@main/core/github/services/folder-github-account-backfill-instance';
 import { openFileSystem } from '@main/core/runtime/files-helpers';
 import { runtimeManager } from '@main/core/runtime/runtime-manager';
@@ -17,7 +16,6 @@ import { folderSettingsChangedChannel } from '@shared/core/folders/folder-events
 import type { Folder } from '@main/core/folders/folders';
 import { ensureEmdashGitExcludedSafe } from './ensure-emdash-excluded';
 import { FolderRuntime, type FolderRuntimeTransport } from './folder-runtime';
-import { resolveFolderGitless } from './folder-gitless';
 import type { FolderSettingsProvider } from './settings/provider';
 import { LocalFolderSettingsProvider } from './settings/providers/local-folder-settings-provider';
 
@@ -35,28 +33,26 @@ export async function createFolderRuntime(
       await runtimeLease.release();
       return err({ message: folderFileSystem.error.message });
     }
-    const gitless = await resolveFolderGitless(
-      folder,
-      folderFileSystem.data,
-      runtimeLease.value.files.path
-    );
     const settings = new LocalFolderSettingsProvider(
       folder.id,
       folder.path,
-      // gugu #2358: a gitless folder has no default-branch fallback.
-      gitless ? undefined : (folder.baseRef ?? undefined),
+      folder.baseRef ?? undefined,
       folderFileSystem.data
     );
-    await runLegacyFolderSettingsMigration(
-      settings,
-      runtimeLease.value.git,
+    const git = new DirectoryGit(
       folder.path,
-      gitless
+      runtimeLease.value.files.path.join(folder.path, '.git'),
+      runtimeLease.value.git,
+      folderFileSystem.data,
+      settings,
+      (repository) => {
+        // Keep the folder's `.gugu/` runtime state (attachments, uploads) out of the user's `git status`.
+        ensureEmdashGitExcludedSafe(folderFileSystem.data, folder.path, folder.id);
+        return repository.subscribe((update) => events.emit(gitRepoUpdateChannel, { folderId: folder.id, update }));
+      }
     );
-    // Both explicitly gitless projects and repositories whose metadata was
-    // removed mount the ordinary directory without acquiring a Git lease.
-    const repoLease = gitless ? undefined : await runtimeLease.value.git.openRepository(folder.path);
     try {
+      await runLegacyFolderSettingsMigration(settings, runtimeLease.value.git, folder.path, !(await git.open()));
       const provider = buildProvider(
         folder.id,
         folder.path,
@@ -69,12 +65,12 @@ export async function createFolderRuntime(
         settings,
         () => {},
         runtimeLease,
-        repoLease
+        git
       );
       await backfillGitHubAccount(provider);
       return ok(provider);
     } catch (error) {
-      await repoLease?.release();
+      await git.close();
       throw error;
     }
   } catch (error) {
@@ -136,14 +132,8 @@ function buildProvider(
   settings: FolderSettingsProvider,
   dispose: () => void | Promise<void>,
   runtimeLease: Lease<MachineRuntime>,
-  // gugu #2358: 非 git 项目没有 repo lease —— 三个 git 服务全部缺省。
-  repoLease: Lease<IGitRepository> | undefined
+  git: DirectoryGit
 ): FolderRuntime {
-  // Keep the folder's `.gugu/` runtime state (attachments, uploads) out of the
-  // user's `git status`. Best effort and non-blocking.
-  if (repoLease) ensureEmdashGitExcludedSafe(folderFileSystem, repoPath, folderId);
-
-  const gitRepository = repoLease ? new GitRepositoryService(repoLease.value, settings) : undefined;
   const transport: FolderRuntimeTransport = {
     ...transportMeta,
     fileSystem: folderFileSystem,
@@ -152,20 +142,8 @@ function buildProvider(
     configPathForDirectory: (directoryPath) => files.path.join(directoryPath, PROJECT_CONFIG_FILE),
     settings,
   };
-  // gugu #2358: 非 git 项目无 git 仓 → 不建 fetch 服务、不订阅 repo 更新(否则底层 openWorktree 抛错)。
-  const gitRepositoryFetchService = gitRepository
-    ? new GitRepositoryFetchService(gitRepository, () => gitRepository.getBaseRemote())
-    : undefined;
-  gitRepositoryFetchService?.start();
-  const unsubscribeRepoUpdates = repoLease
-    ? repoLease.value.subscribe((update) => {
-        events.emit(gitRepoUpdateChannel, { folderId, update });
-      })
-    : undefined;
-
   const releaseLeases = async () => {
-    unsubscribeRepoUpdates?.();
-    await repoLease?.release();
+    await git.close();
     await runtimeLease.release();
   };
 
@@ -173,8 +151,7 @@ function buildProvider(
     folderId,
     repoPath,
     transport,
-    gitRepository,
-    gitRepositoryFetchService,
+    git,
     runtimeLease.value.git,
     async () => {
       await releaseLeases();

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { KeyedMutex } from '@gugu/session-core/lib';
 import { NEW_SESSION_PERMISSION_MODE } from '@gugu/session-core/acp';
 import { rootFolderOf } from '@main/core/folders/folders';
 import { workspaceAtDirectory } from '@main/core/workspaces/workspace-at-directory';
 import { sessionService } from '@main/core/sessions/session-service';
+import { log } from '@main/lib/logger';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import {
@@ -14,8 +16,10 @@ import {
   type LocalSessionEngine,
   type LocalSessionPreview,
 } from '@shared/core/session-import/session-import';
+import { importError, type ImportErrorCode } from '@shared/core/session-import/import-error-code';
 import { buildWorkspaceConfigFromPreset } from '@shared/core/workspaces/build-workspace-config-from-preset';
 import { getLocalSessionSource } from './host-source';
+import { projectFailureCode } from './project-failure-reason';
 
 // @@@sessionpage 导入本机已有会话 (spec session-page-import)。
 //
@@ -37,6 +41,15 @@ function sessionIdFor(engine: LocalSessionEngine, providerSessionId: string): st
 }
 
 /**
+ * 导入失败抛带码的错：message 只带 `<码>:<名字>`（界面按码说人话，见 `sessionImport.error.*`），
+ * 完整目录和内部类型写日志，❌ 拼进 message —— 它会原样出现在用户界面里。
+ */
+function importFailure(code: ImportErrorCode, name: string, context: Record<string, unknown>): Error {
+  log.warn(`[session-import] import failed: ${code}`, context);
+  return importError(code, name);
+}
+
+/**
  * 这条会话的落点：原目录本身的工作区（记录过的文件夹、文件夹里的目录，或者一个新的、不挂群的文件夹）。
  *
  * 关键是**会话必须在它原来的目录里跑起来**：claude 按「会话所在目录」定位会话
@@ -44,14 +57,16 @@ function sessionIdFor(engine: LocalSessionEngine, providerSessionId: string): st
  * 它所在文件夹挂着群，会话就开在那个群里；没有群就是一条没有群的会话。
  */
 function resolveImportWorkspace(workingDirectory: string): { workspaceId: string; groupChatId: string | null } {
+  const name = basename(workingDirectory) || workingDirectory;
   let workspaceId: string;
   try {
     workspaceId = workspaceAtDirectory(workingDirectory);
   } catch (error) {
-    throw new Error(`这条会话所在的目录已经不在了或读不到：${workingDirectory}（${error instanceof Error ? error.message : String(error)}）`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw importFailure(projectFailureCode({ type: 'inspect-failed', message }), name, { directory: workingDirectory, message });
   }
   const folder = rootFolderOf(workspaceId);
-  if (!folder) throw new Error(`${workingDirectory} 不在这台电脑记录的文件夹里`);
+  if (!folder) throw importFailure('project-open-failed', name, { directory: workingDirectory, workspaceId, reason: 'no recorded folder' });
   return { workspaceId, groupChatId: folder.chatId };
 }
 
@@ -78,11 +93,11 @@ export async function bindLocalSession(
 ): Promise<ImportLocalSessionResult> {
   const providerSessionId = preview.providerSessionId.trim();
   if (!providerSessionId) {
-    throw new Error('这条会话没有可用的会话 id，无法恢复原会话');
+    throw importFailure('session-no-id', '', { engine: params.engine, filePath: params.filePath });
   }
   const workingDirectory = preview.cwd?.trim();
   if (!workingDirectory) {
-    throw new Error('读不出这条会话的工作目录，导入后无法在原位置继续');
+    throw importFailure('session-no-cwd', '', { engine: params.engine, filePath: params.filePath });
   }
 
   const provider = LOCAL_SESSION_ENGINE_PROVIDER[params.engine];
@@ -136,7 +151,7 @@ export async function bindLocalSession(
     });
     if (!created.success) {
       // ❌ 别在这里再写一次「导入失败：」——界面已经带了这个前缀，重复一遍只是噪音。
-      throw new Error(`没能建出这条会话（${created.error.type}）`);
+      throw importFailure('session-create-failed', '', { engine: params.engine, type: created.error.type });
     }
 
     return {

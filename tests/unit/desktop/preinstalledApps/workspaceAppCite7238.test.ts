@@ -126,6 +126,14 @@ const line = (n: number) => view().state.doc.line(n)
 const select = (...ranges: [number, number][]) => view().dispatch({ selection: EditorSelection.create(ranges.map(([from, to]) => EditorSelection.range(from, to))) })
 const marked = (cls: string) => [...document.querySelectorAll('.cm-line')].flatMap((l, i) => (l.classList.contains(cls) ? [i + 1] : []))
 const previewMarked = (cls: string) => [...document.querySelectorAll(`#preview .${cls}`)].map((b) => b.getAttribute('data-line'))
+/** The host's right-click 引用 on the viewer that holds the selection: the App's own cite (`gugu.dispatch` draft). */
+let menuRequest = 0
+function citeSelection() {
+  const root = $(document.body.classList.contains('picks-in-preview') ? 'preview' : 'editor')
+  const requestId = `cite-${++menuRequest}`
+  root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { action: 'snapshot', requestId, selection: { text: '' } } }))
+  root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { action: 'quote-selection', requestId, selection: { text: '' } } }))
+}
 const refsOfLastCompose = () => (gugu.dispatch.mock.calls.at(-1)![1] as { refs: unknown[] }).refs
 /** The editor's text changed by someone else: the file says so and the preview draws it again. */
 async function edit(change: { from: number; to?: number; insert: string }) {
@@ -176,12 +184,12 @@ describe('Cite: pills to the picked lines, their words quoted above', () => {
 
   test('each range of the selection is one pill: its lines and their fingerprint; its words a quote above the pills', async () => {
     select([line(3).from, line(4).to], [line(7).from + 2, line(7).from + 6])
-    $('cite-sel').click()
+    citeSelection()
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
     expect(gugu.dispatch).toHaveBeenCalledOnce()
     // A phrase inside a line: that line, and the words picked.
     expect(gugu.dispatch.mock.calls[0]![0]).toBe('> 目标：十月上线 负责人：小王\n\n> 支付接口')
-    // Cited, the selection bar goes, as after Send.
+    // Cited, the selection goes.
     await until('the selection bar has gone', () => !document.body.classList.contains('has-selection'))
     expect(refsOfLastCompose()).toEqual([
       { file: entry, at: { lines: '3-4', h: fingerprint('目标：十月上线\n负责人：小王') }, label: 'Lines 3–4' },
@@ -191,7 +199,7 @@ describe('Cite: pills to the picked lines, their words quoted above', () => {
 
   test('picked in the source, the quoted words read as the preview\'s: no heading or list marker', async () => {
     select([line(6).from, line(7).to])
-    $('cite-sel').click()
+    citeSelection()
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
     expect(gugu.dispatch).toHaveBeenCalledOnce()
     expect(gugu.dispatch.mock.calls[0]![0]).toBe('> 风险 支付接口可能延期')
@@ -207,7 +215,7 @@ describe('Cite: pills to the picked lines, their words quoted above', () => {
     range.setEnd(to.firstChild!, 6)
     document.getSelection()!.addRange(range)
     document.dispatchEvent(new Event('selectionchange'))
-    $('cite-sel').click()
+    citeSelection()
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
     expect(gugu.dispatch).toHaveBeenCalledOnce()
     const [ref] = refsOfLastCompose() as { at: { lines: string; h: string } }[]
@@ -350,7 +358,7 @@ describe("a pill's place is the file's it came for; a JSON file's cite stays a q
     contextChanged(ctxOf('cfg'))
     await until('the JSON file is shown', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString().includes('不是标题'))
     select([line(2).from, line(3).to])
-    $('cite-sel').click()
+    citeSelection()
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
     expect(gugu.dispatch.mock.calls).toEqual([['Lines 2–3\n>   "a": "**粗**",\n>   "b": "# 不是标题"', { draft: true, refs: [{ file: config.entry }] }]])
   })
@@ -369,12 +377,11 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     document.getSelection()!.removeAllRanges()
     document.getSelection()!.addRange(range)
     document.dispatchEvent(new Event('selectionchange'))
-    expect([...$('sel-bar').querySelectorAll('button:not(.fmt):not([hidden])')].map((button) => button.textContent)).toEqual(['Copy', 'Cite'])
-    $('cite-sel').click()
+    citeSelection()
     await until('the first cite is composed', () => gugu.dispatch.mock.calls.length === 1)
     document.getSelection()!.removeAllRanges()
     select([line(6).from, line(6).to])
-    $('cite-sel').click()
+    citeSelection()
     await until('the second cite is composed', () => gugu.dispatch.mock.calls.length === 2)
     // Into the session's composer as main writes a working-copy draft, one after the other; the person's note last.
     const drafts = gugu.dispatch.mock.calls.map(([text, options]) => `${fileCiteDraft(text, (options as { refs: { file: { id: string }; label?: unknown }[] }).refs)}\n`)
@@ -403,7 +410,7 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     await until('the code file is shown', () => $('doc-title').textContent === 'bound.py' && document.querySelector('.code-view') !== null && view().state.doc.toString() === CODE)
     gugu.dispatch.mockClear()
     select([line(3).from, line(4).to])
-    $('cite-sel').click()
+    citeSelection()
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length === 1)
     const [text, options] = gugu.dispatch.mock.calls[0]! as [string, { refs: { file: { id: string }; label?: unknown }[] }]
     expect(options.refs.map(({ label }) => label)).toEqual(['Lines 3–4'])

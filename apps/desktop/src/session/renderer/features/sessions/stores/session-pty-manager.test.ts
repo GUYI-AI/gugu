@@ -152,8 +152,8 @@ describe('SessionPtyManager 的失败提示', () => {
   // ❌ 再在角落弹一条 toast。账本给读者的那一句跟界面语言走(@@@4891:两语各跑一遍,写死的字符串只满足一边);
   // 咕咕这一侧的失败(宿主那一层按错误类型带了原因码)按原因表说;咕咕以外的(harness 起不来)递它的原话一行,去掉路径。
   it.each([
-    ['en-US', "Something went wrong on Gugu's side."],
-    ['zh-CN', '咕咕这边出错了。'],
+    ['en-US', 'The Gugu service returned an error.'],
+    ['zh-CN', '咕咕服务出错。'],
   ])('hydrate 失败只进账本、不弹 toast,账本那一句随 %s 走', async (locale, text) => {
     await i18n.changeLanguage(locale);
     const hydrate = vi.fn().mockRejectedValue(new Error("Error invoking remote method 'pty:start': Error: gugu-models:service-unavailable"));
@@ -170,13 +170,13 @@ describe('SessionPtyManager 的失败提示', () => {
     manager.dispose();
   });
 
-  it('咕咕以外的失败(#4657)递拒绝方的原话:一行、去掉路径;原话是空的才说「咕咕这边出错了」', async () => {
+  it('咕咕以外的失败(#4657)递拒绝方的原话:一行、去掉路径;原话是空的才说「咕咕服务出错」', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(sessionStartupFailureBridge.describe("Error invoking remote method 'pty:start': Error: spawn /Users/someone/.local/bin/claude ENOENT\n    at stack")).toEqual({
       text: 'spawn [path] ENOENT',
       retryable: true,
     });
-    expect(sessionStartupFailureBridge.describe('')).toEqual({ text: '咕咕这边出错了。', retryable: true });
+    expect(sessionStartupFailureBridge.describe('')).toEqual({ text: '咕咕服务出错。', retryable: true });
   });
 
   // Uncoded failures preserve the cause; explicit reason codes keep their guidance.
@@ -189,7 +189,7 @@ describe('SessionPtyManager 的失败提示', () => {
     // The same uncoded cause is preserved regardless of origin.
     expect(sessionStartupFailureBridge.describe('gateway rejected replacement credential').text).toBe('gateway rejected replacement credential');
     expect(sessionStartupFailureBridge.describe("Error invoking remote method 'pty:start': Error: gugu-models:signed-out")).toEqual({
-      text: '咕咕的登录已失效，重新登录后再发一次。',
+      text: '咕咕登录已失效，请重新登录后重新发送。',
       retryable: true,
     });
   });
@@ -197,7 +197,7 @@ describe('SessionPtyManager 的失败提示', () => {
   it('带原因码的失败按原因表说;重试改变不了的(要会员)不给重试', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(sessionStartupFailureBridge.describe("Error invoking remote method 'pty:start': Error: gugu-models:membership-required")).toEqual({
-      text: '这个咕咕模型要开会员才能用。换个模型，或开通会员后再发一次。',
+      text: '此咕咕模型需要会员。请切换模型，或开通会员后重新发送。',
       retryable: false,
     });
   });

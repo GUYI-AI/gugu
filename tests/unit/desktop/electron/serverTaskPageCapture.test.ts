@@ -6,7 +6,7 @@ import type { TaskPageScreenFrame } from '../../../../apps/desktop/electron/serv
 afterEach(() => vi.useRealTimers());
 
 function fixture() {
-  const model = new BrowserPageFeedback(), frames: TaskPageScreenFrame[] = [];
+  const model = new BrowserPageFeedback(() => 'zh-CN'), frames: TaskPageScreenFrame[] = [];
   const state = { loader: 'one', width: 800, height: 600, scale: 1, live: true };
   let duringCapture: () => Promise<void> = async () => {};
   const send = vi.fn(async (method: string) => {

@@ -407,8 +407,8 @@ describe('createSessionCommandProvider', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // 按键静默归档时按**默认范围**走:一个不弹的确认不能替用户勾上递归,也不能替用户把 agent 移出群和通讯录。
-    expect(archiveSession).toHaveBeenCalledWith('conversation-1', { withChildren: false, removeSocialIdentity: false });
+    // 按键静默归档时按确认框的**默认值**走:不连子会话,移出群和通讯录(#3366)。
+    expect(archiveSession).toHaveBeenCalledWith('conversation-1', { withChildren: false, removeSocialIdentity: true });
     // 这条会话就是此刻打开的那一条:归档成功后离开它的视图。
     expect(mocks.navigate).toHaveBeenCalledWith('chat', { chatId: 'chat-1' });
   });

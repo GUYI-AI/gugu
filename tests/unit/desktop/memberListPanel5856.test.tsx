@@ -158,8 +158,8 @@ describe('MemberListPanel archived members', () => {
     await renderWithAppProviders(harness, createNode(MemberListPanel, { chatId: 'chat-1', chatKind: 'group', head }), { contacts: {} })
     const search = harness.container.querySelector<HTMLInputElement>('[data-testid="member-list-search"]')!
     await typeInto(search, 'Codex 5')
-    expect(harness.container.querySelector('[data-member-name="fresh"]')?.textContent).toBe('正在起名…')
-    await typeInto(search, '正在起名')
+    expect(harness.container.querySelector('[data-member-name="fresh"]')?.textContent).toBe('正在生成名称…')
+    await typeInto(search, '正在生成名称')
     expect(harness.container.querySelector('[data-member-row="fresh"]')).toBeNull()
   })
   it('keeps the member and displays an actual muted archived label, not only an avatar tooltip', async () => {
@@ -356,7 +356,7 @@ describe('@@@5856 话题里的 agent 数量线', () => {
     expect(thresholdInput()?.getAttribute('placeholder')).toBe('9')
     const row = harness.container.querySelector('[data-testid="agent-flood-threshold-row"]')
     expect(row?.getAttribute('data-agent-flood-effective')).toBe('9')
-    expect(row?.textContent).toContain('跟随来源那条线')
+    expect(row?.textContent).toContain('沿用来源对话的设置')
   })
 
   it('填一个数就存这条线自己的值;清空 = 交回去跟随', async () => {

@@ -1,10 +1,11 @@
 import type { IAcpBehavior } from '@gugu/session-core/agents/plugins';
 import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
-import { isAcpAuthRequired } from '@gugu/session-core/acp';
+import { isAcpAuthRequired, isCodexRefreshTokenRevoked } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
 import { findToolImage, trimItemsForTransport, type ToolImageLookup } from '@gugu/session-core/session-record';
 import { randomUUID } from 'node:crypto';
+import { MESSAGE_PREVIEW_MAX_BYTES } from '@gugu/session-core/session-record/message-preview';
 import type { HistoryCursor } from '@gugu/session-core/acp/client';
 import { readdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -1924,6 +1925,20 @@ export class SessionManager implements InboundRouter {
     return structuredClone(findToolImage(active ? [...history, active] : history, itemId, index, Number.POSITIVE_INFINITY));
   }
 
+  activeMessagePreview(sessionId: string, historyFloor: string | null) {
+    const record = this.cells.get(sessionId);
+    const turn = record && !record.closing && !record.replaying ? record.cell.transcript.activeTurn : null;
+    if (!turn) return null;
+    if (!this.deps.messagePreview) throw new Error('Message preview projection is not configured');
+    const projection = this.deps.messagePreview.project(turn, historyFloor);
+    if (!projection) return null;
+    const value = { turnId: turn.id, projection };
+    if (Buffer.byteLength(JSON.stringify(value), 'utf8') > MESSAGE_PREVIEW_MAX_BYTES) {
+      throw new Error('Active message preview exceeds its 32 KiB response budget');
+    }
+    return value;
+  }
+
   exportParsedTranscript(sessionId: string): Result<string, AcpExportTranscriptError> {
     const record = this.cells.get(sessionId);
     if (!record) return acpErr.sessionNotFound(sessionId);
@@ -2888,6 +2903,7 @@ export class SessionManager implements InboundRouter {
   }
 
   private publishConversationActivity(record: SessionRecord, closed = false): void {
+    this.deps.messagePreview?.onChange({ sessionId: record.input.sessionId });
     if (record.input.sourceSessionId || !this.deps.conversationPreview) return;
     const turn = !closed && !record.replaying ? record.cell.transcript.activeTurn : null;
     const preview = turn ? this.deps.conversationPreview.project(turn) : null;
@@ -3226,7 +3242,7 @@ const LATE_MODEL_DIMENSION_WAIT_MS = 30_000;
 function isAuthRequiredError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const value = error as { code?: unknown; data?: unknown; cause?: unknown };
-  if (isAcpAuthRequired(value)) return true;
+  if (isAcpAuthRequired(value) || isCodexRefreshTokenRevoked(toSerializedError(error))) return true;
   return isAuthRequiredError(value.cause);
 }
 

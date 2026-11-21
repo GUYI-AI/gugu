@@ -20,7 +20,7 @@ const r = (status: AgentStatusView['status'], detail: AgentStatusView['detail'] 
 
 // #6448 owner 2026-09-25 定的那张表:会话页、聊天、手机都调 presentAgentStatus,这里钉住表本身。
 describe('presentAgentStatus — the one table', () => {
-  it('running spins; parked is the same tone family, still', () => {
+  it('running spins; parked is still', () => {
     expect(presentAgentStatus({ reading: r('working', 'running') })).toEqual({ tone: 'running', label: 'running', animate: true, emphasis: false })
     expect(presentAgentStatus({ reading: r('working') })).toMatchObject({ tone: 'running', animate: true })
     expect(presentAgentStatus({ reading: r('working', 'parked') })).toEqual({ tone: 'parked', label: 'parked', animate: false, emphasis: false })
@@ -64,7 +64,7 @@ describe('presentAgentStatus — the one table', () => {
 
   it('colors come from the --agent-tone-* tokens: orange / yellow / red', () => {
     expect(agentStatusColorVar('running')).toBe('var(--agent-tone-running)')
-    expect(agentStatusColorVar('parked')).toBe('var(--agent-tone-running)')
+    expect(agentStatusColorVar('parked')).toBe('var(--agent-tone-parked)')
     expect(agentStatusColorVar('needs_user')).toBe('var(--agent-tone-needs-user)')
     expect(agentStatusColorVar('error')).toBe('var(--agent-tone-error)')
   })

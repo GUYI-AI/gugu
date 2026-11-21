@@ -5,6 +5,7 @@ import { act, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
+import { until } from '../../../../../../../tests/support/awaitCondition';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { chatLayoutOf, closeChatTab, panelTabsOf } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { installSessionTabViews } from '@renderer/features/sessions/session-tab-views';
@@ -58,6 +59,8 @@ it('keeps the annotation entry visible on an ordinary group browser and register
     await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeVisible();
     // Without an Electron page behind this browser fixture, the visible action waits disabled.
     await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeDisabled();
+    // Registration runs in the pane's effect after the session exists; the disabled action can paint before it fires.
+    await until('browser tab registered with its conversation', () => registerBrowser.mock.calls.length, (calls) => calls > 0);
     expect(registerBrowser).toHaveBeenCalledWith(expect.objectContaining({ conversation: { kind: 'chat', chatId } }));
     const toolbar = page.getByRole('button', { name: '批注', exact: true }).element();
     const address = page.getByPlaceholder('搜索或输入网址').element();

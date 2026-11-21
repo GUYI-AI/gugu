@@ -1,6 +1,6 @@
 import { anySignal } from '@gugu/core/shared/anySignal';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import {
@@ -13,6 +13,8 @@ import { db } from '@main/db/client';
 import { KV } from '@main/db/kv';
 import { sessions } from '@main/db/schema';
 import { loginShellEnv } from '@main/utils/userEnv';
+import { log } from '@main/lib/logger';
+import { importError, importErrorMessage, parseImportError } from '@shared/core/session-import/import-error-code';
 import type { CodexTaskScan, CodexTaskImportResult, CodexTaskSourceRow, ImportCodexTaskParams } from '@shared/core/session-import/codex-tasks';
 import { bindLocalSession } from './import-local-session';
 import { readCodexTasks, verifyCodexTaskFiles } from './codex-task-process';
@@ -26,10 +28,10 @@ let scanning: Promise<CodexTaskScan> | undefined;
 
 function homeForTasks() {
   const bundle = pluginRegistry.get('codex')?.capabilities.sessionBundle;
-  if (!bundle?.configRoot) throw new Error('本机未提供 ChatGPT 导入');
+  if (!bundle?.configRoot) throw importError('codex-import-unavailable');
   const home = resolveAgentHome({ providerId: 'codex', injectionMode: bundle.injectionMode, configRoot: bundle.configRoot,
     guguHome: process.env.GUGU_HOME ?? '', osHomeDir: homedir(), sourceEnv: { ...process.env, ...loginShellEnv() } });
-  if (!home) throw new Error('本机未提供 ChatGPT 导入');
+  if (!home) throw importError('codex-import-unavailable');
   return home;
 }
 
@@ -42,19 +44,21 @@ export function cancelCodexTaskImport() { running?.abort(); }
 
 /** Only source IDs/revisions cross RPC; paths/cwd/native IDs are reread by the host. */
 export async function importCodexTasks(params: readonly ImportCodexTaskParams[]): Promise<CodexTaskImportResult> {
-  if (running) throw new Error('正在导入会话，请稍候');
-  if (!Array.isArray(params) || params.some(item => !item || typeof item.id !== 'string' || typeof item.revision !== 'string')) throw new Error('请选择要导入的会话');
+  if (running) throw importError('codex-import-busy');
+  if (!Array.isArray(params) || params.some(item => !item || typeof item.id !== 'string' || typeof item.revision !== 'string')) throw importError('codex-import-selection-required');
   const controller = new AbortController();
   running = controller;
   const signal = anySignal([controller.signal, closing.signal]);
   const result: CodexTaskImportResult = { items: [] };
+  let sourceRoot: string | undefined;
   try {
     const home = homeForTasks();
+    sourceRoot = home.userConfigRoot;
     // Finish an existing automatic upgrade before appending; never swap a live home for manual import.
     await resolveAgentHomeRoot('codex');
     signal.throwIfAborted();
     const scan = await readCodexTasks(home.userConfigRoot, signal);
-    if (scan.status !== 'ready') throw new Error('暂时无法读取 ChatGPT 的本机会话索引');
+    if (scan.status !== 'ready') throw importError('codex-import-index-unreadable');
     const available = new Map(scan.rows.map(row => [row.id, row]));
     const selected: CodexTaskSourceRow[] = [];
     for (const request of new Map(params.map(item => [item.id, item])).values()) {
@@ -76,7 +80,7 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
     // Use the same planner with the source-validated complete lineage as each session's bundle.
     const selectedHome = { ...home, upgradeHistory: [...ownership.keys()], historySession: (path: string) => ownership.get(path) ?? null };
     const plan = await planAgentHomeHistory(selectedHome, Number.MAX_SAFE_INTEGER, { sessionIds: ids, includeShared: false });
-    if (plan.issues.length || [...ownership.keys()].some(path => !plan.paths.includes(path))) throw new Error('会话原文发生变化，请重新扫描后导入');
+    if (plan.issues.length || [...ownership.keys()].some(path => !plan.paths.includes(path))) throw importError('codex-import-source-changed');
     const targets = selected;
     preparation = { phase: 'copying', startedAt: Date.now() };
     await appendAgentHomeHistory(selectedHome, plan.paths, {
@@ -85,7 +89,7 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
         const latest = await readCodexTasks(home.userConfigRoot, signal);
         const revisions = new Map(latest.rows.map(row => [row.id, row.revision]));
         if (latest.status !== 'ready' || selected.some(row => revisions.get(row.id) !== row.revision)) {
-          throw new Error('会话在复制期间发生变化，请重新扫描后导入');
+          throw importError('codex-import-copy-changed');
         }
       },
     });
@@ -104,11 +108,19 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
         { providerSessionId: row.id, title: row.title, cwd: row.cwd });
         await ledger.setOrThrow(row.id, { revision: row.revision, path: row.relativePath, state: 'bound', sessionId: binding.sessionId });
         result.items.push({ id: row.id, status: binding.alreadyImported ? 'existing' : 'imported', sessionId: binding.sessionId });
-      } catch {
+      } catch (error) {
         signal.throwIfAborted();
-        result.items.push({ id: row.id, status: 'failed', message: '这条会话尚未导入，请重试' });
+        log.warn('[codex-task-import] Task binding failed', { error, sourceRoot, filePath: join(home.configRoot, row.relativePath), sessionId: row.id });
+        const known = error instanceof Error && parseImportError(error.message);
+        result.items.push({ id: row.id, status: 'failed', message: known ? error.message
+          : importErrorMessage('codex-import-task-failed', basename(row.relativePath)) });
       }
     }
     return result;
+  } catch (error) {
+    signal.throwIfAborted();
+    log.warn('[codex-task-import] Import failed', { error, sourceRoot });
+    if (error instanceof Error && parseImportError(error.message)) throw error;
+    throw importError('codex-import-task-failed');
   } finally { running = undefined; preparation = null; }
 }

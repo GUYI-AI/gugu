@@ -4,16 +4,19 @@ import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { log } from '@main/lib/logger';
 import type { GitWorktreeMutationResult } from '@shared/core/git/rpc';
 
+/** The workspace's worktree, read now (@@@disk-decides-git): undefined for an unknown workspace or a directory without Git. */
+export async function worktreeOf(workspaceId: string) {
+  return (await (await resolveWorkspace(workspaceId))?.git())?.worktree;
+}
+
 export async function stageWorktreeFiles(
     workspaceId: string,
   paths: string[]
 ): Promise<GitWorktreeMutationResult> {
   try {
-    const workspace = await resolveWorkspace(workspaceId);
-    if (!workspace) return err({ type: 'not_found' });
-    // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
-    if (!workspace.gitWorktree) return err({ type: 'not_found' });
-    const result = await workspace.gitWorktree.stage(paths);
+    const worktree = await worktreeOf(workspaceId);
+    if (!worktree) return err({ type: 'not_found' });
+    const result = await worktree.stage(paths);
     if (!result.success) return err(result.error);
     return ok({ sequences: result.data });
   } catch (error) {
@@ -27,11 +30,9 @@ export async function unstageWorktreeFiles(
   paths: string[]
 ): Promise<GitWorktreeMutationResult> {
   try {
-    const workspace = await resolveWorkspace(workspaceId);
-    if (!workspace) return err({ type: 'not_found' });
-    // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
-    if (!workspace.gitWorktree) return err({ type: 'not_found' });
-    const result = await workspace.gitWorktree.unstage(paths);
+    const worktree = await worktreeOf(workspaceId);
+    if (!worktree) return err({ type: 'not_found' });
+    const result = await worktree.unstage(paths);
     if (!result.success) return err(result.error);
     return ok({ sequences: result.data });
   } catch (error) {
@@ -45,11 +46,9 @@ export async function revertWorktreeFiles(
   paths: string[]
 ): Promise<GitWorktreeMutationResult> {
   try {
-    const workspace = await resolveWorkspace(workspaceId);
-    if (!workspace) return err({ type: 'not_found' });
-    // gugu #2358: 非 git 项目无 git worktree —— git 功能降级。
-    if (!workspace.gitWorktree) return err({ type: 'not_found' });
-    const result = await workspace.gitWorktree.revert(paths);
+    const worktree = await worktreeOf(workspaceId);
+    if (!worktree) return err({ type: 'not_found' });
+    const result = await worktree.revert(paths);
     if (!result.success) return err(result.error);
     return ok({ sequences: result.data });
   } catch (error) {

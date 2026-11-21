@@ -1,7 +1,6 @@
 {
   "apps/desktop/src/components/AddFriendSearch.tsx": 1,
   "apps/desktop/src/components/AgentHostStaleBadge.tsx": 1,
-  "apps/desktop/src/components/ChatAreaPanel.tsx": 1,
   "apps/desktop/src/components/FeedbackModal.tsx": 2,
   "apps/desktop/src/components/ImagePreviewProvider.tsx": 1,
   "apps/desktop/src/components/MessagePreviewCard.tsx": 1,

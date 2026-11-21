@@ -40,7 +40,7 @@ describe('the archive notice\'s sentence', () => {
   it('puts 会话历史 in the sentence as a link that opens 会话历史', async () => {
     sentence.current = zhCNSessionWorkflowMessages['task.archivedToastHint'];
     await act(async () => root.render(<ArchivedToastHint />));
-    expect(host.textContent).toBe('在「会话历史」里可以找回。');
+    expect(host.textContent).toBe('可在「会话历史」中找回。');
     const link = host.querySelector<HTMLButtonElement>('[data-archived-toast-history]');
     expect(link?.textContent).toBe('会话历史');
     await act(async () => link!.click());

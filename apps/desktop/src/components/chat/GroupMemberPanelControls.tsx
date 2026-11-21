@@ -18,17 +18,16 @@ import { useMobileShell } from '../../hooks/useMobileShell'
 import { closeInfoTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { settingsErrorStyle } from './groupSettingsStyles'
 
-// @@@6418 群成员面板里「和人有关的操作」:邀请、点开资料卡(角色 / 倾听模式 / 移出 / 发消息 / 悄悄话)、
+// @@@6418 群成员面板里「和人有关的操作」:邀请、点开资料卡(角色 / 收听模式 / 移出 / 发消息 / 悄悄话)、
 // 行尾 ⋯ 快捷管理。原来这些只在设置抽屉的头像网格里有,面板只能看;现在面板是成员的唯一入口。
 // 群和话题共用资料/移出;邀请与角色修改只在来源群。管理权限来自后端,owner-agent 控件独立。
 // 入群申请❌ 在这里:申请是冲着人来的请求,和好友申请同归通讯录「新的请求」(NewFriendsPanel)。
 
 const errorStyle: CSSProperties = { ...settingsErrorStyle, padding: '4px 14px' }
 
-export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
+export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
   chatId: string
   chatKind: 'group' | 'topic'
-  chatName?: string | null
   settings: GroupChatSettings | null
   snapshot: GroupCollabSnapshot | null
   identities: Readonly<Record<string, DisplayIdentity>>
@@ -209,7 +208,6 @@ export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settin
               } : undefined}
               onWhisper={member.id !== currentUserId && onWhisper ? (target) => { profileCard.close(); onWhisper(target) } : undefined}
               searchChatId={chatId}
-              listenRoom={chatName ? { kind: chatKind, name: chatName } : undefined}
               editControls={editControlsFor(member)}
             />
           )

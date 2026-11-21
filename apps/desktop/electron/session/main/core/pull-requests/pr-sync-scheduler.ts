@@ -60,7 +60,7 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
   async onFolderOpened(folderId: string): Promise<void> {
     log.info('PrSyncScheduler: onFolderOpened', { folderId });
     const remoteUrls = await this._syncAndGetGitHubRemotes(folderId);
-    this._subscribeToRepository(folderId);
+    await this._subscribeToRepository(folderId);
 
     if (remoteUrls.length === 0) {
       log.info('PrSyncScheduler: no GitHub remotes found, skipping sync', { folderId });
@@ -171,15 +171,16 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
     this._intervals.delete(folderId);
   }
 
-  private _subscribeToRepository(folderId: string): void {
+  private async _subscribeToRepository(folderId: string): Promise<void> {
     if (this._repositoryUnsubscribes.has(folderId)) return;
 
     const folder = folderRuntimes.get(folderId);
     if (!folder) return;
-    // gugu #2358: 非 git 文件夹无远端/PR —— 不订阅 remotes。
-    if (!folder.gitRepository) return;
+    // A directory without Git has no remotes or PRs.
+    const repository = (await folder.git.open())?.repository;
+    if (!repository || this._repositoryUnsubscribes.has(folderId)) return;
 
-    const unsubscribe = folder.gitRepository.subscribeRemotes(() => {
+    const unsubscribe = repository.subscribeRemotes(() => {
       void this.onRemoteChanged(folderId).catch((error) => {
         log.warn('PrSyncScheduler: failed to handle remote model update', {
           folderId,
@@ -244,11 +245,9 @@ export class PrSyncScheduler implements IInitializable, IDisposable {
   private async _syncAndGetGitHubRemotes(folderId: string): Promise<string[]> {
     const folder = folderRuntimes.get(folderId);
     if (!folder) return [];
-    // gugu #2358: 非 git 文件夹无远端。
-    if (!folder.gitRepository) return [];
-
     try {
-      const remotes = await folder.gitRepository.getRemotes();
+      // A directory without Git has no remotes.
+      const remotes = (await (await folder.git.open())?.repository.getRemotes()) ?? [];
       await syncFolderRemotes(folderId, remotes);
       const resolved = await Promise.all(
         remotes.map((r) => githubRepositoryResolver.resolve(r.url))

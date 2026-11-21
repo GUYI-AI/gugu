@@ -15,7 +15,7 @@ export type RoutedMachine = string | null;
 
 export class MachineRoutingConflictError extends Error {
   constructor(channel: string, machines: readonly string[]) {
-    super(`[machine-routing] ${channel} 的参数同时指向几台机器: ${machines.join(', ')}`);
+    super(`[machine-routing] the arguments of ${channel} point at several machines: ${machines.join(', ')}`);
     this.name = 'MachineRoutingConflictError';
   }
 }

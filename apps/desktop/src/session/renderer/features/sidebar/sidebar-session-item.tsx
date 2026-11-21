@@ -38,7 +38,7 @@ import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { SessionRowShell } from './sidebar-session-row';
 import type { SessionBranchSummary } from './sidebar-session-branch';
-import { useSessionDropTarget } from './use-session-drop-target';
+import { sessionDropTarget } from './session-drop-target';
 import { ProjectBadge } from './remote-host-chip';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { SidebarIdentityCard, sidebarIdentityCard, useSidebarIdentityCardTrigger } from './sidebar-identity-card';
@@ -139,8 +139,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const identityCard = useSidebarIdentityCardTrigger(sessionId, identityCardEnabled);
   const identityCardOpen = identityCardEnabled && sidebarIdentityCard.activeSessionId === sessionId;
   const agentBinding = sessionAgentBindings.bindingFor(sessionId);
-  const nestDrop = useSessionDropTarget();
-
   // 挂着的会话读它自己的 store;别的机器上还没挂的读会话目录那一行(列出不挂载,见 sidebar-store)。
   const session = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
   const listed = sidebarStore.remoteSession(projectId, sessionId);
@@ -245,7 +243,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
 
   // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的不给落点:
   // 它自己、已经挂在这里的、以及这一行就在它下面的(挂上去成环)。
-  const nestHere = nestDrop.bind(
+  const nestHere = sessionDropTarget(
     (dragged) =>
       dragged.sessionId !== sessionId &&
       sidebarStore.parentOf(dragged.sessionId) !== sessionId &&
@@ -365,7 +363,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       isActive={isActive}
       isCursor={isCursor}
       isPendingArchive={isPendingArchive}
-      isNestTarget={nestDrop.over}
       join={join}
       quickActions={{ isPinned, onSetPinned: setPinned, archiveLabel, onArchive: requestArchive }}
       onOpen={openSession}

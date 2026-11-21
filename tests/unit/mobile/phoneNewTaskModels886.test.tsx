@@ -135,7 +135,7 @@ it('keeps the draft and shows the shared sign-in explanation when no platform mo
   await send()
   expect(rpc.createSession).not.toHaveBeenCalled()
   expect(readComposer(input())).toBe('Keep this task draft')
-  expect(sheet()?.textContent).toContain('还没登录')
+  expect(sheet()?.textContent).toContain('尚未登录')
 })
 
 it('uses the same remembered signed-in own default as CreateSessionPage', async () => {
@@ -160,7 +160,7 @@ it('does not dispatch an engine default when the catalogue read fails', async ()
   await send()
   expect(rpc.createSession).not.toHaveBeenCalled()
   expect(readComposer(input())).toBe('Keep this task draft')
-  expect(sheet()?.textContent).toContain('读不到这台设备的模型')
+  expect(sheet()?.textContent).toContain('无法读取此设备的模型')
 })
 
 it('carries an explicitly chosen Work model through the project task send', async () => {

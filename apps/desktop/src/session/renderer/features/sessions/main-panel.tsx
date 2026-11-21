@@ -25,6 +25,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useCloudComputerGate } from './use-cloud-computer-gate';
 import { machineUnavailableLabel } from './machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { folderPresence } from '@renderer/features/folders/folder-presence';
 import { openSessionInSessionWhenReady } from './open-session-in-session';
 import { offlineSessionInputTarget } from './offline-session-input-target';
 
@@ -131,12 +132,17 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
   const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
   const sessionPageStore = getSessionPageStore(projectId, sessionId);
-  const kind = sessionViewKind(sessionPageStore, projectId);
+  const storeKind = sessionViewKind(sessionPageStore, projectId);
+  // #3425 别的机器上的项目,账号上那份没有它、那台机器自己的清单还没读到(它的任务工作区就是这样):守卫放行了它,表里却还没有 →
+  // 'missing' 会画成一片空白。它在等那台机器,画的就是「项目还没挂上」那一档(那台离线就说它离线),❌ 另起一个界面。
+  const kind: typeof storeKind =
+    storeKind === 'missing' && machineRegistry.machineOf(projectId) && folderPresence(projectId) === 'unknown' ? 'project-mounting' : storeKind;
   // 要画这条会话、它的项目还没挂:挂上(别的机器上的项目只在用到时挂;那台机器没连上就等它连上)。
+  // 按表里的真实状态走:项目并进表之后 storeKind 才变成 'project-mounting',那时才挂(上面那档只是画的屏)。
   useEffect(() => {
-    if (kind !== 'project-mounting') return;
+    if (storeKind !== 'project-mounting') return;
     void getProjectManagerStore().ensureMounted(projectId).catch(() => {});
-  }, [kind, projectId]);
+  }, [storeKind, projectId]);
   const cloud = useCloudComputerGate(projectId, sessionId, kind);
   // 别的机器上的会话、那台此刻够不着(离线 / 开机恢复时线刚通又断):说它离线,❌ 一直转「正在准备文件」或摆一块
   // 「准备失败」。线通了由 view.tsx 那一处照常准备(准备只有那一个入口)。

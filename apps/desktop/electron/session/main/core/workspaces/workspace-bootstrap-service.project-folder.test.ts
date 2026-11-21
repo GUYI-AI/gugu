@@ -1,7 +1,7 @@
 /**
  * #7341 会话从项目挂的文件夹开工:就在那个文件夹的路径里跑(终端、ACP 的 cwd 都取挂载出来的工作区路径),
  * git 跟着那个文件夹走 —— ❌ 借根目录那个仓库的 git 服务,❌ 按根目录判「是不是 git」。
- * 根目录那一格是对照:项目自己的 git 服务原样注入,复查目录不改。
+ * 根目录那一格是对照:文件夹运行时那一份 git 原样注入。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
@@ -31,17 +31,14 @@ vi.mock('@main/lib/logger', () => {
 
 const { WorkspaceBootstrapService } = await import('./workspace-bootstrap-service');
 
-const projectGitRepository = { repo: 'root' };
-const projectFetchService = { fetch: 'root' };
+const folderGit = { git: 'root' };
 const project = {
   folderId: 'folder-1',
   repoPath: '/work/gugu',
   defaultWorkspaceType: { kind: 'local' },
   defaultWorkspaceMachine: { kind: 'local' },
   settings: {},
-  isGitless: false,
-  gitRepository: projectGitRepository,
-  gitRepositoryFetchService: projectFetchService,
+  git: folderGit,
 };
 
 describe('ensureWorkspaceSetup for a project folder', () => {
@@ -77,24 +74,19 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     expect(context).toMatchObject({
       workDir: '/work/gugu-7341',
       folderPath: '/work/gugu',
-      gitless: false,
-      gitProbePath: '/work/gugu-7341',
     });
-    expect(context.gitRepository).toBeUndefined();
-    expect(context.gitRepositoryFetchService).toBeUndefined();
+    // Not the folder's git: the workspace reads its own directory.
+    expect(context.git).toBeUndefined();
   });
 
-  it('control — the project root: project git services as before, re-check stays on the project path', async () => {
+  it('control — the folder itself: the folder runtime\'s git is injected as before', async () => {
     const { result, context } = await setUp({ id: 'ws-root', kind: 'project-root', path: '/work/gugu' as CanonicalPath });
 
     expect(result).toMatchObject({ success: true, data: { path: '/work/gugu', workspaceId: 'ws-root' } });
     expect(context).toMatchObject({
       workDir: '/work/gugu',
       folderPath: '/work/gugu',
-      gitless: false,
-      gitRepository: projectGitRepository,
-      gitRepositoryFetchService: projectFetchService,
+      git: folderGit,
     });
-    expect(context).not.toHaveProperty('gitProbePath');
   });
 });

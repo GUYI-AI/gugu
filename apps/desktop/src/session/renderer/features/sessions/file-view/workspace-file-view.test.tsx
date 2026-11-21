@@ -29,7 +29,7 @@ vi.mock('@renderer/lib/ipc', () => ({ rpc: {} }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 vi.mock('@renderer/features/remote-hosts/workspace/remote-file-actions', () => ({ downloadSessionFile: vi.fn() }));
-vi.mock('@renderer/lib/editor/quote-workspace-file', () => ({ quoteWorkspaceFile: vi.fn() }));
+vi.mock('@renderer/lib/editor/cite-into-conversation', () => ({ citeIntoConversation: vi.fn() }));
 vi.mock('./file-view-kinds', () => ({ FOLDER_APP_FILE_TAB: 'folder', openFolderInTab: vi.fn() }));
 
 import { WorkspaceFileView } from './workspace-file-view';
@@ -74,11 +74,11 @@ it('watches the folder of a Windows path, not the path cut by one character', as
   expect(h.watchDirectory.mock.calls).toEqual([['w', 'C:\\Users\\me\\task']]);
 });
 
-it('offers Cite on a selection only for a session\'s file, through the same quote as its menu', async () => {
+it('names a selection\'s file by its path on its machine, in the session\'s conversation; a project folder has none', async () => {
   await act(async () => root.render(<WorkspaceFileView projectId="p" workspaceId="w" sessionId="file-cite-owner"
     path="src/example.ts" absolutePath="/home/task/src/example.ts" inWorkspace onClose={() => {}} />));
-  expect(h.source?.citesSelection).toBe(true);
+  expect(h.source?.selectable).toMatchObject({ conversation: { kind: 'session', sessionId: 'file-cite-owner' }, file: { name: 'example.ts', target: '/home/task/src/example.ts' }, sends: true });
   await act(async () => root.render(<WorkspaceFileView projectId="p" workspaceId="w"
     path="src/example.ts" absolutePath="/home/task/src/example.ts" inWorkspace onClose={() => {}} />));
-  expect(h.source?.citesSelection).toBe(false);
+  expect(h.source?.selectable?.conversation).toBeNull();
 });

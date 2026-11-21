@@ -118,7 +118,8 @@ export type CrossMachineDeps = {
 
 /** 对端答 `agentSession.*` 时用到的宿主能力。 */
 export type AgentSessionHost = {
-  peers(): Promise<unknown>
+  /** One session's row when the caller names it (`session_id`), else this machine's whole roster. */
+  peers(sessionId?: string): Promise<unknown>
   /** 其余动作交给会话页编排(`runRemoteSessionAction`)。 */
   run(caller: RemoteSessionCaller, action: Action): Promise<unknown>
   /** 另一台机器上的 App 发来的消息:与本机 App 发消息同一个函数,信封写那个 App。 */
@@ -423,7 +424,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
    * session_children:一条会话的 child 可以在任何一台机器上 —— 本机那一份,加上在线机器各自那一份(离线的机器问不到)。
    * 机器清单读不到(没联网、没登录)时就是本机那一份:别的机器本来也够不着,❌ 为此让本机的列表失败。
    */
-  const withRemoteChildren = async (local: unknown, sessionId: string | undefined, callerOf: () => Promise<RemoteSessionCaller>, signal?: AbortSignal) => {
+  const withRemoteChildren = async (local: unknown, sessionId: string | undefined, callerOf: () => Promise<RemoteSessionCaller>, signal?: AbortSignal, metadataOnly?: boolean) => {
     if (!Array.isArray(local)) return local
     let others: Device[]
     let caller: RemoteSessionCaller
@@ -437,7 +438,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
     }
     const remote = await Promise.all(others.map(async (device) => {
       try {
-        const action = sessionId === undefined ? { action: 'children' } : { action: 'children', session_id: sessionId }
+        const action = { action: 'children', ...(sessionId === undefined ? {} : { session_id: sessionId }), ...(metadataOnly ? { metadata_only: true } : {}) }
         return onDevice(await call(device.device_id, caller, action, signal), device.device_id, device.label) as unknown[]
       } catch (error) {
         if (signal?.aborted) throw error
@@ -582,7 +583,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
       const { caller, action } = parsed as { caller: RemoteSessionCaller; action: AgentSessionAction }
       // 谁在哪台机器上发来的就记下:它派到这里的 child 回话时不必再挨台去问。
       known.set(caller.sessionId, caller.deviceId)
-      if (action.action === 'peers') return await host.peers()
+      if (action.action === 'peers') return await host.peers(typeof action.session_id === 'string' ? action.session_id : undefined)
       return await host.run(caller, action)
     } catch (error) {
       if (error instanceof CrossMachineError) throw error

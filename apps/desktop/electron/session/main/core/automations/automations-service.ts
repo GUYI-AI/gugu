@@ -28,6 +28,7 @@ import {
   listAutomations as repoListAutomations,
   listAgentSchedules,
   listOrphanedAgentScheduleIds,
+  withAgentSessions,
   removeRun,
   renameAutomation as renameInRepo,
   setAutomationEnabled as repoSetAutomationEnabled,
@@ -92,7 +93,7 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
 
   async listAutomations(workspaceId?: string): Promise<Automation[]> {
     await this.removeOrphanedAgentSchedules();
-    return (await repoListAutomations(workspaceId)).filter((automation) => !automation.agentSession?.archived);
+    return (await withAgentSessions(await repoListAutomations(workspaceId))).filter((automation) => !automation.agentSession?.archived);
   }
 
   private async removeOrphanedAgentSchedules(sessionId?: string): Promise<void> {

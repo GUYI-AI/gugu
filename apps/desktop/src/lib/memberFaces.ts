@@ -12,6 +12,12 @@ import { redrawImage } from './redrawImage'
 import { readAvatarTheme } from './avatarTheme'
 
 const SIZE = 128
+/**
+ * How long a face may take. A draw still pending after this is given up on (null) and not kept, so the next one asked for
+ * draws again — a promise that never settles, cached, would hold every later notification of this face at "unavailable".
+ * Above the agent look still's own wait (runtime.ts STILL_WAIT_MS, 15 s), which is what normally ends a stuck one.
+ */
+const DRAW_DEADLINE_MS = 20_000
 
 // By id and avatar: a new upload is a new URL, so the URL is the avatar's version; default faces also vary by theme.
 const drawn = new Map<string, Promise<string | null>>()
@@ -34,11 +40,12 @@ export function memberFace(id: string, avatar: string | null): Promise<string | 
   if (known) return known
   // 形象地址:等引擎把这个形象的定格画好再缩(❌ 缩那张还没画好时顶着的同色图,这里画一次就缓存住了)
   const look = parseAgentLook(normalizeAvatarUrl(avatar))
-  const face = look
-    ? settledAgentLookPoster(look).then(draw, () => null)
-    : draw(displayAvatarUrl(avatar, id, 'App member face', identity.type))
+  const face = withDeadline(look
+    ? settledAgentLookPoster(look, { retryFailed: true }).then(draw, () => null)
+    : draw(displayAvatarUrl(avatar, id, 'App member face', identity.type)))
   drawn.set(key, face)
-  void face.then((url) => url === null && drawn.delete(key))
+  // Only this draw's own entry goes: a newer one under the same key stays.
+  void face.then((url) => { if (url === null && drawn.get(key) === face) drawn.delete(key) })
   return face
 }
 
@@ -46,6 +53,14 @@ export function memberFace(id: string, avatar: string | null): Promise<string | 
 export async function memberFaces(people: readonly { id: string; avatar: string | null }[]): Promise<Record<string, string>> {
   const faces = await Promise.all(people.map(async ({ id, avatar }) => [id, await memberFace(id, avatar)] as const))
   return Object.fromEntries(faces.filter((face): face is readonly [string, string] => face[1] !== null))
+}
+
+function withDeadline(face: Promise<string | null>): Promise<string | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), DRAW_DEADLINE_MS)
+    const settle = (url: string | null) => { clearTimeout(timer); resolve(url) }
+    face.then(settle, () => settle(null))
+  })
 }
 
 async function draw(src: string | null): Promise<string | null> {

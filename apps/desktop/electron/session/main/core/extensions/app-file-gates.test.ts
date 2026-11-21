@@ -318,7 +318,7 @@ describe('a name from elsewhere saved here', () => {
   it('several files: one whose name is a path is refused by name, before anything is written for it', async () => {
     f.capabilities.add('files:read');
     fs.writeFileSync(path.join(f.root, '..\\evil'), 'canary');
-    await expect(downloadAppFile(page(), { refs: [{ workspace, id: '..\\evil' }] }, null)).rejects.toThrow('"..\\evil" can\'t be saved here: it is a path, not a file name');
+    await expect(downloadAppFile(page(), { refs: [{ workspace, id: '..\\evil' }] }, null)).rejects.toThrow('"..\\evil" cannot be saved here: it is a path, not a file name');
     expect(fs.readdirSync(f.dialogDir)).toEqual([]);
   });
 });

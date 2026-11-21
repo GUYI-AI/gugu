@@ -32,6 +32,11 @@ export type JsonlTailFormat<S> = {
   snapshot?(state: S): S;
   /** The native children `state` already knows (`SessionRecordSource.childIdsAt`). */
   childIds?(state: S): string[];
+  /**
+   * A line changed what lines already read mean (a Codex rollback drops turns already sent): the state a read from the
+   * start should begin with, carrying what was learned, or null. The source resets and reads the record again.
+   */
+  again?(state: S): S | null;
 };
 
 type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S; prefixBytes?: number };
@@ -48,12 +53,34 @@ export function createJsonlTailSource<S>(
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
   let prefixBytes = 0;
+  /** A read from `start` is running: a line asking to read again waits for its end (`readAgain`). */
+  let reading = false;
+  /** What a read again starts from: `format.initial()` gives it while that read runs. */
+  let seed: S | null = null;
+  const initial = format.initial.bind(format);
+  format = { ...format, initial: () => seed === null ? initial() : structuredClone(seed) };
 
   const emit = (lines: string[], offsets: number[], file = path, seekable = true) => {
     if (stopped || !sink) return;
     const events = sink;
     emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
       file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, seekable ? offsets : undefined);
+    if (!reading && format.again?.(state)) void whole(() => readAgain(events)).catch((error: unknown) => warn('重读失败', { path, error: (error as Error).message }));
+  };
+
+  const whole = async (read: () => Promise<void>) => {
+    reading = true;
+    try { await read(); } finally { reading = false; }
+  };
+
+  /** While a line asks for it (`JsonlTailFormat.again`): drop what was read, and read the record again through `start`. */
+  const readAgain = async (events: SessionRecordSourceEvents) => {
+    for (let next = format.again?.(state); next && !stopped; next = format.again?.(state)) {
+      reader?.stop();
+      events.onReset('source_replaced');
+      seed = next;
+      try { await start(events); } finally { seed = null; }
+    }
   };
 
   const streamPrefixes = async (found: string) => {
@@ -159,5 +186,11 @@ export function createJsonlTailSource<S>(
       sink = null;
     }
   };
+  // A whole read (initial, snapshot or resume) ends first; only then is the record read again, at most once more.
+  const start = source.start.bind(source);
+  source.start = (events, resume) => whole(async () => {
+    await start(events, resume);
+    await readAgain(events);
+  });
   return source;
 }

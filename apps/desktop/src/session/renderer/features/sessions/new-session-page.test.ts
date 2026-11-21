@@ -231,7 +231,6 @@ vi.mock('@renderer/lib/ui/dropdown-menu', () => ({
   DropdownMenuCheckboxItem: ({ children, checked, disabled, onCheckedChange }: { children: React.ReactNode; checked: boolean; disabled?: boolean; onCheckedChange: (checked: boolean) => void }) => React.createElement('button', { role: 'menuitemcheckbox', 'aria-checked': checked, disabled, onClick: () => onCheckedChange(!checked) }, children),
   DropdownMenu: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuSeparator: () => null,
-  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => children,
   DropdownMenuItem: ({
     children,
@@ -569,9 +568,9 @@ describe('NewSessionPage', () => {
     const picker = container.querySelector('[data-testid="composer-device-picker"]');
     expect(picker).not.toBeNull();
     expect(picker?.getAttribute('data-size')).toBe('compact');
-    // 默认这台电脑:电脑图标 + 名字「这台电脑」(托盘里各处同一个叫法)。
+    // 默认这台电脑:电脑图标 + 名字「本机」(托盘里各处同一个叫法)。
     expect(picker?.getAttribute('data-selected-id')).toBe('local');
-    expect(picker?.textContent).toContain('这台电脑');
+    expect(picker?.textContent).toContain('本机');
     expect(picker?.querySelector('[data-kind="computer"]')).not.toBeNull();
   });
 

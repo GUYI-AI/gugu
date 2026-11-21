@@ -2,7 +2,7 @@
 //
 // @@@5856 话题(topic)展示层的判据 —— product spec。
 // 覆盖两条承重线:
-//   1. 「可见 / 参与 / 通知是三件事」在锚点卡上真的看得出来(is_participant=false ⇒ 「只看得见」);
+//   1. 「可见 / 参与 / 通知是三件事」在锚点卡上真的看得出来(is_participant=false ⇒ 「仅可查看」);
 //      判据能判假 —— 同一份数据把 is_participant 翻成 true,那条断言必须反过来。
 //   2. useTopicsOfChat 的竞态守卫:切线之后,上一条线的慢响应 ❌ 不许落进新线的状态。
 import { askReveal } from '../../../apps/desktop/src/hooks/useSourceMessageReveal'
@@ -33,7 +33,6 @@ vi.mock('../../../apps/desktop/src/lib/chatMessageRevalidation', async (importOr
 
 const { useTopicsOfChat, topicsSourceChatId } = await import('../../../apps/desktop/src/hooks/useTopics')
 const { TopicAnchorCard } = await import('../../../apps/desktop/src/components/chat/TopicAnchorCard')
-const { TopicBreadcrumb } = await import('../../../apps/desktop/src/components/chat/TopicBreadcrumb')
 const { TopicSplitPane } = await import('../../../apps/desktop/src/components/chat/TopicSplitPane')
 const { UI_EVENTS } = await import('../../../apps/desktop/src/lib/uiEvents')
 const { commandRegistry } = await import('../../../apps/desktop/src/session/renderer/lib/commands/registry')
@@ -72,21 +71,21 @@ beforeEach(() => {
 afterEach(() => { harness.cleanup(); attachmentQueryClient.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('TopicAnchorCard 把「可见 / 参与 / 通知」的第三件显形', () => {
-  it('非参与者的话题挂出「只看得见」，参与者的不挂', async () => {
+  it('非参与者的话题挂出「仅可查看」，参与者的不挂', async () => {
     await harness.render(
       createNode(TopicAnchorCard, { topics: [topic({ is_participant: false })], isMine: false, sourceContent: null, onOpen: vi.fn() }),
     )
     const observer = harness.container.querySelector('[data-testid="topic-anchor-observer"]')
     // 判据能判假:同一份数据只翻 is_participant,下面那次渲染必须拿不到这枚标。
     expect(observer).not.toBeNull()
-    expect(observer?.textContent).toBe('只看得见')
+    expect(observer?.textContent).toBe('仅可查看')
     expect(harness.container.querySelector('[data-testid="topic-anchor-row"]')?.getAttribute('data-topic-participant')).toBe('false')
 
     await harness.render(
       createNode(TopicAnchorCard, { topics: [topic({ is_participant: true })], isMine: false, sourceContent: null, onOpen: vi.fn() }),
     )
     expect(harness.container.querySelector('[data-testid="topic-anchor-observer"]')).toBeNull()
-    expect(harness.container.textContent).not.toContain('只看得见')
+    expect(harness.container.textContent).not.toContain('仅可查看')
     expect(harness.container.querySelector('[data-testid="topic-anchor-row"]')?.getAttribute('data-topic-participant')).toBe('true')
   })
 
@@ -149,7 +148,7 @@ describe('锚点是那条消息的附件,所以跟它的气泡同一侧', () => 
     expect(harness.container.querySelector('[data-testid="topic-anchor-card"]')?.getAttribute('data-topic-anchor-side')).toBe('theirs')
   })
 
-  it('那一行说清「谁开的 · 什么时候有动静」;都没有就明说还没有人说话,❌ 不留一行空的', async () => {
+  it('那一行说清「谁开的 · 什么时候有动静」;都没有就明说暂无消息,❌ 不留一行空的', async () => {
     await harness.render(
       createNode(TopicAnchorCard, {
         topics: [topic({ creator_user_id: 'u1', last_message_at: '2026-09-18T12:00:00.000Z' })],
@@ -170,7 +169,7 @@ describe('锚点是那条消息的附件,所以跟它的气泡同一侧', () => 
         onOpen: vi.fn(),
       }),
     )
-    expect(harness.container.querySelector('[data-testid="topic-anchor-meta"]')?.textContent).toBe('还没有人说话')
+    expect(harness.container.querySelector('[data-testid="topic-anchor-meta"]')?.textContent).toBe('暂无消息')
   })
 
   // @@@5856 owner 2026-09-19 对着实机:「你不感觉这个像是个文字重复吗?这一段文字,是你故意的」。
@@ -241,41 +240,6 @@ describe('分栏那条分割线得真能拖', () => {
   })
 })
 
-describe('TopicBreadcrumb:双向连接上行的那一半 + 来源消息被删的状态', () => {
-  it('话题名与「引自哪一句」都显,且不出现一颗跳回来源的废按钮', async () => {
-    await harness.render(
-      createNode(TopicBreadcrumb, {
-        topicName: '分片下载失败',
-        sourceMessagePreview: '下载到 60% 就断',
-      }),
-    )
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-name"]')?.textContent).toBe('分片下载失败')
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-preview"]')?.textContent)
-      .toBe('引自：下载到 60% 就断')
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-deleted"]')).toBeNull()
-    // @@@5856 话题只在来源线旁边开分栏 ⇒ 来源线就在左边,一颗「回到来源」的按钮点了等于没点。
-    // ❌ 不许留着它(dead control)。
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source"]')).toBeNull()
-  })
-
-  it('来源消息被硬删时说出来，❌ 不静默显示成正常', async () => {
-    await harness.render(
-      createNode(TopicBreadcrumb, { topicName: '分片下载失败', sourceMessagePreview: null }),
-    )
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-preview"]')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-deleted"]')?.textContent)
-      .toBe('来源消息已被删除，这条话题继续存在')
-  })
-
-  it('还没读到 / 读到了但这个人看不见:那一行什么都不说，❌ 不谎报「已删除」', async () => {
-    for (const preview of ['pending', 'unreadable'] as const) {
-      await harness.render(createNode(TopicBreadcrumb, { topicName: 'x', sourceMessagePreview: preview }))
-      expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-deleted"]')).toBeNull()
-      expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-preview"]')).toBeNull()
-    }
-  })
-})
-
 describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   const baseProps = {
     topic: { chatId: 'topic-1', name: '分片下载失败' },
@@ -284,7 +248,6 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     memberProfiles: {},
     memberReadSeqs: {},
     visibleChats: [],
-    sourceMessagePreview: 'pending',
     onSend: vi.fn(async () => {}),
     onSendAttachments: vi.fn(async () => {}),
     onClose: vi.fn(),
@@ -305,9 +268,11 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   }
 
   for (const layout of ['desktop', 'phone', 'tab'] as const) {
-    it(`${layout}: topic header only identifies the topic and its source, and the phone tab has none`, async () => {
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, sourceMessagePreview: '下载到 60% 就断', mobile: layout === 'phone', embedded: layout === 'tab' }))
-      expect(harness.container.querySelector('[data-testid="topic-breadcrumb"]') !== null).toBe(layout !== 'phone')
+    // owner: a "From: <source message>" line next to the topic title was removed long ago; it must not come back in any layout.
+    it(`${layout}: topic header names the topic only, never its source message`, async () => {
+      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, mobile: layout === 'phone', embedded: layout === 'tab' }))
+      expect(harness.container.querySelector('[data-testid="topic-split-title"]') !== null).toBe(layout === 'desktop')
+      expect(harness.container.textContent).not.toMatch(/引自|From:/)
       for (const id of ['topic-split-more', 'topic-split-members-toggle', 'topic-split-files-toggle']) {
         expect(harness.container.querySelector(`[data-testid="${id}"]`)).toBeNull()
       }
@@ -316,13 +281,11 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
 
   // owner: on the phone topic page a line "hung" above the conversation (the source preview).
   // With real messages, nothing may sit above the first message; restoring the old source line must turn this red.
-  it('phone: nothing renders above the first topic message, not even the source line', async () => {
-    const source = 'SOURCE-LINE-下载到 60% 就断'
+  it('phone: nothing renders above the first topic message', async () => {
     const messages = [message({ id: 'first', seq: 1, content: 'FIRST-MESSAGE' }), message({ id: 'second', seq: 2, content: 'SECOND-MESSAGE' })]
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, sourceMessagePreview: source, mobile: true }))
+    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, mobile: true }))
     const pane = harness.container.querySelector<HTMLElement>('[data-testid="topic-split-pane"]')!
     expect(pane.textContent).toContain('FIRST-MESSAGE')
-    expect(pane.textContent).not.toContain('SOURCE-LINE')
     expect(pane.firstElementChild?.getAttribute('data-testid')).toBe('topic-split-messages')
   })
 
@@ -692,7 +655,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     const pane = harness.container.querySelector('[data-testid="topic-split-pane"]')
     expect(pane).not.toBeNull()
     expect(harness.container.querySelector('[data-testid="topic-split-messages"]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-breadcrumb-name"]')?.textContent).toBe('分片下载失败')
+    expect(harness.container.querySelector('[data-testid="topic-split-title"]')?.textContent).toBe('分片下载失败')
 
     const close = harness.container.querySelector('[data-testid="topic-split-close"]') as HTMLElement
     expect(close.getAttribute('aria-label')).toBe('收起分栏')

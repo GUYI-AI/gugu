@@ -154,4 +154,23 @@ describe('settling after a restart leaves sessions whose engine survived in tmux
     expect(readInterruptedTurn('failed')).toBeNull();
   });
 
+  it('persists an actual PTY engine end before publishing idle, without touching ACP or tmux survivors (#3374)', async () => {
+    fixture.sqlite.exec("UPDATE sessions SET provider_session_id=id");
+    const { readPtyTurnEnds } = await import('../sessions/pty-turn-ends');
+    let atPublication: readonly unknown[] = [];
+    const off = agentStatusWriter.on('agent:status', change => {
+      if (change.sessionId === 'pty-gone') atPublication = readPtyTurnEnds('pty-gone', 'pty-gone');
+    });
+    try {
+      await agentStatusWriter.settleSessionExited({ sessionId: 'pty-gone' });
+      expect(atPublication).toHaveLength(1);
+      const end = readPtyTurnEnds('pty-gone', 'pty-gone')[0];
+      expect(end.endedAt).toBe(end.cutoff);
+      await agentStatusWriter.settleAfterRestart(new Set([tmuxName('in-tmux'), tmuxName('in-tmux-asking')]));
+      expect(readPtyTurnEnds('in-tmux', 'in-tmux')).toEqual([]);
+      expect(readPtyTurnEnds('acp', 'acp')).toEqual([]);
+      expect(status('in-tmux').status).toBe('working');
+    } finally { off(); }
+  });
+
 });

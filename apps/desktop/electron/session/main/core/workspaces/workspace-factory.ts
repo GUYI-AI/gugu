@@ -3,8 +3,7 @@ import type { CanonicalPath } from '@gugu/session-core/files';
 import { LocalSessionProvider } from '@main/core/sessions/impl/local-session';
 import type { SessionProvider } from '@main/core/sessions/types';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
-import { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
-import { GitRepositoryService } from '@main/core/git/repository/service';
+import { DirectoryGit, workspaceGit } from '@main/core/git/repository/directory-git';
 import { previewServerService } from '@main/core/preview-servers/preview-server-service-instance';
 import type { RuntimeManager } from '@main/core/runtime/types';
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service';
@@ -46,18 +45,11 @@ export type WorkspaceFactoryContext = {
   workspaceRuntime: { manager: Pick<RuntimeManager, 'acquire'> };
   settings: FolderSettingsProvider;
   logPrefix: string;
-  /** gugu #2358: a gitless folder —— 不开 git worktree,工作区无 git 服务,agent 直接在目录里跑。 */
-  gitless?: boolean;
   /**
-   * #7341 拿工作区时按哪个目录复查「还是不是 git」;不给 = `folderPath`(文件夹本身与旧 worktree 行一直如此)。
-   * 挂上来的文件夹是它自己的仓库或根本不是仓库,要照它自己的目录判(workspace-git-context.ts)。
+   * The repository this workspace's directory belongs to (the folder runtime's own, for the folder itself). Absent = the
+   * workspace's directory is its own repository or none (#7341 attached folders); the workspace then reads and owns it.
    */
-  gitProbePath?: string;
-  /** Inject an existing repository service (the folder runtime's). */
-  gitRepository?: GitRepositoryService;
-  /** Inject an existing fetch service. When absent, the factory creates and manages one.
-   *  Lifecycle (start/stop) is only managed by the factory when it creates the instance. */
-  gitRepositoryFetchService?: GitRepositoryFetchService;
+  git?: DirectoryGit;
   extraHooks?: {
     onCreate?: (ws: Workspace) => Promise<void>;
     onDestroy?: (ws: Workspace) => Promise<void>;
@@ -79,13 +71,8 @@ export function createWorkspaceFactory(
 
     const ctx = new LocalExecutionContext();
 
-    const runtime = await acquireWorkspaceRuntime(
-      context.workspaceRuntime,
-      workDir,
-      context.gitless ?? false,
-      context.gitless === undefined ? undefined : (context.gitProbePath ?? context.folderPath)
-    );
-    const { gitWorktree, fileTree, filesRuntime } = runtime;
+    const runtime = await acquireWorkspaceRuntime(context.workspaceRuntime, workDir);
+    const { fileTree, filesRuntime } = runtime;
     const openedFileSystem = filesRuntime.fileSystem();
     if (!openedFileSystem.success) {
       await runtime.release();
@@ -132,17 +119,15 @@ export function createWorkspaceFactory(
       terminals: workspaceTerminals,
     });
 
-    // gugu #2358: 非 git 项目无 gitWorktree/gitRepository → git 服务全缺省。
-    const gitRepository = gitWorktree
-      ? context.gitRepository ?? new GitRepositoryService(gitWorktree.repository, context.settings)
-      : undefined;
-
-    const ownsFetchService = !context.gitRepositoryFetchService && !!gitRepository;
-    const gitRepositoryFetchService = gitRepository
-      ? context.gitRepositoryFetchService ??
-        new GitRepositoryFetchService(gitRepository, () => gitRepository.getBaseRemote())
-      : undefined;
-    let unsubscribeGitUpdates: (() => void) | undefined;
+    const directoryGit = context.git ??
+      new DirectoryGit(workDir, filesRuntime.path.join(workDir, '.git'), runtime.git, fileSystem, context.settings);
+    const git = workspaceGit(directoryGit, workDir, runtime.git, (worktree) =>
+      worktree.subscribe((update) =>
+        handleGitWorktreeUpdate(workspaceId, update, (emitted) => {
+          events.emit(gitWorktreeUpdateChannel, { workspaceId, update: emitted });
+        })
+      )
+    );
     let unsubscribeFileChanges: (() => void) | undefined;
 
     const watchedDirectories = new Set<() => void>();
@@ -160,20 +145,22 @@ export function createWorkspaceFactory(
         watchedDirectories.add(release);
         return ok(release);
       },
-      nudge: () => filesRuntime.nudge(workDir),
+      // A nudge is also a read of whether the directory has Git: a repository made since (`git init`) opens here.
+      nudge: async () => {
+        await git.read();
+        return filesRuntime.nudge(workDir);
+      },
       id: workspaceId,
       path: workDir,
       configPath,
       fileSystem,
       fileTree,
-      gitWorktree,
+      git: git.read,
       settings: context.settings,
       lifecycleService,
-      gitRepository,
-      gitRepositoryFetchService,
       dispose: async () => {
-        unsubscribeGitUpdates?.();
-        unsubscribeGitUpdates = undefined;
+        await git.close();
+        if (!context.git) await directoryGit.close();
         unsubscribeFileChanges?.();
         unsubscribeFileChanges = undefined;
         for (const release of [...watchedDirectories]) release();
@@ -194,18 +181,6 @@ export function createWorkspaceFactory(
             return fs.success ? fs.data.enumerate(root, options) : fs;
           },
         });
-        // gugu #2358: 非 git 工作区无 gitWorktree,不订阅 git 更新。
-        if (ws.gitWorktree) {
-          const gitWorktree = ws.gitWorktree;
-          unsubscribeGitUpdates = gitWorktree.subscribe((update) =>
-            handleGitWorktreeUpdate(workspaceId, update, (emitted) => {
-              events.emit(gitWorktreeUpdateChannel, {
-                workspaceId,
-                update: emitted,
-              });
-            })
-          );
-        }
         // 这条变更流是共享的:编辑器里打开的任何文件(哪怕在 dist/、build/、.claude/ 下)、HTML 预览引用的资源、
         // 项目设置、文件索引都从这里拿。所以 ❌ 拿搜索索引的边界剪它 —— 那会让 dist/ 下打开的页签永远收不到变化;
         // 索引自己在 applyChanges 里照自己的边界再筛一遍。
@@ -239,9 +214,6 @@ export function createWorkspaceFactory(
           });
         }
 
-        if (ownsFetchService) {
-          gitRepositoryFetchService?.start();
-        }
         void (async () => {
           if (scripts?.setup && (projectSettings.autoRunSetupScriptOnSessionCreation ?? true)) {
             const setupResult = await runLifecycleScriptWithPolicy({
@@ -286,9 +258,6 @@ export function createWorkspaceFactory(
 
       onDestroy: async (ws) => {
         await previewServerService.stopForWorkspace(workspaceId);
-        if (ownsFetchService) {
-          gitRepositoryFetchService?.stop();
-        }
         workspaceFileIndexService.onWorkspaceDeactivated(workspaceId);
         const latestProjectSettings = await context.settings.get();
         const latestSessionSettings = await getEffectiveSessionSettings({

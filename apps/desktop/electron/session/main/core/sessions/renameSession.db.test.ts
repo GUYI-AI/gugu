@@ -31,7 +31,7 @@ import { loadTaskNames, setTaskNameOwner, setTaskNamer, taskName } from './task-
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgent, listAgents, updateAgent, writeAgentName } from '@gugu/core/local/state/agents';
+import { createAgent, listAgents, removeAgents, updateAgent, writeAgentName } from '@gugu/core/local/state/agents';
 
 // One name per task (task-name.ts). A person's rename always applies; an automatic name (the harness's
 // own title or gugu's generated one) only replaces the engine default, so the first one wins once.
@@ -144,8 +144,13 @@ describe('task name renames', () => {
       await setTaskNameOwner('someone-else', env);
       expect(rowName()).toBe('Release captain');
 
-      // Archiving releases the identity: its last name becomes the record a restored identity is named by.
+      // An archived task keeps its identity, so the identity still names it.
       await updateAgent({ guguUserId: 'agent-7' }, { status: 'archived' }, env);
+      expect(nameOf('named')).toBeUndefined();
+      expect(rowName()).toBe('Release captain');
+
+      // Removing the identity unbinds it: its last name becomes the record a new identity is named by.
+      await removeAgents((agent) => agent.gugu_user_id === 'agent-7', env);
       expect(nameOf('named')).toBe('Release captain');
       expect(rowName()).toBe('Release captain');
     } finally {

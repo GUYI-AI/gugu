@@ -130,10 +130,14 @@ vi.mock('./app-unread-bindings', () => ({
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
   agentSessionContext: async (sessionId: string) => (sessionId === 'conv-agent' ? { sessionId, folderId: 'p-1', workspaceRoot: null } : null),
 }));
+// Where a computer's file is: its path on that machine (file-selection-reference.ts, tested on its own).
+vi.mock('./file-selection-reference', () => ({
+  fileReferenceOf: async (ref: { id: string }) => ({ name: ref.id.split('/').pop(), target: `/w/${ref.id}` }),
+}));
 const { dispatchForApp } = await import('./extension-send');
 
 const entry = { id: ITEM, chat: GROUP, name: 'card[17].vote.json', type: 'json' };
-const here = { chat: null, session: null };
+const here = { chat: null, session: null, folders: [] };
 const drafts: unknown[] = [];
 const sessionDrafts: Array<{ session: { id: string }; text: string }> = [];
 let picked: unknown = null;
@@ -180,18 +184,31 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
     expect(toldSessions).toEqual([]);
   });
 
-  it('a draft citing a working copy goes into that session as @file mentions: no chat pill points at such a file', async () => {
+  const inSession = { chat: null, session: 'conv-agent', folders: [] };
+  const draftHere = (page: typeof here | typeof inSession, args: Record<string, unknown>) => dispatchForApp('notes', { draft: true, ...args }, page, effects());
+
+  it('a draft citing a computer\'s files goes to the page\'s session, each file named by its path on its machine', async () => {
     const workspace = 'session:conv-agent';
-    await draft({ text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
-    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent' }, text: '@[a.py](src/a.py) @[b.md (L3)](b.md)\n' });
+    await draftHere(inSession, { text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
+    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent' }, text: '@[a.py](/w/src/a.py) @[b.md (L3)](/w/b.md)\n' });
   });
 
   it('a cited selection is a quote above the pill, a blank line apart: the quote does not take the pill in', async () => {
     const workspace = 'session:conv-agent';
-    await draft({ text: '> picked words\n> more', refs: [{ file: { workspace, id: 'b.md' }, label: '第 3–4 行' }] });
-    expect(sessionDrafts.at(-1)?.text).toBe('> picked words\n> more\n\n@[b.md (第 3–4 行)](b.md)\n');
-    await draft({ text: 'look', refs: [{ file: { workspace, id: 'b.md' } }] });
-    expect(sessionDrafts.at(-1)?.text).toBe('look\n@[b.md](b.md)\n');
+    await draftHere(inSession, { text: '> picked words\n> more', refs: [{ file: { workspace, id: 'b.md' }, label: '第 3–4 行' }] });
+    expect(sessionDrafts.at(-1)?.text).toBe('> picked words\n> more\n\n@[b.md (第 3–4 行)](/w/b.md)\n');
+    await draftHere(inSession, { text: 'look', refs: [{ file: { workspace, id: 'b.md' } }] });
+    expect(sessionDrafts.at(-1)?.text).toBe('look\n@[b.md](/w/b.md)\n');
+  });
+
+  it('goes where the page is, not where the file is: a group page\'s draft of its folder\'s file goes into the group', async () => {
+    await draftHere({ chat: { id: GROUP, name: 'G', members: [] }, session: null, folders: [] } as never, { text: '> w', refs: [{ file: { workspace: 'folder:dev-1/ws-1', id: 'AGENTS.md' }, label: 'L2' }] });
+    expect(drafts.at(-1)).toEqual({ chatId: GROUP, text: '> w', refs: [{ label: 'AGENTS.md (L2)', link: '/w/AGENTS.md' }] });
+    expect(sessionDrafts).toEqual([]);
+  });
+
+  it('a page with no conversation has nowhere to cite a computer\'s file into', async () => {
+    await expect(draftHere(here, { text: '', refs: [{ file: { workspace: 'project:p-1', id: 'a.md' } }] })).rejects.toMatchObject({ code: 'invalid' });
   });
 
   it('refs: each goes under the text as a pill the agent can open (App 引用 pill)', async () => {

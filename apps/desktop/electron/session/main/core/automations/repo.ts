@@ -125,7 +125,7 @@ function mapAutomationRow(row: AutomationRow): Automation {
  * #7221 给 agent 排的那几条补上「谁建的」:那条会话的名字(task-name.ts 的那一个名字),
  * `gone` 只指身份行已删除;可恢复归档单独标记。读的是这台机器自己的会话表。
  */
-async function withAgentSessions(list: Automation[]): Promise<Automation[]> {
+export async function withAgentSessions(list: Automation[]): Promise<Automation[]> {
   const ids = [...new Set(list.flatMap((automation) => (automation.agentSessionId ? [automation.agentSessionId] : [])))];
   if (ids.length === 0) return list;
   const rows = await db
@@ -274,8 +274,7 @@ export async function listAutomations(workspaceId?: string): Promise<Automation[
         .from(automations)
         .where(and(eq(automations.workspaceId, workspaceId), isNull(automations.deletedAt)))
     : db.select().from(automations).where(isNull(automations.deletedAt));
-  const rows = await query;
-  return withAgentSessions(mapAutomationRows(rows));
+  return mapAutomationRows(await query);
 }
 
 /** Only a missing local identity is orphaned; archived tasks still have their row. */
@@ -313,14 +312,14 @@ const MEANINGFUL_LAST_RUN = or(
  * 这台机器上每条会话给自己排的定时里,任务页要给人看的那些(`scheduleShown`:还会回来的,与最近一次没送到的)。
  * 条目一问、各自排着的下一次一问;最近一次逐条按 (automation_id, scheduled_at) 索引倒着取一行 —— 条数是这台机器上
  * agent 排的定时(每条会话至多 50),不随运行历史长:一个每 5 分钟一次的 cron 攒了几万行也只读一行。
- * 同步读:会话列表(含离线心跳的摘要)是同步拼的,摘要里那一格从这里来。
+ * 同步读:会话列表(含离线心跳的摘要)是同步拼的,摘要里那一格从这里来。`sessionIds`:只要这几条会话的(列表截了前几条时)。
  */
-export function listSessionSchedules(now = Date.now()): SessionSchedule[] {
+export function listSessionSchedules(sessionIds?: readonly string[], now = Date.now()): SessionSchedule[] {
   const list = mapAutomationRows(
     db
       .select()
       .from(automations)
-      .where(and(isNotNull(automations.agentSessionId), isNull(automations.deletedAt)))
+      .where(and(sessionIds ? inArray(automations.agentSessionId, [...sessionIds]) : isNotNull(automations.agentSessionId), isNull(automations.deletedAt)))
       .all()
   );
   if (list.length === 0) return [];

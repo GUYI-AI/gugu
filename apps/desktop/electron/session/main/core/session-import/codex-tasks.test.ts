@@ -1,13 +1,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   scan: vi.fn(), verify: vi.fn(), append: vi.fn(), plan: vi.fn(), prepare: vi.fn(), bind: vi.fn(),
-  ensure: vi.fn(), root: vi.fn(), write: vi.fn(), existing: vi.fn(),
+  ensure: vi.fn(), root: vi.fn(), write: vi.fn(), existing: vi.fn(), plugin: vi.fn(), home: vi.fn(), warn: vi.fn(),
 }));
 vi.mock('./codex-task-process', () => ({ readCodexTasks: mocks.scan, verifyCodexTaskFiles: mocks.verify }));
 vi.mock('./import-local-session', () => ({ bindLocalSession: mocks.bind }));
-vi.mock('@gugu/session-plugins/agents', () => ({ pluginRegistry: { get: () => ({ capabilities: { sessionBundle: { configRoot: {} } } }) } }));
+vi.mock('@gugu/session-plugins/agents', () => ({ pluginRegistry: { get: mocks.plugin } }));
 vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
-  resolveAgentHome: () => ({ userConfigRoot: '/source', configRoot: '/managed', historySession: (path: string) => ({ id: path.includes('two') ? 'two' : 'one', primary: true }) }),
+  resolveAgentHome: mocks.home,
   ensureAgentHome: mocks.ensure, planAgentHomeHistory: mocks.plan, appendAgentHomeHistory: mocks.append,
 }));
 vi.mock('@main/core/agents/agent-home', () => ({ resolveAgentHomeRoot: mocks.root }));
@@ -16,16 +16,76 @@ vi.mock('@main/utils/userEnv', () => ({ loginShellEnv: () => ({}) }));
 vi.mock('@main/app/app-scope', () => ({ appScope: { add: vi.fn() } }));
 vi.mock('@main/db/kv', () => ({ KV: class { setOrThrow = mocks.write; } }));
 vi.mock('@main/db/client', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: mocks.existing }) }) }) } }));
-import { importCodexTasks, cancelCodexTaskImport } from './codex-tasks';
+vi.mock('@main/lib/logger', () => ({ log: { warn: mocks.warn } }));
+import { importCodexTasks, cancelCodexTaskImport, scanCodexTaskImport } from './codex-tasks';
 
 const row = { id: 'one', title: 'Task', cwd: '/project', relativePath: 'sessions/one.jsonl', updatedAt: 1, sizeBytes: 100, revision: 'r1',
   files: [{ relativePath: 'sessions/one.jsonl', nativeId: 'one', cwd: '/project', sizeBytes: 100, historyBase: null }] };
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
+  mocks.plugin.mockReturnValue({ capabilities: { sessionBundle: { configRoot: {} } } });
+  mocks.home.mockReturnValue({ userConfigRoot: '/source', configRoot: '/managed', historySession: (path: string) => ({ id: path.includes('two') ? 'two' : 'one', primary: true }) });
   mocks.scan.mockResolvedValue({ status: 'ready', indexed: 1, missing: 0, invalid: 0, rows: [row] });
   mocks.existing.mockResolvedValue([]);
   mocks.plan.mockImplementation(async home => ({ paths: home.userConfigRoot === '/managed' ? [] : [row.relativePath], issues: [] }));
   mocks.bind.mockResolvedValue({ sessionId: 'task', workingDirectory: '/work', alreadyImported: false });
+});
+
+it('uses a stable code when the provider or home is unavailable', () => {
+  mocks.plugin.mockReturnValue(undefined);
+  expect(() => scanCodexTaskImport()).toThrow('codex-import-unavailable:');
+  mocks.plugin.mockReturnValue({ capabilities: { sessionBundle: { configRoot: {} } } });
+  mocks.home.mockReturnValue(undefined);
+  expect(() => scanCodexTaskImport()).toThrow('codex-import-unavailable:');
+});
+
+it('rejects invalid selections and an unavailable index with codes', async () => {
+  await expect(importCodexTasks(null as never)).rejects.toThrow('codex-import-selection-required:');
+  mocks.scan.mockResolvedValue({ status: 'unavailable', rows: [] });
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-index-unreadable:');
+});
+
+it('does not replace the active import when a second request arrives', async () => {
+  let release!: () => void;
+  mocks.root.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  const active = importCodexTasks([{ id: 'one', revision: 'r1' }]);
+  try {
+    await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-busy:');
+  } finally { release(); }
+  await active;
+});
+
+it('reports changes before copying and during validation with distinct codes', async () => {
+  mocks.plan.mockResolvedValueOnce({ paths: [], issues: ['changed'] });
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-source-changed:');
+  mocks.append.mockImplementationOnce(async (_home, _paths, options) => {
+    mocks.scan.mockResolvedValueOnce({ status: 'ready', rows: [{ ...row, revision: 'r2' }] });
+    return options.validate('/staged');
+  });
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-copy-changed:');
+  expect(mocks.bind).not.toHaveBeenCalled();
+});
+
+it('keeps the failed task filename in the result and the original error and path in the log', async () => {
+  const error = new Error('EACCES /private/project');
+  mocks.bind.mockRejectedValueOnce(error);
+  const result = await importCodexTasks([{ id: 'one', revision: 'r1' }]);
+  expect(result.items).toEqual([{ id: 'one', status: 'failed', message: 'codex-import-task-failed:one.jsonl' }]);
+  expect(mocks.warn).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ error, filePath: '/managed/sessions/one.jsonl', sourceRoot: '/source' }));
+});
+
+it('logs unexpected host errors and returns a coded failure without their path', async () => {
+  const error = new Error('EACCES /private/source');
+  mocks.verify.mockRejectedValueOnce(error);
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow(/^codex-import-task-failed:$/);
+  expect(mocks.warn).toHaveBeenCalledWith(expect.any(String), { error, sourceRoot: '/source' });
+});
+
+it('preserves a known project failure so settings can show its localized reason', async () => {
+  mocks.bind.mockRejectedValueOnce(new Error('project-not-git:work'));
+  expect((await importCodexTasks([{ id: 'one', revision: 'r1' }])).items).toEqual([
+    { id: 'one', status: 'failed', message: 'project-not-git:work' },
+  ]);
 });
 
 it('plans, stages, verifies the native managed path, then binds a resumable chat task', async () => {
@@ -63,10 +123,10 @@ it('puts archived ancestor segments in the same bundle without binding them as t
 
 it('never binds when native preparation or managed metadata validation fails', async () => {
   mocks.prepare.mockRejectedValueOnce(new Error('native read failed'));
-  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('native read failed');
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-task-failed:');
   expect(mocks.bind).not.toHaveBeenCalled();
   mocks.verify.mockRejectedValueOnce(new Error('wrong metadata'));
-  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('wrong metadata');
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-task-failed:');
   expect(mocks.bind).not.toHaveBeenCalled();
 });
 

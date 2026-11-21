@@ -1,7 +1,7 @@
 import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
-import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/chatRowDerivations'
+import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { useStableHandler } from '@/hooks/useStableHandler'
@@ -23,7 +23,6 @@ import { useAssistantShell } from '../session/renderer/features/assistant/assist
 import { isDuplicateAssistantChat } from '../lib/assistantChatList'
 import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
-import { useAuth } from '../store/auth'
 import { ChatRowContextMenu } from './chat/ChatRowContextMenu'
 import { warmRowAuthority } from './chat/useGroupChatSettings'
 import { chatPreviewText } from '../lib/systemNoticeText'
@@ -61,6 +60,8 @@ import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
 import { chatListShortcutFor, nextChatId } from './chat-list-keyboard-nav'
+import { useUnavailableProjects } from '@/lib/projectRecovery'
+import { ProjectRecoverySubtitle } from './projects/ProjectRecoverySubtitle'
 
 const chatListLog = rendererLogger('chat/list')
 
@@ -297,12 +298,14 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
   const shownName = useShownAgentName({ name: displayName, createdAt: isAgentChat ? peerIdentity?.created_at ?? undefined : undefined })
   const preview = chatPreviewText(chat)
   const newsDot = callsOnly && oneListNewsDot(chat, unreadCount)
+  const unavailable = useUnavailableProjects(!mobile).projects.find(project => project.chatId === chat.id)
 
   return (
     <>
       <ListRow
         data-chat-id={chat.id}
         data-chat-row={chat.id}
+        data-unavailable-project={unavailable?.id}
         draggable={!mobile && !noDrag}
         onDragStart={noDrag ? undefined : (event) => startChatDrag(event, chat, displayName)}
         onDragEnd={noDrag ? undefined : clearDraggedScreenContent}
@@ -320,7 +323,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         tabIndex={tabIndex}
         onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
         onFocus={() => actions.focus(chat.id)}
-        onKeyDown={(event) => actions.keyDown(event, chat)}
+        onKeyDown={(event) => { if (event.target === event.currentTarget) actions.keyDown(event, chat) }}
         onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
         {...(mobile ? longPress : {})}
         leading={
@@ -366,7 +369,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           </span>
         )}
         subtitle={
-          draft ? (
+          unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : draft ? (
             <>
               {pinnedHome !== undefined && `${pinnedHome} · `}
               <span style={{ color: 'var(--color-draft)' }}>{t('chatList.draft')}</span>
@@ -549,7 +552,6 @@ export function ChatListPanel({
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
-  const { user } = useAuth()
   const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
@@ -638,7 +640,6 @@ export function ChatListPanel({
   const isListed = (chat: ChatItem) =>
     (hasSearchQuery || visibleIds.has(chat.id)) &&
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
-      && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
       && (agentHomes ? oneListShows(chat, listedByActivity(chat), agentHomes, isOwnedAgentPeer)
         : (!mobile || chat.kind !== 'topic') && listedByActivity(chat))
@@ -664,7 +665,7 @@ export function ChatListPanel({
     // isListed / matchesSearch 都是每次渲染新建的闭包,进依赖数组等于不缓存;
     // 它们的输入(chats / 搜索词 / 草稿 / 当前会话)已经在下面列全了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, shownAsLead, mobile, agentHomes, inSidebar, user?.id, identitiesById, agentStatuses])
+  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, shownAsLead, mobile, agentHomes, inSidebar])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
   // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []

@@ -90,8 +90,8 @@ describe('SessionStartFailedView — the model needs a membership', () => {
 
     const text = container!.textContent ?? '';
     // 要会员的是咕咕提供的那一个:名字照模型按钮的叫法带「咕咕」,❌ 裸名(用户自己的同名模型不用会员)。
-    expect(text).toContain('Gugu GLM-5.3 needs a membership');
-    expect(text).not.toContain('没能启动');
+    expect(text).toContain('Gugu GLM-5.3 requires a membership');
+    expect(text).not.toContain('无法启动');
     expect(text).not.toMatch(/could not start/i);
     expect(text).not.toContain('ModelAccessHttpError');
     expect(text).not.toContain('gugu-models');
@@ -113,12 +113,12 @@ describe('SessionStartFailedView — the model needs a membership', () => {
     await render(<SessionStartFailedView failure={failure} onRetry={() => {}} providerId="codex" />);
 
     const detail = container!.querySelector('[data-testid="session-start-failure-detail"]')?.textContent ?? '';
-    expect(detail).toBe('This Gugu model needs a membership. Switch models, or get a membership, then resend.');
-    expect(detail).not.toContain('没能启动');
+    expect(detail).toBe('This Gugu model requires a membership. Switch models or get a membership, then resend.');
+    expect(detail).not.toContain('无法启动');
   });
 
-  // #7103 咕咕这一侧没说清原因的内部故障:一句「咕咕这边出错了」+ 重试,原文只进日志。
-  it('says "something went wrong on Gugu\'s side" for a Gugu-side failure without a spoken reason', async () => {
+  // #7103 咕咕这一侧没说清原因的内部故障:一句「咕咕服务出错」+ 重试,原文只进日志。
+  it('says "the Gugu service returned an error" for a Gugu-side failure without a spoken reason', async () => {
     const onRetry = vi.fn();
     await render(
       <SessionStartFailedView
@@ -130,7 +130,7 @@ describe('SessionStartFailedView — the model needs a membership', () => {
     );
     expect(container!.querySelector('[data-reason="service-unavailable"]')).not.toBeNull();
     const detail = container!.querySelector('[data-testid="session-start-failure-detail"]')?.textContent ?? '';
-    expect(detail).toBe("Something went wrong on Gugu's side.");
+    expect(detail).toBe('The Gugu service returned an error.');
     expect(container!.textContent).not.toContain('gugu-models');
     expect(container!.querySelector('[data-testid="session-start-switch-model"]')).toBeNull();
     act(() => button('session-start-retry').click());

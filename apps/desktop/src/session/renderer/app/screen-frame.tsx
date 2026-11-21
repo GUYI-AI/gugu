@@ -5,7 +5,7 @@ import { useGroupRef } from 'react-resizable-panels';
 import { Settings, X } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { observeGroupParticipantWidth } from '@renderer/features/chats/group-participant-width';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
@@ -18,9 +18,7 @@ import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, setGroupLayout } from '@renderer/lib/ui/resizable';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { followLink } from '@/lib/guguLinks';
-import { cn } from '@renderer/utils/utils';
 import {
-  blockDropPreview,
   closeScreenBlock,
   dropOnScreen,
   focusScreenBlock,
@@ -310,7 +308,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
             isFocusedPane={focused}
             label={label}
             title={tooltip}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={takeAway}
           />
@@ -330,7 +328,6 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {
   const { translate } = useSessionMessages();
   const { chatId, tabKind, itemId, title } = content;
-  const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const slot = `screen:${blockId}`;
   const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, slot), itemId && !installedExtensionsStore.isChatFile(tabKind, title) ? title : (installedExtensionsStore.tabTitle(tabKind) ?? title));
   const corners = screenLayout.corners(blockId);
@@ -361,7 +358,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
             isFocusedPane={screenLayout.focusedBlockId === blockId}
             label={label}
             title={tooltip}
-            preSlot={<ExtensionMark iconDataUrl={contribution?.iconDataUrl} />}
+            preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={putBack}
           />
@@ -453,82 +450,6 @@ export function CloseBlockButton({ blockId }: { blockId: string }) {
     >
       <X className="size-3.5" />
     </button>
-  );
-}
-
-/** 拖到一块边上时画出来的那一半:松手前就看得到新的一块会落在哪。 */
-export const BlockDropPreviewLayer = observer(function BlockDropPreviewLayer() {
-  const drop = blockDropPreview.get();
-  if (!drop) return null;
-  if ('mention' in drop) return <MentionDropPreview blockId={drop.blockId} sessionId={drop.mention.sessionId} />;
-  if ('paneId' in drop) return <PaneDropPreview blockId={drop.blockId} paneId={drop.paneId} strip={drop.strip} />;
-  const anchor = blockAnchorName(drop.blockId);
-  const half: Record<string, string> =
-    drop.edge === 'left'
-      ? { left: 'anchor(left)', right: 'anchor(center)', top: 'anchor(top)', bottom: 'anchor(bottom)' }
-      : drop.edge === 'right'
-        ? { left: 'anchor(center)', right: 'anchor(right)', top: 'anchor(top)', bottom: 'anchor(bottom)' }
-        : drop.edge === 'top'
-          ? { left: 'anchor(left)', right: 'anchor(right)', top: 'anchor(top)', bottom: 'anchor(center)' }
-          : { left: 'anchor(left)', right: 'anchor(right)', top: 'anchor(center)', bottom: 'anchor(bottom)' };
-  return (
-    <div
-      className={cn('pointer-events-none z-40 rounded-[var(--radius-control)] border border-foreground/20 bg-foreground/10')}
-      style={{ position: 'absolute', positionAnchor: anchor, ...half } as CSSProperties}
-      data-block-drop-preview={drop.edge}
-    />
-  );
-});
-
-/**
- * App 落进一条会话的某一格:整格罩一层(同格子里拖页签进来时那一层);落在页签条上 = 一根竖线标出插到哪
- * (同一条会话里拖页签时那根,见 draggable-tab.tsx 的 DropIndicator)。
- */
-function PaneDropPreview({ blockId, paneId, strip }: { blockId: string; paneId: string; strip?: { before: string | null } }) {
-  const cell = document.querySelector<HTMLElement>(`[data-screen-page="${CSS.escape(blockId)}"] [data-pane-cell="${CSS.escape(paneId)}"]`);
-  const rect = cell?.getBoundingClientRect();
-  if (!cell || !rect) return null;
-  if (strip) {
-    const slots = [...cell.querySelectorAll<HTMLElement>('.session-tab-bar .session-tab-slot')];
-    const before = strip.before ? cell.querySelector<HTMLElement>(`[data-tabid="${CSS.escape(strip.before)}"]`)?.closest<HTMLElement>('.session-tab-slot') : null;
-    const ref = before ?? slots.at(-1);
-    const box = ref?.getBoundingClientRect();
-    if (!box) return null;
-    return (
-      <div
-        className="pointer-events-none fixed z-40 w-0.5 bg-foreground"
-        style={{ left: (before ? box.left : box.right) - 1, top: box.top + 4, height: box.height - 8 }}
-        data-pane-drop-preview={paneId}
-        data-pane-drop-before={strip.before ?? 'end'}
-      />
-    );
-  }
-  return (
-    <div
-      className="pointer-events-none fixed z-40 rounded-[var(--radius-control)] border border-foreground/20 bg-foreground/10"
-      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
-      data-pane-drop-preview={paneId}
-    />
-  );
-}
-
-/**
- * 插 @ 的落点:罩住那枚 @ 会落进去的地方 —— 聊天是输入框,终端就是终端本身(同分块落点那一层)。
- * 指针在聊天记录上也罩输入框:松手的结果是输入框里多一枚 @,画的就是结果。
- */
-function MentionDropPreview({ blockId, sessionId }: { blockId: string; sessionId: string }) {
-  const surface = document.querySelector<HTMLElement>(
-    `[data-screen-page="${CSS.escape(blockId)}"] [data-session-chat-surface][data-session-chat-session-id="${CSS.escape(sessionId)}"]`
-  );
-  const target = surface?.querySelector<HTMLElement>('[data-slot="composer-bar"]') ?? surface;
-  const rect = target?.getBoundingClientRect();
-  if (!target || !rect) return null;
-  return (
-    <div
-      className="pointer-events-none fixed z-40 border border-foreground/20 bg-foreground/10"
-      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height, borderRadius: getComputedStyle(target).borderRadius }}
-      data-mention-drop-preview={sessionId}
-    />
   );
 }
 

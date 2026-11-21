@@ -1,3 +1,4 @@
+/** Sources with stored read-only history. Only Cursor still imports; 'chatgpt' rows came from the retired export-file import. */
 export type ExternalImportSource = 'chatgpt' | 'cursor'
 
 export interface ExternalMessage {
@@ -22,7 +23,6 @@ export interface ExternalImportHistoryEntry {
 export interface ExternalImportScan {
   count: number
   pending: boolean
-  needsSource?: true
 }
 
 export interface ExternalImportPage {
@@ -41,7 +41,6 @@ export interface ExternalImportBatch {
 
 export const externalImportChannels = {
   scan: 'external-history:scan',
-  pick: 'external-history:pick',
   start: 'external-history:start',
   next: 'external-history:next',
   cancel: 'external-history:cancel',

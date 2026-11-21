@@ -9,10 +9,10 @@ export function createPhoneModelAccess(cloud, store, warn) {
   }
   const resolve = async (requested) => {
     const models = await catalog(true)
-    if (requested && !requested.startsWith('platform:')) throw new Error('手机宿主当前只支持咕咕平台模型，请传 session_list_models 返回的 platform: 模型编号')
+    if (requested && !requested.startsWith('platform:')) throw new Error('The phone host supports only Gugu platform models; pass a platform: model id returned by session_list_models')
     const id = requested?.slice('platform:'.length)
     const found = id ? models.find((item) => item.id === id) : models.find((item) => !item.requires_membership)
-    if (!found) throw new Error(id ? `手机 Agent 不支持平台模型 ${id}` : '没有可供手机 Agent 使用的平台模型')
+    if (!found) throw new Error(id ? `Phone agents do not support platform model ${id}` : 'No platform model is available to phone agents')
     return found.id
   }
   const settle = async (id) => {

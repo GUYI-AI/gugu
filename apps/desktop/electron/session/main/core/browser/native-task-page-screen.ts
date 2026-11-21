@@ -7,6 +7,7 @@ import type { TaskPageScreenTarget, TaskPageScreenFrame } from '../../../../serv
 import { acquireBrowserPage, type BrowserPageLease } from './browser-page-runtime';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { browserPageFeedback, browserFrameFeedback, type BrowserPageFeedback } from '@shared/browser-page-feedback';
+import { extensionPresentation } from '../extensions/extension-bridge';
 
 /** A person's existing desktop tab watched from their phone; its native layout and owner stay in place. */
 class NativeTaskPageScreen extends EventEmitter implements TaskPageScreenTarget {
@@ -17,7 +18,7 @@ class NativeTaskPageScreen extends EventEmitter implements TaskPageScreenTarget 
   private readonly changed = () => this.emit('state');
   private readonly destroyed = () => this.emit('destroyed');
 
-  constructor(private readonly page: WebContents) { super(); this.feedback = browserPageFeedback(page); }
+  constructor(private readonly page: WebContents) { super(); this.feedback = browserPageFeedback(page, () => extensionPresentation().locale); }
 
   async startScreen(publish: (frame: TaskPageScreenFrame) => void): Promise<void> {
     await this.stopScreen();

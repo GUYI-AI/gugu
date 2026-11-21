@@ -73,7 +73,7 @@ it('ends the wait for discussion, without fabricating answers or consent', async
   expect(text).not.toContain('"answers"')
   expect(text).toContain('this question is no longer waiting for answers')
   expect(text).toContain('is not consent')
-  expect(readQuestionAnswerDelivery(text)).toEqual({ answer: '先聊聊' })
+  expect(readQuestionAnswerDelivery(text)).toEqual({ answer: '先讨论' })
 })
 
 it('records a failed answer handoff instead of claiming it was delivered', async () => {

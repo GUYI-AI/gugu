@@ -10,14 +10,20 @@ import { dicebearAvatarDataUri } from '../../../../apps/desktop/src/lib/dicebear
 
 const drawnFrom: string[] = []
 let broken = new Set<string>()
+/** Addresses whose picture never finishes loading (a stalled request). */
+let hung = new Set<string>()
 class FakeImage {
   crossOrigin: string | null = null
-  src = ''
   naturalWidth = 460
   naturalHeight = 300
-  decode() {
-    drawnFrom.push(this.src)
-    return broken.has(this.src) ? Promise.reject(new Error('EncodingError')) : Promise.resolve()
+  onload: (() => void) | null = null
+  onerror: (() => void) | null = null
+  #src = ''
+  get src() { return this.#src }
+  set src(value: string) {
+    this.#src = value
+    drawnFrom.push(value)
+    queueMicrotask(() => { if (!hung.has(value)) (broken.has(value) ? this.onerror : this.onload)?.() })
   }
 }
 const drawImage = vi.fn()
@@ -29,6 +35,7 @@ beforeEach(() => {
   publishIdentityDirectory({ [ID]: { id: ID, type: 'human', avatar: null } as DisplayIdentity }, () => {})
   drawnFrom.length = 0
   broken = new Set()
+  hung = new Set()
   drawImage.mockClear()
   vi.stubGlobal('Image', FakeImage)
   vi.spyOn(document, 'createElement').mockImplementation(((tag: string) =>
@@ -38,12 +45,18 @@ beforeEach(() => {
   vi.resetModules()
 })
 afterEach(() => {
+  vi.useRealTimers()
   delete document.documentElement.dataset.theme
   publishIdentityDirectory(null, null)
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
+// The suite sets no per-test timeout (vitest.config.ts testTimeout: 0): a promise that never settles must fail, not hang.
+const settledNow = async <T>(face: Promise<T>) => {
+  await vi.advanceTimersByTimeAsync(0)
+  return Promise.race([face, Promise.resolve('pending' as const)])
+}
 const load = () => import('../../../../apps/desktop/src/lib/memberFaces')
 const ID = '0a000000-0000-4000-8000-00000000000a'
 const UPLOAD = 'https://devdb.invalid/storage/v1/object/public/avatars/a-1.png'
@@ -86,6 +99,19 @@ describe('members[].avatar: the face the host draws, small', () => {
     await memberFaces([{ id: ID, avatar: UPLOAD }])
     expect(drawnFrom).toEqual([UPLOAD, UPLOAD])
   })
+  it('a draw that never finishes is given up on and not kept: the next face asked for is drawn again', async () => {
+    vi.useFakeTimers()
+    hung.add(UPLOAD)
+    const { memberFace } = await load()
+    const first = memberFace(ID, UPLOAD)
+    expect(memberFace(ID, UPLOAD), 'while it is pending, the same draw is shared').toBe(first)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(await settledNow(first)).toBeNull()
+    hung.delete(UPLOAD)
+    expect(await settledNow(memberFace(ID, UPLOAD))).toBe('data:image/webp;q=0.8')
+    expect(drawnFrom).toEqual([UPLOAD, UPLOAD])
+  })
+
   it('agent defaults remain the official SVG, including a pre-existing built-in URL', async () => {
     publishIdentityDirectory({ [ID]: { id: ID, type: 'agent', avatar: null } as DisplayIdentity }, () => {})
     const { memberFace } = await load()

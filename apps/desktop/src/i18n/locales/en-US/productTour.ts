@@ -5,8 +5,8 @@ export default {
   "previous": "Back",
   "next": "Next",
   "done": "Done",
-  "saveFailed": "Couldn't save tour progress. Try again.",
-  "featureHeader": "Three useful features to revisit",
+  "saveFailed": "Could not save tour progress. Try again.",
+  "featureHeader": "Three common features",
   "featuresProgress": "Feature films ({{current}}/{{total}})",
   "filmProgress": "Film progress",
   "featureSteps": "Feature film steps",
@@ -14,16 +14,16 @@ export default {
   "pause": "Pause",
   "replay": "Replay",
   "retry": "Retry",
-  "filmFailed": "The film can't play right now. Try again.",
+  "filmFailed": "The film cannot play right now. Try again.",
   "close": "Close",
   "steps": {
     "assistant": {
       "title": "Gugu: your assistant",
-      "body": "Tell it your plans and errands."
+      "body": "Tell it your schedule and to-dos directly."
     },
     "tasks": {
       "title": "Create agent",
-      "body": "Write one line of what you need and you have one more agent. It shows up in the list on the left."
+      "body": "Describe what you need in one line to create an agent. New agents appear in the list on the left."
     },
     "tasksSample": {
       "title": "Groups: one thing at a time",
@@ -31,15 +31,15 @@ export default {
     },
     "chats": {
       "title": "Chats",
-      "body": "Agents, groups and people are all in this one list, latest activity first. Whatever needs you gets a red number."
+      "body": "Agents, groups and contacts appear in one list, sorted by latest activity. Items that need you show a red number."
     },
     "contacts": {
       "title": "Contacts: find collaborators",
-      "body": "Add someone as a contact to work together."
+      "body": "Search for someone and add them as a contact to collaborate."
     },
     "apps": {
-      "title": "Marketplace: find tools for your agents",
-      "body": "Add an app and your agent can do more, like using your computer."
+      "title": "Marketplace: extend your agents",
+      "body": "Install apps to extend what your agents can do, such as operating your computer."
     },
     "settings": {
       "title": "Settings: credits and preferences",
@@ -72,7 +72,7 @@ export default {
         "0": "Open Add contact",
         "1": "Enter a name, email, or Gugu ID",
         "2": "Check the search result and choose Add",
-        "3": "Write a short introduction",
+        "3": "Write a note stating who you are",
         "4": "Send the request and wait for acceptance"
       }
     },

@@ -14,7 +14,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@renderer/lib/ui/dropdown-menu';
@@ -631,9 +630,7 @@ function AttachButton({
     <DropdownMenu>
       <DropdownMenuTrigger render={button} />
       <DropdownMenuContent side="top" align="end" className="w-auto max-w-80 min-w-48" onClick={(event) => event.stopPropagation()}>
-        {/* 分组标题只能在 Group 里(Base UI):少了这一层,点开菜单整页崩(#7341 实机撞过)。 */}
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{heading}</DropdownMenuLabel>
+        <DropdownMenuGroup label={heading}>
           {machines.map((machine) => (
             <DropdownMenuItem
               key={machine.id ?? 'this-computer'}

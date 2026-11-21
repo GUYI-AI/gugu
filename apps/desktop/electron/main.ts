@@ -117,7 +117,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
-import { buildProbePlatformCredentials } from './harness-catalog-probe-env'
+import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
@@ -151,7 +151,7 @@ import { createUpdateState, type VersionedUpdateState } from '../shared/update-s
 import { createBuiltRendererRootResolver } from './rendererRoot'
 import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
 import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
-import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity, watchHostResumeGap } from './server/account-resume-wiring'
+import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
 import { runDueScheduledTasksForOwner } from './scheduled-tasks-runner'
 import { handOffLegacyWechat } from './wechat/handoff'
@@ -230,6 +230,7 @@ import {
   type AgentRosterRemovalReason,
 } from '@gugu/core/local/agent/deviceCommandRuntime'
 import {
+  agentsWithInbox,
   discloseInboxRowsFailed,
   DisclosedFailure,
   kickAgentInboxPull,
@@ -444,6 +445,7 @@ import {
   createDesktopGuguMcpHost,
   setSessionExtensionCatalog,
   type AcpMcpServer,
+  type BuildSocialBridgeDeps,
   type DesktopGuguMcpHost,
 } from './acp-engine-utils'
 import { GUGU_PLATFORM_BLOCK, buildSessionpageGroupContextBlock } from './product-platform-prompt'
@@ -574,7 +576,6 @@ import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
 import { menuOpenSettingsChannel } from '@shared/events/appEvents'
 import { pinDesktopPointerMedia } from './linux-pointer-media'
-import { enableOverlayScrollbars } from './windows-overlay-scrollbars'
 import {
   NOTIFICATION_BUS_NAME,
   PROBE_TIMEOUT_MS,
@@ -717,9 +718,6 @@ if (process.env.GUGU_FAKE_MICROPHONE_FILE?.trim() && !app.isPackaged) {
 // pointer:none,Tailwind 的整块 hover 样式随之失效(置顶 / 归档等 hover 浮出按钮全灭)。command-line
 // 开关必须在 app ready 前追加,所以与上面的 CDP 端口放在一起。细节与真机读数见 linux-pointer-media.ts。
 pinDesktopPointerMedia(app.commandLine)
-// @@@win-overlay-scrollbar Windows 上让 Chromium 画悬浮滚动条(会话页树的 scrollbar-width: thin 默认是常驻带箭头的 10px 经典条)。
-// 同样必须在 app ready 前追加;`enable-features` 只在这一处写,细节见 windows-overlay-scrollbars.ts。
-enableOverlayScrollbars(app.commandLine)
 forwardWindowSeen()
 // @@@devtools-lock — 必须在任何窗口创建之前注册 'web-contents-created',否则主窗口漏在守卫外面。
 installDevtoolsLock((url) => {
@@ -2284,7 +2282,7 @@ const heartbeatRowSources = {
   // 会话摘要随心跳上云:机器离线后手机就只剩它可读了(product spec 的验收)。
   // 经桥拿,与设备 RPC 同一条规矩。桥没起来就报空 —— 那时这台机器上确实一条会话页会话
   // 都还没有,❌ 不为此把心跳判失败(心跳是 presence 的唯一写者,拿主要的换次要的)。
-  sessionDigest: () => loadEmdashBridge()?.sessionpageSessionDigest?.() ?? [],
+  sessionDigest: (limit: number) => loadEmdashBridge()?.sessionpageSessionDigest?.(limit) ?? [],
   // #7199 第二步:这台电脑能被调用的动作随心跳登记(没授权的也登记、标不可用)。
   deviceActions: () => deviceActionsRuntime().capability(),
 }
@@ -2544,6 +2542,25 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
 })
+/**
+ * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same
+ * file resolver and publisher, uploads and session actions, so no surface loses a tool another has.
+ */
+function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction']): BuildSocialBridgeDeps {
+  return {
+    host,
+    resolveFile: desktopFiles.resolve,
+    publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
+    attachments: attachmentUploads,
+    grantKey: sessionpageSurfaceKey(sessionId),
+    nativeSessionId: sessionId,
+    runHostAction: runAction,
+    runSessionAction: runAction,
+    // @@@2374 No auth: writing files and installing Apps call no cloud API for the person. Without the bridge this leg
+    // is not wired, so gugu_session's app_* actions fail when called rather than look usable.
+    ...(emdashBridge ? { runExtensionAction: extensionActionsFor(sessionId) } : {}),
+  }
+}
 registerNativeFileIpc(ipcMain, nativeFiles, error => createLogger('files').warn({ error: String(error) }, 'Native file operation failed'))
 app.on('will-quit', () => { attachmentUploads.dispose(); void nativeFiles.drop().catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed')) })
 
@@ -3829,8 +3846,8 @@ function crossMachine(): CrossMachineSessions {
     lookupAgents: async ({ userIds, numbers }) => {
       const auth = await requireAuth()
       const query = (column: 'id' | 'gugu_number', values: Array<string | number>) => makeIdentityClient(auth.accessToken)
-        .from('active_users').select('id, device_id, gugu_number')
-        .eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
+        .from('users').select('id, device_id, gugu_number')
+        .is('removed_at', null).eq('type', 'agent').eq('owner_user_id', auth.userId).in(column, values)
       const results = await Promise.all([userIds.length ? query('id', userIds) : null, numbers.length ? query('gugu_number', numbers) : null])
       return results.flatMap((result) => {
         if (result?.error) throw new Error(`agent identity lookup failed: ${result.error.message}`)
@@ -3953,6 +3970,11 @@ if (inheritedOwnerTimeZone) applyOwnerTimeZoneContext(inheritedOwnerTimeZone)
 
 const resumeAccountMessaging = createAccountResumeHandler({
   kickInbox: kickInboxForAgent,
+  agentsWithInbox: async (agentUserIds) => {
+    const auth = await authProvider?.getAuth()
+    if (!auth?.accessToken) throw new Error('host-resume: the roster inbox cannot be read while signed out')
+    return agentsWithInbox(agentUserIds, auth.accessToken)
+  },
   reconnect: resumeElectronSupabaseRealtime,
   reconcile: async () => { await reconcileSessionpagePlatformOnResume?.() },
   notifyCommands: () => deviceRuntimeHost?.notifyCommandsChanged(),
@@ -4142,7 +4164,7 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
 ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unknown, remoteCard?: unknown) => {
   const auth = await authProvider?.getAuth()
   if (!auth?.accessToken || !auth.userId) {
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // #6264 会话在别的机器上:名片由那台机器答过了(绑定记在那台机器上),这里只负责画;null = 那台机器说它还没有身份。
@@ -4154,7 +4176,7 @@ ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unkn
   )
   if (!card) {
     // 点了必须有反应:说明为什么不能分享,而不是一个点下去毫无动静的入口(实机反馈「点击没反应」)。
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // 分享浮层里要摆会话 id(#6093),而名片本身是「会话 → agent」的答案,不带问题那一半 —— 这里补上。
@@ -4214,13 +4236,13 @@ async function applyAgentModelSelectionOnDevice(input: {
   } catch (error) {
     // 交接窗口里的结构歧义（两个认领者）：默认已落下，活会话这一步说不清该动哪条 —— 响亮报，❌ 不猜。
     throw new Error(
-      `模型默认已更新，但此刻分不出该 Agent 的活会话（${error instanceof Error ? error.message : String(error)}）；`
-      + '请稍后再试一次。',
+      `模型默认已更新，但暂时无法确定该 Agent 的当前会话（${error instanceof Error ? error.message : String(error)}）；`
+      + '请稍后重试。',
     )
   }
   if (!sessionId) return { applied: 'next-session' }
   const emdash = loadEmdashBridge()
-  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，活会话没能切换')
+  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，当前会话未能切换')
   const outcome = await emdash.applyEmdashSessionModelSelection({
     sessionId,
     selection: input.selection,
@@ -4556,6 +4578,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
+    emdashBridge.setNativeHistoryProviderResolver(buildNativeHistoryProbeCredentials)
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)
@@ -4949,15 +4972,14 @@ app.whenReady().then(async () => {
           const sender = await senderBinding(context, auth.userId)
           if (!sender.guguAgentUserId || !auth.accessToken) throw new Error('Session file handoff requires an Agent identity')
           const caller = await remoteCaller(auth, context)
-          const remotePeers = new Map<string, Array<Record<string, unknown>>>()
           const recipients: string[] = []
           for (const target of targets) {
             let agentId: string | null = target.agentId ?? null
             if (agentId) { recipients.push(agentId); continue }
             if (!target.deviceId) agentId = await guguAgentUserIdForSession(target.sessionId, process.env)
             else {
-              if (!remotePeers.has(target.deviceId)) remotePeers.set(target.deviceId, await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers' }, signal) as Array<Record<string, unknown>>)
-              const peer = remotePeers.get(target.deviceId)!.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
+              const peers = await crossMachine().runOnDevice(target.deviceId, caller, { action: 'peers', session_id: target.sessionId }, signal) as Array<Record<string, unknown>>
+              const peer = peers.find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
               const identity = peer?.identity as { users?: { id?: string } } | undefined
               agentId = typeof peer?.agentUserId === 'string' ? peer.agentUserId : typeof peer?.agent_user_id === 'string' ? peer.agent_user_id.replace(/^user:/, '') : identity?.users?.id ?? null
             }
@@ -5156,7 +5178,7 @@ app.whenReady().then(async () => {
       if (record.action === 'children') {
         if (elsewhere) await crossMachine().deviceOfSession(sessionId, await remoteCaller(auth, context), signal)
         const local = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal)
+        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal, record.metadata_only === true)
       }
       if (['get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel'].includes(String(record.action)) && elsewhere) {
         return crossMachine().runOnSession(sessionId, await remoteCaller(auth, context), record as { action: string }, signal)
@@ -5169,7 +5191,7 @@ app.whenReady().then(async () => {
       if (!auth?.accessToken || !auth.userId) throw new CrossMachineError('host_not_signed_in', 'that machine is not signed in to 咕咕')
       const signal = new AbortController().signal
       return crossMachine().answer(name, caller, action, {
-        peers: () => localSessionPeers(emdash, auth),
+        peers: (sessionId) => localSessionPeers(emdash, auth, sessionId),
         // app_install { device } from another machine: installed here the way a card's package is — fetched and checked
         // here (L4 10-02); the same dispatcher as this machine's app_*. D-31: that machine asks the person, as its agent's
         // approval — `consent` says hand back the ask, or install the bytes they agreed to.
@@ -5704,21 +5726,8 @@ app.whenReady().then(async () => {
                 forkSource.agentUserId,
               ),
             },
-            socialBridgeDeps: {
-              host: primaryGuguMcpHost,
-              resolveFile: desktopFiles.resolve,
-              publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
-              attachments: attachmentUploads,
-              // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
-              grantKey: sessionpageSurfaceKey(info.sessionId),
-              nativeSessionId: info.sessionId,
-              runHostAction: runAction,
-              runSessionAction: runAction,
-              forkOf: forkSource.forkOf,
-              ...(emdashBridge
-                ? { runExtensionAction: extensionActionsFor(info.sessionId) }
-                : {}),
-            },
+            // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
+            socialBridgeDeps: { ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction), forkOf: forkSource.forkOf },
           })
           const forkCapabilities = loadSessionAcpCapabilities(info.providerId, forkBundle, {
             cwd: info.cwd,
@@ -5979,25 +5988,13 @@ app.whenReady().then(async () => {
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
           model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
-            host: primaryGuguMcpHost,
-            resolveFile: desktopFiles.resolve,
-            publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
-            attachments: attachmentUploads,
-            grantKey: sessionpageSurfaceKey(info.sessionId),
-            nativeSessionId: info.sessionId,
+            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction),
+            ownerReadsSession: true,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, assistantHomeKind(process.env), provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
             } } : {}),
             ...(readAssistantResources ? { readAssistantResources } : {}),
-            runHostAction: runAction,
-            runSessionAction: runAction,
-            // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
-            // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
-            // ❌ 不给一个看起来能用却调不通的动作。
-            ...(emdashBridge
-              ? { runExtensionAction: extensionActionsFor(info.sessionId) }
-              : {}),
           },
         })
         injectMark('session-bundle-built')
@@ -6131,20 +6128,7 @@ app.whenReady().then(async () => {
       },
       socialBridge(info, host) {
         const sessionContext = ptySessionCallerContext(info)
-        const runAction = (action: unknown, auth: RuntimeAuth, signal: AbortSignal) =>
-          runLocalSessionAction(auth, sessionContext, action, signal)
-        return {
-          host,
-          attachments: attachmentUploads,
-          grantKey: sessionpageSurfaceKey(info.sessionId),
-          nativeSessionId: info.sessionId,
-          runHostAction: runAction,
-          runSessionAction: runAction,
-          // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
-          // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
-          // ❌ 不给一个看起来能用却调不通的动作。
-          ...(emdashBridge ? { runExtensionAction: extensionActionsFor(info.sessionId) } : {}),
-        }
+        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal))
       },
       platformRecovery: () => sessionpagePlatformRecovery,
       recordFailedSessionDirectMessage(params, message, error) {
@@ -6406,6 +6390,13 @@ app.whenReady().then(async () => {
       .then(() => { adoptCloudTaskNames = adoptTaskNames; return adoptTaskNames() })
       .catch((error: unknown) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting task names failed'))
     refreshPlatformCredentials()
+    // The resource monitor switch is also the agents' grant to read it (ResourceMonitorSettingsPage): a monitor that was
+    // already on, from before that or from another start, gets the perf group connected here.
+    void emdashBoot.then(async () => {
+      if (!(await appSettingsService.get('resourceMonitor')).enabled || !deviceActionsRuntime().ungrantedGroup('perf.snapshot')) return
+      const result = await deviceActionsRuntime().connect('perf')
+      if (!result.ok) createLogger('device-actions').warn({ code: result.code, message: result.message }, 'could not connect perf for the running resource monitor')
+    }).catch((error: unknown) => createLogger('device-actions').warn({ error: String(error) }, 'could not connect perf for the running resource monitor'))
     // session-life signs in once the backend that owns it is up; later account changes come through the auth IPC.
     void emdashBoot.then(async () => {
       sessionLifeBooted = true
@@ -6507,8 +6498,6 @@ app.whenReady().then(async () => {
             (server) => createLogger('server').info({ socket: server.socketPath }, '账号进程套接字已开(设备连接 link 与 open-url 走它)'),
             (err: unknown) => createLogger('server').error({ err }, '账号进程套接字开不出来 —— 设备连接(link)与 open-url 不可用'),
           )
-          const stopResumeGapWatch = watchHostResumeGap(resumeAccountMessaging)
-          app.once('will-quit', stopResumeGapWatch)
           // 远程隧道:别的电脑经中转连到这里的终端 / 浏览器 / 端口(不挡启动,失败原因留给 tunnel.open 答)。
           ensureServerTunnelEndpoint()
         }

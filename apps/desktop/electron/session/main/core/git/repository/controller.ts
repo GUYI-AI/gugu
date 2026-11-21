@@ -34,11 +34,10 @@ export const gitRepositoryController = createRPCController({
   getRepoSnapshot: async (folderId: string): Promise<GitRepositorySnapshotResult> => {
     const opened = await openFolder(folderId);
     if (!opened.success) return err({ type: 'not_found' as const });
-    const folder = opened.data;
-    // gugu #2358: 非 git 文件夹无仓 —— git RPC 对其无意义(renderer store 已短路不调,此为防御)。
-    if (!folder.gitRepository) return err({ type: 'not_found' as const });
     try {
-      return ok(await folder.gitRepository.getSnapshot());
+      const repository = (await opened.data.git.open())?.repository;
+      if (!repository) return err({ type: 'not_found' as const });
+      return ok(await repository.getSnapshot());
     } catch (e) {
       return err({ type: 'git_error' as const, message: gitErrorMessage(e) });
     }
@@ -58,10 +57,10 @@ export const gitRepositoryController = createRPCController({
   getDefaultBranch: async (folderId: string) => {
     const opened = await openFolder(folderId);
     if (!opened.success) return err({ type: 'not_found' as const });
-    const folder = opened.data;
-    if (!folder.gitRepository) return err({ type: 'not_found' as const });
     try {
-      return ok({ defaultBranch: await folder.gitRepository.getDefaultBranch() });
+      const repository = (await opened.data.git.open())?.repository;
+      if (!repository) return err({ type: 'not_found' as const });
+      return ok({ defaultBranch: await repository.getDefaultBranch() });
     } catch (e) {
       return err({ type: 'git_error' as const, message: gitErrorMessage(e) });
     }
@@ -74,9 +73,9 @@ export const gitRepositoryController = createRPCController({
   addRemote: async (folderId: string, name: string, url: string) => {
     const opened = await openFolder(folderId);
     if (!opened.success) return err({ type: 'not_found' as const });
-    const folder = opened.data;
-    if (!folder.gitRepository) return err({ type: 'not_found' as const });
-    const result = await folder.gitRepository.addRemote(name, url);
+    const repository = (await opened.data.git.open())?.repository;
+    if (!repository) return err({ type: 'not_found' as const });
+    const result = await repository.addRemote(name, url);
     if (!result.success) return err(result.error);
     return ok();
   },
@@ -89,11 +88,9 @@ export const gitRepositoryController = createRPCController({
 
     let result;
     if (workspaceId) {
-      // gugu #2358: 非 git 工作区无 fetch 服务 → 回落到文件夹级 fetch(对非 git 亦返回空序列成功)。
-      result =
-        ws && ws.gitRepositoryFetchService
-          ? await ws.gitRepositoryFetchService.fetch()
-          : await folder.fetch();
+      // A workspace without Git falls back to the folder's fetch (an empty success when that has none either).
+      const fetch = (await ws?.git())?.fetch;
+      result = fetch ? await fetch.fetch() : await folder.fetch();
     } else {
       result = await folder.fetch();
     }
@@ -111,9 +108,9 @@ export const gitRepositoryController = createRPCController({
   ) => {
     const opened = await openFolder(folderId);
     if (!opened.success) return err({ type: 'not_found' as const });
-    const folder = opened.data;
-    if (!folder.gitRepository) return err({ type: 'not_found' as const });
-    const result = await folder.gitRepository.publishBranch(branchName, remote);
+    const repository = (await opened.data.git.open())?.repository;
+    if (!repository) return err({ type: 'not_found' as const });
+    const result = await repository.publishBranch(branchName, remote);
     return result;
   },
 
@@ -126,10 +123,10 @@ export const gitRepositoryController = createRPCController({
   ) => {
     const opened = await openFolder(folderId);
     if (!opened.success) return err({ type: 'not_found' as const });
-    const folder = opened.data;
-    if (!folder.gitRepository) return err({ type: 'not_found' as const });
-    const baseRemote = await folder.gitRepository.getBaseRemote();
-    const result = await folder.gitRepository.fetchPrForReview(
+    const repository = (await opened.data.git.open())?.repository;
+    if (!repository) return err({ type: 'not_found' as const });
+    const baseRemote = await repository.getBaseRemote();
+    const result = await repository.fetchPrForReview(
       prNumber,
       headRefName,
       headRepositoryUrl,

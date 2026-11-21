@@ -9,7 +9,7 @@ vi.mock('@main/db/client', () => ({ get db() { return state.fixture!.db; } }));
 vi.mock('@main/core/provider-accounts/provider-account-registry-instance', () => ({ get providerAccountRegistry() { return state.fixture!.registry; } }));
 vi.mock('electron', () => ({ app: { getPath: () => state.home } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn() } }));
-const { createHarnessConnection, renameHarnessConnection, harnessHasConnections, listHarnessConnections, resolveHarnessConnection, selectHarnessConnection } = await import('./harness-connections');
+const { createHarnessConnection, removeHarnessConnection, renameHarnessConnection, harnessHasConnections, listHarnessConnections, resolveHarnessConnection, selectHarnessConnection } = await import('./harness-connections');
 const { listCustomModels } = await import('./custom-models');
 beforeEach(async () => { state.home = await mkdtemp(join(tmpdir(), 'gugu-vendor-account-')); state.fixture = await openRegistryFixture('empty'); });
 afterEach(async () => { state.fixture?.close(); state.fixture = null; await rm(state.home, { recursive: true, force: true }); });
@@ -58,4 +58,16 @@ it('does not recreate deleted connections when renaming', async () => {
   await state.fixture!.registry.upsertAccount({ providerId: 'harness:kilocode', accountId: 'removed', secret: 'fixture-secret', meta: { harnessConnection: { kind: 'api-key', removed: true } } });
   await expect(renameHarnessConnection({ providerId: 'kilocode', connectionId: 'removed', name: 'Recreated' })).rejects.toThrow('no longer exists');
   expect((await state.fixture!.registry.getAccount('harness:kilocode', 'removed'))?.meta?.harnessConnection?.removed).toBe(true);
+});
+it('removing a vendor-key connection drops its key from encrypted storage and a session bound to it stops at unavailable', async () => {
+  const saved = await createHarnessConnection({ providerId: 'kilocode', kind: 'account', apiKey: 'fixture-secret', name: 'Work' });
+  const other = await createHarnessConnection({ providerId: 'kilocode', kind: 'account', apiKey: 'other-secret', name: 'Other' });
+  expect(state.fixture!.secretStore.secrets.size).toBe(2);
+  await removeHarnessConnection('kilocode', saved.id);
+  expect([...state.fixture!.secretStore.secrets.values()]).toEqual(['other-secret']);
+  expect((await state.fixture!.registry.getAccount('harness:kilocode', saved.id))?.meta?.harnessConnection?.removed).toBe(true);
+  const listed = (await listHarnessConnections('kilocode')).map(({ id }) => id);
+  expect(listed).toContain(other.id);
+  expect(listed).not.toContain(saved.id);
+  await expect(resolveHarnessConnection('kilocode', { connectionId: saved.id })).rejects.toThrow('key is unavailable');
 });

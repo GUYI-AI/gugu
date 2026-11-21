@@ -37,7 +37,7 @@ vi.mock('@main/lib/logger', () => ({
 }));
 
 import { buildLocalUsageSnapshot } from './build-local-usage-snapshot';
-import { recordModelSource } from './model-source-recorder';
+import { lastModelSource, recordModelSource } from './model-source-recorder';
 import { usageController } from './controller';
 import {
   RunIntervalRecorder,
@@ -383,5 +383,16 @@ describe('buildLocalUsageSnapshot / usage.localDaily', () => {
 
   it('非法范围直接 reject(invoke 的 promise 失败),不读库', async () => {
     await expect(usageController.localDaily({ from: '2026-09-24', to: '2026-09-23' })).rejects.toThrow(/after/);
+  });
+
+  // A model switch asks which route the provider session was started on. A session that never went through the composer
+  // (spawned, automated, imported) has no composer record, yet every start writes its resolved route here.
+  it('lastModelSource is the route of the latest start; undefined before any start', () => {
+    expect(lastModelSource('c2')).toBeUndefined();
+    recordModelSource('c2', 'gugu', at(23, 10));
+    expect(lastModelSource('c2')).toBe('gugu');
+    recordModelSource('c2', 'byok', at(23, 11));
+    expect(lastModelSource('c2')).toBe('byok');
+    expect(lastModelSource('c1')).toBeUndefined();
   });
 });

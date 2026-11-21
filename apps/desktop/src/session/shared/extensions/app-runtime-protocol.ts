@@ -791,6 +791,8 @@ export interface AppFileOpened {
    * (`filesRead`, 512 KB each) — `f.read(offset, length)`, or `f.blob()` for all of it.
    */
   chunked?: true;
+  /** API 60 The menu a selection in it has on this page (file-selection.ts `selectionMenu`), drawn by `files.showSelection`. */
+  selectionMenu?: { id: 'copy' | 'cite' | 'send'; label: string }[];
 }
 
 /** The click's authorized document metadata, consumed by exactly one bound file open. */

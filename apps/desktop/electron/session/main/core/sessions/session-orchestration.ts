@@ -10,7 +10,7 @@ import { withSessionAttachments, type SessionAttachmentRef } from '@gugu/core/cl
 import { isActivityAction, runActivityAction, type ActivityAction } from '../activity/actions';
 import { tabHygiene, type TabHygieneResult } from './tab-hygiene';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
-import type { SessionPaneTabsResult } from '@gugu/session-core/session-record/contract';
+import { SESSION_DETAILS_BATCH_SIZE, SESSION_PREVIEW_CONCURRENCY, type SessionPaneTabsResult } from '@gugu/session-core/session-record/contract';
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import { readCurrentActivitySource } from './session-activity-source';
 import { receiveAssistantWorkReport, workReportSchema, type WorkReport } from '../../../../sessionpage/assistant-work';
@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { sessionDirectMessageId } from './session-direct-identity';
 import { parseGuguLink } from '@gugu/core/shared/ui/guguLink';
 import type { SessionSummary } from '@gugu/session-core/acp';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import type { MessagePreviewEntry, MessagePreviewProjection } from '@gugu/session-core/session-record/message-preview';
 import { readSessionPreview } from '@main/core/session-timeline/preview-rpc';
 import {
@@ -108,11 +108,11 @@ import {
   type SessionTransport,
 } from '../agents/session-discovery';
 import { getPlugin, listPlugins, toAgentProviderId } from '../agents/plugin-registry';
-import { resolveSessionParent, setSessionParent } from './session-family';
+import { familyOf, resolveSessionParent, setSessionParent } from './session-family';
 import { attachAgentToSession, type InternalSessionRelations } from './attach-agent-to-session';
 import { archiveSession } from './archiveSession';
 import { recordSessionOutput } from './session-outputs';
-import { sessionPlatformModel } from './platform-model-selection';
+import { sessionPlatformModel, sessionPlatformModels } from './platform-model-selection';
 import type { AgentScheduleAction } from '../automations/agent-schedules';
 import { sessionModelFromDecision, type SessionModel } from './session-model-fact';
 import {
@@ -174,7 +174,8 @@ export type SessionAction =
       chat_id?: string | null;
     }
   | { action: 'ask_user'; questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string }>; multi_select?: boolean }>; source_link?: string }
-  | { action: 'children'; session_id?: string }
+  | { action: 'children'; session_id?: string; metadata_only?: boolean }
+  | { action: 'get_many'; session_ids: string[] }
   | {
       action: 'message';
       delivery_id?: string; delivery_at?: string; // Host-owned durable retry identity; not a model tool argument.
@@ -442,6 +443,11 @@ function snapshot(
 ): SessionSnapshot {
   const transport = transportOf(row);
   const runtime = transport === 'acp' ? (summaries[row.id] ?? null) : null;
+  return { ...sessionMetadata(row), model, runtime };
+}
+
+function sessionMetadata(row: SessionRow): Omit<SessionSnapshot, 'model' | 'runtime'> {
+  const transport = transportOf(row);
   const status = parseAgentStatus(row.agentStatus);
   const remoteSpawner = row.config?.spawnedByRemote;
   return {
@@ -454,13 +460,11 @@ function snapshot(
     cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) : null,
     title: taskName(row),
     provider_id: row.provider ?? 'unknown',
-    model,
     transport,
     status: sessionStatus(row),
     detail: parseAgentStatusDetail(row.agentStatusDetail, status),
     pinned: row.isPinned === 1,
     last_active_at: row.lastInteractedAt ?? null,
-    runtime,
   };
 }
 
@@ -534,7 +538,7 @@ async function stopUnattachedTmuxSession(target: SessionRow): Promise<void> {
 function withActivitySource(text: string, sourceLink?: string): string {
   if (!sourceLink) return text;
   if (!parseConversationLink(sourceLink)?.messageId) throw new Error('source_link requires a message reference');
-  return `来源：[原始需求](${sourceLink})\n\n${text}`;
+  return `Source: [original request](${sourceLink})\n\n${text}`;
 }
 
 async function rememberActivitySource(sessionId: string, link: string): Promise<void> {
@@ -1218,7 +1222,7 @@ async function newSessionMemory(): Promise<NewSessionMemory> {
  */
 // Read by the person the App is working for, not an agent: what to do next, in the product's words and their language.
 const NO_AGENT_INSTALLED: Record<string, string> = {
-  'zh-CN': '这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。',
+  'zh-CN': '这台电脑上尚未安装 agent。请先在「新建任务」中安装，然后重试。',
   'en-US': 'No agent is installed on this computer yet. Install one from New task, then try again.',
 };
 
@@ -2042,6 +2046,8 @@ export async function runSessionAction(
   if (isActivityAction(action)) return runActivityAction(action);
   const caller = await callerRow(context);
   signal?.throwIfAborted();
+  if (action.action === 'get_many') return readSessionDetails(action.session_ids, signal);
+  if (action.action === 'children' && action.metadata_only) return childMetadata(action.session_id ?? caller.id, signal);
 
   if ((action.action === 'spawn' || action.action === 'message' || action.action === 'ask_user')
     && !action.source_link && transportOf(caller) === 'acp') {
@@ -2139,6 +2145,48 @@ async function listChildren(rows: SessionRow[], parentSessionId: string, signal?
   return children.sort(byLastActiveDesc);
 }
 
+/** Filter children in SQLite before decoding configs; model/runtime/preview reads wait for the selected page. */
+async function childMetadata(parentSessionId: string, signal?: AbortSignal) {
+  const storedConfig = sql`case when json_valid(${sessions.config}) then ${sessions.config} else '{}' end`;
+  const parent = sql`coalesce(${sessions.parentSessionId}, json_extract(${storedConfig}, '$.parentRemote.sessionId'),
+    case when json_extract(${storedConfig}, '$.spawnedByRemote.nested') = 1 then json_extract(${storedConfig}, '$.spawnedByRemote.sessionId') end)`;
+  const rows = await db.select().from(sessions).where(sql`${parent} = ${parentSessionId}`);
+  signal?.throwIfAborted();
+  // Schema-invalid/future config has the same null semantics as the ordinary row reader.
+  return childrenOf(rows, parentSessionId).map(row => sessionMetadata(row)).sort(byLastActiveDesc);
+}
+
+/** One page batch owns one sessions query, one summaries read and one selected model-KV query. */
+async function readSessionDetails(sessionIds: readonly string[], signal?: AbortSignal) {
+  if (!Array.isArray(sessionIds) || sessionIds.length > SESSION_DETAILS_BATCH_SIZE || sessionIds.some(id => typeof id !== 'string' || !id)) {
+    throw new Error(`get_many requires at most ${SESSION_DETAILS_BATCH_SIZE} session ids`);
+  }
+  if (!sessionIds.length) return [];
+  signal?.throwIfAborted();
+  const rows = await db.select().from(sessions).where(inArray(sessions.id, [...new Set(sessionIds)]));
+  const byId = new Map(rows.map(row => [row.id, row]));
+  const [summaries, models] = await Promise.all([readAcpSessionSummaries(), sessionPlatformModels(sessionIds)]);
+  // Preview I/O runs on a small fixed pool inside the bounded batch (at most SESSION_PREVIEW_CONCURRENCY reads in flight,
+  // never the unbounded per-row Promise.all). Serial reads gave up the overlap of file reads and parsing (#2007: ~2x slower
+  // than the old unbounded fan-out on 512 KiB transcripts). Results are written by index so the order is the request's.
+  const result: unknown[] = new Array(sessionIds.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < sessionIds.length; i = next++) {
+      signal?.throwIfAborted();
+      const id = sessionIds[i];
+      const row = byId.get(id);
+      if (!row) { result[i] = { session_id: id, preview: { error: { code: 'session_not_found', message: '这台机器上没有这条会话' } } }; continue; }
+      const value = snapshot(row, summaries, sessionModelFromDecision(models.get(id), row.config?.model ?? null));
+      if (row.archivedAt) { result[i] = value; continue; }
+      try { result[i] = { ...value, preview: await sessionPreview(id) }; }
+      catch (error) { result[i] = { ...value, preview: { error: { code: 'preview_failed', message: error instanceof Error ? error.message : String(error) } } }; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(SESSION_PREVIEW_CONCURRENCY, sessionIds.length) }, worker));
+  return result;
+}
+
 /** 指名一条会话的动作。发起方在别的机器上时 session_id 必须给(children 省略 = 这台上挂在它下面的那些)。 */
 async function runTargetAction(
   caller: SessionRow | RemoteSessionCaller,
@@ -2199,6 +2247,11 @@ async function runTargetAction(
     // spec session-graph:agent 收起会话只有归档,走人在会话页点的同一个 `archiveSession`(范围 =
     // 确认框里那个「连同子会话」勾选),人能在会话历史里恢复。归档不删 task 也不删工作目录,所以没有
     // 「工作目录不许一个 task 都不剩」那道闸。❌ 给 agent 删除:删除永久、撤不回来,只归人(owner 2026-09-28)。
+    // with_children is that box; with live children under the target it has no default (archiving only the parent leaves them running without it).
+    if (action.with_children === undefined) {
+      const { members } = await familyOf(target.id);
+      if (members.length > 0) throw new Error(`session has ${members.length} child session(s): pass with_children=true to archive them with it, or with_children=false to archive only this one and leave them running, no longer listed under it`);
+    }
     signal?.throwIfAborted();
     const withChildren = action.with_children === true;
     const { archived, unreached } = await archiveSession(target.id, { withChildren, removeSocialIdentity: action.remove_social_identity });
@@ -2251,8 +2304,8 @@ export async function runRemoteSessionAction(
   signal?.throwIfAborted();
   if (isGroupFolderAgentAction(action)) return runGroupFolderAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
-
-
+  if (action.action === 'get_many') return readSessionDetails(action.session_ids, signal);
+  if (action.action === 'children' && action.metadata_only) return childMetadata(action.session_id ?? caller.sessionId, signal);
   if (action.action === 'locate') return { session_ids: await localSessionIds(action.session_ids) };
 
   if (action.action === 'list_harnesses') {

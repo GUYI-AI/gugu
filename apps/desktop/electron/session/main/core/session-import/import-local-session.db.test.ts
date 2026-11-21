@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   workspaceAtDirectory: vi.fn(),
   rootFolderOf: vi.fn(),
   preview: vi.fn(),
+  warn: vi.fn(),
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -29,11 +30,27 @@ vi.mock('@main/core/workspaces/workspace-at-directory', () => ({
 vi.mock('@main/core/folders/folders', () => ({
   rootFolderOf: mocks.rootFolderOf,
 }));
+vi.mock('@main/lib/logger', () => ({ log: { warn: mocks.warn } }));
 vi.mock('./host-source', () => ({
   getLocalSessionSource: () => ({ preview: mocks.preview }),
 }));
 
 import { bindLocalSession, importLocalSession } from './import-local-session';
+import { humanizeRpcError } from '@renderer/features/session-import/humanize-error';
+import { localizeImportError } from '@renderer/features/session-import/import-error-copy';
+import { enUSSessionWorkflowMessages, zhCNSessionWorkflowMessages } from '@renderer/localization/messages-session-workflows';
+
+/**
+ * 这条错到用户界面上说的那句:本机 IPC 的外壳 + 渲染层按当前语言查词条(真词条表,{name}/{reason} 插值)。
+ * 用它断言「界面上有本地化的原因」,而不是只看主进程抛了什么码。
+ */
+function uiSays(error: Error, locale: 'en' | 'zh'): string {
+  const catalog = (locale === 'en' ? enUSSessionWorkflowMessages : zhCNSessionWorkflowMessages) as Record<string, string>;
+  const translate = ((key: string, values?: Record<string, unknown>) =>
+    (catalog[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''))) as never;
+  const wrapped = new Error(`Error invoking remote method 'sessionImport.importLocalSession': Error: ${error.message}`);
+  return localizeImportError(humanizeRpcError(wrapped, 'unknown'), translate);
+}
 
 const CLAUDE_SESSION = '11111111-2222-3333-4444-555555555555';
 const CODEX_SESSION = '019fa62b-9ddb-7373-a1b8-807548106894';
@@ -76,6 +93,7 @@ describe('importLocalSession', () => {
     mocks.rootFolderOf.mockReturnValue({ id: 'workspace-repo-1', chatId: null });
     mocks.preview.mockReset();
     mocks.preview.mockResolvedValue(previewOf({}));
+    mocks.warn.mockReset();
   });
 
   afterEach(() => {
@@ -196,7 +214,7 @@ describe('importLocalSession', () => {
     });
 
     it('目录读不到就报出来并停下，不建会话', async () => {
-      mocks.workspaceAtDirectory.mockImplementation(() => { throw new Error('ENOENT'); });
+      mocks.workspaceAtDirectory.mockImplementation(() => { throw new Error("ENOENT: no such file or directory, stat '/work/webapp'"); });
 
       await expect(
         importLocalSession({
@@ -206,7 +224,7 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('读不到');
+      ).rejects.toThrow('project-not-found:webapp');
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
   });
@@ -350,7 +368,7 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: null,
         })
-      ).rejects.toThrow('工作目录');
+      ).rejects.toThrow('session-no-cwd:');
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
 
@@ -365,7 +383,7 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('会话 id');
+      ).rejects.toThrow('session-no-id:');
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
 
@@ -380,7 +398,68 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('project-not-found');
+      ).rejects.toThrow('session-create-failed:');
+      // 界面只说「无法创建」;内部类型留给日志排查,不进 message。
+      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: session-create-failed', {
+        engine: 'claude-code',
+        type: 'project-not-found',
+      });
+    });
+  });
+
+  describe('落点失败:界面说本地化的原因，message 只带码和文件夹名，完整目录与原始报错进日志', () => {
+    const params = {
+      engine: 'claude-code' as const,
+      providerSessionId: CLAUDE_SESSION,
+      filePath: '/f.jsonl',
+      title: '标题',
+      cwd: '/work/webapp',
+    };
+    const PREFIX_EN = 'The folder webapp could not be opened';
+    const PREFIX_ZH = '无法打开文件夹 webapp';
+    // [场景, 目录读出的原始报错, 码, 英文原因, 中文原因]
+    const cases = [
+      ['不是目录', 'Not a directory: /work/webapp', 'project-not-found', 'it no longer exists, was moved, or is not a folder', '它已不存在、被移走了，或不是文件夹'],
+      ['读不了(EACCES)', "EACCES: permission denied, stat '/work/webapp'", 'project-permission-denied', 'Gugu does not have permission to read it', '咕咕没有读取它的权限'],
+      ['不存在(ENOENT)', "ENOENT: no such file or directory, stat '/work/webapp'", 'project-not-found', 'it no longer exists, was moved, or is not a folder', '它已不存在、被移走了，或不是文件夹'],
+    ] as const;
+
+    it.each(cases)('%s → %s 的原因', async (_name, raw, code, reasonEn, reasonZh) => {
+      mocks.workspaceAtDirectory.mockImplementation(() => { throw new Error(raw); });
+
+      const thrown = await importLocalSession(params).catch((error: Error) => error);
+
+      expect(thrown).toMatchObject({ message: `${code}:webapp`, code });
+      expect((thrown as Error).message).not.toContain('/work');
+      expect(uiSays(thrown as Error, 'en')).toBe(`${PREFIX_EN}: ${reasonEn}`);
+      expect(uiSays(thrown as Error, 'zh')).toBe(`${PREFIX_ZH}：${reasonZh}`);
+      expect(mocks.warn).toHaveBeenCalledWith(
+        `[session-import] import failed: ${code}`,
+        expect.objectContaining({ directory: '/work/webapp', message: raw }),
+      );
+      expect(mocks.createSession).not.toHaveBeenCalled();
+    });
+
+    it('认不出的原因 → 界面一句通用的本地化文案，原始报错只进日志', async () => {
+      const raw = 'database is locked';
+      mocks.workspaceAtDirectory.mockImplementation(() => { throw new Error(raw); });
+
+      const thrown = await importLocalSession(params).catch((error: Error) => error);
+
+      expect((thrown as Error).message).toBe('project-open-failed:webapp');
+      expect(uiSays(thrown as Error, 'en')).toBe(`${PREFIX_EN}. See the Gugu log for details.`);
+      expect(uiSays(thrown as Error, 'zh')).toBe(`${PREFIX_ZH}，详情见咕咕日志。`);
+      expect(uiSays(thrown as Error, 'en')).not.toContain('locked');
+      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: project-open-failed', expect.objectContaining({ message: raw }));
+    });
+
+    it('目录不在本机记录的文件夹里 → 通用一句，不建会话', async () => {
+      mocks.rootFolderOf.mockReturnValue(undefined);
+
+      const thrown = await importLocalSession(params).catch((error: Error) => error);
+
+      expect((thrown as Error).message).toBe('project-open-failed:webapp');
+      expect(mocks.createSession).not.toHaveBeenCalled();
     });
   });
 });

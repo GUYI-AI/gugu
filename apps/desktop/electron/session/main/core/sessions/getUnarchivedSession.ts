@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
+import { rootFolderOf } from '@main/core/folders/folders';
 import { log } from '@main/lib/logger';
 import { scheduleExternalForkCapture } from './fork-capture';
 import { mapSessionRowToSession } from './utils';
@@ -13,9 +14,6 @@ export async function getUnarchivedSession(sessionId: string) {
   const startedAt = Date.now();
   log.info('getUnarchivedSession: enter', { requestId, sessionId });
   try {
-    // Captured forks land after this read returns and reach the sidebar via
-    // session:created events — the list call itself stays fast.
-    scheduleExternalForkCapture(sessionId);
     const rows = await db
       .select()
       .from(sessions)
@@ -28,6 +26,10 @@ export async function getUnarchivedSession(sessionId: string) {
           isNull(sessions.archivedAt)
         )
       );
+    // Captured forks land after this read returns and reach the sidebar via
+    // session:created events — the list call itself stays fast.
+    const folderId = rows[0]?.workspaceId ? rootFolderOf(rows[0].workspaceId)?.id : undefined;
+    if (folderId) scheduleExternalForkCapture(folderId, sessionId);
     const result = rows.map((r) => mapSessionRowToSession(r, false));
     log.info('getUnarchivedSession: return', {
       requestId,

@@ -86,17 +86,14 @@ function createProject(
 ) {
   const remoteSubscribers: Array<(model: GitRemotesModel) => void> = [];
   const unsubscribe = vi.fn();
-  const project = {
-    settings: {},
-    ctx: {},
-    gitRepository: {
-      getRemotes: vi.fn().mockResolvedValue(remotes),
-      subscribeRemotes: vi.fn((cb: (model: GitRemotesModel) => void) => {
-        remoteSubscribers.push(cb);
-        return unsubscribe;
-      }),
-    },
+  const gitRepository = {
+    getRemotes: vi.fn().mockResolvedValue(remotes),
+    subscribeRemotes: vi.fn((cb: (model: GitRemotesModel) => void) => {
+      remoteSubscribers.push(cb);
+      return unsubscribe;
+    }),
   };
+  const project = { settings: {}, ctx: {}, gitRepository, git: { open: async () => ({ repository: gitRepository }) } };
 
   return {
     project,

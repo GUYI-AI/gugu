@@ -159,6 +159,24 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     expect(byId.get(GRANDCHILD)?.config).toMatchObject({ agentDisplayName: '母会话-fork-fork', forkedFrom: { sessionId: CHILD } });
   });
 
+  it('registers the forks of every watched session of a workspace in one sweep', async () => {
+    const other = randomUUID();
+    const otherFork = randomUUID();
+    await fixture.db.insert(sessions).values({
+      id: other, projectId, workspaceId: 'workspace-1', provider: 'claude', providerSessionId: other, runtime: 'pty',
+      config: { agentDisplayName: '另一条', version: '1', type: 'pty', permissionMode: 'edit' },
+    });
+    const dir = claudeTranscriptDirFor(await realpath(workspace));
+    await writeFile(path.join(dir, `${other}.jsonl`), jsonl(['o1', 'o2']));
+    await writeFile(path.join(dir, `${otherFork}.jsonl`), jsonl(['o1', 'o2', 'z1']));
+
+    await captureExternalForks(PARENT, other);
+
+    const rows = new Map((await fixture.db.select().from(sessions)).map((row) => [row.id, row]));
+    expect(forkedFromId(rows.get(CHILD))).toBe(PARENT);
+    expect(forkedFromId(rows.get(otherFork))).toBe(other);
+  });
+
   it('carries the source session\'s permission mode onto captured forks, so a read-only source stays read-only', async () => {
     await fixture.db.update(sessions)
       .set({ config: { version: '1', type: 'pty', agentDisplayName: '母会话', permissionMode: 'read-only' } })

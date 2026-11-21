@@ -18,6 +18,7 @@ import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLa
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
+import { dropShapeOf, hideDropHighlight, showDropHighlight, type DropShape } from '@renderer/lib/drop-highlight';
 
 export { isScreenView };
 
@@ -556,6 +557,42 @@ const dropKey = (drop: BlockDrop | MentionDrop | null): string =>
 export function setBlockDropPreview(drop: BlockDrop | MentionDrop | null): void {
   if (dropKey(blockDropPreview.get()) === dropKey(drop)) return;
   runInAction(() => blockDropPreview.set(drop));
+  const shape = drop && blockDropShape(drop);
+  if (shape) showDropHighlight(shape);
+  else hideDropHighlight();
+}
+
+/**
+ * Where a drop on the screen lands, as the shared drop highlight draws it (@@@drop-highlight): the half of the block an edge
+ * splits off; a pane, or on its tab strip a 2px line where the tab goes in (the line within a session, draggable-tab.tsx's
+ * DropIndicator); a session's composer (or its terminal) that gets the @ — the pointer over its messages shows the composer
+ * too: what a drop gives is what is drawn.
+ */
+function blockDropShape(drop: BlockDrop | MentionDrop): DropShape | null {
+  const page = `[data-screen-page="${CSS.escape(drop.blockId)}"]`;
+  if ('mention' in drop) {
+    const surface = document.querySelector<HTMLElement>(`${page} [data-session-chat-surface][data-session-chat-session-id="${CSS.escape(drop.mention.sessionId)}"]`);
+    const target = surface?.querySelector<HTMLElement>('[data-slot="composer-bar"]') ?? surface;
+    return target ? dropShapeOf(target) : null;
+  }
+  if ('paneId' in drop) {
+    const cell = document.querySelector<HTMLElement>(`${page} [data-pane-cell="${CSS.escape(drop.paneId)}"]`);
+    if (!cell || !drop.strip) return cell ? dropShapeOf(cell, '8px') : null;
+    const before = drop.strip.before ? cell.querySelector<HTMLElement>(`[data-tabid="${CSS.escape(drop.strip.before)}"]`)?.closest<HTMLElement>('.session-tab-slot') : null;
+    const box = (before ?? [...cell.querySelectorAll<HTMLElement>('.session-tab-bar .session-tab-slot')].at(-1))?.getBoundingClientRect();
+    return box ? { left: (before ? box.left : box.right) - 1, top: box.top + 4, width: 2, height: box.height - 8, radius: '1px' } : null;
+  }
+  const block = screenBlockElement(drop.blockId)?.getBoundingClientRect();
+  if (!block) return null;
+  const { left, top, width, height } = block;
+  const across = drop.edge === 'left' || drop.edge === 'right';
+  return {
+    left: drop.edge === 'right' ? left + width / 2 : left,
+    top: drop.edge === 'bottom' ? top + height / 2 : top,
+    width: across ? width / 2 : width,
+    height: across ? height : height / 2,
+    radius: '8px',
+  };
 }
 
 /**

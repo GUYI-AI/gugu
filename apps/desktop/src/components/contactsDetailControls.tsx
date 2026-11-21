@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { colorOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentContactTone } from './contactAgentTone'
+import { AgentParkedGlyph } from './AgentParkedGlyph'
 import { Chip } from './ui/Chip'
 import { Button } from './ui/Button'
 
@@ -108,7 +109,7 @@ export function AgentContactStatusChip({ agentId, tone, label }: { agentId: stri
       data-agent-id={agentId}
       style={{ color: colorOfDisplayStatus(tone) ?? undefined }}
     >
-      <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-current" />
+      {tone === 'parked' ? <AgentParkedGlyph /> : <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-current" />}
       {label}
     </Chip>
   )

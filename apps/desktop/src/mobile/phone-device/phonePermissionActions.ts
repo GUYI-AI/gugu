@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { nativePhoneActions, type PhoneRuntimePermission, type PhoneSettingsTarget } from './nativePhoneActions'
 import { missingRequirements, type PhoneActionGroup, type PhoneOsState, type PhoneRequirement } from './phoneActionCatalog'
 import { nativePhoneData, phoneDataAllowed } from './phoneDataActions'
@@ -33,7 +34,7 @@ export async function connectPhoneActionGroup(
   os: PhoneOsState | null,
   options: { enableDevice?: boolean } = {},
 ): Promise<void> {
-  if (!os) throw new Error('还没有读到系统权限，请刷新后再试。')
+  if (!os) throw new Error(mobileWorkspaceText('phoneDevice.permissionsNotRead'))
   if (options.enableDevice) connectPhoneActionGroupChoice(ownerId, group)
   else setPhoneActionGroup(ownerId, group, true)
   const missing = missingRequirements(group, os)

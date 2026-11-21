@@ -43,7 +43,7 @@ describe('workspace operations after the host process loses its cache', () => {
     fixture.sqlite.prepare('INSERT INTO projects (id, name, path) VALUES (?, ?, ?)').run('p', 'Placeholder', root + '-placeholder');
     fixture.sqlite.prepare("INSERT INTO workspaces (id, type, kind, location, path, key, gitless) VALUES ('ws', 'local', 'project-root', 'local', ?, ?, 1)").run(root, root);
     fixture.sqlite.prepare("INSERT INTO sessions (id, project_id, workspace_id, config) VALUES ('s', 'p', 'ws', ?)").run(JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'Recovery' }));
-    h.folder = { folderId: 'ws', repoPath: root, isGitless: true, settings: {} } as FolderRuntime;
+    h.folder = { folderId: 'ws', repoPath: root, git: { open: async () => undefined }, settings: {} } as unknown as FolderRuntime;
     h.open.mockImplementation(async () => undefined);
     h.factory.mockImplementation((id: string, context: WorkspaceFactoryContext) => async () => {
       h.create();
@@ -51,7 +51,7 @@ describe('workspace operations after the host process loses its cache', () => {
         workspace: {
           id, path: context.workDir, fileSystem: new FileSystem(),
           fileTree: { dispose: vi.fn() }, lifecycleService: { dispose: vi.fn() },
-          gitWorktree: { getSnapshot: async () => ({ head: 'recorded-head' }) },
+          git: async () => ({ worktree: { getSnapshot: async () => ({ head: 'recorded-head' }) } }),
           dispose: vi.fn(),
         },
       };

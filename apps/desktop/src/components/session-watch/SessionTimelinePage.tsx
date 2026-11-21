@@ -12,7 +12,7 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useRef, useState, type ComponentProps, type CSSProperties } from 'react'
+import { useEffect, useState, type ComponentProps, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
 import { reaction } from 'mobx'
 import { useTranslation } from 'react-i18next'
@@ -27,7 +27,6 @@ import { IconButton } from '@/components/ui/IconButton'
 import { RefreshCw } from '@/lib/icons'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { SessionConversation } from './SessionConversation'
-import { offerSessionSend } from '@renderer/features/sessions/session-send'
 import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
@@ -198,10 +197,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     }
     if (nativeHistory) nativeRecord.followTail()
   }
-  const sendNow = useRef(send)
-  sendNow.current = send
-  // A selection's Send goes the way the composer's words go, also while an App (the Files App) covers the conversation.
-  useEffect(() => offerSessionSend(session.conversationId, { send: text => sendNow.current(text) }), [session.conversationId])
   // Identified agents share the group/avatar reading; transport only governs timeline access.
   const shownStatus = useShownAgentStatus()
   const agentUserId = session.agent?.userId

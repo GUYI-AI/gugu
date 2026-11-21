@@ -43,9 +43,6 @@ export const sidebarRowContentInsetX = 'pl-2';
  */
 export const sidebarGroupHeaderClass = 'group/ghdr flex h-8 items-center justify-between pr-2 pl-5';
 
-/** 一条会话正拖在这一行上、松手就挂过去(或回到根):罩上落点那一层,同这屏分块 / 插 @ 的落点(use-session-drop-target)。 */
-export const sidebarDropTargetClass = 'bg-foreground/10 ring-1 ring-inset ring-foreground/20';
-
 /**
  * 分区头标题(置顶 / 项目 / 任务)的角色 —— MicroLabel 自带 text-xs,咕咕字阶只有 14/12,
  * 这里落在 14 档(text-sm)。三个分区头引用同一个常量,❌ 各写一遍手抄同一串覆盖类:

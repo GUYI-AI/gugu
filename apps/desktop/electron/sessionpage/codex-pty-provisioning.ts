@@ -398,6 +398,7 @@ async function provisionAndOverrideOnce(
       try {
         adopted = {
           threadId: await awaitStartupPhase(session.adopt(info.cwd, survivor, {
+            env: engineOptions.env,
             threadId: resumeThreadId ?? null,
             extraArgs: engineOptions.extraArgs,
             threadStart: engineOptions.threadStart,

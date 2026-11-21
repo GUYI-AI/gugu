@@ -27,9 +27,8 @@ vi.mock('./local-files', () => ({
   workingCopyFolder: (_place: unknown, rel: string) => ({ id: rel, name: rel, type: 'folder', suffix: '' }),
 }));
 vi.mock('@main/core/workspaces/workspace-runtime', () => ({
-  acquireWorkspaceRuntime: async (_runtime: unknown, workDir: string, gitless: boolean) => {
+  acquireWorkspaceRuntime: async (_runtime: unknown, workDir: string) => {
     if (opensFail) throw new Error(`Failed to open file tree: ${workDir}`);
-    expect(gitless).toBe(true);
     const entries = [
       { id: 1, path: path.join(workDir, 'src'), name: 'src', parentId: null, childrenLoaded: false, type: 'directory' },
       { id: 2, path: path.join(workDir, 'README.md'), name: 'README.md', parentId: null, childrenLoaded: false, type: 'file' },

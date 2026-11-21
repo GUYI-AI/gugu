@@ -20,17 +20,17 @@ async function withResolvedRemote<T extends IssueQueryOpts>(opts: T): Promise<T>
   if (!opts.folderId) return opts;
   const opened = await openFolder(opts.folderId);
   if (!opened.success) return opts;
-  const folder = opened.data;
-  // gugu #2358: 非 git 项目无远端 → 不做远端/仓库 URL 解析,原样返回。
-  if (!folder.gitRepository) return opts;
+  // A directory without Git has no remote: nothing to resolve.
+  const repository = (await opened.data.git.open())?.repository;
+  if (!repository) return opts;
 
-  const remote = await folder.gitRepository.getBaseRemote().catch(() => undefined);
+  const remote = await repository.getBaseRemote().catch(() => undefined);
   const selectedRemote = opts.remote?.trim() || remote;
   const providedRepositoryUrl = opts.repositoryUrl?.trim();
 
   const remoteRepositoryUrl =
     !providedRepositoryUrl && selectedRemote
-      ? (await folder.gitRepository.getRemotes().catch(() => [])).find(
+      ? (await repository.getRemotes().catch(() => [])).find(
           (candidate) => candidate.name === selectedRemote
         )?.url
       : undefined;

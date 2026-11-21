@@ -363,16 +363,14 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
         const sessionMeta = await claudeCustomModelSessionMeta(info.sessionId, info.sourceSessionId)
         if (sessionMeta) return { kind: 'session-meta', sessionMeta }
       }
-      // composer 没做过决定(存量会话、自动化任务、派生子会话)→ 什么都不注入。
-      //
+      // composer 没做过决定(存量会话、自动化任务、派生子会话)= 与选了 harness 自家模型(显式 null)同一条路:不上平台。
       // ❌ 这里**不**回退 agent 级 model_access,pty 路那条回退不适用:那条回退的意义是「保住这些会话
       // 一直以来的行为」,而 Chat UI 会话一直以来的行为是**从来上不了平台**(创建期那道墙拦着)。在这里
-      // 回退不是保住行为,是改变行为。选了 harness 自家模型(显式 null)同样不注入。
-      if (!info.platformModel) return null
-      const contract = requireInjectionContract(info.providerId, 'cui')
-      const platform = await acpPlatformModel(info)
-      // 解析下来不上平台(这个 agent 没有平台额度)→ 不注入,会话照常按它自己的配置跑。
-      if (!Object.keys(platform.env).length) return null
+      // 回退不是保住行为,是改变行为。仍经同一个解析口:这次启动走哪条路由它记进底账(换模型时据此判换没换路)。
+      const contract = info.platformModel && requireInjectionContract(info.providerId, 'cui')
+      const platform = await acpPlatformModel({ ...info, platformModel: info.platformModel ?? null })
+      // 解析下来不上平台(没选平台模型、或这个 agent 没有平台额度)→ 不注入,会话照常按它自己的配置跑。
+      if (!contract || !Object.keys(platform.env).length) return null
       const platformAccessSessionId = requirePlatformAccessSessionId(platform)
       // 这条诊断从 main.ts 一起搬过来 —— 抽取不该顺手弄丢可观测性。用 logger 不用 console:
       // console 棘轮对新文件按「NEW console-member」判红(#5015 撞过同一形状)。

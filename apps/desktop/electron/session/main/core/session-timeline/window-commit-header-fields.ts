@@ -32,7 +32,7 @@ export const COMMIT_ITEM_HEADER_FIELDS: Readonly<Record<string, string>> = Objec
 const turn = 'id seq referenceId initiator startedAt endedAt outcome trigger foreground';
 const terminal = 'terminalId owner canKill command args cwd outputBytes truncated exitStatus';
 export const COMMIT_HEADER_CHILDREN: Readonly<Record<string, string>> = Object.freeze({
-  'turn:outcome': 'kind reason detail signInRequired guguReason said',
+  'turn:outcome': 'kind reason detail signInRequired signInReason guguReason said',
   'turn:trigger': 'kind chatIds',
   'terminal:exitStatus': 'exitCode signal',
   'item:exitStatus': 'exitCode signal',

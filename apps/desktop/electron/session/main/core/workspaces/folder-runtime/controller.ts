@@ -10,7 +10,8 @@ export const folderRuntimeController = createRPCController({
   openFolder: async (folderId: string) => {
     const opened = await openFolderRuntime(folderId);
     if (!opened.success) return opened;
-    return ok({ gitless: await opened.data.resolveGitless() });
+    // Whether the folder has Git is read from disk now (@@@disk-decides-git), not taken from its record.
+    return ok({ gitless: !(await opened.data.git.open()) });
   },
   acquireFolderWorkspace,
   acquireTaskDirectory,

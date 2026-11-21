@@ -64,8 +64,8 @@ describe('侧栏那颗点 / 悬停那句', () => {
   });
 
   it('悬停那句不说离线', () => {
-    expect(hostStatusLabel('asleep', '小咕', null, NOW, zh)).toBe('小咕 在休息，有事会自动醒');
-    expect(hostStatusLabel('waking', '小咕', null, NOW, zh)).toBe('小咕 正在醒来…');
+    expect(hostStatusLabel('asleep', '小咕', null, NOW, zh)).toBe('小咕 已休眠，需要时自动唤醒');
+    expect(hostStatusLabel('waking', '小咕', null, NOW, zh)).toBe('正在唤醒 小咕…');
   });
 
   it('store 的判据把这一端的叫醒状态并进来', () => {
@@ -79,12 +79,12 @@ describe('侧栏那颗点 / 悬停那句', () => {
 });
 
 describe('机器选择器那一行', () => {
-  it('睡着的云电脑:能选、写「休息中」、云图标那一类、不标连法', () => {
+  it('睡着的云电脑:能选、写「已休眠」、云图标那一类、不标连法', () => {
     const choice = machineChoiceFromHost(cloud(), 'asleep');
     expect(choice).toMatchObject({ kind: 'cloudComputer', cloudComputer: 'asleep', link: null });
     expect(machineAcceptsWork(choice)).toBe(true);
-    expect(machineMeta(choice, zh)).toBe('休息中');
-    expect(machineMeta(machineChoiceFromHost(cloud(), 'waking'), zh)).toBe('正在醒来…');
+    expect(machineMeta(choice, zh)).toBe('已休眠');
+    expect(machineMeta(machineChoiceFromHost(cloud(), 'waking'), zh)).toBe('正在唤醒…');
   });
 
   it('调用方没给连接状态时照设备行上管家说的', () => {
@@ -102,18 +102,18 @@ describe('机器选择器那一行', () => {
 
 describe('新建框那一句', () => {
   it('睡着:开始输入就叫醒它;正在醒:醒了就能发送、草稿留着;❌ 说离线', () => {
-    expect(machineUnavailableReason('asleep', '小咕', zh)).toBe('小咕 在休息，开始输入就会叫醒它。');
-    expect(machineUnavailableReason('waking', '小咕', zh)).toBe('小咕 正在醒来，醒了就能发送。草稿已保留。');
+    expect(machineUnavailableReason('asleep', '小咕', zh)).toBe('小咕 处于休眠状态，开始输入将唤醒该设备。');
+    expect(machineUnavailableReason('waking', '小咕', zh)).toBe('正在唤醒 小咕，唤醒后可发送。草稿已保留。');
   });
   it('说真实原因:登录没了说重新登录、正在连说正在连,❌ 一律「离线」', () => {
     expect(machineUnavailableReason('offline', 'd22', zh, null, '2026-10-22T00:00:00Z')).toBe('d22 上的登录已失效，请在 设置 → 设备 中重新登录。');
     expect(machineUnavailableReason('connecting', 'd22', zh)).toBe('正在连接 d22…');
     expect(machineUnavailableReason('reconnecting', 'd22', zh)).toBe('正在重新连接 d22…');
     // 对照:只是离线。
-    expect(machineUnavailableReason('offline', 'd22', zh)).toBe('d22 离线。草稿已保留，上线后可发送，或换一台机器。');
+    expect(machineUnavailableReason('offline', 'd22', zh)).toBe('d22 离线。草稿已保留，设备上线后可发送，或选择其他设备。');
   });
   it('叫醒没成:说那句原因', () => {
-    expect(machineUnavailableReason('wake-failed', '小咕', zh, '积分已用完，小咕 醒不来。')).toBe('积分已用完，小咕 醒不来。');
+    expect(machineUnavailableReason('wake-failed', '小咕', zh, '积分已用完，无法唤醒 小咕。')).toBe('积分已用完，无法唤醒 小咕。');
   });
   // 统筹 10-15:「休眠中」只是说明状态,❌ 报错的红字;与私聊里那句同一个样子。owner 10-22:离线同样只是状态(#113)。
   // 叫醒没成、要先登录、版本太旧照旧是报错。
@@ -139,12 +139,12 @@ describe('新建框那一句', () => {
 
 describe('叫醒没成时说的话', () => {
   it('只说是哪一类,❌ 把管家原话 / 异常原文端给人', () => {
-    expect(cloudWakeFailureText({ reason: 'refused', code: 'credits_exhausted' }, '小咕', zh)).toBe('积分已用完，小咕 醒不来。');
-    expect(cloudWakeFailureText({ reason: 'timeout', code: null }, '小咕', zh)).toBe('小咕 两分钟内没醒来，稍后再试。');
-    expect(cloudWakeFailureText({ reason: 'failed', code: 'network' }, '小咕', zh)).toBe('连不上服务，小咕 醒不来。检查一下网络。');
-    expect(cloudWakeFailureText({ reason: 'failed', code: 'unauthorized' }, '小咕', zh)).toBe('登录已失效，重新登录后再试。');
-    expect(cloudWakeFailureText({ reason: 'failed', code: 'not_found' }, '小咕', zh)).toBe('小咕 已经不在了。');
-    expect(cloudWakeFailureText({ reason: 'failed', code: null }, '小咕', zh)).toBe('没能叫醒 小咕，那边出了问题，稍后再试。');
+    expect(cloudWakeFailureText({ reason: 'refused', code: 'credits_exhausted' }, '小咕', zh)).toBe('积分已用完，无法唤醒 小咕。');
+    expect(cloudWakeFailureText({ reason: 'timeout', code: null }, '小咕', zh)).toBe('小咕 两分钟内未唤醒，请稍后重试。');
+    expect(cloudWakeFailureText({ reason: 'failed', code: 'network' }, '小咕', zh)).toBe('无法连接服务，小咕 无法唤醒。请检查网络后重试。');
+    expect(cloudWakeFailureText({ reason: 'failed', code: 'unauthorized' }, '小咕', zh)).toBe('登录已失效，请重新登录后重试。');
+    expect(cloudWakeFailureText({ reason: 'failed', code: 'not_found' }, '小咕', zh)).toBe('小咕 已不存在。');
+    expect(cloudWakeFailureText({ reason: 'failed', code: null }, '小咕', zh)).toBe('无法唤醒 小咕：该设备出现错误，请稍后重试。');
   });
 });
 
@@ -153,12 +153,12 @@ describe('分机器的模块那一句 / 导入会话 / 工作区', () => {
 
   it('资源库这类页面:说正在唤醒(只读到醒),❌ 说离线', () => {
     const notice = deviceScopeNotice({ remote, error: null, hasData: true, now: NOW, cloud: { state: 'asleep', failure: null } }, zh);
-    expect(notice).toEqual({ kind: 'waking', text: '「小咕」正在醒来。显示的是缓存，醒了就能修改。', retry: false, readOnly: true, inHeading: true, cached: true });
+    expect(notice).toEqual({ kind: 'waking', text: '正在唤醒「小咕」。显示的是缓存，唤醒后可修改。', retry: false, readOnly: true, inHeading: true, cached: true });
     const failed = deviceScopeNotice(
       { remote, error: null, hasData: false, now: NOW, cloud: { state: 'wake-failed', failure: { reason: 'timeout', code: null, message: 'x' } } },
       zh
     );
-    expect(failed?.text).toBe('小咕 两分钟内没醒来，稍后再试。');
+    expect(failed?.text).toBe('小咕 两分钟内未唤醒，请稍后重试。');
     // The failure reason is not in the heading: that line stays.
     expect(failed?.inHeading).toBe(false);
     // 对照:不是云电脑照旧说离线。
@@ -172,6 +172,6 @@ describe('分机器的模块那一句 / 导入会话 / 工作区', () => {
   });
 
   it('工作区的文件 / 审阅:说正在唤醒', () => {
-    expect(remoteToolReach(cloud(), NOW, zh)).toEqual({ ok: false, label: '小咕 正在醒来…' });
+    expect(remoteToolReach(cloud(), NOW, zh)).toEqual({ ok: false, label: '正在唤醒 小咕…' });
   });
 });

@@ -269,6 +269,10 @@ class SessionWorkspaceManager {
     return this._lifecycle.get(sessionId)?.sessionMount;
   }
 
+  sessionsOf(folderId: string): string[] {
+    return [...(this._sessionsByFolder.get(folderId) ?? [])];
+  }
+
   getWorkspaceId(sessionId: string): string | undefined {
     return this._lifecycle.get(sessionId)?.persistData.workspaceId;
   }

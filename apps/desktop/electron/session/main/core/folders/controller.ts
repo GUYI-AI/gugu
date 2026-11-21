@@ -11,6 +11,7 @@ import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { bindFolder, ensureFolder, ensureTaskHomeFolder, folderAtPath, getFolder, isTaskHomeFolder, listFolders, listUnboundFolders, reorderFolders, type Folder } from './folders';
 import { folderPathStatus } from './folder-path-status';
+import { findRetainedFolderAtPath, inspectFolderRecovery, listUnavailableFolders, restoreFolder } from './folder-recovery';
 import { legacyProject } from './legacy-project-aliases';
 
 function record(folder: Folder): FolderRecord {
@@ -102,4 +103,8 @@ export const folderController = createRPCController({
   bindFolderAtPath,
   unbindFolder,
   reorderGroupFolders,
+  listUnavailableFolders,
+  findRetainedFolderAtPath,
+  inspectFolderRecovery,
+  restoreFolder,
 });

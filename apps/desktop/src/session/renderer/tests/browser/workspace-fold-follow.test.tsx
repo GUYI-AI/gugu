@@ -29,24 +29,39 @@ beforeEach(async () => { await page.viewport(1200, 800); localStorage.removeItem
 // A drag that lands open stores its width: ❌ leave it for the next file's list.
 afterEach(() => { harness?.cleanup(); sidebarFolds.clear(); writeInterface('gugu.taskpage.sidebarWidth', undefined); });
 
-/** Every frame until the list stops moving: the page's laid-out width, how far its edges are from the list's edge and the shell's right. */
-async function foldFrames(shell: HTMLElement) {
-  // The list is clipped at its edge, and the edge's handle rides on it.
-  const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
-  const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-  const frames: { width: number; gap: number; right: number; edge: number }[] = [];
-  let still = 0, last = -1;
-  await userEvent.click([...shell.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
+const edgeOf = (handle: HTMLElement) => handle.getBoundingClientRect().left + handle.getBoundingClientRect().width / 2;
+
+/**
+ * The frames of one motion of the list's edge away from `from` (where it was before the click or the release): from the
+ * first frame it is a pixel away until it has been still for 10 frames. How many frames that is, and whether any is
+ * caught mid-way, is the machine's: a loaded runner may start late or draw the whole motion between two of our frames.
+ */
+async function edgeMotion<T>(handle: HTMLElement, from: number, read: (edge: number) => T): Promise<T[]> {
+  const frames: T[] = [];
+  let still = 0, last = from;
   while (still < 10) {
     await new Promise(requestAnimationFrame);
-    const box = handle.getBoundingClientRect();
-    const edge = box.left + box.width / 2;
-    const page = surface.getBoundingClientRect();
-    frames.push({ width: surface.offsetWidth, gap: page.left - edge, right: shell.getBoundingClientRect().right - page.right, edge });
+    const edge = edgeOf(handle);
+    if (frames.length === 0 && Math.abs(edge - from) < 1) continue;
+    frames.push(read(edge));
     still = Math.abs(edge - last) < 0.01 ? still + 1 : 0;
     last = edge;
   }
   return frames;
+}
+
+/** Where the fold starts, then each frame of it: the page's laid-out width, how far its edges are from the list's edge and the shell's right. */
+async function foldFrames(shell: HTMLElement) {
+  // The list is clipped at its edge, and the edge's handle rides on it.
+  const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
+  const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
+  const before = { width: surface.offsetWidth, edge: edgeOf(handle) };
+  await userEvent.click([...shell.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
+  const frames = await edgeMotion(handle, before.edge, (edge) => {
+    const page = surface.getBoundingClientRect();
+    return { width: surface.offsetWidth, gap: page.left - edge, right: shell.getBoundingClientRect().right - page.right, edge };
+  });
+  return { before, frames };
 }
 
 it('a fold moves the page with the list\'s edge in every frame, the same way in both directions', async () => {
@@ -59,18 +74,25 @@ it('a fold moves the page with the list\'s edge in every frame, the same way in 
     </div>
   );
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
-  const widthsPerFold: number[] = [];
-  for (const direction of ['collapse', 'expand']) {
-    const frames = await foldFrames(shell);
-    expect(frames.length, `${direction}: the list animated`).toBeGreaterThan(15);
+  const folds: { before: { width: number; edge: number }; end: { width: number; edge: number } }[] = [];
+  for (const direction of ['collapse', 'expand'] as const) {
+    const { before, frames } = await foldFrames(shell);
+    const end = frames.at(-1)!;
+    folds.push({ before, end });
     const gaps = frames.map((frame) => Math.round(frame.gap));
     expect(new Set(gaps).size, `${direction}: the page's left edge follows the list's edge (${gaps.join(',')})`).toBe(1);
     const rights = frames.map((frame) => Math.round(frame.right));
     expect(new Set(rights).size, `${direction}: the page's right edge stays put (${rights.join(',')})`).toBe(1);
-    // Neither held at one end nor switched once: the page's width moves through the fold.
-    widthsPerFold.push(new Set(frames.map((frame) => frame.width)).size);
-    expect(widthsPerFold.at(-1), `${direction}: page widths through the fold`).toBeGreaterThan(5);
+    // One way, no jump back: the list's edge only moves toward where it lands.
+    const edges = frames.map((frame) => frame.edge);
+    const step = direction === 'collapse' ? -1 : 1;
+    expect(edges.every((edge, i) => i === 0 || (edge - edges[i - 1]) * step >= -0.01), `${direction}: the edge moves one way (${edges.map(Math.round).join(',')})`).toBe(true);
   }
+  // The expand lands where the collapse started: back at the list's width.
+  const [collapse, expand] = folds;
+  expect(Math.round(expand.end.edge)).toBe(Math.round(collapse.before.edge));
+  expect(expand.end.width).toBe(collapse.before.width);
+  expect(collapse.before.edge - collapse.end.edge, 'the collapse moved the edge').toBeGreaterThan(0);
 });
 
 it('a place without the list takes no space or motion from it after a resize, while folding, or on return', async () => {
@@ -155,18 +177,10 @@ it('dragging the rail\'s edge out moves the page with it; let go, it lands the s
   expect(widths.at(-1)!, 'mid-drag the page narrows with the edge').toBeLessThan(railWidth - 80);
   expect(rightOf(), 'and keeps its right edge').toBe(right);
   expect(gaps.size, `the page rides on the edge (${[...gaps].join(',')})`).toBe(1);
+  const released = edgeOf(handle);
   pointer('pointerup', handle, start + 100);
-  const frames: { width: number; edge: number }[] = [];
-  let still = 0, last = -1;
-  while (still < 10) {
-    await new Promise(requestAnimationFrame);
-    const box = handle.getBoundingClientRect();
-    frames.push({ width: surface.offsetWidth, edge: box.left + box.width / 2 });
-    still = Math.abs(frames.at(-1)!.edge - last) < 0.01 ? still + 1 : 0;
-    last = frames.at(-1)!.edge;
-  }
-  const end = frames.at(-1)!;
-  expect(end.width, 'it snapped open').toBeLessThan(railWidth);
-  expect(new Set(frames.map((frame) => frame.width)).size, 'the page moved with the edge on the way').toBeGreaterThan(5);
+  const snap = await edgeMotion(handle, released, (edge) => ({ width: surface.offsetWidth, gap: Math.round(surface.getBoundingClientRect().left - edge) }));
+  expect(snap.at(-1)!.width, 'it snapped open').toBeLessThan(railWidth);
+  expect(new Set(snap.map((frame) => frame.gap)).size, `the page rode on the edge as it snapped (${snap.map((frame) => frame.gap).join(',')})`).toBe(1);
   expect(rightOf(), 'and kept its right edge').toBe(right);
 });

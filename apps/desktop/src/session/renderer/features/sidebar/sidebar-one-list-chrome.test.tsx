@@ -84,6 +84,11 @@ vi.mock('@renderer/lib/layout/layout-provider', async () => {
     useSyncExternalStore(state.subscribe, state.version);
     return { isLeftOpen: state.open, toggleLeft: state.toggleLeft };
   },
+  // Landed on the rail: collapsed with the progress at its end.
+  useLeftRailLayout: () => {
+    useSyncExternalStore(state.subscribe, state.version);
+    return !state.open && state.progress === 0;
+  },
 };
 });
 // The task page's own back (the back button, Mod+[, the window's ←).
