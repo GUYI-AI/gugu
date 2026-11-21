@@ -69,8 +69,24 @@ export function storedForm(message: MessageItem): MessageItem {
   return value as unknown as MessageItem
 }
 
-export function messageStoreOperations(store: MessageStoreAdapter) {
+/**
+ * `retain`: how many newest rows of each main stream the store keeps (null: all of them). Older rows and their coverage
+ * leave together, so a read below the kept rows is not covered and goes to the server.
+ */
+export function messageStoreOperations(store: MessageStoreAdapter, retain: number | null = null) {
   const departed = (chatId: string) => store.tombstoned(chatId, '')
+
+  function trim(chatId: string): void {
+    const kept = store.latest([chatId], retain!)
+    if (kept.length < retain!) return
+    const oldest = kept[0]!.seq
+    const older = store.stream(chatId, null, 0, oldest, Number.MAX_SAFE_INTEGER, false)
+    if (older.length) store.deleteRows(chatId, older.map(row => row.id))
+    const ranges = store.ranges(chatId, '')
+    if (ranges.some(range => range.fromSeq < oldest)) {
+      store.setRanges(chatId, '', ranges.filter(range => range.toSeq >= oldest).map(range => ({ fromSeq: Math.max(range.fromSeq, oldest), toSeq: range.toSeq })))
+    }
+  }
 
   function cover(range: ImMessageRange): void {
     requireId(range.chatId)
@@ -225,6 +241,9 @@ export function messageStoreOperations(store: MessageStoreAdapter) {
         for (const operation of page.writes) applied.push(...write(operation, page.revision))
       }
       for (const range of batch.ranges ?? []) cover(range)
+      if (retain !== null) {
+        for (const chatId of new Set(applied.flatMap(write => write.type === 'put' && !write.message.thread_root_id ? [write.message.chat_id] : []))) trim(chatId)
+      }
       if (batch.throughRevision !== undefined) {
         if (!decimalRevision.test(batch.throughRevision)) throw new Error('Invalid message through_revision')
         if (batch.revisions.some(page => BigInt(page.revision) > BigInt(batch.throughRevision!))) {

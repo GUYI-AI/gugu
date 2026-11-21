@@ -302,3 +302,28 @@ describe.each(subjects)('IM message store contract (%s)', (_name, open) => {
     expect(ids(await reopened.windows(account, ['chat-a'], 20))).toEqual(['new'])
   })
 })
+
+// The phone keeps what a chat window can show (MAX_WINDOW rows per main stream); the desktop keeps every row for local
+// search. Rows and their coverage leave together, so an older read is not covered and goes to the server.
+describe('phone retention (indexeddb)', () => {
+  it('keeps the newest window of a main stream, with coverage only over the kept rows, across a reopen', async () => {
+    const { MAX_WINDOW } = await import('../../../../../src/store/chatMessageWindow')
+    const indexedDb = new IDBFactory()
+    const store = createLocalMessageStore({ indexedDb })
+    const count = MAX_WINDOW + 5
+    const rows = Array.from({ length: count }, (_, index) => message(`m${index + 1}`, 'orchid', index + 1))
+    await store.ingest(account, { writes: rows.map(row => ({ type: 'put', message: row })), revisions: [],
+      ranges: [{ chatId: 'chat-a', threadRootId: null, fromSeq: 1, toSeq: count }] })
+    const reply = message('reply', 'orchid', count + 1, { thread_root_id: 'm1' })
+    await store.ingest(account, batch(reply))
+    store.close()
+    const reopened = createLocalMessageStore({ indexedDb })
+    const window = await reopened.windows(account, ['chat-a'], count)
+    expect(window.map(row => row.seq)).toEqual(Array.from({ length: MAX_WINDOW }, (_, index) => index + 6))
+    expect(await reopened.page(account, { chatId: 'chat-a', beforeSeq: 6, limit: 5 })).toEqual({ rows: [], covered: false })
+    expect((await reopened.page(account, { chatId: 'chat-a', beforeSeq: count + 1, limit: 40 })).covered).toBe(true)
+    // A thread keeps its replies; retention is per main stream.
+    expect(ids((await reopened.page(account, { chatId: 'chat-a', threadRootId: 'm1', limit: 10 })).rows)).toContain('reply')
+    reopened.close()
+  })
+})

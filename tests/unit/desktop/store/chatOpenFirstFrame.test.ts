@@ -616,9 +616,9 @@ describe('打开会话的第一帧', () => {
         } }])
       }
       await act(async () => { for (let seq = 2; seq <= 201; seq++) await emit(seq) })
-      // The window stays at the tail size; the store keeps the whole stream, as on the desktop.
+      // The window stays at the tail size; the store keeps the newest 120 of the stream (the phone's retention).
       const expected = Array.from({ length: 40 }, (_, index) => index + 162)
-      const stored = Array.from({ length: 200 }, (_, index) => index + 2)
+      const stored = Array.from({ length: 120 }, (_, index) => index + 82)
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
       await vi.waitFor(async () => expect(await storedSeqs('chatA')).toEqual(stored), WAIT)
       messagesByChat.chatA = Array.from({ length: 40 }, (_, index) => message({ id: `stream-${index + 162}`, chat_id: 'chatA', seq: index + 162 }))

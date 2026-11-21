@@ -2,6 +2,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { ImMessageBatch, ImMessagePage, ImMessagePageResult, ImMessageWrite, MessageStore } from '../session/shared/core/im-messages'
 import { chatsOfBatch, messageStoreOperations, requireId, type ChatAccessRow, type MessageStoreAdapter, type SeqRange } from '../session/shared/core/im-message-store'
 import { createIndexedDbHandle } from './indexedDbHandle'
+import { MAX_WINDOW } from '../store/chatMessageWindow'
 import { requestResult, transactionDone } from './indexedDbHandle'
 
 // @@@client-state-model - the phone's adapter of the one message storage contract (session/shared/core/im-message-store).
@@ -246,7 +247,8 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
     }
   }
 
-  const operations = (rows: AccountRows) => messageStoreOperations(rows.adapter())
+  // The phone keeps what a chat window can show; older history is read from the server again (the desktop keeps it all).
+  const operations = (rows: AccountRows) => messageStoreOperations(rows.adapter(), MAX_WINDOW)
 
   async function chatsOfIds(rows: AccountRows, ids: readonly string[]): Promise<string[]> {
     const db = await handle.get()
