@@ -57,7 +57,6 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   const refreshPlans = async () => {
     if (refreshing) return;
     setRefreshing(true); setFeedback(null);
-    // @@@reading-default(moment) - the refresh button's click: agents not read yet = no subscription account to refresh
     const providers = (agents ?? []).filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => agent.id);
     try { await refreshModelSubscriptions(machine, providers); }
     catch (error) { setFeedback({ group: 'coding-plan', text: errorText(error) }); }

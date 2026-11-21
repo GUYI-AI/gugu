@@ -378,7 +378,6 @@ function useNameWhenAppears(devices: readonly Device[], rename: (deviceId: strin
     return () => clearTimeout(timer)
   }, [pending])
 
-  // @@@effect-flow(command) - renaming the machine just added once its row appears.
   useEffect(() => {
     if (!pending || targetLabel === null) return
     if (targetLabel === pending.name) { setPending(null); return }

@@ -29,7 +29,6 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<{ key: string; message: string } | null>(null)
 
-  // @@@effect-flow(command) - one check when the session is found missing: whether its machine can start it fresh
   useEffect(() => {
     if (!missing || !online) { setEligible(null); return }
     let active = true
@@ -43,7 +42,6 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     return () => { active = false }
   }, [deviceId, projectId, sessionId, missing, online, local, key])
 
-  // @@@effect-flow(command) - waits for the restart command to settle: its lifecycle passes the clicked version
   useEffect(() => {
     if (attempt?.key !== key || !online) return
     let active = true

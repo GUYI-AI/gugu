@@ -116,7 +116,6 @@ export function AssistantOnboarding({
   }, [ownerUserId, step])
 
   // 上次在这台电脑上建到一半(退出 / 断网):接着建同一个,❌ 再建一个。
-  // @@@effect-flow(command) - resumes a persisted half-done local assistant install (a setup step), not a read a surface shows
   useEffect(() => {
     if (!localDeviceId) return
     let record

@@ -194,8 +194,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const fraction = useSelect(previewProgress, (progress) => progress.get(key))
   const shownBytes = bytes.state === 'value' ? bytes.value : null
   const [drawn, setDrawn] = useState<{ of: ShownBytes; read: PreviewRead } | null>(null)
-  // @@@effect-flow(render) - turns the bytes in hand into what the viewer draws (an image's or a video's object URL, revoked
-  // with them; text; an ArrayBuffer; the MPEG-TS sniff); the server refusing the read it acknowledges takes that down and says why
   useEffect(() => {
     if (!shownBytes) return
     let live = true, refused = false, release: (() => void) | undefined
@@ -216,8 +214,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     return () => { live = false; release?.() }
   }, [shownBytes, kind, file.fileName, t])
   const [stream, setStream] = useState<{ opening: string; read: PreviewRead; holder: OfflineHolder | null } | null>(null)
-  // @@@effect-flow(lifecycle) - a streamed video holds its signed preview (renewed when the link expires, disposed when the
-  // preview closes) for the preview's life; state holds only its link, or why it could not be had
   useEffect(() => {
     if (!streamed || file.source.kind === 'hosted') return
     const source = file.source

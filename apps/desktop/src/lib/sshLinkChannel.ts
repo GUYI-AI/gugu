@@ -61,7 +61,6 @@ export function isSshMachine(deviceId: string): boolean {
 /** The list as it is right now, for a one-moment routing decision outside rendering (surfaces read `useSshMachineIds`). */
 export function currentSshMachineIds(): ReadonlySet<string> {
   const reading = sshMachineAddresses.peek()
-  // @@@reading-default(route) - routing decision of this moment (not drawn): a list not read yet routes through the cloud, as before it is read; `sshMachinesReady` is awaited first where it matters
   return reading.state === 'value' ? sshMachineIdsOf(reading.value) : NO_MACHINES
 }
 

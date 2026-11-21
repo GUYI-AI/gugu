@@ -44,7 +44,6 @@ export function CLISpinner({ variant = '1' }: { variant?: '1' | '2' }) {
   const shown = useContext(SurfaceShownContext);
   const [inView, setInView] = useState(true);
 
-  // @@@effect-flow(dom) - observes whether the spinner is in the viewport (DOM observation)
   useEffect(() => {
     const host = element.current;
     if (!host) return;

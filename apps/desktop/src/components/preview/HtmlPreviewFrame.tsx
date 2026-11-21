@@ -56,7 +56,6 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
   const [attempt, setAttempt] = useState(0);
 
   // frame 只管理一次登记的生命周期;协议登记或 Blob 的更新/撤销由传输适配提供。
-  // @@@effect-flow(lifecycle) - registers a preview URL for the editor buffer in hand and releases it on cleanup
   useEffect(() => {
     let cancelled = false;
     let registered: Extract<HtmlPreviewRegistration, { ok: true }> | null = null;
@@ -111,7 +110,6 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     const off = subscribeChanges(queue.changed);
     return () => { off(); queue.dispose(); };
   }, [preview, subscribeChanges, failed]);
-  // @@@effect-flow(command) - pushes the edited buffer to the registered preview (debounced)
   useEffect(() => {
     if (!preview) return;
     // 登记时那一份已经发过去了,这里不重复推一遍 —— 否则每次打开预览都要白加载两次。
