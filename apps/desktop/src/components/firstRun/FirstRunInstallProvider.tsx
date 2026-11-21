@@ -10,7 +10,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { rpc } from '@renderer/lib/ipc'
 import { Button } from '../ui/Button'
 import { FirstRunInstallContext } from './first-run-install-context'
-import { readLocalCopy, type LocalCopy } from './local-copy'
+import { localCopy, type LocalCopy } from './local-copy'
 
 /** `local`: what was found here; for any kind but `usable` Gugu installs its own copy and the row says why. */
 type InstallTask = { id: FirstRunHarness; state: 'checking' | 'installing' | 'done' | 'failed'; local?: LocalCopy; error?: string }
@@ -54,7 +54,7 @@ export function FirstRunInstallProvider({ children, showNotification = true }: {
       const known = current.current.find((task) => task.id === id)
       if (known && known.state !== 'failed') continue
       update({ id, state: 'checking' })
-      void readLocalCopy(id).then((local) => local.kind === 'usable' ? update({ id, state: 'done', local }) : install(id, local))
+      void localCopy.reread(id).then((local) => local.kind === 'usable' ? update({ id, state: 'done', local }) : install(id, local))
         .catch((error: unknown) => update({ id, state: 'failed', error: messageForUser(error) }))
     }
   }

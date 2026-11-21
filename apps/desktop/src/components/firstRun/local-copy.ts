@@ -1,5 +1,6 @@
 import type { FirstRunHarness } from '@gugu/core/shared/firstRun'
 import { rpc } from '@renderer/lib/ipc'
+import { replica } from '../../lib/replica'
 
 /**
  * What first run finds for a harness on this computer. Only `usable` is used as it is; for the other three Gugu
@@ -13,7 +14,7 @@ export type LocalCopy =
   | { kind: 'broken' }
   | { kind: 'missing' }
 
-export async function readLocalCopy(id: FirstRunHarness): Promise<LocalCopy> {
+async function readLocalCopy(id: FirstRunHarness): Promise<LocalCopy> {
   await rpc.agents.probe(id)
   const status = await rpc.agents.getAgentInstallationStatus(id)
   if (!status || status.status === 'missing') return { kind: 'missing' }
@@ -22,3 +23,10 @@ export async function readLocalCopy(id: FirstRunHarness): Promise<LocalCopy> {
   if (met === true) return { kind: 'usable', version: status.version }
   return met === false ? { kind: 'outdated', version: status.version } : { kind: 'broken' }
 }
+
+/** The tile shows it as soon as it appears; Continue rereads it (`reread`) so the action follows this computer as it is now. */
+export const localCopy = replica({
+  name: 'firstRunLocalCopy',
+  scope: 'device',
+  read: (_device: string, id: FirstRunHarness) => readLocalCopy(id),
+})

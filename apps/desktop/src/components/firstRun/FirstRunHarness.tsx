@@ -1,7 +1,6 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { FirstRunHarness as FirstRunHarnessId } from '@gugu/core/shared/firstRun'
@@ -14,7 +13,9 @@ import { Chip } from '../ui/Chip'
 import { Check } from '@/lib/icons'
 import { writeFirstRunHarness } from '../../lib/firstRun'
 import { useFirstRunInstaller } from './first-run-install-context'
-import { readLocalCopy, type LocalCopy } from './local-copy'
+import { useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
+import { localCopy, type LocalCopy } from './local-copy'
 import './first-run-harness.css'
 
 /** 多选推荐；本机已有且够新的副本直接用，没有或太旧才装咕咕托管的一份（见 FirstRunInstallProvider）。 */
@@ -90,7 +91,7 @@ function HarnessChoice({ id, selected, disabled, onToggle }: {
   const { t } = useTranslation('main')
   const name = id === 'codex' ? 'Codex' : 'Claude'
   // What is on this computer, read when the tile appears; Continue reads it again before acting on it.
-  const local = useQuery({ queryKey: ['first-run-local-copy', id], queryFn: () => readLocalCopy(id) })
+  const local = useReplica(localCopy, [id])
   return (
     <label className="first-run-harness-choice" data-selected={selected} data-testid={`first-run-harness-${id}`}>
       <input type="checkbox" className="first-run-harness-input" checked={selected} disabled={disabled} onChange={onToggle}
@@ -100,7 +101,7 @@ function HarnessChoice({ id, selected, disabled, onToggle }: {
       <AppIcon id={id} size={52} />
       <div className="first-run-harness-name">
         <h2>{name}</h2>
-        <p data-testid={`first-run-harness-${id}-local`}>{local.data ? localLine(t, id, local.data) : null}</p>
+        <p data-testid={`first-run-harness-${id}-local`}>{local.state === 'value' ? localLine(t, id, local.value) : local.state === 'error' ? messageForUser(local.error) : <Unknown />}</p>
       </div>
     </label>
   )

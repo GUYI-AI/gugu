@@ -2,8 +2,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FirstRunHarness } from '@/components/firstRun/FirstRunHarness';
+import { queryClient } from '@/lib/replica';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 const f = vi.hoisted(() => ({ queue: vi.fn(), remember: vi.fn(), save: vi.fn(), done: vi.fn(), local: vi.fn() }));
@@ -14,10 +14,13 @@ vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
 vi.mock('@renderer/lib/components/app-icon', () => ({ AppIcon: () => null }));
 vi.mock('@/components/firstRun/first-run-install-context', () => ({ useFirstRunInstaller: () => f.queue }));
 vi.mock('@/lib/firstRun', () => ({ writeFirstRunHarness: f.remember }));
-vi.mock('@/components/firstRun/local-copy', () => ({ readLocalCopy: f.local }));
+vi.mock('@/components/firstRun/local-copy', async () => {
+  const { replica } = await import('@/lib/replica');
+  return { localCopy: replica({ name: 'testFirstRunLocalCopy', scope: 'device', read: (_device: string, id: string) => f.local(id) }) };
+});
 
 let host: HTMLDivElement; let root: Root;
-const render = () => act(async () => root.render(<QueryClientProvider client={new QueryClient()}><FirstRunHarness userId="qa-user" onDone={f.done} /></QueryClientProvider>));
+const render = () => act(async () => root.render(<FirstRunHarness userId="qa-user" onDone={f.done} />));
 const next = () => host.querySelector<HTMLButtonElement>('[data-testid="first-run-harness-continue"]')!;
 const choice = (id: string) => host.querySelector<HTMLInputElement>(`[data-testid="first-run-harness-${id}"] input`)!;
 beforeEach(() => {
@@ -26,7 +29,7 @@ beforeEach(() => {
   f.local.mockReset().mockResolvedValue({ kind: 'missing' });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); queryClient.clear(); });
 
 describe('first-run agent selection (#7582)', () => {
   it('defaults to Codex, allows both, and continues without waiting for installation', async () => {
