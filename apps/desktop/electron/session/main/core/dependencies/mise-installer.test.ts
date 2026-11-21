@@ -8,6 +8,7 @@ import { managedMiseBinDir } from './managed-agent-home';
 import * as progressMeter from './install-progress-meter';
 import * as selectionModule from './install-source-race';
 import { PlatformBuildMissingError } from './mise-distribution';
+import { installerEnvironment } from '../../../../egress/installer';
 
 const mocks = vi.hoisted(() => ({ appRoot: '', run: vi.fn(), exec: vi.fn(), resolve: vi.fn(), info: vi.fn(), env: {} as NodeJS.ProcessEnv }));
 vi.mock('@main/lib/logger', () => ({ log: { info: mocks.info, warn: vi.fn() } }));
@@ -37,6 +38,7 @@ const npmTarget = {
   backend: { kind: 'npm' as const, node: '24.21.0' },
 };
 const tool = 'http:gugu-agent';
+const ARCHIVE = 'https://registry.npmjs.org/@vendor/agent-linux-x64/-/agent-linux-x64-1.2.3.tgz';
 const version = '1.2.3-official-content';
 const launcher = () => path.join(managedMiseBinDir(), process.platform === 'win32' ? 'agent.cmd' : 'agent');
 let abort: AbortController | undefined;
@@ -90,9 +92,11 @@ describe('common automatic installation execution', () => {
     const result = await runMiseOperation({ mise: { target, operation: 'install', source: automatic } }, preparation);
     expect(result).toMatchObject({ success: true, data: { registry: 'official' } });
     const childEnv = mocks.run.mock.calls.find((c) => c[1][0] === 'install')![2].env;
-    expect(childEnv).toMatchObject(mocks.env);
-    expect(selection.mock.calls[0][0].env).toBe(childEnv);
-    expect(selection.mock.calls[0][0].env.NO_PROXY).toBe(childEnv.NO_PROXY);
+    const sampledEnv = selection.mock.calls[0][0].env;
+    expect(sampledEnv).toMatchObject(mocks.env);
+    // The race samples through the same installer adaptation the child gets (loopback bypass merged).
+    expect(childEnv).toEqual(await installerEnvironment(ARCHIVE, sampledEnv));
+    expect(childEnv.HTTPS_PROXY).toBe(mocks.env.HTTPS_PROXY);
     expect(childEnv.MISE_DATA_DIR).toBe(path.join(preparation.root, 'data'));
     expect(await readFile(launcher(), 'utf8')).toBe('previous launcher');
     expect(JSON.stringify(mocks.info.mock.calls.filter((c) => c[0].includes('source selection')))).not.toMatch(/secret|7897|internal/);
@@ -132,7 +136,7 @@ beforeEach(async () => {
   mocks.env = {};
   mocks.info.mockClear();
   mocks.exec.mockReset().mockResolvedValue({ stdout: 'agent 1.2.3', stderr: '' });
-  mocks.resolve.mockReset().mockResolvedValue({ kind: 'platform-archive', tool, version: '1.2.3', installVersion: version, executable: 'bin/agent', config: '[tools]\n' });
+  mocks.resolve.mockReset().mockResolvedValue({ kind: 'platform-archive', tool, version: '1.2.3', installVersion: version, executable: 'bin/agent', config: '[tools]\n', sampleUrl: ARCHIVE });
   mocks.run.mockReset().mockImplementation(async (_command, args, options) => {
     if (args[0] === '--version') return '2026.9.12 test';
     if (args[0] === 'ls') return JSON.stringify(entries);
@@ -334,7 +338,7 @@ describe('application-owned mise lifecycle', () => {
       const sampledEnv = selection.mock.calls[0][0].env;
       const childEnv = mocks.run.mock.calls.find((call) => call[1][0] === 'install')![2].env;
       expect(sampledEnv).toMatchObject(mocks.env);
-      expect(childEnv).toEqual({ ...sampledEnv, NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org' });
+      expect(childEnv).toEqual(await installerEnvironment('https://registry.npmjs.org', { ...sampledEnv, NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org' }));
     });
 
     it('node 与包一条命令一起装,下载源经 NPM_CONFIG_REGISTRY 递给 mise', async () => {
@@ -489,7 +493,7 @@ describe('application-owned mise lifecycle', () => {
       backend: { kind: 'acp-registry' as const, agentId: 'antigravity-acp' },
     };
     beforeEach(() => {
-      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/agent', config: '[tools]\n' });
+      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/agent', config: '[tools]\n', sampleUrl: ARCHIVE });
       const base = mocks.run.getMockImplementation()!;
       mocks.run.mockImplementation(async (command, args, options) => {
         const output = await base(command, args, options);
@@ -508,7 +512,7 @@ describe('application-owned mise lifecycle', () => {
     });
 
     it('cmd 指的文件不在就失败并回滚,❌ 不发布一个指向空处的启动器', async () => {
-      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/missing', config: '[tools]\n' });
+      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/missing', config: '[tools]\n', sampleUrl: ARCHIVE });
       const result = await runMiseOperation({ mise: { target: acpTarget, operation: 'install' } });
       expect(result.success).toBe(false);
       expect(await readFile(launcher(), 'utf8')).toBe('previous launcher');

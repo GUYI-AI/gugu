@@ -110,6 +110,13 @@ export function analyzeSource(file, sourceText) {
   const emitterSites = []
   let outlets = 0
   const record = (name, node) => {
+    // A raw emitter returned directly by an exported factory belongs to its caller, like node:http.createServer.
+    // Starting/using it here still counts; only an unconsumed direct return crosses this ownership boundary.
+    if (ts.isReturnStatement(node.parent)) {
+      let owner = node.parent.parent
+      while (owner && !ts.isFunctionLike(owner)) owner = owner.parent
+      if (owner && ts.isFunctionDeclaration(owner) && owner.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) return
+    }
     emitterSites.push({
       name,
       line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,

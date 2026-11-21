@@ -85,6 +85,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.39.0
         version: 2.103.0
+      agent-base:
+        specifier: 7.1.4
+        version: 7.1.4
       better-sqlite3:
         specifier: 13.2.0
         version: 13.2.0
@@ -103,6 +106,9 @@ importers:
       file-uri-to-path:
         specifier: ^1.0.0
         version: 1.0.0
+      https-proxy-agent:
+        specifier: 7.0.6
+        version: 7.0.6
       is-extglob:
         specifier: ^2.1.1
         version: 2.1.1
@@ -124,6 +130,9 @@ importers:
       playwright-core:
         specifier: 1.64.0-alpha-1790635538000
         version: 1.64.0-alpha-1790635538000
+      socks-proxy-agent:
+        specifier: 8.0.5
+        version: 8.0.5
       tldts:
         specifier: 7.0.28
         version: 7.0.28
@@ -10953,6 +10962,10 @@ packages:
   smol-toml@1.7.1:
     resolution: {integrity: sha512-PPlsspAZ4jbMBu5DMFhfUGDQLu/vrL4SyBROVS37x8ynnVmFIs1VPBz1Co8Xks3TvpIaZXmU85y4DrQ+UyVFoQ==}
     engines: {node: '>= 18'}
+
+  socks-proxy-agent@8.0.5:
+    resolution: {integrity: sha512-HehCEsotFqbPW9sJ8WVYB6UbmIMv7kUUORIF2Nncq4VQvBfNBLibW9YZR5dlYCSUhwcD628pRllm7n+E+YTzJw==}
+    engines: {node: '>= 14'}
 
   socks@2.8.10:
     resolution: {integrity: sha512-e0VyvkVTwVYViNovRkZ9aodhxVlyoMn7eJhVUPxZ+eK9P/7CBkxvvsBOHqFPEH416726W8tLXXXjKwqgTErrCQ==}
@@ -23080,6 +23093,14 @@ snapshots:
   smart-buffer@4.2.0: {}
 
   smol-toml@1.7.1: {}
+
+  socks-proxy-agent@8.0.5:
+    dependencies:
+      agent-base: 7.1.4
+      debug: 4.4.3
+      socks: 2.8.10
+    transitivePeerDependencies:
+      - supports-color
 
   socks@2.8.10:
     dependencies:

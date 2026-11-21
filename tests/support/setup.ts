@@ -81,3 +81,5 @@ beforeEach(async () => {
   await import('../../apps/desktop/src/i18n/registerAgentsCatalog')
   applyLocalePreference('zh-CN', false)
 })
+
+import '../../apps/desktop/session-tooling/vitest-egress-setup'

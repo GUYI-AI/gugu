@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
@@ -7,7 +8,6 @@ import {
   VENDOR_MANIFEST_PLACEHOLDER,
   type InstallTarget,
 } from '@gugu/session-core/deps';
-import { anySignal } from '@gugu/core/shared/anySignal';
 import type { InstallFetch } from './install-source-transport';
 
 export type MiseTarget = Extract<InstallTarget, { kind: 'mise' }>;
@@ -25,8 +25,8 @@ export type MiseArchiveDistribution = {
   /** 启动器在 `"$@"` 前固定带上的参数 —— 只有 ACP 注册表那一格会给(FORMAT.md 的 `args`)。 */
   args?: string[];
   config: string;
-  /** The exact artifact used by this recipe, also used for a bounded source sample. */
-  sampleUrl?: string;
+  /** The exact artifact used by this recipe: its origin decides the installer's proxy route, and a bounded source sample reads it. */
+  sampleUrl: string;
 };
 
 /**
@@ -76,10 +76,10 @@ async function fetchManifest(
   name: string,
   version: string,
   signal?: AbortSignal,
-  fetcher: InstallFetch = fetch,
+  fetcher: InstallFetch = egress.fetch,
 ): Promise<Manifest> {
   const response = await fetcher(registry + '/' + encodeURIComponent(name) + '/' + encodeURIComponent(version), {
-    signal: anySignal([signal, AbortSignal.timeout(20_000)]),
+    timeoutMs: 20_000, signal: signal,
   });
   if (!response.ok) {
     await response.body?.cancel();
@@ -110,8 +110,8 @@ type AcpRegistryAgent = { id?: unknown; version?: unknown; distribution?: { bina
 
 /** 取回官方 ACP 注册表的发布索引 —— 超时与 npm 元数据那条同一口径。 */
 export async function fetchAcpRegistry(signal?: AbortSignal): Promise<{ agents: AcpRegistryAgent[] }> {
-  const response = await fetch(ACP_REGISTRY_URL, {
-    signal: anySignal([signal, AbortSignal.timeout(20_000)]),
+  const response = await egress.fetch(ACP_REGISTRY_URL, {
+    timeoutMs: 20_000, signal: signal,
   });
   if (!response.ok) throw new Error('ACP registry HTTP ' + response.status);
   const json = await response.json() as { agents?: unknown };
@@ -184,7 +184,7 @@ async function resolveAcpRegistryDistribution(
     'bin_path = ' + JSON.stringify(path.posix.dirname(executable)),
     '',
   ].join('\n');
-  return { kind: 'acp-registry', tool, version: agent.version, installVersion, executable, ...(args.length > 0 ? { args } : {}), config };
+  return { kind: 'acp-registry', sampleUrl: binary.archive, tool, version: agent.version, installVersion, executable, ...(args.length > 0 ? { args } : {}), config };
 }
 
 /**
@@ -237,8 +237,8 @@ export function parseVendorManifest(json: unknown): VendorManifestRelease {
 }
 
 export async function fetchVendorManifest(url: string, signal?: AbortSignal): Promise<VendorManifestRelease> {
-  const response = await fetch(url, {
-    signal: anySignal([signal, AbortSignal.timeout(20_000)]),
+  const response = await egress.fetch(url, {
+    timeoutMs: 20_000, signal: signal,
   });
   if (!response.ok) throw new Error('Vendor manifest HTTP ' + response.status + ': ' + url);
   return parseVendorManifest(await response.json());
@@ -299,7 +299,7 @@ async function resolveVendorManifestDistribution(
     ...layout,
     '',
   ].join('\n');
-  return { kind: 'vendor-manifest', tool, version: release.version, installVersion, executable, config };
+  return { kind: 'vendor-manifest', sampleUrl: release.url, tool, version: release.version, installVersion, executable, config };
 }
 
 /** Resolve the chosen distribution source; mise owns all artifact download and extraction. */
@@ -311,7 +311,7 @@ export async function resolveMiseDistribution(
   arch: string = process.arch,
   /** 只给测试用;缺省按本机 libc 判(`vendorPlatformLookupKey`)。 */
   musl?: boolean,
-  fetcher: InstallFetch = fetch,
+  fetcher: InstallFetch = egress.fetch,
 ): Promise<MiseDistribution> {
   // ACP 注册表只有一个 URL:npm 下载源在这条上没有意义,❌ 不去查它(也就不会因为一个镜像 id 报错)。
   if (target.backend.kind === 'acp-registry') {

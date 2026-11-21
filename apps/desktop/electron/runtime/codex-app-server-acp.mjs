@@ -246,32 +246,6 @@ function rejectAppPending(error) {
   appPending.clear()
 }
 
-const LOOPBACK_MCP_HOSTS = ['127.0.0.1', 'localhost', '::1']
-
-function appendNoProxy(env, hosts) {
-  const entries = new Set(
-    [env.NO_PROXY, env.no_proxy]
-      .flatMap((value) => String(value ?? '').split(','))
-      .map((value) => value.trim())
-      .filter(Boolean),
-  )
-  for (const host of hosts) entries.add(host)
-  const value = [...entries].join(',')
-  env.NO_PROXY = value
-  env.no_proxy = value
-}
-
-function hasLoopbackMcp(servers) {
-  return (servers ?? []).some((server) => {
-    try {
-      const host = new URL(String(server?.url ?? '')).hostname.replace(/^\[|\]$/g, '').toLowerCase()
-      return LOOPBACK_MCP_HOSTS.includes(host)
-    } catch {
-      return false
-    }
-  })
-}
-
 /**
  * ACP 线上的 mcpServers → 原生 thread-open `config` 覆盖。
  *
@@ -874,7 +848,6 @@ async function startAppAttempt(servers) {
   }
   const inheritedArgs = process.argv.slice(2)
   const childEnv = { ...process.env, ...mcp.env }
-  if (hasLoopbackMcp(servers)) appendNoProxy(childEnv, LOOPBACK_MCP_HOSTS)
   delete childEnv.GUGU_CODEX_BIN
   // 平台模型的 codex 元数据(#5635):宿主给的网关目录事实 → 这座桥自有的 catalog 文件,
   // 活到本进程退出。没有事实(用户自己的 Codex 账号)⇒ 不写、不加参数。

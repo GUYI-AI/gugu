@@ -38,6 +38,9 @@ moduleInternals._load = function patchedLoad(this: unknown, request: string, ...
 }
 
 async function main(): Promise<void> {
+  // Before anything reaches the network (the shim is in place, so the egress module may import electron).
+  const { installHostEgress } = await import('./egress/install')
+  installHostEgress()
   const { startSessionHostWsServer } = await import('./session/main/host-ws/server')
   const { bootSessionHostCore, disposeEmdashModule, setSessionMessageRouter } = await import(
     './session/main/embedded-boot'

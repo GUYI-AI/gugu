@@ -394,7 +394,8 @@ export const plugin = definePlugin(
 
 /**
  * New ACP starts use the same host-resolved agy as TUI. Stored conversations choose their original
- * native store and executable; loopback proxy exclusions apply to both paths and catalog probes.
+ * native store and executable. Loopback stays out of the proxy for both paths and catalog probes: the child
+ * environment's exit merges it (session-core `withLoopbackNoProxy`).
  */
 const antigravityAcp = createNativeAcpBehavior(buildAntigravityAcpSpawn, { interruptAtToolBoundary: true });
 

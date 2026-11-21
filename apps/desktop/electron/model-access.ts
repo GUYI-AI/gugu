@@ -1,4 +1,5 @@
 import { isUserFacingModelId } from '@gugu/session-core/acp/client'
+import { egress } from '@gugu/core/shared/egress'
 import { execFile } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -25,7 +26,6 @@ import {
   type RuntimeAuthProvider,
 } from '@gugu/core'
 import { platformProtocolForEngine } from './engine-injection-contract'
-import * as electron from 'electron'
 import type { PlatformCallableRoutes } from '@gugu/session-core/agents/plugins'
 import type { GuguCatalogReason } from '@gugu/session-core/session-record/contract'
 import { createLogger } from './lib/logger'
@@ -124,10 +124,7 @@ export interface IssuedModelAccess {
 }
 
 // A ticket's `expires_at` is on the backend's clock: its answers tune the main process's `serverNow()` (`@@@server-clock`).
-const modelAccessFetch = withServerClock((url: string, init: RequestInit): Promise<Response> => {
-  const netFetch = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
-  return netFetch ? netFetch(url, init) : fetch(url, init)
-})
+const modelAccessFetch = withServerClock((url: string, init: RequestInit): Promise<Response> => egress.fetch(url, init))
 
 /**
  * model-access 的非 2xx 回应;status 让调用方分清「这张票服务端不认识」(404)与其它失败。
@@ -196,8 +193,7 @@ async function invokeModelAccessAs(
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   if (!platformModelsEnabled()) throw new Error('Official model service is not configured')
-  // #5331 签令牌走 Chromium 连接池(与 supabase-js 同池,空闲保活约 5 分钟);Node 全局 fetch 的 undici 池
-  // 4 s 就断,两次新建会话之间必然冷掉,每次都重握 0.95 s 的 TLS。electron 缺席(单测)时退回全局 fetch。
+  // Model credentials and other cloud requests share the selected egress backend and its connection pool.
   const response = await modelAccessFetch(`${getSupabaseUrl().replace(/\/$/, '')}/functions/v1/model-access`, {
     method: 'POST',
     headers: {

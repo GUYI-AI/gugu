@@ -4,7 +4,7 @@ import { createServer, type Server, type Socket } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { downloadServerPackage } from '../../../../apps/desktop/electron/server/server-package-download'
+import { downloadServerPackage, DownloadSiteUnreachableError } from '../../../../apps/desktop/electron/server/server-package-download'
 
 let home: string
 const servers: Server[] = []
@@ -61,8 +61,8 @@ describe('server package transport', () => {
     const url = await feed(() => {})
     await expect(downloadServerPackage(url, path.join(home, 'package'), 25)).rejects.toThrow('stopped receiving data')
   })
-  it('rejects a malformed redirect inside the response callback without an uncaught exception', async () => {
+  it('rejects a malformed redirect through the transport without an uncaught exception', async () => {
     const url = await feed(socket => socket.end('HTTP/1.0 302 Found\r\nLocation: http://[\r\n\r\n'))
-    await expect(downloadServerPackage(url, path.join(home, 'package'))).rejects.toThrow('Invalid URL')
+    await expect(downloadServerPackage(url, path.join(home, 'package'))).rejects.toBeInstanceOf(DownloadSiteUnreachableError)
   })
 })

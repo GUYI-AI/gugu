@@ -8,6 +8,7 @@
  * 账号主体只在唯一账号已有登录态时进入;登录失效时 getAuth() 返回 null,
  * 进程随即退出,等人重新 `gugu-server login`。
  */
+import { egress } from '@gugu/core/shared/egress'
 import fs from 'node:fs'
 import path from 'node:path'
 import { app, safeStorage } from 'electron'
@@ -227,10 +228,10 @@ export function createServerAuthProvider(input: {
     async revokeAndSignOut() {
       const auth = current ? await current.provider.getAuth().catch(() => null) : null
       if (auth?.accessToken) {
-        await fetch(`${input.supabaseUrl.replace(/\/$/, '')}/auth/v1/logout?scope=local`, {
+        await egress.fetch(`${input.supabaseUrl.replace(/\/$/, '')}/auth/v1/logout?scope=local`, {
           method: 'POST',
           headers: { apikey: input.anonKey, authorization: `Bearer ${auth.accessToken}` },
-          signal: AbortSignal.timeout(10_000),
+          timeoutMs: 10_000,
         }).catch(() => undefined)
       }
       clearStoredServerSession()
