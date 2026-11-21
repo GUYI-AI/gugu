@@ -5,7 +5,7 @@ import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfG
 import { screenLayout } from '@renderer/app/screen-layout';
 import { AlertTriangle, LayoutGrid, PanelLeft, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { observer } from 'mobx-react-lite';
@@ -28,6 +28,7 @@ import {
   useWorkspaceSlots,
 } from '@renderer/lib/layout/navigation-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { hasStatusSource } from '@shared/core/sessions/initial-agent-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
@@ -37,7 +38,7 @@ import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { SessionRowShell } from './sidebar-session-row';
 import type { SessionBranchSummary } from './sidebar-session-branch';
-import { useSessionDropTarget } from './use-session-drop-target';
+import { sessionDropTarget } from './session-drop-target';
 import { ProjectBadge } from './remote-host-chip';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { SidebarIdentityCard, sidebarIdentityCard, useSidebarIdentityCardTrigger } from './sidebar-identity-card';
@@ -121,8 +122,9 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
 }: SidebarSessionItemProps) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
+  const installed = useInstalledApps(LOCAL_HOST);
   const { params } = useParams('session');
-  const { data: agents } = useAgents();
+  const agents = valueOf(useAgents());
   const { translate } = useSessionMessages();
   const shownStatus = useShownAgentStatus();
   const assistantName = useAssistantShell()?.assistant?.display_name ?? null;
@@ -135,8 +137,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const identityCard = useSidebarIdentityCardTrigger(sessionId, identityCardEnabled);
   const identityCardOpen = identityCardEnabled && sidebarIdentityCard.activeSessionId === sessionId;
   const agentBinding = sessionAgentBindings.bindingFor(sessionId);
-  const nestDrop = useSessionDropTarget();
-
   // 挂着的会话读它自己的 store;别的机器上还没挂的读会话目录那一行(列出不挂载,见 sidebar-store)。
   const session = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
   const listed = sidebarStore.remoteSession(projectId, sessionId);
@@ -147,7 +147,8 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const localSchedules = useSessionSchedules(null, sessionId, machine === null);
   const schedule =
     machine === null
-      ? sessionScheduleDigest(localSchedules)
+      // A mark only: none until this computer answered (`undefined` = the row's "not known"); the task's tray says why.
+      ? localSchedules.state === 'value' ? sessionScheduleDigest(localSchedules.value) : undefined
       : (listed ?? sidebarStore.remoteSession(projectId, sessionId))?.summary.schedule;
   const row = session ? rowOfStore(session, schedule) : listed ? rowOfListing(listed) : null;
   const agentUserId = agentBinding?.agentUserId ?? listed?.summary.agent?.userId;
@@ -190,10 +191,10 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const spawnedByExtensionId = row.spawnedByExtensionId;
   const spawnedByExtensionLabel = spawnedByExtensionLabelFor({
     extensionId: spawnedByExtensionId,
-    installedName: spawnedByExtensionId
-      ? installedExtensionsStore.appName(spawnedByExtensionId)
+    installedName: spawnedByExtensionId && installed.state === 'value'
+      ? installed.value.appName(spawnedByExtensionId)
       : undefined,
-    manifestsLoaded: installedExtensionsStore.isLoaded,
+    manifestsLoaded: installed.state === 'value',
   });
 
   // A row of the inner column (a group's agents) opens inside that group: the screen stays the group's (screen-layout `entry`).
@@ -241,7 +242,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
 
   // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的不给落点:
   // 它自己、已经挂在这里的、以及这一行就在它下面的(挂上去成环)。
-  const nestHere = nestDrop.bind(
+  const nestHere = sessionDropTarget(
     (dragged) =>
       dragged.sessionId !== sessionId &&
       sidebarStore.parentOf(dragged.sessionId) !== sessionId &&
@@ -361,7 +362,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       isActive={isActive}
       isCursor={isCursor}
       isPendingArchive={isPendingArchive}
-      isNestTarget={nestDrop.over}
       join={join}
       quickActions={{ isPinned, onSetPinned: setPinned, archiveLabel, onArchive: requestArchive }}
       onOpen={openSession}

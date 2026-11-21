@@ -18,7 +18,9 @@ vi.mock('@/lib/realtimeChannel', () => ({ subscribePrivateUserEventBus: (_user: 
 const marked = vi.hoisted(() => ({ scopes: [] as string[][] }))
 vi.mock('@/lib/chatUnreadLocator', async (original) => ({ ...await original<typeof import('@/lib/chatUnreadLocator')>(),
   markChatsReadAndRefresh: async ({ chats }: { chats: readonly { id: string }[] }) => { marked.scopes.push(chats.map((chat) => chat.id)); return { failedChats: 0 } } }))
-vi.mock('@/platform', async (original) => { const actual = await original<typeof import('@/platform')>(); return { ...actual, platform: { ...actual.platform, subscribeAppForeground: () => () => {} } } })
+const foreground = vi.hoisted(() => ({ listeners: new Set<() => void>() }))
+vi.mock('@/platform', async (original) => { const actual = await original<typeof import('@/platform')>(); return { ...actual, platform: { ...actual.platform,
+  subscribeAppForeground: (listener: () => void) => { foreground.listeners.add(listener); return () => { foreground.listeners.delete(listener) } } } } })
 
 const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions')
 const { PinnedTopicTabs } = await import('@/components/chat/PinnedTopicTabs')
@@ -52,7 +54,7 @@ beforeEach(() => {
 afterEach(() => { harness.cleanup(); queryClient.clear() })
 
 describe('rich Topics menu', () => {
-  it('shows who is calling you in red, lists that topic first, and opens it', async () => {
+  it('shows who is calling you in red, keeps it in its place (pinned, then by activity), and opens it', async () => {
     const calling = chat({ id: 'calling', kind: 'topic', source_chat_id: 'g', name: 'Quiet but calling', last_message_at: '2026-10-01T00:00:00Z', last_message_preview: 'Not this', unread_count: 27, unread_locator: locator(27, 1) })
     save(['old'])
     await renderWithAppProviders(harness, topicMenu(), { auth: { id: 'u' }, chat: { activeChatId: 'g', chats: [...topics, calling] } })
@@ -62,7 +64,7 @@ describe('rich Topics menu', () => {
     expect(chip.dataset.tone).toBe('danger')
     await clickElement(button)
     await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="group-menu-topic"]')).toHaveLength(3))
-    expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'older than the rest and not pinned, still first').toEqual(['calling', 'old', 'new'])
+    expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'unread does not move a topic: same order as the chat list').toEqual(['old', 'new', 'calling'])
     const row = document.querySelector<HTMLElement>('[data-topic-id="calling"]')!
     expect(row.textContent, 'title only: no preview line').not.toContain('Not this')
     expect(row.querySelector('.gg-list-row-subtitle')).toBeNull()
@@ -238,6 +240,17 @@ describe('pinned topic tabs', () => {
     await act(async () => { io.listeners.forEach((receive) => receive()) })
     await vi.waitFor(() => expect(document.querySelector('[data-testid="phone-chat-tabs"]')).toBeNull())
   })
+})
+
+it('the main window regaining focus (switching between Gugu windows) does not read the pins again', async () => {
+  save(['old'])
+  await renderWithAppProviders(harness, strip(), options())
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="phone-chat-tab-old"]')).not.toBeNull())
+  save(['new'])
+  await act(async () => { foreground.listeners.forEach((listener) => listener()) })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  expect(document.querySelector('[data-testid="phone-chat-tab-old"]')).not.toBeNull()
+  expect(document.querySelector('[data-testid="phone-chat-tab-new"]')).toBeNull()
 })
 
 it('pins from Topics and immediately shows that topic on the strip', async () => {

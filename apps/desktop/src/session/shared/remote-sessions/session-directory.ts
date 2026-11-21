@@ -59,7 +59,7 @@ export function registerDeviceSessionsRetry(ownerId: string, deviceId: string, r
 /** A stale page from another account or a stopped device cannot reconnect that device. */
 export async function retryDeviceSessions(ownerId: string, deviceId: string): Promise<void> {
   const entry = directoryState().retries.get(deviceId)
-  if (!ownerId || !entry || entry.ownerId !== ownerId) throw new Error('当前账号没有这台设备的可重试连接。')
+  if (!ownerId || !entry || entry.ownerId !== ownerId) throw new Error('The current account has no retryable connection for this device.')
   await entry.run()
 }
 
@@ -172,12 +172,14 @@ export function deviceSessionsOf(device: Device, liveSessions: Readonly<Record<s
   // 状态由行所在机器的在线信号决定,不把旧的 working 当此刻正在运行;完整 workspace 时间线仍然 unsupported。
   if (!device.is_online && isPhoneDevice(device) && live) return { ...live, cached: true, loading: false, error: null, hostOnline: false }
   const digest = sessionListFromDigest(device.session_digest, device.is_online)
+  // A row restored from the last run carries no digest: its sessions are not known until the devices read lands.
+  const digestKnown = device.session_digest !== undefined
   const recorded = (device.projects ?? []).map((project) => ({ id: project.localProjectId, name: project.name, path: project.rootPath }))
   const known = new Set(recorded.map((project) => project.id))
   const projects = [...recorded, ...digest.projects.filter((project) => !known.has(project.id))]
   return device.is_online
     ? { ...digest, projects, cached: true, loading: live?.loading ?? true, error: live?.error ?? null, hostOnline: true }
-    : { ...digest, projects, cached: false, loading: false, error: null, hostOnline: false }
+    : { ...digest, projects, cached: false, loading: !digestKnown, error: null, hostOnline: false }
 }
 
 /** 全部机器的行;地址是行上的机器,❌ 人进的是哪台。 */

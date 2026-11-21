@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useTimelineSession, type SessionpageTimelineClient } from '../../../apps/desktop/src/components/session-watch/use-timeline-session'
 import type { TimelineAfterResult, TimelineOlderResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
 
-vi.mock('../../../apps/desktop/src/components/session-watch/timeline-cache', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/timeline-cache', async (original) => ({ ...await original<object>(),
   readCachedTimeline: () => null, hydrateCachedTimeline: async () => null, writeCachedTimeline: () => {},
 }))
 vi.mock('../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }))

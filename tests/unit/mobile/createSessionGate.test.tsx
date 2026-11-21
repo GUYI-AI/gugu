@@ -6,8 +6,9 @@ import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } 
 import { CreateSessionPage, CreateSessionSheet } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
-import { createNode, createReactHarness, deferred } from '../../support/testHarness'
+import { clickElement, createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
+import { freshReplicaAccount } from '../../support/replicaAccount'
 
 const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn() }))
 vi.mock('@renderer/features/settings/subscriptions/ensure-agent-home', () => ({
@@ -59,7 +60,9 @@ const pageOn = (on: Device, props: Omit<Parameters<typeof CreateSessionPage>[0],
   return createNode(CreateSessionPage, props)
 }
 const scrollTo = Element.prototype.scrollTo
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('create-gate-owner')
+
   harness = createReactHarness()
   Element.prototype.scrollTo = () => undefined
   composerDrafts.set(mobileCreationDraftKey('create-gate-owner'), '')
@@ -232,6 +235,27 @@ describe('phone first-send host readiness', () => {
     expect(rpc.create).not.toHaveBeenCalled()
     await act(async () => { retry.resolve(options); await retry.promise })
     expect(readComposer(field)).toBe('重试中继续编辑')
+    expect(send().disabled).toBe(false)
+  })
+
+  it('options and models read before, a read again that fails is said with a retry; the options stay and the draft still sends', async () => {
+    const { sessionCreateModels, sessionCreateOptions } = await import('../../../apps/desktop/src/lib/agentModelReplicas')
+    rpc.options.mockResolvedValue(options)
+    await harness.render(pageOn(device, { onCreated: vi.fn() }))
+    await write('照旧能发')
+    await act(async () => { await Promise.resolve() })
+    expect(send().disabled).toBe(false)
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-options-error"]')).toBeNull()
+    expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+    rpc.options.mockRejectedValue(new Error('host request timed out'))
+    rpc.models.mockRejectedValue(new Error('catalogue unavailable'))
+    await act(async () => {
+      await Promise.all([sessionCreateOptions.refresh(device.device_id), sessionCreateModels.refresh(device.device_id)].map((read) => read.catch(() => undefined)))
+    })
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-options-error"]')?.textContent).toContain('host request timed out')
+    expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
+    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')?.disabled).toBe(false)
     expect(send().disabled).toBe(false)
   })
 

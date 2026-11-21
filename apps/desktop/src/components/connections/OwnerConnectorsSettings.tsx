@@ -1,3 +1,4 @@
+import '@/i18n/registerAssistantCatalog'
 import { useMemo,useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
@@ -6,7 +7,7 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { ConnectedAppsCatalog } from '@/components/assistant/ConnectedAppsCatalog'
 import { assistantConnectedApps, type AssistantConnectedApp } from '@/components/assistant/assistant-app-connections'
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon'
-import { useChatChannels } from '@/components/settings/channels/useChatChannels'
+import { useReplica } from '@/lib/replica'
 import { SettingsNote, SettingsPage } from '@/components/settings/SettingsPrimitives'
 import { ConnectorMarketCatalog } from '@/session/renderer/features/extensions/panel/connector-market-catalog'
 import { PageLoading } from '@/session/renderer/lib/components/page-layout'
@@ -25,6 +26,8 @@ import './connection-copy'
 import { connectionApplicationStatus } from './connection-application-status'
 import { useConnectionRecovery } from './useConnectionRecovery'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
+import { chatChannels, useOwnerConnectionsReading } from './connection-replicas'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { PhoneMarketConnectorCatalog, type PhoneConnectorCatalogMode } from '@/mobile/market/PhoneMarketConnectorCatalog'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -50,19 +53,23 @@ export const OwnerConnectorsSettings = observer(function OwnerConnectorsSettings
 function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePicker,initialConnectorId,marketQuery,route,phoneCatalog,connectOnly }: { host: LibraryHost; selectedDeviceId: string | null; panelNavigation: boolean; showDevicePicker: boolean; initialConnectorId?: string; marketQuery?: string; route: ConnectionRoute; phoneCatalog?: PhoneConnectorPresentation; connectOnly?: boolean }) {
   const { translate } = useSessionMessages()
   const { t,i18n } = useTranslation('assistant'),copy = useTranslation('connections').t,settings = useTranslation('settings').t
-  const mobile = useMobileShell(),devices = useDevicesStore(),channels = useChatChannels()
+  const mobile = useMobileShell(),devices = useDevicesStore(),channels = useReplica(chatChannels,[])
   const data = useIntegrationsContext()
   const [openId,setOpenId] = useState<string | null>(initialConnectorId ?? null)
   useAssistantPanelBack(panelNavigation && openId ? `owner-connector:${openId}` : null,() => setOpenId(null))
   const allowed = useConnectionMutationAllowed()
   useConnectionRecovery(host.connectionMetadata,allowed)
-  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations,i18n.language),channels.list,
+  // Owner mode: the list is the built-in catalog (always known); which are saved and how they are is the snapshot's.
+  const configured = data.configuredConnections
+  const snapshot = useOwnerConnectionsReading(host.connectionMetadata)
+  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations ?? [],i18n.language),channels,
     id => settings(`channels.${id}`),t('connectors.wechatDescription'),
-    id => connectorState(data.hasConfiguredConnections ? !!data.configuredConnections[id] : undefined,data.checkedConnections[id],
-      undefined,true),data.configuredConnections).map(app => {
-      const status = connectionApplicationStatus(host.connectionMetadata?.peekSnapshot?.(),app.id,data.connectionOperations)
+    id => connectorState(configured ? !!configured[id] : undefined,data.connectionStatus?.[id],undefined,true),configured ?? undefined).map(app => {
+      const status = snapshot.state === 'value' ? connectionApplicationStatus(snapshot.value,app.id,snapshot.value.application) : null
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
-    }),[data,host.connectionMetadata,i18n.language,channels.list,settings,t,copy])
+    }),[data,configured,snapshot,i18n.language,channels,settings,t,copy])
+  const channelList = channels.state === 'value' && !('absent' in channels.value) ? channels.value : null
+  const connectionKnown = configured !== null
   const icon = (app: typeof apps[number], size: number) => app.integration
     ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
     : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null
@@ -77,20 +84,20 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
     </SettingsNote></SettingsPage>
     : <AppConnectionListPlaceholder />
   if (initialConnectorId && openId && !selected) return <SettingsNote role="status">{t('connectors.gone')}</SettingsNote>
-  if (phoneCatalog?.mode === 'installed' && data.configuredConnectionsError && !data.hasConfiguredConnections) {
+  if (phoneCatalog?.mode === 'installed' && data.configuredConnectionsError && !connectionKnown) {
     return <SettingsNote tone="danger" role="alert">{t('connectors.loadFailed')}
       <Button size="sm" onClick={data.reloadConnections}>{t('machine.retry')}</Button>
     </SettingsNote>
   }
   if (phoneCatalog) return <PhoneMarketConnectorCatalog mode={phoneCatalog.mode} apps={apps}
-    open={phoneCatalog.open} icon={icon} connectionKnown={data.hasConfiguredConnections} />
+    open={phoneCatalog.open} icon={icon} connectionKnown={connectionKnown} />
   if (market && !data.hasList) {
     return data.listError ? <div className="mk-status" role="alert">{translate('extensions.connectorDirectoryUnavailable')}</div> : <PageLoading />
   }
   if (market) return <>
     <ConnectorMarketCatalog
-      apps={apps.filter(app => app.id !== 'wechat' || channels.list?.kinds.includes('wechat'))}
-      query={marketQuery} isConnectionKnown={app => app.id === 'wechat' ? !!channels.list : data.hasConfiguredConnections}
+      apps={apps.filter(app => app.id !== 'wechat' || channelList?.kinds.includes('wechat'))}
+      query={marketQuery} isConnectionKnown={app => app.id === 'wechat' ? !!channelList : connectionKnown}
       open={setOpenId} icon={icon}
     />
     {detail}
@@ -103,8 +110,11 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
         {devices.devices.map(device => <option key={device.device_id} value={device.device_id}>{device.label || device.hostname}</option>)}
       </select>
     </label> : null}
+    {/* The snapshot read before, its read again failing: rows keep its statuses, the failure said with a retry (an unread
+        snapshot is said by the provider's connection notice). */}
+    {snapshot.state === 'value' ? <RefreshFailed reading={snapshot} /> : null}
     <ConnectedAppsCatalog apps={apps} scope={host.key} open={setOpenId} mobile={mobile} panelNavigation={panelNavigation}
-      connectionRead={data.hasConfiguredConnections ? 'ready' : 'pending'}
+      connectionRead={connectionKnown ? 'ready' : 'pending'}
       icon={icon} />
   </SettingsPage>
 }

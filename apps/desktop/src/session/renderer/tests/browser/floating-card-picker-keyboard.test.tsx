@@ -5,6 +5,7 @@ import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { Sheet } from '@/components/ui/Sheet';
 import { RemoteFolderPicker } from '@/components/RemoteFolderPicker';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { useFloatingCardKeys } from '../../app/floating-card-keys';
 import '@/styles/tokens.css';
 
@@ -20,6 +21,8 @@ vi.mock('react-i18next', async (original) => ({
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
+  queryClient.clear();
+  followRendererSession('SIGNED_IN', 'tester');
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);

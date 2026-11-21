@@ -90,7 +90,7 @@ export const sessionController = createRPCController({
     return sessionLife().read(sessionId);
   },
   lifeStart: async (sessionId: string) => { sessionLife().start(sessionId, 'user-open'); },
-  lifeRetryUnknown: (sessionId: string, messageId: string) => sessionLife().retryUnknownRow(sessionId, messageId, nativePendingInputLookup(sessionId)),
+  lifeRetryUnknown: (sessionId: string, messageId: string, options?: import('@shared/core/sessions/session-life').NativeInputRetryOptions) => sessionLife().retryUnknownRow(sessionId, messageId, nativePendingInputLookup(sessionId), options),
   lifeStop: (sessionId: string) => stopSessionByPerson(sessionId),
   lifeDiscard: async (sessionId: string, messageId: string) => { sessionLife().discardRow(sessionId, messageId); },
   // A side chat is a fork entry of Life: opened by its page, fed through the same custody send, ended when the

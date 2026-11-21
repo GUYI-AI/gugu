@@ -25,13 +25,13 @@ export function AnnotateDoneMenu({ actions, mobile }: { actions: Actions; mobile
         <Button disabled={actions.busy} onClick={() => void actions.copy()} aria-label={actions.copied ? t('copied') : undefined}>{actions.copied ? <Check size={16} /> : t('copy')}</Button>
         <output aria-live="polite" className="sr-only">{actions.copied ? t('copied') : ''}</output>
         <Button disabled={actions.busy} onClick={() => void actions.save()}>{t('save')}</Button>
-        {actions.canCompose ? <Button disabled={actions.busy} onClick={() => void actions.saveToFolder()}>{t('saveFolder')}</Button> : null}
+        {actions.canSaveToFolder ? <Button disabled={actions.busy} onClick={() => void actions.saveToFolder()}>{t('saveFolder')}</Button> : null}
       </div>
     </Sheet> : null}
     {mobile ? null : <DropdownMenu.Content zIndex="var(--z-overlay)" className="min-w-[160px]">
       <MenuItem onClick={() => void actions.copy()}>{t('copy')}</MenuItem>
       <MenuItem onClick={() => void actions.save()}>{t('save')}</MenuItem>
-      {actions.canCompose ? <MenuItem onClick={() => void actions.saveToFolder()}>{t('saveFolder')}</MenuItem> : null}
+      {actions.canSaveToFolder ? <MenuItem onClick={() => void actions.saveToFolder()}>{t('saveFolder')}</MenuItem> : null}
     </DropdownMenu.Content>}
   </DropdownMenu.Root>
 }

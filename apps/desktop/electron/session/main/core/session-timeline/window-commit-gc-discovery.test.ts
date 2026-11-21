@@ -64,6 +64,9 @@ describe('incremental source catalog candidate discovery', () => {
   it('serializes concurrent discovery and permanently closes its own handle on disposal', async () => {
     const f = await fixture(), ids = [randomUUID(), randomUUID()];
     for (const id of ids) await writeFile(join(f.path, `${id}.version`), 'metadata');
+    // This case is about serialization, not the 5 ms slice: a slow runner can spend the slice on `.ready` and
+    // legitimately answer `continuation`. Keep the slice open so each call reaches its own entry.
+    vi.spyOn(performance, 'now').mockReturnValue(0);
     const results = await Promise.all([f.discovery.next(createWindowBudget()), f.discovery.next(createWindowBudget())]);
     expect(results.map(value => value.kind === 'candidate' ? value.sourceId : '').sort()).toEqual(ids.sort());
     await f.discovery.close(); await expect(f.discovery.next(createWindowBudget())).rejects.toThrow('closed');

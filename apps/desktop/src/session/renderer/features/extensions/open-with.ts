@@ -4,7 +4,7 @@ import { showModal } from '@renderer/lib/modal/modal-provider';
 import { log } from '@renderer/utils/logger';
 import { askOpener, chooseOpener, fileOpenersFor, openWithKey, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import { opensInEditor } from '@renderer/features/sessions/file-view/file-view-kinds';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { fetchInstalledApps, LOCAL_HOST, noteOpenWithDefault } from './installed-extensions';
 
 /**
  * `candidate`: the App that opens it without asking — the one a link's place is told to (several: the person picks, and
@@ -18,22 +18,23 @@ export type SessionOpener = { tabKind: string; candidate?: FileOpenerCandidate }
  * 「用哪个打开」 asks. Cancelled opens nothing. `ask`
  * (「用别的 App 打开」, an App's `files.openWith(file, { ask: true })`): every App that opens it, the person picks.
  */
-export function pickSessionOpener(filePath: string, ask = false): Promise<SessionOpener> {
-  const candidates = fileOpenersFor(filePath, installedExtensionsStore.manifests, 'session').filter((candidate) =>
-    installedExtensionsStore.isEnabled(candidate.extensionId) && (candidate.suffix !== '*' || opensInEditor(filePath))
+export async function pickSessionOpener(filePath: string, ask = false): Promise<SessionOpener> {
+  const installed = await fetchInstalledApps(LOCAL_HOST);
+  const candidates = fileOpenersFor(filePath, installed.manifests, 'session').filter((candidate) =>
+    installed.isEnabled(candidate.extensionId) && (candidate.suffix !== '*' || opensInEditor(filePath))
   );
-  const remembered = (suffix: string) => installedExtensionsStore.openWithDefaults[openWithKey('session', suffix)] ?? null;
+  const remembered = (suffix: string) => installed.openWithDefaults[openWithKey('session', suffix)] ?? null;
   const choice = ask ? askOpener(candidates) : chooseOpener(candidates, remembered);
-  if (choice.kind === 'none') return Promise.resolve({ preview: true });
-  if (choice.kind === 'one') return Promise.resolve({ tabKind: choice.candidate.tabKind, candidate: choice.candidate });
+  if (choice.kind === 'none') return { preview: true };
+  if (choice.kind === 'one') return { tabKind: choice.candidate.tabKind, candidate: choice.candidate };
   return new Promise((resolve) => {
     showModal('openWithChooserModal', {
       fileName: filePath.split(/[\\/]/).pop() ?? filePath,
-      candidates: choice.candidates.map(({ tabKind, tabTitle, app, onlyTab }) => ({ tabKind, tabTitle, appName: localizedManifestText(app, installedExtensionsStore.locale).name, onlyTab })),
+      candidates: choice.candidates.map(({ tabKind, tabTitle, app, onlyTab }) => ({ tabKind, tabTitle, appName: localizedManifestText(app, installed.locale).name, onlyTab })),
       onSuccess: ({ tabKind, always }) => {
         if (always) {
           const key = openWithKey('session', choice.suffix);
-          installedExtensionsStore.noteOpenWithDefault(key, tabKind!);
+          noteOpenWithDefault(LOCAL_HOST, key, tabKind!);
           void rpc.extensions.setOpenWithDefault({ key, tabKind: tabKind! }).then((result) => {
             if (!result.success) log.warn('The open-with choice was not kept:', result.error);
           });

@@ -1,6 +1,6 @@
 import { notifyCopied } from '@/lib/copyFeedback'
 import { billingLinksAvailable } from '../../lib/appLinks'
-import type { Reading } from '../../lib/replica'
+import { refreshFailure, useReplica, type Reading, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -20,7 +20,8 @@ import {
 } from '../../lib/deviceRowModel'
 import { rendererLogger } from '../../lib/log'
 import { useSshSignInStates } from '../../hooks/useSshSignInStates'
-import { useSshLinkProblems, useSshMachineIds, useSshUpgrades } from '../../hooks/useSshLinkProblems'
+import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
+import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
 import { sshLinkFacts } from '../../lib/sshLinkOnline'
 import { requestSshServerUpgrade, signInSshMachine } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
@@ -36,7 +37,6 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu, MenuItem, MenuSeparator } from '../ui/Menu'
-import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { SearchField } from '../ui/SearchField'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { cn } from '../../lib/cn'
@@ -46,7 +46,7 @@ import { supersededBy } from '../../lib/deviceSuperseded'
 import { consumeAddServerIntent } from '../../lib/addServerIntent'
 import { consumeDeviceActionsIntent } from '../../lib/deviceActionsIntent'
 import { useDeviceRemoval } from './useDeviceRemoval'
-import { SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
+import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { DeviceActionsPage } from './DeviceActionsPage'
 import { deviceAcceptsWork } from '@gugu/core/cloud/cloudComputer'
 import { withoutAssistantHome } from '../../lib/assistantHome'
@@ -55,6 +55,7 @@ import { useDeviceMachineSections } from '../../lib/deviceMachines'
 import { DeviceMachineArchive } from '../devices/DeviceMachineArchive'
 import { DeviceRenameField } from '../devices/DeviceRenameField'
 import { useDeviceRename } from '../../hooks/useDeviceRename'
+import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 
 // #1749 设备管理 → #6264 做成能上线的「设置 → 设备」:
 //  · 每行:名字、是台什么机器(本机 / 电脑 / 服务器)、系统与架构、咕咕版本 + 升级状态、在线或「上次在线」、
@@ -74,7 +75,7 @@ const log = rendererLogger('devices')
 // ❌ 出现「· 咕咕 0.2.51」那种孤零零挂在行首的分隔符。第一项(状态)用同宽的左内边距占位。
 const META_SEP = "ml-2"
 
-const DEVICE_LIST_CLASS = 'flex flex-col rounded-[var(--radius-document)] bg-foreground/[0.025] p-1 dark:bg-foreground/[0.04]'
+const DEVICE_LIST_CLASS = 'gg-settings-device-list'
 
 export function DevicesSection({
   onUpgrade,
@@ -84,12 +85,13 @@ export function DevicesSection({
 } = {}) {
   const { t } = useTranslation('settings')
   const { toast } = useToast()
-  const { devices: deviceRows, phones, loading, error, refresh, rename, cloudComputer } = useDevicesStore()
+  const { devices: deviceRows, phones, loading, error, refresh, rename } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   // Disk bytes are on-demand state; the revision journal only announces warning transitions.
   useEffect(() => { void refresh() }, [refresh])
   const allDevices = useMemo(() => [...deviceRows, ...(phones ?? [])], [deviceRows, phones])
   // #7199 个人助理住的那台云端宿主不在这一页(owner 10-15:用户看不到它住在哪);开通、叫醒、关闭都在「助理」App 里。
-  const cloudDeviceId = cloudComputer?.snapshot?.deviceId ?? null
+  const cloudDeviceId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const machines = useMemo(() => deviceMachines(withoutAssistantHome(allDevices, cloudDeviceId)), [allDevices, cloudDeviceId])
   const devices = useMemo(() => machines.map(machine => machine.device), [machines])
   // A reinstall or a new data directory leaves the old row behind: the online row that may have replaced it (a hint only).
@@ -123,7 +125,10 @@ export function DevicesSection({
   // 远程 SSH 的机器:在线与否、要不要先登录,只看这台电脑到它的设备连接(与侧栏、顶上卡片同一个读数)。
   const linkProblems = useSshLinkProblems()
   const upgrades = useSshUpgrades()
-  const sshMachineIds = useSshMachineIds()
+  // SSH machines unreadable: said once above the list with a retry (❌ a placeholder forever).
+  watchSshMachineAddresses()
+  const sshMachines = useReplica(sshMachineAddresses, [])
+  const sshMachineIds = sshMachines.state === 'value' ? sshMachineIdsOf(sshMachines.value) : null
   const showTools = hasOtherMachines(devices)
   const visible = useMemo(
     () => (showTools ? filterDevices(devices, { query, filter, sshAddress: addressOf }) : devices),
@@ -171,7 +176,7 @@ export function DevicesSection({
       onUninstall={() => openUninstall(device)}
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
-      sshLink={sshMachineIds.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
+      sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
       onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
@@ -188,11 +193,6 @@ export function DevicesSection({
 
   return (
     <SettingsPage data-testid={AUTOMATION_TEST_IDS.settingsDevicesPane}>
-      {canAddServer && !addingServer && (
-        <div className="flex justify-end">
-          <AddServerMenu defaultOpen={addMenuFromIntent} onPick={setAddingServer} testId="settings-add-server-button" />
-        </div>
-      )}
 
       {addingServer && (
         <AddServerPanel
@@ -213,10 +213,17 @@ export function DevicesSection({
         </SettingsNote>
       )}
 
+      {refreshFailure(sshMachines) && (
+        <SettingsNote tone="danger">
+          {t('devices.sshListFailed')}
+          <Button variant="ghost" size="sm" onClick={retryOf(sshMachines)} className="ml-2">{t('devices.retry')}</Button>
+        </SettingsNote>
+      )}
+
       {loading && devices.length === 0 && <SettingsNote>{t('devices.loading')}</SettingsNote>}
 
       {thisDevice && canAddServer && (
-        <div className="gg-settings-card window-no-drag-region">
+        <SettingsGroup presentation="navigation">
           <SettingsRow
             data-testid="settings-device-actions-entry"
             leading={<ListChecks size={18} />}
@@ -225,7 +232,7 @@ export function DevicesSection({
             control={<ChevronRight size={16} />}
             onClick={() => setActionsFor(thisDevice.device_id)}
           />
-        </div>
+        </SettingsGroup>
       )}
 
       {showTools && (
@@ -243,24 +250,23 @@ export function DevicesSection({
         </div>
       )}
 
-      <div
-        className={cn(DEVICE_LIST_CLASS, visibleActive.length === 0 && 'hidden')}
-        role="list"
-      >
-        {visibleActive.map(renderRow)}
-      </div>
+      <SettingsGroup>
+        <div className={cn(DEVICE_LIST_CLASS, visibleActive.length === 0 && 'hidden')} role="list">
+          {visibleActive.map(renderRow)}
+        </div>
+        {/* Adding a machine is the group's last row; where this host cannot add one, the row still says what it brings. */}
+        {!addingServer && (canAddServer || !showTools) && (
+          <SettingsRow leading={<Plus size={18} />} data-testid="settings-devices-empty"
+            title={t('devices.addServer.open')}
+            description={!showTools ? t('devices.empty.hint') : undefined}
+            control={canAddServer ? <AddServerMenu defaultOpen={addMenuFromIntent} onPick={setAddingServer} testId="settings-add-server-button" /> : undefined} />
+        )}
+      </SettingsGroup>
 
       <DeviceMachineArchive count={visibleArchived.length} listClassName={DEVICE_LIST_CLASS}>{visibleArchived.map(renderRow)}</DeviceMachineArchive>
 
       {showTools && visible.length === 0 && (
         <div className="text-[length:var(--font-body)] text-[var(--muted-fg)]" data-testid="settings-devices-no-match">{t('devices.noMatch')}</div>
-      )}
-
-      {!loading && !error && !showTools && !addingServer && (
-        <div className="flex flex-col items-center gap-3 py-5" data-testid="settings-devices-empty">
-          <PaneEmptyState caption={devices.some((d) => d.is_current_device) ? t('devices.empty.title') : t('devices.empty.none')} hint={t('devices.empty.hint')} />
-          {canAddServer && <AddServerMenu primary onPick={setAddingServer} />}
-        </div>
       )}
 
       {dialogs}
@@ -365,7 +371,6 @@ function useNameWhenAppears(devices: readonly Device[], rename: (deviceId: strin
     return () => clearTimeout(timer)
   }, [pending])
 
-  // @@@effect-flow - renaming the machine just added once its row appears.
   useEffect(() => {
     if (!pending || targetLabel === null) return
     if (targetLabel === pending.name) { setPending(null); return }
@@ -456,7 +461,8 @@ function DeviceRow({
   /** 离线的 SSH 机器上这个账号还登着没有(问不到 = null / unknown,照旧只说离线)。 */
   signIn: Reading<SshSignInState> | null
   /** #6264 远程 SSH 那台此刻设备连接的问题(没有 = 连着);其它机器 null。 */
-  sshLink?: SshLinkFailure | null
+  /** Its SSH link from this desktop; undefined = not an SSH machine here; 'unknown' = the SSH machine list is not read yet. */
+  sshLink?: SshLinkFailure | null | 'unknown'
   /** 设备连接要先登录时,句中的「登录」:经 SSH 登录(问密码 / 口令)。 */
   onSshSignIn?: () => void
   /** 正在替它升级时的进度百分比(不知道总量 = null)。 */
@@ -477,7 +483,7 @@ function DeviceRow({
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
-  const link = sshLink === undefined ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
+  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
   const failedUpdate = device.is_online && model.update?.state === 'failed' ? model.update.version : null
   const [retriedFor, setRetriedFor] = useState<string | null>(null)
@@ -518,7 +524,8 @@ function DeviceRow({
   }, [restarting, toast, t, device.label, device.is_online])
   const signInState = signIn?.state === 'value' ? signIn.value : null
   // 离线的 SSH 机器还没问到登录态:状态那一格画占位,❌ 先写「N 天前在线」再改成「登录已失效」。
-  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && signIn?.state === 'unknown'
+  // Not known yet whether it is an SSH machine here (the list is not read): the same placeholder, ❌ "seen N days ago".
+  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && (signIn?.state === 'unknown' || sshLink === 'unknown')
   const signedOutText = sshLink === 'notSignedIn'
     ? t('devices.loginState.signedOut')
     : device.is_online || !signInState
@@ -546,15 +553,15 @@ function DeviceRow({
       data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
       data-device-id={device.device_id}
       data-kind={model.kind}
-      className="flex items-start gap-3 rounded-[var(--radius-control)] px-3 py-[10px] transition-colors duration-[var(--dur-fast)] hover:bg-[var(--hover)] motion-reduce:transition-none"
+      className="gg-settings-device-row flex items-start gap-3"
     >
       <div className="min-w-0 flex-1">
         {editing ? (
           <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} />
         ) : (
           <div className="flex min-w-0 flex-wrap items-center gap-[7px]">
-            <span className="truncate text-[length:var(--font-body)] font-semibold text-[var(--fg)]">{device.label}</span>
-            {model.kind === 'this' && <Chip tone="accent">{t('devices.current')}</Chip>}
+            <span className="truncate text-[length:var(--font-body)] text-[var(--fg)]">{device.label}</span>
+            {model.kind === 'this' && <Chip>{t('devices.current')}</Chip>}
             {(restarting || hostWaiting) && <Chip tone="accent" data-testid="settings-device-restarting">{t('devices.update.restarting')}</Chip>}
             {!restarting && !hostWaiting && (model.update?.state === 'ready' || model.update?.state === 'downloading') && (
               <Chip

@@ -47,10 +47,13 @@ export const TabBar = observer(function TabBar({
   const active = pane.activeEntry;
   const opener = active?.openerTabId ? pane.entries.get(active.openerTabId) : undefined;
   const ownsFileToolbar = active?.kind === 'file-view' || active?.kind === 'chat-panel' && !!(active.state as { file?: unknown }).file;
-  // File pages own this action in their content toolbar. Other pages keep it in the
-  // pane's ordinary action group, never in the absolute, fixed-width grip slot.
-  const returnConversation = !toolsOnly && !ownsFileToolbar && active && opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation && (pane.navigationOf(active.tabId)?.index ?? 0) === 0
-    ? <Button size="icon-sm" variant="ghost" data-testid="tab-return-conversation" aria-label={translate('tabs.backToConversation')} title={translate('tabs.backToConversation')} onClick={() => void pane.go(active.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
+  // Back: a page reached in place (Review → a file's diff) returns to the page before it; the first page returns to the
+  // conversation it came from, except in the tools strip, which sits beside that conversation. File pages own this
+  // action in their content toolbar. Others keep it in the pane's action group, never in the fixed-width grip slot.
+  const index = active ? pane.navigationOf(active.tabId)?.index ?? 0 : 0;
+  const toConversation = index === 0 && !!opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation;
+  const back = active && !ownsFileToolbar && (index > 0 || (toConversation && !toolsOnly)) ? translate(toConversation ? 'tabs.backToConversation' : 'common.back') : null;
+  const returnBack = back ? <Button size="icon-sm" variant="ghost" data-testid={toConversation ? 'tab-return-conversation' : 'tab-back'} aria-label={back} title={back} onClick={() => void pane.go(active!.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
   // A page in full screen covers the whole workspace: its strip offers a worded way out, whichever page it is (file, App,
   // browser). The tab's own ⤡ and Esc do the same; this is the one a person reads. A narrow strip keeps only its icon (index.css).
   const fullscreen = !toolsOnly && (tabFullscreen.isOn(pane) || (!!side && tabFullscreen.isOn(side.pane)));
@@ -123,7 +126,7 @@ export const TabBar = observer(function TabBar({
           />
         ) : null
       }
-      actionsSlot={returnConversation || exitFullscreen ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{exitFullscreen}{returnConversation}{actionsSlot}</div> : actionsSlot}
+      actionsSlot={returnBack || exitFullscreen ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{exitFullscreen}{returnBack}{actionsSlot}</div> : actionsSlot}
       reserveShellRestoreLane={reserveShellRestoreLane}
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}

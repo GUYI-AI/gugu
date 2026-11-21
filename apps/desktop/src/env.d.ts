@@ -42,6 +42,7 @@ interface Window {
     relaunchApp: () => Promise<void>
     onAppForeground: (callback: () => void) => () => void
     subscribeAppActive: (callback: (active: boolean) => void) => () => void
+    subscribeAppPresence: (callback: (present: boolean) => void) => () => void
     subscribeLocalDeviceIdentified: (callback: () => void) => () => void
     showNotification: (payload: { title: string; body?: string; chatId?: string | null }) => Promise<unknown>
     getLocalDeviceSelfSnapshot: () => Promise<unknown>
@@ -64,7 +65,8 @@ interface Window {
     minimize: () => void
     maximize: () => void
     close: () => void
-    isMaximized: () => Promise<boolean>
+    /** Synchronous: the first frame draws the right maximize / restore glyph. */
+    isMaximizedSync: () => boolean
     /** Windows 标题栏菜单的编辑 / 缩放 / 全屏命令(清单见 electron/window-menu-commands.ts)。 */
     runMenuCommand?: (command: import('../shared/window-menu-commands').WindowMenuCommand) => void
     getChromeLabels?: () => {

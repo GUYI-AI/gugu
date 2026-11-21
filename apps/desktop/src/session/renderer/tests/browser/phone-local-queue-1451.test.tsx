@@ -3,13 +3,13 @@ import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { SessionConversation } from '@/components/session-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
-import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge'
+import { state, changed, EMPTY } from '@/lib/outbox/kinds/sessionInput'
 import { chatStore, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
-import type { SessionInputOutbox } from '@/lib/sessionInputOutbox'
+import { installOutboxCore } from '../../../../../../../tests/helpers/sessionInputOutbox'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
@@ -41,7 +41,7 @@ vi.mock('@/components/chat/useChatDraft', async original => {
 
 const life = vi.hoisted(() => ({ view: null as LifeView | null }))
 const release = vi.hoisted(() => vi.fn(async () => null))
-vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await original<object>()), releaseQueuedSessionInput: release }))
+vi.mock('@/lib/outbox/kinds/sessionInput', async original => ({ ...(await original<object>()), releaseQueuedSessionInput: release }))
 
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }))
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
@@ -52,11 +52,13 @@ vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
 vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: life.view, error: null, current: () => life.view }) }))
 
 let harness: ReturnType<typeof createReactHarness>
+let core: ReturnType<typeof installOutboxCore> | undefined
 afterEach(() => {
   harness?.cleanup()
   phoneDraftTrace.end()
   const own = state()
-  own.accountId = null; own.queue = null; own.rows = EMPTY; own.valid = () => false; changed()
+  core?.dispose(); core = undefined
+  own.accountId = null; own.rows = EMPTY; own.valid = () => false; changed()
   life.view = null; release.mockClear()
 })
 
@@ -175,9 +177,10 @@ it.each((['accepted', 'failed'] as const).flatMap(result => (['append', 'replace
 it('shows and retries an online host refusal outside the normal locked queue', async () => {
   await page.viewport(390, 844)
   const own = state()
-  const retry = vi.fn(async () => {})
+  // The window's one outbox: the retry button retries that one id.
+  core = installOutboxCore({ accountId: 'owner' })
+  const retry = vi.spyOn(core.outbox, 'retry').mockResolvedValue(undefined)
   own.accountId = 'owner'; own.valid = () => true
-  own.queue = Promise.resolve({ retry } as unknown as SessionInputOutbox)
   const input = { id: 'refused-local', accountId: 'owner', deviceId: 'host', sessionId: 'session', text: 'local refused input', createdAt: 1,
     queued: true, failure: { code: 'send-failed' as const, message: 'Provider login expired' } }
   own.rows = [input]

@@ -23,10 +23,14 @@ import {
   toSelection,
 } from './installation-sources';
 import { AgentAdvancedSection } from './AgentAdvancedSection';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { InstallationOverrideCard } from './InstallationOverrideCard';
 import { canUninstallManagedSource, managedInstallOption, resolveManagedSourceUpdate } from './agent-source-actions';
 import { ManagedVersionsRow } from './ManagedVersionsRow';
 import { useLibraryHost } from '@renderer/features/library/library-host';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import type { AgentInstallErrorPresentation } from './agent-install';
+import { lastFailureSummary } from './install-failure-summary';
 
 export type AgentInstallationHeader = {
   version: string | null;
@@ -42,6 +46,10 @@ export type AgentInstallationHeader = {
   install: (() => void) | undefined;
   /** Existing cleanup UI for the active managed mise copy, reused by the compact details dialog. */
   managedVersions?: ReactNode;
+  /** Why the last install or update failed; null once a new attempt starts or one succeeds. */
+  failure: AgentInstallErrorPresentation | null;
+  /** Runs a detection again (it re-reads the current PATH first). */
+  check: () => Promise<void>;
 };
 
 export type InstallSectionProps = {
@@ -67,12 +75,12 @@ export const InstallSection = observer(function InstallSection({
 }: InstallSectionProps) {
   const vm = useAgentInstallationStatus(agentId, agentPayload);
   const host = useLibraryHost();
+  const { translate } = useSessionMessages();
   const hasRegistryOptions = installOptions.some((option) => option.registry !== undefined);
   /**
-   * 各下载源的「最新版本」。这一趟请求**本来就要发**(高级那一项要把版本列出来),
-   * 主进程顺手给它们计时 —— 装的时候按「谁先正确答出来」选源(#6157 的自动选源)。
+   * 只展示各源版本和平台可用性。选源属于实际安装，不依赖设置页是否打开过。
    */
-  const sourceVersionsQuery = useInstallSourceVersions(agentId, hasRegistryOptions);
+  const sourceVersions = useInstallSourceVersions(agentId, hasRegistryOptions);
 
   const [selectedSource, setSelectedSource] = useState<SelectedSource>(() =>
     liveRefFor(vm.used, vm.installations),
@@ -138,8 +146,8 @@ export const InstallSection = observer(function InstallSection({
   );
 
   const registries = useMemo(
-    () => registryRows(installOptions, sourceVersionsQuery.data, sourceVersionsQuery.isPending),
-    [installOptions, sourceVersionsQuery.data, sourceVersionsQuery.isPending],
+    () => registryRows(installOptions, sourceVersions.state === 'value' ? sourceVersions.value : undefined, sourceVersions.state === 'unknown'),
+    [installOptions, sourceVersions],
   );
 
   /** 状态判据与图标网格**同一个函数** —— ❌ 两处各算一遍就是 #6101 那格 bug 的形状。 */
@@ -304,8 +312,13 @@ export const InstallSection = observer(function InstallSection({
   const settings = (
     <>
       {sources}
+      {/* The installation read before (or the library row standing in), its re-read failed: said with a retry. */}
+      <RefreshFailed error={vm.statusFailure} onRetry={vm.refresh} />
       {ready && agentPayload && <AgentAccountSection agent={agentPayload} />}
-      <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange} />
+      <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
+        {/* The sources' versions could not be read (again): said where they are listed. */}
+        {registries.length > 0 ? <RefreshFailed reading={sourceVersions} /> : null}
+      </AgentAdvancedSection>
     </>
   );
   if (!renderPage) return settings;
@@ -322,5 +335,7 @@ export const InstallSection = observer(function InstallSection({
     uninstall: canUninstall ? vm.uninstall : undefined,
     install: managedInstall ? onInstall : undefined,
     managedVersions,
+    failure: lastFailureSummary(vm, translate),
+    check: vm.refresh,
   }, settings);
 });

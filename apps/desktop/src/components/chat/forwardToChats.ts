@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../store/auth'
 import { useChatStore, type ChatContextValue } from '../../store/chatContext'
 import { markdownPlainText } from '../../lib/markdownPlainText'
+import { unknownMemberName } from '../../lib/memberFallbackName'
 import type { AppForwardFilesDetail } from '../../session/shared/extensions/app-runtime-protocol'
 
 /**
@@ -123,12 +124,13 @@ export function useForwardToChats() {
 export function useForwardNames(): Names {
   const { identitiesById } = useChatStore('identitiesById')
   const { user } = useAuth()
-  const { t } = useTranslation('messaging')
+  useTranslation('messaging') // re-renders on a language change, so the label below is read again
+  const unknownName = unknownMemberName()
   return useMemo(() => ({
     knownName: (userId: string | null) => {
       const id = userId ?? user?.id
       return (id ? identitiesById[id]?.display_name : undefined) || undefined
     },
-    unknownName: t('group.memberFallback.unknown'),
-  }), [identitiesById, user, t])
+    unknownName,
+  }), [identitiesById, user, unknownName])
 }

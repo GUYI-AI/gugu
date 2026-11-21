@@ -11,7 +11,6 @@
 // 于是宿主把它画在 App 页上 App 说的那个位置,裁在页里、点击穿透;宿主页盖着时不画。App 的页换了文档(重载、改了授权)=
 // 它要过的宿主页和小鸟一并收起。
 import '@/i18n/registerAssistantCatalog';
-import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar';
@@ -24,7 +23,7 @@ import { appHostLayerSlotKey, readAppHostLayerBridge, type AppHostLayer } from '
 import { readShellSlots } from '@/lib/shellSlots';
 import { AssistantProjectsLibrary } from '@/components/assistant/AssistantProjectsLibrary';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { useAssistantMachine } from '@renderer/features/assistant/assistant-data';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { AssistantShellPageFrame } from '@renderer/features/assistant/assistant-ui';
@@ -162,8 +161,8 @@ export function resetMountedAppPagesForTest(): void {
 }
 
 /** Whether the App reads the assistant (its binding declares it, and it is on): only then are the panel's numbers read. */
-const readsAssistant = (extensionId: string) => installedExtensionsStore.isEnabled(extensionId)
-  && installedExtensionsStore.manifests.find((manifest) => manifest.id === extensionId)?.permissions?.bindings?.[0]?.actions.includes('assistant-status') === true;
+const readsAssistant = (apps: InstalledApps, extensionId: string) => apps.isEnabled(extensionId)
+  && apps.manifests.find((manifest) => manifest.id === extensionId)?.permissions?.bindings?.[0]?.actions.includes('assistant-status') === true;
 
 /**
  * Mounted with the App's main page wherever it stands (alone, or beside its conversation): the page on screen for
@@ -171,8 +170,9 @@ const readsAssistant = (extensionId: string) => installedExtensionsStore.isEnabl
  * assistant, and the panel's numbers read for an App reading the assistant. A task's conversation is the ledger's
  * (AppHostLayerHost keeps it).
  */
-export const AppHostLayerSources = observer(function AppHostLayerSources({ extensionId }: { extensionId: string }) {
+export function AppHostLayerSources({ extensionId }: { extensionId: string }) {
   const layer = useAppHostLayerNow(extensionId);
+  const installed = useInstalledApps(LOCAL_HOST);
   const shell = useAssistantShell();
   useEffect(() => {
     mounted.set(extensionId, (mounted.get(extensionId) ?? 0) + 1);
@@ -200,8 +200,8 @@ export const AppHostLayerSources = observer(function AppHostLayerSources({ exten
   useEffect(() => {
     if (figureStale) setAssistantFigure(extensionId, null);
   }, [figureStale, extensionId]);
-  return readsAssistant(extensionId) ? <AssistantAppCountsSource /> : null;
-});
+  return installed.state === 'value' && readsAssistant(installed.value, extensionId) ? <AssistantAppCountsSource /> : null;
+}
 
 /** The cell the shell draws a host page into (AppHostLayerHost). The App's page is set aside meanwhile, never closed. */
 function AppHostLayerSlot({ extensionId, className, testId }: { extensionId: string; className: string; testId: string }) {

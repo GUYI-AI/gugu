@@ -6,7 +6,10 @@ import { HostDependencyManager } from '../../../../packages/session-core/src/hos
 import { NodeExecutionContext } from '../../../../packages/session-core/src/exec/node-execution-context'
 
 const f = vi.hoisted(() => ({ root: '', manager: null as HostDependencyManager | null, install: vi.fn() }))
-vi.mock('@gugu/session-core/deps/runtime', () => ({ agentProgramsOf: () => [{ dependencyId: 'assistant-fixture-935' }] }))
+vi.mock('@gugu/session-core/deps/runtime', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@gugu/session-core/deps/runtime')>(),
+  agentProgramsOf: () => [{ dependencyId: 'assistant-fixture-935' }],
+}))
 vi.mock('../../../../apps/desktop/electron/session/main/core/agents/plugin-registry', () => ({ getPlugin: () => ({}) }))
 vi.mock('../../../../apps/desktop/electron/session/main/core/dependencies/managed-agent-home', () => ({
   managedAgentPrefix: () => f.root,

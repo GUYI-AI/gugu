@@ -185,6 +185,8 @@ describe('ImagePreviewProvider', () => {
     const pswp = instances[0]
     expect(pswp.opener.isOpening).toBe(true)
     expect(pswp.currSlide!.width).toBe(3000)
+    // Its box is known: its pixels show as they come.
+    expect((pswp.currSlide!.content.element as HTMLImageElement).style.visibility).toBe('')
     expect(full).not.toHaveBeenCalled()
     await act(async () => {
       await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
@@ -212,9 +214,13 @@ describe('ImagePreviewProvider', () => {
     // A thumbnail with an original to fetch is not the original: its natural size lays nothing out.
     expect(slide.width).toBe(window.innerWidth)
     const shown = slide.content.element as HTMLImageElement
+    // On screen already, in the viewport-sized box: its pixels stay invisible until the box is theirs.
+    expect(shown.isConnected).toBe(true)
+    expect(shown.style.visibility).toBe('hidden')
     Object.defineProperties(shown, { naturalWidth: { value: 300, configurable: true }, naturalHeight: { value: 200, configurable: true } })
     await act(async () => shown.dispatchEvent(new Event('load')))
     expect(slide.width).toBe(300)
+    expect(shown.style.visibility).toBe('')
     await act(async () => {
       await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
     })

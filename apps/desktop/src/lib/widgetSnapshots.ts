@@ -1,11 +1,12 @@
 import { createIndexedDbHandle } from './indexedDbHandle'
 
-export const WIDGET_SNAPSHOT_EVENT = 'gugu:widget-snapshot'
 export const WIDGET_SNAPSHOT_MAX_BYTES = 200 * 1024
 export const WIDGET_SNAPSHOT_ACCOUNT_BYTES = 20 * 1024 * 1024
 type Capture = { accountId: string; generation: number }
 interface Snapshot { key: string; accountId: string; blob: Blob; usedAt: number }
-export const widgetSnapshotKey = (accountId: string, widgetId: string, theme: string, width: number) => JSON.stringify([accountId, widgetId, theme, Math.floor(width / 40)])
+/** The width a picture is kept for: pictures within 40 px of each other are the same one. */
+export const widgetWidthBucket = (width: number) => Math.floor(width / 40)
+export const widgetSnapshotKey = (accountId: string, widgetId: string, theme: string, width: number) => JSON.stringify([accountId, widgetId, theme, widgetWidthBucket(width)])
 
 /** Local pictures only: no spec, network storage or cross-account reuse. */
 export class WidgetSnapshots {
@@ -99,9 +100,7 @@ export class WidgetSnapshots {
         transaction.oncomplete = () => resolve()
         transaction.onabort = () => reject(transaction.error)
       })
-      if (!this.current(capture)) return false
-      window.dispatchEvent(new CustomEvent(WIDGET_SNAPSHOT_EVENT, { detail: key }))
-      return true
+      return this.current(capture)
     })
   }
 }

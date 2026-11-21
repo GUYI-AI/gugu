@@ -5,6 +5,8 @@ import { emptyAgentWatchTimeline } from './agent-watch-store'
 import { getAgentWatchStore, type AgentWatchLocalStore, type LocalRow } from '@/session/shared/remote-sessions/local-store'
 import { isDeepEqual } from '@gugu/session-shared'
 import { mergeNativeRecordPage } from './native-record-state'
+import { createSelectStore, patch, type Readable, type SelectStore } from '@/lib/selectStore'
+import { onAccountChange } from '@/lib/replica'
 
 /**
  * 手机上「上次看到哪儿了」的本地留存。
@@ -409,9 +411,7 @@ async function pruneIfDue(store: AgentWatchLocalStore): Promise<void> {
 
 /** 测试与收尾用：内存与库一起清。 */
 export async function clearTimelineCache(): Promise<void> {
-  memory.clear()
-  nativeMemory.clear()
-  nativeStored.clear()
+  forgetInMemoryTimelines()
   lastPruneAt = 0
   try {
     await (await getAgentWatchStore()).clear()
@@ -421,7 +421,7 @@ export async function clearTimelineCache(): Promise<void> {
 }
 
 /**
- * 只丢掉进程内那一层，库里那份留着 —— **冷启动就是这个形状**。
+ * 只丢掉进程内那一层，库里那份留着 —— **冷启动就是这个形状**。账号换了(或登出)也走这里:内存里那几份是上一个人的。
  *
  * 测试用：跨重启这条路只有把内存清掉才量得到，否则每次都命中内存层，
  * 库里存没存下来根本判不出来。
@@ -430,4 +430,93 @@ export function forgetInMemoryTimelines(): void {
   memory.clear()
   nativeMemory.clear()
   nativeStored.clear()
+  for (const store of [streams, nativeStreams, sessionpageFacts]) {
+    if (Object.keys(store.get()).length > 0) store.set({})
+  }
+}
+onAccountChange(() => forgetInMemoryTimelines())
+
+// ── a session's live stream state (the stream engine's own state, @@@client-state-model §1) ──────────────────────────
+
+/**
+ * 和那台机器的链路。
+ *  · connecting —— 正在(重新)快照 + 订阅;
+ *  · ok —— 订阅上了,窗口通着;
+ *  · lost —— 读不出来 / 补缺口失败 / 窗口断了。
+ */
+export type TimelineLink = 'connecting' | 'ok' | 'lost'
+export type AgentWatchPhase = 'loading' | 'ready' | 'error'
+
+export type SessionStreamState = {
+  timeline: AgentWatchTimeline
+  phase: AgentWatchPhase
+  link: TimelineLink
+  error: string | null
+  errorCode: string | null
+  waitingForRecord: boolean
+}
+
+/**
+ * Each session stream's live state, keyed per session: absent = not read in this run (first frame from the cache above);
+ * present with an empty timeline = read, empty. Owner: the signed-in account (cleared on sign-out / account switch).
+ */
+const streams = createSelectStore<Readonly<Record<string, SessionStreamState>>>({})
+export const sessionStreams: Readable<Readonly<Record<string, SessionStreamState>>> = streams
+
+export const sessionStreamKey = (key: TimelineCacheKey) => `${key.deviceId}\u0000${key.sessionId}`
+
+export function initialSessionStream(key: TimelineCacheKey | null, boundedWindow = false): SessionStreamState {
+  const timeline = (boundedWindow || !key ? null : readCachedTimeline(key)) ?? emptyAgentWatchTimeline()
+  return { timeline, phase: timeline.cursor ? 'ready' : 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
+}
+
+/** The fields one step of a stream changes, written together (one notify); fields that did not change write nothing. */
+export type StreamWrite<S> = Partial<S> | ((current: S) => Partial<S>)
+function writeStream<S extends object>(store: SelectStore<Readonly<Record<string, S>>>, id: string, initial: () => S, fields: StreamWrite<S>): void {
+  const current = store.get()[id] ?? initial()
+  const next = typeof fields === 'function' ? fields(current) : fields
+  if ((Object.keys(next) as (keyof S)[]).some((name) => !Object.is(next[name], current[name]))) patch(store, id, { ...current, ...next })
+}
+
+export function updateSessionStream(key: TimelineCacheKey, fields: StreamWrite<SessionStreamState>, boundedWindow = false): void {
+  writeStream(streams, sessionStreamKey(key), () => initialSessionStream(key, boundedWindow), fields)
+}
+
+export function forgetSessionStream(key: TimelineCacheKey): void {
+  patch(streams, sessionStreamKey(key), undefined)
+}
+
+export type NativeRecordStreamState = {
+  record: NativeSessionRecord | null
+  error: string | null
+  errorCode: string | null
+  /** The last read failed because that machine did not answer (not because it refused). */
+  unreachable: boolean
+  /** The link epoch whose newest page has been read (the follower's own epoch counter). */
+  confirmed: { key: string; epoch: number } | null
+}
+
+/** Native record streams (useNativeSessionRecord), keyed and owned like `sessionStreams`. */
+const nativeStreams = createSelectStore<Readonly<Record<string, NativeRecordStreamState>>>({})
+export const nativeRecordStreams: Readable<Readonly<Record<string, NativeRecordStreamState>>> = nativeStreams
+
+export function initialNativeRecordStream(key: TimelineCacheKey, enabled: boolean): NativeRecordStreamState {
+  return { record: enabled ? readCachedNativeRecord(key) : null, error: null, errorCode: null, unreachable: false, confirmed: null }
+}
+
+export function updateNativeRecordStream(key: TimelineCacheKey, fields: StreamWrite<NativeRecordStreamState>, enabled = true): void {
+  writeStream(nativeStreams, sessionStreamKey(key), () => initialNativeRecordStream(key, enabled), fields)
+}
+
+type SessionpageTimelineFacts = {
+  recentActions: { actions: string[]; lastActionAt: string | null } | null
+  settlements: Readonly<Record<string, Settlement>>
+}
+
+/** Desktop task sessions' timeline facts (useSessionpageSessionTimeline), keyed by session, owned like `sessionStreams`. */
+const sessionpageFacts = createSelectStore<Readonly<Record<string, SessionpageTimelineFacts>>>({})
+export const sessionpageTimelineFacts: Readable<Readonly<Record<string, SessionpageTimelineFacts>>> = sessionpageFacts
+
+export function updateSessionpageFacts(sessionId: string, change: (current: SessionpageTimelineFacts | undefined) => SessionpageTimelineFacts | undefined): void {
+  patch(sessionpageFacts, sessionId, change(sessionpageFacts.get()[sessionId]))
 }

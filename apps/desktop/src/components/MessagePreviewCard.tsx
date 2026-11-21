@@ -1,15 +1,18 @@
 // @@@6357 working 栏悬浮卡 MessagePreview:版式照 assistant-ui SharedConversation,浮层档 tokens,
 // 承载信息的字只用 --text-primary / --text-secondary(tertiary 过不了 AA)。
 import { metadataSeparator } from '@/i18n/format'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useTranslation } from 'react-i18next'
 import type { MessagePreviewEntry } from '@gugu/session-core/session-record/message-preview'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { useChatStore } from '../store/chatContext'
 import { useDevicesStore } from '../store/devicesContext'
-import { chatDb } from '../lib/supabase'
+import { messageById } from '../lib/messageById'
+import { readRevisionResourceKey } from '../lib/accountRevisionCoordinator'
+import { useReplicas } from '../lib/replica'
 import { Avatar } from './Avatar'
+import { RefreshFailed } from './ui/RefreshFailed'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { useAgentMessagePreview } from '../hooks/useAgentMessagePreview'
 import type { RunningToken } from './RunningTokenBar'
@@ -31,50 +34,49 @@ const STYLE = `
 .mp-prompt{margin-left:auto;max-width:85%;border-radius:16px;padding:8px 12px;background:color-mix(in srgb,var(--text-primary) 6%,transparent)}
 .mp-prompt-who{display:block;font-size:var(--font-caption);color:var(--text-secondary)}
 .mp-prompt-body{font-size:var(--font-body);line-height:1.625;color:var(--text-primary);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap}
-.mp-prompt[data-preview-prompt=elsewhere] .mp-prompt-body{color:var(--text-secondary)}
+.mp-prompt[data-preview-prompt=elsewhere] .mp-prompt-body,.mp-prompt[data-preview-prompt=failed] .mp-prompt-body{color:var(--text-secondary)}
 `
 
 type PromptMessage = Pick<MessageItem, 'id' | 'sender_user_id' | 'content' | 'retracted_at'>
 
 /**
- * prompt 正文按 id 以我自己的身份取(走 RLS);缓存跟卡片走,撤回/换号后不残留。
- * undefined = 还在取;null = 我读不到(别的 chat、不是给我的悄悄话)。
+ * prompt 正文按 id 以我自己的身份取(messageById,走 RLS):已经在手里的那几条(当前线 / 话题里的消息)直接用。
+ * undefined = 还在取;null = 我读不到(别的 chat、不是给我的悄悄话);Error = 没读到(❌ 当成读不到,永远画占位)。
+ * 撤回是一条 message_deleted 修订:卡片上的那几条重读。
  */
 function usePromptMessages(
   ids: readonly string[],
   loaded: readonly MessageItem[],
-): (id: string) => PromptMessage | null | undefined {
-  const [cache, setCache] = useState<ReadonlyMap<string, PromptMessage | null>>(() => new Map())
+): (id: string) => PromptLookup | undefined {
+  const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
   const byId = new Map<string, PromptMessage>(loaded.map((message) => [message.id, message]))
-  const missing = ids.filter((id) => !byId.has(id) && !cache.has(id))
+  const missing = ids.filter((id) => !byId.has(id))
+  const readings = useReplicas(messageById, missing.map((id) => [id] as [string]))
   const missingKey = missing.join(',')
-  useEffect(() => {
-    if (!missingKey) return
-    let active = true
-    const wanted = missingKey.split(',')
-    void chatDb
-      .from('messages')
-      .select('id, sender_user_id, content, retracted_at')
-      .in('id', wanted)
-      .then(({ data, error }) => {
-        if (error || !active) return
-        const rows = (data ?? []) as PromptMessage[]
-        setCache((current) => {
-          const next = new Map(current)
-          for (const id of wanted) next.set(id, rows.find((row) => row.id === id) ?? null)
-          return next
-        })
-      })
-    return () => {
-      active = false
+  useEffect(() => missingKey ? subscribeAccountRevision('message_deleted', (operations) => {
+    const shown = new Set(missingKey.split(','))
+    for (const operation of operations) {
+      if (operation.event !== 'message_deleted') continue
+      const { entityId } = readRevisionResourceKey(operation.payload, 'message_deleted')
+      if (entityId && shown.has(entityId)) void messageById.refresh(entityId)
     }
-  }, [missingKey])
-  return (id) => byId.get(id) ?? cache.get(id)
+  }) : undefined, [missingKey, subscribeAccountRevision])
+  const read = new Map(missing.map((id, index) => [id, readings[index]!]))
+  return (id) => {
+    const shown = byId.get(id)
+    if (shown) return { message: shown, failed: null }
+    const reading = read.get(id)
+    if (!reading || reading.state === 'unknown') return undefined
+    return reading.state === 'error' ? { message: reading.error, failed: null } : { message: reading.value, failed: reading.error }
+  }
 }
 
+/** message: Error = 没读到;failed = 读到过、重读(撤回后)没读到:照画读到的那份,并说重读失败。 */
+type PromptLookup = { message: PromptMessage | null | Error; failed: Error | null }
+
 type Block =
-  /** message 为 null = 看卡的人读不到这条输入,画占位。 */
-  | { kind: 'prompt'; id: string; message: PromptMessage | null }
+  /** message 为 null = 看卡的人读不到这条输入,画占位;Error = 没读到,照实说。 */
+  | { kind: 'prompt'; id: string; message: PromptMessage | null | Error; failed: Error | null }
   | { kind: 'text'; id: string; text: string }
   | { kind: 'activity'; id: string; text: string }
   | { kind: 'tools'; id: string; parts: { state: string; count: number }[] }
@@ -82,7 +84,7 @@ type Block =
 /** 条目 → 版块:prompt 读得到画正文、读不到或没有 id 画占位,还在取的先不画;连续工具并成一行、按类别合计。 */
 const promptIdOf = (messageId: string) => messageId.replace(/^msg:/, '')
 
-function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) => PromptMessage | null | undefined, activityText: ReturnType<typeof useActivityPreviewText>): Block[] {
+function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) => PromptLookup | undefined, activityText: ReturnType<typeof useActivityPreviewText>): Block[] {
   const blocks: Block[] = []
   const activities = new Set<string>()
   for (const entry of entries) {
@@ -94,10 +96,11 @@ function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) 
       continue
     }
     if (entry.kind === 'prompt') {
-      const message = entry.messageId ? lookup(promptIdOf(entry.messageId)) : null
-      if (message === undefined) continue
-      const readable = message && message.content && !message.retracted_at ? message : null
-      blocks.push({ kind: 'prompt', id: entry.id, message: readable })
+      const found = entry.messageId ? lookup(promptIdOf(entry.messageId)) : { message: null, failed: null }
+      if (found === undefined) continue
+      const { message, failed } = found
+      const readable = message instanceof Error ? message : message && message.content && !message.retracted_at ? message : null
+      blocks.push({ kind: 'prompt', id: entry.id, message: readable, failed })
     } else if (entry.kind === 'tool') {
       const last = blocks[blocks.length - 1]
       const same = last?.kind === 'tools' ? last.parts.find((part) => part.state === entry.state) : undefined
@@ -115,10 +118,18 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
   const { t } = useTranslation('agents')
   if (block.kind === 'activity') return <div className="mp-mono" data-preview-entry="activity">{block.text}</div>
   if (block.kind === 'prompt') {
+    if (block.message instanceof Error) {
+      return (
+        <div className="mp-prompt" data-preview-entry="prompt" data-preview-prompt="failed">
+          <div className="mp-prompt-body">{t('runtime.messagePreview.promptFailed')}</div>
+        </div>
+      )
+    }
     if (!block.message) {
       return (
         <div className="mp-prompt" data-preview-entry="prompt" data-preview-prompt="elsewhere">
           <div className="mp-prompt-body">{t('runtime.messagePreview.promptElsewhere')}</div>
+          <RefreshFailed error={block.failed} />
         </div>
       )
     }
@@ -126,6 +137,7 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
       <div className="mp-prompt" data-preview-entry="prompt">
         <span className="mp-prompt-who">{senderName(block.message.sender_user_id)}</span>
         <div className="mp-prompt-body">{block.message.content}</div>
+        <RefreshFailed error={block.failed} />
       </div>
     )
   }
@@ -173,7 +185,7 @@ export function MessagePreviewCard({
   )
   const lookupPrompt = usePromptMessages(promptIds, [...messages, ...threadMessages])
   const blocks = preview ? toBlocks(preview.entries, lookupPrompt, activityText) : []
-  const senderIds = [...new Set(blocks.flatMap(block => block.kind === 'prompt' && block.message?.sender_user_id ? [block.message.sender_user_id] : []))]
+  const senderIds = [...new Set(blocks.flatMap(block => block.kind === 'prompt' && block.message && !(block.message instanceof Error) && block.message.sender_user_id ? [block.message.sender_user_id] : []))]
   const senderNames = useShownAgentName(senderIds.map(id => ({ name: identitiesById[id]?.display_name ?? '', createdAt: identitiesById[id]?.type === 'agent' ? identitiesById[id]?.created_at ?? undefined : undefined })))
   const senderName = (id: string | null) => id ? senderNames[senderIds.indexOf(id)] ?? '' : ''
   const rel = formatRelativeTime(token.lastActiveAt) ?? t('runtime.justNow')

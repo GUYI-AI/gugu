@@ -23,6 +23,7 @@ it('does not flash placeholders before 300ms and does not reserve an extra messa
 })
 it('paints already-read work messages while the newly opened chat history is still pending',async()=>{
  const owner='first-paint-owner',assistant='first-paint-assistant',workId='first-paint-work',session='first-paint-session'
+ ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN',owner)
  const task={workId,title:'Known task',assistantId:assistant,taskAgentId:'first-paint-agent',task:{sessionId:session,deviceId:'home'},assistants:[{sessionId:'main',deviceId:'home'}]}
  const work={work_id:workId,title:task.title,assistant_user_id:assistant,owner_user_id:owner,outcome:'completed',executors:[{session_id:session,device_id:'home',agent_user_id:task.taskAgentId}],coordinator_session_id:'main',coordinator_device_id:'home'}
  cloud.get.mockResolvedValue({work,events:[{work_id:workId,message_id:'first-paint-result',kind:'completed',source_available:true,source_message_id:null,content:'Already known result',attachment_refs:[],from_session_id:session,to_session_id:'main',platform_received_at:'2026-10-26T08:00:00Z'}]})
@@ -32,5 +33,7 @@ it('paints already-read work messages while the newly opened chat history is sti
  function Page(){const read=useAssistantWorkDetail(owner,assistant,workId,session);return read.detail?<Rows/>:null}
  await harness.render(<Page/>)
  await vi.waitFor(()=>expect(harness.container.textContent).toContain('Already known result'))
- expect(cloud.historyAll).toHaveBeenCalled()
+ // The window and the chat rows share one read of the work (`assistantWork`): its events are the history, read once.
+ expect(cloud.get).toHaveBeenCalledTimes(1)
+ expect(cloud.historyAll).not.toHaveBeenCalled()
 })

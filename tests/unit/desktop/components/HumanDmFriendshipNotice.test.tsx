@@ -25,7 +25,7 @@ describe('the shared human DM stream notice', () => {
   it('uses the existing system line and sends directly to the peer, with no greeting or dialog', async () => {
     const sendRequest = vi.fn(async () => {})
     await render({ sendRequest })
-    expect(ui.container.textContent).toBe('对方还不是你的好友 添加好友')
+    expect(ui.container.textContent).toBe('对方尚未成为你的好友 添加好友')
     expect(ui.container.querySelector('.system-message-notice > span')).not.toBeNull()
     await act(async () => { ui.container.querySelector('button')!.click() })
     expect(sendRequest).toHaveBeenCalledExactlyOnceWith('peer')

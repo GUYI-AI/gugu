@@ -122,7 +122,6 @@ export function WechatConnectDialog({
   const connected = view?.phase === 'connected'
   const channel = list.channels.find((c) => c.kind === 'wechat') ?? null
 
-  // @@@effect-flow - starting the WeChat sign-in this dialog is for.
   useEffect(() => {
     let alive = true
     setView(null)
@@ -136,7 +135,6 @@ export function WechatConnectDialog({
     }
   }, [client, attempt])
 
-  // @@@effect-flow - polling the sign-in in progress until it finishes.
   useEffect(() => {
     if (requestFailed || !inProgress(view) || view === null) return
     const timer = setTimeout(() => {

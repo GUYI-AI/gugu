@@ -14,7 +14,7 @@ export function createNativeBridge(emit, { timeoutMs = 30_000 } = {}) {
       else resolve(result)
     }
     const abort = () => settle(signal.reason ?? new Error('任务已取消'))
-    const timer = setTimeout(() => settle(Object.assign(new Error('手机工具没有在时限内返回'), name === 'phone.native' ? { code: 'execution_unknown' } : {})), name === 'phone.native' ? Math.max(timeoutMs, 180_000) : timeoutMs)
+    const timer = setTimeout(() => settle(Object.assign(new Error('The phone tool did not return in time'), name === 'phone.native' ? { code: 'execution_unknown' } : {})), name === 'phone.native' ? Math.max(timeoutMs, 180_000) : timeoutMs)
     timer.unref?.()
     pending.set(id, { settle, context, name })
     signal?.addEventListener('abort', abort, { once: true })
@@ -30,6 +30,6 @@ export function createNativeBridge(emit, { timeoutMs = 30_000 } = {}) {
       task.settle(null, command.result)
       return true
     },
-    close() { for (const task of [...pending.values()]) task.settle(Object.assign(new Error('手机运行时已关闭'), task.name === 'phone.native' ? { code: 'execution_unknown' } : {})) },
+    close() { for (const task of [...pending.values()]) task.settle(Object.assign(new Error('The phone runtime has closed'), task.name === 'phone.native' ? { code: 'execution_unknown' } : {})) },
   }
 }

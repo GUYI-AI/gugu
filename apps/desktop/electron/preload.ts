@@ -1,6 +1,5 @@
 import type { AttachmentUploadIpc } from './attachmentUploadHost'
 import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { contextBridge, ipcRenderer } from 'electron'
 import * as ElectronNS from 'electron'
 import { installProcessMetricsResponder } from './process-metrics-responder'
@@ -163,6 +162,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     void ipcRenderer.invoke('app:is-active').then(callback)
     return () => ipcRenderer.removeListener('app:active-changed', listener)
   },
+  // 人离开了咕咕 / 回来了(main.ts @@@app-presence):先答一次当下,之后每次变化再答。只给「回前台重读」用。
+  subscribeAppPresence: (callback: (present: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, present: boolean): void => callback(present)
+    ipcRenderer.on('app:presence-changed', listener)
+    void ipcRenderer.invoke('app:is-present').then(callback)
+    return () => ipcRenderer.removeListener('app:presence-changed', listener)
+  },
   // 本机在当前账号的设备里认出了自己(main.ts device:self-identified):设备表要按「哪一行是本机」重读。
   subscribeLocalDeviceIdentified: (callback: () => void): (() => void) => {
     const listener = (): void => callback()
@@ -216,7 +222,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   minimize: (): void => ipcRenderer.send('window:minimize'),
   maximize: (): void => ipcRenderer.send('window:maximize'),
   close: (): void => ipcRenderer.send('window:close'),
-  isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
+  // 首帧就要画对最大化 / 还原那颗钮:同步取一次,之后的变化走 onMaximizedChange。
+  isMaximizedSync: (): boolean => ipcRenderer.sendSync('window:is-maximized-sync'),
   // Windows 标题栏「编辑 / 视图」菜单;命令清单由 main 的 window-menu-commands.ts 把关。
   runMenuCommand: (command: string): void => ipcRenderer.send('window:menu-command', command),
   getChromeLabels: (): {
@@ -256,7 +263,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
 })
 
 // Dedicated trusted settings channel: no generic action logger or Agent RPC.
-if (PASSWORD_BETA_ENABLED) contextBridge.exposeInMainWorld('passwordVaultBeta', {
+contextBridge.exposeInMainWorld('passwordVaultBeta', {
   invoke: (command: PasswordUiCommand) => ipcRenderer.invoke('gugu:password-beta-ui', command),
   subscribe: (listener: () => void) => {
     const changed = () => listener()

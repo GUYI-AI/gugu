@@ -8,7 +8,7 @@ import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { useSessionConversationDraft } from '@/components/session-watch/use-session-conversation-draft';
 
 const scope = vi.hoisted(() => ({ account: 'owner' as string | null, initial: {} as Record<string, string> }));
-vi.mock('@/lib/sessionInputOutboxBridge', () => ({
+vi.mock('@/lib/outbox/kinds/sessionInput', () => ({
   state: () => ({ accountId: scope.account, valid: () => scope.account !== null }),
   useSessionInputAccount: () => scope.account,
 }));

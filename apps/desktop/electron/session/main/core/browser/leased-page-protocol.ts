@@ -3,11 +3,12 @@ import { anySignal } from '@gugu/core/shared/anySignal';
 import { createPageProtocol, type PageProtocol } from './page-protocol';
 import { LeasedPageInput } from './leased-page-input';
 import { browserPageFeedback } from '@shared/browser-page-feedback';
+import { extensionPresentation } from '../extensions/extension-bridge';
 
 /** Fence undispatched commands, release dispatched controls, then let the owner detach the protocol. */
 export function leasePageProtocol(contents: WebContents, options: { ready: Promise<void>; capture(params: Record<string, unknown>): Promise<unknown> }) {
   const commands = new AbortController(), input = new LeasedPageInput();
-  const feedback = browserPageFeedback(contents);
+  const feedback = browserPageFeedback(contents, () => extensionPresentation().locale);
   const lifetimes = new WeakMap<AbortSignal, AbortSignal>();
   const watched = new Map<AbortSignal, () => void>();
   const raw = createPageProtocol(contents, { ...options,

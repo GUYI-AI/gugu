@@ -1,7 +1,7 @@
 import { i18n } from '@/i18n/runtime'
 import '@/i18n/registerAssistantCatalog'
 import type { AssistantHomePlace } from '@/lib/assistantHome'
-import { wakeCloudComputer } from '@/lib/cloudComputerStore'
+import { wakeCloudComputer } from '@/lib/cloudComputer'
 import { waitForAssistantControl } from '@/lib/assistantControlReady'
 import { isAssistantActionRefusal } from '@/lib/assistantActionRefusal'
 import { getRendererSession } from '@/lib/sessionPublication'

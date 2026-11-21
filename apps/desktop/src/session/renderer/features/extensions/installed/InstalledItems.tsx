@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlignJustify, ArrowUp, Check, LayoutGrid, X } from '@/lib/icons'
 import { notify } from '@/lib/notices'
@@ -51,7 +51,7 @@ function ItemTile({ item, layout, selected, managing, onSelect }: {
   )
 }
 
-export function InstalledItems({ items, loading, error, offline, section, layout, setSection, setLayout, remoteLabel }: {
+export function InstalledItems({ items, loading, error, offline, section, layout, setSection, setLayout, remoteLabel, itemsRef, scroll }: {
   items: readonly InstalledItem[]
   loading?: boolean
   error?: boolean
@@ -61,6 +61,9 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   setSection: (next: InstalledSection) => void
   setLayout: (next: InventoryView) => void
   remoteLabel?: string
+  itemsRef?: RefObject<HTMLDivElement | null>
+  /** How far down the list was when it was left; restored once the items are there. */
+  scroll?: number
 }) {
   const { t } = useTranslation('main')
   const panelId = useId()
@@ -71,6 +74,12 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   const [confirming, setConfirming] = useState(false)
   const busyRef = useRef(false)
   const shown = items.filter(({ name }) => name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const restored = useRef(false)
+  useLayoutEffect(() => {
+    if (restored.current || !scroll || shown.length === 0 || !itemsRef?.current) return
+    restored.current = true
+    itemsRef.current.scrollTop = scroll
+  }, [scroll, shown.length, itemsRef])
   const picked = shown.filter(({ id }) => selected.has(id))
   const updateable = picked.filter((item) => item.update && !item.busy)
   const removable = picked.filter((item) => item.remove && !item.busy)
@@ -144,7 +153,7 @@ export function InstalledItems({ items, loading, error, offline, section, layout
         <SearchInput type="search" value={query} onChange={(event) => setQuery(event.target.value)}
           placeholder={searchLabel} aria-label={searchLabel} disabled={offline || busy} />
       )}
-      <div id={panelId} role="tabpanel" aria-label={phrase} className="gg-installed-items">
+      <div id={panelId} ref={itemsRef} role="tabpanel" aria-label={phrase} className="gg-installed-items">
         {loading ? <div className="gg-installed-empty"><LoadingIndicator size="inline" /></div>
           : offline ? <p className="gg-installed-empty">{t('installedManager.offline')}</p>
           : error ? <p className="gg-installed-empty">{t('installedManager.readFailed')}</p>

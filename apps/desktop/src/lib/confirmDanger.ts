@@ -4,7 +4,7 @@ import { i18n } from '../i18n'
 /**
  * The one confirmation for a destructive action that cannot be undone from where it was taken (leaving a group,
  * deleting a contact, a conversation, a topic or a message, removing a member or the sample project). Same dialog as the
- * archive confirmation (confirmActionModal), drawn on desktop by the task page and on the phone by PhoneSessionModalHost;
+ * archive confirmation (confirmActionModal), drawn by SessionModalHost (on desktop inside the task page's tree);
  * ❌ window.confirm, ❌ an action that runs without asking. Resolves true only on confirm.
  */
 export function confirmDanger(args: { title: string; description: string; confirmLabel: string }): Promise<boolean> {

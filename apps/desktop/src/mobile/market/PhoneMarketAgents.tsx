@@ -1,3 +1,4 @@
+import { vendorName } from '@/i18n/vendorName'
 import { useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
@@ -7,12 +8,14 @@ import { MobileAppsSection } from '@/components/settings/MobileAppsSection'
 import { useAuth } from '@/store/auth'
 import { PhoneAgentHostControl } from '../local-agent/PhoneAgentHostControl'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { Sheet } from '@/components/ui/Sheet'
 import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { ChevronLeft } from '@/lib/icons'
 import { IconButton } from '@/components/ui/IconButton'
 import { SettingsNote } from '@/components/settings/SettingsPrimitives'
-import { usePhoneMarketPage, phoneMarketRows } from '@/components/settings/phoneMarketPage'
+import { phoneMarketCatalog, phoneMarketRows } from '@/components/settings/phoneMarketPage'
+import { retryOf, useReplica } from '@/lib/replica'
 import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from './PhoneMarketInstallSheet'
 import { usePhoneAgentInstallTargets, usePhoneMarketInstalledAppIds } from './phoneMarketTargets'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
@@ -44,9 +47,10 @@ export const PhoneMarketAgents = observer(function PhoneMarketAgents({ device, t
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<Category>('all')
   const [detail, setDetail] = useState<AgentPayload | null>(null)
-  const market = usePhoneMarketPage()
-  const assistant = !installed && category !== 'coding'
-    ? phoneMarketRows(market.data?.entries ?? [], '').find(item =>
+  const market = useReplica(phoneMarketCatalog, ['phone'])
+  // The assistant's row, once the catalog is read.
+  const assistant = !installed && category !== 'coding' && market.state === 'value'
+    ? phoneMarketRows(market.value.entries, '').find(item =>
         item.manifest.id === ASSISTANT_APP_ID && matchesExtensionQuery(item.manifest, query))
     : undefined
   const assistantText = assistant && localizedManifestText(assistant.manifest, locale)
@@ -108,22 +112,23 @@ function AgentRows({ query, category, targets, installed, onOpen }: {
   const { locale, translate } = useSessionMessages()
   const host = useLibraryHost()
   const agents = useManagementAgents()
-  if (!agents.data) {
+  if (agents.state !== 'value') {
     if (host.remote?.online === false) return <SettingsNote role="status">{t('phoneMarket.deviceOffline')}</SettingsNote>
-    if (agents.isError) return <SettingsNote tone="danger" role="alert">{t('phoneMarket.agentUnavailable')}
-      <Button size="sm" onClick={() => void agents.refetch()}>{translate('extensions.retry')}</Button>
+    if (agents.state === 'error') return <SettingsNote tone="danger" role="alert">{t('phoneMarket.agentUnavailable')}
+      <Button size="sm" onClick={retryOf(agents)}>{translate('extensions.retry')}</Button>
     </SettingsNote>
     return <AppConnectionListPlaceholder />
   }
-  const rows = [...agents.data].sort(compareAgents).flatMap(agent => {
+  const rows = [...agents.value].sort(compareAgents).flatMap(agent => {
     const local = agent.reading !== undefined && isInstalledAgent(agent)
     const present = local || !installed && targets.some(device => device.capabilities.runtimes.includes(agent.id))
     const description = marketAgentDescription(agent, locale)
     if ((installed && !local) || (category !== 'all' && agentMarketCategoryOf(agent.id) !== category)) return []
-    if (query.trim() && !queryScore(query, [agent.id, agent.name, agent.publisher, description].join(' '))) return []
+    if (query.trim() && !queryScore(query, [agent.id, agent.name, agent.publisher, agent.publisher && vendorName(agent.publisher), description].join(' '))) return []
     return [{ agent, present, description }]
   })
   return <>
+    <RefreshFailed reading={agents} />
     {rows.map(({ agent, present, description }) =>
       <PhoneMarketRow key={agent.id} testId={`phone-market-agent-${agent.id}`} name={agent.name} description={description}
         icon={<AppIcon id={agent.id} asset={agent.icon} size={42} />} onOpen={() => onOpen(agent)}
@@ -150,7 +155,7 @@ function PhoneMarketAgentDetail({ agent, targets, onClose }: { agent: AgentPaylo
   const category = translate(`extensions.agentCategory.${agentMarketCategoryOf(agent.id)}`)
   return <Sheet fullScreenMobile onClose={onClose} ariaLabel={agent.name} testId="phone-market-agent-detail">
     <AgentPane name={agent.name} onClose={onClose}>
-      <PhoneMarketRow name={agent.name} description={agent.publisher}
+      <PhoneMarketRow name={agent.name} description={agent.publisher && vendorName(agent.publisher)}
         icon={<AppIcon id={agent.id} asset={agent.icon} size={42} />} testId="phone-market-agent-detail-title" />
       <p className="phone-market-agent-description">{marketAgentDescription(agent, locale)}</p>
       <Button variant="primary" className="phone-market-install-submit" data-testid="phone-market-agent-install"
@@ -158,7 +163,7 @@ function PhoneMarketAgentDetail({ agent, targets, onClose }: { agent: AgentPaylo
       <PhoneMarketInstallSummary rows={rows} />
       <dl className="phone-market-agent-facts">
         {agent.latestVersion && <div><dt>{t('phoneMarket.latestVersion')}</dt><dd>{agent.latestVersion}</dd></div>}
-        {agent.publisher && <div><dt>{t('phoneMarket.publisher')}</dt><dd>{agent.publisher}</dd></div>}
+        {agent.publisher && <div><dt>{t('phoneMarket.publisher')}</dt><dd>{vendorName(agent.publisher)}</dd></div>}
         <div><dt>{t('phoneMarket.categories')}</dt><dd>{category}</dd></div>
       </dl>
     </AgentPane>
@@ -170,12 +175,13 @@ function AgentDetail({ id }: { id: string }) {
   const { t } = useTranslation('main')
   const { locale } = useSessionMessages()
   const host = useLibraryHost()
-  const query = useManagementAgent(id)
-  if (host.remote?.online === false && !query.data) return <SettingsNote role="status">{t('phoneMarket.deviceOffline')}</SettingsNote>
-  if (!query.data) return query.isError || query.data === null
+  const reading = useManagementAgent(id)
+  const loaded = reading.state === 'value' ? reading.value : undefined
+  if (host.remote?.online === false && !loaded) return <SettingsNote role="status">{t('phoneMarket.deviceOffline')}</SettingsNote>
+  if (!loaded) return reading.state === 'error' || loaded === null
     ? <SettingsNote role="status">{t('phoneMarket.agentUnavailable')}</SettingsNote>
     : <AppConnectionListPlaceholder />
-  const agent = query.data
+  const agent = loaded
   return <>
     <PhoneMarketRow name={agent.name} description={marketAgentDescription(agent, locale)}
       icon={<AppIcon id={id} asset={agent.icon} size={42} />} testId="phone-market-agent-detail-title" />

@@ -95,6 +95,40 @@ describe('real Electron fixture ownership', () => {
     } finally { fake.drained.resolve(); await fixture.dispose(); await result; }
   });
 
+  it('writes child output to live logs while the child is still running', async () => {
+    const fake = processDouble();
+    const fixture = startRealElectronFixture(options());
+    const result = fixture.result.catch(error => error);
+    const live = (stream: string) => path.join(temporary, `reports/native-projection-pipeline.${stream}.live.log`);
+    try {
+      fake.child.stderr.write('REAL_ELECTRON_FIXTURE_PHASE={"phase":"first-wait-entered"}\n');
+      fake.child.stdout.write('stdout line\n');
+      await vi.waitFor(() => expect(fs.readFileSync(live('stderr'), 'utf8')).toBe('REAL_ELECTRON_FIXTURE_PHASE={"phase":"first-wait-entered"}\n'));
+      expect(fs.readFileSync(live('stdout'), 'utf8')).toBe('stdout line\n');
+      // No final report exists yet: this is exactly what a hung child leaves behind.
+      expect(fs.existsSync(path.join(temporary, 'reports/native-projection-pipeline.json'))).toBe(false);
+      fake.child.stderr.write('second phase\n');
+      await vi.waitFor(() => expect(fs.readFileSync(live('stderr'), 'utf8')).toMatch(/first-wait-entered.*\nsecond phase\n$/s));
+      fake.child.exitCode = 0; fake.child.emit('exit', 0, null);
+      fake.drained.resolve();
+      expect(await result).toMatchObject({ code: 0, stdout: 'stdout line\n' });
+    } finally { fake.drained.resolve(); await fixture.dispose(); await result; }
+  });
+
+  it('keeps collecting output and does not fail the fixture when a live log write fails', async () => {
+    const fake = processDouble();
+    const append = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => { throw new Error('disk full'); });
+    const fixture = startRealElectronFixture(options());
+    const result = fixture.result.catch(error => error);
+    try {
+      fake.child.stderr.write('kept in memory\n');
+      await vi.waitFor(() => expect(append).toHaveBeenCalled());
+      fake.child.exitCode = 0; fake.child.emit('exit', 0, null);
+      fake.drained.resolve();
+      expect(await result).toMatchObject({ code: 0, stderr: 'kept in memory\n' });
+    } finally { append.mockRestore(); fake.drained.resolve(); await fixture.dispose(); await result; }
+  });
+
   it('retains output on process error and waits for close instead of rejecting on the error event', async () => {
     const fake = processDouble();
     const fixture = startRealElectronFixture(options());

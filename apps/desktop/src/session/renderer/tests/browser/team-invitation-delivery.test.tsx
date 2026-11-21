@@ -6,7 +6,9 @@ import { TeamProvider, TeamAccessGate } from '@/features/team/context'
 import { TeamInviteDialog } from '@/features/team/TeamInviteDialog'
 import { createTeamApi, type TeamTransport } from '@/features/team/api'
 import { createTeamInviteIntentStore } from '@/features/team/inviteIntentStore'
-import { mockTeamApi, teamInvitationFixture, teamInvitationCapability, teamUser } from '../../../../../../../tests/fixtures/teamEdition'
+import { mockTeamApi, teamInvitationFixture, teamInvitationCapability, teamUser, teamApiDouble } from '../../../../../../../tests/fixtures/teamEdition'
+vi.mock('@/features/team/runtime', async () => (await import('../../../../../../../tests/fixtures/teamEdition')).teamRuntimeDouble)
+import { queryClient } from '@/lib/replica'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
@@ -21,11 +23,11 @@ beforeEach(async () => {
   document.documentElement.setAttribute('data-theme', 'light')
   for (const key of Object.keys(localStorage)) if (key.startsWith(prefix)) localStorage.removeItem(key)
 })
-afterEach(() => harness?.cleanup())
+afterEach(() => { harness?.cleanup(); queryClient.clear() })
 async function mount(transport: TeamTransport) {
   const invite = createTeamApi(transport).invite, onClose = vi.fn(), fixture = mockTeamApi('admin', { invite })
-  harness = createReactHarness()
-  await renderWithAppProviders(harness, <TeamProvider user={teamUser} api={fixture}><TeamAccessGate>
+  harness = createReactHarness(); teamApiDouble.current = fixture
+  await renderWithAppProviders(harness, <TeamProvider user={teamUser}><TeamAccessGate>
     <TeamInviteDialog onClose={onClose} onSaved={async () => {}} />
   </TeamAccessGate></TeamProvider>, { auth: teamUser })
   await until('the administrator invitation dialog is ready', () => !!document.querySelector('.gg-team-dialog input[type="email"]'))

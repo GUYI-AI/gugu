@@ -149,18 +149,22 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
 // as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
-// 54 (selection-send.ts): `files.sendSelection({ text, refs, rect, viewport })`, the preinstalled Files App only, inside a
-// real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
-// 55: the same Send on a page of a chat's folder: into that chat (the page's, from the binding), @ its members, every
-// file one of that folder. 'sent' is queued, as a composer's message is, not delivered.
+// 54: `files.sendSelection`, the preinstalled Files App's Send box beside a selection, into the page's session; 55: the same
+// on a chat folder's page, into that chat. Both withdrawn with 60 (the host's selection menu cites instead).
 // 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
 // only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
 // 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
-// 59 (file-annotation-draft.ts): the preinstalled Files App can save a source selection to the session's annotation draft.
-export const EXTENSION_API_VERSION = 59;
+// 59: withdrawn (the preinstalled Files App's `files.annotateSelection`, and with 60 also 54/55's `files.sendSelection`).
+// 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
+// `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
+// Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
+// 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
+// `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
+// App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
+export const EXTENSION_API_VERSION = 61;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1032,6 +1036,14 @@ export const BRIDGE_VERBS = {
   promptsDelete: { needs: 'prompts' },
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
+  /**
+   * `gugu.credentials` (61, app-credentials.ts): a request the host sends for the page with the credential the person
+   * picked for that website; the value never reaches the page. Gated by `permissions.credentials`, `permissions.network`
+   * and that pick, not a capability word. A page an agent works never uses the person's credential: a read there answers
+   * `unavailable`, a write is handed to the agent.
+   */
+  credentialsRead: { needs: null, only: 'page' },
+  credentialsWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
   cloudSubscribe: { needs: null, only: 'page' },
   cloudUnsubscribe: { needs: null, only: 'page' },
@@ -1107,8 +1119,8 @@ export const BRIDGE_VERBS = {
   filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
-  filesSendSelection: { needs: null, only: 'page', gesture: true },
-  filesAnnotateSelection: { needs: null, only: 'page', gesture: true },
+  /** 60 (file-selection.ts): Cite or Send pressed on the page's selection menu, in the person's gesture: a draft, or the host's own box. */
+  filesSelectionAction: { needs: null, only: 'page', gesture: true },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
   filesDraft: { needs: null, machine: 'place' },

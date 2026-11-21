@@ -12,7 +12,7 @@ vi.mock('@gugu/session-chat-ui', () => ({
     return {}
   },
 }))
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {} }))
+vi.mock('@renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', peekInstalledApps: () => null, installedExtensions: { subscribe: () => () => {} } }))
 vi.mock('@renderer/lib/ipc', () => ({ rpc: {} }))
 vi.mock('@renderer/lib/chat/advertised-command-provider', () => ({ advertisedCommandProvider: {} }))
 vi.mock('@renderer/lib/chat/sender-avatar', () => ({ senderAvatarUrl: () => null, subscribeSenderAvatars: () => () => {} }))

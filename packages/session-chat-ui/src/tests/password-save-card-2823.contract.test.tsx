@@ -7,7 +7,6 @@ import type { PasswordBetaUi, PasswordSaveRequest, PasswordUiCommand, PasswordUi
 import { createPasswordCardKey, openPasswordCard, sealPasswordCard } from '@gugu/core/shared/passwordCardCipher'
 import { remotePasswordSaveCard } from '../../../../apps/desktop/src/lib/passwordSaveCards'
 vi.mock('../../../../apps/desktop/src/lib/deviceRpc', () => ({ callDeviceRpc: vi.fn() }))
-vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }))
 const request: PasswordSaveRequest = { kind: 'save', requestId: '11111111-1111-4111-8111-111111111111',
   origin: 'https://example.com', agent: 'agent', agentName: '研究助理', sessionTitle: '研究助理', sessionId: 'session', deviceId: 'desktop',
   expiresAt: Date.now() + 100000, inputs: [{ key: 'phone', name: '手机号', secret: false }] }
@@ -51,13 +50,14 @@ async function remote(fail = false) {
   await expect.poll(() => host.querySelector<HTMLInputElement>('input[aria-label="手机号"]')?.value).toBe(field.value)
   return { commands, wire }
 }
+// Rendered without a host translator, the card reads the package's English fallback.
 describe('mobile save card without an Electron bridge', () => {
   it('shows the supplied non-secret field and saves it through the encrypted remote card', async () => {
     const f = await remote()
-    const button = [...host.querySelectorAll('button')].find(button => button.textContent === '保存')!
+    const button = [...host.querySelectorAll('button')].find(button => button.textContent === 'Save')!
     await expect.poll(() => button.disabled).toBe(false)
     button.click()
-    await expect.poll(() => host.querySelector('[role=status]')?.textContent).toBe('已保存')
+    await expect.poll(() => host.querySelector('[role=status]')?.textContent).toBe('Saved')
     expect(f.commands.find(command => command.type === 'save')).toMatchObject({ type: 'save', fields: [{ name: '手机号', value: '15500000000', secret: false }] })
     expect(JSON.stringify(f.wire)).not.toContain('15500000000')
   })
@@ -65,10 +65,10 @@ describe('mobile save card without an Electron bridge', () => {
     await remote(true)
     const input = host.querySelector<HTMLInputElement>('input[aria-label="手机号"]')!
     input.value = '15500000001'; input.dispatchEvent(new InputEvent('input', { bubbles: true }))
-    const button = [...host.querySelectorAll('button')].find(button => button.textContent === '保存')!
+    const button = [...host.querySelectorAll('button')].find(button => button.textContent === 'Save')!
     await expect.poll(() => button.disabled).toBe(false)
     button.click()
-    await expect.poll(() => host.querySelector('[role=alert]')?.textContent).toBe('保存失败，请重试')
+    await expect.poll(() => host.querySelector('[role=alert]')?.textContent).toBe('Could not save. Try again.')
     expect(input.value).toBe('15500000001')
     expect(button.disabled).toBe(false)
   })

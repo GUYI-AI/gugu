@@ -88,7 +88,6 @@ it.each([
   ['error', 'var(--agent-tone-error)'],
   ['needs_user', 'var(--agent-tone-needs-user)'],
   ['working', 'var(--agent-tone-running)'],
-  ['parked', 'var(--agent-tone-running)'],
   ['idle', 'var(--green)'],
   ['starting', 'var(--green)'],
   ['pending', 'var(--green)'],
@@ -100,8 +99,17 @@ it.each([
     const shown = modal.querySelector<HTMLElement>('[data-testid="agent-settings-header-status"]')!;
     expect(dot(shown).display).not.toBe('none');
     expect(dot(shown).backgroundColor).toBe(resolved(token));
-    if (status === 'error' || status === 'needs_user' || status === 'working' || status === 'parked') expect(dot(shown).backgroundColor).not.toBe(resolved('var(--green)'));
+    if (status === 'error' || status === 'needs_user' || status === 'working') expect(dot(shown).backgroundColor).not.toBe(resolved('var(--green)'));
     harness.cleanup();
     harness = createReactHarness();
   }
+});
+
+// Background running is drawn as AgentParkedGlyph's two bars, not a dot: no ::before dot beside it.
+it('the header for parked shows the two-bar glyph instead of a dot', async () => {
+  setAgentDisplayStatusOverride(fixture.other.id, 'parked');
+  const modal = await open(fixture.other);
+  const shown = modal.querySelector<HTMLElement>('[data-testid="agent-settings-header-status"]')!;
+  expect(dot(shown).display).toBe('none');
+  expect(shown.querySelector('[data-agent-status-glyph="parked"]')).not.toBeNull();
 });

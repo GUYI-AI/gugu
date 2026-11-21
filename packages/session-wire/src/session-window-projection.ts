@@ -41,7 +41,7 @@ export const WINDOW_PROJECTION_ROOT_FIELDS: Readonly<Record<'turn' | 'terminal',
   terminal: 'terminalId owner canKill command args cwd outputBytes truncated exitStatus',
 });
 export const WINDOW_PROJECTION_HEADER_CHILDREN: Readonly<Record<string, string>> = Object.freeze({
-  'turn:outcome': 'kind reason detail signInRequired guguReason said', 'turn:trigger': 'kind chatIds',
+  'turn:outcome': 'kind reason detail signInRequired signInReason guguReason said', 'turn:trigger': 'kind chatIds',
   'terminal:exitStatus': 'exitCode signal', 'item:exitStatus': 'exitCode signal',
 });
 const names = (value: string) => value.trim().split(/\s+/);

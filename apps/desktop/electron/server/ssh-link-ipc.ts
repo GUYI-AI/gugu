@@ -3,7 +3,8 @@
  * 契约见 src/lib/sshLink.ts。
  *
  * signIn:后台开的设备连接一律不弹问(BatchMode);要密码 / 口令 / 新主机指纹的机器,由人点「登录」,
- * 这里用与直连终端同一套 askpass + 提问卡片问一次,登上后共享连接一直留着(ControlPersist),再开设备连接不再问。
+ * 这里用与直连终端同一套 askpass + 提问卡片问一次,登上后共享连接一直留着(ControlPersist),再开设备连接不再问;
+ * Windows 自带的 OpenSSH 没有共享连接,这一下记住的是新指纹(known_hosts)与装上的咕咕钥匙,之后 BatchMode 直接连上。
  * 密码提问上照样给「以后连这台机器不用再输密码」(下次免密,见 ssh-key-install.ts)。
  */
 import { spawn } from '@gugu/core/local/childProcess'
@@ -192,8 +193,6 @@ export function registerSshLinkIpc(options: {
       const machine = await machineFor(deviceId)
       const controlPath = terminalControlPath()
       if (!machine) return { ok: false, reason: 'unmapped' }
-      // Windows 自带的 OpenSSH 没有共享连接:登录这一下留不住,设备连接只能靠钥匙(照旧如实说要登录)。
-      if (!controlPath) return openOutcome(deviceId, await links.open(deviceId), upgrader)
       const install = options.installKey
       const askpass = await createTerminalAskpass(
         undefined,
@@ -202,6 +201,7 @@ export function registerSshLinkIpc(options: {
       entry.askpass = askpass
       askpass.onPrompt((prompt) => send(SSH_LINK_CHANNELS.prompt, { deviceId, prompt }))
       askpass.onKeyInstall?.((outcome) => send(KEY_INSTALL_EVENT, { label: machine.display, outcome }))
+      let installing: Promise<void> | void
       try {
         const exit = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
           const child = spawn('ssh', buildEnsureMasterArgs(sshTargetOf(machine), controlPath), {
@@ -220,12 +220,14 @@ export function registerSshLinkIpc(options: {
           options.log?.('ssh link: sign-in failed', { deviceId, code: exit.code, detail: exit.stderr.trim().split(/\r?\n/).slice(-3).join('\n') })
           return outcome
         }
-        askpass.authenticated?.()
+        installing = askpass.authenticated?.()
       } finally {
         send(SSH_LINK_CHANNELS.prompt, { deviceId, prompt: null })
-        // 钥匙可能还在装(装完才报结果):askpass 的目录与套接字此刻就能收掉,装钥匙用的是刚才那条共享连接。
+        // 装钥匙不用这个 askpass(复用共享连接,没有就自己带着刚答的密码再登一次):它的目录与套接字此刻就能收掉。
         void askpass.close()
       }
+      // 勾了「以后不用再输密码」:钥匙装好再开设备连接 —— 没有共享连接(Windows)时,设备连接靠的就是这把钥匙。
+      await installing
       return openOutcome(deviceId, await links.open(deviceId), upgrader)
     })()
     signIns.set(deviceId, entry)

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react'
 import { CloudComputerError, type CloudVersionMatchState } from '@gugu/core/cloud/cloudComputer'
-import { rendererCloudComputerClient } from './cloudComputer'
+import { rendererCloudComputerClient } from './cloudComputerClient'
 import { getRendererSession, observeRendererSession } from './sessionPublication'
+import { i18n } from '@/i18n/runtime'
 
 const states = new Map<string, CloudVersionMatchState>()
 const running = new Map<string, AbortController>()
@@ -25,8 +26,8 @@ export function useCloudVersionMatch(deviceId: string | null) {
 
 /** Called only for a verified version mismatch, never for a connection failure. */
 export async function requestCloudVersionMatch(deviceId: string, retry = false): Promise<boolean> {
-  const { getCloudComputerState } = await import('./cloudComputerStore')
-  if (getCloudComputerState().snapshot?.deviceId !== deviceId) return false
+  const { knownCloudDeviceId } = await import('./cloudComputer')
+  if (knownCloudDeviceId() !== deviceId) return false
   const key = keyFor(deviceId)
   if (running.has(key)) return true
   // A new verified mismatch invalidates a previous ready receipt: the desktop
@@ -45,7 +46,7 @@ export async function requestCloudVersionMatch(deviceId: string, retry = false):
       const until = Date.now() + 10 * 60_000
       let state = initial
       while (state.status === 'updating') {
-        if (Date.now() >= until) throw new CloudComputerError(0, 'version_match_failed', '云端咕咕升级一直没有完成，请重试')
+        if (Date.now() >= until) throw new CloudComputerError(0, 'version_match_failed', i18n.t('cloud.upgradeIncomplete', { ns: 'assistant' }))
         await new Promise(resolve => setTimeout(resolve, 2_000))
         assertCurrent()
         state = await client.matchVersion!(deviceId, false, controller.signal)

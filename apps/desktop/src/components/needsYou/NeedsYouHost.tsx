@@ -13,6 +13,7 @@ import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { IconButton } from '../ui/IconButton'
 import { SectionLabel } from '../ui/SectionLabel'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
@@ -22,7 +23,7 @@ import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from '
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
 import { isAssistantAgent } from '@/session/renderer/features/assistant/assistant-lineage'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
-import { usePasswordNotifications, usePasswordSnapshot, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
+import { passwordNotifications, usePasswordVault, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { promptedRequests, waitingToJoin } from '../password/passwordModel'
 
 installShellSlots()
@@ -34,8 +35,9 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   const { t } = useTranslation()
   const mobile = useMobileShell()
   const { tasks, count, attention, error, loading } = useNeedsYouTasks()
-  const passwords = usePasswordNotifications()
-  const sync = usePasswordSnapshot()?.sync
+  const vault = usePasswordVault()
+  const passwords = passwordNotifications(vault.snapshot)
+  const sync = vault.snapshot?.sync
   const devices = promptedRequests(sync), joining = waitingToJoin(sync)
   const notificationCount = count + passwords.length + devices.length + (joining ? 1 : 0)
   const open = useSidebarNotificationsOpen()
@@ -82,12 +84,13 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
       </div> : <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
+        <RefreshFailed error={vault.failure} onRetry={vault.retry} />
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
-          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} : {request.origin}</Button>)}
+          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{t(request.kind === 'save' ? 'passwords.notifySave' : 'passwords.notifyUse', { ns: 'settings' })} : {request.origin}</Button>)}
         {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}
-          onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>「{request.label || '新设备'}」想用你的密码</Button>)}
+          onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>{t('passwords.notifyDevice', { ns: 'settings', name: request.label || t('passwords.newDevice', { ns: 'settings' }) })}</Button>)}
         {joining && <Button variant="ghost" className="w-full justify-start" data-password-join=""
-          onClick={() => { openPasswordDevicePrompt(null); setSidebarNotificationsOpen(false) }}>在另一台设备上允许这台电脑用你的密码</Button>}
+          onClick={() => { openPasswordDevicePrompt(null); setSidebarNotificationsOpen(false) }}>{t('passwords.joinAsk', { ns: 'settings' })}</Button>}
         {tasks.map(task => {
           // The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat, which the one
           // decision (lib/assistantEntry.ts) sends to its App, or, when the App is not usable here, opens as any chat — never the

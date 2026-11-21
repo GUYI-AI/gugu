@@ -61,7 +61,7 @@ export type AgentHomeMarker = {
   terminalNeedsSignIn?: boolean;
   oldSessionsSkipped?: number;
   upgradeIssues?: AgentHomeImportIssue[];
-  upgradeSignIn?: 'copied' | 'relogin';
+  upgradeSignIn?: 'copied' | 'relogin' | 'reference';
   legacyBaseline?: boolean;
 };
 type PathSpec = Exclude<AgentHomeImportPath, string>;

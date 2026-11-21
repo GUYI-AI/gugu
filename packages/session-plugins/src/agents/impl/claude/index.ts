@@ -25,7 +25,7 @@ import {
 } from '../../helpers/node-interpreter';
 import { connectClaudeWithReview } from './auto-review-connection';
 import { claudeReviewConfig } from './auto-review';
-import { claudeAuthStatus } from './auth';
+import { buildClaudeLoginCommand, claudeAuthStatus } from './auth';
 import { claudeSubscriptionBehavior } from './subscription';
 import { buildClaudeHookConfig } from './hooks';
 import { CLAUDE_PRESENCE_SINCE } from './presence';
@@ -197,6 +197,9 @@ export const plugin = definePlugin(
           // (code.claude.com/docs/en/troubleshoot-install「OAuth login fails in WSL2, SSH, or containers」:
           // `claude auth login` 从标准输入读贴回来的码)。
           headlessArgs: ['auth', 'login'],
+          // CLI 打开浏览器走 `$BROWSER`(2.1.293:没设才用 `open`)。登录窗口自己摆链接和「打开授权页」,
+          // 由人决定什么时候打开 ⇒ 让它执行的是 `true`,什么都不开。
+          env: { BROWSER: 'true' },
           description: 'Open the Claude Code CLI sign-in flow in a terminal.',
         },
         {
@@ -436,6 +439,7 @@ export const provider = registerPluginBehavior(plugin, {
   },
   auth: {
     checkStatus: claudeAuthStatus,
+    buildLoginCommand: buildClaudeLoginCommand,
   },
   subscription: claudeSubscriptionBehavior(),
   prompt: {

@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/snapshot-regis
 const { Sidebar } = await import('../../../../apps/desktop/src/components/Sidebar')
 const { DevicesContext } = await import('../../../../apps/desktop/src/store/devicesContext')
 const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
-const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge')
 const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge')
 const { ASSISTANT_APP_ID, installAssistantAppEntryBridge, publishAssistantAppWord } = await import('../../../../apps/desktop/src/lib/assistantEntry')
@@ -40,7 +40,7 @@ const shell = (over: Record<string, unknown> = {}) => ({
   assistantState: 'found' as const, ownerName: 'U', ownerId: OWNER, chatId: DM, home: null, setup: null, member: false, preparing: false, ...over,
 })
 const app = (id: string, name = id) => ({ id, name, version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'today', title: name }] } })
-const apps = (over: { disabled?: string[]; installed?: boolean; dock?: string[] } = {}) => installedExtensionsStore.applyList({
+const apps = (over: { disabled?: string[]; installed?: boolean; dock?: string[] } = {}) => installedExtensions.set(['local'], {
   extensions: [...over.installed === false ? [] : [app(ASSISTANT_APP_ID, 'Gugu')], app('notes')], invalid: [],
   icons: {}, appIcons: { [ASSISTANT_APP_ID]: ICON }, disabled: over.disabled ?? [], disclosure: {}, dock: over.dock ?? [ASSISTANT_APP_ID, 'notes'],
 } as never)
@@ -69,7 +69,7 @@ afterEach(() => {
   publishAssistantAppWord(null)
   publishAppConversationSurfaces({})
   publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null, ownerId: null }))
-  installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+  installedExtensions.set(['local'], { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
 })
 
 describe('the assistant App is the first App of the rail\'s App group', () => {

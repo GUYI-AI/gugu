@@ -13,6 +13,7 @@
  * 层次(pass):back 身体后面 / mid 身体上、眼睛下面 / top 眼睛上面(第二趟 GL)。
  * 二级运动(sway / bob / 滑板)只由身体动作驱动、会停下来:静止的小鸟画面不再变,runtime 就不重画(#7435)。
  */
+import { imageLoaded } from '@/lib/imageLoaded'
 import { rendererLogger } from '@/lib/log'
 import { DEG, NEUTRAL_BODY, clamp, smoothstep, warp } from './geometry'
 import { onWing, wingOf, type Rig } from './rig'
@@ -100,8 +101,7 @@ function pieceUrl(pc: Piece, cw: Colorway): Promise<string> {
   if (!p) {
     p = (async () => {
       const img = new Image()
-      img.src = src
-      await img.decode()
+      await imageLoaded(img, src)
       const c = document.createElement('canvas')
       c.width = pc.size.w
       c.height = pc.size.h
@@ -298,8 +298,7 @@ export class OutfitDraw {
         void pieceUrl(pc, w.def.colorways[w.cw])
           .then(async (url) => {
             const img = new Image()
-            img.src = url
-            await img.decode()
+            await imageLoaded(img, url)
             flatImages.set(id, img)
           })
           .catch((err: unknown) => {

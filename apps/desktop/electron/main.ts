@@ -7,6 +7,7 @@ import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-p
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
+import { followAppPresence } from './app-presence'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
@@ -29,6 +30,7 @@ import { configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
+import { offerNativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
@@ -150,7 +152,7 @@ import {
 } from '../shared/update-policy'
 import { createUpdateState, type VersionedUpdateState } from '../shared/update-state'
 import { createBuiltRendererRootResolver } from './rendererRoot'
-import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
+import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot, refreshUserPath } from './shellPath'
 import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
 import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
@@ -379,6 +381,7 @@ import {
 import {
   SESSIONPAGE_PLATFORM_CATALOG_CHANNEL,
   sessionpagePlatformCatalog,
+  sessionpagePlatformGate,
 } from './sessionpage/sessionpage-platform-catalog'
 import { sessionPlatformModel } from './session/main/core/sessions/platform-model-selection'
 import { providerSessionIdForSession } from './session/main/core/sessions/provider-session-id'
@@ -2289,7 +2292,7 @@ const heartbeatRowSources = {
   // 会话摘要随心跳上云:机器离线后手机就只剩它可读了(product spec 的验收)。
   // 经桥拿,与设备 RPC 同一条规矩。桥没起来就报空 —— 那时这台机器上确实一条会话页会话
   // 都还没有,❌ 不为此把心跳判失败(心跳是 presence 的唯一写者,拿主要的换次要的)。
-  sessionDigest: () => loadEmdashBridge()?.sessionpageSessionDigest?.() ?? [],
+  sessionDigest: (limit: number) => loadEmdashBridge()?.sessionpageSessionDigest?.(limit) ?? [],
   // #7199 第二步:这台电脑能被调用的动作随心跳登记(没授权的也登记、标不可用)。
   deviceActions: () => deviceActionsRuntime().capability(),
 }
@@ -2366,7 +2369,7 @@ ipcMain.on('window:maximize', (event) => {
   else win.maximize()
 })
 ipcMain.on('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close())
-ipcMain.handle('window:isMaximized', (event) => BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false)
+ipcMain.on('window:is-maximized-sync', (event) => { event.returnValue = BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false })
 // @@@app-active 「App 在前台」= 咕咕有一扇窗口拿着焦点(快速聊天小窗也是主窗渲染层画的,它在前台也算)。
 // 渲染层的 visibilityState 答不了这个:主窗关了 backgroundThrottling,最小化、被遮住、切到别的应用时页面照样 visible,
 // 眼前那条会话就永远不弹通知、新消息一到就被标成已读(lib/onScreenChat.ts 读的就是这里)。
@@ -2377,6 +2380,11 @@ app.on('browser-window-focus', sendAppActive)
 // 「跟随系统」的语言:系统语言可能在咕咕不在前台时变了,回到前台时重新解析一次(变了才动托盘、菜单)。
 app.on('browser-window-focus', () => { if (hostLocaleStore) applyHostLocale() })
 app.on('browser-window-blur', sendAppActive)
+// @@@app-presence — in Gugu or not, for the reads on a return (electron/app-presence.ts).
+const appPresence = followAppPresence((present) => {
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present)
+})
+ipcMain.handle('app:is-present', () => appPresence.present())
 // @@@win-titlebar-row — Windows 标题栏「编辑 / 视图」菜单的命令(清单与理由见 window-menu-commands.ts)。
 ipcMain.on('window:menu-command', (event, command: unknown) => {
   const window = BrowserWindow.fromWebContents(event.sender)
@@ -2536,6 +2544,7 @@ const attachmentUploads = createAttachmentUploadHost({
       }, electronFetch, SERVER_MODE)
     } }
   },
+  preview: offerNativeImagePreview,
   result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
   progress: event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('attachments:progress', event) },
   warn: error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Attachment upload failed; pending bytes remain on this device'),
@@ -4175,7 +4184,7 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
 ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unknown, remoteCard?: unknown) => {
   const auth = await authProvider?.getAuth()
   if (!auth?.accessToken || !auth.userId) {
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // #6264 会话在别的机器上:名片由那台机器答过了(绑定记在那台机器上),这里只负责画;null = 那台机器说它还没有身份。
@@ -4187,7 +4196,7 @@ ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unkn
   )
   if (!card) {
     // 点了必须有反应:说明为什么不能分享,而不是一个点下去毫无动静的入口(实机反馈「点击没反应」)。
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // 分享浮层里要摆会话 id(#6093),而名片本身是「会话 → agent」的答案,不带问题那一半 —— 这里补上。
@@ -4247,13 +4256,13 @@ async function applyAgentModelSelectionOnDevice(input: {
   } catch (error) {
     // 交接窗口里的结构歧义（两个认领者）：默认已落下，活会话这一步说不清该动哪条 —— 响亮报，❌ 不猜。
     throw new Error(
-      `模型默认已更新，但此刻分不出该 Agent 的活会话（${error instanceof Error ? error.message : String(error)}）；`
-      + '请稍后再试一次。',
+      `模型默认已更新，但暂时无法确定该 Agent 的当前会话（${error instanceof Error ? error.message : String(error)}）；`
+      + '请稍后重试。',
     )
   }
   if (!sessionId) return { applied: 'next-session' }
   const emdash = loadEmdashBridge()
-  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，活会话没能切换')
+  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，当前会话未能切换')
   const outcome = await emdash.applyEmdashSessionModelSelection({
     sessionId,
     selection: input.selection,
@@ -4570,12 +4579,12 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
         return () => hostPresentationListeners.delete(listener)
       },
     })
-    // 同理注入:登录 shell PATH 的取回住在宿主这边(shellPath.ts 有模块级状态 lastLoginShellPath,
+    // 同理注入:用户当前 PATH 的重读住在宿主这边(shellPath.ts 有模块级状态 lastLoginShellPath,
     // 报错时要靠它说明「当时 PATH 补没补上」;会话页 import 只会拿到读不到的复制品)。
-    // 装完之后要重来一次:安装脚本自己挑目录、再往用户 rc 追加 PATH 是正当做法(36 个 agent 里
-    // 15 个走脚本安装),而启动时取的那份快照此刻已经过期 —— 不重来就是「装成功、当场找不到」。
-    emdashBridge.setLoginShellPathRehydrator(() => {
-      hydrateLoginShellPath()
+    // 每次检测前都重读:咕咕开着时用户在别处装了 CLI / 改了 rc 或用户 PATH,启动时那份已经过期。
+    emdashBridge.setUserPathRefresher(async () => {
+      const read = await refreshUserPath()
+      return { from: read.from, shell: read.shell, at: read.at, ...(read.hydrated ? {} : { failed: read.reason }) }
     })
     // #5873 同一次采样的另一半:整份登录 shell 环境。传的是**取值函数**而非当下的值 ——
     // 注入发生在 loadEmdashBridge() 那一刻,而 hydrateLoginShellPath() 可能还没跑过、
@@ -5201,7 +5210,7 @@ app.whenReady().then(async () => {
       if (record.action === 'children') {
         if (elsewhere) await crossMachine().deviceOfSession(sessionId, await remoteCaller(auth, context), signal)
         const local = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal)
+        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal, record.metadata_only === true)
       }
       if (['get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel'].includes(String(record.action)) && elsewhere) {
         return crossMachine().runOnSession(sessionId, await remoteCaller(auth, context), record as { action: string }, signal)
@@ -6116,6 +6125,8 @@ app.whenReady().then(async () => {
     // 于是「agent 用 session_list_models 查到的」与「用户在下拉里看到的」不可能分岔。
     // ❌ 别在这里另加过滤或另算一份可用性:那就是第二份判据,它一定会漂。
     emdash.setPlatformModelCatalogResolver((query) => sessionpagePlatformHooks.listModels(query))
+    // 同一道门的答案随 `agents.modelCatalog` 回给 composer;账号口与上面那条 IPC 同一个(现取,❌ 早到的一问落成 null)。
+    emdash.setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: desktopAuthProvider() }))
 
     // @@@2503 平台额度注入器(Chat UI / ACP 侧)—— pty 钩子的孪生。结构刻意与它一致:先按契约判这一格
     // 能不能注入,再决定复用还是重签。Claude 走会话 `_meta`;Codex/OpenCode 走会话私有适配器的 spawn env。
@@ -6436,6 +6447,13 @@ app.whenReady().then(async () => {
       .then(() => { adoptCloudTaskNames = adoptTaskNames; return adoptTaskNames() })
       .catch((error: unknown) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting task names failed'))
     refreshPlatformCredentials()
+    // The resource monitor switch is also the agents' grant to read it (ResourceMonitorSettingsPage): a monitor that was
+    // already on, from before that or from another start, gets the perf group connected here.
+    void emdashBoot.then(async () => {
+      if (!(await appSettingsService.get('resourceMonitor')).enabled || !deviceActionsRuntime().ungrantedGroup('perf.snapshot')) return
+      const result = await deviceActionsRuntime().connect('perf')
+      if (!result.ok) createLogger('device-actions').warn({ code: result.code, message: result.message }, 'could not connect perf for the running resource monitor')
+    }).catch((error: unknown) => createLogger('device-actions').warn({ error: String(error) }, 'could not connect perf for the running resource monitor'))
     // session-life signs in once the backend that owns it is up; later account changes come through the auth IPC.
     void emdashBoot.then(async () => {
       sessionLifeBooted = true

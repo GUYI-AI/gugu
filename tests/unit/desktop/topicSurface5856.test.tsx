@@ -245,11 +245,11 @@ describe('#6010 摘要参与人数随来源线的失效通知更新', () => {
   it('非参与者也重读人数；加入、退出不依赖话题新消息，其他来源线不影响它', async () => {
     listTopicsOfChat.mockResolvedValue([topic({ participant_count: 1, is_participant: false })])
     await mount()
-    expect(surface?.anchorsByMessageId.get('msg-1')?.[0]?.participant_count).toBe(1)
+    expect(surface?.anchorsByMessageId?.get('msg-1')?.[0]?.participant_count).toBe(1)
     for (const count of [2, 1]) {
       listTopicsOfChat.mockResolvedValue([topic({ participant_count: count, is_participant: false })])
       await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-      expect(surface?.anchorsByMessageId.get('msg-1')?.[0]?.participant_count).toBe(count)
+      expect(surface?.anchorsByMessageId?.get('msg-1')?.[0]?.participant_count).toBe(count)
       expect(surface?.topics[0]?.is_participant).toBe(false)
     }
     expect(listTopicsOfChat).toHaveBeenCalledTimes(3)

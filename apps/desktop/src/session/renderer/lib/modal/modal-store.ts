@@ -4,6 +4,8 @@ import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
 class ModalStore {
   activeModalId: string | null = null;
   activeModalArgs: Record<string, any> | null = null;
+  /** 每次 setModal 一个新号:ModalRenderer 拿它当内容的 key —— 新的一次请求是一个新弹窗,❌ 接着上一个的勾选与输入。 */
+  request = 0;
   closeGuardActive = false;
   previousFocus: HTMLElement | null = null;
   /**
@@ -28,6 +30,7 @@ class ModalStore {
     }
     this.activeModalId = id;
     this.activeModalArgs = args;
+    this.request += 1;
   }
 
   /**

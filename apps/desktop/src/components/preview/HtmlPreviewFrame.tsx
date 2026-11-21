@@ -1,6 +1,6 @@
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { useEffect, useId, useRef, useState } from 'react';
-import { queryClient } from '@/lib/replica';
+import { useEffect, useRef, useState } from 'react';
+import { readOnce } from '@/lib/replica';
 import { Button } from '@/components/ui/Button';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { HtmlPreviewAnnotationContext } from './use-html-preview-annotations';
@@ -42,7 +42,6 @@ interface HtmlPreviewFrameProps {
  * 这两样由调用方注入;地址、沙箱、改字即见、链接拦截只写这一份。
  */
 export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloadKey, subscribeChanges, scrollPosition, anchor, annotation }: HtmlPreviewFrameProps) {
-  const reader = useId();
   const [preview, setPreview] = useState<Extract<HtmlPreviewRegistration, { ok: true }> | null>(null);
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState<string | null>(null);
@@ -61,21 +60,14 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     let registered: Extract<HtmlPreviewRegistration, { ok: true }> | null = null;
     setPreview(null);
     setFailed(null);
-    const queryKey = ['html-preview-registration', reader, attempt];
     void (async () => {
       const content = rawContentRef.current;
-      const result = await queryClient.fetchQuery({
-        queryKey, gcTime: 0, retry: 3,
-        queryFn: async ({ signal }) => {
-          const result = await register(content);
-          if (signal.aborted) {
-            if (result.ok) result.release();
-            throw signal.reason;
-          }
-          if (!result.ok) throw new Error(result.message);
-          return result;
-        },
-      });
+      // A registration that comes up after the frame closed is released just below.
+      const result = await readOnce(async () => {
+        const result = await register(content);
+        if (!result.ok) throw new Error(result.message);
+        return result;
+      }, { retry: 3 });
       if (cancelled) {
         if (result.ok) result.release();
         return;
@@ -89,11 +81,9 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     });
     return () => {
       cancelled = true;
-      void queryClient.cancelQueries({ queryKey, exact: true });
-      queryClient.removeQueries({ queryKey, exact: true });
       registered?.release();
     };
-  }, [register, attempt, reader]);
+  }, [register, attempt]);
 
   // 预览看的是**编辑器缓冲区**,不是磁盘那一份:改一个字、切到预览就该看见,不必先保存。
   // 更新后的地址由适配给出:协议追加版本,Blob 重建地址;frame 不判断平台。

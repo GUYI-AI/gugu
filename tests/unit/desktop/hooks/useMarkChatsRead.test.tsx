@@ -35,6 +35,8 @@ let harness: ReturnType<typeof createReactHarness>
 let markRead: ReturnType<typeof useMarkChatsRead>
 function Reader() { markRead = useMarkChatsRead(); return null }
 beforeEach(async () => {
+  const { followRendererSession } = await import("../../../../apps/desktop/src/lib/replica")
+  followRendererSession("SIGNED_IN", "user-1") // read positions go through the account's outbox
   await import('@/session/renderer/lib/ipc')
   await import('@/components/session-watch/sessionpage-rpc')
   vi.clearAllMocks()

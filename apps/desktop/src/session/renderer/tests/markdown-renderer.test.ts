@@ -24,6 +24,12 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   },
 }));
 
+const images = vi.hoisted(() => ({ readImage: vi.fn() }));
+vi.mock('@renderer/features/sessions/workspace-backend/workspace-backend', () => ({
+  workspaceRpc: () => ({ files: { readImage: images.readImage } }),
+  workspaceEvents: { on: () => () => {} },
+}));
+
 vi.mock('@renderer/lib/ipc', () => ({
   events: {
     on: vi.fn(() => () => {}),
@@ -72,6 +78,23 @@ describe('MarkdownRenderer', () => {
     expect(html).toContain('max-w-full');
     expect(html).toContain('max-h-80');
     expect(html).toContain('object-contain');
+  });
+
+  it('a workspace image read before, its re-read failed: the image stays and the failure is said beside it', async () => {
+    const { followRendererSession } = await import('@/lib/replica');
+    const { workspaceImage } = await import('@renderer/features/sessions/workspace-backend/workspace-image');
+    followRendererSession('SIGNED_IN', 'account-1');
+    images.readImage.mockResolvedValue({ success: true, data: { success: true, dataUrl: 'data:image/png;base64,AAAA' } });
+    const props = { content: '![Chart](chart.png)', workspaceImages: { projectId: 'p', workspaceId: 'w', pathOf: (src: string) => src } };
+    await act(async () => root.render(React.createElement(MarkdownRenderer, props)));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+    expect(container.querySelector('[data-refresh-failed]')).toBeNull();
+    images.readImage.mockResolvedValue({ success: false, error: 'disk gone' });
+    await act(async () => { await workspaceImage.refresh('p', 'w', 'chart.png').catch(() => undefined); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+    expect(container.querySelector('[data-refresh-failed]')).not.toBeNull();
   });
 
   it('constrains allowed HTML images in compact rendering', () => {

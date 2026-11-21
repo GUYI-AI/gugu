@@ -18,11 +18,11 @@ const fixture = vi.hoisted(() => ({
 // portals, styles and the look/model panes are the actual product components.
 vi.mock('@/lib/myAssistant', async (original) => ({
   ...await original<object>(),
-  useMyAssistantContact: () => ({ contact: fixture.assistant, agentId: fixture.assistant.id, loading: false, error: null, homeDeviceId: null }),
-  useMyAssistant: () => ({ agentId: fixture.assistant.id, loading: false, error: null }),
+  useMyAssistantContact: () => ({ contact: fixture.assistant, reading: { state: 'value', value: { agentId: fixture.assistant.id, provisionDeviceId: null }, stale: false, error: null }, homeDeviceId: null }),
+  useMyAssistant: () => ({ state: 'value', value: { agentId: fixture.assistant.id, provisionDeviceId: null }, stale: false, error: null }),
 }));
 vi.mock('@/lib/useAssistantHome', () => ({
-  useAssistantHome: () => ({ mine: { loading: false }, contact: fixture.assistant, home: null, localDeviceId: null, snapshot: null, cloudDeviceId: null, cloudComputer: null, devices: [] }),
+  useAssistantHome: () => ({ mine: { reading: { state: 'value', value: { agentId: fixture.assistant.id, provisionDeviceId: null }, stale: false, error: null } }, contact: fixture.assistant, home: null, localDeviceId: null, snapshot: null, cloudDeviceId: null, cloudComputer: { state: 'value', value: { available: false }, stale: false, error: null }, devices: [] }),
 }));
 vi.mock('@/lib/avatarIdentity', async (original) => ({
   ...await original<object>(), useIsAssistantAvatar: (id: string) => id === fixture.assistant.id,

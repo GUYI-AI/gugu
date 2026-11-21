@@ -50,13 +50,13 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const { settings: settingsSettings } = useAppSettingsKey('localProject')
-  const settings = settingsSettings.state === 'value' ? settingsSettings.value.value : undefined
-  const defaultDirectory = settings?.defaultProjectsDirectory ?? ''
+  const { settings: settingsSettings, reload: reloadSettings } = useAppSettingsKey('localProject')
+  // null = not read yet (that machine's settings, or this device's on a first run): Create waits, ❌ "no default directory".
+  const defaultDirectory = settingsSettings.state === 'value' ? settingsSettings.value.value.defaultProjectsDirectory : null
 
   const create = async () => {
     const trimmed = name.trim()
-    if (!trimmed || creating) return
+    if (!trimmed || creating || defaultDirectory === null) return
     if (!defaultDirectory) {
       setError(translate('projects.create.noDefaultDirectory'))
       return
@@ -120,6 +120,12 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
                 if (event.key === 'Enter') void create()
               }}
             />
+            {settingsSettings.state === 'error' && !error ? (
+              <p role="alert" data-testid="project-creation-error" className="text-foreground-destructive mt-1 text-xs">
+                {translate('projects.create.directoryUnread')}{' '}
+                <Button variant="link" size="xs" onClick={reloadSettings}>{translate('projects.create.retryRead')}</Button>
+              </p>
+            ) : null}
             {error && (
               <p
                 role="alert"
@@ -136,7 +142,7 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
         <Button variant="outline" onClick={onClose}>
           {translate('projects.create.cancel')}
         </Button>
-        <ConfirmButton disabled={!name.trim() || creating} onClick={() => void create()}>
+        <ConfirmButton disabled={!name.trim() || creating || defaultDirectory === null} onClick={() => void create()}>
           {translate(creating ? 'projects.create.creating' : 'projects.create.save')}
         </ConfirmButton>
       </DialogFooter>

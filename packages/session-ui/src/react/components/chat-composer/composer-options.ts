@@ -47,6 +47,8 @@ export interface ComposerAttachment {
   previewText?: string;
   /** `previewText` 只是文件的前一段。对话框据此挂一行说明。 */
   previewTruncated?: boolean;
+  /** The host already holds the file and can open its preview. */
+  hasLocalPreview?: boolean;
   /**
    * chip 的三态(照 assistant-ui `ComposerAttachment.state`,#5269):`uploading` 转圈 + 底边进度条、
    * `done` 显 × / ✓、`error` 把 meta 变红。缺省按 `done` 算 —— 既有调用点都是上传完才入列。

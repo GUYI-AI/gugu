@@ -2,19 +2,32 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createOutboxWiring, type OutboxWiringIo } from '../../../../apps/desktop/src/store/chatOutboxWiring'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { openImRepository, readOutboxRecords } from '../../../../apps/desktop/src/lib/imRepository'
+import { openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { createOutbox, type Outbox, type OutboxItem } from '../../../../apps/desktop/src/lib/outbox/core'
+import { recordOf, type ChatSend } from '../../../../apps/desktop/src/store/chatOutbox'
+import { fakeAccount, memoryStorage } from '../store/chatOutboxHarness'
 import { chatService } from '../../../../apps/desktop/src/lib/chat'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 const { attachmentForward, fileShare, prepare, commit, resolveFile, disposeFile, nativeSend } = vi.hoisted(() => ({
   attachmentForward: vi.fn(), fileShare: vi.fn(), prepare: vi.fn(), commit: vi.fn(), resolveFile: vi.fn(), disposeFile: vi.fn(), nativeSend: vi.fn(),
 }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', () => ({ attachmentsEndpoint: async () => ({ token: 'fixture' }), prepareChatAttachment: prepare }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', () => ({ attachmentsEndpoint: async () => ({ token: 'fixture' }), prepareChatAttachment: prepare, commitPreparedChatAttachment: nativeSend }))
 vi.mock('@gugu/core/cloud/attachmentsApi', async original => ({ ...await original<typeof import('@gugu/core/cloud/attachmentsApi')>(), forwardAttachment: attachmentForward, shareAttachment: fileShare, commitAttachment: commit }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentSendRecovery', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/attachmentSendRecovery')>(), settleAttachmentSend: nativeSend }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ resolveFile, fileReader: (actorId: string) => ({ accountId: 'me', actorId }), fileReadSignal: () => new AbortController().signal }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), snapshotBlob: async () => new Blob(['abc']) }))
 vi.mock('../../../../apps/desktop/src/lib/readWriter', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/readWriter')>(), writeRead: vi.fn(async () => {}) }))
+// The window's one outbox, real, over memory that outlives a restart (`restart` makes the next run's outbox).
+let storage = memoryStorage()
+let box: Outbox
+function restart() {
+  box?.dispose()
+  box = createOutbox({ storage, account: fakeAccount('me'), online: () => () => {} })
+  ;(globalThis as Record<string, unknown>).__GUGU_OUTBOX__ = box
+}
+const outboxRows = () => (box.items() as OutboxItem<ChatSend>[]).map(recordOf)
 beforeEach(() => {
+  storage = memoryStorage()
+  restart()
   vi.clearAllMocks()
   vi.stubGlobal('URL', class extends URL {
     static createObjectURL = vi.fn(() => 'blob:fixture')
@@ -24,7 +37,7 @@ beforeEach(() => {
   prepare.mockImplementation(async (_endpoint, _file, scope) => ({ staging_key: `staged-${scope.request_id}` }))
   commit.mockImplementation(async (_endpoint, args) => ({ ...source('attachment'), id: args.message_id, chat_id: args.chat_id, sender_user_id: args.sender_user_id, seq: 11 }))
 })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); window.localStorage.clear() })
+afterEach(() => { box.dispose(); delete (globalThis as Record<string, unknown>).__GUGU_OUTBOX__; vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); window.localStorage.clear() })
 function fixture(adapter = createMemoryLocalSyncDb()) {
   const repository = openImRepository('me', { adapter, storage: window.localStorage })
   let rows: MessageItem[] = []
@@ -49,7 +62,7 @@ it('queues the selected body and forwards text with one stable id, without a sou
   await f.wiring.outbox.delivered(id)
   expect(send).toHaveBeenCalledWith('destination', 'me', 'selected body', id, 'text', expect.objectContaining({ forwardedFromMessageId: 'source', isWhisper: false, toUserIds: null }))
   expect(lookup).not.toHaveBeenCalled()
-  expect(readOutboxRecords(await f.repository)).toEqual([])
+  expect(outboxRows()).toEqual([])
   f.wiring.dispose()
 })
 
@@ -67,12 +80,13 @@ it('persists prepared files and their card dependency before a queued card is se
   const send = vi.spyOn(chatService, 'sendMessage').mockImplementation(() => new Promise(() => {}))
   const { forward } = f.wiring
   await forward(task(), 'destination', 'me')
-  const stored = readOutboxRecords(await f.repository)
+  const stored = outboxRows()
   const card = stored.find(row => row.payload.contentType === 'card')!
   const attachment = stored.find(row => row.operation?.kind === 'attachment')!
   expect(attachment).toMatchObject({ dependsOn: card.clientMessageId, state: 'pending', operation: { commit: { message_id: attachment.clientMessageId } } })
   expect(commit).not.toHaveBeenCalled()
   f.wiring.dispose()
+  restart()
   const order: string[] = []
   send.mockImplementation(async (chat, actor, content, id) => {
     order.push(id); return { ...source('card'), id, chat_id: chat, sender_user_id: actor, content, seq: 10 }
@@ -87,7 +101,7 @@ it('persists prepared files and their card dependency before a queued card is se
   expect(order).toEqual([card.clientMessageId, attachment.clientMessageId])
   expect(resolveFile).toHaveBeenCalledOnce()
   expect(prepare).toHaveBeenCalledOnce()
-  expect(readOutboxRecords(await recovered.repository)).toEqual([])
+  expect(outboxRows()).toEqual([])
   recovered.wiring.dispose()
 })
 
@@ -124,7 +138,7 @@ it('keeps the same card and file UUID through lost responses and retries without
   expect(commit.mock.calls.map(([, args]) => args.message_id)).toEqual([ids[1], ids[1]])
   expect(resolveFile).toHaveBeenCalledOnce()
   expect(prepare).toHaveBeenCalledOnce()
-  expect(readOutboxRecords(await f.repository)).toEqual([])
+  expect(outboxRows()).toEqual([])
   f.wiring.dispose()
 })
 
@@ -133,7 +147,7 @@ it('preserves the native storage decision and publishes only after its card is a
   let confirmCard!: (message: MessageItem) => void
   vi.spyOn(chatService, 'sendMessage').mockImplementation(() => new Promise(resolve => { confirmCard = resolve }))
   prepare.mockImplementation(async (_endpoint, file) => ({ local: file }))
-  nativeSend.mockImplementation(async ({ commit: args }) => ({ ...source('attachment'), id: args.message_id, chat_id: args.chat_id, sender_user_id: args.sender_user_id, seq: 11 }))
+  nativeSend.mockImplementation(async (_endpoint, _prepared, args) => ({ ...source('attachment'), id: args.message_id, chat_id: args.chat_id, sender_user_id: args.sender_user_id, seq: 11 }))
   const forwarding = f.wiring.forward(task(), 'destination', 'me')
   await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce())
   expect(nativeSend).not.toHaveBeenCalled()
@@ -152,7 +166,7 @@ it('keeps a failed prepared-file intent visible and continues other files withou
   prepare.mockRejectedValueOnce(new Error('upload unavailable'))
   await f.wiring.forward(task([ref, { ...ref, itemId: 'last' }]), 'destination', 'me')
   await f.wiring.outbox.delivered(f.rows().filter(row => row.content_type === 'attachment')[1].id)
-  const failed = readOutboxRecords(await f.repository)
+  const failed = outboxRows()
   expect(failed).toHaveLength(1)
   expect(failed[0]).toMatchObject({ state: 'failed', operation: { kind: 'upload' } })
   expect(f.rows().some(row => row.id === failed[0].clientMessageId)).toBe(true)

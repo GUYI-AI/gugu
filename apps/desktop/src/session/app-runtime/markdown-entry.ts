@@ -4,7 +4,7 @@ import { documentToHtml } from '@gugu/session-chat-ui/markdown-html';
 import type { MarkdownTrust } from '@gugu/session-shared/markdown/dialect';
 import { APP_RUNTIME_MARKDOWN_CSS } from '@shared/extensions/app-runtime-protocol';
 import { revealMarkdownAnchor } from '../../components/markdown/revealAnchor';
-import { createMermaidRenderId, renderMermaidDiagram } from '@gugu/session-chat-ui/mermaid';
+import { renderMermaidDiagram } from '@gugu/session-chat-ui/mermaid';
 import { guguError } from './host';
 
 /**
@@ -96,11 +96,9 @@ const MAX_DIAGRAMS = 50;
 const diagrams = new Map<string, string>();
 
 function drawDiagrams(root: HTMLElement): void {
-  const theme = document.documentElement.dataset.guguTheme === 'dark' ? 'dark' : 'neutral';
   for (const code of root.querySelectorAll<HTMLElement>(MERMAID)) {
     const pre = code.parentElement!;
     const chart = code.textContent ?? '';
-    const key = `${theme}\u0000${chart}`;
     const show = (svg: string) => {
       const box = document.createElement('div');
       box.className = 'gg-md-mermaid';
@@ -108,16 +106,16 @@ function drawDiagrams(root: HTMLElement): void {
       box.innerHTML = svg;
       pre.replaceWith(box);
     };
-    const hit = diagrams.get(key);
+    const hit = diagrams.get(chart);
     if (hit !== undefined) {
       show(hit);
       continue;
     }
-    // A chart mermaid cannot draw stays the code block it was.
-    renderMermaidDiagram({ id: createMermaidRenderId(), chart, theme })
+    // A chart pele cannot draw stays the code block it was.
+    renderMermaidDiagram(chart)
       .then((svg) => {
         if (diagrams.size >= MAX_DIAGRAMS) diagrams.delete(diagrams.keys().next().value!);
-        diagrams.set(key, svg);
+        diagrams.set(chart, svg);
         if (pre.isConnected) show(svg);
       })
       .catch(() => undefined);

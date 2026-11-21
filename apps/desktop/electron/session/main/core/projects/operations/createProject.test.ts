@@ -257,7 +257,7 @@ describe('createLocalProject', () => {
     expect(fs.existsSync(path.join(projectPath, '.git'))).toBe(false);
     expect(fs.readFileSync(path.join(parent, '.git', 'config'), 'utf8')).toBe('preserve parent metadata');
     expect(mocks.acquireRuntimeMock).not.toHaveBeenCalled();
-    expect(mocks.valuesMock).toHaveBeenCalledWith(expect.objectContaining({ gitless: true, path: projectPath }));
+    expect(mocks.valuesMock).toHaveBeenCalledWith(expect.objectContaining({ baseRef: null, path: projectPath }));
   });
 
   // #7341 一个文件夹只属于一个项目:已经挂在项目 A 下的文件夹,「使用现有文件夹」/ agent 指过来 ⇒ 就是 A,❌ 再插一个项目。
@@ -326,7 +326,7 @@ describe('createLocalProject', () => {
 
       expect(created.baseRef).toBeNull();
       expect(mocks.valuesMock).toHaveBeenCalledWith(
-        expect.objectContaining({ gitless: true, baseRef: null })
+        expect.objectContaining({ baseRef: null })
       );
       expect(mocks.acquireRuntimeMock).not.toHaveBeenCalled();
       expect(mocks.openProjectMock).toHaveBeenCalledWith(
@@ -443,7 +443,7 @@ describe('createLocalProject', () => {
 
     expect(created).toMatchObject({ type: 'local', path: projectPath, baseRef: null });
     expect(mocks.valuesMock).toHaveBeenCalledWith(
-      expect.objectContaining({ gitless: true, baseRef: null })
+      expect.objectContaining({ baseRef: null })
     );
   });
 
@@ -494,7 +494,7 @@ describe('createLocalProject', () => {
         id: 'project-id', name: 'Project', path: projectPath, allowNonGit: true,
       }));
       expect(created).toMatchObject({ path: projectPath, baseRef: null });
-      expect(mocks.valuesMock).toHaveBeenCalledWith(expect.objectContaining({ gitless: true }));
+      expect(mocks.valuesMock).toHaveBeenCalledWith(expect.objectContaining({ baseRef: null }));
       expect(mocks.openProjectMock).toHaveBeenCalledWith(created);
       expect(fs.readdirSync(projectPath)).toEqual(originalEntries);
       await expect(git.ensureRepository(projectPath, { initIfMissing: true }))

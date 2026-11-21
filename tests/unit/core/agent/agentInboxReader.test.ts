@@ -666,7 +666,7 @@ describe('reader 对 RPC 交来的行不做资格判断', () => {
     expect(result).toMatchObject({ pulled: 2, injected: 2, verdict: 'accepted' })
     expect([...read]).toEqual(['10000000-0000-4000-8000-00000000001e', '10000000-0000-4000-8000-000000000021'])
     const delivered = injected.map((input) => input.text).join('\n')
-    expect(delivered).toContain('from="咕咕系统" from_id="system:gugu"')
+    expect(delivered).toContain('from="Gugu" from_id="system:gugu"')
     expect(delivered).toContain('msg="msg:10000000-0000-4000-8000-00000000001e"')
     expect(delivered).not.toContain('user:null')
     // Nudge storms and a restarted reader use the existing exact read markers.

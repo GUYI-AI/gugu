@@ -145,12 +145,14 @@ import { SessionHistoryMainPanel } from '@renderer/features/session-history/sess
 import { SESSION_HISTORY_IMPORT_PART } from '@renderer/features/session-history/session-history-import-part';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { runInAction } from 'mobx';
+import { followRendererSession, queryClient } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 
 /** 账号上的项目:webapp(这台电脑上的 p1,加上用例绑在别的机器上的)。 */
 function seedAccounts(): void {
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
     accountProjectsStore.list = [{ chatId: 'chat-webapp', name: 'webapp', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'this-computer', localProjectId: 'p1' }, ...world.bound] }];
-    accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.status = 'ready';
   });
 }
@@ -333,9 +335,13 @@ describe('会话历史(按目录分节)核心合同', () => {
     container?.remove();
     root = null;
     container = null;
+    queryClient.clear();
+    followRendererSession('SIGNED_OUT', null);
   });
 
   beforeEach(async () => {
+    // The preview is an account replica: it reads for whoever is signed in.
+    followRendererSession('SIGNED_IN', 'reader');
     await page.viewport(1280, 860);
     setLocalePreference('zh-CN');
     entry.params = {};
@@ -624,6 +630,43 @@ describe('会话历史(按目录分节)核心合同', () => {
     }
   });
 
+  it.each([
+    ['zh-CN', '读取失败：imp-8.jsonl 不存在或无法读取'],
+    ['en-US', 'Failed to read: imp-8.jsonl is missing or cannot be read'],
+  ] as const)('预览读不到文件(%s):按界面语言说人话,只带文件名,❌ 硬编码中文或完整路径(#3447)', async (locale, sentence) => {
+    setLocalePreference(locale);
+    // 主进程只递原因码 + 文件名(完整路径只进它的日志);本机 IPC 再套外壳和类名(真 Electron 45 实测的整句)。
+    mocks.previewLocalSession.mockRejectedValue(
+      new Error("Error invoking remote method 'sessionImport.previewLocalSession': TranscriptAccessError: transcript-unreadable:imp-8.jsonl")
+    );
+    render();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    // 第三行是 not-imported:点开就读预览。
+    (screen.getByTestId('session-history-row').all()[2].element() as HTMLElement).click();
+    const detail = screen.getByTestId('session-history-detail');
+    await expect.element(detail.getByText(sentence)).toBeVisible();
+    const error = detail.getByText(sentence).element().textContent ?? '';
+    expect(error).not.toContain('/');
+    if (locale === 'en-US') expect(error).not.toMatch(/[㐀-鿿]/u);
+  });
+
+  it.each([
+    ['zh-CN', '导入失败：无法把文件夹 webapp 作为项目打开：咕咕没有读取它的权限'],
+    ['en-US', 'Import failed: The folder webapp could not be opened as a project: Gugu does not have permission to read it'],
+  ] as const)('导入时文件夹读不了(%s):界面说「文件夹 X 无法作为项目打开：<本地化原因>」,❌ 完整路径或原始报错(#3447)', async (locale, sentence) => {
+    setLocalePreference(locale);
+    // 主进程抛 `<码>:<文件夹名>`,本机 IPC 再套外壳(完整目录与原始 EACCES 只进它的日志)。
+    mocks.importLocalSession.mockRejectedValue(
+      new Error("Error invoking remote method 'sessionImport.importLocalSession': Error: project-permission-denied:webapp")
+    );
+    render();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    // 第三行是 not-imported:它的动作是「导入」。
+    (screen.getByTestId('session-history-action').all()[2].element() as HTMLElement).click();
+    await expect.element(screen.getByText(sentence)).toBeVisible();
+    expect(screen.getByText(sentence).element().textContent).not.toMatch(/EACCES|\/work|\/Users/);
+  });
+
   it('点一行展开详情(咕咕行含 session id),再点收起;已归档的行:恢复走唯一路径并刷新', async () => {
     // 主进程的 restoreSession 每放回一条都发一次 archivedAt: null 的 session:changed;面板靠它刷新(#6956)。
     mocks.restore.mockImplementation(async (ref: { projectId: string; sessionId: string }) => {
@@ -751,7 +794,7 @@ describe('会话历史(按目录分节)核心合同', () => {
       'gugu:zebra', 'dev-d22/gugu:remote-w', 'gugu:alpha',
     ]);
     await expect.element(sections[0].getByText('3 个会话', { exact: true })).toBeVisible();
-    expect(sections[0].getByTestId('session-history-row-machine').all().map((el) => el.element().textContent)).toEqual(['这台电脑', 'd22', '这台电脑']);
+    expect(sections[0].getByTestId('session-history-row-machine').all().map((el) => el.element().textContent)).toEqual(['本机', 'd22', '本机']);
     // 每台问得到的都问了;离线的 off ❌ 去问(只会挂满超时)。
     expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ sessionsPerDirectory: 5, source: 'gugu' }));
     expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-tunnel', expect.anything());

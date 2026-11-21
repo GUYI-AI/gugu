@@ -14,7 +14,7 @@ import '@/styles/tokens.css'
 import '@/components/settings/data-import/data-import.css'
 
 const state = vi.hoisted(() => ({
-  counts: {} as Record<string, number | 'error' | 'unknown' | 'pending' | 'needs-source'>,
+  counts: {} as Record<string, number | 'error' | 'unknown' | 'pending'>,
   enqueue: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), cancelAutomatic: vi.fn(),
   owners: { fixture: { automatic: true, sources: ['codex'], categories: ['tasks'] as string[] } },
   update: vi.fn(),
@@ -27,10 +27,10 @@ vi.mock('@renderer/lib/ipc', async load => ({
   rpc: { agents: { listIcons: state.listIcons } },
 }))
 vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/replica')>(),
-  useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id]) => state.counts[id] === 'error'
-    ? { state: 'error', error: new Error('fixture') }
+  useReplicas: (_source: unknown, keys: [string, string | null][]) => keys.map(([id, deviceId]) => state.counts[id] === 'error'
+    ? { state: 'error', error: new Error('fixture'), retry: async () => { state.refresh(id, deviceId) } }
     : state.counts[id] === 'unknown' ? { state: 'unknown' }
-    : { state: 'value', value: { count: typeof state.counts[id] === 'number' ? state.counts[id] : 0, pending: state.counts[id] === 'pending', needsSource: state.counts[id] === 'needs-source' } }),
+    : { state: 'value', value: { count: typeof state.counts[id] === 'number' ? state.counts[id] : 0, pending: state.counts[id] === 'pending' } }),
 }))
 vi.mock('@/components/settings/data-import/import-replicas', () => ({ importSourceCounts: { refresh: state.refresh } }))
 vi.mock('@/components/settings/data-import/import-queue', () => ({
@@ -81,17 +81,21 @@ afterEach(async () => {
   }
 })
 
+/** The source row's own 「全部导入」. */
+const importAll = () => [...harness.container.querySelectorAll<HTMLButtonElement>('.gg-import-source button')].find(button => button.textContent === '全部导入')!
+
 it('renders all five real category rows and queues only the selected category or all five', async () => {
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
-  expect(rows.map(row => row.querySelector('.gg-import-row-label')?.textContent)).toEqual([
-    '全部（15）', '任务 (1)', '空间 (2)', '记忆 (3)', '技能 (4)', '连接器 (5)',
+  expect(rows.map(row => row.querySelector('.gg-settings-row-title')?.textContent)).toEqual([
+    '任务1', '空间2', '记忆3', '技能4', '连接器5',
   ])
-  await clickElement(rows[4]!.querySelector('button')!)
+  expect(harness.container.querySelector('.gg-import-source')!.textContent).toContain('15')
+  await clickElement(rows[3]!.querySelector('button')!)
   expect(state.enqueue).toHaveBeenCalledTimes(1)
   expect(state.enqueue.mock.calls[0]![1].provider.category).toBe('skills')
   state.enqueue.mockClear()
-  await clickElement(rows[0]!.querySelector('button')!)
+  await clickElement(importAll())
   expect(state.enqueue.mock.calls.map(call => call[1].provider.category)).toEqual([...ENVIRONMENT_IMPORT_CATEGORIES])
   expect(harness.container.textContent).not.toContain('·')
   await document.fonts.ready
@@ -102,13 +106,13 @@ it('a failed category never becomes a complete total or blocks another category 
   state.counts['codex:skills'] = 'error'
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
-  expect(rows[0]!.querySelector('button')!.disabled).toBe(true)
-  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).not.toContain(i18n.t('settings.dataImport.reading', {ns:'main'}))
+  expect(importAll().disabled).toBe(true)
+  expect(harness.container.querySelector('.gg-import-source')!.textContent).not.toContain(i18n.t('settings.dataImport.reading', {ns:'main'}))
   expect(harness.container.textContent).toContain('部分来源暂不可读取')
-  expect(rows[0]!.textContent).not.toContain('11')
-  await clickElement(rows[4]!.querySelector('button')!)
+  expect(harness.container.querySelector('.gg-import-source')!.textContent).not.toContain('11')
+  await clickElement(rows[3]!.querySelector('button')!)
   expect(state.refresh).toHaveBeenCalledWith('codex:skills', null)
-  await clickElement(rows[2]!.querySelector('button')!)
+  await clickElement(rows[1]!.querySelector('button')!)
   expect(state.enqueue.mock.calls[0]![1].provider.category).toBe('projects')
 })
 
@@ -137,43 +141,29 @@ it('renders the actual preparing-history status while a task import is running',
   await page.screenshot({ path: '../../../../../../../test-results/environment-import-preparing-zh.png', element: harness.container });
 });
 
-it('keeps legacy export-file histories distinct from resumable native tasks', async () => {
-  const history = { ...providers[0]!, id: 'chatgpt-json', sourceId: undefined, sourceLabel: undefined,
-    label: 'ChatGPT 导出文件', historyOnly: true };
+it('keeps read-only history sources distinct from resumable native tasks', async () => {
+  const history = { ...providers[0]!, id: 'cursor', sourceId: undefined, sourceLabel: undefined,
+    label: 'Cursor', historyOnly: true };
   state.counts[history.id] = 2;
   await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
-  await clickElement(harness.container.querySelector('.gg-import-card-trigger')!);
+  await clickElement(harness.container.querySelector('.gg-import-source [aria-expanded]')!);
   expect(harness.container.textContent).toContain('只读历史记录');
-  expect(harness.container.querySelectorAll('.gg-import-row')).toHaveLength(2);
+  expect(harness.container.querySelectorAll('.gg-import-row')).toHaveLength(1);
   expect(harness.container.textContent).not.toContain('任务');
 });
 
 it.each(['unknown', 'pending'] as const)('continues checking a genuinely %s source', async stateName => {
   state.counts.codex = stateName;
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />));
-  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
+  expect(harness.container.querySelector('.gg-import-source')!.textContent).toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
   expect(harness.container.querySelector('.gg-import-row button')!.hasAttribute('disabled')).toBe(true);
 });
 
 it('shows a confirmed empty native source without a perpetual checking label', async () => {
   providers.forEach(provider => { state.counts[provider.id] = 0 });
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />));
-  expect(harness.container.querySelector('.gg-import-card-trigger')!.textContent).toContain('0');
+  expect(harness.container.querySelector('.gg-import-source')!.textContent).toContain('0');
   expect(harness.container.textContent).not.toContain(i18n.t('settings.dataImport.reading', { ns: 'main' }));
   expect(harness.container.querySelector('.gg-import-row button')!.hasAttribute('disabled')).toBe(true);
 });
 
-it('asks for a JSON file before selection and keeps the file icon and read-only count after selection', async () => {
-  const history: ImportProvider = { ...providers[0]!, id: 'chatgpt-json', sourceId: undefined, sourceLabel: undefined,
-    label: 'ChatGPT 聊天记录导出文件', historyOnly: true, pickSource: vi.fn() };
-  state.counts[history.id] = 'needs-source';
-  await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
-  const heading = harness.container.querySelector('.gg-import-card-trigger')!;
-  expect(heading.textContent).toContain('选择导出文件');
-  expect(heading.textContent).not.toContain('0');
-  expect(heading.querySelector('svg')).not.toBeNull();
-  state.counts[history.id] = 2;
-  await harness.render(withQueries(<LocalImportSources providers={[history]} ownerId="fixture" jobs={[]} />));
-  expect(heading.textContent).toContain('2');
-  expect(heading.textContent).toContain('只读历史记录');
-});

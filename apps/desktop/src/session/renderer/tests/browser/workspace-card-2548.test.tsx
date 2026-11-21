@@ -32,9 +32,9 @@ afterEach(() => {
 
 async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
   document.documentElement.dataset.theme = theme;
-  // The light desktop main window flattens its reading surface into the rail's workspace frame (#7610); the card must
-  // survive that rule, so the light case runs with a window material like the real main window.
-  if (theme === 'light') document.documentElement.dataset.windowMaterial = 'native';
+  // The desktop main window lays the list on the rail's workspace frame (#7610) in both themes; the card must survive
+  // that rule, so both themes run with a window material like the real main window.
+  document.documentElement.dataset.windowMaterial = 'native';
   harness = createReactHarness();
   await harness.render(<div data-desktop-shell="" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
     <nav className="gg-sidebar-rail" />
@@ -91,5 +91,16 @@ for (const theme of ['light', 'dark'] as const) {
     expect(shell.bottom - right.bottom).toBeCloseTo(5);
     expect(getComputedStyle(surface).borderRadius).toBe('12px');
     expect(getComputedStyle(surface).boxShadow).not.toBe('none');
+  });
+
+  it(`${theme}: the list and the inner column lie on the one inset workspace frame, ❌ a veil of their own`, async () => {
+    const { column } = await renderDesktop(theme, true);
+    const frame = harness.container.querySelector<HTMLElement>('[data-desktop-shell] > .gg-sidebar-rail + div')!;
+    const list = harness.container.querySelector<HTMLElement>('[data-workspace-left-panel] > :not([data-peek])')!;
+    const frameStyle = getComputedStyle(frame);
+    expect(frameStyle.marginTop).toBe('5px');
+    expect(frameStyle.getPropertyValue('--shell-bg').trim()).not.toBe('transparent');
+    expect(getComputedStyle(list).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(getComputedStyle(column!).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   });
 }

@@ -1,15 +1,17 @@
 import { useState } from 'react'
-import { skipToken, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { refreshTag } from '@/lib/replica'
+import { useReplicaPages } from '@/lib/replicaPages'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
+import { TEAM, teamMembersPage } from './replicas'
 import { useTranslation } from 'react-i18next'
-import { useAuth } from '@/store/auth'
 import { Avatar } from '@/components/Avatar'
 import { Button } from '@/components/ui/Button'
 import { ListRow } from '@/components/ui/ListRow'
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import { PaneEmptyState } from '@/components/ui/PaneEmptyState'
-import { teamKeys, useTeamApi, useTeamSession } from './context'
+import { useTeamApi, useTeamSession } from './context'
 import { teamErrorCopy, teamRoleLabel } from './copy'
-import { TeamAsyncState, TeamDialog } from './TeamPrimitives'
+import { TeamDialog, TeamReadingState } from './TeamPrimitives'
 import { TeamDisableDialog, TeamEmailDialog, TeamInviteDialog } from './TeamMemberCommands'
 import { useTeamCommandKey } from './operations'
 import { useTeamDisableIntent } from './disableIntents'
@@ -50,22 +52,20 @@ function MemberDialog({ member, onClose, onChanged, onEmail, onDisable, onCap }:
 export function TeamMemberActionsDialog({ member, onClose, onChanged, onCap }: {
   member: TeamMember; onClose: () => void; onChanged: () => Promise<void>; onCap: () => void
 }) {
-  const { t } = useTranslation('team'), api = useTeamApi(), session = useTeamSession(), { user } = useAuth()
+  const { t } = useTranslation('team'), session = useTeamSession()
   const admin = session.status === 'ready' && session.context?.role !== 'member'
   const [action, setAction] = useState<'details' | 'email' | 'disable'>('details')
-  const candidates = useInfiniteQuery({ queryKey: [...teamKeys.account(user?.id ?? ''), 'handoff-members', session.context?.team_id],
-    initialPageParam: null as string | null, enabled: admin && action === 'disable',
-    queryFn: ({ pageParam, signal }) => api.members({ state: 'active', cursor: pageParam ?? undefined, limit: 50 }, signal),
-    getNextPageParam: page => page.next_cursor ?? undefined })
+  // Whom a disabled member's work is handed to: the team's active members, read once the disable step opens.
+  const candidates = useReplicaPages(teamMembersPage,
+    admin && action === 'disable' && session.context ? [session.context.team_id, 'active' as const] : null, page => page.next_cursor)
   if (!admin) return <PaneEmptyState caption={t('forbidden')} />
   if (action === 'email') return <TeamEmailDialog member={member} onClose={onClose} onSaved={onChanged} />
   if (action === 'disable') {
-    if (candidates.isPending || candidates.isError) return <TeamDialog title={t('disable')} onClose={onClose}>
-      <TeamAsyncState pending={candidates.isPending} error={candidates.error} retry={() => { void candidates.refetch() }} />
+    if (candidates.first.state !== 'value') return <TeamDialog title={t('disable')} onClose={onClose}>
+      <TeamReadingState reading={candidates.first} />
     </TeamDialog>
-    return <TeamDisableDialog member={member} candidates={candidates.data.pages.flatMap(page => page.members)}
-      onMore={candidates.hasNextPage ? () => { void candidates.fetchNextPage() } : undefined}
-      loadingMore={candidates.isFetchingNextPage} onClose={onClose} onSaved={onChanged} />
+    return <TeamDisableDialog member={member} candidates={candidates.pages.flatMap(page => page.members)}
+      onMore={candidates.more ?? undefined} loadingMore={candidates.loadingMore} onClose={onClose} onSaved={onChanged} />
   }
   return <MemberDialog member={member} onClose={onClose} onChanged={onChanged} onCap={onCap}
     onEmail={() => setAction('email')} onDisable={() => setAction('disable')} />
@@ -80,29 +80,30 @@ function ManagedMemberRow({ member, onSelect }: { member: TeamMember; onSelect: 
 }
 
 export function TeamMembers() {
-  const { t } = useTranslation('team'), api = useTeamApi(), session = useTeamSession(), { user } = useAuth(), cache = useQueryClient()
+  const { t } = useTranslation('team'), session = useTeamSession()
   const [state, setState] = useState<Exclude<TeamMemberState, 'provisioning'>>('active'), [invite, setInvite] = useState(false)
   const [selected, setSelected] = useState<{ member: TeamMember; action: 'details' | 'email' | 'disable' } | null>(null)
   const context = session.context, admin = session.status === 'ready' && context?.role !== 'member'
-  const result = useInfiniteQuery({ queryKey: [...teamKeys.account(user?.id ?? ''), 'manage-members', context?.team_id, state],
-    initialPageParam: null as string | null, queryFn: admin ? ({ pageParam, signal }) => api.members({ state, cursor: pageParam ?? undefined, limit: 50 }, signal) : skipToken,
-    getNextPageParam: page => page.next_cursor ?? undefined })
-  const refresh = async () => { await cache.invalidateQueries({ queryKey: teamKeys.account(user!.id) }) }
+  const list = useReplicaPages(teamMembersPage, admin && context ? [context.team_id, state] : null, page => page.next_cursor)
+  const members = list.pages.flatMap(page => page.members)
+  const refresh = async () => { await refreshTag(TEAM) }
   if (!admin) return <PaneEmptyState caption={t('forbidden')} />
   return <>
     <div className="gg-team-section-heading"><SegmentedTabs value={state} onChange={setState} ariaLabel={t('members')}
       items={(['active', 'disabled', 'invited'] as const).map(value => ({ value, label: t(value) }))} />
       <Button onClick={() => setInvite(true)}>{t('invite')}</Button></div>
-    {result.isPending || result.isError ? <TeamAsyncState pending={result.isPending} error={result.error} retry={() => { void result.refetch() }} />
-      : result.data.pages.some(page => page.members.length) ? <div className="gg-team-list">{result.data.pages.flatMap(page => page.members).map(member =>
+    <RefreshFailed reading={list.first} />
+    {list.first.state !== 'value' ? <TeamReadingState reading={list.first} />
+      : members.length ? <div className="gg-team-list">{members.map(member =>
         <ManagedMemberRow key={member.id} member={member} onSelect={() => setSelected({ member, action: 'details' })} />)}</div> : <PaneEmptyState caption={t('noMembers')} />}
-    {result.hasNextPage && <Button disabled={result.isFetchingNextPage} onClick={() => { void result.fetchNextPage() }}>{t('more')}</Button>}
+    {list.moreFailed && <RefreshFailed reading={list.moreFailed} />}
+    {(list.more || list.loadingMore) && <Button disabled={list.loadingMore} onClick={() => list.more?.()}>{t('more')}</Button>}
     {invite && <TeamInviteDialog onClose={() => setInvite(false)} onSaved={refresh} />}
     {selected?.action === 'details' && <MemberDialog member={selected.member} onClose={() => setSelected(null)} onChanged={refresh}
       onEmail={() => setSelected({ ...selected, action: 'email' })} onDisable={() => setSelected({ ...selected, action: 'disable' })} />}
     {selected?.action === 'email' && <TeamEmailDialog member={selected.member} onClose={() => setSelected(null)} onSaved={refresh} />}
-    {selected?.action === 'disable' && <TeamDisableDialog member={selected.member} candidates={result.data?.pages.flatMap(page => page.members) ?? []}
-      onMore={result.hasNextPage ? () => { void result.fetchNextPage() } : undefined} loadingMore={result.isFetchingNextPage}
+    {selected?.action === 'disable' && <TeamDisableDialog member={selected.member} candidates={members}
+      onMore={list.more ?? undefined} loadingMore={list.loadingMore}
       onClose={() => setSelected(null)} onSaved={refresh} />}
   </>
 }

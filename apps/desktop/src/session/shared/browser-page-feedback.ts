@@ -1,13 +1,20 @@
 import type { ProjectionPresentation, ProjectionTarget } from './extensions/projection-presentation';
+import { FALLBACK_LOCALE, matchSupportedLocale } from '@/i18n/locale';
+import { hostCatalog } from '../../../shared/host-localization';
 
 type Point = { x: number; y: number; click?: string };
 type Snapshot = { target: ProjectionTarget; stamp: number; cursor?: Point; action?: NonNullable<ProjectionPresentation['action']> };
 const pages = new WeakMap<object, BrowserPageFeedback>();
 
-/** The real page object is the key. App arguments never choose the target or another page's feedback. */
-export function browserPageFeedback(page: object): BrowserPageFeedback {
+type BrowserPageVerb = keyof ReturnType<typeof hostCatalog>['browserFeedback']['running'];
+
+/**
+ * The real page object is the key. App arguments never choose the target or another page's feedback.
+ * `locale` is the host's language: each action caption is written in it when the action happens.
+ */
+export function browserPageFeedback(page: object, locale: () => string): BrowserPageFeedback {
   let feedback = pages.get(page);
-  if (!feedback) { feedback = new BrowserPageFeedback(); pages.set(page, feedback); }
+  if (!feedback) { feedback = new BrowserPageFeedback(locale); pages.set(page, feedback); }
   return feedback;
 }
 
@@ -23,6 +30,8 @@ export class BrowserPageFeedback {
   private readonly calls = new Map<AbortSignal, string>();
   private operation() { return this.callAction ?? this.action; }
   private readonly listeners = new Set<() => void>();
+  constructor(private readonly locale: () => string) {}
+  private copy() { return hostCatalog(matchSupportedLocale(this.locale()) ?? FALLBACK_LOCALE).browserFeedback; }
 
   snapshot(): Snapshot {
     return { target: { id: this.id, revision: this.revision }, stamp: this.stamp,
@@ -40,14 +49,14 @@ export class BrowserPageFeedback {
     if (signal.aborted || this.calls.has(signal) || this.calls.size >= 128) return () => {};
     const id = `call-${++this.serial}`;
     this.calls.set(signal, id);
-    this.callAction = { id, label: '正在操作网页', phase: 'running' };
+    this.callAction = { id, label: this.copy().operating, phase: 'running' };
     this.changed();
     let live = true;
     const stop = (finished: boolean) => {
       if (!live) return; live = false; signal.removeEventListener('abort', ended); this.calls.delete(signal);
       const active = [...this.calls.values()].at(-1);
-      this.callAction = active ? { id: active, label: '正在操作网页', phase: 'running' }
-        : finished ? { id, label: '网页操作已结束', phase: 'done' } : undefined;
+      this.callAction = active ? { id: active, label: this.copy().operating, phase: 'running' }
+        : finished ? { id, label: this.copy().finished, phase: 'done' } : undefined;
       this.changed();
     };
     const ended = () => stop(true);
@@ -62,12 +71,12 @@ export class BrowserPageFeedback {
     // Child-frame coordinates are not root-page coordinates; never pretend they are.
     if (child) { this.invalidate(); return; }
     const pointer = method === 'Input.dispatchMouseEvent';
-    const verb = pointer ? params.type === 'mouseMoved' ? '移动光标' : params.type === 'mouseWheel' ? '滚动' : '点击'
-      : method === 'Input.insertText' ? '输入' : method === 'Input.dispatchKeyEvent' ? '按键'
-        : method === 'Page.navigate' ? '打开网页' : method === 'Page.reload' ? '刷新网页' : '查看网页';
+    const verb: BrowserPageVerb = pointer ? params.type === 'mouseMoved' ? 'move' : params.type === 'mouseWheel' ? 'scroll' : 'click'
+      : method === 'Input.insertText' ? 'type' : method === 'Input.dispatchKeyEvent' ? 'key'
+        : method === 'Page.navigate' ? 'navigate' : method === 'Page.reload' ? 'reload' : 'view';
     const id = `dispatch-${++this.serial}`, revision = this.revision;
     if (pointer) { this.cursor = undefined; if (params.type === 'mousePressed') this.gesture = undefined; }
-    this.action = { id, label: `正在${verb}`, phase: 'running' }; this.changed();
+    this.action = { id, label: this.copy().running[verb], phase: 'running' }; this.changed();
     void native.then(() => {
       if (this.revision !== revision || this.action?.id !== id) return;
       if (pointer && typeof params.x === 'number' && Number.isFinite(params.x) && params.x >= 0
@@ -76,7 +85,7 @@ export class BrowserPageFeedback {
         else if (params.type !== 'mouseReleased') this.gesture = undefined;
         this.cursor = { x: params.x, y: params.y, ...(this.gesture ? { click: this.gesture } : {}) };
       }
-      this.action = { id, label: `已${verb}`, phase: 'done' }; this.changed();
+      this.action = { id, label: this.copy().done[verb], phase: 'done' }; this.changed();
     }, () => {
       if (this.revision !== revision || this.action?.id !== id) return;
       // Native dispatch errors can have an unknown execution outcome. Do not label one as a confirmed failed action.

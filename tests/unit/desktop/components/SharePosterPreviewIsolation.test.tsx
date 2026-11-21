@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import '../../../../apps/desktop/src/i18n/registerContactsCatalog'
 import { createNode, createReactHarness } from '../../../support/testHarness'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 vi.mock('@gugu/core/cloud/optionalServices', async (importOriginal) => ({
   ...await importOriginal<typeof import('@gugu/core/cloud/optionalServices')>(),
@@ -26,6 +27,8 @@ beforeAll(async () => {
   ;({ PersonalSharePreview } = await import('../../../../apps/desktop/src/components/referralPreview/ReferralPreview'))
 })
 beforeEach(async () => {
+  await freshReplicaAccount('owner')
+
   poster.mockClear(); harness = createReactHarness()
   await act(async () => { setLocalePreference('zh-CN'); await i18n.changeLanguage('zh-CN') })
 })
@@ -37,8 +40,8 @@ describe('default sharing on an installation without official services', () => {
     it(`preserves the existing shared copy and poster options for ${surface}`, async () => {
       const Component = surface === 'default share' ? SharePosterDialog : PersonalSharePreview
       await harness.render(createNode(Component, { title: 'Existing card', subtitle: 'Existing subtitle', qrValue: 'gugu://contact/123', onClose: () => {} }))
-      await act(async () => { await Promise.resolve() })
-      expect(poster).toHaveBeenCalled()
+      // The QR is drawn by the shared QR replica (lib/qrCode.ts), then the poster is composed from it.
+      await vi.waitFor(() => expect(poster).toHaveBeenCalled())
       expect(poster.mock.calls.at(-1)![0]).toMatchObject({
         title: 'Existing card', subtitle: 'Existing subtitle',
         qrCaption: '扫码加入 咕咕', ctaText: '用 咕咕 连接你的 AI 协作网络', variant: undefined,

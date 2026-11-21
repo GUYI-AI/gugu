@@ -19,7 +19,7 @@ import { until, untilStable } from '../../../../tests/support/awaitCondition';
 const dispose: Array<() => void> = [];
 afterEach(() => { dispose.splice(0).forEach(fn => fn()); delete document.documentElement.dataset.theme; });
 const capturePhase = import.meta.env.VITE_ALIGNMENT_CAPTURE_PHASE;
-const scheduled = `<gugu_delivery route="scheduled" from="咕咕系统" from_id="system:gugu" schedule="三图 + 合并账 每小时整点更新 + 任务对账" msg="msg:scheduled"><![CDATA[整点更新看板、对任务账（总主管的职责）。每小时出一次，别漏任务。
+const scheduled = `<gugu_delivery route="scheduled" from="Gugu" from_id="system:gugu" schedule="三图 + 合并账 每小时整点更新 + 任务对账" msg="msg:scheduled"><![CDATA[整点更新看板、对任务账（总主管的职责）。每小时出一次，别漏任务。
 
 1. 先对账：把这一小时里收到的每条主管回报逐条对应到现有任务。
 2. 更新看板：核对负责人、进度、下一步和截止时间。]]></gugu_delivery>`;
@@ -206,7 +206,7 @@ it.each([{ width: 1440, mode: 'light' }, { width: 1440, mode: 'dark' }, { width:
   const process = [...host.querySelectorAll<HTMLElement>('[data-slot="turn-process"]')].at(-1)!;
   const silent = process.lastElementChild as HTMLElement;
   const strip = host.querySelector<HTMLElement>('[data-slot="background-tasks"]')!;
-  const silentText = textBox(silent, '不回话');
+  const silentText = textBox(silent, '未回复');
   const stripText = textBox(strip, '后台');
   const siblingGap = Math.max(turnProcessUnitDef.margin?.bottom ?? 0, backgroundTasksUnitDef.margin?.top ?? 0);
   const reading = { phase: capturePhase ?? 'test', width, mode, roots: host.querySelectorAll('[data-chat-root]').length,
@@ -268,6 +268,8 @@ it('keeps the silent copy available to hover and keyboard without moving any row
   const geometry = () => ({ height: line.getBoundingClientRect().height, backgroundTop: background.getBoundingClientRect().top });
   const resting = geometry();
   await userEvent.hover(document.body);
+  // Read at rest: leaving the line starts the controls' fade-out, which ends before they are read.
+  await Promise.all(actions.getAnimations().map(animation => animation.finished));
   expect(getComputedStyle(actions).opacity).toBe('0');
   await userEvent.hover(line);
   await until('the actual copy control is revealed by hover', () => getComputedStyle(actions).opacity === '1');
@@ -339,6 +341,7 @@ it.each([390, 1200])('aligns a reply, its artifact and the final actions at %ipx
   expect(host.querySelectorAll('[data-user-message-actions="answer"]')).toHaveLength(1);
   const copy = actions.querySelector<HTMLElement>('[data-slot="message-copy"]')!;
   if (matchMedia('(hover: hover)').matches) {
+    await Promise.all(copy.getAnimations().map(animation => animation.finished));
     expect(getComputedStyle(copy).opacity).toBe('0');
     await userEvent.hover(bubble);
     await until('the reply hover reveals the moved controls', () => getComputedStyle(copy).opacity === '1');

@@ -239,6 +239,8 @@ describe('describePrompt:SSH 在问什么', () => {
 
   it("ssh 追问「Please type 'yes', 'no'…」仍是指纹确认,❌ 当成密码框", () => {
     expect(describePrompt("Please type 'yes', 'no' or the fingerprint: ").kind).toBe('hostKey')
+    // Windows: the .cmd askpass wrapper only gets the first line of the question.
+    expect(describePrompt("The authenticity of host '[127.0.0.1]:2222 ([127.0.0.1]:2222)' can't be established.")).toMatchObject({ kind: 'hostKey', hostKey: { host: '[127.0.0.1]:2222' } })
   })
 
   it('密码、键盘交互密码、密钥口令、二次验证码、只提醒的安全密钥', () => {

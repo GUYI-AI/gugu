@@ -156,16 +156,16 @@ export function draftWithPills(text: string, pills: string): string {
 }
 
 /**
- * A cite of working-copy files, as an App's draft names them (`refs`): its words (the selection's `> ` quote), then one
- * @file pill per ref, named by the file and its place (`a.md (Lines 3–4)`). The Files App's cite and the host's file
- * preview both come here.
+ * A cite of working-copy files, as an App's draft names them (`refs`): its words (a note the App wrote, if any), then one
+ * @file pill per ref, named by the file and its place (`a.md (Lines 3–4)`). The pill's link is where the cited lines are
+ * read; the picked words are not repeated beside it. The Files App's cite and the host's file preview both come here.
  */
 export function fileCiteDraft(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): string {
   return fileCite(words, refs).draft;
 }
 
-/** The same cite in its parts too, for a host that shows it before sending: the words, and each pill's label. */
-export function fileCite(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): { draft: string; quote: string; pills: string[] } {
+/** The same cite in its parts too, for a host that shows it before sending: the draft, and each pill's label. */
+export function fileCite(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): { draft: string; pills: string[] } {
   return pillCite(words, refs.map(({ file, label }) => {
     const name = file.id.replace(/\\/g, '/').split('/').pop() ?? file.id;
     return { label: typeof label === 'string' && label ? `${name} (${label})` : name, target: file.id };
@@ -173,9 +173,8 @@ export function fileCite(words: string, refs: readonly { file: { id: string }; l
 }
 
 /** A cite whose pills are already named and pointed (a chat folder's files: the folder's name, a `gugu-file://` link). */
-export function pillCite(words: string, pills: readonly { label: string; target: string }[]): { draft: string; quote: string; pills: string[] } {
-  const quote = words.trim();
-  return { draft: draftWithPills(quote, pills.map(pill => stringifyMention({ ...pill, kind: 'file' })).join(' ')), quote, pills: pills.map(pill => pill.label) };
+export function pillCite(words: string, pills: readonly { label: string; target: string }[]): { draft: string; pills: string[] } {
+  return { draft: draftWithPills(words.trim(), pills.map(pill => stringifyMention({ ...pill, kind: 'file' })).join(' ')), pills: pills.map(pill => pill.label) };
 }
 
 /**

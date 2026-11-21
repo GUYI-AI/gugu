@@ -4,13 +4,12 @@ import type { ExtensionAgentView } from '../../session/shared/extensions/bridge-
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import type { AppMessageReceipt } from '@gugu/session-core/session-record/contract';
 import type { AssistantAppChange } from '../../session/shared/extensions/assistant-app';
-import type { AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel';
 import { libraryHost } from './assistant-library-client';
 import type { AssistantMachine } from '../../session/renderer/features/assistant/assistant-machine-core';
 import { rendererLogger } from '../../lib/log';
 import { cachedDevicesAccount } from '../../store/devicesCache';
 import { assistantPanelAccountId, requireAssistantPanelBridge } from '../../lib/assistantPanelBridge';
-import { ASSISTANT_PANEL_CHANGED } from './assistant-panel-events';
+import { onAssistantPanelChanged } from './assistant-panel-replica';
 
 type ProgramNotification = { server: string; method: string; params?: unknown };
 export type AssistantAppMachine = Pick<AssistantMachine, 'rpc' | 'panel'>;
@@ -38,8 +37,8 @@ export function assistantAppClient(machine: AssistantAppMachine | null | undefin
       },
       onProgramNotification(listener: (event: ProgramNotification) => void) {
         const changed = () => listener({ server: 'assistant',method: 'notifications/resources/updated',params: { ownerId: panel.ownerId,resource: 'pending-work' } });
-        window.addEventListener(ASSISTANT_PANEL_CHANGED,changed);
-        return () => window.removeEventListener(ASSISTANT_PANEL_CHANGED,changed);
+        // The pending-work file lives in the panel: a changed snapshot is the resource update.
+        return onAssistantPanelChanged(panel.assistantId,changed);
       },
       deliver: (_event: ExtensionHostEvent) => {},
     };
@@ -66,7 +65,7 @@ export async function publishAssistantAppChange(
   change: Omit<AssistantAppChange, 'operationId'> & { operationId?: string },
   assistantId: string | undefined = undefined,
   expectedOwnerId = machine?.panel?.ownerId ?? assistantPanelAccountId() ?? cachedDevicesAccount(),
-): Promise<AssistantPanelReceipt | null> {
+): Promise<void> {
   return requireAssistantPanelBridge().queueNotice({ ...change, operationId: change.operationId ?? crypto.randomUUID() },assistantId,expectedOwnerId);
 }
 

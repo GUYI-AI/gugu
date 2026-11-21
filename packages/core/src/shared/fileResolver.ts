@@ -35,6 +35,8 @@ export interface FileRevision {
   legacy_object?: { bucket_id: 'chat-media'; object_name: string; message_id: string }
   width?: number | null
   height?: number | null
+  /** An image's small copy, uploaded by its sender and kept in the cloud for as long as the version is. */
+  preview?: { sha256: string; size_bytes: number; content_type: string }
   /** The device that keeps this version: the one that sent it. */
   host_device_id?: string
   host_project_id?: string
@@ -147,8 +149,8 @@ export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
   if (row.status === 'missing' && row.code === 'object_not_found') return { status: 'missing', sha256: row.sha256 ?? null }
   if (row.status === 'gone' || row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null }
   if (row.status !== 'ready') throw new Error('Invalid file metadata')
-  const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer } = row
-  const revision = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer }
+  const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, preview, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer } = row
+  const revision = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, preview, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer }
   if (source === 'managed-object' && sha256 === null && row.bucket_id === 'chat-media' && typeof row.object_name === 'string' && row.object_name &&
     ref && 'message_id' in ref && row.message_id === ref.message_id) {
     Object.assign(revision, { legacy_object: Object.freeze({ bucket_id: 'chat-media', object_name: row.object_name, message_id: row.message_id }) })

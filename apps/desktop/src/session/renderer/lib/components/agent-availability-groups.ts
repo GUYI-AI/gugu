@@ -47,7 +47,7 @@ export function readingLabelKey(reading: InstallationReading): SessionMessageLoo
     // 类型上到不了这里。真到了说明有人喂了不在 `InstallationReading` 里的值(实际发生过:一份
     // 残缺的测试 fixture 没带 status)。响亮报出是哪个值,而不是返回 undefined,让调用方
     // 在几层之外炸出一句 "cannot read 'selectable' of undefined"。
-    throw new Error(`未知的 agent 安装读数: ${JSON.stringify(reading)}`);
+    throw new Error(`unknown agent install reading: ${JSON.stringify(reading)}`);
   }
   return group.labelKey;
 }

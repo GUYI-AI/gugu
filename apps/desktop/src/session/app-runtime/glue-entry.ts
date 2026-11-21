@@ -28,20 +28,20 @@ const zh = locale.toLowerCase().startsWith('zh');
 // Said where the page is: a session's file is a file on the disk, a chat's is one of the chat's files.
 const say = {
   pick(claims: string[]) {
-    if (!claims.length) return zh ? '这个页面没有打开文件。' : 'No file is open here.';
+    if (!claims.length) return zh ? '此页面未打开文件。' : 'No file is open here.';
     const names = claims.map((c) => (c.startsWith('.') ? (zh ? `一个 ${c} 文件` : `a ${c} file`) : c)).join(zh ? ' 或' : ' or ');
     const place = inChat ? (zh ? '这个对话的文件夹' : "the chat's folder") : zh ? '文件列表' : 'the file list';
-    return zh ? `这个页面没有打开文件：在${place}里点 ${names}，用这个应用打开。` : `No file is open here: click ${names} in ${place} to open it with this App.`;
+    return zh ? `此页面未打开文件：请在${place}中点击 ${names}，用此应用打开。` : `No file is open here: click ${names} in ${place} to open it with this App.`;
   },
-  failed: zh ? '打不开这个文件：' : 'Could not open the file: ',
-  offline: zh ? '离线：你的改动会在回线后补上。' : 'Offline — your changes are sent when you are back.',
+  failed: zh ? '无法打开此文件：' : 'Could not open the file: ',
+  offline: zh ? '离线：恢复连接后将同步你的修改。' : 'Offline. Your changes will be sent when the connection is restored.',
   gone: !inChat
     ? zh
-      ? '这个文件在磁盘上被删了。把它恢复（比如 git checkout），这里会自己回来。'
-      : 'This file was deleted on disk. Put it back (git checkout, an undo) and it comes back here.'
+      ? '此文件已在磁盘上删除。恢复该文件（例如 git checkout）后，此处将自动重新显示。'
+      : 'This file was deleted on disk. Restore it (for example with git checkout) to show it here again.'
     : zh
-      ? '这个文件不在了：被删了，或者你已不在这个对话里。'
-      : 'This file is gone: it was deleted, or you left its chat.',
+      ? '此文件不可用：文件已删除，或你已不在此对话中。'
+      : 'This file is unavailable: it was deleted, or you are no longer in its chat.',
 };
 
 // $('#board') and $$('.card') are document.querySelector / querySelectorAll, as everywhere else (F75: an agent wrote

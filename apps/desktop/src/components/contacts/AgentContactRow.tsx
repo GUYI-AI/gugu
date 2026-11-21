@@ -74,7 +74,7 @@ export const AgentContactRow = memo(function AgentContactRow({
           <>
             {selectionMode ? <SelectionCheckbox checked={multiSelected} /> : null}
             <div className={agentAvatarClass(tone)} style={mobile ? { width: 'var(--avatar-md)', height: 'var(--avatar-md)' } : undefined}>
-              <Avatar name={shownName} avatarUrl={contact.avatar} seed={contact.id} size={mobile ? 'md' : 'sm'} isAgent agentStatus={status === 'needs_user' ? status : undefined} />
+              <Avatar name={shownName} avatarUrl={contact.avatar} seed={contact.id} size={mobile ? 'md' : 'sm'} isAgent agentStatus={status === 'needs_user' || status === 'parked' ? status : undefined} />
             </div>
           </>
         }

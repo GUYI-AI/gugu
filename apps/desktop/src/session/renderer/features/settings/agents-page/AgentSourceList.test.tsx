@@ -45,6 +45,7 @@ function vm(overrides: Partial<HostDependencyInstallation> = {}): HostDependency
     lastInstallError: null,
     lastUpdateError: null,
     lastInstallSucceededAt: null,
+    statusFailure: null,
     installingMethod: undefined,
     installingRegistry: undefined,
     updatingMethod: undefined,

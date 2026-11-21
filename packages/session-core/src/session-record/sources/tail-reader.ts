@@ -283,6 +283,8 @@ export class TailReader {
       // restart 必须在任何一行之前送达，所以先攒着 —— 尾读的增量本来就只有一两块大小。
       const pending: Array<[string[], number[]]> = [];
       const restart = await this.readInto((lines, offsets) => pending.push([lines, offsets]));
+      // A reader stopped while it read hands nothing over: whoever stopped it reads those lines again.
+      if (this.stopped) return;
       if (restart) this.events.onRestart(restart);
       for (const [lines, offsets] of pending) this.events.onLines(lines, offsets);
     } catch (error) {

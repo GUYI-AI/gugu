@@ -1033,7 +1033,7 @@ export function providerUsesSessionAcpSessionAdapter(providerId: string): boolea
 // session_* is deliberately absent from Gugu social/chat-driven ACP sessions. The explicit
 // distinction matters because several harnesses expose their own Task/Agent worker and the generic
 // platform routing rule otherwise classifies "start an agent" as ordinary work.
-const SESSION_SPAWN_ROUTING_RULE = `For a persistent Gugu agent/session/child (「起一个 agent」「创建一个小弟」), use \`session_spawn\`. Only use a harness-internal worker when explicitly requested; it is not a session agent and cannot receive Gugu messages. Never substitute one for a requested Gugu session; report inability to start it and why.
+const SESSION_SPAWN_ROUTING_RULE = `For a persistent Gugu agent/session/child ("start an agent", "spawn a helper"), use \`session_spawn\`. Only use a harness-internal worker when explicitly requested; it is not a session agent and cannot receive Gugu messages. Never substitute one for a requested Gugu session; report inability to start it and why.
 When a person typing straight into this panel will inspect a file you create or materially change, call \`session_open_in_tab\` immediately after writing it instead of only reporting its path.`
 
 function guguSessionSurfaceBody(surface: HarnessSessionSurface): string {
@@ -1079,15 +1079,15 @@ function guguToolNamingLine(
   const names = mcpToolNamesOn(mcp.toolNames, surface === 'tui' ? 'tui' : 'acp')
   switch (names.kind) {
     case 'listed':
-      return `Your harness lists each 咕咕 tool as \`${names.prefix}<tool>\` (e.g. \`${names.prefix}message_send\`).\n`
+      return `Your harness lists each Gugu tool as \`${names.prefix}<tool>\` (e.g. \`${names.prefix}message_send\`).\n`
     case 'proxied':
-      return `Your harness does not list 咕咕 tools one by one: call them through its \`${names.proxyTool}\` tool, naming the tool \`${names.prefix}<tool>\` (e.g. \`${names.prefix}message_send\`).\n`
+      return `Your harness does not list Gugu tools one by one: call them through its \`${names.proxyTool}\` tool, naming the tool \`${names.prefix}<tool>\` (e.g. \`${names.prefix}message_send\`).\n`
     case 'namespaced':
       // Codex advertises the native name or an exec declaration, depending on its model tool mode.
-      return `Your harness exposes 咕咕 tools under \`${names.namespace}\`.\n`
+      return `Your harness exposes Gugu tools under \`${names.namespace}\`.\n`
     case 'server-proxied':
       // server 名就是咕咕那台 server 注册时用的名字 —— 与写进配置的键同一个常量,❌ 别另写一个字面量。
-      return `Your harness does not list 咕咕 tools one by one: call them through its \`${names.proxyTool}\` tool with \`${names.serverArg}\` set to \`${GUGU_MCP_SERVER_NAME}\` and \`${names.toolArg}\` set to the bare tool name (e.g. \`message_send\`).\n`
+      return `Your harness does not list Gugu tools one by one: call them through its \`${names.proxyTool}\` tool with \`${names.serverArg}\` set to \`${GUGU_MCP_SERVER_NAME}\` and \`${names.toolArg}\` set to the bare tool name (e.g. \`message_send\`).\n`
     case 'unmeasured':
       return 'Call the tool exactly as your tool list names it, not by the bare suffix.\n'
   }
@@ -1170,10 +1170,10 @@ function appLines(apps: readonly ExtensionAgentApp[]): string[] {
  */
 export const GUGU_APPS_SEARCH_LINE = [
   'An App not listed here may have been installed since, be switched off or be only in the market.',
-  'Before you answer a message that names an App (「记账 App」) or a game, look it up with catalog_call app_search { query } — even when a tool of your own could do it (a device\'s calendar, hosting the game yourself): the person asked for the App, and a game\'s App keeps the game for everyone in the chat.',
+  'Before you answer a message that names an App ("the budget App") or a game, look it up with catalog_call app_search { query } — even when a tool of your own could do it (a device\'s calendar, hosting the game yourself): the person asked for the App, and a game\'s App keeps the game for everyone in the chat.',
   'To install an App or change its version, use app_install. If an App cannot do what is asked, ask "Shall I fork a version?" before inspecting source or using shell (guide_read apps-fork).',
-  '> (from Wei) 来一局狼人杀',
-  'catalog_call app_search { query: "狼人杀" } → an App row → use its tools, or do what its next says',
+  '> (from Wei) let\'s play a round of werewolf',
+  'catalog_call app_search { query: "werewolf" } → an App row → use its tools, or do what its next says',
 ].join('\n')
 
 /**
@@ -1195,7 +1195,7 @@ export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readon
   }
   if (skills.length > 0) {
     const lines = skills.map(skillLine)
-    parts.push(['Skills from Apps installed in 咕咕. When a task matches one, read its SKILL.md first and follow it.', ...lines].join('\n'))
+    parts.push(['Skills from Apps installed in Gugu. When a task matches one, read its SKILL.md first and follow it.', ...lines].join('\n'))
   }
   if (!off.includes('apps')) parts.push(GUGU_APPS_SEARCH_LINE)
   if (parts.length === 0) return ''

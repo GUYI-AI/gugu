@@ -94,21 +94,20 @@ describe('取一张工具图', () => {
   }
 
   // 2026-10-15 mac1 实测:回包一到就放手,写回还排在下一次渲染里的那一小段,图格照旧没图又要了一遍(每阶段 4–7 张)。
-  it('取到了、写回还没画上的那一小段里再要,❌ 再问', async () => {
+  it('取到了就当场画上(写进会话流 store,没有「写回还排着」的空档),❌ 再问', async () => {
     const { asks, fetchToolImage } = pendingAsks()
     await harness.render(createNode(Probe, { client: fakeClient(fetchToolImage) }))
     await settle()
 
     await act(async () => {
       const first = session.loadToolImage('tc1', 0)
+      // Asked again while the first ask is out: the same answer.
+      const again = session.loadToolImage('tc1', 0)
       asks[0]!(SHOT)
       await first
-      // 还在同一个 act 里:写回排着,还没渲染。
-      expect(item().images).toBeUndefined()
-      const again = session.loadToolImage('tc1', 0)
-      expect(fetchToolImage).toHaveBeenCalledTimes(1)
       await again
     })
+    expect(fetchToolImage).toHaveBeenCalledTimes(1)
     expect(item().images).toEqual([SHOT])
   })
 

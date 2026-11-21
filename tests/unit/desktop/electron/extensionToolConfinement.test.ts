@@ -58,7 +58,7 @@ describe('tools confinement follows the installed API and program form', () => {
         expect(text).toContain(machine ?? (messages === enUSMessages ? 'your computer' : '你的电脑'));
         expect(text).not.toMatch(/\{\w+\}/);
         const broad = describeCapability('agents:tools', manifest(27), say(messages), machine);
-        expect(broad).toContain(messages === enUSMessages ? 'can reach the internet' : '程序能联网');
+        expect(broad).toContain(messages === enUSMessages ? 'can reach the internet' : '该程序可以联网');
         const mixed = describeCapability('agents:tools', manifest(EXTENSION_API_VERSION,
           [{ tools: 'tools.js' }, { name: 'node', command: 'node' }]), say(messages), machine);
         expect(mixed).toBe(broad);

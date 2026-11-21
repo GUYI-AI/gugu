@@ -40,7 +40,7 @@ import { requestTerminalModelMenu } from './view/terminal-model-menu-request';
 import { useSessionStartupFailure } from './use-session-startup-failure';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { SessionScheduleChip } from './session-schedule-chip';
+import { scheduleSlotShown, SessionScheduleSlot } from './session-schedule-chip';
 
 export const SessionsPanel = observer(function SessionsPanel() {
   const { translate } = useSessionMessages();
@@ -49,7 +49,6 @@ export const SessionsPanel = observer(function SessionsPanel() {
   const sessions = useSessions();
   const workspaceId = useWorkspaceId();
   const { settings: interfaceSettingsReading } = useAppSettingsKey('interface');
-  const interfaceSettings = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value : undefined;
   const { pane } = usePaneContext();
   const isActive = useIsActiveSession(sessionId);
 
@@ -134,7 +133,7 @@ export const SessionsPanel = observer(function SessionsPanel() {
   // isActive 只管键盘焦点给谁。
   useMarkSeenWhenShown(activeSession, useContext(SurfaceShownContext));
 
-  const hideContextBarTrigger = interfaceSettings?.hideContextBar ?? false;
+  const hideContextBarTrigger = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value.hideContextBar : null;
 
   // Measure the rendered height of the ContextBar so the PTY controller can
   // subtract it from the available terminal height. The ContextBar renders null
@@ -312,7 +311,7 @@ export const SessionsPanel = observer(function SessionsPanel() {
             sessionId={activeSessionId(pane)}
             hideTrigger={hideContextBarTrigger}
             leading={
-              schedules.length > 0 ? <SessionScheduleChip machine={scheduleMachine} schedules={schedules} /> : null
+              activeSession && scheduleSlotShown(schedules) ? <SessionScheduleSlot machine={scheduleMachine} reading={schedules} /> : null
             }
           />
         </div>

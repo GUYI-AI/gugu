@@ -41,10 +41,10 @@ describe('workspace operations after the host process loses its cache', () => {
     h.db = fixture.db;
     root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'gugu-workspace-recovery-')));
     await writeFile(path.join(root, 'note.ts'), 'before');
-    fixture.sqlite.prepare('INSERT INTO projects (id, name, path, repository_workspace_id, gitless) VALUES (?, ?, ?, ?, 1)').run('p', 'Project', root, 'ws');
+    fixture.sqlite.prepare('INSERT INTO projects (id, name, path, repository_workspace_id) VALUES (?, ?, ?, ?)').run('p', 'Project', root, 'ws');
     fixture.sqlite.prepare("INSERT INTO workspaces (id, type, kind, location, path) VALUES ('ws', 'local', 'project-root', 'local', ?)").run(root);
     fixture.sqlite.prepare("INSERT INTO sessions (id, project_id, workspace_id, config) VALUES ('s', 'p', 'ws', ?)").run(JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'Recovery' }));
-    h.project = { projectId: 'p', repoPath: root, isGitless: true, settings: {} } as ProjectProvider;
+    h.project = { projectId: 'p', repoPath: root, git: { open: async () => undefined }, settings: {} } as unknown as ProjectProvider;
     h.opened = false;
     h.open.mockImplementation(async () => { h.opened = true; return { success: true, data: {} }; });
     h.factory.mockImplementation((id: string, context: WorkspaceFactoryContext) => async () => {
@@ -53,7 +53,7 @@ describe('workspace operations after the host process loses its cache', () => {
         workspace: {
           id, path: context.workDir, fileSystem: new FileSystem(),
           fileTree: { dispose: vi.fn() }, lifecycleService: { dispose: vi.fn() },
-          gitWorktree: { getSnapshot: async () => ({ head: 'recorded-head' }) },
+          git: async () => ({ worktree: { getSnapshot: async () => ({ head: 'recorded-head' }) } }),
           dispose: vi.fn(),
         },
       };

@@ -300,6 +300,39 @@ describe('HostDependencyManager cached path invalidation', () => {
   });
 });
 
+describe('HostDependencyManager detection reads the current PATH', () => {
+  it('re-reads the PATH before every detection round, so a CLI installed after startup is found', async () => {
+    // The context's PATH as it was at startup has no codex; the user's current PATH does.
+    let pathHasCodex = false;
+    const ctx = makeCtx(async (command, args = []) => {
+      if (command === 'which' && args.at(-1) === 'codex' && pathHasCodex) return { stdout: '/home/u/.npm-global/bin/codex\n', stderr: '' };
+      if (command === 'realpath') return { stdout: `${args[0]}\n`, stderr: '' };
+      if (command === '/home/u/.npm-global/bin/codex') return { stdout: 'codex-cli 1.2.3\n', stderr: '' };
+      throw new Error('missing');
+    }, { refreshShellEnv: async () => { pathHasCodex = true; } });
+    const manager = new HostDependencyManager(ctx, { dependencies: TEST_DEPENDENCIES, installMethodDetector: unknownDetector });
+
+    await manager.probe('codex');
+    expect(manager.get('codex')?.status).toBe('missing');
+
+    await manager.probeAll();
+    expect(ctx.refreshShellEnv).toHaveBeenCalledTimes(1);
+    expect(manager.get('codex')).toMatchObject({ status: 'available', path: '/home/u/.npm-global/bin/codex' });
+  });
+
+  it('keeps how `--version` failed, so the panel can say it', async () => {
+    const ctx = makeCtx(async (command, args = []) => {
+      if (command === 'which' && args.at(-1) === 'codex') return { stdout: '/bin/codex\n', stderr: '' };
+      if (command === '/bin/codex') throw Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: '' });
+      throw new Error('missing');
+    });
+    const manager = new HostDependencyManager(ctx, { dependencies: TEST_DEPENDENCIES, installMethodDetector: unknownDetector });
+
+    await manager.probe('codex');
+    expect(manager.get('codex')).toMatchObject({ status: 'error', path: '/bin/codex', failure: { exitCode: 1, timedOut: false } });
+  });
+});
+
 describe('HostDependencyManager probe env (#6186)', () => {
   it.each(['macos', 'linux', 'windows'] as const)('discovers a newly installed agent using the latest host ledger on %s (#465)', async (platform) => {
     const bin = platform === 'windows' ? 'C:\\gugu\\agents\\mise-bin\\codex.cmd' : '/gugu/agents/mise-bin/codex';
@@ -417,92 +450,11 @@ describe('HostDependencyManager install', () => {
     });
   });
 
-  /**
-   * 下载那一段失败 ⇒ 换下一个源重试一次(#6157)。
-   *
-   * 源的先后由应用层测速排出来(`install-source-race.ts`),这一层只按给定顺序试 ——
-   * 所以这里喂的是一个写死的顺序,判的是「它会不会换、换几次、换到哪一条」。
-   */
-  describe('下载失败换源重试一次', () => {
-    const twoSources: DependencyDescriptor[] = [
-      {
-        id: 'codex',
-        name: 'Codex',
-        category: 'agent',
-        commands: ['codex'],
-        versionArgs: ['--version'],
-        installCommands: {
-          macos: [
-            { method: 'npm', registry: 'alpha', command: 'install --registry=alpha', recommended: true },
-            { method: 'npm', registry: 'beta', command: 'install --registry=beta' },
-          ],
-        },
-      },
-    ];
-
-    function manager(run: ReturnType<typeof vi.fn>) {
-      return new HostDependencyManager(missingCtx, {
-        dependencies: twoSources,
-        platform: 'macos',
-        runInstallCommand: run as never,
-      });
-    }
-
-    it('第一个源在下载那一段挂了 ⇒ 用第二个源再来一次', async () => {
-      const run = vi.fn(async (command: string) =>
-        command.includes('alpha')
-          ? err({ type: 'command-failed' as const, message: 'boom', output: 'sha512 mismatch', stage: 'download' })
-          : ok<void>(),
-      );
-      await manager(run).install('codex', undefined, { registries: ['alpha', 'beta'] });
-
-      expect(run.mock.calls.map((call) => call[0])).toEqual([
-        'install --registry=alpha',
-        'install --registry=beta',
-      ]);
-    });
-
-    it('阴控:装完之后才挂的失败不换源 —— 换了也一样', async () => {
-      // 没有这一条,上面那条绿也可能只是因为「失败就无脑重试」。启动器写不进去、版本对不上
-      // 这类失败与源无关,再下一遍只是把同一件事做两遍。
-      const run = vi.fn(async () =>
-        err({ type: 'command-failed' as const, message: 'boom', output: 'launcher publish failed' }),
-      );
-      const result = await manager(run).install('codex', undefined, { registries: ['alpha', 'beta'] });
-
-      expect(run).toHaveBeenCalledTimes(1);
-      expect(result.success).toBe(false);
-    });
-
-    it('取消不重试 —— 用户按的是取消', async () => {
-      const run = vi.fn(async () =>
-        err({ type: 'cancelled' as const, message: 'Installation cancelled.', output: '', stage: 'download' }),
-      );
-      await manager(run).install('codex', undefined, { registries: ['alpha', 'beta'] });
-
-      expect(run).toHaveBeenCalledTimes(1);
-    });
-
-    it('只重试一次 —— 三个候选也只试前两个', async () => {
-      const run = vi.fn(async () =>
-        err({ type: 'stalled' as const, message: 'no progress', output: '', idleMs: 60_000, stage: 'download' }),
-      );
-      await manager(run).install('codex', undefined, { registries: ['alpha', 'beta', 'alpha'] });
-
-      expect(run).toHaveBeenCalledTimes(2);
-    });
-
-    it('用户在高级里指名了源就只试那一个 —— ❌ 不许悄悄换成别的', async () => {
-      const run = vi.fn(async (command: string) =>
-        err({ type: 'command-failed' as const, message: 'boom', output: command, stage: 'download' }),
-      );
-      await manager(run).install('codex', undefined, {
-        registry: 'beta',
-        registries: ['alpha', 'beta'],
-      });
-
-      expect(run.mock.calls.map((call) => call[0])).toEqual(['install --registry=beta']);
-    });
+  it('delegates a download failure exactly once to the host installer', async () => {
+    const run = vi.fn(async () => err({ type: 'command-failed' as const, message: 'failed', output: '', stage: 'download' }));
+    const manager = new HostDependencyManager(missingCtx, { dependencies: TEST_DEPENDENCIES, runInstallCommand: run });
+    await manager.install('codex');
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   it('returns an error result for unknown dependency ids', async () => {
@@ -1979,7 +1931,7 @@ describe('HostDependencyManager 探测失败的副本', () => {
 });
 
 describe('mise migration of an application-owned legacy copy', () => {
-  it('forwards cancellation and verifies the new stable entry instead of the unchanged legacy path', async () => {
+  it.each([undefined, 'npmmirror'])('forwards intent/actual source and verifies the new entry (explicit=%s)', async (registry) => {
     const legacy = '/managed/npm/codex';
     const stable = '/managed/mise-bin/codex';
     let installed = false;
@@ -1995,15 +1947,15 @@ describe('mise migration of an application-owned legacy copy', () => {
     });
     const signal = new AbortController().signal;
     const onProgress = vi.fn();
-    const run = vi.fn(async () => { installed = true; return ok<void>(); });
+    const run = vi.fn(async () => { installed = true; return ok({ registry: registry ?? 'huawei' }); });
     const manager = new HostDependencyManager(ctx, {
       platform: 'linux',
       dependencies: [{
         id: 'codex', name: 'Codex', category: 'agent', commands: ['codex'],
-        installCommands: { linux: [{ method: 'mise', replaces: ['npm'], registry: 'npmmirror', command: 'mise install http:gugu-codex', target: { kind: 'mise', package: '@openai/codex', binary: 'codex', backend: { kind: 'platform-archive', executables: {} } } }] },
+        installCommands: { linux: ['official', 'npmmirror', 'huawei'].map(source => ({ method: 'mise', replaces: ['npm'], registry: source, recommended: source === 'official', command: 'mise install http:gugu-codex', target: { kind: 'mise', package: '@openai/codex', binary: 'codex', backend: { kind: 'platform-archive', executables: {} } } })) },
         updates: { kind: 'supported', releaseSource: { kind: 'npm', package: '@openai/codex' }, update: { kind: 'package-manager' } },
       }],
-      getSelection: async () => ({ kind: 'pinned', realpath: legacy, registry: 'npmmirror' }),
+      getSelection: async () => ({ kind: 'pinned', realpath: legacy, ...(registry ? { registry } : {}) }),
       runInstallCommand: run,
       installMethodDetector: {
         detect: async (file) => ({ kind: file === stable ? 'mise' : 'npm', confidence: 'confirmed', ours: true }),
@@ -2015,9 +1967,10 @@ describe('mise migration of an application-owned legacy copy', () => {
     expect(manager.getHostDependency('codex')?.installations.length).toBeGreaterThan(0);
     const result = await manager.update('codex', undefined, { signal, onProgress });
     expect(result.success).toBe(true);
+    expect(manager.getHostDependency('codex')?.installations.find(copy => copy.realpath === stable)?.provenance.registry).toBe(registry ?? 'huawei');
     expect(run).toHaveBeenCalledWith('mise install http:gugu-codex', {
       signal, onProgress,
-      mise: { operation: 'update', registry: 'npmmirror', selectedPath: legacy, target: expect.objectContaining({ kind: 'mise' }) },
+      mise: { operation: 'update', source: registry ? { kind: 'explicit', registry } : { kind: 'automatic', fallbackRegistry: 'official', registries: ['official', 'npmmirror', 'huawei'] }, minimumVersion: '1.0.0', selectedPath: legacy, target: expect.objectContaining({ kind: 'mise' }) },
     });
   });
 });

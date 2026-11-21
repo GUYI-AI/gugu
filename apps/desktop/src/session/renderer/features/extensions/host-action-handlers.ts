@@ -10,7 +10,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { desktopIpc } from '@/platform/desktopIpc';
 import { EXTENSION_BRIDGE_CHANNEL, type ExtensionBridgeResponse } from '@shared/extensions/bridge-protocol';
-import { EXTENSION_FILE_ANNOTATION_METHOD, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
+import { EXTENSION_FILE_SELECTION_METHOD, type FileSelectionAsk } from '@shared/extensions/file-selection';
 import type { AppModalHostAction } from '@shared/extensions/app-modal';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 
@@ -25,14 +25,12 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
-  EXTENSION_SELECTION_SEND_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
   EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
   type ResourceRemovalAsk,
-  type SelectionSendAsk,
   type VoiceNoteExportAsk,
   type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
@@ -49,7 +47,7 @@ import {
 } from '@shared/extensions/app-runtime-protocol';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { fetchInstalledApps, peekInstalledApps, type InstalledApps } from './installed-extensions';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
 import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
@@ -139,7 +137,12 @@ export function applyExtensionHostAction(command: ExtensionHostActionCommand): E
 function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
   switch (action.kind) {
     case 'openApp':
-      if (action.chatId) return openLinkTarget({ kind: 'app', extensionId: action.extensionId, tab: action.tab ?? installedExtensionsStore.mainTabOf(action.extensionId)?.kind.slice(action.extensionId.length + 1) ?? '', path: '', query: {}, place: { chat: action.chatId } });
+      if (action.chatId) {
+        const chatId = action.chatId;
+        const open = (apps: InstalledApps) => openLinkTarget({ kind: 'app', extensionId: action.extensionId, tab: action.tab ?? apps.mainTabOf(action.extensionId)?.kind.slice(action.extensionId.length + 1) ?? '', path: '', query: {}, place: { chat: chatId } });
+        const known = peekInstalledApps();
+        return known ? open(known) : fetchInstalledApps().then((apps) => runInAction(() => open(apps)));
+      }
       { const opened = openApp(action.extensionId, action.tab); revealSessionpage(); return opened; }
     case 'openChatFile':
       if ('onlyIfOpen' in action) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
@@ -167,7 +170,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       return openLinkTarget(action.target, action.source);
     case 'notGivenAt': {
       // The App's page in 「App」 is where a chat is added, one at a time (`changeAppPlaces`).
-      const app = installedExtensionsStore.manifests.find((manifest) => manifest.id === action.extensionId)?.name ?? action.extensionId;
+      const app = peekInstalledApps()?.manifestFor(action.extensionId)?.name ?? action.extensionId;
       toast({
         title: translateSessionMessage('extensions.notGivenAt', { app, chat: action.chat.name }),
         tier: 'warning',
@@ -328,9 +331,9 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'showMessage':
       return openLinkTarget({ kind: 'chat', chatId: action.detail.chatId, messageId: action.detail.messageId });
     case 'openWith':
-      if (action.detail.background) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ updateFileNames }) => {
+      if (action.detail.background) return Promise.all([import('@renderer/features/chats/chat-tabs/chat-layouts'), fetchInstalledApps()]).then(([{ updateFileNames }, apps]) => {
         const detail = action.detail;
-        updateFileNames([{ id: detail.itemId, filename: detail.name, content_type: detail.file.contentType }], installedExtensionsStore.manifests);
+        updateFileNames([{ id: detail.itemId, filename: detail.name, content_type: detail.file.contentType }], apps.manifests);
       });
       return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin }) => {
         const origin = chatPageOrigin(tabId);
@@ -424,11 +427,8 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
    * 这份 handler,等于把它塞进每一条走 extensions 通道的路径。❌ 别改成顶层 import。
    */
   [EXTENSION_INSTALLED_CHANGED_METHOD]: async (): Promise<{ ok: true }> => {
-    const { registerInstalledExtensionTabs } = await import('./register-extension-tabs');
-    await registerInstalledExtensionTabs();
-    // What the market has to say is about what is installed: an App updated by itself (auto-update-apps.ts) has no update now.
-    const { installedExtensionsStore } = await import('./installed-extensions-store');
-    void installedExtensionsStore.checkUpdates();
+    const { resyncInstalledExtensionTabs } = await import('./register-extension-tabs');
+    await resyncInstalledExtensionTabs();
     return { ok: true };
   },
   /** Members' faces (`lib/memberFaces.ts`). Imported when asked, as above. */
@@ -465,27 +465,13 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
   },
-  /**
-   * API 54/55 Send, over the page that asked, at its selection (into its session, or its chat): the page's CSS px scaled to its guest's box here (its zoom
-   * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
-   */
-  [EXTENSION_FILE_ANNOTATION_METHOD]: async (params: unknown) => {
-    const ask = params as FileAnnotationAsk;
+  /** API 60 Cite or Send pressed on a page's selection menu (file-selection.ts): a draft, or the host's line at that page. */
+  [EXTENSION_FILE_SELECTION_METHOD]: async (params: unknown) => {
+    const ask = params as FileSelectionAsk;
     const guest = pageElement(ask.webContentsId);
-    if (!guest) return false;
-    const { openGuestFileAnnotation } = await import('../sessions/annotations/guest-file-annotation');
-    return openGuestFileAnnotation(guest, auxWindows.layerOf(guest.ownerDocument), ask, INSTALL_CONSENT_HUMAN_WINDOW_MS);
-  },
-  [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
-    const { to, webContentsId, open } = params as SelectionSendAsk;
-    const guest = pageElement(webContentsId);
-    if (!guest) return 'cancelled';
-    const box = guest.getBoundingClientRect(), { rect, viewport } = open, scale = box.width / viewport.width;
-    const anchor = new DOMRect(box.x + rect.x * scale, box.y + rect.y * scale, rect.width * scale, rect.height * scale);
-    if (anchor.right < box.left || anchor.left > box.right || anchor.bottom < box.top || anchor.top > box.bottom) return 'cancelled';
-    const { openSelectionSend } = await import('@/components/chat/selectionSendAsk');
-    const { draft, quote, pills } = open;
-    return openSelectionSend({ cite: { draft, quote, pills }, to, anchor, cover: box, container: auxWindows.layerOf(guest.ownerDocument), closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
+    if (!guest) return;
+    const { runFileSelection } = await import('../sessions/annotations/file-selection-overlay');
+    runFileSelection(guest, auxWindows.layerOf(guest.ownerDocument), ask);
   },
   /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {

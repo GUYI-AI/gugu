@@ -1,6 +1,7 @@
 import { getCurrentAuthUserId } from '@/lib/supabase'
-import { SessionInputFailureError, withSessionInputDeadline } from '@/lib/sessionInputOutbox'
+import { SessionInputFailureError, withSessionInputDeadline } from '@/lib/sessionInput'
 import { invokePhoneHost } from './phoneHostRpc'
+import { taskFlowText } from '@/components/session-watch/task-flow-catalog'
 
 export type StoredPhoneTaskSend = { version: 1; id: string; text: string }
 export interface PhoneTaskComposer {
@@ -23,8 +24,8 @@ export function readPhoneTaskSend(ownerId: string, deviceId: string, sessionId: 
   if (raw === null) return null
   let pending: Partial<StoredPhoneTaskSend> | null
   try { pending = JSON.parse(raw) as Partial<StoredPhoneTaskSend> | null }
-  catch { throw new Error('上次任务发送记录不完整，请保留记录后重试') }
-  if (!pending || pending.version !== 1 || typeof pending.id !== 'string' || !pending.id || typeof pending.text !== 'string' || !pending.text.trim()) throw new Error('上次任务发送记录不完整，请保留记录后重试')
+  catch { throw new Error(taskFlowText('errors.sendRecordIncomplete')) }
+  if (!pending || pending.version !== 1 || typeof pending.id !== 'string' || !pending.id || typeof pending.text !== 'string' || !pending.text.trim()) throw new Error(taskFlowText('errors.sendRecordIncomplete'))
   return pending as StoredPhoneTaskSend
 }
 
@@ -38,7 +39,7 @@ const changed = (key: string) => { for (const listener of listeners) listener(ke
 async function withPhoneInputDeadline<T>(sending: Promise<T>): Promise<T> {
   try { return await withSessionInputDeadline(sending, 12_000) }
   catch (error) {
-    if (error instanceof SessionInputFailureError) throw Object.assign(new Error('手机尚未返回操作结果，请重试。'), { code: 'host_call_timeout' })
+    if (error instanceof SessionInputFailureError) throw Object.assign(new Error(taskFlowText('errors.noResult')), { code: 'host_call_timeout' })
     throw error
   }
 }
@@ -51,9 +52,9 @@ export async function sendPhoneTaskText(deviceId: string, sessionId: string, tex
 
 /** An explicit retry confirms the saved admission without adding another optimistic user message. */
 export async function retryPhoneTaskSend(ownerId: string, deviceId: string, sessionId: string, id: string, invoke = invokePhoneHost, storage: StorageLike = window.localStorage): Promise<unknown> {
-  if (await getCurrentAuthUserId() !== ownerId) throw new Error('当前账号已改变，未重新发送原稿')
+  if (await getCurrentAuthUserId() !== ownerId) throw new Error(taskFlowText('errors.accountChanged'))
   const pending = readPhoneTaskSend(ownerId, deviceId, sessionId, storage)
-  if (!pending || pending.id !== id) throw new Error('待确认原稿已改变，请查看当前任务后再试')
+  if (!pending || pending.id !== id) throw new Error(taskFlowText('errors.pendingDraftChanged'))
   return withPhoneInputDeadline(sendOwnedPhoneTask(ownerId, deviceId, sessionId, pending.text, invoke, storage))
 }
 
@@ -61,12 +62,12 @@ async function sendOwnedPhoneTask(ownerId: string, deviceId: string, sessionId: 
   const key = phoneTaskSendKey(ownerId, deviceId, sessionId)
   const pending = readPhoneTaskSend(ownerId, deviceId, sessionId, storage)
   const body = text.trim()
-  if (!body) throw new Error('请填写任务内容')
-  if (pending && pending.text !== body) throw new Error('上条任务尚未确认，请先重试原消息，再发送新的内容')
+  if (!body) throw new Error(taskFlowText('errors.taskRequired'))
+  if (pending && pending.text !== body) throw new Error(taskFlowText('errors.sendPending'))
   const request: StoredPhoneTaskSend = pending ?? { version: 1, id: crypto.randomUUID(), text: body }
   if (!pending) { storage.setItem(key, JSON.stringify(request)); changed(key) }
   const result = await invoke<{ accepted?: unknown }>(deviceId, 'sessionTimeline.sessionSend', [{ conversationId: sessionId, text: request.text, clientRequestId: request.id }], request.id)
-  if (result?.accepted !== true) throw new Error('手机尚未确认接收任务，请重试原消息')
+  if (result?.accepted !== true) throw new Error(taskFlowText('errors.sendUnconfirmed'))
   if (await getCurrentAuthUserId() === ownerId) {
     const current = storage.getItem(key)
     if (current && (JSON.parse(current) as StoredPhoneTaskSend).id === request.id) { storage.removeItem(key); changed(key) }

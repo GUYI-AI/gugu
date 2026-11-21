@@ -7,15 +7,16 @@ import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/libr
 import { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Pencil, Trash2, Link, RefreshCw } from '@/lib/icons';
-import { useReplica } from '@/lib/replica';
+import { useReplica, valueOf } from '@/lib/replica';
 import { Button } from '@renderer/lib/ui/button';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { refreshModelSubscriptions, errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
-import { type CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
+import { vendorName } from '@/i18n/vendorName';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
@@ -48,14 +49,15 @@ export const CustomModelsGroup = observer(function CustomModelsGroup({ addReques
 const CustomModels = observer(function CustomModels({ machine, addRequested, onAddClose }: { machine: string | null } & AddRequest) {
   const { translate } = useSessionMessages();
   const reading = useReplica(customModels, [machine]);
-  const { data: agents } = useAgents();
+  const agents = valueOf(useAgents());
   const [userEdit, setEditing] = useState<CustomModelConnection | NewModel | null>(null);
   const editing: CustomModelConnection | NewModel | null = addRequested ? { group: 'custom' } : userEdit;
   const [refreshing, setRefreshing] = useState(false);
   const refreshPlans = async () => {
     if (refreshing) return;
     setRefreshing(true); setFeedback(null);
-    try { await refreshModelSubscriptions(machine, (agents ?? []).filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => agent.id)); }
+    const providers = (agents ?? []).filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => agent.id);
+    try { await refreshModelSubscriptions(machine, providers); }
     catch (error) { setFeedback({ group: 'coding-plan', text: errorText(error) }); }
     finally { setRefreshing(false); }
   };
@@ -110,18 +112,16 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       </span>
     </span>} note={translate(note)} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
       {group === 'coding-plan' && agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex').sort((a, b) => Number(a.id === 'claude') - Number(b.id === 'claude')).map(agent => (
-        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows={{
-          onAddAccount: () => setEditing({ group: 'coding-plan', account: agent.id === 'codex' ? 'codex' : 'claude' }),
-        }} />
+        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />
       ))}
       {reading.state === 'error' ? <SettingsRow description={errorText(reading.error)} control={<Button onClick={refresh}>{translate('common.retry')}</Button>} />
         : reading.state === 'unknown' ? <SettingsRow control={<Unknown className="w-32" />} /> : <>
-          <RefreshFailed error={reading.error} onRetry={refresh} />
+          <RefreshFailed reading={reading} />
           {group === 'coding-plan' ? providerPresets.filter(preset => preset.group === group).map(preset => {
             const connections = reading.value.filter(connection => connection.preset === preset.id);
             if (!connections.length) return null;
             const icon = modelProviderIcon({ id: preset.id, name: preset.name, iconKey: preset.icon });
-            return <CodingPlanGroup key={preset.id} id={preset.id} name={preset.name} icon={icon}>
+            return <CodingPlanGroup key={preset.id} id={preset.id} name={vendorName(preset.name)} icon={icon}>
               {connections.flatMap(renderConnection)}
             </CodingPlanGroup>;
           }) : reading.value.filter(connection => groupOf(connection) === group).flatMap(renderConnection)}

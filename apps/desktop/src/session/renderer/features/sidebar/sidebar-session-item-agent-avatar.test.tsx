@@ -23,9 +23,9 @@ vi.mock('@/lib/avatarIdentity', () => ({
 vi.mock('@/hooks/useShownAgentName', () => ({ useShownAgentName: ({ name }: { name: string }) => name }));
 vi.mock('@/components/chat/useAgentsOnCloudComputer', () => ({ useShownAgentStatus: () => ({ presentation: () => state.presentation }) }));
 vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: (_id: unknown, _device: unknown, pick: (summary: undefined) => unknown) => pick(undefined) }));
-vi.mock('@renderer/features/automations/use-session-schedules', () => ({ useSessionSchedules: () => [] }));
+vi.mock('@renderer/features/automations/use-session-schedules', () => ({ useSessionSchedules: () => ({ state: 'value', value: [], stale: false, error: null }) }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
-  useAgents: () => ({ data: [{ id: 'claude', name: 'Claude Code', capabilities: { hooks: { kind: 'native' }, sessions: { fork: [] } } }] }),
+  useAgents: () => ({ state: 'value', stale: false, error: null, value: [{ id: 'claude', name: 'Claude Code', capabilities: { hooks: { kind: 'native' }, sessions: { fork: [] } } }] }),
 }));
 vi.mock('@renderer/lib/components/agent-icon', () => ({ AgentIcon: ({ id }: { id: string }) => <span data-harness-icon={id} /> }));
 vi.mock('./sidebar-session-title', () => ({ SidebarSessionTitle: ({ title }: { title: string }) => <span>{title}</span> }));
@@ -35,7 +35,7 @@ vi.mock('./sidebar-identity-card', () => ({
   useSidebarIdentityCardTrigger: () => ({ dismiss: () => {}, onPointerEnter: () => {}, onPointerLeave: () => {}, onPointerDown: () => {} }),
 }));
 vi.mock('./sidebar-store', () => ({ mountedSessionPresentation: () => null }));
-vi.mock('./use-session-drop-target', () => ({ useSessionDropTarget: () => ({ over: false, bind: () => ({}) }) }));
+vi.mock('./session-drop-target', () => ({ sessionDropTarget: () => ({}) }));
 vi.mock('./session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, pendingArchiveSessionId: null, syncCursorFromPointer: () => {} } }));
 vi.mock('./with-mounted-session', () => ({ withMountedSession: () => {} }));
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
@@ -73,7 +73,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useWorkspaceSlots: () => ({ currentView: 'chat' }),
 }));
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { isLoaded: true, appName: () => undefined } }));
+vi.mock('@renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', value: { appName: () => undefined }, stale: false, error: null }) }));
 vi.mock('@renderer/features/sessions/archive-session-flow', () => ({ requestArchiveSession: () => {} }));
 vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: () => {} }));
 vi.mock('@renderer/features/sessions/fork-task', () => ({ forkTask: () => {} }));

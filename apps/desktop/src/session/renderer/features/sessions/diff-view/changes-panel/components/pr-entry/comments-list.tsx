@@ -1,5 +1,6 @@
 import { ExternalLink, MessageSquare } from '@/lib/icons'
-import { useMemo } from 'react';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import type { Reading } from '@/lib/replica';
 import { rpc } from '@renderer/lib/ipc';
 import { MarkdownRenderer } from '@renderer/lib/ui/markdown-renderer';
 import { RelativeTime } from '@renderer/lib/ui/relative-time';
@@ -83,41 +84,17 @@ function CommentItem({ comment }: { comment: PullRequestSessionItem }) {
   );
 }
 
-export function CommentsList({
-  comments,
-  isLoading,
-  error,
-}: {
-  comments: PullRequestSessionItem[];
-  isLoading?: boolean;
-  error?: Error | null;
-}) {
+export function CommentsList({ comments }: { comments: Reading<PullRequestSessionItem[]> }) {
   const { translate } = useSessionMessages();
-  const sorted = useMemo(() => [...comments].sort(sortPullRequestSessionItems), [comments]);
-
-  if (isLoading && sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.loadingComments')}</div>;
-  }
-
-  if (error && sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.commentsFailed')}</div>;
-  }
-
-  if (sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div>;
-  }
-
   return (
-    <div className="flex flex-col gap-[1px]">
-      {sorted.map((comment) => (
-        <CommentItem key={comment.id} comment={comment} />
-      ))}
-      {isLoading && (
-        <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.loadingComments')}</div>
+    <ReadingSlot reading={comments} placeholder="mx-3 my-2 block h-10 w-auto" className="px-3 py-2" failed={() => translate('pr.commentsFailed')}>
+      {(items) => items.length === 0 ? <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div> : (
+        <div className="flex flex-col gap-[1px]">
+          {[...items].sort(sortPullRequestSessionItems).map((comment) => (
+            <CommentItem key={comment.id} comment={comment} />
+          ))}
+        </div>
       )}
-      {error && (
-        <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.commentsFailed')}</div>
-      )}
-    </div>
+    </ReadingSlot>
   );
 }

@@ -16,7 +16,7 @@ describe('consent for the voice-note recorder', () => {
   it('says the microphone, the click, the conversation chosen, and that the App never gets the audio', () => {
     expect(describeCapability('chat:voice-notes:record', app, say(enUSMessages)))
       .toBe('Record voice notes from your microphone when you click, for your agent in the conversation you select; the App never gets the audio');
-    expect(describeCapability('chat:voice-notes:record', app, say(zhCNMessages))).toBe('你点了才用麦克风录语音笔记，交给你选定的那条会话里的 agent；应用拿不到录音');
+    expect(describeCapability('chat:voice-notes:record', app, say(zhCNMessages))).toBe('仅在你点击时通过麦克风录制语音笔记，交给你选定的会话中的 agent；应用无法获取录音');
   });
 
   it('is a high-risk word', () => {

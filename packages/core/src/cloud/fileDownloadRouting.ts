@@ -12,7 +12,7 @@ const parsedUrl = (url: string) => {
 /** A network preference, never an authorization or a cache of signed capabilities. */
 export function createFileDownloadSession() {
   const unavailable = new Map<string, number>()
-  const advertised = new Map<string, { file: string; thumbnail?: string }>()
+  const advertised = new Map<string, string>()
   const scopeKey = (url: string) => { const parsed = parsedUrl(url); return parsed.origin + parsed.pathname.replace(/\/+$/, '') }
   const cooling = (origin: string) => {
     const until = unavailable.get(origin)
@@ -22,14 +22,10 @@ export function createFileDownloadSession() {
     return false
   }
   return {
-    advertise(scope: string, url: string, thumbnail?: string | null) {
-      const key = scopeKey(scope)
-      advertised.set(key, { file: parsedUrl(url).origin,
-        thumbnail: thumbnail ? parsedUrl(thumbnail).origin : advertised.get(key)?.thumbnail })
-    },
-    prefersOrigin(scope: string, variant: 'file' | 'thumbnail') {
-      const routes = advertised.get(scopeKey(scope))
-      return !!routes && cooling(variant === 'thumbnail' ? routes.thumbnail ?? routes.file : routes.file)
+    advertise(scope: string, url: string) { advertised.set(scopeKey(scope), parsedUrl(url).origin) },
+    prefersOrigin(scope: string) {
+      const route = advertised.get(scopeKey(scope))
+      return !!route && cooling(route)
     },
     failed(url: string, error: unknown) {
       if (isTransientFileReadError(error)) unavailable.set(parsedUrl(url).origin, Date.now() + ORIGIN_COOLDOWN_MS)

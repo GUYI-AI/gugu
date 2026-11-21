@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import { X } from '@/lib/icons'
@@ -16,23 +16,30 @@ import { ExtensionsSettingsCard } from '@renderer/features/settings/components/E
 import { InstalledAgents } from './InstalledAgents'
 import { InstalledConnectors } from './InstalledConnectors'
 import { InstalledItems, type InventoryView } from './InstalledItems'
-import type { InstalledItem, InstalledSection } from './installed-item'
+import type { InstalledItem } from './installed-item'
+import type { AppsLocation } from '@renderer/features/apps/apps-location'
 import './installed-manager.css'
 
+type InstalledPlace = NonNullable<AppsLocation['installed']>
+
+/** The Installed sheet, at `place` (the Apps location's `installed`): every change of segment, device or layout moves it. */
 export const InstalledManager = observer(function InstalledManager({
-  initialSection = 'agents', initialDeviceId, onClose, onOpenAgent, onOpenApp,
+  place, onPlace, onClose, onOpenAgent, onOpenApp,
 }: {
-  initialSection?: InstalledSection
-  initialDeviceId?: string
+  place: InstalledPlace
+  onPlace: (next: InstalledPlace) => void
   onClose: () => void
   onOpenAgent: (id: string, deviceId?: string) => void
   onOpenApp: (id: string, deviceId?: string) => void
 }) {
   const { t } = useTranslation('main')
   const [modalLayer, setModalLayer] = useState<HTMLDivElement | null>(null)
-  const [section, setSection] = useState(initialSection)
-  const [layout, setLayout] = useState<InventoryView>('grid')
-  const [selected, setSelected] = useState(initialDeviceId ?? LOCAL_IMPORT_DEVICE)
+  const itemsRef = useRef<HTMLDivElement>(null)
+  const { section, layout = 'grid' } = place
+  const selected = place.deviceId ?? LOCAL_IMPORT_DEVICE
+  const setSection = (next: typeof section) => onPlace({ ...place, section: next, scroll: undefined })
+  const setLayout = (next: InventoryView) => onPlace({ ...place, layout: next })
+  const setSelected = (id: string) => onPlace({ ...place, deviceId: id === LOCAL_IMPORT_DEVICE ? undefined : id, scroll: undefined })
   const choices = orderMachines(importDeviceChoices(t('installedManager.thisComputer'),
     [...remoteHostsStore.hosts.values()].map(({ device }) => device).filter((device) => !device.isCurrentMachine)))
   useEffect(() => { remoteHostsStore.start() }, [])
@@ -64,10 +71,12 @@ export const InstalledManager = observer(function InstalledManager({
   const renderItems = (items: readonly InstalledItem[], state?: { loading?: boolean; error?: boolean }) => (
     <InstalledItems key={`${machine.id}:${section}`} items={items} {...state} offline={host.remote?.online === false}
       section={section} setSection={setSection} layout={layout} setLayout={setLayout}
-      remoteLabel={deviceId ? machine.label : undefined} />
+      remoteLabel={deviceId ? machine.label : undefined} itemsRef={itemsRef} scroll={place.scroll} />
   )
-  const openApp = (id: string) => { onClose(); onOpenApp(id, deviceId) }
-  const openAgent = (id: string) => { onClose(); onOpenAgent(id, deviceId) }
+  // Opening one is a step away from this sheet: it keeps how far down the list was, for coming back.
+  const leave = () => onPlace({ ...place, scroll: itemsRef.current?.scrollTop ?? 0 })
+  const openApp = (id: string) => { leave(); onOpenApp(id, deviceId) }
+  const openAgent = (id: string) => { leave(); onOpenAgent(id, deviceId) }
 
   return (
     <Sheet ariaLabel={t('installedManager.title')} onClose={onClose}
@@ -88,7 +97,7 @@ export const InstalledManager = observer(function InstalledManager({
               ) : section === 'apps' ? (
                 <ExtensionsSettingsCard renderInstalledApps={renderItems} onOpenInstalledApp={openApp} />
               ) : (
-                <InstalledConnectors render={renderItems} directManagement={initialSection === 'connectors'} />
+                <InstalledConnectors render={renderItems} directManagement={place.direct === true} />
               )}
             </LibraryHostProvider>
           </div>

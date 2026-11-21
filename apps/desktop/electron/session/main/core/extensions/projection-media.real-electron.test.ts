@@ -9,7 +9,8 @@ const electron = process.env.GUGU_BROWSER_REAL_ELECTRON;
 const enabled = electron && process.env.GUGU_TEST_MEDIA_HELPER && process.env.GUGU_PROJECTION_FFMPEG && process.env.GUGU_TEST_CHROMIUM;
 let temporary = '';
 let fixture: ReturnType<typeof startRealElectronFixture> | undefined;
-let result: { passed: boolean; reused: boolean; inputCalls: number; paints: unknown[];
+let result: { passed: boolean; reused: boolean; inputCalls: number; paints: unknown[]; sourceCaptures: Array<{ sequence: number; pngSha256: string; rgb: number[] }>;
+  sourceWitness: { attempts: number; firstRgb: number[]; rgb: number[] };
   device: { signedInputs: number; paints: number; retargetClosed: boolean; privateKeysHidden: boolean;
     wrongVersionRefused: boolean; wrongSourceRefused: boolean };
   ownership: { lateHelperExited: boolean; concurrentNativeDecoders: number; reusedPerStream: boolean } };
@@ -56,6 +57,12 @@ describe.skipIf(!enabled)('projection factory through real media with Electron',
   it('decodes two correlated captures, reuses pixels, applies Unicode once, and drains on App revocation', () => {
     expect(result).toMatchObject({ passed: true, reused: true, inputCalls: 1 });
     expect(result.paints.length).toBeGreaterThanOrEqual(2);
+    expect(result.sourceCaptures.map(frame => frame.sequence)).toEqual([1, 2]);
+    expect(result.sourceCaptures[1]!.pngSha256).not.toBe(result.sourceCaptures[0]!.pngSha256);
+    expect(result.sourceWitness.attempts).toBeGreaterThanOrEqual(1);
+    for (const [channel, wanted] of [190, 40, 26].entries()) {
+      expect(Math.abs(result.sourceCaptures[1]!.rgb[channel]! - wanted)).toBeLessThanOrEqual(1);
+    }
     expect(result.ownership).toEqual({ lateHelperExited: true, concurrentNativeDecoders: 2, reusedPerStream: true });
     expect(result.device).toMatchObject({ signedInputs: 1, retargetClosed: true, privateKeysHidden: true,
       wrongVersionRefused: true, wrongSourceRefused: true });

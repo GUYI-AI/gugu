@@ -1,7 +1,7 @@
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { useReplica } from '@/lib/replica';
+import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
@@ -14,7 +14,7 @@ import { agentOffersConnections } from '@renderer/features/settings/agents-page/
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
-import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
+import { useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput';
 import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
 import { useSearchedTaskReveal, useSessionSourceMessage } from './use-session-source-message';
@@ -118,8 +118,7 @@ import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTa
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
-import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
-import { SessionScheduleChip } from '../session-schedule-chip';
+import { scheduleSlotShown, SessionScheduleSlot } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';
 import { toComposerPermission } from './composer-permission';
@@ -198,7 +197,7 @@ import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
-import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
+import { useLastTurnSignIn } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
@@ -216,7 +215,6 @@ import {
 import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
 import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
 import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
-import { offerSessionSend } from '../session-send';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -746,21 +744,20 @@ const ComposerForStore = observer(function ComposerForStore({
     agentCreationToolsByEngine,
     localSessionMentionProvider,
   ]);
-  // A selection's Send (`SelectionSend`) sends through this composer: typed words' path, this composer's @.
-  useEffect(() => offerSessionSend(store.sessionId, { send: text => store.submitPrompt(text), mentionProvider }), [store, mentionProvider]);
 
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
   // 只渲染成一个禁用图标按钮、列表根本不展开,所以这里**不**接安装动作 —— 接了也是死代码。
   // 分组口径仍与 initial-session-section 共用,见 `agent-availability-groups`。
-  const agentOptions = useMemo<ComposerAgentOption[]>(
+  const agentOptions = useMemo<ComposerAgentOption[] | null>(
     () =>
-      sortAgentsByAvailability(agents ?? []).map((a) => ({
+      agents ? sortAgentsByAvailability(agents).map((a) => ({
         id: a.id,
         name: a.name,
         icon: <AgentIcon id={a.id} size={14} className="rounded-sm" />,
         groupLabel: agentGroupLabel(a.reading, translate),
-      })),
+      })) : null,
     [agents]
   );
 
@@ -945,11 +942,11 @@ const ComposerForStore = observer(function ComposerForStore({
   // 判定(harnessCatalogNotice)。只说「坏了」这一态:没装、没登录各有各的入口,不在这里。
   // #2982 PR-A 合进来以后收编进 ReadingSlot(读数三态的唯一画法)。
   const ownCatalogFailure = !ownTier && harnessCatalog.state.kind === 'unavailable'
-    ? harnessCatalogNotice(harnessCatalog.state, composerOwnTierAgentName(agents, providerId), translate)
+    ? harnessCatalogNotice(harnessCatalog.state, composerOwnTierAgentName(agents ?? null, providerId), translate)
     : null;
   const ownCatalogRetry = ownCatalogFailure
     ? {
-        groupLabel: composerTierLabel('own', composerOwnTierAgentName(agents, providerId), translate),
+        groupLabel: composerTierLabel('own', composerOwnTierAgentName(agents ?? null, providerId), translate),
         label: translate(ownCatalogFailure.key, ownCatalogFailure.values),
         title: ownCatalogFailure.detail ?? '',
         detail: translate('harnessCatalog.retry'),
@@ -1444,9 +1441,9 @@ const ComposerForStore = observer(function ComposerForStore({
         granularity={mcpPanel?.granularity ?? 'per-server'}
         onApply={applyMcpSelection}
       />
-      {schedules.length > 0 ? (
+      {scheduleSlotShown(schedules) ? (
         <div data-composer-band data-composer-top-band="schedule" className={sessionComposerTrayClassName} style={sessionComposerTrayStyle}>
-          <SessionScheduleChip machine={scheduleMachine} schedules={schedules} />
+          <SessionScheduleSlot machine={scheduleMachine} reading={schedules} />
         </div>
       ) : null}
       {/* This task's agent's failed deliveries (the shell draws the same bar a chat's composer shows). */}
@@ -1460,7 +1457,7 @@ const ComposerForStore = observer(function ComposerForStore({
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
       <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} />
       <ChatComposer
-        className={schedules.length > 0 ? sessionComposerFrameLiftClassName : undefined}
+        className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
         // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。
         hideLockedAgent={false}
         isWorking={a.isWorking}
@@ -1501,6 +1498,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 与新建任务那个 composer 同一套装配(@@@composer-model-assembly);
         // 「哪几条现在切不了」由 sessionModelOptions 判,见 @@@session-options-disabled。
         modelOptions={sessionModelOptions}
+        modelUnknown={merged === undefined || !platformCatalog.known}
         selectedModel={composerSelectedOptionId({
           platformModel: runningPlatformModel,
           model: store.model,
@@ -1535,6 +1533,7 @@ const ComposerForStore = observer(function ComposerForStore({
         )}
         onPermissionModeChange={handleModeChange}
         agentOptions={agentOptions}
+        agentOptionsLoading={agentsReading.state === 'unknown'}
         selectedAgent={providerId ?? undefined}
         agentLocked
         onAgentChange={() => {}}
@@ -1742,7 +1741,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       ? sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)
       : undefined
   );
-  const { data: agents } = useAgents();
+  const agents = valueOf(useAgents());
   const providerId = sessionStore?.data.providerId ?? null;
   // 上一轮被宿主的退出打断(开机收残记下的):停着时说明原因;兼容旧 error 记录,下一轮开工就不是了。
   const interruptedBy = sessionStore?.status === 'idle' || sessionStore?.status === 'error'
@@ -1775,17 +1774,17 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    * 两个条件缺一不可 —— 重新登录成功(或别处一次会话成功)撤掉标记的那一刻,这一行自己消失,
    * 而那一轮的失败行照旧留在历史里说「登录已失效」(那是当时的事实)。
    */
-  const lastTurnSignIn = useLastTurnSignInRequired(store?.chatState.transcript);
+  const lastTurnSignIn = useLastTurnSignIn(store?.chatState.transcript);
   // #6264 会话在别的机器上:登录读数与重新登录都在那台机器上(与资源库「账号」一行同一条路)。
   const { auth: harnessAuth } = useAgentAuthStatus(providerId, undefined, { probe: false, machine });
-  const signInExpired = lastTurnSignIn && isAuthExpired(harnessAuth);
+  const signInExpired = !!lastTurnSignIn && isAuthExpired(harnessAuth);
   // 同一个信号(这一轮因凭据不能用而失败),而这家在这台电脑上压根没登录过(MiMo 没 key 时):说「还没登录」。
-  const signInMissing = lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
+  const signInMissing = !!lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
   // Expired credentials go directly to the existing login flow, scoped to this session's machine.
   const signInAgain = useCallback((anchor?: HTMLElement) => {
-    if (signInExpired && agent) connections.signIn(agent, machine);
+    if ((signInExpired || lastTurnSignIn === 'revoked') && agent) connections.signIn(agent, machine);
     else openAgentAccount(anchor);
-  }, [signInExpired, agent, machine, connections.signIn, openAgentAccount]);
+  }, [signInExpired, lastTurnSignIn, agent, machine, connections.signIn, openAgentAccount]);
 
   // #4900 登录 ❌ 不自动发起。owner 2026-09-04:「我不登录也行啊」——自动弹登录终端会
   // 连带跑起厂商的 `<cli> login`,浏览器随即弹出授权页,这就是「强登」本身。
@@ -1812,23 +1811,18 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
-  useEffect(() => {
-    if (!store) return;
+  // Computed in render from what the panel holds, ❌ an effect that works it out after paint.
+  const condition = useMemo((): PanelCondition | null => {
+    if (!store) return null;
     // 有没有可重来的首轮,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
     const canRestartSession = canStartFreshSession('provider_session_missing',
       sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
         .firstUtterance
     );
-    const setCondition = (condition: PanelCondition | null) => {
-      conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
-      store.chatState.session.setCondition(
-        condition && { ...condition, actions: condition.actions?.map(({ label, pending }) => ({ label, pending })) },
-      );
-    };
     const error = store.loadError;
     if (!error && membershipLock) {
       // #7056 会员中途到期:说清原因、给两条去路;发送键在输入框那一格已经停下了。
-      setCondition({
+      return ({
         code: 'membership-required',
         // 要会员的只有咕咕提供的模型;名字照模型按钮上的叫法(「咕咕 X」),❌ 裸名 —— 用户自己的同名模型不用会员。
         label: guguReasonText('membership-required', translate, membershipLock.modelName),
@@ -1836,48 +1830,44 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         // 「我开好了」= 让下拉重取目录:开成了,这一格自然变回 null。
         actions: reasonActions('membership-required', { joinMembership: openMembershipPage, retry: refreshPlatformModelCatalogs }, translate),
       });
-      return;
     }
     if (!error && store.reconcileAwaitingLink) {
       // 刚讲完的那一轮留在上面,线回来再对账补全(acp-chat-store @@@reconcile-across-link-loss)。
-      setCondition({
+      return ({
         code: 'machine-unreachable',
         label: translate('transcript.condition.turnAwaitsLink'),
         detail: 'reconcile-awaiting-link',
       });
-      return;
     }
     if (!error && interruptedBy && !signInExpired && !signInMissing) {
-      setCondition({
+      return ({
         code: 'turn-interrupted',
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
       });
-      return;
     }
     if (!error && birthGroup.join && !signInExpired && !signInMissing) {
       // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
-      setCondition({
+      return {
         code: 'group-join-failed',
         label: translate('transcript.condition.groupJoinFailed'),
         detail: birthGroup.join.reason,
         actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
-      });
-      return;
+      };
     }
     if (!error) {
-      setCondition(
+      return (
         signInExpired || signInMissing
           ? {
               code: 'auth-required',
-              label: translate(signInExpired ? 'chat.signInExpiredLead' : 'chat.signInMissingLead', {
+              label: translate(lastTurnSignIn === 'revoked' ? 'chat.signInRevokedLead' : signInExpired ? 'chat.signInExpiredLead' : 'chat.signInMissingLead', {
                 agent: agent?.name ?? providerId ?? '',
               }),
               detail: signInExpired ? 'sign-in-expired' : 'sign-in-missing',
               ...(cliAuthMethod
                 ? {
                     actions: [{
-                      label: translate(signInExpired ? 'chat.signInAgain' : 'transcript.condition.signIn'),
+                      label: translate(signInExpired || lastTurnSignIn === 'revoked' ? 'chat.signInAgain' : 'transcript.condition.signIn'),
                       run: signInAgain,
                     }],
                   }
@@ -1885,7 +1875,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             }
           : null
       );
-      return;
     }
     const retry = { label: translate('transcript.condition.retry'), run: () => store.retry() };
     const condition = ((): PanelCondition => {
@@ -1936,10 +1925,12 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 两颗都不能少(#4900):「去登录」与「我登好了」是两个动作,后者 ❌ 不能用「重试」顶替。
           return {
             code: 'auth-required',
+            ...(error.signInReason === 'revoked' ? { label: translate('chat.signInRevokedLead', { agent: agent?.name ?? providerId ?? '' }) } : {}),
             detail: error.message,
             actions: [
               ...(cliAuthMethod
-                ? [{ label: translate('transcript.condition.signIn'), run: openAgentAccount }]
+                ? [{ label: translate(error.signInReason === 'revoked' ? 'chat.signInAgain' : 'transcript.condition.signIn'),
+                    run: error.signInReason === 'revoked' && agent ? () => connections.signIn(agent, machine) : openAgentAccount }]
                 : []),
               { label: translate('chat.signInDone'), run: () => store.retry() },
             ],
@@ -2020,8 +2011,15 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         }
       }
     })();
-    setCondition(condition);
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+    return condition;
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  useEffect(() => {
+    if (!store) return;
+    conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
+    store.chatState.session.setCondition(
+      condition && { ...condition, actions: condition.actions?.map(({ label, pending }) => ({ label, pending })) },
+    );
+  }, [store, condition]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
@@ -2217,11 +2215,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const render = new AbortController();
         mermaidViewerRender.current = render;
         const caches = store.chatContext.sharedCaches;
-        const theme = readMermaidTheme();
-        const cached = caches.peekMermaid(arg.chart, theme);
+        const cached = caches.peekMermaid(arg.chart);
         setMermaidViewer({ svg: cached, pending: cached === null });
         if (cached !== null) return;
-        void caches.renderMermaid(arg.chart, theme, render.signal).then((svg) => {
+        void caches.renderMermaid(arg.chart, render.signal).then((svg) => {
           if (!render.signal.aborted) setMermaidViewer({ svg, pending: false });
         });
       },

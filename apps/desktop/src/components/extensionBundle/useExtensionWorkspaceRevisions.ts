@@ -8,7 +8,8 @@ import { platform } from '../../platform'
 import { useChatStore } from '../../store/chatContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { rpc } from '../../session/renderer/lib/ipc'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '../appSlot/hereHost'
 import { openFileIds, updateFileNames } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useAgentResourceRevisions } from './useAgentResourceRevisions'
 
@@ -44,7 +45,8 @@ export function useExtensionWorkspaceRevisions(): void {
           if (error) throw error
           return data
         })
-        updateFileNames(files, installedExtensionsStore.manifests)
+        // No App store on the web: no App names a file there (a fact of the platform, not a list unread).
+        updateFileNames(files, HERE_HOST ? (await fetchInstalledApps(HERE_HOST)).manifests : [])
       }))
     })
     // 摩擦单 F36: who is in the chat is part of an App page's context; the same bus says when a member row changed, and
