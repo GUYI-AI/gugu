@@ -41,6 +41,7 @@ import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle'
 import { MarketDetailConfirmations, MarketDetailDialog } from '@renderer/features/extensions/panel/market-detail-dialog';
 import { MarketAgentDetail } from '@renderer/features/extensions/panel/market-detail-agent';
 import { MarketExtensionDevices } from '@renderer/features/extensions/panel/market-detail-extension-devices';
+import { useBrowseList } from '@renderer/features/extensions/panel/use-browse-list';
 import type { AppLifecycle } from '@renderer/features/extensions/panel/app-lifecycle-button';
 import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-page';
 import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/extensions/panel/app-product-page';
@@ -453,6 +454,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const page = scroller();
     if (page) page.scrollTop = detailId ? 0 : listScroll.current;
   }, [detailId]);
+  useBrowseList(rootRef, scroller, browsing?.subject.manifest.id, shelf.status === 'ready' ? shelf.items.length : 0);
 
   /**
    * 一个扩展当前在市场上的那一版:先看已经取到的页,没有就定点问一次。

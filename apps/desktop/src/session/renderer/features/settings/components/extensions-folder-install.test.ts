@@ -106,6 +106,7 @@ describe('Marketplace installed inventory', () => {
 
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom.window.HTMLElement.prototype.scrollTo = () => {};
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
@@ -238,6 +239,7 @@ describe('Installing one version from the market: the sheet speaks of that versi
 
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom.window.HTMLElement.prototype.scrollTo = () => {};
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
@@ -316,6 +318,7 @@ describe('Desktop marketplace tabs and app details', () => {
 
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom.window.HTMLElement.prototype.scrollTo = () => {};
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
@@ -620,6 +623,7 @@ describe('App variant switching uses the existing install consent', () => {
     active = 'timeline';
     asks = false;
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom.window.HTMLElement.prototype.scrollTo = () => {};
     for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'Element', 'Node', 'Event', 'navigator', 'MutationObserver'] as const) vi.stubGlobal(key, dom.window[key]);
     vi.stubGlobal('getComputedStyle', dom.window.getComputedStyle.bind(dom.window));
     root = createRoot(doc().querySelector('#root')!);
