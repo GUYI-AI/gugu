@@ -13,7 +13,7 @@ import { SharePosterDialog } from '../SharePosterDialog'
 import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
 import { buildUnifiedMembers, GROUP_FACES } from './groupMemberModels'
-import { profileCardStyles } from '../contacts/ContactProfileCard'
+import { profileCardStyles } from '../contacts/contactsPanelStyles'
 
 /** Displayed size of a group's own invite QR code. */
 const GROUP_INVITE_QR_SIZE = 208

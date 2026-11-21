@@ -22,8 +22,7 @@ import { PaneBackButton } from './ContactDetail'
 import { ContactGroupAvatar } from './ContactSearch'
 import { GroupInviteRow } from './GroupInvite'
 import { useGroupProject } from './groupRowFacts'
-import { ct, detailCaptionClass, detailPlaceholderClass, nameClampClass, profileBodyClass } from './contactsPanelStyles'
-import { profileCardStyles as card } from './ContactProfileCard'
+import { ct, detailCaptionClass, detailPlaceholderClass, nameClampClass, profileBodyClass, profileCardStyles as card } from './contactsPanelStyles'
 
 // 群资料:桌面通讯录的抽屉与手机群列表点进去的是同一份。头部(群头像 · 名字 · 项目群 · 人数 · 进入群聊)、
 // 群号与项目文件夹、成员按「人 / Agent」分开列;我自己的 Agent 说它在哪台机器、此刻在做什么。
@@ -89,7 +88,12 @@ function GroupDetail({ group, mobile, onBack, onOpenGroupChat }: { group: Contac
                 <CopyValue value={chatPublicId(group)!} message={ct('groupDetail.copiedNumber')} />
               </div>
             ) : null}
-            {bound ? <div className={cn(card.guguNumber, 'max-w-full')}><span className="truncate">{[folderMachine, bound.project.rootPath].filter(Boolean).join(' · ')}</span></div> : null}
+            {bound ? (
+              <div className={cn(card.guguNumber, 'max-w-full')}>
+                <span className={cn(card.guguNumberLabel, 'shrink-0')}>{ct('groupDetail.folder')}</span>
+                <span className="min-w-0 truncate">{[folderMachine, bound.project.rootPath].filter(Boolean).join(' · ')}</span>
+              </div>
+            ) : null}
             <div className={cn(card.actions, 'flex-wrap justify-center')}>
               <button type="button" className={card.action} onClick={() => onOpenGroupChat?.(group)}>
                 <MessageCircle size={19} />{ct('panel.enterGroup')}
