@@ -137,7 +137,7 @@ it.each([1440, 390])('keeps both 74px cards, the frame and single action fixed t
       await expect.element(page.getByRole('button', { name, exact: true })).toBeVisible();
       samples.push({ engine: id, state, boxes: boxes() });
       expect(boxes()).toEqual(initial);
-      if (state === 'authenticated') expect(page.getByTestId(`assistant-engine-${id}`).element().textContent).not.toContain('Not ready');
+      if (state === 'authenticated') expect(page.getByTestId(`assistant-engine-${id}`).element().textContent).not.toMatch(/Not signed in|Not installed/);
     }
     let finish!: () => void;
     f.hold = new Promise<void>(resolve => { finish = resolve; });
@@ -228,6 +228,18 @@ it.each(['claude', 'codex'])('with a saved %s connection, the menu, its options 
   await userEvent.keyboard('{Escape}');
   await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
   expectSolidOnTop(await openAddDialog(name), 'add dialog');
+});
+
+// An installed engine nobody has signed in to is not the same as a missing one: the label says which, ❌ one blanket "Unavailable".
+it('labels an installed but signed-out engine "Not signed in"', async () => {
+  f.states.codex = 'unauthenticated'; render();
+  await expect.element(page.getByTestId('assistant-engine-codex')).toHaveTextContent('Not signed in');
+  expect(page.getByTestId('assistant-engine-codex').element().textContent).not.toContain('Not installed');
+});
+
+it('labels a not-detected engine "Not installed"', async () => {
+  f.missingProgram = true; f.states.codex = 'unauthenticated'; render();
+  await expect.element(page.getByTestId('assistant-engine-codex')).toHaveTextContent('Not installed');
 });
 
 it('shows retry while unknown and completes a fresh check before allowing setup', async () => {

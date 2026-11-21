@@ -61,7 +61,8 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
         render={<Button variant="option" size="option" className="ta-engine-option">
           <AppIcon id={id} size={40} />
           <span className="ta-engine-copy"><span className="ta-engine-name">{names[id]}</span>
-            {id !== engine && readings[id].state === 'unusable' && <span className="ta-engine-state">{t('setup.engineUnusable')}</span>}
+            {id !== engine && readings[id].state === 'unusable' && <span className="ta-engine-state">
+              {t(readings[id].agent?.reading === 'not-detected' ? 'setup.engineNotInstalled' : 'setup.engineSignedOut')}</span>}
           </span>
           <span className="ta-engine-mark"><Radio.Indicator><Check size={16} /></Radio.Indicator></span>
         </Button>} />)}
