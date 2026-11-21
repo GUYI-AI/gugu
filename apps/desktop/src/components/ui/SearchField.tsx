@@ -11,6 +11,8 @@ type ClearAction =
 
 export type SearchFieldProps = Omit<InputPrimitive.Props, 'className' | 'type'> &
   ClearAction & {
+    /** 导航列(通讯录左栏)里的框:与列里的行同形 —— 胶囊、无常驻边框、浅底;聚焦时边框照常出现。 */
+    variant?: 'nav'
     className?: string
     ref?: Ref<HTMLInputElement>
   }
@@ -24,6 +26,7 @@ export function SearchField({
   placeholder,
   ref,
   value,
+  variant,
   ...props
 }: SearchFieldProps) {
   const hasClearAction = onClear && typeof value === 'string' && value.length > 0
@@ -40,6 +43,7 @@ export function SearchField({
         'hover:border-[var(--border-strong)] focus-within:border-[var(--border-strong)]',
         'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-[0.58] data-[disabled]:hover:border-[var(--border-color)]',
         'max-[719px]:h-11',
+        variant === 'nav' && 'rounded-[var(--radius-capsule)] border-transparent bg-[var(--hover)] hover:border-transparent focus-within:border-[var(--border-strong)]',
         className,
       )}
     >

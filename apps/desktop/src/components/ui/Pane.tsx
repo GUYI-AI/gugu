@@ -50,12 +50,16 @@ export interface PaneHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   mobile?: boolean
   /** 底部分隔线(会话头需要,导航列头不需要——列头下面紧接搜索框)。 */
   divider?: boolean
+  /** The header reaches the window's right edge: its end leaves the window controls their room (`--titlebar-controls-width`). */
+  atWindowEdge?: boolean
   /** Give phone conversation titles identical space on both sides. */
   centered?: boolean
   className?: string
 }
 
-export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading, actions, mobile, divider, centered, className, children, ...rest }: PaneHeaderProps) {
+export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading, actions, mobile, divider, atWindowEdge, centered, className, children, ...rest }: PaneHeaderProps) {
+  // 标题一行、超出省略号(.gg-pane-title);悬停看全名。
+  const fullTitle = typeof title === 'string' ? title : undefined
   const centerTitle = mobile && centered
   const structuredTitle = centerTitle || titleLevel !== undefined || subtitle !== undefined || titleLeading !== undefined
   return (
@@ -64,6 +68,7 @@ export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading,
       data-slot="pane-header"
       data-mobile={mobile || undefined}
       data-divider={divider || undefined}
+      data-window-edge={atWindowEdge || undefined}
       data-centered={centerTitle || undefined}
       data-inline={mobile && Boolean(leading) || undefined}
       className={cn('gg-pane-header window-drag-region', className)}
@@ -73,11 +78,11 @@ export function PaneHeader({ title, subtitle, titleLeading, titleLevel, leading,
         <div className="gg-pane-heading">
           {titleLeading !== undefined ? <div className="gg-pane-heading-leading">{titleLeading}</div> : null}
           <div className="gg-pane-heading-copy">
-            <h2 className="gg-pane-title gg-pane-heading-title" data-title-level={titleLevel ?? 'panel'}>{title}</h2>
+            <h2 className="gg-pane-title gg-pane-heading-title" data-title-level={titleLevel ?? 'panel'} title={fullTitle}>{title}</h2>
             {subtitle !== undefined && subtitle !== null ? <div className="gg-pane-heading-subtitle">{subtitle}</div> : null}
           </div>
         </div>
-      ) : typeof title === 'string' ? <h2 className="gg-pane-title">{title}</h2> : title}
+      ) : typeof title === 'string' ? <h2 className="gg-pane-title" title={fullTitle}>{title}</h2> : title}
       {children}
       {actions ? <div className="gg-pane-actions window-no-drag-region">{actions}</div> : null}
     </div>

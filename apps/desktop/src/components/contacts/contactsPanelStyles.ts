@@ -10,6 +10,8 @@ export const ct = i18n.getFixedT(null, 'contacts')
 // @@@ui-ruler 本地样式副本(rowBase / meta / name / sharedTag / reqBadge / section* / cpane*)已按角色
 // 收口进原语,这里只剩原语不管的那点:头像壳(agent 状态角标挂在它的 ::after 上)、
 // 详情面排版。几何一律取 tokens,❌ 字面量像素。
+// 名字(人 / Agent / 群)在资料卡与详情标题里最多两行,再长省略号,悬停 title 看全名;页头与列表行是一行(.gg-pane-title / .gg-list-row-title)。
+export const nameClampClass = 'line-clamp-2 [overflow-wrap:anywhere]'
 export const rowAvatarClass =
   'gg-c-av flex h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 items-center justify-center overflow-hidden rounded-full'
 // 行内改名/备注输入:控件高与 Button/Field 同一把尺子(--control-h-md)。
@@ -25,7 +27,8 @@ export const detailNoticeClass =
 export const detailCardRowClass =
   'flex min-h-[var(--control-h-touch)] min-w-0 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !p-2'
 // 详情面里的标题(群名 / Agent 名)。
-export const detailTitleClass = 'text-lg font-semibold text-[var(--fg)] [overflow-wrap:anywhere]'
+export const detailTitleTypeClass = 'text-lg font-semibold text-[var(--fg)]'
+export const detailTitleClass = `${detailTitleTypeClass} ${nameClampClass}`
 export const detailPlaceholderClass = 'flex flex-1 items-center justify-center text-sm text-[var(--muted-fg)]'
 export const detailSectionClass = (mobile?: boolean) => (mobile ? '!px-4 !py-5' : '!px-6 !py-6')
 export const detailBodyClass = (mobile?: boolean) =>

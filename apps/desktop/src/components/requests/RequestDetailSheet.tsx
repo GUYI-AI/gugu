@@ -5,6 +5,8 @@ import { Avatar } from '../Avatar'
 import { Sheet } from '../ui/Sheet'
 import { DrawerClose } from '../contacts/ContactsPageFrame'
 import { useDrawerPortal } from '../contacts/contactsDrawer'
+import { nameClampClass } from '../contacts/contactsPanelStyles'
+import { cn } from '@/lib/cn'
 
 type RequestPeer = Pick<ContactUser, 'id' | 'display_name' | 'avatar' | 'gugu_number' | 'type'>
 
@@ -24,7 +26,7 @@ export function RequestDetailSheet({ peer, context, message, footer, onClose }: 
       <div className="flex items-center gap-3">
         <Avatar name={peer.display_name} avatarUrl={peer.avatar} seed={peer.id} size="lg" isAgent={peer.type === 'agent'} />
         <div className="min-w-0">
-          <div className="truncate text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]">{peer.display_name}</div>
+          <div className={cn(nameClampClass, 'text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]')} title={peer.display_name}>{peer.display_name}</div>
           {peer.gugu_number == null ? null : (
             <div className="text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{t('friendSearch.guguNumberValue', { number: peer.gugu_number })}</div>
           )}
