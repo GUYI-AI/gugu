@@ -252,33 +252,27 @@ export class InstalledApps {
     return (own.length > 0 ? own : pages).find((entry) => !entry.hidden) ?? null;
   }
 
-  /** What the rail shows: the pinned Apps that are installed, on, and have a page of their own, in the person's order. */
+  /**
+   * The Apps that open in `place`, in the order they were installed, each with the tab that opens there — read from what
+   * their tabs declare, so every list of Apps is whole the moment it is drawn. `page`: an App's page of its own (the rail,
+   * a task, a right click on 「App」). `chat`: that page beside the chat, or else a tab that opens a chat's files — an
+   * agent's group game opens on its file (5-minute game ①); picking it says what it opens here (`appInChat`). On, and not
+   * one gugu ships: those the host places itself — decided by origin, not manifest (统筹 09-29, L3).
+   */
+  appsIn(place: 'page' | 'chat'): RailApp[] {
+    return this.manifests.flatMap((manifest) => {
+      if (!this.isEnabled(manifest.id) || this.isPreinstalled(manifest.id)) return [];
+      const page = this.mainTabOf(manifest.id)?.kind;
+      const files = place === 'chat' ? manifest.contributes.tabs.find((tab) => declaredContexts(tab).includes('chat')) : undefined;
+      const kind = page ?? (files && extensionTabKind(manifest.id, files.name));
+      return kind ? [{ extensionId: manifest.id, name: localizedManifestText(manifest, this.locale).name, kind, iconDataUrl: this.appIcons[manifest.id] ?? null }] : [];
+    });
+  }
+
+  /** What the rail shows: the pinned Apps that open as a page, in the person's order. */
   get dockedApps(): RailApp[] {
-    return this.dock.flatMap((extensionId) => this.railApp(extensionId) ?? []);
-  }
-
-  /** Every App the rail can open, pinned or not, in the order they were installed: what a right click on 「App」 lists. */
-  get openableApps(): RailApp[] {
-    return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? []);
-  }
-
-  /** Also Apps whose tab only opens a chat's files (5-minute game ①). */
-  get chatOpenableApps(): RailApp[] {
-    return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? this.chatFilesApp(manifest) ?? []);
-  }
-
-  private chatFilesApp(manifest: ExtensionManifest): RailApp | null {
-    const tab = manifest.contributes.tabs.find((candidate) => declaredContexts(candidate).includes('chat'));
-    if (!tab || !this.isEnabled(manifest.id) || this.isPreinstalled(manifest.id)) return null;
-    const name = localizedManifestText(manifest, this.locale).name;
-    return { extensionId: manifest.id, name, kind: extensionTabKind(manifest.id, tab.name), iconDataUrl: this.appIcons[manifest.id] ?? null };
-  }
-
-  private railApp(extensionId: string): RailApp | null {
-    const main = this.mainTabOf(extensionId);
-    // A preinstalled App is where the host puts it, not an App of the rail or a chat's App list besides (统筹 09-29, L3).
-    if (!main || !main.enabled || main.preinstalled) return null;
-    return { extensionId, name: main.extensionName, kind: main.kind, iconDataUrl: this.appIcons[extensionId] ?? null };
+    const apps = this.appsIn('page');
+    return this.dock.flatMap((extensionId) => apps.find((app) => app.extensionId === extensionId) ?? []);
   }
 }
 
