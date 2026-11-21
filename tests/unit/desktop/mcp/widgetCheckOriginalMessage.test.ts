@@ -44,7 +44,7 @@ it('checks a typed original message when the registered widget has a different i
   const { result, run } = await check({ message_id: `msg:${messageId}` })
   expect(result, JSON.stringify(result)).not.toHaveProperty('isError', true)
   expect(run).toHaveBeenCalledWith(expect.objectContaining({ widget: expect.objectContaining({ id: widgetId, originMessageId: messageId, senderId: 'sender' }) }), undefined)
-  expect(io.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: widgetId, p_as: 'agent-1' })
+  expect(io.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: widgetId })
   expect(io.restGet).not.toHaveBeenCalled()
 })
 

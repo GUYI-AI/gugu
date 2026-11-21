@@ -30,7 +30,7 @@ describe('widget checks resolve the registry origin before using immutable input
       tabKind: 'vote.poll', chatId, widget: { id: widgetId, originMessageId: messageId, messageId, senderId: 'sender-1', text: 'Dinner', data: { file: 'poll.json' } },
     })
     expect(deps.restGet).not.toHaveBeenCalled()
-    expect(deps.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: widgetId, p_as: agentId })
+    expect(deps.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: widgetId })
     expect(deps.restRpc.mock.calls.map(([name]) => name)).toEqual(['widget_origin', 'messages_by_id_as'])
   })
   it('preserves the original message height in the checked widget scope', async () => {
