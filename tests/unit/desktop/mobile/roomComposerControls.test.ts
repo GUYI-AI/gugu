@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chat } from '../../../support/testHarness'
-import { roomAgentEntry, roomTopicChoices } from '../../../../apps/desktop/src/mobile/chat/room-composer-models'
+import { roomAgentEntry, roomAgentsByRecentActivity, roomTopicChoices } from '../../../../apps/desktop/src/mobile/chat/room-composer-models'
 
 const topic = (id: string): TopicSummary => ({ chat_id: id, name: 'Topic '+id, source_message_id: 'anchor-'+id,
   creator_user_id: 'owner', last_message_at: null, message_count: 0, participant_count: 1, is_participant: true })
@@ -53,5 +53,14 @@ describe('phone room Agent entry permissions', () => {
     ['human','owner','owner',true,'profile'],
   ] as const)('%s owned by %s with viewer %s and task %s opens %s', (type,ownerUserId,viewer,hasSession,expected) => {
     expect(roomAgentEntry({type,ownerUserId},viewer,hasSession)).toBe(expected)
+  })
+})
+
+describe('phone room Agents order', () => {
+  it('puts the last to act first, then the newest account, then id, whatever the status', () => {
+    const acted: Record<string, string> = { idle: '2026-11-21T10:00:00.5+00:00', running: '2026-11-21T09:00:00.123Z' }
+    const created: Record<string, string> = { old: '2026-01-01T00:00:00Z', fresh: '2026-11-01T00:00:00Z', idle: '2025-01-01T00:00:00Z' }
+    const order = roomAgentsByRecentActivity(['b-never', 'old', 'running', 'a-never', 'fresh', 'idle'].map(id => ({ id })), id => acted[id], id => created[id])
+    expect(order.map(agent => agent.id)).toEqual(['idle', 'running', 'fresh', 'old', 'a-never', 'b-never'])
   })
 })
