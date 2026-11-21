@@ -757,7 +757,7 @@ let readsOnce = 0
  * One read that is not kept (a file's bytes for one preview, a one-off check), retried as a model's reads are: ❌ a hand
  * loop with timers. Nothing is cached: the next call reads again.
  */
-export function readOnce<V>(read: () => Promise<V>, options: { retry?: number; retryDelay?: (attempt: number) => number } = {}): Promise<V> {
+export function readOnce<V>(read: () => Promise<V>, options: Pick<Definition<[], V>, 'retry' | 'retryDelay'> = {}): Promise<V> {
   return queryClient.fetchQuery({
     queryKey: ['read-model:once', ++readsOnce],
     queryFn: read,
