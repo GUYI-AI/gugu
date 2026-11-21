@@ -695,7 +695,9 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     },
     reread: async (...args) => {
       await model.refresh(...args)
-      return model.fetch(...args)
+      // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once). Not shown, read now.
+      const state = queryClient.getQueryState(requireKey(args))
+      return state?.data !== undefined && !state.isInvalidated ? state.data as V : model.fetch(...args)
     },
   }
   models.set(definition.name, model as unknown as Replica<unknown[], unknown>)
