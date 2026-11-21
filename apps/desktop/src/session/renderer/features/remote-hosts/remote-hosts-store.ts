@@ -191,11 +191,14 @@ export class RemoteHostsStore {
     // Each machine's folders (connected ones answer, offline ones from the account's record), and which of my agents is
     // which session (the chat page reads it: the profile card's「发消息」, the @ list).
     groupFoldersStore.watchMachines();
+    // The account's record decides about machines not read yet (folder-presence): read it now, ❌ wait for a page to ask.
+    void groupFoldersStore.refresh();
     startAgentSessionsBridge();
     // The account's record changed (a machine bound or unbound a folder while this one was not connected to it): the
     // machines that are not connected list it.
     reaction(() => groupFoldersStore.account, () => {
       for (const deviceId of this.hosts.keys()) this.applyAccountFolders(deviceId);
+      appState.navigation.revalidate();
     });
     subscribeDeviceSessions(() => runInAction(() => (this.directory = liveDeviceSessions())));
     onRemoteHostsBridgeChange(() => this.attach(findRemoteHostsBridge()));
@@ -307,7 +310,7 @@ export class RemoteHostsStore {
     if (!this.started) return true;
     // #3433 名册还没接上 / 接上了设备列表还没读 / 正在一台台登记:空的名册(或登记到一半的)不等于「名下没有别的机器」。
     if (this.reconciling || !this.bridge || this.bridge.devicesRead?.() === false) return true;
-    return [...this.hosts.values()].some((state) => !state.synced) && groupFoldersStore.status !== 'ready';
+    return [...this.hosts.values()].some((state) => !state.synced) && groupFoldersStore.status === 'loading';
   }
 
   /** 名下哪台别的机器的会话清单里有开在这个文件夹里的会话(那台的任务目录不记在账号上,只能这样认);没有 = null。 */
