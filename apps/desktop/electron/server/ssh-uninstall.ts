@@ -112,7 +112,7 @@ export function uninstallScript(options: { keepUserId?: string | null } = {}): s
     '    [ "$id" = "$KEEP" ] && continue',
     '    if [ "${d%/}" = "$H/account" ]; then o="$("$B" unregister </dev/null 2>/dev/null)"; else o="$("$B" unregister --account "$id" </dev/null 2>/dev/null)"; fi',
     // 连不上云端的账号:它的登录态还在,停在这里(什么都还没删),网络好了重卸一次就能补上。
-    `    case "$o" in *"${UNREGISTERED_MARK} unreachable"*) echo "卸载失败:账号 $id 连不上咕咕云端,没能从它的设备列表里移除这台机器(\${o#*${UNREGISTERED_MARK} unreachable });网络恢复后再卸载一次" >&2; exit 1 ;; esac`,
+    `    case "$o" in *"${UNREGISTERED_MARK} unreachable"*) echo "卸载失败:账号 $id 无法连接咕咕云端,未能从其设备列表中移除这台机器(\${o#*${UNREGISTERED_MARK} unreachable });请在网络恢复后重新卸载" >&2; exit 1 ;; esac`,
     '  done',
     'fi',
     'if [ -n "$OWN_B" ] && [ -x "$B" ]; then',

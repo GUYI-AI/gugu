@@ -171,7 +171,7 @@ describe('task card in a chat (gugu-dev#181)', () => {
     await renderWithAppProviders(harness, card('card-run'))
     const row = () => harness.container.querySelector('[data-testid="composer-card"]')!.lastElementChild!
     expect(row().textContent, 'a braille spinner frame').toMatch(/[\u2800-\u28ff]/)
-    expect(row().querySelector('[data-animate="false"]'), 'it turns').toBeNull()
+    expect(row().querySelector('.cli-spinner'), 'it turns').not.toBeNull()
     harness.cleanup(); harness = createReactHarness()
     agentStatus = 'idle'
     await renderWithAppProviders(harness, card('card-done'))
@@ -197,7 +197,7 @@ describe('task card in a chat (gugu-dev#181)', () => {
   })
 })
 
-// 审批群里我派的卡:等群主同意时写「等群主同意它进群」。同意 / 拒绝时库给发起人发 friend_requests_changed,
+// 审批群里我派的卡:等群主同意时写「等待群主同意其入群」。同意 / 拒绝时库给发起人发 friend_requests_changed,
 // 卡跟着变,不用刷新页面;agent 已经坐进群里(成员表随 chat_members_changed 更新)就不读请求、不等。
 describe('a task card waiting for the group owner (gugu-dev#181)', () => {
   type Subscribe = ChatContextValue['subscribeAccountRevision']
@@ -216,15 +216,15 @@ describe('a task card waiting for the group owner (gugu-dev#181)', () => {
 
   it('turns when the owner lets it in, without a reload', async () => {
     await renderWithAppProviders(harness, groupCard(), { chat })
-    expect(cardText()).toContain('等群主同意它进群')
+    expect(cardText()).toContain('等待群主同意其入群')
     await requestChanged('accepted')
-    expect(cardText()).not.toContain('等群主同意它进群')
+    expect(cardText()).not.toContain('等待群主同意其入群')
   })
 
   it('turns when the owner turns it down, without a reload', async () => {
     await renderWithAppProviders(harness, groupCard(), { chat })
     await requestChanged('rejected')
-    expect(cardText()).toContain('群主没有同意它进群')
+    expect(cardText()).toContain('群主未同意其入群')
   })
 
   // The continuity scan saw list_my_agent_join_requests nine times on one group open: every card read it itself.
@@ -242,7 +242,7 @@ describe('a task card waiting for the group owner (gugu-dev#181)', () => {
   it('an agent already seated in the group: no request read, no waiting', async () => {
     await renderWithAppProviders(harness, groupCard({ 'agent-1': { displayName: 'Codex 1' } }), { chat })
     expect(joins.reads).toBe(0)
-    expect(cardText()).not.toContain('等群主同意它进群')
+    expect(cardText()).not.toContain('等待群主同意其入群')
   })
 })
 

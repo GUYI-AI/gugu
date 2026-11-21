@@ -98,7 +98,7 @@ export function MarketFeatured<T>({ title, items, next, renderCard }: {
   );
 }
 
-export function MarketCard({ testId, name, icon, publisher, category, description, installed, statusLabel, deprecated, onOpen, resource }: {
+export function MarketCard({ testId, name, icon, publisher, category, description, installed, statusLabel, deprecated, selected, onOpen, resource }: {
   testId: string;
   name: string;
   icon: ReactNode;
@@ -108,12 +108,14 @@ export function MarketCard({ testId, name, icon, publisher, category, descriptio
   installed?: boolean;
   statusLabel?: string;
   deprecated?: boolean;
+  /** The one whose page is open beside the list. */
+  selected?: boolean;
   onOpen: () => void;
   resource?: ResourceContext;
 }) {
   const { translate } = useSessionMessages();
   const card = (
-    <button type="button" className="mk-market-card" data-testid={testId} onClick={onOpen}>
+    <button type="button" className="mk-market-card" data-testid={testId} aria-current={selected || undefined} onClick={onOpen}>
       <span className="mk-market-card-header">
         {icon}
         <span className="mk-market-card-identity">

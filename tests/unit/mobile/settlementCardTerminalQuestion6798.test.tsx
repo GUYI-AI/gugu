@@ -112,7 +112,7 @@ describe('SettlementCard — 终端提问从手机答', () => {
     expect(card.onRespond).toHaveBeenCalledWith({ itemId: 'ask-1', kind: 'question', decline: true })
   })
 
-  it('手机端答了:沿用「已在手机端回答」;没有表单,标题不再说「在等你回答」', async () => {
+  it('手机端答了:沿用「已在手机端回答」;没有表单,标题不再说「等待你的回答」', async () => {
     const card = await render(asked([q('一?', ['a']), q('二?', ['c'], true)], {
       state: 'resolved', resolvedBy: 'mobile', resolvedAt: 1,
     }))
@@ -121,9 +121,9 @@ describe('SettlementCard — 终端提问从手机答', () => {
     expect(card.$('[data-testid="agent-watch-settlement-submit"]')).toBeNull()
   })
 
-  it('在终端里答了、拒了(记录里有了结果、没人认领):与别的腿同一句「这条已经不需要回答了」', async () => {
+  it('在终端里答了、拒了(记录里有了结果、没人认领):与别的腿同一句「此问题已无需回答」', async () => {
     const card = await render(asked([q('去哪?', ['北京'])], { state: 'cancelled', resultRecorded: true, resolvedAt: 1 }))
-    expect(harness.container.textContent).toContain('这条已经不需要回答了')
+    expect(harness.container.textContent).toContain('此问题已无需回答')
     expect(card.$('[data-testid="agent-watch-settlement-submit"]')).toBeNull()
   })
 })

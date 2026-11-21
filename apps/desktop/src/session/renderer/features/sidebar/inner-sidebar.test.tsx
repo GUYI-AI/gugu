@@ -62,6 +62,8 @@ const state = vi.hoisted(() => ({
   openSessionWhenReady: vi.fn(),
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
+  moveSessionUnder: vi.fn(),
+  showDropHighlight: vi.fn(),
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
@@ -113,8 +115,11 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     toggleSessionExpanded: vi.fn(),
     expandSessions: vi.fn(),
     toggleIdleExpanded: (key: string) => state.toggleIdleExpanded(key),
+    parentOf: (id: string) => state.items.find((entry) => entry.id === id)?.parentSessionId ?? null,
   },
 }));
+vi.mock('@renderer/lib/drop-highlight', async (original) => ({ ...(await original<object>()), showDropHighlight: (...args: unknown[]) => state.showDropHighlight(...args) }));
+vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: (...args: unknown[]) => state.moveSessionUnder(...args) }));
 vi.mock('./sidebar-session-item', () => ({
   SidebarSessionItem: ({ sessionId, agentAvatar }: { sessionId: string; agentAvatar?: boolean }) => (
     <div data-session-row={sessionId} data-agent-avatar={agentAvatar === true || undefined} />
@@ -153,6 +158,7 @@ const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shell
 const { sidebarFolds } = await import('./sidebar-folds');
 const { readPanelToggle } = await import('@/lib/panelToggles');
 const { sidebarStore } = await import('@renderer/lib/stores/app-state');
+const { clearDraggedScreenContent, setDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } = await import('@renderer/lib/drag-screen-content');
 const { screenLayout } = await import('@renderer/app/screen-layout');
 type ScreenBlockContent = import('@renderer/app/screen-layout').ScreenBlockContent;
 
@@ -254,6 +260,28 @@ describe('inner sidebar', () => {
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['shop-task', 'shop-idle', 'shop-chat-agent']);
+  });
+
+  it('#3367 a sub-session dragged onto the Agents header goes back to the top level; a top-level one is not taken', async () => {
+    state.items = [...state.items, item('shop-sub', 'p-shop', idle, 0, 'shop-task')];
+    openProject('p-shop');
+    await render();
+    const header = host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"] > div')!;
+    const drag = (type: 'dragover' | 'drop', sessionId: string) => {
+      const dataTransfer = { types: [SCREEN_CONTENT_DRAG_TYPE], dropEffect: 'none', effectAllowed: 'copyMove', setData: () => undefined, setDragImage: () => undefined, getData: () => '' } as unknown as DataTransfer;
+      setDraggedScreenContent(dataTransfer, { kind: 'session', projectId: 'p-shop', sessionId, title: sessionId });
+      const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), { dataTransfer });
+      act(() => { header.dispatchEvent(event); });
+      clearDraggedScreenContent();
+      return event.defaultPrevented;
+    };
+    state.showDropHighlight.mockClear();
+    expect(drag('dragover', 'shop-task'), 'already at the top level: no drop target').toBe(false);
+    expect(state.showDropHighlight).not.toHaveBeenCalled();
+    expect(drag('dragover', 'shop-sub')).toBe(true);
+    expect(state.showDropHighlight, 'the shared drop highlight moves onto the header').toHaveBeenCalledTimes(1);
+    expect(drag('drop', 'shop-sub')).toBe(true);
+    expect(state.moveSessionUnder).toHaveBeenCalledWith({ kind: 'session', projectId: 'p-shop', sessionId: 'shop-sub', title: 'shop-sub' }, null, 'shop-task');
   });
 
   it("agent rows lead with the agent's own avatar: every row asks the session row for it (mock v33)", async () => {

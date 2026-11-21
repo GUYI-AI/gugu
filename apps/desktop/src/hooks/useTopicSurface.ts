@@ -120,8 +120,7 @@ export function useTopicSurface({
   // chat_changed that re-reads this topic in `topics`. So the open line catches up to its own summary whenever the summary is
   // newer than the line's tail -- one rule for whoever is reading, member or not.
   const summaryAt = Date.parse(topics.find((summary) => summary.chat_id === splitChatId)?.last_message_at ?? '')
-  // The window is ordered by seq with unsent rows (seq < 1, local clock) last (compareMessageOrder), so the last
-  // confirmed row is the line's server tail.
+  // Unsent rows sit at their send-time slot or last (orderMessages), so the last confirmed row is the line's server tail.
   const tail = line.messages.findLast((row) => row.seq > 0)
   const lineAt = tail ? Date.parse(tail.created_at) : -Infinity
   const lineSettled = !line.loadingMessages && !line.messageWindow.hasNewer

@@ -12,7 +12,6 @@ import { cn } from '@renderer/utils/utils';
 import {
   SidebarMenuAction,
   SidebarMenuRow,
-  sidebarDropTargetClass,
   sidebarRowActionsSlotClass,
   sidebarRowHoverActionsClass,
   sidebarRowRestActionsClass,
@@ -75,8 +74,6 @@ export type SessionRowShellProps = {
   isActive: boolean;
   isCursor: boolean;
   isPendingArchive: boolean;
-  /** 另一条会话正拖在这一行上、松手就挂到它下面:这一行罩上落点那层(同这屏分块的落点)。 */
-  isNestTarget?: boolean;
   /** 行尾 hover 浮出的「置顶 / 归档」;null = 这一行此刻做不了(机器离线),整层不出。 */
   quickActions: SessionRowQuickActions | null;
   /** 点不开的行灰掉(机器离线 / 记录读不了);`disabledReason` 放进 title。 */
@@ -115,7 +112,6 @@ export function SessionRowShell({
   isActive,
   isCursor,
   isPendingArchive,
-  isNestTarget = false,
   quickActions,
   disabled = false,
   disabledReason,
@@ -158,11 +154,7 @@ export function SessionRowShell({
       <ContextMenu.Trigger>
         <SidebarMenuRow
           ref={rowRef}
-          className={cn(
-            'group/row flex h-8 items-center justify-between gap-1 pr-1',
-            isNestTarget && sidebarDropTargetClass
-          )}
-          data-nest-target={isNestTarget || undefined}
+          className="group/row flex h-8 items-center justify-between gap-1 pr-1"
           style={{ paddingInlineStart: `${sidebarRowInsetPx(rowVariant, depth)}px` }}
           isActive={isActive}
           isCursor={isCursor}

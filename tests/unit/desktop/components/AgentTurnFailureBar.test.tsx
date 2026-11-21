@@ -113,8 +113,8 @@ describe('durable provider failure notice', () => {
   })
   it('offers no model change for a reason another model would not get past', async () => {
     await harness.render(createNode(SystemMessageNotice, { senderName: 'Codex 1', message: failureRow('rateLimited') }))
-    expect(harness.container.querySelector('.tfc-title')?.textContent).toBe('请求太频繁')
-    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('请求过于频繁，请稍后重试。 下条消息会自动再试')
+    expect(harness.container.querySelector('.tfc-title')?.textContent).toBe('请求过于频繁')
+    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('请求过于频繁，请稍后重试。 发送下一条消息时将自动重试')
     expect(harness.container.querySelector('[data-testid="agent-turn-failure-retry"]')).toBeNull()
   })
   it('shows a row whose reason it cannot read (an old Chinese row, an unknown reason) as its plain content', async () => {
@@ -141,7 +141,7 @@ describe('topic-opened system notice', () => {
     await harness.render(createNode(SystemMessageNotice, { message, onOpenTopic }))
     const link = harness.container.querySelector<HTMLButtonElement>('[data-testid="topic-opened-link"]')!
     expect(link.textContent).toBe('Release: notes')
-    expect(harness.container.textContent).toBe('Codex 1 开了话题：Release: notes')
+    expect(harness.container.textContent).toBe('Codex 1 创建了话题：Release: notes')
     await clickElement(link)
     expect(onOpenTopic).toHaveBeenCalledExactlyOnceWith('topic-chat-id')
   })
@@ -149,7 +149,7 @@ describe('topic-opened system notice', () => {
     for (const [props, text] of [
       [{ message: { ...message, client_message_id: null }, onOpenTopic: vi.fn() }, message.content],
       [{ message: { ...message, content_type: 'text' as const }, onOpenTopic: vi.fn() }, message.content],
-      [{ message }, 'Codex 1 开了话题：Release: notes'],
+      [{ message }, 'Codex 1 创建了话题：Release: notes'],
     ] as const) {
       await harness.render(createNode(SystemMessageNotice, props))
       expect(harness.container.textContent).toBe(text)
@@ -182,7 +182,7 @@ describe('shared failure card behavior', () => {
     await clickElement(summary)
     expect(summary.getAttribute('aria-expanded')).toBe('true')
     expect(harness.container.querySelector('.tfc-count')?.textContent).toBe('×3')
-    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('与模型服务的连接中断，本次回复未完成。 下条消息会自动再试')
+    expect(harness.container.querySelector('.tfc-reason')?.textContent).toBe('与模型服务的连接中断，本次回复未完成。 发送下一条消息时将自动重试')
     expect(harness.container.querySelector('[data-testid="agent-turn-failure-retry"]')).toBeNull()
     expect(harness.container.textContent).not.toContain('private host cause')
   })

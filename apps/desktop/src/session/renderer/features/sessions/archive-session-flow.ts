@@ -141,9 +141,8 @@ export function requestArchiveSession(args: { projectId: string; sessionId: stri
  * 本机会话、别的机器上的会话(#6264)、通讯录 / agent 设置 / 消息列表按 agent 归档(lib/archiveOwnedAgent)、
  * 手机会话菜单都走这一问 —— 同一个动作、同一条确认,只是「真的归档」那一步落在不同的地方。
  *
- * 「移出群和通讯录」只有用户在这个框里亲手勾着才做:确认被「不再询问」关掉时按**保留身份**走 ——
- * 一个不弹的确认不能替用户把 agent 从群和通讯录里移走。没有会话可归档的孤儿身份(`identity: 'only'`)
- * 归档就等于移走身份,所以它永远要问。
+ * 不问(「不再询问」关掉了确认)就按这个框的默认值走:不连子会话,移出群和通讯录 —— 和直接按确认同一个结果
+ * (#3366:关了询问,归档的 agent 却还留在通讯录里)。没有会话可归档的孤儿身份(`identity: 'only'`)永远要问。
  */
 export function confirmArchive(args: {
   childCount: number;
@@ -156,7 +155,7 @@ export function confirmArchive(args: {
 }): void {
   const { childCount, description, identity = 'choice', proceed, onCancel } = args;
   if (identity === 'choice' && !shouldConfirm()) {
-    proceed(false, false);
+    proceed(false, true);
     return;
   }
 

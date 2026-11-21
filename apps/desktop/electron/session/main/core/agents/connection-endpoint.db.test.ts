@@ -27,7 +27,7 @@ async function legacy(provider: string, models?: string[], endpoint?: string) {
   await state.fixture!.registry.setDefaultAccount(`harness:${provider}`, id);
   return (await state.fixture!.registry.getAccount(`harness:${provider}`, id))!;
 }
-it('saves one encrypted provider record, lists no secret, and keeps existing sessions bound across edits/removal', async () => {
+it('saves one encrypted provider record, lists no secret, keeps existing sessions bound across edits, and drops the key on removal', async () => {
   const connection = await saveCustomModel({ name: 'My provider', apiKey: 'fixture-secret', preset: null, endpoints, models: [{ id: 'model:a', contextWindow: 32768 }, { id: 'model/b' }] });
   session('a', 'codex', customModelOptionId({ connectionId: connection.id, modelId: 'model:a' }));
   session('b', 'codex', customModelOptionId({ connectionId: connection.id, modelId: 'model/b' }));
@@ -41,9 +41,11 @@ it('saves one encrypted provider record, lists no secret, and keeps existing ses
   await expect(validateCustomModelSelection('codex', { kind: 'custom', connectionId: connection.id, modelId: 'next' }))
     .resolves.toEqual({ id: 'next' });
   expect((await resolveCustomModel('codex', 'a'))?.models[0]).toBe('model:a');
+  expect(state.fixture!.secretStore.secrets.size).toBe(1);
   await removeCustomModel(connection.id);
   expect(await listCustomModels()).toEqual([]);
-  expect((await resolveCustomModel('codex', 'a'))?.apiKey).toMatch(/^sk-gugu-/);
+  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  await expect(resolveCustomModel('codex', 'a')).rejects.toThrow('Custom model unavailable');
 });
 it('migration reuses credential references, restores the original official endpoint, preserves models and is idempotent after downgrade strips the marker', async () => {
   const old = await legacy('dsh');

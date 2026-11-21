@@ -975,6 +975,22 @@
   --bubble-own: color-mix(in oklab, var(--fg) 8%, var(--card));
   --bubble-other: var(--bubble-agent);
   --bubble-mine: var(--bubble-own);
+  /* mermaid 图(packages/session-chat-ui/src/core/mermaid/render.ts,pele 画)只读 --pele-* 这些名字:图不随主题重画,跟着这一层的色走。 */
+  --pele-bg: var(--bg);
+  --pele-fg: var(--fg);
+  --pele-muted: var(--muted-fg);
+  --pele-line: var(--muted-fg);
+  --pele-surface: var(--muted);
+  --pele-surface-alt: var(--card);
+  --pele-border: var(--border-strong);
+  --pele-accent: var(--live);
+  --pele-critical: var(--danger);
+  --pele-error: var(--danger);
+  --pele-series-1: var(--chart-1); --pele-series-2: var(--chart-2); --pele-series-3: var(--chart-3);
+  --pele-series-4: var(--chart-4); --pele-series-5: var(--chart-5); --pele-series-6: var(--chart-6);
+  --pele-font: var(--font-family-system);
+  --pele-font-mono: var(--font-family-mono);
+  --pele-radius: var(--radius-xs);
 }
 
 /* File-family marks share one App/host palette. Dark keeps the light hue at 85% chroma; where the light lightness is too dark to be ink on a dark tile, it is raised so each glyph reads >= 3.6:1 on its tile, on page and card alike. */
@@ -1627,9 +1643,10 @@ body.barcode-scanner-active #root {
   --warn-tint: color-mix(in srgb, var(--warn) 14%, transparent);
   /* #6448 agent 状态的颜色只在这里定义一次(owner 2026-09-25 定表),会话页、聊天、手机都经
      `agentStatusColorVar`(packages/core/src/shared/agentStatusPresentation.ts)取这几个名字:
-     在跑 / 后台在跑 = 橙(聊天侧沿用的那个),需要你 = --warn 黄,出错 = --danger 红,在线 = 绿(可达)。
-     做完只加粗不上色,空闲不上色。 */
+     在跑 = 橙(聊天侧沿用的那个),后台在跑 = --warn 黄(画成双竖线 AgentParkedGlyph,不是点),需要你 = --warn 黄,
+     出错 = --danger 红,在线 = 绿(可达)。做完只加粗不上色,空闲不上色。 */
   --agent-tone-running: #ff5f1f;
+  --agent-tone-parked: var(--warn);
   --agent-tone-needs-user: var(--warn);
   --agent-tone-error: var(--danger);
   --agent-tone-online: var(--green);

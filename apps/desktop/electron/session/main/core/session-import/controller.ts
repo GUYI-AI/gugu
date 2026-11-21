@@ -10,6 +10,7 @@ import type {
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { hasLocalSessionSource, getLocalSessionSource } from './host-source';
 import { importLocalSession } from './import-local-session';
+import { logTranscriptFailure } from './transcript-failure-log';
 
 export const sessionImportController = createRPCController({
   scanEnvironmentImport: (category: Exclude<EnvironmentImportCategory, 'tasks'>) => scanEnvironmentImport(category),
@@ -23,6 +24,7 @@ export const sessionImportController = createRPCController({
   isAvailable: () => Promise.resolve(hasLocalSessionSource()),
   listLocalSessions: (params: ListLocalSessionsParams) => getLocalSessionSource().list(params),
   previewLocalSession: (params: PreviewLocalSessionParams) =>
-    getLocalSessionSource().preview(params),
-  importLocalSession: (params: ImportLocalSessionParams) => importLocalSession(params),
+    logTranscriptFailure('preview', params.filePath, () => getLocalSessionSource().preview(params)),
+  importLocalSession: (params: ImportLocalSessionParams) =>
+    logTranscriptFailure('import', params.filePath, () => importLocalSession(params)),
 });

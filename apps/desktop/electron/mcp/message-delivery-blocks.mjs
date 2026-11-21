@@ -2,8 +2,8 @@
 // A reason this client does not know yet is still a refusal of a message that IS in the chat: report it as not delivered,
 // never as a failed send (an agent would send it again) — #2383.
 const REFUSALS = {
-  agent_archived: { label: '对方已归档、未送达', after: 'no replay after restoration' },
-  identity_removed: { label: '对方已移除、未送达', after: 'the identity cannot be restored' },
+  agent_archived: { label: 'not delivered, recipient archived', after: 'no replay after restoration' },
+  identity_removed: { label: 'not delivered, recipient removed', after: 'the identity cannot be restored' },
 }
 
 /** Read the immutable recipient result, never infer it from current presence. */
@@ -20,7 +20,7 @@ export async function messageDeliveryBlocks(deps, messageId) {
 export function deliveryRefusalNotes(blocks) {
   const unknown = [...new Set(blocks.map((row) => row.reason).filter((reason) => !Object.hasOwn(REFUSALS, reason)))]
   const known = Object.entries(REFUSALS)
-  return [...known, ...unknown.map((reason) => [reason, { label: '未送达', after: 'a reason this client does not know yet' }])].flatMap(([reason, { label, after }]) => {
+  return [...known, ...unknown.map((reason) => [reason, { label: 'not delivered', after: 'a reason this client does not know yet' }])].flatMap(([reason, { label, after }]) => {
     const refused = blocks.filter((row) => row.reason === reason)
     return refused.length ? [`${label} (${refused.map((row) => `user:${row.agent_user_id}`).join(', ')}; ${reason}; retained in history, ${after})`] : []
   })

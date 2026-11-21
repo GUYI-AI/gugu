@@ -126,7 +126,7 @@ describe('gugu.dispatch over the bridge', () => {
     dispatchForApp.mockResolvedValue({ to: MEMBER, id: 'm-2' });
     expect(await call(BACKGROUND, { to: MEMBER, text: 'ready' })).toEqual({ ok: true, value: { to: MEMBER, id: 'm-2' } });
     expect(handed()[1]).toEqual({ to: MEMBER, text: 'ready' });
-    expect(handed()[2]).toEqual({ chat: null, session: null });
+    expect(handed()[2]).toEqual({ chat: null, session: null, folders: [] });
   });
 });
 

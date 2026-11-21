@@ -667,7 +667,7 @@ export async function resolveProjectWorkspace(input: {
   const { openProject } = await import('@main/core/projects/operations/openProject');
   const opened = await openProject(projectId);
   if (!opened.success) {
-    return fail('project_open_failed', `打不开项目:${JSON.stringify(opened.error)}`);
+    return fail('project_open_failed', `无法打开项目:${JSON.stringify(opened.error)}`);
   }
   const [project] = await db
     .select({ id: projects.id, repositoryWorkspaceId: projects.repositoryWorkspaceId })
@@ -679,7 +679,7 @@ export async function resolveProjectWorkspace(input: {
   // ❌ 不替它编一个工作区:编出来的路径会让 agent 跑在一个谁都没想到的目录里。
   const repositoryWorkspaceId = opened.data.repositoryWorkspaceId ?? project.repositoryWorkspaceId;
   if (!repositoryWorkspaceId) {
-    return fail('project_not_open', '这个项目在那台机器上还没打开过,先在电脑上打开一次');
+    return fail('project_not_open', '该项目尚未在该设备上打开过,请先在该设备上打开一次');
   }
   return { ok: true, value: { projectId, repositoryWorkspaceId } };
 }

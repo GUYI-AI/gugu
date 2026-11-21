@@ -16,6 +16,7 @@ import { AgentIcon } from '@renderer/lib/components/agent-icon'
 import type { MachineChoice } from '@renderer/features/remote-hosts/machine-choice'
 import type { ImportProvider } from './import-providers'
 import { cancelImport, enqueueImport, isActiveImport, type ImportJob } from './import-queue'
+import { importFailureDescription } from './import-failure-copy'
 
 type SourceReading = ReturnType<typeof useReplicas<[string, string | null], Awaited<ReturnType<ImportProvider['scan']>>>>[number]
 
@@ -77,7 +78,7 @@ function sourceCount(reading?: SourceReading): number | undefined {
 }
 
 function sourceDescription(t: ReturnType<typeof useTranslation<'main'>>['t'], reading?: SourceReading) {
-  if (reading?.state === 'error') return t('settings.dataImport.readFailed')
+  if (reading?.state === 'error') return importFailureDescription(reading.error) ?? t('settings.dataImport.readFailed')
   const count = sourceCount(reading)
   return count === undefined ? t('settings.dataImport.reading') : t('settings.dataImport.available', { count })
 }
@@ -163,7 +164,7 @@ export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
               return (
                 <ImportRow key={category} label={<>{t(first.historyOnly ? 'settings.dataImport.sessions' : categoryLabelKey(category))}<span className="gg-settings-row-value">{count === undefined ? '' : count}</span></>} job={job}>
                   {source ? source.reading?.state === 'error' ? (
-                    <Button variant="secondary" size="sm" title={t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
+                    <Button variant="secondary" size="sm" title={importFailureDescription(source.reading.error) ?? t('settings.dataImport.readFailed')} onClick={() => { void importSourceCounts.refresh(source.provider.id, null) }}>
                       {t('settings.dataImport.refresh')}
                     </Button>
                   ) : <SourceAction provider={source.provider} reading={source.reading} ownerId={ownerId} deviceId={null}

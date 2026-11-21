@@ -1,3 +1,4 @@
+import { vendorName } from '@/i18n/vendorName';
 import type { ReactNode } from 'react';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Button } from '@renderer/lib/ui/button';
@@ -67,7 +68,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
   const { translate, locale } = useSessionMessages();
   const host = useLibraryHost();
   const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
-  const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source } = installation;
+  const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source, failure } = installation;
   const terminalConfiguration = agent.id === 'claude' || agent.id === 'codex';
 
   const actions = installing || updating || uninstalling ? (
@@ -87,12 +88,24 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
       {translate('agentsPage.installDocsLink')}
     </Button>
   ) : undefined;
+  // The button above goes back to "Install" after a failure; this line says why it did.
+  const failureNote = failure && !busy && (
+    <div role="alert" className="text-sm text-foreground-destructive">
+      {failure.message}
+      {failure.diagnostic && (
+        <details className="mt-1 text-xs text-foreground-muted">
+          <summary className="cursor-pointer">{translate('agentsPage.errorDetails')}</summary>
+          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all">{failure.diagnostic}</pre>
+        </details>
+      )}
+    </div>
+  );
 
   return (
     <>
       <MarketDetailCard
         name={agent.name}
-        publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: agent.publisher }) : undefined}
+        publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: vendorName(agent.publisher) }) : undefined}
         icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
         actions={actions}
         devices={<MarketAgentDevices agentId={agent.id} />}
@@ -102,7 +115,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
           { label: translate('extensions.infoCategory'), value: translate(agentMarketCategoryOf(agent.id) === 'general' ? 'agentsPage.detailGeneral' : 'agentsPage.detailCoding') },
         ]}
         subtitle={marketAgentDescription(agent, locale)}
-        notice={notice}
+        notice={<>{notice}{failureNote}</>}
         onUninstall={uninstall && !busy ? () => requestUninstall(agent.name, uninstall) : undefined}
       >
         {installed && (terminalConfiguration || installation.managedVersions) && <SettingsGroup>

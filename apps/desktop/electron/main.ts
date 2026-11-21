@@ -2289,7 +2289,7 @@ const heartbeatRowSources = {
   // 会话摘要随心跳上云:机器离线后手机就只剩它可读了(product spec 的验收)。
   // 经桥拿,与设备 RPC 同一条规矩。桥没起来就报空 —— 那时这台机器上确实一条会话页会话
   // 都还没有,❌ 不为此把心跳判失败(心跳是 presence 的唯一写者,拿主要的换次要的)。
-  sessionDigest: () => loadEmdashBridge()?.sessionpageSessionDigest?.() ?? [],
+  sessionDigest: (limit: number) => loadEmdashBridge()?.sessionpageSessionDigest?.(limit) ?? [],
   // #7199 第二步:这台电脑能被调用的动作随心跳登记(没授权的也登记、标不可用)。
   deviceActions: () => deviceActionsRuntime().capability(),
 }
@@ -4175,7 +4175,7 @@ handleShellChannel(SESSION_SHELL_CHANNELS.agentNames, async () => {
 ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unknown, remoteCard?: unknown) => {
   const auth = await authProvider?.getAuth()
   if (!auth?.accessToken || !auth.userId) {
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // #6264 会话在别的机器上:名片由那台机器答过了(绑定记在那台机器上),这里只负责画;null = 那台机器说它还没有身份。
@@ -4187,7 +4187,7 @@ ipcMain.handle(SESSION_SHELL_CHANNELS.shareAgent, async (_event, sessionId: unkn
   )
   if (!card) {
     // 点了必须有反应:说明为什么不能分享,而不是一个点下去毫无动静的入口(实机反馈「点击没反应」)。
-    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '这个任务还没有可分享的 agent 身份')
+    sendUiEvent(MAIN_UI_EVENTS.sessionpageShareAgentUnavailable, '该任务暂无可分享的 agent 身份')
     return false
   }
   // 分享浮层里要摆会话 id(#6093),而名片本身是「会话 → agent」的答案,不带问题那一半 —— 这里补上。
@@ -4247,13 +4247,13 @@ async function applyAgentModelSelectionOnDevice(input: {
   } catch (error) {
     // 交接窗口里的结构歧义（两个认领者）：默认已落下，活会话这一步说不清该动哪条 —— 响亮报，❌ 不猜。
     throw new Error(
-      `模型默认已更新，但此刻分不出该 Agent 的活会话（${error instanceof Error ? error.message : String(error)}）；`
-      + '请稍后再试一次。',
+      `模型默认已更新，但暂时无法确定该 Agent 的当前会话（${error instanceof Error ? error.message : String(error)}）；`
+      + '请稍后重试。',
     )
   }
   if (!sessionId) return { applied: 'next-session' }
   const emdash = loadEmdashBridge()
-  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，活会话没能切换')
+  if (!emdash) throw new Error('模型默认已更新，但任务页运行时不可用，当前会话未能切换')
   const outcome = await emdash.applyEmdashSessionModelSelection({
     sessionId,
     selection: input.selection,
@@ -5201,7 +5201,7 @@ app.whenReady().then(async () => {
       if (record.action === 'children') {
         if (elsewhere) await crossMachine().deviceOfSession(sessionId, await remoteCaller(auth, context), signal)
         const local = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal)
+        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal, record.metadata_only === true)
       }
       if (['get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel'].includes(String(record.action)) && elsewhere) {
         return crossMachine().runOnSession(sessionId, await remoteCaller(auth, context), record as { action: string }, signal)
@@ -6436,6 +6436,13 @@ app.whenReady().then(async () => {
       .then(() => { adoptCloudTaskNames = adoptTaskNames; return adoptTaskNames() })
       .catch((error: unknown) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting task names failed'))
     refreshPlatformCredentials()
+    // The resource monitor switch is also the agents' grant to read it (ResourceMonitorSettingsPage): a monitor that was
+    // already on, from before that or from another start, gets the perf group connected here.
+    void emdashBoot.then(async () => {
+      if (!(await appSettingsService.get('resourceMonitor')).enabled || !deviceActionsRuntime().ungrantedGroup('perf.snapshot')) return
+      const result = await deviceActionsRuntime().connect('perf')
+      if (!result.ok) createLogger('device-actions').warn({ code: result.code, message: result.message }, 'could not connect perf for the running resource monitor')
+    }).catch((error: unknown) => createLogger('device-actions').warn({ error: String(error) }, 'could not connect perf for the running resource monitor'))
     // session-life signs in once the backend that owns it is up; later account changes come through the auth IPC.
     void emdashBoot.then(async () => {
       sessionLifeBooted = true

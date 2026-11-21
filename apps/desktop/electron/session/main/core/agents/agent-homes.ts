@@ -206,6 +206,11 @@ export async function scanAgentHomes(providerIds?: readonly string[], upgradedOn
       if (marker?.migratedFrom !== 'shared' && !nativeHistory && !nativePreparation) continue;
     }
     const scan = await scanAgentHome(home);
+    // The former copied-OAuth reminder is obsolete once the same account is a native reference.
+    if (providerId === 'codex' && scan.marker?.upgradeSignIn) {
+      const result = await migrateOwnedHarnessAccounts('codex', { ...process.env, ...loginShellEnv() });
+      if (result.upgradeSignIn === 'reference') scan.marker.upgradeSignIn = 'reference';
+    }
     const migration = !scan.marker && !!(await upgradeProviders())?.has(providerId);
     const sourceReadable = await access(home.userConfigRoot).then(() => true, () => scan.groups.some((group) => group.count > 0));
     rows.push({

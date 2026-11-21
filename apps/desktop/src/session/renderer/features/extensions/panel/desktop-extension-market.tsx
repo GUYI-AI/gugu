@@ -22,7 +22,7 @@ async function readInstallRanking() {
 }
 
 export function DesktopExtensionMarket({
-  shelf, query, category, onCategoryChange, installedIds, onOpen, resourceOf, sentinelRef, stale,
+  shelf, query, category, onCategoryChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
 }: {
   shelf: DesktopMarketShelf;
   query: string;
@@ -33,6 +33,8 @@ export function DesktopExtensionMarket({
   resourceOf: (id: string) => ResourceContext;
   sentinelRef: Ref<HTMLDivElement>;
   stale: string | null;
+  /** An App's page is open beside the list: no featured row, every App in the one list, this one marked. */
+  selectedId?: string;
 }) {
   const { translate, locale } = useSessionMessages();
   const [sort, setSort] = useState<AppSort>('recommended');
@@ -75,7 +77,7 @@ export function DesktopExtensionMarket({
   ];
   const activeCategory = choices.some((choice) => choice.value === category) ? category : 'all';
   const featured = useMarketFeatured(home?.featured ?? [], home?.moreFeatured ?? []);
-  const featuredOnPage = !query && activeSort === 'recommended' && activeCategory === 'all'
+  const featuredOnPage = !query && !selectedId && activeSort === 'recommended' && activeCategory === 'all' && home
     ? featured.items : [];
   const visible = activeCategory === 'all'
     ? entries.filter((item) => !featuredOnPage.includes(item))
@@ -97,6 +99,7 @@ export function DesktopExtensionMarket({
         description={locale.startsWith('zh') ? subtitle.replace(/\bagents?\b/gi, '智能体') : subtitle}
         installed={installedIds?.has(id)}
         deprecated={Boolean(item.cloud.deprecated)}
+        selected={id === selectedId}
         onOpen={() => onOpen(item)}
         resource={resourceOf(id)}
       />
@@ -105,7 +108,7 @@ export function DesktopExtensionMarket({
 
   return (
     <>
-      {!query && activeSort === 'recommended' && activeCategory === 'all' && home && (
+      {featuredOnPage.length > 0 && (
         <MarketFeatured title={translate('extensions.featuredApps')} {...featured} renderCard={(item) => card(item, true)} />
       )}
       {!query && (

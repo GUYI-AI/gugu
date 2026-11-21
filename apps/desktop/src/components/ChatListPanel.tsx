@@ -63,6 +63,8 @@ import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
 import { chatListShortcutFor, nextChatId } from './chat-list-keyboard-nav'
+import { useUnavailableProjects } from '@/lib/projectRecovery'
+import { ProjectRecoverySubtitle } from './projects/ProjectRecoverySubtitle'
 
 const chatListLog = rendererLogger('chat/list')
 
@@ -336,12 +338,14 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
   const shownName = useShownAgentName({ name: displayName, createdAt: isAgentChat ? peerIdentity?.created_at ?? undefined : undefined })
   const preview = chatPreviewText(chat)
   const newsDot = callsOnly && oneListNewsDot(chat, unreadCount)
+  const unavailable = useUnavailableProjects(!mobile).projects.find(project => project.chatId === chat.id)
 
   return (
     <>
       <ListRow
         data-chat-id={chat.id}
         data-chat-row={chat.id}
+        data-unavailable-project={unavailable?.id}
         draggable={!mobile && !noDrag}
         onDragStart={noDrag ? undefined : (event) => startChatDrag(event, chat, displayName)}
         onDragEnd={noDrag ? undefined : clearDraggedScreenContent}
@@ -359,7 +363,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         tabIndex={tabIndex}
         onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
         onFocus={() => actions.focus(chat.id)}
-        onKeyDown={(event) => actions.keyDown(event, chat)}
+        onKeyDown={(event) => { if (event.target === event.currentTarget) actions.keyDown(event, chat) }}
         onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
         {...(mobile ? longPress : {})}
         leading={
@@ -405,7 +409,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           </span>
         )}
         subtitle={
-          draft ? (
+          unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : draft ? (
             <>
               {pinnedHome !== undefined && `${pinnedHome} · `}
               <span style={{ color: 'var(--color-draft)' }}>{t('chatList.draft')}</span>

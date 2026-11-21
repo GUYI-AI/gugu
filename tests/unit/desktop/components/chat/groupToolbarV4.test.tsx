@@ -9,7 +9,6 @@ import { UI_EVENTS } from '../../../../../apps/desktop/src/lib/uiEvents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
-import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop/src/lib/groupAgentStatus'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
 import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
@@ -54,12 +53,11 @@ beforeEach(() => {
 })
 afterEach(() => { runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = [] }); harness.cleanup(); resizeCallbacks.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[]; status?: 'working' | 'needs_user' } = {}) {
+async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[] } = {}) {
   if (options.stripNarrow) { harness.container.className = 'session-tab-bar'; harness.container.setAttribute('data-strip-narrow', '') }
   const room = {
     snapshot: { humans: [{ id: 'human' }], agents: [{ id: 'agent-1' }, { id: 'agent-2' }] } as GroupCollabSnapshot,
     settings: { my_role: 'member', can_manage: false, allow_member_invite: false } as GroupChatSettings,
-    statusIndicatorProps: { role: 'img' as const, 'data-agent-display-status': options.status ?? 'working', 'aria-label': 'Working' } as ReturnType<typeof groupAgentStatusIndicatorProps>,
     onReload: vi.fn(async () => {}),
   }
   const chat = { id: 'chat', kind, is_pinned: options.pinned ?? false, notification_level: options.muted ? 'none' : 'all' }
@@ -81,21 +79,19 @@ const button = (label: string) => [...harness.container.querySelectorAll<HTMLBut
 const menuItem = (text: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) => element.textContent?.includes(text))
 
 describe('final group toolbar v4', () => {
-  it('[immediate] removes duplicate installed Apps only from wide-group More', async () => {
-    await header('group', { menu: true })
-    expect(document.querySelector('[data-testid="chat-header-apps-button"]')).not.toBeNull()
-    expect(document.querySelectorAll('[data-testid="chat-header-menu-app"]')).toHaveLength(0)
+  it.each(['group', 'dm', 'topic'] as const)('[immediate] a wide %s header has the one labeled Apps button and More lists no Apps', async (kind) => {
+    await header(kind, { menu: true })
+    expect(document.querySelector('[data-testid="chat-header-apps-button"]')?.textContent).toContain('应用')
+    expect(menuItem('应用')).toBeUndefined()
   })
 
-  it.each(['width', 'mobile', 'strip', 'dm', 'topic'] as const)('[immediate control] %s keeps the existing installed-App menu', async (mode) => {
+  it.each(['width', 'mobile', 'strip'].flatMap((mode) => (['group', 'dm'] as const).map((kind) => [mode, kind] as const)))('[immediate control] %s %s folds the Apps button into More, which opens the same picker', async (mode, kind) => {
     headerWidth = mode === 'width' ? 560 : 900
-    await header(mode === 'dm' || mode === 'topic' ? mode : 'group', { menu: true, mobile: mode === 'mobile', stripNarrow: mode === 'strip' })
-    const app = document.querySelector<HTMLElement>('[data-testid="chat-header-menu-app"]')
-    expect(app?.querySelector('.gg-menu-item-label')?.textContent).toBe('Toolbar App')
-    if (mode !== 'dm' && mode !== 'topic') {
-      expect(document.querySelector('[data-testid="chat-header-apps-button"]')).toBeNull()
-      expect(menuItem('应用')).toBeDefined()
-    }
+    await header(kind, { menu: true, mobile: mode === 'mobile', stripNarrow: mode === 'strip' })
+    expect(document.querySelector('[data-testid="chat-header-apps-button"]')).toBeNull()
+    await clickElement(menuItem('应用')!)
+    const app = document.querySelector<HTMLElement>('[data-app-id="toolbar-app"] [data-testid="chat-apps-open"]')
+    expect(app?.textContent).toContain('Toolbar App')
     const opened = vi.fn()
     window.addEventListener(UI_EVENTS.openApp, opened)
     try { await clickElement(app!) } finally { window.removeEventListener(UI_EVENTS.openApp, opened) }
@@ -110,13 +106,8 @@ describe('final group toolbar v4', () => {
     expect(members.title).toBe('成员列表')
   })
 
-  it.each(['working', 'needs_user'] as const)('[immediate] member pill omits the %s status glyph', async (status) => {
-    await header('group', { status })
-    expect(button('成员列表')?.querySelector('[data-agent-display-status]')).toBeNull()
-  })
-
   it.each([['en-US', enMessaging, 'Apps'], ['zh-CN', zhMessaging, '应用']] as const)('[immediate] %s uses the short Apps label', (_locale, catalog, label) => {
-    expect(catalog.header.groupApps).toBe(label)
+    expect(catalog.header.apps).toBe(label)
   })
 
   it('puts members, topics, Apps and More on a wide group (no invitation button: it is the members page\'s first row); search and files live in More', async () => {
@@ -129,7 +120,6 @@ describe('final group toolbar v4', () => {
     expect(button('文件')).toBeUndefined()
     expect(menuItem('搜索聊天记录')).toBeDefined()
     expect(menuItem('文件')).toBeDefined()
-    expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
   it('#2548 with the desktop inner column on this chat: only topics leave the bar (the column lists them); the members button stays', async () => {
@@ -195,12 +185,12 @@ describe('final group toolbar v4', () => {
     expect(button('话题')?.querySelector('.gg-chip')?.textContent).toBe(shown)
   })
 
-  it('keeps independent topics free of group-only tools, with members and conversation information', async () => {
+  it('keeps independent topics free of group-only tools, with members, Apps and conversation information', async () => {
     await header('topic', { menu: true })
     expect(button('成员列表')).toBeDefined()
     expect(button('话题')).toBeUndefined()
     expect(button('邀请')).toBeUndefined()
-    expect(button('应用')).toBeUndefined()
+    expect(button('应用')).toBeDefined()
     expect(menuItem('会话信息')).toBeDefined()
   })
 

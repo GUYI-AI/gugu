@@ -21,6 +21,7 @@ import { ImportSyncSettings } from './ImportSyncSettings'
 import { SettingsGroup, SettingsPage, SettingsRow } from '../SettingsPrimitives'
 import type { EnvironmentImportCategory } from '@shared/core/session-import/environment-import'
 import './data-import.css'
+import { importFailureDescription } from './import-failure-copy'
 
 type HistoryGroup = { id: string; provider: ImportProvider; finishedAt: number; entries: readonly ImportedEntry[] }
 
@@ -158,7 +159,7 @@ function CategoryResult({ items }: { items: CategoryItems }) {
   return (
     <FoldingRow label={label} open={open} onToggle={() => setOpen(!open)} title={label}
       description={t('settings.dataImport.categoryResultSummary', { count: items.filter(item => item.status === 'imported').length, existing: items.filter(item => item.status === 'existing').length, failed })}>
-      {items.map(item => <SettingsRow key={item.id} title={item.title} control={<span className="gg-settings-row-value">{t(outcomeLabelKey(item.status, item.reason))}</span>} />)}
+      {items.map(item => <SettingsRow key={item.id} title={item.title} control={<span className="gg-settings-row-value">{importFailureDescription(item.reason) ?? t(outcomeLabelKey(item.status, item.reason))}</span>} />)}
       {items.some(item => item.category === 'connectors') && <SettingsRow description={t('settings.dataImport.configurationOnly')} />}
     </FoldingRow>
   )

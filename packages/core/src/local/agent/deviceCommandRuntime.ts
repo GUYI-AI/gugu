@@ -1162,11 +1162,11 @@ export function buildAgentIdentityBlock(input: {
   // @@@1390 具体目标 Special Focus:作"它是谁/做什么"的指示注入身份块(创建者填的 agent 专注方向)。
   const focus = input.specialFocus?.trim()
   const focusBlock = focus
-    ? `\n<special_focus reason="creator_directive">\n你的具体目标(创建者设定,贯穿你的回应):${escapeXmlText(focus)}\n</special_focus>\n`
+    ? `\n<special_focus reason="creator_directive">\nYour specific goal (set by your creator; it shapes every reply): ${escapeXmlText(focus)}\n</special_focus>\n`
     : ''
   return `<agent_identity reason="new_acp_session">
 participant_id: ${escapeXmlText(encodeTypedId('user', input.guguUserId))}
-You are this 咕咕 participant. Your display name can change while this session runs, so it is not written here: when a message @-mentions you, its message_context marks that mention as you by id; when you need your current name, call profile_whoami.
+You are this Gugu participant. Your display name can change while this session runs, so it is not written here: when a message @-mentions you, its message_context marks that mention as you by id; when you need your current name, call profile_whoami.
 Messages whose from_id (sender_user_id in message_history) is your participant_id are your own.
 Stay in this identity and scope for every reply in this session.
 </agent_identity>

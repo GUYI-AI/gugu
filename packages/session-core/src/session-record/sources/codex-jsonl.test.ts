@@ -711,6 +711,48 @@ describe('codex rollout 记录源', () => {
       expect(turns.map(users)).toEqual([['第一句', '插进来的第二句', '压缩后插进来的第三句'], ['下一轮']]);
       expect(turns.map((turn) => turn.outcome?.kind)).toEqual(['done', 'error']);
     });
+
+    describe('thread_rolled_back', () => {
+      const line = (type: string, payload: Record<string, unknown>) => JSON.stringify({ timestamp: '2026-07-17T01:00:00.000Z', type, payload });
+      const rollback = line('event_msg', { type: 'thread_rolled_back', num_turns: 1 });
+      const turn = (id: string, text: string | null, end: 'task_complete' | 'turn_aborted') => [
+        line('event_msg', { type: 'task_started', turn_id: id }),
+        ...(text === null ? [] : [line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text }] })]),
+        line('event_msg', { type: end, turn_id: id }),
+      ];
+      const userTexts = (timeline: Awaited<ReturnType<typeof build>>['timeline']) =>
+        timeline.getSnapshot().turns.map((one) => one.items.flatMap((item) => item.kind === 'message' && item.role === 'user' ? [item.text] : []));
+
+      // Codex's own history (app-server ThreadHistoryBuilder) drops the last N turns still in it; each task_started is one,
+      // an empty one too. The rolled-back lines stay in the file.
+      it('drops the last turns still in the thread, an empty turn being one, and never a turn already dropped', async () => {
+        const { timeline } = await build([
+          ...turn('t1', '一', 'task_complete'),
+          ...turn('t2', '二', 'turn_aborted'), rollback,
+          ...turn('t3', '三', 'task_complete'),
+          ...turn('t4', null, 'turn_aborted'), rollback,
+          ...turn('t5', '五', 'turn_aborted'), rollback,
+          ...turn('t6', '六', 'turn_aborted'), rollback,
+          ...turn('t7', '七', 'task_complete'),
+        ]);
+        expect(userTexts(timeline)).toEqual([['一'], ['三'], ['七']]);
+      });
+
+      it('a rollback written while tailing takes the turn back out', async () => {
+        const { file, timeline } = await build([...turn('t1', '一', 'task_complete')]);
+        const after = async (lines: string[], expected: string[][]) => {
+          const shown = new Promise<void>((resolve) => {
+            const check = () => { if (JSON.stringify(userTexts(timeline)) === JSON.stringify(expected)) resolve(); };
+            disposers.push(timeline.subscribe(timeline.getSnapshot().cursor, check));
+          });
+          await appendFile(file, lines.join('\n') + '\n');
+          await awaitPending('the timeline shows the appended turns', shown);
+        };
+        await after(turn('t2', '二', 'turn_aborted'), [['一'], ['二']]);
+        await after([rollback], [['一']]);
+        await after(turn('t3', '三', 'task_complete'), [['一'], ['三']]);
+      });
+    });
   });
 
   it('task_complete 出边界，task_started 不出', async () => {

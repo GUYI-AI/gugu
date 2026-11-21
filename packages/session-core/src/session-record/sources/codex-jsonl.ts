@@ -32,20 +32,32 @@ const DIR_CONCURRENCY = 16;
  * 决定，同一份文件读多少遍都一样;续读时随续读点装回去，接着数。
  */
 type Child = { id: string; name: string; callId: string; task?: string; model?: string };
-type Ordinals = { turn: number; item: number; userSeen: boolean; calls: Record<string, Record<string, unknown>>; children: Record<string, Child> };
+type Ordinals = {
+  turn: number; item: number; userSeen: boolean; calls: Record<string, Record<string, unknown>>; children: Record<string, Child>;
+  /**
+   * Turns a `thread_rolled_back` took out of the thread. The first `applied` rollbacks are in it, `seen` counts those this
+   * read has met, and `rolled` says this read dropped turns it had already sent.
+   */
+  dropped: number[]; seen: number; applied: number; rolled: boolean;
+};
+
+const initialOrdinals = (dropped: number[] = [], applied = 0): Ordinals =>
+  ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {}, dropped, seen: 0, applied, rolled: false });
 
 export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
   const lineage = new Set(ancestors);
   lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
-    resumeVersion: 7,
+    resumeVersion: 8,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
     prefixes: (path) => rolloutPrefixes(locator, path),
-    initial: () => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {} }),
-    // `calls` and `children` are replaced, never changed in place: a snapshot need not copy them.
+    initial: () => initialOrdinals(),
+    // `calls`, `children` and `dropped` are replaced, never changed in place: a snapshot need not copy them.
     snapshot: (ordinals) => ({ ...ordinals }),
     childIds: (ordinals) => Object.keys(ordinals.children),
+    // Turns already sent were rolled back: read again, knowing them from the start.
+    again: (ordinals) => ordinals.rolled ? initialOrdinals(ordinals.dropped, ordinals.applied) : null,
     decode(record, ordinals) {
       const codex = readCodexRecord(record);
       // 序号按**每一条记录**推进，不按「解出了 event 的记录」推进:
@@ -57,6 +69,12 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
       }
       if (codex.turnStart || codex.end) ordinals.userSeen = false;
       const key = `codex:${locator.providerSessionId}:${ordinals.turn}:${ordinals.item}`;
+      const rollback = rolledBackTurns(record);
+      if (rollback !== null) {
+        rollBack(ordinals, rollback);
+        return [];
+      }
+      if (ordinals.dropped.includes(ordinals.turn)) return [];
       if (nativeChild && codex.turnStart) return [{ key, at: parseTimestamp(codex.timestamp), event: childState(locator.providerSessionId, 'in_progress') }];
       const item = codex.item;
       if (item?.kind === 'tool_call' && item.namespace === 'collaboration') {
@@ -116,6 +134,32 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
     () => createCodexJsonlSource(locator, options, nativeChild, ancestors),
     options,
   );
+}
+
+/** `num_turns` of a `thread_rolled_back` line, or null for any other line. */
+function rolledBackTurns(record: Record<string, unknown>): number | null {
+  const payload = asRecord(record.payload);
+  return record.type === 'event_msg' && payload?.type === 'thread_rolled_back' && typeof payload.num_turns === 'number' ? payload.num_turns : null;
+}
+
+/**
+ * Codex's thread history drops the last `count` turns still in it, the running one included; a turn is what a
+ * `task_started` opened, kept even when empty (app-server `ThreadHistoryBuilder::handle_thread_rollback`). The rolled
+ * back turns stay in the file, so a read again meets this rollback again: it then changes nothing.
+ */
+function rollBack(ordinals: Ordinals, count: number): void {
+  ordinals.seen += 1;
+  if (ordinals.seen <= ordinals.applied) return;
+  ordinals.applied = ordinals.seen;
+  const dropped = [...ordinals.dropped];
+  for (let turn = ordinals.turn; turn >= 1 && count > 0; turn--) {
+    if (dropped.includes(turn)) continue;
+    dropped.push(turn);
+    count -= 1;
+  }
+  if (dropped.length === ordinals.dropped.length) return;
+  ordinals.dropped = dropped;
+  ordinals.rolled = true;
 }
 
 /** A child's final answer, which Codex hands to its parent as an `agent_message` in the parent's record:

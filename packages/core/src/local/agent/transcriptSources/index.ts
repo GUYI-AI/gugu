@@ -27,7 +27,7 @@ export function allTranscriptSourceSpecs(): readonly TranscriptSourceSpec[] {
  * 取一家的 spec。认不出的 id **抛错**而不是回退到某一家 ——
  * 这个参数是从渲染层经 IPC 递进来的（`electron/main.ts` 那句 `source as TranscriptSource`
  * 只是断言，运行时什么都不挡）。从前的三元表达式会把任何非 `'claude-code'` 的值当 codex 处理，
- * 报出来的错是「路径不在允许的扫描目录内」——离真因十万八千里。
+ * 报出来的错是 `transcript-outside-roots`（路径不在允许的扫描目录内）——离真因十万八千里。
  */
 export function requireTranscriptSourceSpec(source: TranscriptSource): TranscriptSourceSpec {
   const spec = TRANSCRIPT_SOURCE_SPECS[source]

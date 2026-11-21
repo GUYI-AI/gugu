@@ -11,14 +11,14 @@ const translate = (key: string, values: Record<string, unknown> = {}) =>
 describe('sshKeyInstallToast', () => {
   it('装好了:一句话,带机器名', () => {
     expect(sshKeyInstallToast({ label: 'alice@box', outcome: { status: 'installed' } }, translate)).toEqual({
-      title: '已为 alice@box 设好免密',
+      title: '已为 alice@box 设置免密登录',
     });
   });
 
   it('没做成:醒目,标题说没设好,说明给原因;四种原因中英文都有', () => {
     const toast = sshKeyInstallToast({ label: 'alice@box', outcome: { status: 'failed', reason: 'not-accepted' } }, translate);
     expect(toast.variant).toBe('destructive');
-    expect(toast.title).toContain('未能为 alice@box 设好免密');
+    expect(toast.title).toContain('无法为 alice@box 设置免密登录');
     expect(toast.description).toContain('不接受免密登录');
     for (const reason of ['not-accepted', 'write-failed', 'no-key', 'unreachable']) {
       expect(enUSRemoteHostMessages).toHaveProperty(`remoteHost.keyInstall.reason.${reason}`);

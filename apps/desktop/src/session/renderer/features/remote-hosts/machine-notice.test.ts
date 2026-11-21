@@ -28,13 +28,13 @@ describe('选着的机器用不了,说什么(#137)', () => {
     expect(spec({ connection: 'outdated', notices: [{ kind: 'server-too-old' }], serverUpdate: { ...serverUpdate, state: 'downloading' } }))
       .toMatchObject({ title: 'Mac 1 上的咕咕正在更新，稍后会自动重新连接。', tier: 'info', waiting: true });
     expect(spec({ connection: 'outdated', notices: [{ kind: 'desktop-too-old' }], serverUpdate }))
-      .toMatchObject({ title: 'Mac 1 的咕咕较新，请更新这台电脑上的咕咕', tier: 'error', waiting: false });
+      .toMatchObject({ title: 'Mac 1 的咕咕较新，请更新本机的咕咕', tier: 'error', waiting: false });
     expect(spec({ connection: 'connected', serverUpdate })).toBeNull();
     expect(spec({ connection: 'connected', serverUpdate: { ...serverUpdate, state: 'failed' } })).toBeNull();
   });
   it('reuses the device protocol notice and says which endpoint must upgrade', () => {
     expect(spec({ connection: 'connecting', notices: [{ kind: 'desktop-too-old' }] }))
-      .toMatchObject({ title: 'Mac 1 的咕咕较新，请更新这台电脑上的咕咕', tier: 'error', waiting: false, delayed: false });
+      .toMatchObject({ title: 'Mac 1 的咕咕较新，请更新本机的咕咕', tier: 'error', waiting: false, delayed: false });
     expect(spec({ connection: 'outdated', notices: [{ kind: 'server-too-old' }] })?.title)
       .toBe(zh('remoteHost.notice.serverTooOld', { device: 'Mac 1' }));
     expect(spec({ connection: 'connected', notices: [{ kind: 'disk-low', freeBytes: 1 }] })).toBeNull();
@@ -48,7 +48,7 @@ describe('选着的机器用不了,说什么(#137)', () => {
 
   it('连着 = 没有提示;名下已经没有这台机器(设备行不在了)= 用不了,❌ 当没事', () => {
     expect(spec({ connection: 'connected' })).toBeNull();
-    expect(spec({ connection: null })).toMatchObject({ title: 'Mac 1 离线。草稿已保留，上线后可发送，或换一台机器。', tier: 'error', waiting: false, delayed: false });
+    expect(spec({ connection: null })).toMatchObject({ title: 'Mac 1 离线。草稿已保留，设备上线后可发送，或选择其他设备。', tier: 'error', waiting: false, delayed: false });
   });
 
   it('重连中:在等 + 先等一会儿再出现;第几次写在说明里,第一次拨不算重试', () => {
@@ -60,14 +60,21 @@ describe('选着的机器用不了,说什么(#137)', () => {
   });
 
   it('离线 / 休眠只是此刻用不了:说明档、不转圈、立刻出现;❌ 假装在重试', () => {
-    expect(spec({ connection: 'offline', dials: 5 })).toMatchObject({ title: 'Mac 1 离线。草稿已保留，上线后可发送，或换一台机器。', description: undefined, tier: 'info', waiting: false, delayed: false });
+    expect(spec({ connection: 'offline', dials: 5 })).toMatchObject({ title: 'Mac 1 离线。草稿已保留，设备上线后可发送，或选择其他设备。', description: undefined, tier: 'info', waiting: false, delayed: false });
     expect(spec({ connection: 'asleep' })).toMatchObject({ tier: 'info', waiting: false, delayed: false });
     expect(spec({ connection: 'waking' })).toMatchObject({ tier: 'info', waiting: true, delayed: false });
   });
 
   it('叫醒没成 / 要先登录 / 登录没了 / 版本太旧是报错档:要人知道、可能要人去做点什么', () => {
-    expect(spec({ connection: 'wake-failed', wakeFailure: '积分已用完，Mac 1 醒不来。' })).toMatchObject({ title: '积分已用完，Mac 1 醒不来。', tier: 'error', waiting: false });
+    expect(spec({ connection: 'wake-failed', wakeFailure: '积分已用完，无法唤醒 Mac 1。' })).toMatchObject({ title: '积分已用完，无法唤醒 Mac 1。', tier: 'error', waiting: false });
     expect(spec({ connection: 'sign-in' })?.tier).toBe('error');
+    // 真要用这台(新建框选了它)才说要登录,「登录」就在这条提示上;别的状况没有这一段。
+    const signIn = vi.fn();
+    const needs = spec({ connection: 'sign-in', signIn });
+    expect(needs).toMatchObject({ title: '「Mac 1」需要 SSH 登录，草稿已保存。', action: { label: '登录' } });
+    needs?.action?.onClick();
+    expect(signIn).toHaveBeenCalledTimes(1);
+    expect(spec({ connection: 'offline', signIn })?.action).toBeUndefined();
     expect(spec({ connection: 'offline', signInExpiredAt: '2026-10-22T00:00:00Z' })).toMatchObject({ title: 'Mac 1 上的登录已失效，请在 设置 → 设备 中重新登录。', tier: 'error' });
     expect(spec({ connection: 'outdated' })?.tier).toBe('error');
     expect(spec({ connection: 'update-failed' })?.tier).toBe('error');
@@ -119,7 +126,7 @@ describe('一台机器一条提示:原地换,不叠', () => {
     await show('d1', reconnecting(2));
     expect(lastNotify()).toMatchObject({ key: 'machine:d1', description: '第 2 次尝试' });
     await show('d1', offline());
-    expect(lastNotify()).toMatchObject({ key: 'machine:d1', title: 'Mac 1 离线。草稿已保留，上线后可发送，或换一台机器。', waiting: false, ongoing: true });
+    expect(lastNotify()).toMatchObject({ key: 'machine:d1', title: 'Mac 1 离线。草稿已保留，设备上线后可发送，或选择其他设备。', waiting: false, ongoing: true });
     expect(new Set(notices.notify.mock.calls.map((call) => call[0].key))).toEqual(new Set(['machine:d1']));
     expect(notices.dismissNotice).not.toHaveBeenCalled();
   });

@@ -5,6 +5,8 @@ import {
   type EnvironmentImportCategory, type EnvironmentImportScan, type EnvironmentImportSelection,
 } from '@shared/core/session-import/environment-import'
 import type { ImportProvider, ImportResult, ImportPreparation } from './import-providers'
+import { i18n } from '@/i18n/runtime'
+import { importError } from '@shared/core/session-import/import-error-code'
 
 const emptyResult = (): ImportResult => ({ imported: [], entities: [], details: [], existing: 0, failed: 0 })
 
@@ -27,7 +29,7 @@ function categoryProvider(category: Exclude<EnvironmentImportCategory, 'tasks'>)
   }
   async function run(snapshot: EnvironmentImportScan | undefined, deviceId: string | null,
     onProgress: (done: number, total: number) => void, signal: AbortSignal): Promise<ImportResult> {
-    if (deviceId || !snapshot) throw new Error('请先刷新导入来源')
+    if (deviceId || !snapshot) throw new Error(i18n.t('settings.dataImport.refreshFirst', { ns: 'main' }))
     signal.throwIfAborted()
     const result = emptyResult()
     const selection: EnvironmentImportSelection[] = snapshot.items.flatMap(item =>
@@ -70,7 +72,7 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
       if (deviceId) return transcripts.scan(deviceId)
       preview = await rpcOn(null).sessionImport.scanCodexTasks()
       if (preview.status !== 'ready' && preview.reason !== 'missing-index') {
-        throw new Error(`ChatGPT task source unavailable (${preview.reason ?? 'unknown'})`)
+        throw importError('codex-import-index-unreadable')
       }
       return { count: preview.rows.length, pending: false }
     },
@@ -83,7 +85,7 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
   async function run(snapshot: CodexTaskScan | undefined, deviceId: string | null,
     onProgress: (done: number, total: number, preparation?: ImportPreparation | null) => void, signal: AbortSignal): Promise<ImportResult> {
     if (deviceId) return transcripts.importAll(deviceId, onProgress, signal)
-    if (!snapshot) throw new Error('请先刷新导入来源')
+    if (!snapshot) throw new Error(i18n.t('settings.dataImport.refreshFirst', { ns: 'main' }))
     signal.throwIfAborted()
     const api = rpcOn(null).sessionImport
     const result = emptyResult()
@@ -112,7 +114,11 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
         if (item.status === 'imported') result.imported.push({ title: titles.get(item.id) ?? item.id,
           projectId: item.projectId, sessionId: item.sessionId })
         else if (item.status === 'existing') result.existing++
-        else result.failed++
+        else {
+          result.failed++
+          result.details!.push({ id: item.id, title: titles.get(item.id) ?? item.id, category: 'tasks', status: 'failed',
+            reason: item.status === 'changed' ? 'source-changed' : item.status === 'missing' ? 'source-missing' : 'message' in item ? item.message : undefined })
+        }
       }
       result.failed += snapshot.blocked.length
       onProgress(snapshot.rows.length, snapshot.rows.length)

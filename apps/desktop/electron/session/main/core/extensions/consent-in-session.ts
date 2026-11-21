@@ -90,7 +90,7 @@ export async function askInstallInSession(
         title: request.removeVariant ? `${requester.name}: remove fork ${request.removeVariant.name} from ${request.manifest.name}` : `${requester.name}: install ${request.manifest.name}`,
         options: [
           { optionId: APP_INSTALL_OPTION, name: request.removeVariant ? 'Remove fork' : 'Install', kind: 'allow_once' },
-          { optionId: APP_INSTALL_DECLINE_OPTION, name: request.removeVariant ? 'Keep fork' : "Don't install", kind: 'reject_once' },
+          { optionId: APP_INSTALL_DECLINE_OPTION, name: request.removeVariant ? 'Keep fork' : 'Do not install', kind: 'reject_once' },
         ],
         origin: { source: 'app-install', payload: { request: ask } satisfies AppInstallAsk },
       },

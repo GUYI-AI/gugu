@@ -125,6 +125,6 @@ describe('#6418 通讯录「新的请求」里的入群申请', () => {
     })
     await clickElement(groupTab()!)
     expect(joinRow()?.textContent).toContain('写代码的')
-    expect(joinRow()?.textContent).toContain('成员乙 申请把这个 Agent 拉进「产品组」')
+    expect(joinRow()?.textContent).toContain('成员乙 申请将该 Agent 加入「产品组」')
   })
 })

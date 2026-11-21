@@ -25,7 +25,7 @@ describe('#7317 every heartbeat that writes this machine\'s row carries the same
     for (const options of found) expect(options).toContain('...heartbeatRowSources')
     // The sources are said once, so a writer cannot carry a different list.
     expect(main.match(/deviceActions: \(\) =>/g)).toHaveLength(1)
-    expect(main.match(/sessionDigest: \(\) =>/g)).toHaveLength(1)
+    expect(main.match(/sessionDigest: \([^)]*\) =>/g)).toHaveLength(1)
   })
 
   it('goes red on a writer that leaves them out', () => {

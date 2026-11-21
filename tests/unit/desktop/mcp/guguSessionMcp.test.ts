@@ -306,7 +306,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
       { tool: 'session_spawn', args: { prompt: 'inspect', thinking: 'native-level' }, dispatched: { action: 'spawn', prompt: 'inspect', thinking: 'native-level' } },
       { tool: 'session_spawn', args: { prompt: 'inspect', device: 'device:dev-b', thinking: 'native-level' }, dispatched: { action: 'spawn', prompt: 'inspect', device: 'dev-b', thinking: 'native-level' } },
       { tool: 'session_ask_user', args: { questions: [{ question: 'Which?', options: [{ label: 'One' }, { label: 'Two' }] }] }, dispatched: { action: 'ask_user', questions: [{ question: 'Which?', options: [{ label: 'One' }, { label: 'Two' }] }] } },
-      { tool: 'session_children', args: {}, dispatched: { action: 'children' } },
+      { tool: 'session_children', args: {}, dispatched: { action: 'children', metadata_only: true } },
       {
         // #4562 union 寻址:to 条目保持 typed 穿过注册机,由宿主分派器按前缀拆腿。
         tool: 'session_message',
@@ -465,8 +465,8 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
   })
 
   // #7379 复核:近况只给返回的这一页算 —— 切完窗才对窗内的行逐个走 get(宿主 readSessionPreview 的唯一入口);归档的不算。
-  it('session_children 只为窗内的行要近况:5 个 child、rows:"1" 只走 1 次 get', async () => {
-    const seen: Array<{ action: string; session_id?: string }> = []
+  it('#2007 enriches only the selected child page with one batch, preserves per-row errors and skips archived previews', async () => {
+    const seen: Array<{ action: string; session_ids?: string[]; session_id?: string }> = []
     const children = [
       { session_id: 'c1', title: 'one', status: 'idle', detail: 'done', pinned: false },
       { session_id: 'c2', title: 'two', status: 'idle', detail: 'done', pinned: false },
@@ -474,16 +474,15 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
       { session_id: 'c4', title: 'four', status: 'working', detail: 'running', pinned: false },
       { session_id: 'c5', title: 'five', status: 'idle', detail: 'done', pinned: false },
     ]
-    const client = await connectTo({
-      kind: 'session-only',
-      expectedOwnerUserId: 'owner-1',
-      subjectId: 'agent-1',
-      runSessionAction: async (action) => {
-        const a = action as { action: string; session_id?: string }
-        seen.push(a)
-        if (a.action !== 'get') return children
-        if (a.session_id === 'c5') throw new Error('machine "B" (device:b) did not answer')
-        return { session_id: a.session_id, status: children.find((row) => row.session_id === a.session_id)?.status, preview: { running: false, now: null, ended: { kind: 'done', reason: a.session_id === 'c1' ? 'refusal' : 'end_turn' }, entries: [] } }
+    const details = (id: string) => ({ ...children.find(row => row.session_id === id), ...(id === 'c3' ? {} : { preview: id === 'c5'
+      ? { error: { code: 'record_unreadable', message: 'record did not answer' } }
+      : { running: false, now: null, ended: { kind: 'done', reason: id === 'c1' ? 'refusal' : 'end_turn' }, entries: [] } }) })
+    const client = await connectTo({ kind: 'session-only', expectedOwnerUserId: 'owner-1', subjectId: 'agent-1',
+      runSessionAction: async action => {
+        const a = action as { action: string; session_ids?: string[]; session_id?: string }; seen.push(a)
+        if (a.action === 'get_many') return a.session_ids!.map(details)
+        if (a.action === 'get') return details(a.session_id!)
+        return children
       },
     })
     const call = async (args: Record<string, unknown>) => {
@@ -491,34 +490,47 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
       expect(result.isError ?? false, responseText(result)).toBe(false)
       return JSON.parse(responseText(result)) as { total: number; items: Array<{ session_id: string; preview?: { ended?: unknown; error?: { message: string } } }> }
     }
-
     const first = await call({ rows: '1' })
     expect(first.total).toBe(4)
     expect(first.items[0]!.preview?.ended).toEqual({ kind: 'done', reason: 'refusal' })
-    expect(seen.filter((a) => a.action === 'get')).toEqual([{ action: 'get', session_id: 'c1' }])
-
+    expect(seen).toEqual([{ action: 'children', metadata_only: true }, { action: 'get_many', session_ids: ['c1'] }])
     seen.length = 0
     const rest = await call({ rows: '2-5' })
-    // 先筛掉归档再切窗；c5 那台没答,原因落在它自己那一行。
-    expect(seen.filter((a) => a.action === 'get').map((a) => a.session_id)).toEqual(['c2', 'c4', 'c5'])
-    expect(rest.items.map((row) => row.session_id)).toEqual(['session:c2', 'session:c4', 'session:c5'])
-    expect(rest.items.find((row) => row.session_id === 'session:c5')?.preview?.error?.message).toContain('did not answer')
-
+    expect(seen).toEqual([{ action: 'children', metadata_only: true }, { action: 'get_many', session_ids: ['c2', 'c4', 'c5'] }])
+    expect(rest.items.map(row => row.session_id)).toEqual(['session:c2', 'session:c4', 'session:c5'])
+    expect(rest.items.find(row => row.session_id === 'session:c5')?.preview?.error?.message).toContain('did not answer')
     seen.length = 0
     const archived = await call({ status: 'archived' })
     expect(archived.total).toBe(1)
     expect(archived.items).toEqual([expect.objectContaining({ session_id: 'session:c3', status: 'archived' })])
     expect(archived.items[0]).not.toHaveProperty('preview')
-    expect(seen).toEqual([{ action: 'children' }])
-
-    for (const status of ['', 'idle', 'done']) {
-      const filtered = await call({ status })
-      expect(filtered.items.map((row) => row.session_id)).not.toContain('session:c3')
-    }
-
+    expect(seen).toEqual([{ action: 'children', metadata_only: true }, { action: 'get_many', session_ids: ['c3'] }])
     const direct = await client.callTool({ name: 'session_get', arguments: { session_id: 'session:c3' } })
     expect(direct.isError ?? false, responseText(direct)).toBe(false)
     expect(JSON.parse(responseText(direct))).toMatchObject({ session_id: 'session:c3', status: 'archived' })
+  })
+
+  it('#2007 batches by machine with a finite size for rows all, preserving global row order', async () => {
+    const children = Array.from({ length: 105 }, (_, i) => ({ session_id: `child-${i}`, title: `Child ${i}`, status: 'idle',
+      ...(i % 3 === 0 ? { device_id: 'remote-machine' } : {}) }))
+    const batches: Array<{ device?: string; session_ids: string[] }> = []
+    const client = await connectTo({ kind: 'session-only', expectedOwnerUserId: 'owner-1', subjectId: 'agent-1',
+      runSessionAction: async action => {
+        const a = action as { action: string; device?: string; session_ids: string[] }
+        if (a.action === 'get') throw new Error('Per-row gets are forbidden')
+        if (a.action !== 'get_many') return children
+        batches.push(a)
+        expect(a.session_ids.length).toBeLessThanOrEqual(32)
+        return [...a.session_ids].reverse().map(id => ({ session_id: id, preview: { running: false, now: null, ended: null, entries: [] } }))
+      },
+    })
+    const result = await client.callTool({ name: 'session_children', arguments: { rows: 'all' } })
+    expect(result.isError ?? false, responseText(result)).toBe(false)
+    const shown = JSON.parse(responseText(result))
+    expect(shown.total).toBe(105)
+    expect(shown.items.map((row: { session_id: string }) => row.session_id)).toEqual(children.map(row => `session:${row.session_id}`))
+    expect(batches).toHaveLength(5)
+    expect(batches.filter(batch => batch.device === 'remote-machine').flatMap(batch => batch.session_ids)).toEqual(children.filter(row => row.device_id).map(row => row.session_id))
   })
 
   // spec im-mcp 列表约定:rows / name / 工具自己的筛选在注册机判,❌ 进分派器;结果按宿主给的顺序切窗。
@@ -559,10 +571,10 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
 
     // 分派器收到的只有它自己的参数(session_id 已解码成存储形态)。
     expect(seen.filter((action) => (action as { action: string }).action === 'children')).toEqual([
-      { action: 'children', session_id: 'parent' },
-      { action: 'children' },
-      { action: 'children' },
-      { action: 'children' },
+      { action: 'children', session_id: 'parent', metadata_only: true },
+      { action: 'children', metadata_only: true },
+      { action: 'children', metadata_only: true },
+      { action: 'children', metadata_only: true },
     ])
 
     // 写错的区间响亮地拒,并说清两种写法。
@@ -615,7 +627,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
 
     // 工具面叫 app_pack,宿主分派器收到的仍是 pack —— ❌ 别让工具面和执行侧各写一份动作名清单。
     expect(seenExtension).toEqual([{ action: 'pack', source_dir: '/apps/notes' }])
-    expect(seenSession).toEqual([{ action: 'children' }])
+    expect(seenSession).toEqual([{ action: 'children', metadata_only: true }])
   })
 
   // F15 (L7-d) app_pack { chat_id } 以 agent 本人往群里发卡片:没有咕咕身份的会话在打包之前就说清楚,❌ 包打出来了再报发不出去。

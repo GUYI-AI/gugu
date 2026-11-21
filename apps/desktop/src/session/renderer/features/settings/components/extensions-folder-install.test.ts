@@ -414,13 +414,15 @@ describe('Desktop marketplace tabs and app details', () => {
     await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
     await press('[data-testid="agent-market-chip-general"]');
     expect(card('claude')).toBeNull();
+    // From the agents' page the assistant's market page is the whole page; from the Apps list it sits beside the list.
     await press('[data-testid="extension-card-gugu-assistant"]');
-    expect(document.querySelector('[data-testid="market-detail-dialog"]')?.textContent).toContain('App gugu-assistant');
-    await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
+    expect(document.querySelector<HTMLElement>('[data-testid="app-product-page"]')?.dataset.extensionId).toBe('gugu-assistant');
+    expect(document.querySelector('[data-testid="extensions-market-panel"]')).toBeNull();
+    await press('[data-testid="app-product-back"]');
     await press('[data-testid="extensions-section-market"]');
     await press('[data-testid="extension-card-gugu-assistant"]');
-    expect(document.querySelector('[data-testid="market-detail-dialog"]')?.textContent).toContain('App gugu-assistant');
-    await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
+    expect(document.querySelector<HTMLElement>('[data-testid="extensions-market-panel"] [data-testid="app-product-page"]')?.dataset.extensionId).toBe('gugu-assistant');
+    await press('[data-testid="app-product-back"]');
     await press('[data-testid="extensions-tab-installed"]');
     expect(document.querySelector('[data-testid="extensions-installed-panel"]')).not.toBeNull();
   });
@@ -491,8 +493,8 @@ describe('Desktop marketplace tabs and app details', () => {
   it('第一次装、什么权限都不要的:产品页头上点「安装」就装,不弹框', async () => {
     await render();
     await press('[data-testid="featured-extension-card-pomo"]');
-    await press('[data-testid="market-detail-primary"]');
-    expect(dom.window.document.querySelector('[data-testid="market-detail-confirmation"]')).toBeNull();
+    await press('[data-testid="app-product-action"]');
+    expect(h.showConfirm).not.toHaveBeenCalled();
     expect((h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket).toHaveBeenLastCalledWith({
       ref: { extensionId: 'pomo', version: '1.0.0' },
       consent: { kind: 'given', digest: 'digest-pomo' },
@@ -502,13 +504,13 @@ describe('Desktop marketplace tabs and app details', () => {
   it('要了权限的(这里是联网):照旧先问,点头之前不装', async () => {
     await render();
     await press('[data-testid="extension-card-arxiv"]');
-    await press('[data-testid="market-detail-primary"]');
+    await press('[data-testid="app-product-action"]');
     const installFromMarket = (h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket;
     expect(installFromMarket.mock.calls.map(([args]) => (args as { consent?: { kind: string } }).consent?.kind)).toEqual(['return']);
-    expect(dom.window.document.querySelector('[data-testid="market-detail-confirmation"]')?.textContent).toContain('export.arxiv.org');
-    await press('[data-testid="market-detail-confirm"]');
+    expect(h.showConfirm).toHaveBeenCalledOnce();
+    await act(async () => void (h.showConfirm.mock.calls[0][0] as { onSuccess: () => void }).onSuccess());
     expect(installFromMarket.mock.calls.map(([args]) => (args as { consent?: { kind: string } }).consent?.kind)).toEqual(['return', 'given']);
-    expect(dom.window.document.querySelector('[data-testid="market-detail-dialog"]')).not.toBeNull();
+    expect(dom.window.document.querySelector<HTMLElement>('[data-testid="app-product-page"]')?.dataset.extensionId).toBe('arxiv');
   });
 
   it('opens compatibility and upgrade requirements in extension details', async () => {
@@ -531,12 +533,12 @@ describe('Desktop marketplace tabs and app details', () => {
     expect(sub('trace')).toBe('trace 的一句话');
     expect(document.querySelector('[data-testid="extension-card-arxiv"] button')).toBeNull();
     await press('[data-testid="extension-card-arxiv"]');
-    expect(document.querySelector('[data-testid="market-detail-dialog"]')?.textContent).toContain(
+    expect(document.querySelector('[data-testid="app-product-page"]')?.textContent).toContain(
       translateSessionMessage('extensions.needsNewerApp', { version: '9.0.0' })
     );
-    await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
+    // The next App from the list beside the page, without going back first.
     await press('[data-testid="extension-card-trace"]');
-    expect(document.querySelector('[data-testid="market-detail-version-notice"]')?.textContent).toBe(
+    expect(document.querySelector('[data-testid="app-product-newer-needs-app"]')?.textContent).toBe(
       translateSessionMessage('extensions.newerNeedsApp', { version: '2.0.0' })
     );
   });
@@ -554,74 +556,42 @@ describe('Desktop marketplace tabs and app details', () => {
       h.api.list.mockResolvedValueOnce({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins } } as never);
       await render();
       await press('[data-testid="featured-extension-card-pomo"]');
-      const action = dom.window.document.querySelector('[data-testid="market-detail-primary"]')?.textContent ?? null;
+      const action = dom.window.document.querySelector('[data-testid="app-product-action"]')?.textContent ?? null;
       // The product page is drawn either way (a missing button would make the arm without an offer pass on nothing).
       expect(action).not.toBeNull();
       expect(action === translateSessionMessage('extensions.updateTo', { version: '1.1.0' })).toBe(offered);
     });
   }
 
-  it('confirms uninstall and keeps the detail open with Install again', async () => {
+  it('an installed App\'s market page leads to its settings page, where it is uninstalled', async () => {
     const listed = h.api.list.getMockImplementation();
     const here = app('pomo', ['productivity']);
     h.api.list.mockResolvedValue({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins: { pomo: 'market' } } } as never);
     try {
       await render();
       await press('[data-testid="featured-extension-card-pomo"]');
-      const more = dom.window.document.querySelector<HTMLButtonElement>('[data-testid="market-detail-more"]')!;
-      await act(async () => more.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
-      await press('[data-testid="market-detail-uninstall"]');
-      expect(h.api.uninstall).not.toHaveBeenCalled();
-      h.api.list.mockResolvedValue({ success: true, data: { extensions: [], invalid: [], icons: {}, disabled: [], origins: {} } } as never);
-      await press('[data-testid="market-detail-confirm"]');
-      await until('install action visible after uninstall', () => dom.window.document.querySelector('[data-testid="market-detail-primary"]')?.textContent === translateSessionMessage('extensions.installAction'));
-      expect(h.api.uninstall).toHaveBeenCalledOnce();
+      await press('[data-testid="app-product-manage"]');
+      expect(dom.window.document.querySelector('[data-testid="extensions-manage"]')).not.toBeNull();
     } finally {
       h.api.list.mockImplementation(listed!);
     }
   });
 
-  it('asks before installing an older release even when it needs no additional permission', async () => {
-    const originalList = h.api.list.getMockImplementation();
-    const here = app('pomo', ['productivity']);
-    const older = { ...here.manifest, version: '0.9.0' };
-    h.api.list.mockResolvedValue({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [] } } as never);
-    h.api.marketHistory.mockResolvedValue({ success: true, data: [{
-      version: older.version, publishedAt: here.cloud.publishedAt, releaseNotes: 'Legacy release notes', compat: null, yanked: null,
-    }] });
-    const installFromMarket = (h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket;
-    installFromMarket.mockResolvedValueOnce({
-      success: true, data: {
-        outcome: 'ask', asks: false,
-        ask: { manifest: older, manifestDigest: 'older-digest', installed: here.manifest, revokedPermissions: [] },
-      },
-    });
-    try {
-      await render();
-      await press('[data-testid="featured-extension-card-pomo"]');
-      await until('older release drawn', () => !!dom.window.document.querySelector('[data-testid="extension-history-pomo-0.9.0"] .xp-history-action button'));
-      expect(dom.window.document.querySelector('[data-testid="extension-history-pomo-0.9.0"]')?.textContent).not.toContain('Legacy release notes');
-      await press('[data-testid="extension-history-pomo-0.9.0"] .xp-history-action button');
-      expect(installFromMarket).toHaveBeenCalledOnce();
-      expect(dom.window.document.querySelector('[data-testid="market-detail-confirmation"]')?.textContent).toContain(translateSessionMessage('extensions.pinHint'));
-      await press('[data-testid="market-detail-confirm"]');
-      expect(installFromMarket).toHaveBeenLastCalledWith({
-        ref: { extensionId: 'pomo', version: '0.9.0' },
-        consent: { kind: 'given', digest: 'older-digest' },
-      });
-    } finally {
-      h.api.list.mockImplementation(originalList!);
-    }
-  });
-
-  it('opens each card over the existing Marketplace list and closes back to it', async () => {
+  it('opens an App beside the Marketplace list, switches from the list and goes back to the grid', async () => {
     await render();
+    const document = dom.window.document;
+    const page = () => document.querySelector<HTMLElement>('[data-testid="extensions-market-panel"] [data-testid="app-product-page"]');
     await press('[data-testid="extension-card-trace"]');
-    expect(dom.window.document.querySelector('[data-testid="market-detail-dialog"]')?.textContent).toContain('App trace');
-    expect(dom.window.document.querySelector('[data-testid="extensions-store"]')).not.toBeNull();
-    await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
-    expect(dom.window.document.querySelector('[data-testid="market-detail-dialog"]')).toBeNull();
-    expect(dom.window.document.querySelector('[data-testid="extension-card-trace"]')).not.toBeNull();
+    expect(page()?.dataset.extensionId).toBe('trace');
+    expect(document.querySelector('[data-testid="extension-card-trace"]')?.getAttribute('aria-current')).toBe('true');
+    // Beside a page the list is one list: the featured row's Apps are in it.
+    expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).toBeNull();
+    await press('[data-testid="extension-card-pomo"]');
+    expect(page()?.dataset.extensionId).toBe('pomo');
+    expect(document.querySelector('[data-testid="extension-card-trace"]')?.getAttribute('aria-current')).toBeNull();
+    await press('[data-testid="app-product-back"]');
+    expect(page()).toBeNull();
+    expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).not.toBeNull();
   });
 });
 

@@ -16,7 +16,7 @@
 import { useUiPortalContainerOrBody } from '@session-ui/react/lib/portal-container';
 import { CONTENT_MENU_EVENT, type ContentMenuRequest } from '@gugu/session-shared/content-menu';
 import { cx } from '@session-ui/styles/utilities/cx';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { Slice } from '@tiptap/pm/model';
 import type { EditorProps } from '@tiptap/pm/view';
 import { StarterKit } from '@tiptap/starter-kit';
@@ -224,6 +224,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     enterBehavior = 'submit',
     disabled = false,
     onChange,
+    onDocumentClear,
     onPasteText,
     hostDropTypes,
     onSubmit,
@@ -246,6 +247,8 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
   onSubmitRef.current = onSubmit;
   const clearOnSubmitRef = useRef(clearOnSubmit);
   clearOnSubmitRef.current = clearOnSubmit;
+  const onDocumentClearRef = useRef(onDocumentClear);
+  onDocumentClearRef.current = onDocumentClear;
   const onPasteTextRef = useRef(onPasteText);
   onPasteTextRef.current = onPasteText;
   const hostDropTypesRef = useRef(hostDropTypes);
@@ -297,6 +300,13 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
 
   // We capture the editor in a stable ref so the submit handler can read the doc.
   const editorRef = useRef<ReturnType<typeof useEditor> | null>(null);
+  const notifyDocumentClear = useCallback((ed: Editor) => {
+    if (isEmptyPromptDocument(ed.state.doc)) onDocumentClearRef.current?.();
+  }, []);
+  const clearDocument = useCallback((ed: Editor) => {
+    ed.commands.clearContent(true);
+    notifyDocumentClear(ed);
+  }, [notifyDocumentClear]);
 
   // Stable submit callback that reads the doc from the current editor.
   const handleSubmitFromKeymap = useCallback(() => {
@@ -304,9 +314,9 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     if (!ed) return;
     const text = serializeDoc(ed.state.doc);
     if (!onSubmitRef.current) return;
-    if (clearOnSubmitRef.current) ed.commands.clearContent(true);
+    if (clearOnSubmitRef.current) clearDocument(ed);
     onSubmitRef.current(text);
-  }, []);
+  }, [clearDocument]);
 
   const mentionExtension = useMemo(() => buildMentionExtension(
     {
@@ -477,7 +487,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       editor?.commands.focus(position);
     },
     clear() {
-      editor?.commands.clearContent(true);
+      if (editor) clearDocument(editor);
     },
     getText() {
       if (!editor) return '';
@@ -488,6 +498,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       if (!editor) return;
       const next = editor.schema.nodeFromJSON(plainTextDoc(text, mentionProviderRef.current?.resolve));
       if (!editor.state.doc.eq(next)) editor.commands.setContent(next, { emitUpdate: true });
+      if (text === '') notifyDocumentClear(editor);
     },
     insertText(text, position) {
       if (!editor) return;
@@ -542,7 +553,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       });
       if (changed) editor.view.dispatch(tr);
     },
-  }), [editor]);
+  }), [editor, clearDocument, notifyDocumentClear]);
 
   // Convert suggestion items to ComboboxPopupItem shape.
   const mentionPopupItems = mentionSuggestion.items.map((item) => mentionToPopupItem(item, renderMentionIcon));

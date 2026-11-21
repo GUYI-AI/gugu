@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyTurnToAuthExpiry,
+  applyStartToAuthExpiry,
   authExpiryEffect,
   sessionUsesPlatformCredentials,
   hookAuthExpiryEffect,
@@ -10,6 +11,31 @@ import {
 const failed = { outcome: { kind: 'error' as const, reason: 'prompt_failed' as const, signInRequired: true } };
 const otherFailure = { outcome: { kind: 'error' as const, reason: 'prompt_failed' as const } };
 const done = { outcome: { kind: 'done' as const, reason: 'end_turn' as const } };
+
+describe('startup revocation before a turn exists', () => {
+  const failure = { type: 'auth_required', cause: { name: 'RequestError', message: 'refresh token was revoked' } };
+  const writer = () => ({ mark: vi.fn(async () => {}), clear: vi.fn(async () => {}), log: vi.fn() });
+  it('marks the session-bound connection before the start failure is returned', async () => {
+    const target = writer();
+    await applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'bound-old-agent', platformCredentials: false, failure }, target);
+    expect(target.mark).toHaveBeenCalledWith('codex', 'bound-old-agent');
+    expect(target.clear).not.toHaveBeenCalled();
+  });
+  it('does not expire a personal account for a platform failure or a generic startup error', () => {
+    const target = writer();
+    expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'platform-agent', platformCredentials: true, failure }, target)).toBeNull();
+    expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'agent', platformCredentials: false,
+      failure: { cause: { name: 'Error', message: 'refresh token request timed out' } } }, target)).toBeNull();
+    expect(applyStartToAuthExpiry({ sessionId: 'agent', platformCredentials: false, failure }, target)).toBeNull();
+    expect(target.mark).not.toHaveBeenCalled();
+  });
+  it('keeps the original startup error when the expiry writer fails', async () => {
+    const target = writer();
+    target.mark.mockRejectedValueOnce(new Error('fixture write failure'));
+    await expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'agent', platformCredentials: false, failure }, target)).resolves.toBeUndefined();
+    expect(target.log).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('authExpiryEffect (#6264)', () => {
   it('这一轮因鉴权被拒 ⇒ 标上这家', () => {

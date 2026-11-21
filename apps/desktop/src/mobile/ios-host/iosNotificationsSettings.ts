@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import type { IOSOwnerBinding } from '../ios-runtime/iosOwnerClient'
 import { IOSAgentError, type IOSAgentClient, type IOSHostChannel } from './iosAgentClient'
 
@@ -18,7 +19,7 @@ function metaReply(value: unknown): IOSNotificationsMeta {
   const fields = value as Record<string, unknown>
   return { value: valueReply(fields.value), defaults: valueReply(fields.defaults), overrides: valueReply(fields.overrides) }
 }
-const invalid = () => new IOSAgentError('settings_unknown', '尚未读到已保存的本机任务通知设置。')
+const invalid = () => new IOSAgentError('settings_unknown', mobileWorkspaceText('ios.notificationSettingsUnknown'))
 
 /** Only the local phone's named preference. No generic settings/remote fallback. */
 export class IOSNotificationsSettings {

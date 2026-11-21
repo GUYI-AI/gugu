@@ -20,11 +20,11 @@ export type SelfIdentity = {
 /**
  * The same rendering rule as core's `identityShown` minus the typed-id anchor
  * (the card already shows `from_id` in its details tier):
- * "Name (咕咕号 N)" → "Name" → "咕咕号 N" → null when the profile names nothing.
+ * "Name (gugu:N)" → "Name" → "gugu:N" → null when the profile names nothing.
  */
 export function selfIdentityLabel(self: SelfIdentity): string | null {
   const name = self.displayName?.trim() || null;
-  const number = self.guguNumber != null ? `咕咕号 ${self.guguNumber}` : null;
+  const number = self.guguNumber != null ? `gugu:${self.guguNumber}` : null;
   if (name && number) return `${name} (${number})`;
   return name ?? number;
 }

@@ -24,11 +24,11 @@ describe('phone Agent model options',()=>{
     await h.render(createElement(CreateOptionsPill,{...props,models:null}))
     await clickElement(h.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-open"]')!)
     const row=()=>h.container.querySelector('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')?.textContent??''
-    expect(row()).toContain('正在问')
+    expect(row()).toContain('正在读取该设备的模型列表')
     await h.render(createElement(CreateOptionsPill,{...props,models}))
-    expect(row()).toContain('默认');expect(row()).not.toContain('正在问')
+    expect(row()).toContain('默认');expect(row()).not.toContain('正在读取该设备的模型列表')
     await h.render(createElement(CreateOptionsPill,{...props,models:{...models,harness:'codex'}}))
-    expect(row()).toContain('正在问')
+    expect(row()).toContain('正在读取该设备的模型列表')
   })
   it('shows the fixed phone Agent identity and opens models directly without exposing an engine or private project',async()=>{
     const h=createReactHarness();active.push(h);const onChange=vi.fn(),selection=defaultSelection(options)

@@ -8,6 +8,7 @@ import {
   type InstallTarget,
 } from '@gugu/session-core/deps';
 import { anySignal } from '@gugu/core/shared/anySignal';
+import type { InstallFetch } from './install-source-transport';
 
 export type MiseTarget = Extract<InstallTarget, { kind: 'mise' }>;
 
@@ -24,6 +25,8 @@ export type MiseArchiveDistribution = {
   /** 启动器在 `"$@"` 前固定带上的参数 —— 只有 ACP 注册表那一格会给(FORMAT.md 的 `args`)。 */
   args?: string[];
   config: string;
+  /** The exact artifact used by this recipe, also used for a bounded source sample. */
+  sampleUrl?: string;
 };
 
 /**
@@ -42,11 +45,19 @@ export type MiseNpmDistribution = {
   config: string;
   /** 交给 mise 的额外环境 —— 下载源走 `NPM_CONFIG_REGISTRY`(mise 与 aube 都认它)。 */
   env: NodeJS.ProcessEnv;
+  sampleUrl?: string;
 };
 
 export type MiseDistribution = MiseArchiveDistribution | MiseNpmDistribution;
 
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+export class PlatformBuildMissingError extends Error {}
+class PackageMetadataError extends Error {
+  constructor(readonly status: number, name: string, version: string) {
+    super('Package metadata HTTP ' + status + ': ' + name + '@' + version);
+  }
+}
 
 type Manifest = {
   version: string;
@@ -65,11 +76,15 @@ async function fetchManifest(
   name: string,
   version: string,
   signal?: AbortSignal,
+  fetcher: InstallFetch = fetch,
 ): Promise<Manifest> {
-  const response = await fetch(registry + '/' + encodeURIComponent(name) + '/' + encodeURIComponent(version), {
+  const response = await fetcher(registry + '/' + encodeURIComponent(name) + '/' + encodeURIComponent(version), {
     signal: anySignal([signal, AbortSignal.timeout(20_000)]),
   });
-  if (!response.ok) throw new Error('Package metadata HTTP ' + response.status + ': ' + name + '@' + version);
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new PackageMetadataError(response.status, name, version);
+  }
   return await response.json() as Manifest;
 }
 
@@ -296,6 +311,7 @@ export async function resolveMiseDistribution(
   arch: string = process.arch,
   /** 只给测试用;缺省按本机 libc 判(`vendorPlatformLookupKey`)。 */
   musl?: boolean,
+  fetcher: InstallFetch = fetch,
 ): Promise<MiseDistribution> {
   // ACP 注册表只有一个 URL:npm 下载源在这条上没有意义,❌ 不去查它(也就不会因为一个镜像 id 报错)。
   if (target.backend.kind === 'acp-registry') {
@@ -309,7 +325,7 @@ export async function resolveMiseDistribution(
   if (target.backend.kind === 'npm') {
     // 版本自己解析出来再钉给 mise:`@latest` 交给 mise 也行,但那样装完对不上账 ——
     // 「装的是哪个版本」要在装之前就是一个已知的值,inventory 与 `--version` 才有东西可核。
-    const main = await fetchManifest(registry, target.package, 'latest', signal);
+    const main = await fetchManifest(registry, target.package, 'latest', signal, fetcher);
     if (!VERSION.test(main.version)) throw new Error('Invalid published version');
     const tool = 'npm:' + target.package;
     return {
@@ -329,21 +345,25 @@ export async function resolveMiseDistribution(
       // mise 的版本查询与 aube 的安装都认 `NPM_CONFIG_*`(docs/dev-tools/backends/npm.md),
       // 所以「显示版本、更新检查、实际取包」三处同源这条承诺在这条后端上照旧成立。
       env: { NPM_CONFIG_REGISTRY: registry },
+      ...(main.dist?.tarball ? { sampleUrl: new URL(main.dist.tarball, registry + '/').href } : {}),
     };
   }
   const executable = target.backend.executables[platform + '-' + arch];
   if (!executable || executable.split(/[\\/]/).includes('..') || path.posix.isAbsolute(executable)) {
     throw new Error('Unsupported mise target: ' + platform + '-' + arch);
   }
-  const main = await fetchManifest(registry, target.package, 'latest', signal);
+  const main = await fetchManifest(registry, target.package, 'latest', signal, fetcher);
   if (!VERSION.test(main.version)) throw new Error('Invalid published version');
   // 平台包名默认按 `<package>-<platform>-<arch>`;厂商换了命名的那几家在 descriptor 里写明。
   const name = target.backend.platformPackages?.[platform + '-' + arch] ?? target.package + '-' + platform + '-' + arch;
   const spec = main.optionalDependencies?.[name];
-  if (!spec) throw new Error('Platform package missing: ' + name + '@' + main.version);
+  if (!spec) throw new PlatformBuildMissingError('Platform package missing: ' + name + '@' + main.version);
   const alias = spec.startsWith('npm:') ? spec.slice(4) : name + '@' + spec;
   const at = alias.lastIndexOf('@');
-  const payload = await fetchManifest(registry, alias.slice(0, at), alias.slice(at + 1), signal);
+  const payload = await fetchManifest(registry, alias.slice(0, at), alias.slice(at + 1), signal, fetcher).catch((error: unknown) => {
+    if (error instanceof PackageMetadataError && error.status === 404) throw new PlatformBuildMissingError('Platform package missing: ' + name + '@' + main.version);
+    throw error;
+  });
   const integrity = payload.dist?.integrity;
   if (!payload.dist?.tarball || !integrity?.startsWith('sha512-')) throw new Error('Platform package has no SHA-512 integrity');
   const checksum = Buffer.from(integrity.slice(7), 'base64');
@@ -363,5 +383,5 @@ export async function resolveMiseDistribution(
     'bin_path = ' + JSON.stringify(path.posix.dirname(executable)),
     '',
   ].join('\n');
-  return { kind: 'platform-archive', tool, version: main.version, installVersion, executable, config };
+  return { kind: 'platform-archive', tool, version: main.version, installVersion, executable, config, sampleUrl: url };
 }

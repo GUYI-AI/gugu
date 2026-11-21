@@ -48,11 +48,13 @@ export const ModalRenderer = observer(function ModalRenderer() {
   const lastComponentRef = useRef<React.ComponentType<any> | null>(null);
   const lastArgsRef = useRef<Record<string, unknown> | null>(null);
   const lastEntryRef = useRef<ModalRegistryEntry | null>(null);
+  const lastRequestRef = useRef(0);
 
   if (modalStore.isOpen && Component && modalStore.activeModalArgs) {
     lastComponentRef.current = Component;
     lastArgsRef.current = modalStore.activeModalArgs;
     lastEntryRef.current = entry;
+    lastRequestRef.current = modalStore.request;
   }
 
   const DisplayComponent = lastComponentRef.current;
@@ -156,7 +158,7 @@ export const ModalRenderer = observer(function ModalRenderer() {
             SIZE_CLASSES[displayEntry?.size ?? 'md']
           )}
         >
-          {DisplayComponent && displayArgs ? <DisplayComponent {...displayArgs} /> : null}
+          {DisplayComponent && displayArgs ? <DisplayComponent key={lastRequestRef.current} {...displayArgs} /> : null}
         </DialogPrimitive.Popup>
       </DialogPortal>
     </Dialog>
