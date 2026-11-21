@@ -3,6 +3,7 @@ import { WireError } from '@gugu/session-wire'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { errorText } from './subscription-queries'
 import { showModal } from '@renderer/lib/modal/modal-provider'
+import { replica } from '@/lib/replica'
 
 /** Re-import an already migrated configuration from Subscriptions. */
 export async function openAgentHomeImport(providerId: string, machine: string | null): Promise<boolean> {
@@ -37,3 +38,12 @@ export async function readAgentHome(providerId: string, machine: string | null) 
     throw error
   }
 }
+
+/** A provider's configuration home on a machine (null = this one): the data-import page and the subscriptions row read this one. */
+export const agentHome = replica({
+  name: 'agentHome',
+  scope: 'device',
+  read: (_device: string, machine: string | null, providerId: string) => readAgentHome(providerId, machine),
+  // While the home is being prepared for a move, it is read every second until it says it is done.
+  refreshEvery: (home) => (home?.migrationPreparation ? 1000 : false),
+})

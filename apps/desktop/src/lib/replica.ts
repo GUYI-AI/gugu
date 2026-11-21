@@ -695,7 +695,9 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     },
     reread: async (...args) => {
       await model.refresh(...args)
-      return model.fetch(...args)
+      // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once). Not shown, read now.
+      const state = queryClient.getQueryState(requireKey(args))
+      return state?.data !== undefined && !state.isInvalidated ? state.data as V : model.fetch(...args)
     },
   }
   models.set(definition.name, model as unknown as Replica<unknown[], unknown>)
@@ -755,7 +757,7 @@ let readsOnce = 0
  * One read that is not kept (a file's bytes for one preview, a one-off check), retried as a model's reads are: ❌ a hand
  * loop with timers. Nothing is cached: the next call reads again.
  */
-export function readOnce<V>(read: () => Promise<V>, options: { retry?: number; retryDelay?: (attempt: number) => number } = {}): Promise<V> {
+export function readOnce<V>(read: () => Promise<V>, options: Pick<Definition<[], V>, 'retry' | 'retryDelay'> = {}): Promise<V> {
   return queryClient.fetchQuery({
     queryKey: ['read-model:once', ++readsOnce],
     queryFn: read,

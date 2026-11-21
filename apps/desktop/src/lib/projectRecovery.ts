@@ -58,7 +58,7 @@ async function groupIsArchived(chatId: string): Promise<boolean> {
   return data.status === 'archived'
 }
 
-async function recoverFolder(project: UnavailableProject, path: string): Promise<void> {
+export async function recoverUnavailableProject(project: UnavailableProject, path: string): Promise<void> {
   const checked = await local().inspectProjectRecovery(project.id, path)
   if (!checked.success) throw new ProjectRecoveryRefusal(checked.error.type, checked.error.message)
   // A refusal (including missing topic evidence) must leave the local project unchanged.
@@ -69,27 +69,20 @@ async function recoverFolder(project: UnavailableProject, path: string): Promise
   const result = await local().restoreProjectFolder(project.id, path)
   if (!result.success) throw new ProjectRecoveryRefusal(result.error.type, result.error.message)
   if (project.chatId) noteGroupArchived(project.chatId, false)
-  await refreshProjectRecovery()
-}
-
-export async function refreshProjectRecovery(): Promise<void> {
   await unavailableProjects.refresh()
-}
-
-export async function recoverUnavailableProject(project: UnavailableProject, path: string): Promise<void> {
-  await recoverFolder(project, path)
 }
 
 /** The existing-folder action is the only post-cleanup recovery entry. No name/inode guessing. */
 export async function recoverRetainedProjectAtPath(path: string): Promise<string | null> {
   const project = await local().findRetainedProjectAtPath(path)
   if (!project?.chatId || !await groupIsArchived(project.chatId)) return null
-  await recoverFolder(project, path)
+  await recoverUnavailableProject(project, path)
   return project.id
 }
 
 export async function archiveUnavailableProjects(confirmed: readonly UnavailableProject[]): Promise<void> {
-  const current = await local().listUnavailableProjects()
+  // Checked against the list read now (the shown one may be minutes old).
+  const current = await readUnavailableProjects()
   const eligible = new Map(current.map(project => [project.id, project]))
   if (confirmed.some(project => eligible.get(project.id)?.chatId !== project.chatId || eligible.get(project.id)?.path !== project.path)) throw new ProjectRecoveryRefusal('state-changed', 'unavailable projects changed after confirmation')
   const { currentGroupAdmin } = await import('./groupAdmin')
@@ -99,5 +92,5 @@ export async function archiveUnavailableProjects(confirmed: readonly Unavailable
     await admin.archive(chatId)
     noteGroupArchived(chatId, true)
   }
-  await refreshProjectRecovery()
+  await unavailableProjects.refresh()
 }
