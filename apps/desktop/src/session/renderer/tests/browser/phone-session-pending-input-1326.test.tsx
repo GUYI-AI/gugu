@@ -27,7 +27,7 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const 
 vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
 let harness: ReturnType<typeof createReactHarness>;
-afterEach(() => {
+afterEach(async () => {
   modalStore.closeModal();
   harness?.cleanup();
   Object.assign(state(), { accountId: null, rows: EMPTY, valid: () => false });
@@ -37,6 +37,7 @@ afterEach(() => {
   discard.mockClear();
   hostLife.view = null;
   hostHistory.read.mockReset();
+  await i18n.changeLanguage('en-US');
 });
 
 it('clears an unknown incoming marker when the phone already has its native bubble', async () => {
@@ -237,8 +238,11 @@ it('offers resend and discard on a failed host row and discard on an unknown one
   expect(retry).not.toHaveBeenCalled();
 });
 
-it.each([false, true])('phone native recovery explains the real tail limit and dispatches consent only on confirmation (%s)', async confirmed => {
+it.each([
+  ['en-US', false], ['en-US', true], ['zh-CN', false], ['zh-CN', true],
+] as const)('phone recovery uses plain %s copy and submits consent only on confirmation (%s)', async (locale, confirmed) => {
   await page.viewport(390, 844);
+  await i18n.changeLanguage(locale);
   hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
     pending: { count: 1, items: [{ seq: 1, messageId: 'tail-input', kind: 'session-direct', text: 'old input', preview: 'old input',
       state: 'unknown', failure: null, resendable: true, discardable: true }] } };
@@ -259,12 +263,14 @@ it.each([false, true])('phone native recovery explains the real tail limit and d
   await act(async () => { await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!); });
   await until('the existing native delivery confirmation is open', () => !!document.querySelector('[role="dialog"]'));
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-  expect(dialog.textContent).toContain('only the latest part');
-  expect(dialog.textContent).toContain('could create a duplicate');
+  expect(dialog.textContent).toContain(locale === 'zh-CN' ? 'Agent 那边的对话记录' : "the agent's conversation record");
+  expect(dialog.textContent).toContain(locale === 'zh-CN' ? '再次发送可能产生重复' : 'could create a duplicate');
+  expect(dialog.textContent).not.toMatch(/原生记录|native history/i);
   expect(dialog.textContent).not.toContain('native_tail_does_not_cover_history');
   expect(dialog.textContent).not.toContain('raw-detail-marker');
   expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'tail-input', { allowConfirmation: true });
-  await act(async () => { await userEvent.click(page.getByRole('button', { name: confirmed ? /^Send again anyway/ : /^Cancel$/ })); });
+  const label = locale === 'zh-CN' ? (confirmed ? /^仍然重发/ : /^取消$/) : (confirmed ? /^Send again anyway/ : /^Cancel$/);
+  await act(async () => { await userEvent.click(page.getByRole('button', { name: label })); });
   await until('confirmation is settled', () => !modalStore.isOpen && resend.mock.calls.length === (confirmed ? 2 : 1));
   if (confirmed) expect(resend).toHaveBeenNthCalledWith(2, 'phone-task', 'tail-input', { allowConfirmation: true, confirmation: 'phone-row-consent' });
   expect(harness.container.querySelectorAll('[data-user-card]')).toHaveLength(1);

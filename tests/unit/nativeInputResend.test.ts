@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { runInAction } from 'mobx'
 import { modalStore } from '@renderer/lib/modal/modal-store'
 import { resendNativeInputByPerson } from '@/lib/nativeInputResend'
+import { enUSMessages, zhCNMessages } from '@renderer/localization/messages'
 
 const mocks = vi.hoisted(() => ({ succeeded: vi.fn(), failed: vi.fn(), warn: vi.fn(), error: vi.fn() }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ debug: () => {}, info: () => {}, warn: mocks.warn, error: mocks.error }) }))
@@ -84,4 +85,15 @@ it('keeps unexpected RPC details out of notices while preserving them in diagnos
   await resendNativeInputByPerson('s', 'unknown-failure', null, vi.fn().mockRejectedValue(new Error(detail)));
   expect(mocks.failed).toHaveBeenCalledWith(expect.objectContaining({ description: 'nativeResend.action.failed' }));
   expect(mocks.error).toHaveBeenCalledWith(expect.objectContaining({ error: `Error: ${detail}` }), expect.any(String));
+});
+
+it.each([
+  ['en-US', enUSMessages, "the agent's conversation record"],
+  ['zh-CN', zhCNMessages, 'Agent 那边的对话记录'],
+] as const)('uses plain conversation-record wording in all %s resend explanations', (_locale, catalog, phrase) => {
+  for (const reason of ['tail', 'record', 'changed', 'budget', 'unreadable', 'unavailable', 'identity'] as const) {
+    const copy = catalog[`nativeResend.reason.${reason}`];
+    expect(copy.toLowerCase()).toContain(phrase.toLowerCase());
+    expect(copy).not.toMatch(/原生记录|native history|native record/i);
+  }
 });
