@@ -537,6 +537,7 @@ const state = {
   openSections: new Set(), // the time sections shown in full, past their first SECTION_ROWS
   selecting: false, // the phone's explicit selection mode, including an empty selection
   pickFrom: null, // the file pressed last, where a Shift press's range starts
+  opened: null, // the file opened last from this list: its row stays marked (aria-current) under the viewer and after it
   order: [], // the files on screen, in their order: what a range runs along
   locating: null, // 「在聊天中定位」 for a selection: { ids: message ids oldest first, at }
   showAppData: false,
@@ -2043,6 +2044,7 @@ function listItem(entry, now = new Date(Date.now())) {
   li.dataset.id = entry.id
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', String(state.current?.entry.id === entry.id))
+  markOpened(li)
   if (entry.gitStatus) li.dataset.git = entry.gitStatus
   const open = document.createElement('button')
   open.type = 'button'
@@ -2132,6 +2134,7 @@ function gridItem(entry, now) {
   li.dataset.id = entry.id
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', 'false')
+  markOpened(li)
   if (offline(entry)) li.dataset.offline = ''
   if (fileUnavailable(entry)) li.dataset.expired = ''
   const open = document.createElement('button')
@@ -4253,11 +4256,25 @@ function pickable(li, entry) {
 
 // Explicit open gestures win; Shift selects a range and an unmodified press toggles while selection is active.
 function pressFile(entry, event) {
-  if (event?.altKey || event?.ctrlKey || event?.metaKey || event?.button === 1) return openFile(entry, event.altKey ? 'beside' : 'newTab')
+  if (event?.altKey || event?.ctrlKey || event?.metaKey || event?.button === 1) return openFile(opened(entry), event.altKey ? 'beside' : 'newTab')
   if (event?.shiftKey) return pick(entry.id, 'range')
   if (state.picked.size || state.selecting) return pick(entry.id, 'toggle')
   state.pickFrom = entry.id
-  return openFile(entry, event?.altKey ? 'beside' : event?.ctrlKey || event?.metaKey || event?.button === 1 ? 'newTab' : 'navigate')
+  return openFile(opened(entry), event?.altKey ? 'beside' : event?.ctrlKey || event?.metaKey || event?.button === 1 ? 'newTab' : 'navigate')
+}
+
+// @@@opened-row - the row a file was opened from keeps one background, the selected one, under the host's viewer and
+// after it closes. Otherwise its fill is only hover and press: the viewer taking the pointer fades it out under the
+// opening picture, and it comes back only when the pointer moves again — the row seen to flash while an image opens.
+function opened(entry) {
+  state.opened = entry.id
+  for (const li of $('file-list').querySelectorAll('li[data-id]')) markOpened(li)
+  return entry
+}
+
+function markOpened(li) {
+  if (state.opened === li.dataset.id) li.setAttribute('aria-current', 'true')
+  else li.removeAttribute('aria-current')
 }
 
 function pick(id, how) {

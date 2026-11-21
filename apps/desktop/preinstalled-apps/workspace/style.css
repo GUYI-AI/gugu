@@ -87,6 +87,8 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .pick-all[aria-checked='true']::after, .file-pick[aria-checked='true']::after { content: ''; position: absolute; left: 8px; top: 5px; width: 4px; height: 8px; border: solid var(--em-background); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .pick-all[aria-checked='mixed']::after { content: ''; position: absolute; inset: 10px 6px; background: var(--em-foreground); }
 .file.picked { background: var(--em-selected); }
+/* The row a file was opened from keeps one fill whether the pointer rests on it or the image viewer takes it away; a press still shows. */
+.file[aria-current]:not(:active) { background-image: none; }
 .file-open:focus-visible { outline: none; }
 .file:has(.file-open:focus-visible) { outline: 2px solid var(--em-focus-ring); outline-offset: -2px; }
 .pick-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; margin: var(--em-spacing-lg); padding: 4px var(--em-spacing-sm); border-radius: var(--em-radius-control); background: var(--em-selected); color: var(--em-foreground); font-size: var(--em-font-caption); }
