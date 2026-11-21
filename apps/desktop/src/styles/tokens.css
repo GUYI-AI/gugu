@@ -1664,8 +1664,10 @@ body.barcode-scanner-active #root {
 
 /* 列表行:会话/联系人/任务/文件/成员行。选中挂 data-selected(React: data-selected={sel || undefined})。 */
 .gg-row {
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
+/* 此刻选不了的行(如联系人多选态下的「新的请求」):与菜单项的禁用态(.gg-mi[data-disabled])同一个淡法,不接指针。 */
+.gg-row[aria-disabled='true'] { opacity: 0.4; pointer-events: none; }
 /* #2598 置顶行常驻底色(飞书式:靠底色辨识,❌ 另起分隔条/标题栏——见 #1323/#1331 做减法先例)。
    刻意排在交互态之前:同特异度下后写的赢,hover/press/selected 照常盖过常驻态。 */
 .gg-row[data-pinned] { background: var(--pinned); }

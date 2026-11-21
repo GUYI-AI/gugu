@@ -126,6 +126,7 @@ export function AppProductPage({
   onBack: () => void;
   onLifecycle: () => void;
   onInstallVersion?: (ref: MarketSourceRef) => void;
+  /** Installing on this account's other devices: one more button in the action row. */
   targetSummary?: ReactNode;
   /** Installed only: its settings page, where everything about this copy is managed. */
   onManage?: () => void;
@@ -535,6 +536,7 @@ export function AppProductPage({
                     {translate('extensions.appSettings')}
                   </Button>
                 ) : null}
+                {targetSummary}
                 {onForward ? (
                   <Button type="button" variant="ghost" size="lg" onClick={onForward} data-testid="app-product-forward">
                     <Share2 className="size-4" />
@@ -542,7 +544,6 @@ export function AppProductPage({
                   </Button>
                 ) : null}
               </div>
-              {targetSummary}
             </fieldset>
           </AppProductHeader>
         </header>

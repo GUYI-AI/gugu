@@ -1,10 +1,10 @@
-import type { AgentAppDetailLink, ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { AgentAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { retryOf } from '@/lib/replica';
 import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -19,7 +19,6 @@ import { Unknown } from '@/components/ui/Unknown';
 import { reloadAppPage } from '@renderer/features/extensions/app-page-unsaved';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
-import type { MarketplaceTab } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
@@ -28,7 +27,7 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
-import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
+import { appsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -38,22 +37,14 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
   const currentViewId = appState.navigation.currentViewId;
-  const { agentDetail, agentDetailFrom, detail, installedSection: requestedInstalled, installedDeviceId: requestedDevice } = params;
-  const marketHost = detail?.deviceId ? deviceDetailHost(detail.deviceId) : LOCAL_LIBRARY_HOST;
-  const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
-  const [installedDeviceId, setInstalledDeviceId] = useState<string>();
-  useEffect(() => {
-    if (currentViewId !== 'apps' || requestedInstalled !== 'connectors') return;
-    setInstalledDeviceId(requestedDevice);
-    setInstalledSection('connectors');
-    setParams({ installedSection: undefined, installedDeviceId: undefined });
-  }, [currentViewId, requestedInstalled, requestedDevice, setParams]);
-  useEffect(() => {
-    if (currentViewId !== 'apps') setInstalledSection(null);
-  }, [currentViewId]);
-  const launchInstalled = () => {
-    setInstalledDeviceId(undefined);
-    setInstalledSection('agents');
+  const { agentDetail, agentDetailFrom } = params;
+  const location = appsLocation(params);
+  const marketHost = location.deviceId ? deviceDetailHost(location.deviceId) : LOCAL_LIBRARY_HOST;
+  const installed = location.installed;
+  // The sheet is a place of its own: closing it is going back to where it was opened from.
+  const closeInstalled = () => {
+    if (previousAppsLocation()) navigateBack(true);
+    else moveAppsLocation((here) => ({ ...here, installed: undefined }));
   };
 
   const closeAgentDetail = () => {
@@ -72,11 +63,6 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
           <PageContent className="max-w-none px-0">
             <LibraryHostProvider value={marketHost} key={marketHost.key}>
               <ExtensionsLibraryPage
-                detail={detail}
-                openInstalled={launchInstalled}
-                onCloseDetailLink={() => setParams({ detail: undefined })}
-                marketPage={params.marketPage}
-                onMarketPageChange={(marketPage) => setParams({ marketPage })}
                 onOpenAgentDetail={(agentId) => setParams({
                   agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
                   agentDetailFrom: 'apps',
@@ -86,9 +72,9 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
           </PageContent>
         </PageLayout>
       </div>
-      {installedSection && currentViewId === 'apps' && <InstalledManager key={`${installedSection}:${installedDeviceId ?? 'local'}`}
-        initialSection={installedSection} initialDeviceId={installedDeviceId}
-        onClose={() => setInstalledSection(null)}
+      {installed && currentViewId === 'apps' && <InstalledManager place={installed}
+        onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
+        onClose={closeInstalled}
         onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
         onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
@@ -127,10 +113,7 @@ const AgentDetailHost = observer(function AgentDetailHost({ target, children }: 
 });
 
 type AppsViewParams = {
-  marketPage?: MarketplaceTab;
-  installedSection?: 'connectors';
-  installedDeviceId?: string;
-  detail?: ExtensionAppDetailLink;
+  location?: AppsLocation;
   agentDetail?: AgentAppDetailLink;
   agentDetailFrom?: 'apps' | 'embedded-composer';
 };
@@ -138,7 +121,8 @@ function AppsViewWrapper({ children }: { children: ReactNode } & AppsViewParams)
 
 export const appsView = {
   WrapView: AppsViewWrapper,
-  transientParams: ['detail', 'agentDetail', 'agentDetailFrom', 'installedSection', 'installedDeviceId'],
+  placeParams: ['location'],
+  transientParams: ['agentDetail', 'agentDetailFrom'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   withoutSessionSidebar: true,

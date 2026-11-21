@@ -131,12 +131,14 @@ export function useMarketDevicePicker<Reading, Plan>({
   };
 }
 
-export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, blockDismiss = false }: {
+export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, blockDismiss = false, size }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rows: readonly PickerRow[];
   submitLabel?: string;
   blockDismiss?: boolean;
+  /** The trigger's size: an App's page puts it in its row of large buttons. */
+  size?: 'lg';
 }) {
   const { translate } = useSessionMessages();
   const confirming = useMarketDetailConfirming();
@@ -170,7 +172,7 @@ export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, bloc
       }
       onOpenChange(next);
     }}>
-      <PopoverTrigger render={<Button variant="outline" data-testid="market-detail-other-devices" />}>
+      <PopoverTrigger render={<Button variant="outline" size={size} data-testid="market-detail-other-devices" />}>
         {translate('marketDetail.otherDevices')}
         <ChevronDown className={open ? 'rotate-180' : undefined} aria-hidden />
       </PopoverTrigger>

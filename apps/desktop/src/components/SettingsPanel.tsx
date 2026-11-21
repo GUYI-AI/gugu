@@ -190,7 +190,7 @@ export function SettingsPanel({
         )}
         {(!mobile || mobilePane === 'detail') && (
           <Pane paneRole="detail" mobile={mobile} className="gg-settings-detail">
-            {activeSection !== 'data-import' && <PaneHeader
+            {<PaneHeader
               mobile={mobile}
               title={detailPage?.title ?? sectionTitle}
               titleLevel={mobile ? 'panel' : undefined}

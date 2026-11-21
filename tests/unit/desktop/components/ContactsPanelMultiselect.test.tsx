@@ -50,4 +50,29 @@ describe('ContactsPanel contact multi-select', () => {
     expect(modal).toBeTruthy()
     expect(modal.querySelector('[data-contact-option="charlie"]')).toBeTruthy()
   })
+
+  it('enters and leaves multi-select in place: the open contact stays open, focus stays on the toggle, New requests reads as unavailable', async () => {
+    await renderWithAppProviders(harness, createNode(ContactsPanel, {}), { shellTab: 'contacts',
+      auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
+      contacts: { contacts: [contact({ id: 'alice', display_name: 'Alice' })] },
+      chat: { chats: [] }
+    })
+    const $ = (selector: string) => harness.container.querySelector(selector) as HTMLElement | null
+    const requests = () => $(`[data-testid="${AUTOMATION_TEST_IDS.contactsNewFriendsNav}"]`)!
+    await clickElement($('[data-section-key="people"]')!)
+    await clickElement($('[data-contact-id="alice"]')!)
+    const drawer = () => $('[data-testid="contacts-detail-drawer"] [data-slot="pane-header"]')?.textContent
+    expect(drawer()).toBe('Alice')
+    const enter = $(`[data-testid="${AUTOMATION_TEST_IDS.contactsSelectModeButton}"]`)!
+    enter.focus()
+    await clickElement(enter)
+    expect(drawer()).toBe('Alice')
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(AUTOMATION_TEST_IDS.contactsSelectModeDoneButton)
+    expect(requests().getAttribute('aria-disabled')).toBe('true')
+    expect(requests().tabIndex).toBe(-1)
+    await clickElement(document.activeElement as HTMLElement)
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(AUTOMATION_TEST_IDS.contactsSelectModeButton)
+    expect(requests().hasAttribute('aria-disabled')).toBe(false)
+    expect(drawer()).toBe('Alice')
+  })
 })

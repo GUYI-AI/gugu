@@ -100,6 +100,8 @@ export default {
     "emptyContacts": "暂无联系人",
     "failed": "创建群聊失败",
     "fallbackName": "群聊",
+    "nameLabel": "群名称",
+    "namePlaceholder": "群名称（可选）",
     "noResults": "未找到成员",
     "removeMember": "移除 {{name}}",
     "searchPlaceholder": "搜索名字、任务、项目或设备",
@@ -276,7 +278,9 @@ export default {
     "agents": "Agent",
     "count_one": "{{count}} 个",
     "count_other": "{{count}} 个",
-    "groups": "群"
+    "groups": "群",
+    "showLess": "收起",
+    "showMore": "展开其余 {{count}} 个"
   },
   "panel": {
     "addContact": "添加联系人",
