@@ -89,7 +89,6 @@ export interface PhoneDeviceSnapshot {
 
 const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
 let snapshot: PhoneDeviceSnapshot = OFF
-let osReadRevision = 0
 const listeners = new Set<() => void>()
 
 function publish(next: Partial<PhoneDeviceSnapshot>): void {
@@ -127,23 +126,13 @@ function osNow(): PhoneOsState | null {
 }
 
 /**
- * A new read of the OS state (heartbeat, foreground return, the settings page through refreshPhoneDevice); only the
- * latest one started lands. ❌ `phoneOsState.reread()`: on an entry nobody shows it joins a read already on its way, which
- * may have begun before the person changed a permission in the system settings.
+ * A new read of the OS state (heartbeat, foreground return, the settings page through refreshPhoneDevice): `reread`
+ * reads anew and the read begun last lands, so a permission changed in the system settings is not answered by an older
+ * read. Whether the caller goes on (the session that asked is still the current one) is the caller's.
  */
 async function readLatestOs(isCurrent: () => boolean): Promise<boolean> {
-  const revision = ++osReadRevision
-  let os: PhoneOsState
-  try {
-    os = await readPhoneOsState()
-  } catch (error) {
-    // A failure is the reading's (the page says so), ❌ the earlier answer left standing as now.
-    if (revision === osReadRevision) void phoneOsState.prefetch()
-    throw error
-  }
-  if (revision !== osReadRevision || !isCurrent()) return false
-  phoneOsState.set([], os)
-  return true
+  await phoneOsState.reread()
+  return isCurrent()
 }
 
 /** 网页比安装包新时,原生还没有 healthStatus:如实标成「这个版本读不了」(old_app),❌ 让整份系统状态读失败。 */
@@ -188,7 +177,6 @@ export function startPhoneDevice(options: {
   claimNotice: (label: string) => () => void
 }): () => void {
   session?.stop()
-  osReadRevision++
   const beforeBoot = previousSessionDrain
   const { userId } = options
   let alive = true
@@ -456,7 +444,6 @@ export function startPhoneDevice(options: {
     stop: () => {
       if (!alive) return
       alive = false
-      osReadRevision++
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (hostTimer) clearInterval(hostTimer)
       unsubscribeSettings()

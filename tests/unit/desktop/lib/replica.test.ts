@@ -63,10 +63,12 @@ describe('readings', () => {
       read: () => { calls += 1; return calls === 1 ? new Promise<string>((resolve) => { answerFirst = resolve }) : Promise.resolve('after') },
     })
     const first = model.fetch()
-    const again = model.reread()
+    // Answered without waiting for the read on its way; that read, landing later, does not overwrite it.
+    await expect(model.reread()).resolves.toBe('after')
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'after' })
     answerFirst('before')
-    await expect(first).resolves.toBe('before')
-    await expect(again).resolves.toBe('after')
+    await expect(first).resolves.toBe('after')
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'after' })
     expect(calls).toBe(2)
   })
 

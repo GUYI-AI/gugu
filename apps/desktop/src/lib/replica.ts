@@ -122,6 +122,9 @@ const definitions = new Map<string, Definition<unknown[], unknown>>()
  */
 const writes = new Map<string, number>()
 
+/** Rereads begun per entry: of two on their way, the one begun later lands. */
+const rereads = new Map<string, number>()
+
 /** Entries whose last read failed (its failure already logged). */
 const failing = new Set<string>()
 
@@ -699,10 +702,14 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once).
       const state = queryClient.getQueryState(k)
       if (state?.data !== undefined && !state.isInvalidated) return state.data as V
-      // Not shown: a read already on its way began before this call. Let it land, then read anew (❌ answer with it).
-      const query = queryClient.getQueryCache().find({ queryKey: k, exact: true })
-      if (query && query.state.fetchStatus !== 'idle') await query.promise?.catch(() => undefined)
-      return queryClient.fetchQuery({ ...options(k), staleTime: 0 }) as Promise<V>
+      // Not shown: a read of its own, begun now, ❌ joining one already on its way (it may predate a change). Its answer is
+      // put as a write (@@@write-over-read): the earlier read cannot overwrite it, and of two rereads the later one stays.
+      const hash = hashKey(k)
+      const mine = (rereads.get(hash) ?? 0) + 1
+      rereads.set(hash, mine)
+      const value = await readFromKey({ queryKey: k } as QueryFunctionContext) as V
+      if (rereads.get(hash) === mine && k[1] === ownerOf(definition.scope)) putValue(k, value)
+      return value
     },
   }
   models.set(definition.name, model as unknown as Replica<unknown[], unknown>)
