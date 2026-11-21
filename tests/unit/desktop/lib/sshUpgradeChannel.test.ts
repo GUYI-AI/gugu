@@ -6,53 +6,44 @@ import { describe, expect, it } from 'vitest'
 import {
   applyUpgradeEvent,
   onSshMachineSignedIn,
-  subscribeSshLinkProblems,
-  subscribeSshUpgrades,
+  sshLinkProblems,
+  sshUpgrades,
   subscribeSshUpgradeEvents,
 } from '../../../../apps/desktop/src/lib/sshLinkChannel'
-import type { SshLinkFailure } from '../../../../apps/desktop/src/lib/sshLink'
 
 describe('替它升级的每一步 → 设备连接的状况', () => {
   it('updating(带进度)→ done:问题清掉、当场重连;failed:停在「版本太旧」', () => {
-    let problems: ReadonlyMap<string, SshLinkFailure> = new Map()
-    let upgrades: ReadonlyMap<string, number | null> = new Map()
     const reopened: string[] = []
-    const offProblems = subscribeSshLinkProblems((next) => (problems = next))
-    const offUpgrades = subscribeSshUpgrades((next) => (upgrades = next))
     const offSignedIn = onSshMachineSignedIn((deviceId) => reopened.push(deviceId))
 
     applyUpgradeEvent({ deviceId: 'd22', phase: 'updating', percent: null })
-    expect(problems.get('d22')).toBe('updating')
-    expect(upgrades.get('d22')).toBeNull()
+    expect(sshLinkProblems.get().get('d22')).toBe('updating')
+    expect(sshUpgrades.get().get('d22')).toBeNull()
     applyUpgradeEvent({ deviceId: 'd22', phase: 'updating', percent: 40 })
-    expect(upgrades.get('d22')).toBe(40)
+    expect(sshUpgrades.get().get('d22')).toBe(40)
 
     applyUpgradeEvent({ deviceId: 'd22', phase: 'done' })
-    expect(problems.has('d22')).toBe(false)
-    expect(upgrades.has('d22')).toBe(false)
+    expect(sshLinkProblems.get().has('d22')).toBe(false)
+    expect(sshUpgrades.get().has('d22')).toBe(false)
     expect(reopened).toEqual(['d22'])
 
     applyUpgradeEvent({ deviceId: 'd23', phase: 'updating', percent: 10 })
     applyUpgradeEvent({ deviceId: 'd23', phase: 'failed' })
-    expect(problems.get('d23')).toBe('outdated')
-    expect(upgrades.has('d23')).toBe(false)
+    expect(sshLinkProblems.get().get('d23')).toBe('outdated')
+    expect(sshUpgrades.get().has('d23')).toBe(false)
     expect(reopened).toEqual(['d22'])
 
-    offProblems()
-    offUpgrades()
     offSignedIn()
   })
 
   it('an unconfirmed observation stops local progress without claiming a switch or reconnecting', () => {
     const events: string[] = []
-    let upgrades: ReadonlyMap<string, number | null> = new Map()
     const offEvents = subscribeSshUpgradeEvents(event => events.push(event.phase))
-    const offUpgrades = subscribeSshUpgrades(next => { upgrades = next })
     const offSignedIn = onSshMachineSignedIn(() => events.push('reconnected'))
     applyUpgradeEvent({ deviceId: 'pending', phase: 'updating' })
     applyUpgradeEvent({ deviceId: 'pending', phase: 'unconfirmed', request: 42, reportedVersion: '1.0.0' })
-    expect(upgrades.has('pending')).toBe(false)
+    expect(sshUpgrades.get().has('pending')).toBe(false)
     expect(events).toEqual(['updating', 'unconfirmed'])
-    offEvents(); offUpgrades(); offSignedIn()
+    offEvents(); offSignedIn()
   })
 })

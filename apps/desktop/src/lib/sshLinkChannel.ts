@@ -199,11 +199,6 @@ export function wantTunnels(wants: readonly TunnelWant[]): void {
   void electron.invoke(TUNNEL_MACHINES_CHANNELS.want, wants).then(applyTunnelState, () => undefined)
 }
 
-/** 测试用。 */
-export function _setTunnelStateForTesting(state: TunnelState): void {
-  applyTunnelState(state)
-}
-
 // ── 一台机器的设备连接 ─────────────────────────────────────────────────────────
 
 /**
@@ -224,11 +219,6 @@ function setLinkProblem(deviceId: string, problem: SshLinkFailure | null): void 
   else next.delete(deviceId)
   linkProblems.publish(next)
   linkProblems.notify()
-}
-
-export function subscribeSshLinkProblems(listener: (problems: ReadonlyMap<string, SshLinkFailure>) => void): () => void {
-  listener(linkProblems.get())
-  return linkProblems.subscribe(() => listener(linkProblems.get()))
 }
 
 export type SshLinkHandle = {
@@ -386,12 +376,6 @@ export const sshUpgrades: Readable<ReadonlyMap<string, number | null>> = {
     if (electron) wireEvents(electron)
     return upgrades.subscribe(listener)
   },
-}
-
-export function subscribeSshUpgrades(listener: (upgrades: ReadonlyMap<string, number | null>) => void): () => void {
-  const off = sshUpgrades.subscribe(() => listener(upgrades.get()))
-  listener(upgrades.get())
-  return off
 }
 
 /**
