@@ -89,7 +89,7 @@ it('a cut given other shares moves its divider over frames, and lays its panes o
   expect(Math.abs(edges.at(-1)! - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
 });
 
-it('the side page comes in on the track: it slides in from the end, and the page beside it is laid out once', async () => {
+it('the side page comes in on the track: it slides in from the end, and the page beside it re-wraps once, at its new width, as it starts', async () => {
   await page.viewport(1100, 800);
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
@@ -114,7 +114,9 @@ it('the side page comes in on the track: it slides in from the end, and the page
   expect(new Set(lefts).size, JSON.stringify(lefts)).toBeGreaterThan(5);
   expect(lefts[0], JSON.stringify(lefts)).toBeGreaterThan(800);
   expect(Math.abs(lefts.at(-1)! - 500)).toBeLessThan(2);
-  expect(keptWidths.size, [...keptWidths].join(' ')).toBeLessThanOrEqual(2);
+  // Control: laid out at the larger width while moving, it read 1000 until it landed and then jumped to 500.
+  expect(keptWidths.size, [...keptWidths].join(' ')).toBe(1);
+  expect(Math.abs([...keptWidths][0] - 500), [...keptWidths].join(' ')).toBeLessThan(2);
 });
 
 it('with exit, a last child that goes away is drawn until it is off, moving out over frames', async () => {
@@ -132,7 +134,8 @@ it('with exit, a last child that goes away is drawn until it is off, moving out 
     const side = harness.container.querySelector('[data-testid="side"]');
     lefts.push(side ? Math.round(side.getBoundingClientRect().left) : -1);
   }
-  expect(lefts[0], JSON.stringify(lefts)).toBeLessThan(700);
+  // It starts on screen (from 600, read a frame or more into the move) and is drawn until it is off.
+  expect(lefts[0], JSON.stringify(lefts)).toBeLessThan(1000);
   expect(new Set(lefts.filter((left) => left >= 0)).size, JSON.stringify(lefts)).toBeGreaterThan(5);
   expect(lefts.at(-1), JSON.stringify(lefts)).toBe(-1);
 });

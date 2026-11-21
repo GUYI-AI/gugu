@@ -4,7 +4,8 @@ import { animate } from 'framer-motion';
  * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill` that
  * takes the rest; callers say where slots go (`to` on the spring, `jump` at once) and never animate.
  *
- *  · Laid out once at each end: while moving, a slot's place is the smaller of its two sizes and its content the larger.
+ *  · Laid out once at each end: while moving, a slot's place is the smaller of its two sizes and its content the larger
+ *    (a slot that `reflows` is laid out at its new size from the start: its text wraps once, ❌ jumps when it lands).
  *  · Every frame in between is transforms: the content is seen through a window moved to the drawn edge (the content moved
  *    back by as much), the fill moved to start there. A slot going to or from nothing fades behind a soft edge (owner 11-21).
  */
@@ -25,6 +26,8 @@ export function clamp01(value: number): number {
 export interface SlotTarget {
   size: number;
   content?: number;
+  /** Narrowing, its content takes the new size at the move's start; what it gives up is drawn over by the slot after it. */
+  reflows?: boolean;
 }
 
 /** Where a slot is drawn now, its place in the layout, and its content's laid-out size. */
@@ -45,8 +48,9 @@ export interface SlotPaint {
 }
 
 /** A move from where a slot is drawn (maybe mid-move) to `target`: place the smaller size, lay the content out at the larger. */
-export function planSlot(drawn: number, content: number, target: Required<SlotTarget>): { place: number; content: number } {
-  return { place: Math.min(drawn, target.size), content: Math.max(content, target.content) };
+export function planSlot(drawn: number, content: number, target: SlotTarget & { content: number }): { place: number; content: number } {
+  const now = target.reflows && target.size >= PANEL_LANDED_PX;
+  return { place: Math.min(drawn, target.size), content: now ? target.content : Math.max(content, target.content) };
 }
 
 /** One frame: each slot and the fill are moved by how far the slots before them are drawn from where they are laid out. */
@@ -237,9 +241,9 @@ export class PanelTrack {
 }
 
 function full(target: SlotTarget): Required<SlotTarget> {
-  return { size: target.size, content: target.content ?? target.size };
+  return { size: target.size, content: target.content ?? target.size, reflows: target.reflows ?? false };
 }
 
 function same(a: Required<SlotTarget>, b: Required<SlotTarget>): boolean {
-  return a.size === b.size && a.content === b.content;
+  return a.size === b.size && a.content === b.content && a.reflows === b.reflows;
 }

@@ -28,6 +28,13 @@ describe('a move is laid out once at each end', () => {
     // a column folding to nothing keeps its laid-out width
     expect(planSlot(260, 260, { size: 0, content: 260 })).toEqual({ place: 0, content: 260 });
   });
+
+  it('a pane that reflows takes its new width at the start, unless it goes to nothing', () => {
+    // the chat beside a side page coming in: wrapped once, at 529, ❌ at 889 until it lands
+    expect(planSlot(889, 889, { size: 529, content: 529, reflows: true })).toEqual({ place: 529, content: 529 });
+    expect(planSlot(529, 529, { size: 889, content: 889, reflows: true })).toEqual({ place: 529, content: 889 });
+    expect(planSlot(260, 260, { size: 0, content: 0, reflows: true })).toEqual({ place: 0, content: 260 });
+  });
 });
 
 describe('a frame is transforms', () => {

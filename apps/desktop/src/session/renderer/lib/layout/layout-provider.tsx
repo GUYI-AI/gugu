@@ -176,7 +176,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const state = useRef({ open: isLeftOpen, listHidden: false, rootWidth: 0, innerFrames: 0, innerFolded: false });
   const [innerSidebarShown, setInnerSidebarShown] = useState(false);
 
-  const listTarget = (): Required<SlotTarget> => {
+  const listTarget = (): SlotTarget => {
     const { open, listHidden } = state.current;
     const width = leftWidth.get();
     // Hidden, it keeps its laid-out width (its rows stay as they are) and takes no room.

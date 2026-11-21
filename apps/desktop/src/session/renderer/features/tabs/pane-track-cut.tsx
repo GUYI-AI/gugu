@@ -94,10 +94,10 @@ export function TrackCut({
     const give = spare > 0 ? Math.min(1, short / spare) : 0;
     return px.map((value, at) => Math.max(items[at].min, value - Math.max(0, value - items[at].min) * give));
   };
-  // The last child before one leaving has no divider after it.
+  // The last child before one leaving has no divider after it. A pane re-wraps at its new size once, as the move starts.
   const targets = () => {
     const px = sizes();
-    return Object.fromEntries(ids.slice(0, -1).map((id, at) => [id, { size: px[at] + (at < items.length - 1 ? 1 : 0) }]));
+    return Object.fromEntries(ids.slice(0, -1).map((id, at) => [id, { size: px[at] + (at < items.length - 1 ? 1 : 0), reflows: !items[at].fixed }]));
   };
   const userShares = (next: number[]) => {
     moved.current = true;
