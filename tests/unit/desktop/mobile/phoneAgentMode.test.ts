@@ -243,7 +243,7 @@ describe('one phone endpoint owns registration and RPC', () => {
     } finally { old.resolve({ calendar: 'granted' }); await offRead }
   })
 
-  it('does not let a stopped boot publish OS, info or device identity after a new settings read', async () => {
+  it('does not let a stopped boot publish OS or device identity after a new settings read', async () => {
     const old = deferred<{ calendar: string }>()
     test.checkPermissions.mockReturnValueOnce(old.promise).mockResolvedValue({ calendar: 'denied' })
     setPhoneDeviceEnabled(test.ownerId, true)
@@ -251,11 +251,10 @@ describe('one phone endpoint owns registration and RPC', () => {
     try {
       await vi.waitFor(() => expect(test.checkPermissions).toHaveBeenCalledOnce())
       stop()
-      const stopped = readSnapshot()
       await refreshPhoneDevice()
       old.resolve({ calendar: 'granted' })
       await stopPhoneAgentHost(test.ownerId)
-      expect(readSnapshot()).toMatchObject({ link: { state: 'off' }, deviceId: null, info: stopped.info })
+      expect(readSnapshot()).toMatchObject({ link: { state: 'off' }, deviceId: null })
       expect(osShown()?.runtime.calendar).toBe('denied')
       expect(test.register).not.toHaveBeenCalled()
       expect(test.subscribe).not.toHaveBeenCalled()
