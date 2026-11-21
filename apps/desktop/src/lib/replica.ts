@@ -708,7 +708,10 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const mine = (rereads.get(hash) ?? 0) + 1
       rereads.set(hash, mine)
       const value = await readFromKey({ queryKey: k } as QueryFunctionContext) as V
-      if (rereads.get(hash) === mine && k[1] === ownerOf(definition.scope)) putValue(k, value)
+      if (rereads.get(hash) === mine && k[1] === ownerOf(definition.scope)) {
+        const shown = queryClient.getQueryData(k) as V | undefined
+        putValue(k, shown !== undefined && definition.merge ? definition.merge(shown, value) : value)
+      }
       return value
     },
   }

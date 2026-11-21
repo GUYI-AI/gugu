@@ -23,14 +23,8 @@ const bridge: AssistantPanelBridge = {
       if (!token) throw new AssistantPanelError('signed-out','PANEL_SIGNED_OUT')
       return { token,chatId,ownerId,accountId: () => getRendererSession()?.user.id ?? null }
     }
-    // ❌ Join a read already on its way (it began before the write, I2); its answer joins the entry by revision (`merge`).
-    const cloud = { ...assistantPanelCloud,snapshot: async (id: string) => {
-      if (!assistantPanel.isFetching(id)) return assistantPanel.fetch(id)
-      const entry = assistantPanel.at(id)
-      const snapshot = await bridge.panelSnapshot(ownerId,id)
-      entry.set((shown) => (shown && BigInt(shown.revision) > BigInt(snapshot.revision) ? shown : snapshot))
-      return snapshot
-    } }
+    // A read already on its way may have begun before a write (I2): then a read of its own (`reread`), ❌ joining it.
+    const cloud = { ...assistantPanelCloud,snapshot: (id: string) => assistantPanel.isFetching(id) ? assistantPanel.reread(id) : assistantPanel.fetch(id) }
     return createAssistantPanelFiles({ ownerId,assistantId,deviceId,cloud,
       cache: assistantPanelReadCache(ownerId,assistantId),
       assertCurrent: () => assertAssistantPanelOwner(ownerId),
