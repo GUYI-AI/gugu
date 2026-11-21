@@ -27,7 +27,7 @@ const sharedList = () => [...sharedHere.packages.values()] as { card: { source: 
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
   ...(await original<object>()),
   chatPackageCards: async () => sharedList().map((pkg) => pkg.card),
-  readPackageSummary: async (key: string) => ({ ok: true, manifest: sharedList().find((pkg) => (pkg.card.source.kind === 'url' ? `url:${pkg.card.source.url}` : `msg:${pkg.card.messageId}`) === key)!.manifest }),
+  readPackageSummary: async (source: unknown) => ({ ok: true, manifest: sharedList().find((pkg) => JSON.stringify(pkg.card.source) === JSON.stringify(source))!.manifest }),
   newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),

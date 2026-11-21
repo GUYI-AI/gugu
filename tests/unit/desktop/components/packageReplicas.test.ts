@@ -102,7 +102,7 @@ describe('extensionPackageSummary', () => {
     const vote = pkg('vote', '1.0.0')
     kept.set('sha-vote', new Blob([vote.source.url]))
     noteKeptCopy(`url:${vote.source.url}`, 'sha-vote')
-    expect(await extensionPackageSummary.fetch(`url:${vote.source.url}`)).toMatchObject({ ok: true, manifest: { id: 'vote', version: '1.0.0' } })
+    expect(await extensionPackageSummary.fetch(vote.source)).toMatchObject({ ok: true, manifest: { id: 'vote', version: '1.0.0' } })
     expect(download).not.toHaveBeenCalled()
   })
 
@@ -113,7 +113,7 @@ describe('extensionPackageSummary', () => {
     const seen: unknown[] = []
     const stop = packageProgress.subscribe(() => seen.push(packageProgress.get()[key] ?? null))
     expect(packageProgress.get()[key]).toBeUndefined()
-    await extensionPackageSummary.fetch(key)
+    await extensionPackageSummary.fetch(vote.source)
     expect(seen).toEqual([{ done: 1, total: 2 }, { done: 2, total: 2 }, null])
     stop()
   })
@@ -122,8 +122,8 @@ describe('extensionPackageSummary', () => {
     const { extensionPackageSummary } = await load()
     const vote = pkg('vote', '1.0.0')
     download.mockRejectedValueOnce(new Error('network'))
-    await expect(extensionPackageSummary.fetch(`url:${vote.source.url}`)).rejects.toThrow('network')
-    expect(await extensionPackageSummary.fetch(`url:${vote.source.url}`)).toMatchObject({ ok: true })
+    await expect(extensionPackageSummary.fetch(vote.source)).rejects.toThrow('network')
+    expect(await extensionPackageSummary.fetch(vote.source)).toMatchObject({ ok: true })
   })
 })
 
@@ -131,12 +131,11 @@ describe('a package whose bytes are not there (F1-4)', () => {
   it('is the reading\'s error, read again on retry (❌ remembered as unreadable for ever)', async () => {
     const { extensionPackageSummary } = await load()
     const vote = pkg('vote', '1.0.0')
-    const key = `url:${vote.source.url}`
     download.mockResolvedValueOnce({ status: 'expired' } as never)
-    await expect(extensionPackageSummary.fetch(key)).rejects.toThrow()
-    expect(extensionPackageSummary.peek(key).state).toBe('error')
-    await extensionPackageSummary.refresh(key)
-    expect(await extensionPackageSummary.fetch(key)).toMatchObject({ ok: true })
+    await expect(extensionPackageSummary.fetch(vote.source)).rejects.toThrow()
+    expect(extensionPackageSummary.peek(vote.source).state).toBe('error')
+    await extensionPackageSummary.refresh(vote.source)
+    expect(await extensionPackageSummary.fetch(vote.source)).toMatchObject({ ok: true })
   })
 
   it('offers no App in the chat\'s list, the others still listed (❌ the whole list failed)', async () => {
@@ -167,8 +166,8 @@ describe('one summary per package, whoever asks', () => {
     const vote = pkg('vote', '2.0.0')
     const key = `url:${vote.source.url}`
     noteKeptCopy(key, 'sha-not-kept-here')
-    await extensionPackageSummary.fetch(key)
-    await extensionPackageSummary.fetch(key)
+    await extensionPackageSummary.fetch(vote.source)
+    await extensionPackageSummary.fetch(vote.source)
     expect(download).toHaveBeenCalledTimes(1)
   })
 })
