@@ -68,9 +68,7 @@ export function installAssistantPanelHost(w: Window = window): void {
 }
 
 /** @@@client-state-model - read the panel as soon as the session is restored, so opening it draws on the first frame. */
-function prefetchMyPanel(): void {
-  void myAssistant.fetch().then((mine) => { if (mine.agentId) void assistantPanel.prefetch(mine.agentId) }, () => undefined)
-}
 observeRendererSession(({ event, session }) => {
-  if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) prefetchMyPanel()
+  if (!session || (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION')) return
+  void myAssistant.fetch().then((mine) => { if (mine.agentId) void assistantPanel.prefetch(mine.agentId) }, () => undefined)
 })
