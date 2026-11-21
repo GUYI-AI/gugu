@@ -39,7 +39,7 @@ describe('message references at the actual send boundary', () => {
   it('sends a readable widget link using its checked origin without copying the widget input', async () => {
     const deps = fixture(true, true)
     await expect(send('gugu-widget://counter', deps)).resolves.toContain('sent')
-    expect(deps.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: 'counter', p_as: agent })
+    expect(deps.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: 'counter' })
     expect(deps.restInsert).toHaveBeenCalledWith('messages', expect.objectContaining({ content: 'gugu-widget://counter' }))
     expect(JSON.stringify(deps.restInsert.mock.calls)).not.toContain('Counter')
   })

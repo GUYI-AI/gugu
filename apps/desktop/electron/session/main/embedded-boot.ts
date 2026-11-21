@@ -43,13 +43,13 @@ import {
   pruneSessionSnapshots,
   sessionSnapshotDir,
 } from './core/extensions/extension-session-snapshot'
-// 装完之后重新读登录 shell PATH 的注入口 —— 实现(hydrateLoginShellPath)住宿主,理由见
-// utils/userEnv.ts 的 setLoginShellPathRehydrator 注释:那个模块有模块级状态,跨 bundle
+// 每次检测前重新读用户当前 PATH 的注入口 —— 实现(refreshUserPath)住宿主,理由见
+// utils/userEnv.ts 的 setUserPathRefresher 注释:那个模块有模块级状态,跨 bundle
 // import 只会拿到复制品。
 import { encryptedAppSecretsStore } from '@main/core/secrets/encrypted-app-secrets-store'
 import { interruptTuiTurn } from '@main/core/sessions/interrupt-tui-turn'
 import { resolveSystemProxy } from '@main/utils/systemProxyEnv'
-export { setLoginShellPathRehydrator } from './utils/userEnv'
+export { setUserPathRefresher } from './utils/userEnv'
 // #5873 同一个属主的另一半:整份登录 shell 环境的快照。PATH 早就在补,而 key / 代理
 // 一直没人送 —— 终端腿靠 `-il` 自己 source 到,TUI 腿(`zsh -c`)与聊天腿(裸 spawn)读不到。
 export { setLoginShellEnvProvider } from './utils/userEnv'
@@ -370,6 +370,7 @@ export {
 } from '@main/core/extensions/extension-bridge-relay'
 import { reconcileResourceSampler, stopResourceSampler } from '@main/core/resource-monitor/resource-sampler'
 import { ensureAgentDependenciesProbed, localDependencyManager } from '@main/core/dependencies/dependency-managers'
+import { warmBundledMise } from '@main/core/dependencies/mise-installer'
 import { ensureAgentInstalled } from '@main/core/agents/ensure-agent-installed'
 import { projectManager } from '@main/core/projects/project-manager'
 import { runtimeManager } from '@main/core/runtime/runtime-manager'
@@ -813,7 +814,11 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
 
   // --- Post-registration reconcilers (index.ts:185-215). Fire-and-forget. ---
   void reconcileResourceSampler()
-  const discover = () => ensureAgentDependenciesProbed(localDependencyManager)
+  const discover = () => {
+    // Optional startup work, like the inventory: the first agent install should not pay mise's first launch.
+    void warmBundledMise()
+    return ensureAgentDependenciesProbed(localDependencyManager)
+  }
   const discovery = options.scheduleDiscovery ? options.scheduleDiscovery(discover) : discover()
   discovery.catch((e: unknown) => {
     log.error('Failed to probe dependencies:', e)

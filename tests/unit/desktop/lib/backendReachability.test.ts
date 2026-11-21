@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -13,10 +14,26 @@ vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => (
 
 import { bindBackendProbe, noteBackendAnswer, subscribeBackendRecovered } from '../../../../packages/core/src/cloud/backendReachability'
 import { createSupabaseAccountRevisionSource } from '../../../../apps/desktop/src/lib/supabaseAccountRevisionSource'
-import { chatSeq, forgetUnconfirmedReads, writeRead } from '../../../../apps/desktop/src/lib/readWriter'
+import { chatSeq, writeRead } from '../../../../apps/desktop/src/lib/readWriter'
+import { readOutboxKind } from '../../../../apps/desktop/src/lib/outbox/kinds/read'
+import { createOutbox, type Outbox } from '../../../../apps/desktop/src/lib/outbox/core'
+import { fakeAccount, memoryStorage } from '../store/chatOutboxHarness'
 
 const unbinds: Array<() => void> = []
-afterEach(() => { for (const unbind of unbinds.splice(0)) unbind(); forgetUnconfirmedReads(); db.rpc.mockReset(); db.syncSince.mockReset() })
+// The window's one outbox with the read kind, over memory, for account 'me'.
+let box: Outbox
+let account: ReturnType<typeof fakeAccount>
+beforeEach(() => {
+  account = fakeAccount('me')
+  box = createOutbox({ storage: memoryStorage(), account, online: () => () => {} })
+  box.register(readOutboxKind)
+  ;(globalThis as Record<string, unknown>).__GUGU_OUTBOX__ = box
+})
+afterEach(() => {
+  box.dispose(); delete (globalThis as Record<string, unknown>).__GUGU_OUTBOX__
+  vi.useRealTimers()
+  for (const unbind of unbinds.splice(0)) unbind(); db.rpc.mockReset(); db.syncSince.mockReset()
+})
 
 describe('backend recovered = the sync pull failed, then answered', () => {
   it('fires once on the failed → answered edge, never while the backend keeps answering', () => {
@@ -62,51 +79,69 @@ describe('backend recovered = the sync pull failed, then answered', () => {
 })
 
 describe('a cloud read that could not be written goes out again when the backend recovers', () => {
-  it('keeps the highest read per stream, asks the beat to pull, and writes it once on recovery', async () => {
+  const offline = { data: null, error: { message: 'Failed to fetch' } }
+  it('is accepted once on disk, keeps the highest read per stream, asks the beat to pull, and writes it once on recovery', async () => {
+    vi.useFakeTimers()
     const pull = vi.fn()
     unbinds.push(bindBackendProbe(pull))
-    db.rpc.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } })
-    await expect(writeRead({ kind: 'main', chatId: 'c', seq: chatSeq(7) })).rejects.toThrow('Failed to fetch')
-    await expect(writeRead({ kind: 'main', chatId: 'c', seq: chatSeq(9) })).rejects.toThrow('Failed to fetch')
-    await expect(writeRead({ kind: 'main', chatId: 'c', seq: chatSeq(8) })).rejects.toThrow('Failed to fetch')
-    expect(pull).toHaveBeenCalledTimes(3)
+    db.rpc.mockResolvedValue(offline)
+    // The local read position is the fact: writing it never fails for the caller.
+    await writeRead({ kind: 'main', chatId: 'c', seq: chatSeq(7) })
+    await writeRead({ kind: 'main', chatId: 'c', seq: chatSeq(9) })
+    await writeRead({ kind: 'main', chatId: 'c', seq: chatSeq(8) })
+    expect(box.items()).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(box.items()[0]).toMatchObject({ state: 'failed', payload: { seq: 9 } })
+    expect(pull).toHaveBeenCalled()
     db.rpc.mockReset()
     db.rpc.mockResolvedValue({ data: [{ stream_id: 'main:c' }], error: null })
     noteBackendAnswer(false)
     noteBackendAnswer(true)
-    await vi.waitFor(() => expect(db.rpc).toHaveBeenCalledOnce())
-    expect(db.rpc).toHaveBeenCalledWith('mark_stream_read', expect.objectContaining({ p_chat_id: 'c', p_seq: 9 }))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(db.rpc).toHaveBeenCalledExactlyOnceWith('mark_stream_read', expect.objectContaining({ p_chat_id: 'c', p_seq: 9 }))
+    expect(box.items()).toEqual([])
     noteBackendAnswer(false)
     noteBackendAnswer(true)
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(10)
     expect(db.rpc).toHaveBeenCalledOnce()
   })
 
-  it('a read still not written on recovery waits for the next one (local is the fact), until a newer read replaces it', async () => {
+  it('a read still not written on recovery waits for the next one (local is the fact)', async () => {
+    vi.useFakeTimers()
     unbinds.push(bindBackendProbe(() => {}))
-    db.rpc.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } })
-    await expect(writeRead({ kind: 'thread', chatId: 'c', rootId: 'r', seq: chatSeq(4) })).rejects.toThrow('Failed to fetch')
+    db.rpc.mockResolvedValue(offline)
+    await writeRead({ kind: 'thread', chatId: 'c', rootId: 'r', seq: chatSeq(4) })
+    await vi.advanceTimersByTimeAsync(25_000)
+    const attempts = db.rpc.mock.calls.length
     noteBackendAnswer(false); noteBackendAnswer(true)
-    await vi.waitFor(() => expect(db.rpc).toHaveBeenCalledTimes(2))
-    await new Promise((resolve) => setTimeout(resolve, 0)) // the failed push is kept again
+    await vi.advanceTimersByTimeAsync(10)
+    expect(db.rpc).toHaveBeenCalledTimes(attempts + 1)
+    expect(box.items()[0]).toMatchObject({ state: 'failed' })
     db.rpc.mockReset()
     db.rpc.mockResolvedValue({ data: [{ stream_id: 'thread:c:r' }], error: null })
     noteBackendAnswer(false); noteBackendAnswer(true)
-    await vi.waitFor(() => expect(db.rpc).toHaveBeenCalledOnce())
-    expect(db.rpc).toHaveBeenCalledWith('mark_stream_read', expect.objectContaining({ p_chat_id: 'c', p_thread_root_id: 'r', p_seq: 4 }))
-    noteBackendAnswer(false); noteBackendAnswer(true)
-    await Promise.resolve(); await Promise.resolve()
-    expect(db.rpc).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(db.rpc).toHaveBeenCalledExactlyOnceWith('mark_stream_read', expect.objectContaining({ p_chat_id: 'c', p_thread_root_id: 'r', p_seq: 4 }))
+    expect(box.items()).toEqual([])
   })
 
-  it('an account switch forgets the reads the previous account could not write (they never go out under the next one)', async () => {
+  it('an account switch never writes the previous account\'s reads under the next one; they wait for their owner', async () => {
+    vi.useFakeTimers()
     unbinds.push(bindBackendProbe(() => {}))
-    db.rpc.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } })
-    await expect(writeRead({ kind: 'main', chatId: 'shared-group', seq: chatSeq(12) })).rejects.toThrow('Failed to fetch')
-    forgetUnconfirmedReads()
+    db.rpc.mockResolvedValue(offline)
+    await writeRead({ kind: 'main', chatId: 'shared-group', seq: chatSeq(12) })
+    await vi.advanceTimersByTimeAsync(25_000)
+    account.set('someone-else')
+    await box.loaded()
     db.rpc.mockReset()
+    db.rpc.mockResolvedValue({ data: [{ stream_id: 'main:shared-group' }], error: null })
     noteBackendAnswer(false); noteBackendAnswer(true)
-    await Promise.resolve(); await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(10)
     expect(db.rpc).not.toHaveBeenCalled()
+    account.set('me')
+    await box.loaded()
+    noteBackendAnswer(false); noteBackendAnswer(true)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(db.rpc).toHaveBeenCalledExactlyOnceWith('mark_stream_read', expect.objectContaining({ p_chat_id: 'shared-group', p_seq: 12 }))
   })
 })

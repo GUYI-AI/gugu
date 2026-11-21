@@ -2,12 +2,13 @@ import { hydrateLife, OUTCOME_UNKNOWN, shouldStartAfterOutage, shouldStartOnHydr
 import { STAGES } from '@gugu/core/local/session-life/types';
 import { isSqliteBusy } from '@gugu/core/shared/sqliteBusy';
 import { toSerializedError } from '@gugu/session-shared/result';
+import { randomUUID } from 'node:crypto';
 import type {
   Attempt, AuthEpoch, Effect, Event, Gen, Hold, InterruptEvent, Life,
   PendingView, Receipt, RunStageEffect, Seq, SerializedError, StageResult,
 } from '@gugu/core/local/session-life/types';
 import type { Logger } from '@gugu/session-shared/logger';
-import type { LifeStatus, LifeView } from '@shared/core/sessions/session-life';
+import type { LifeStatus, LifeView, NativeInputRetryOptions, NativeInputRetryResult } from '@shared/core/sessions/session-life';
 import type { LegAdapter, PendingRow } from './session-life-adapter';
 import type { EnqueuePending } from './session-pending';
 import { LifeEvents, UncommittedLifeEvent } from './session-life-events';
@@ -78,6 +79,8 @@ interface Entry {
   version: number;
   /** Invalidates in-flight recovery intents even when an interrupt returns to the same state. */
   recoveryEpoch: number;
+  /** Ephemeral, one-use consent. Restart, account change, stop or replacing the row invalidates it. */
+  resendConfirmations: Map<string, { token: string; account: string; epoch: number; recoveryEpoch: number; seq: Seq; isCurrent?: () => boolean }>;
   since: number;
   run: Run | null;
   /** IO ownership only. Life, not this promise, answers whether a session can accept a message. */
@@ -141,7 +144,7 @@ export class SessionLife {
     const entry: Entry = { events: new LifeEvents(event => this.apply(sessionId, entry, event),
       () => this.entries.get(sessionId) === entry, error => this.ports.failed(sessionId, error)),
       life: hydrateLife(this.ports.store(sessionId).read(sessionId)), reconfigured: false, attempt: 0,
-      version: 0, recoveryEpoch: 0, since: this.ports.now(), run: null, effects: this.draining.get(sessionId) ?? Promise.resolve() };
+      version: 0, recoveryEpoch: 0, resendConfirmations: new Map(), since: this.ports.now(), run: null, effects: this.draining.get(sessionId) ?? Promise.resolve() };
     this.entries.set(sessionId, entry);
     return entry;
   }
@@ -388,9 +391,9 @@ export class SessionLife {
    * History lookup failure leaves custody unchanged; a positive echo settles it without dispatch.
    * A failed row never reached the provider, so it is resent without a history lookup.
    */
-  retryUnknownRow(sessionId: string, messageId: string,
-    findEcho: NativeInputLookup): Promise<void> {
-    return this.recoverUnknownRow(sessionId, messageId, findEcho, true);
+  async retryUnknownRow(sessionId: string, messageId: string,
+    findEcho: NativeInputLookup, options: NativeInputRetryOptions = {}): Promise<NativeInputRetryResult> {
+    return await this.recoverUnknownRow(sessionId, messageId, findEcho, true, options) ?? { kind: 'done' };
   }
 
   /** Opening a session reconciles durable inputs beyond the renderer's bounded history window. Never resends. */
@@ -401,9 +404,18 @@ export class SessionLife {
   }
 
   private async recoverUnknownRow(sessionId: string, messageId: string,
-    findEcho: NativeInputLookup, resend: boolean): Promise<void> {
+    findEcho: NativeInputLookup, resend: boolean, options: NativeInputRetryOptions = {}): Promise<NativeInputRetryResult | void> {
     const account = this.account, epoch = this.epoch;
     const observed = this.entries.get(sessionId), recoveryEpoch = observed?.recoveryEpoch ?? 0;
+    const confirmation = resend && options.confirmation !== undefined ? observed?.resendConfirmations.get(messageId) : undefined;
+    if (resend && options.confirmation !== undefined) {
+      if (!confirmation || confirmation.token !== options.confirmation || confirmation.account !== account
+        || confirmation.epoch !== epoch || confirmation.recoveryEpoch !== recoveryEpoch) {
+        throw new Error('The resend confirmation expired; check this message again');
+      }
+      // Claim before any await: a second click cannot reuse the same consent.
+      observed!.resendConfirmations.delete(messageId);
+    }
     if (!account || this.leaving || !await this.ports.ownedBy(sessionId, account)
       || this.account !== account || this.epoch !== epoch || this.leaving) {
       if (resend) throw new Error('This account cannot resend this input');
@@ -420,6 +432,7 @@ export class SessionLife {
     const store = this.ports.store(sessionId);
     const row = store.unaccepted(sessionId).find(item => item.message.id === messageId);
     if (!row || !(row.state === 'unknown' || (resend && row.state === 'failed' && settledByHand(row)))) return;
+    if (confirmation && (confirmation.seq !== row.seq || row.state !== 'unknown')) throw new Error('The message changed after resend confirmation');
     let evidence: NativeInputEvidence;
     let lookupFailed = false, lookupError: unknown;
     try {
@@ -435,13 +448,17 @@ export class SessionLife {
     // Another click or a receipt may have consumed this exact row while history was read.
     if (!store.unaccepted(sessionId).some(current => current.seq === row.seq && current.state === row.state)) return;
     // Ownership may await while the native session is rebound. No await may separate this check from the receipt commit.
+    let bindingChanged = false;
     try {
-      if (row.state === 'unknown' && findEcho.isCurrent?.() === false) evidence = { state: 'incomplete', reason: 'native_session_changed' };
+      bindingChanged = row.state === 'unknown' && (findEcho.isCurrent?.() === false || confirmation?.isCurrent?.() === false
+        || evidence.state === 'incomplete' && evidence.reason === 'native_session_changed');
+      if (bindingChanged) evidence = { state: 'incomplete', reason: 'native_session_changed' };
     } catch (error) {
+      bindingChanged = true;
       lookupFailed = true; lookupError = error;
       evidence = { state: 'incomplete', reason: 'native_lookup_failed', detail: String(error) };
     }
-    if (evidence.state !== 'received' && (!resend || evidence.state === 'incomplete')) {
+    if (evidence.state !== 'received' && (!resend || evidence.state === 'incomplete' && (!confirmation || bindingChanged))) {
       const cause = { name: 'NativeInputUnresolved', code: evidence.reason,
         message: evidence.state === 'incomplete' ? evidence.detail ?? evidence.reason : evidence.reason };
       if (row.failure?.code !== cause.code) {
@@ -450,9 +467,18 @@ export class SessionLife {
         this.logReceipt(sessionId, row.seq, receipt);
         this.publish(sessionId, entry);
       }
-      if (resend) throw lookupFailed ? lookupError : new Error(`Native delivery cannot be checked: ${evidence.reason}`);
+      if (resend) {
+        // Automatic reconciliation never reaches this branch or obtains a confirmation.
+        if (options.allowConfirmation && evidence.state === 'incomplete' && !bindingChanged) {
+          const token = randomUUID();
+          entry.resendConfirmations.set(messageId, { token, account, epoch, recoveryEpoch, seq: row.seq, isCurrent: findEcho.isCurrent });
+          return { kind: 'confirmation-required', confirmation: token, reason: evidence.reason, ...(evidence.detail ? { detail: evidence.detail } : {}) };
+        }
+        throw lookupFailed ? lookupError : new Error(`Native delivery cannot be checked: ${evidence.reason}`);
+      }
       return;
     }
+    entry.resendConfirmations.delete(messageId);
     const receipt: Receipt = evidence.state === 'received' ? { state: 'accepted', nativeReceiptId: evidence.nativeReceiptId } : { state: 'queued' };
     store.commit(sessionId, [{ e: 'write-receipt', seq: row.seq, receipt }]);
     this.logReceipt(sessionId, row.seq, receipt);
@@ -491,7 +517,7 @@ export class SessionLife {
 
   private known(sessionId: string): Omit<Entry, 'events'> {
     return this.entries.get(sessionId) ?? { life: hydrateLife(this.ports.store(sessionId).read(sessionId)), reconfigured: false, attempt: 0,
-      version: 0, recoveryEpoch: 0, since: this.ports.now(), run: null, effects: Promise.resolve() };
+      version: 0, recoveryEpoch: 0, resendConfirmations: new Map(), since: this.ports.now(), run: null, effects: Promise.resolve() };
   }
 
   /** Entries whose run holds a process or is building one (starting, ready, stopping); a side chat names its parent. */

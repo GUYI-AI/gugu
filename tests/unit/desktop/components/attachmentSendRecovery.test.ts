@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { retryAttachmentUpload } from '../../../../apps/desktop/src/lib/attachmentSendRecovery'
+import { retryAttachmentUpload } from '../../../../apps/desktop/src/lib/attachmentSendTiming'
 import { attachmentAttemptEndpoint } from '../../../../apps/desktop/src/lib/attachmentSendTiming'
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
 afterEach(() => { vi.useRealTimers() })

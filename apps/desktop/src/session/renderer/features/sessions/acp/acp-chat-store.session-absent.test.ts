@@ -13,14 +13,14 @@ import { setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { reaction, runInAction } from 'mobx';
 import { WireError } from '@gugu/session-wire';
-import type { SessionInput } from '@/lib/sessionInputOutbox';
+import type { SessionInput } from '@/lib/sessionInput';
 import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
 const custody = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('./queue-native-input', () => ({ sendThroughCustody: custody, canQueueNativeInput: () => false }));
 const reorderLocal = vi.fn(async (_sessionId: string, _ids: readonly string[]) => {});
-vi.mock('@/lib/sessionInputOutboxBridge', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/lib/sessionInputOutboxBridge')>(),
+vi.mock('@/lib/outbox/kinds/sessionInput', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/outbox/kinds/sessionInput')>(),
   reorderQueuedSessionInputs: reorderLocal,
 }));
 

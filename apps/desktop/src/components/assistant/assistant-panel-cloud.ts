@@ -1,9 +1,8 @@
 import { createAssistantPanelClient, AssistantPanelError } from '@gugu/core/cloud/assistantPanel'
-import { createAssistantPanelOutbox } from '@gugu/core/cloud/assistantPanelOutbox'
+import { enqueueAssistantNotice } from '@/lib/outbox/kinds/assistantNotice'
 import { identityDb } from '@/lib/supabase'
 import { myAssistant } from '@/lib/myAssistant'
-import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication'
-import { rendererLogger } from '@/lib/log'
+import { getRendererSession } from '@/lib/sessionPublication'
 import { assistantAppChangeSchema, type AssistantAppChange } from '@/session/shared/extensions/assistant-app'
 
 const accountId = () => getRendererSession()?.user.id ?? null
@@ -17,45 +16,17 @@ export function assertAssistantPanelOwner(expectedOwner: string | null): asserts
 }
 
 /** The assistant the outbox addresses: the account's `myAssistant` replica, read for the owner the notice belongs to. */
-async function personalAssistant(owner: string): Promise<string | null> {
+export async function personalAssistant(owner: string): Promise<string | null> {
   assertAssistantPanelOwner(owner)
   const assistant = await myAssistant.fetch()
   assertAssistantPanelOwner(owner)
   return assistant.agentId
 }
 
-const outbox = createAssistantPanelOutbox({ storage: {
-  getItem: key => window.localStorage.getItem(key),setItem: (key,value) => window.localStorage.setItem(key,value),
-},accountId,assistantId: personalAssistant,
-  send: (assistant,notice) => assistantPanelCloud.notice(assistant,assistantAppChangeSchema.parse(notice)),
-})
-const log = rendererLogger('assistant/panel')
-let retry: ReturnType<typeof setTimeout> | undefined
-let delay = 1000
-
-/** Retries do not involve the execution host and never change the saved result. */
-async function flushNotices(): Promise<void> {
-  clearTimeout(retry)
-  const owner = accountId()
-  if (!owner) return
-  try { await outbox.flush(owner); delay = 1000 }
-  catch { log.warn({},'Saved App change publication will retry') }
-  try {
-    if (accountId() === owner && outbox.hasPending(owner)) {
-      retry = setTimeout(() => { void flushNotices() },delay)
-      delay = Math.min(delay * 2,60_000)
-    }
-  } catch { log.warn({},'Saved App change outbox could not be read') }
-}
-observeRendererSession(() => { delay = 1000; void flushNotices() })
-if (typeof window !== 'undefined') window.addEventListener('online',() => { delay = 1000; void flushNotices() })
-void flushNotices()
-
+/** Durable through the outbox (kind `assistantNotice`): the source edit has already saved; telling the assistant follows. */
 export async function queueAssistantAppChange(
   change: AssistantAppChange, assistantId: string | undefined, expectedOwnerId: string | null,
-) {
+): Promise<void> {
   assertAssistantPanelOwner(expectedOwnerId)
-  const notice = assistantAppChangeSchema.parse(change)
-  try { return await outbox.enqueue(expectedOwnerId,notice,assistantId) }
-  finally { void flushNotices() }
+  await enqueueAssistantNotice(assistantAppChangeSchema.parse(change), assistantId)
 }

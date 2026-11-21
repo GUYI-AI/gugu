@@ -10,7 +10,6 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
-vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }));
 
 const credential = { reference: { id: 'test-credential', version: 1, epoch: 'test' }, name: 'Example login', origin: 'https://example.test',
   maskedAccount: 't***', accountSecret: true, hasPassword: true, fields: [], grants: [], sites: [] };

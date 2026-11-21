@@ -30,6 +30,7 @@ import { configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
+import { offerNativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
@@ -151,7 +152,7 @@ import {
 } from '../shared/update-policy'
 import { createUpdateState, type VersionedUpdateState } from '../shared/update-state'
 import { createBuiltRendererRootResolver } from './rendererRoot'
-import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot } from './shellPath'
+import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot, refreshUserPath } from './shellPath'
 import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
 import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
@@ -2543,6 +2544,7 @@ const attachmentUploads = createAttachmentUploadHost({
       }, electronFetch, SERVER_MODE)
     } }
   },
+  preview: offerNativeImagePreview,
   result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
   progress: event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('attachments:progress', event) },
   warn: error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Attachment upload failed; pending bytes remain on this device'),
@@ -4577,12 +4579,12 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
         return () => hostPresentationListeners.delete(listener)
       },
     })
-    // 同理注入:登录 shell PATH 的取回住在宿主这边(shellPath.ts 有模块级状态 lastLoginShellPath,
+    // 同理注入:用户当前 PATH 的重读住在宿主这边(shellPath.ts 有模块级状态 lastLoginShellPath,
     // 报错时要靠它说明「当时 PATH 补没补上」;会话页 import 只会拿到读不到的复制品)。
-    // 装完之后要重来一次:安装脚本自己挑目录、再往用户 rc 追加 PATH 是正当做法(36 个 agent 里
-    // 15 个走脚本安装),而启动时取的那份快照此刻已经过期 —— 不重来就是「装成功、当场找不到」。
-    emdashBridge.setLoginShellPathRehydrator(() => {
-      hydrateLoginShellPath()
+    // 每次检测前都重读:咕咕开着时用户在别处装了 CLI / 改了 rc 或用户 PATH,启动时那份已经过期。
+    emdashBridge.setUserPathRefresher(async () => {
+      const read = await refreshUserPath()
+      return { from: read.from, shell: read.shell, at: read.at, ...(read.hydrated ? {} : { failed: read.reason }) }
     })
     // #5873 同一次采样的另一半:整份登录 shell 环境。传的是**取值函数**而非当下的值 ——
     // 注入发生在 loadEmdashBridge() 那一刻,而 hydrateLoginShellPath() 可能还没跑过、

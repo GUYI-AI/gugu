@@ -3,7 +3,6 @@ import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { AccountRevisionCoordinator, AccountRevisionEvent, AccountRevisionListener } from '../lib/accountRevisionCoordinator'
 import { watchRendererRevisionReconcile } from '../lib/accountRevisionReconcile'
 import { bindBackendProbe } from '@gugu/core/cloud/backendReachability'
-import { forgetUnconfirmedReads } from '../lib/readWriter'
 import type { AccountImRepository } from '../lib/imRepository'
 import { rendererLogger } from '../lib/log'
 import { forgetMessageAgentWakes } from '../lib/messageAgentWakes'
@@ -77,6 +76,6 @@ export function useAccountStartBeat(userId: string | null | undefined, ports: {
     // A failed backend write asks for this same beat now; the beat's pull is what tells the backend came back.
     const unbindProbe = bindBackendProbe(beat)
     // Reads this account could not write, and wakes it read, are this account's: they never carry over to the next one.
-    return () => { cancelled = true; stopBeat(); stopNative?.(); window.removeEventListener(nativePersonalPublicationChannel.name, onPhone); unbindProbe(); forgetUnconfirmedReads(); forgetMessageAgentWakes() }
+    return () => { cancelled = true; stopBeat(); stopNative?.(); window.removeEventListener(nativePersonalPublicationChannel.name, onPhone); unbindProbe(); forgetMessageAgentWakes() }
   }, [coordinatorRef, getImRepository, getRevisionCoordinator, loadChats, paintLocal, registrationsRef, setChats, setChatsLoad, userId])
 }

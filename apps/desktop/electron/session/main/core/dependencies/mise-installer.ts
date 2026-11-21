@@ -50,6 +50,23 @@ export function bundledMisePath(): string {
   return path.join(root, 'mise', 'bin', process.platform === 'win32' ? 'mise.exe' : 'mise');
 }
 
+/**
+ * Launch the bundled mise once, in the background at startup. Windows Defender scans the unsigned mise.exe on its
+ * first launch only (10-35 s on a clean machine, see `MISE_COMMAND_TIMEOUT_MS`); paying that here keeps it out of
+ * the person's first agent install. Later launches take 0.1-0.2 s, so this runs on every start without state.
+ */
+export async function warmBundledMise(): Promise<void> {
+  const mise = bundledMisePath();
+  const root = path.join(managedAgentPrefix(), 'mise');
+  const started = Date.now();
+  try {
+    await runMiseProcess(mise, ['--version'], { cwd: path.dirname(mise), env: miseEnvironment(root, path.join(root, 'global.toml')), signal: AbortSignal.timeout(MISE_COMMAND_TIMEOUT_MS) });
+    log.info('[mise-installer] bundled mise warmed', { ms: Date.now() - started });
+  } catch (error) {
+    log.warn('[mise-installer] bundled mise warm-up failed', { ms: Date.now() - started, error: String(error).slice(0, 300) });
+  }
+}
+
 function shellQuote(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'"; }
 
 /**

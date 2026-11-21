@@ -46,7 +46,8 @@ it('runs cloud reads and subscriptions in the shell across two module graphs and
   expect(world.rpc).toHaveBeenCalledWith('assistant_panel_commit',expect.objectContaining({ p_data: { text: 'New owner agreement' } }))
   const paneBridge = await import('@/lib/assistantPanelBridge')
   await paneBridge.requireAssistantPanelBridge().queueNotice({ operationId: 'b0a1d3e5-0a9c-40d0-a590-bd83a795b389',resource: 'devices',operation: 'edited',id: 'device' },'assistant','owner')
-  expect(world.rpc).toHaveBeenCalledWith('assistant_panel_notice',expect.objectContaining({ p_assistant: 'assistant' }))
+  // Durable once queued; the outbox sends it right after.
+  await vi.waitFor(() => expect(world.rpc).toHaveBeenCalledWith('assistant_panel_notice',expect.objectContaining({ p_assistant: 'assistant' })))
   // A change heard on the bus reads the panel again (replica `assistantPanel`), ❌ a window event.
   const snapshotReads = () => world.rpc.mock.calls.filter(([name]) => name !== 'assistant_panel_resource' && name !== 'assistant_panel_commit' && name !== 'assistant_panel_notice').length
   const before = snapshotReads()

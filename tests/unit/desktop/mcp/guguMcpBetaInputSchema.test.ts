@@ -35,14 +35,19 @@ async function withBetaClient(run: (client: Client) => Promise<void>) {
   }
 }
 
-it('publishes a complete Beta tools/list that the MCP SDK and object-only consumers accept', async () => {
+it('publishes a complete tools/list that the MCP SDK and object-only consumers accept', async () => {
   await withBetaClient(async client => {
     // Read the real wire result before the SDK's normal listTools validation can discard it.
     const raw = await client.request({ method: 'tools/list' }, z.unknown())
     const parsed = ListToolsResultSchema.safeParse(raw)
     expect(parsed.success ? [] : parsed.error.issues).toEqual([])
     if (!parsed.success) throw new Error('Beta tools/list violates the MCP SDK schema')
-    expect(parsed.data.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['message_send', 'password_credentials', 'password_fill']))
+    expect(parsed.data.tools.map(tool => tool.name)).toContain('message_send')
+    // The password tools are in the catalog on every tier; their full definitions keep the same object-only shape.
+    for (const name of ['password_credentials', 'password_fill']) {
+      const result = await client.callTool({ name: 'catalog_list', arguments: { name } }) as { content: Array<{ text: string }> }
+      expect(JSON.parse(result.content[0]!.text).inputSchema.type, name).toBe('object')
+    }
     for (const tool of parsed.data.tools) {
       expect(tool.inputSchema.type, tool.name).toBe('object')
       for (const combinator of ['oneOf', 'anyOf', 'allOf']) expect(tool.inputSchema, `${tool.name}.${combinator}`).not.toHaveProperty(combinator)

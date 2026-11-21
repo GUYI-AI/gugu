@@ -1,4 +1,3 @@
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { registerPasswordBetaTools } from './mcp/password-beta-tools'
 import { guguMcpToolScope } from './mcp/password-native-identity'
 import { registerGuguActivityTools } from './mcp/gugu-activity-tool'
@@ -256,7 +255,6 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
   const search = initial.webSearch?.available() ? initial.webSearch : undefined
   const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
-  if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_fill']) listedTools.add(name)
   const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
     const tracked = trackHostRequest(work, toolName, requestId)
     if (initial.personalAssistant && toolName) {

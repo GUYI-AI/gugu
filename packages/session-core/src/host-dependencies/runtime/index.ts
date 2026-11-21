@@ -31,7 +31,6 @@ export {
   type DependencyId,
   type DependencyInstallError,
   type DependencyInstallResult,
-  type DependencyProbeOptions,
   type DependencyState,
   type DependencyStatus,
   type DependencyStatusMap,

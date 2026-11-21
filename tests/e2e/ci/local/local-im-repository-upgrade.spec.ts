@@ -44,7 +44,7 @@ test.beforeEach(async ({ page }) => {
   }, DB_NAME)
 })
 
-test('real repository API commits, selects, subscribes, recovers outbox, and isolates account reset', async ({ page }) => {
+test('real repository API commits, selects, subscribes, hands an older build\'s queued send over, and isolates account reset', async ({ page }) => {
   const result = await page.evaluate(async (message) => {
     const moduleUrl = '/src/lib/imRepository.ts'
     const repositoryModule = await import(/* @vite-ignore */ moduleUrl)
@@ -82,7 +82,6 @@ test('real repository API commits, selects, subscribes, recovers outbox, and iso
       transaction.putMessage(message)
       transaction.putStream('thread:chat-1:root-1', 'chat-1', 'thread', 'root-1')
       transaction.putPresence('identity-1', { state: 'online' })
-      transaction.putOutbox(outbox)
       transaction.putView('active-chat', 'chat-1')
       transaction.putSyncState('cursor', { revision: 1 })
     })
@@ -91,12 +90,19 @@ test('real repository API commits, selects, subscribes, recovers outbox, and iso
     )
     repositoryA.close()
     await new Promise((resolve) => setTimeout(resolve, 0))
+    // An older build queued this send in the IM cache; the repository no longer writes there, only hands it over.
+    const localSyncDbUrl = '/src/lib/localSyncDb.ts'
+    const legacyDb = await (await import(/* @vite-ignore */ localSyncDbUrl)).openLocalSyncDb()
+    await legacyDb.commit([{ type: 'put', store: 'outbox', value: { accountId: 'account-a', id: outbox.clientMessageId, value: outbox } }])
+    legacyDb.close()
 
     const recoveredA = await repositoryModule.openImRepository('account-a')
-    const recoveredOutbox = repositoryModule.readOutboxRecords(recoveredA).map((row: { clientMessageId: string }) => row.clientMessageId)
-    await repositoryModule.ackOutboxRecord(recoveredA, 'message-1', message)
+    const taken: Array<{ clientMessageId: string }> = []
+    await repositoryModule.takeLegacyOutboxRecords(recoveredA, async (row: { clientMessageId: string }) => { taken.push(row) })
+    const recoveredOutbox = taken.map(row => row.clientMessageId)
+    await repositoryModule.confirmSentMessage(recoveredA, taken[0], message)
     const afterAck = {
-      outbox: repositoryModule.readOutboxRecords(recoveredA).length,
+      outbox: repositoryModule.imSelectors.outbox(recoveredA.snapshot()).length,
       messages: repositoryModule.imSelectors.messagesForChat('chat-1')(recoveredA.snapshot()).length,
     }
     const resetNotifications: number[] = []
@@ -120,7 +126,7 @@ test('real repository API commits, selects, subscribes, recovers outbox, and iso
   expect(result.notifications).toEqual([0, 1])
   expect(result.committedCounts).toMatchObject({
     identity: 1, chat: 1, membership: 1, message: 1, stream: 2,
-    presence: 1, outbox: 1, view: 1, sync_state: 1,
+    presence: 1, outbox: 0, view: 1, sync_state: 1,
   })
   expect(result.recoveredOutbox).toEqual(['message-1'])
   expect(result.afterAck).toEqual({ outbox: 0, messages: 1 })
@@ -305,7 +311,7 @@ for (const version of [1, 2] as const) {
   })
 }
 
-test('atomic outbox ack keeps the main cached window reopenable and excludes thread ack', async ({ page }) => {
+test('a confirmed send keeps the main cached window reopenable and excludes a thread send', async ({ page }) => {
   const result = await page.evaluate(async ({ mainOne, mainTwo, thread }) => {
     const moduleUrl = '/src/lib/imRepository.ts'
     const repositoryModule = await import(/* @vite-ignore */ moduleUrl)
@@ -318,8 +324,7 @@ test('atomic outbox ack keeps the main cached window reopenable and excludes thr
     })
     const repository = await repositoryModule.openImRepository('account-a')
     await repositoryModule.replaceMessageWindow(repository, 'chat-1', [mainOne], true)
-    await repositoryModule.putOutboxRecord(repository, outboxFor(mainTwo))
-    await repositoryModule.ackOutboxRecord(repository, mainTwo.id, mainTwo)
+    await repositoryModule.confirmSentMessage(repository, repositoryModule.outboxMessagePosition(repository, outboxFor(mainTwo)), mainTwo)
     repository.close()
     await new Promise((resolve) => setTimeout(resolve, 0))
     let error = ''
@@ -329,15 +334,14 @@ test('atomic outbox ack keeps the main cached window reopenable and excludes thr
       const reopened = await repositoryModule.openImRepository('account-a')
       const window = repositoryModule.readMessageWindow(reopened, 'chat-1')
       afterMain = { ids: window?.messages.map((row: { id: string }) => row.id), maxSeq: window?.maxSeq,
-        outbox: repositoryModule.readOutboxRecords(reopened).length }
-      await repositoryModule.putOutboxRecord(reopened, outboxFor(thread))
-      await repositoryModule.ackOutboxRecord(reopened, thread.id, thread)
+        outbox: repositoryModule.imSelectors.outbox(reopened.snapshot()).length }
+      await repositoryModule.confirmSentMessage(reopened, repositoryModule.outboxMessagePosition(reopened, outboxFor(thread)), thread)
       reopened.close()
       await new Promise((resolve) => setTimeout(resolve, 0))
       const final = await repositoryModule.openImRepository('account-a')
       const finalWindow = repositoryModule.readMessageWindow(final, 'chat-1')
       afterThread = { ids: finalWindow?.messages.map((row: { id: string }) => row.id), maxSeq: finalWindow?.maxSeq,
-        outbox: repositoryModule.readOutboxRecords(final).length }
+        outbox: repositoryModule.imSelectors.outbox(final.snapshot()).length }
       final.close()
     } catch (caught) {
       error = caught instanceof Error ? caught.message : String(caught)

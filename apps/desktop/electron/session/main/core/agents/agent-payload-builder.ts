@@ -21,11 +21,14 @@ import { pluginRegistry } from '@gugu/session-plugins/agents';
 import type {
   AgentIconAsset,
   AgentInstallationStatus,
+  AgentLookup,
+  InstallationReading,
   AgentMetadata,
   AgentPayload,
   InstallOption,
 } from '@shared/core/agents/agent-payload';
 import { getDependencyDescriptor } from '../dependencies/registry';
+import { lookupPathSource } from '@main/utils/userEnv';
 import { providerOverrideSettings } from '../settings/provider-settings-service';
 import { getPlugin, listPlugins } from './plugin-registry';
 import { foldAgentPrograms } from './agent-programs';
@@ -104,10 +107,12 @@ async function buildOne(
     ? foldedCompanionFields(id, dependencyManager, enrichHostDep)
     : undefined;
 
+  const reading = hostDep ? readHostDependency(hostDep) : readingFromStatus(state?.status ?? 'missing');
   return {
     ...buildMetadata(provider),
     status: hostDep ? deriveHostDependencyStatus(hostDep) : (state?.status ?? 'missing'),
-    reading: hostDep ? readHostDependency(hostDep) : readingFromStatus(state?.status ?? 'missing'),
+    reading,
+    lookup: lookupOf(id, state, reading),
     version: usedInst?.version ?? state?.version ?? null,
     latestVersion,
     updateAvailable,
@@ -243,11 +248,13 @@ export function toAgentInstallationStatus(
 ): AgentInstallationStatus {
   const used = hostDep?.used ?? { kind: 'auto' as const };
   const usedInst = hostDep ? resolveActiveInstallation(hostDep.installations, used) : undefined;
+  // 四态读数与 status 一起出门(#6101):判据只有一份,在 `readHostDependency`。
+  const reading = hostDep ? readHostDependency(hostDep) : readingFromStatus(state.status);
   return {
     id,
     status: hostDep ? deriveHostDependencyStatus(hostDep) : state.status,
-    // 四态读数与 status 一起出门(#6101):判据只有一份,在 `readHostDependency`。
-    reading: hostDep ? readHostDependency(hostDep) : readingFromStatus(state.status),
+    reading,
+    lookup: lookupOf(id, state, reading),
     version: state.version,
     latestVersion: usedInst?.latestVersion ?? state.latestVersion ?? null,
     updateAvailable: usedInst?.updateAvailable ?? state.updateAvailable ?? false,
@@ -256,5 +263,21 @@ export function toAgentInstallationStatus(
     used,
     usedId: sourceKey(used),
     installOptions,
+  };
+}
+
+/**
+ * 没找到 / 找到了跑不起来时,这次查找看到了什么 —— 面板据此说出具体原因(找的是哪个名字、PATH 从哪来、
+ * `--version` 怎么失败的)。全是探测时已有的数据,不另外再跑任何东西。
+ */
+function lookupOf(id: string, state: DependencyState | undefined, reading: InstallationReading): AgentLookup | undefined {
+  if (reading !== 'not-detected' && reading !== 'detected-but-broken') return undefined;
+  const descriptor = getDependencyDescriptor(id);
+  return {
+    commands: descriptor?.commands ?? [id],
+    path: state?.path ?? null,
+    versionArgs: descriptor?.versionArgs ?? ['--version'],
+    failure: state?.failure ?? null,
+    pathSource: lookupPathSource(),
   };
 }
