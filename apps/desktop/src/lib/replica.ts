@@ -1,5 +1,5 @@
 import { QueryClient, focusManager, hashKey, keepPreviousData, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
 import { recordSnapshotRefusal } from './perfCounters'
 import { rendererLogger } from './log'
@@ -738,6 +738,18 @@ export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A
   const query = { ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: canRead, ...(options.keepPrevious ? { placeholderData: keepPreviousData } : {}) }
   const result = useQuery(query, queryClient) as UseQueryResult<V>
   return k ? readingOf(result, k) : UNKNOWN
+}
+
+/**
+ * The entry for these arguments, bound to the account this render drew: a write that answers after an await lands there,
+ * ❌ in the account signed in when it answers. null without a subject or an account.
+ */
+export function useEntry<A extends unknown[], V>(model: Replica<A, V>, args: A | null): ReturnType<Replica<A, V>['at']> | null {
+  useSyncExternalStore(subscribeAccount, accountSnapshot)
+  const k = args ? model.key(...args) : null
+  const hash = k ? hashKey(k) : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key's hash names the entry and its account
+  return useMemo(() => (args && k ? model.at(...args) : null), [hash])
 }
 
 /** One reading per subject (rows of a list), in the order given. */

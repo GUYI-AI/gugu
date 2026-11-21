@@ -1,7 +1,7 @@
 // #987 定时任务 pane — data-pane="tasks"。设计稿只给空态；列表/建表单按 gg-as 设计系统补。
 // 给 agent 配周期 prompt（间隔 + 内容），到点经设备运行时 tick → ACP deliver 触发 agent 回合（owner↔agent 私聊里）。
 import { useCallback, useMemo, useState } from 'react'
-import { refreshFailure, replica, useReplica } from '../../lib/replica'
+import { refreshFailure, replica, useEntry, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -58,8 +58,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const readError = refreshFailure(reading)
   const error = actionError ?? (readError ? (readError.message || t('settings.tasks.loadFailed')) : null)
   // Edits land after an await (a rollback, a removal): bound to the account this render drew, ❌ the next one's tasks.
-  const owner = agentScheduledTasks.key(agent.id)?.[1] ?? null
-  const entry = useMemo(() => (owner ? agentScheduledTasks.at(agent.id) : null), [agent.id, owner])
+  const entry = useEntry(agentScheduledTasks, [agent.id])
   const setTasks = useCallback((edit: (tasks: AgentScheduledTask[]) => AgentScheduledTask[]) => entry?.set((now) => now && edit(now)), [entry])
   const [showForm, setShowForm] = useState(false)
   const [prompt, setPrompt] = useState('')

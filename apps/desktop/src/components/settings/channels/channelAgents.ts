@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import type { ChatChannelList } from '@gugu/core/cloud/chatChannels'
 import { rendererChatChannelsClient } from '@/lib/chatChannels'
-import { useReplica } from '@/lib/replica'
+import { useEntry, useReplica } from '@/lib/replica'
 import { chatChannels } from '@/components/connections/connection-replicas'
 import { useAuth } from '../../../store/auth'
 import { useContactsStore } from '../../../store/contactsContext'
@@ -23,8 +23,7 @@ export function useChatChannels() {
   const reading = useReplica(chatChannels, [])
   // A change answers with the whole list after an await: it goes into the account this render drew (bound now, held across
   // the await by the handler), ❌ whichever account is signed in when it answers.
-  const owner = chatChannels.key()?.[1] ?? null
-  const entry = useMemo(() => (owner ? chatChannels.at() : null), [owner])
+  const entry = useEntry(chatChannels, [])
   // No cloud computer (`absent`): no channels to list, and nothing to connect.
   const list = reading.state === 'value' && !('absent' in reading.value) ? reading.value : null
   return { client, reading, list, apply: (next: ChatChannelList) => { entry?.set(next) } }
