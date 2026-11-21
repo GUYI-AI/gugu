@@ -44,6 +44,21 @@ function primaryFailure(stderr: string): Failure | undefined {
   }
 }
 
+// A fixture that never exits is stopped by its owner before the report below is
+// written, and its phase marks live only in the child's stderr. Append each chunk
+// as it arrives so the last mark survives a hang. A diagnostic write failing must
+// not become the fixture's own failure.
+function liveSink(directory: string | undefined, name: string, stream: 'stdout' | 'stderr'): (chunk: string) => void {
+  if (!directory) return () => {};
+  let file: string;
+  try {
+    fs.mkdirSync(directory, { recursive: true });
+    file = path.join(directory, `${name}.${stream}.live.log`);
+    fs.writeFileSync(file, '');
+  } catch { return () => {}; }
+  return chunk => { try { fs.appendFileSync(file, chunk); } catch { /* keep the in-memory copy */ } };
+}
+
 /** A fixture owns its detached process group until both the tree and stdio close. */
 export function startRealElectronFixture(options: RealElectronFixtureOptions) {
   let stdout = '', stderr = '', processError: ProcessFailure | undefined;
@@ -60,8 +75,10 @@ export function startRealElectronFixture(options: RealElectronFixtureOptions) {
     },
   });
   const child = owned.child;
-  child.stdout.on('data', chunk => { stdout += chunk.toString(); });
-  child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+  const liveStdout = liveSink(options.reportDirectory, options.name, 'stdout');
+  const liveStderr = liveSink(options.reportDirectory, options.name, 'stderr');
+  child.stdout.on('data', chunk => { const text = chunk.toString(); stdout += text; liveStdout(text); });
+  child.stderr.on('data', chunk => { const text = chunk.toString(); stderr += text; liveStderr(text); });
   // A surviving descendant may hold the pipes open after the root exits.
   child.once('exit', terminal);
   child.once('close', () => { closed(); terminal(); });

@@ -33,6 +33,8 @@ const POSTER_PX = 256
 const log = rendererLogger('agent-avatar/posters')
 
 const drawn = new Map<string, Promise<string>>()
+/** 画失败了的定格:界面每次渲染都会来要,所以默认不重画;能自己重试的调用方(通知)带 retryFailed 再要一次 */
+const failed = new Set<string>()
 const ready = new Map<string, string>()
 const listeners = new Set<() => void>()
 let version = 0
@@ -40,9 +42,10 @@ let version = 0
 /** 定格按「颜色 | 表情 | 实际穿的那一身」缓存:缺省装扮为空,同一形象共用定格 */
 const keyOf = (look: AgentLook) => `${look.color}|${look.rest}|${wearKey(wornOf(look))}`
 
-/** 这个形象的定格画好了的那张;还没画就开始画。画失败记一条,这次会话里不再重画(❌ 每次渲染都起一轮等待) */
-export function settledAgentLookPoster(look: AgentLook): Promise<string> {
+/** 这个形象的定格画好了的那张;还没画就开始画。画失败记一条,这次会话里不再重画(❌ 每次渲染都起一轮等待);只有带 retryFailed 的调用方(通知里的成员头像)才会把失败的再画一次 */
+export function settledAgentLookPoster(look: AgentLook, { retryFailed = false }: { retryFailed?: boolean } = {}): Promise<string> {
   const key = keyOf(look)
+  if (retryFailed && failed.delete(key)) drawn.delete(key)
   let p = drawn.get(key)
   if (!p) {
     p = runtime.still({ tint: bodyTint(look.color), rest: look.rest, wear: wornOf(look) }, POSTER_PX)
@@ -54,6 +57,7 @@ export function settledAgentLookPoster(look: AgentLook): Promise<string> {
         for (const fn of listeners) fn()
       },
       (err: unknown) => {
+        failed.add(key)
         log.error({ key, error: String(err) }, 'drawing agent look poster failed')
       }
     )

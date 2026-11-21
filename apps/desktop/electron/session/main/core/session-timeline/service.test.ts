@@ -41,6 +41,7 @@ const state = vi.hoisted(() => ({
   nativeUnread: [] as string[],
   notificationEpoch: 0,
   storedHistory: vi.fn(),
+  activePreview: vi.fn(),
   deliverPermission: vi.fn(),
   prepareQuestion: vi.fn(),
   deliverQuestion: vi.fn(),
@@ -69,6 +70,14 @@ const state = vi.hoisted(() => ({
 }));
 
 const persistedQuestions = vi.hoisted(() => new Map<string, Settlement[]>());
+const previewListeners = vi.hoisted(() => new Set<(id?: string) => void>());
+vi.mock('./native-preview-events', () => ({
+  readNativeActiveMessagePreview: (...args: unknown[]) => state.activePreview(...args),
+  onNativeMessagePreviewChanged: (listener: (id?: string) => void) => {
+    previewListeners.add(listener);
+    return () => { previewListeners.delete(listener); };
+  },
+}));
 vi.mock('../extensions/extension-bridge-relay', () => ({ requestExtensionInstallConsent: vi.fn(), closeExtensionInstallConsent: vi.fn() }));
 vi.mock('@renderer/features/extensions/install-consent', () => ({ askInShell: vi.fn(), installConsentPrompt: vi.fn() }));
 vi.mock('../sessions/agent-question-store', () => ({
@@ -422,6 +431,7 @@ describe('session timeline service', () => {
     state.nativeUnread = [];
     state.notificationEpoch = 0;
     state.storedHistory.mockReset();
+    state.activePreview.mockReset().mockResolvedValue(null);
     state.rows = [row()];
     state.projects = [];
     state.deliverText = vi.fn(async () => ({ accepted: 'started' as const }));
@@ -511,6 +521,70 @@ describe('session timeline service', () => {
       originTurnIds: turns.slice(-limit).map(turn => turn === source ? 'provider-source' : 'owner-notify:request') }));
     const result = await service.nativeRecord({ conversationId: 'conv-1', tail: true, limit: 2 });
     expect(result).toMatchObject({ ok: true, value: { turns, originTurnIds: ['owner-notify:request', 'provider-source'], nativeOwnerNotificationEpoch: 0 } });
+  });
+
+  it('#2007 reads a cold native preview without creating or acquiring the complete provider timeline', async () => {
+    state.rows = [row({ runtime: 'acp' })];
+    const factory = vi.fn(async () => { throw new Error('A compact preview must not replay the provider history'); });
+    service.setSessionTimelineFactory(factory);
+    const turn = { id: 'conv-1:turn:s9', seq: 9, initiator: 'user', items: [], outcome: { kind: 'done', reason: 'end_turn' } };
+    state.storedHistory.mockResolvedValue({ turns: [turn], originTurnIds: ['real-origin'], nextCursor: null });
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: true, value: { turns: [turn], activeTurn: null } });
+    expect(factory).not.toHaveBeenCalled();
+    expect(state.pendingWatchCalls).toEqual([]);
+    expect(state.wake).not.toHaveBeenCalled();
+  });
+
+  it('#2007 stops an archive snapshot after three crossed epochs instead of spinning forever', async () => {
+    state.rows = [row({ runtime: 'acp' })];
+    state.storedHistory.mockImplementation(async () => {
+      state.notificationEpoch++;
+      return { turns: [], originTurnIds: [], nextCursor: null };
+    });
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: false, error: { code: 'history_epoch_unstable' } });
+    expect(state.storedHistory).toHaveBeenCalledTimes(6);
+  });
+
+  it('#2007 keeps cold native preview subscriptions independent of full timeline watchers', async () => {
+    state.rows = [row({ runtime: 'acp' })];
+    const factory = vi.fn(async () => { throw new Error('Must not build a complete timeline'); });
+    service.setSessionTimelineFactory(factory);
+    const changed = vi.fn();
+    await expect(service.subscribePreview({ conversationId: 'conv-1', subscriptionId: 'compact-watch', cursor: null }, changed))
+      .resolves.toMatchObject({ ok: true });
+    const invalidation = [...previewListeners][0]!;
+    invalidation('other');
+    expect(changed).not.toHaveBeenCalled();
+    invalidation('conv-1');
+    invalidation(); // Worker restart invalidates the small projection, without starting a new worker.
+    const { sessionChangedChannel } = await import('@shared/core/sessions/sessionEvents');
+    for (const tap of mainTaps) tap(sessionChangedChannel.name, { sessionId: 'conv-1', changes: { nativeLastMessage: true } });
+    expect(changed).toHaveBeenCalledTimes(3);
+    service.unsubscribe('compact-watch');
+    invalidation('conv-1'); // A queued callback cannot revive a closed preview.
+    expect(changed).toHaveBeenCalledTimes(3);
+    expect(previewListeners.size).toBe(0);
+    expect(factory).not.toHaveBeenCalled();
+    expect(state.pendingWatchCalls).toEqual([]);
+    expect(state.wake).not.toHaveBeenCalled();
+  });
+
+  it('#2007 reads bounded active projections without waking a timeline and discards an already committed live origin', async () => {
+    state.rows = [row({ runtime: 'acp' })];
+    state.storedHistory.mockResolvedValue({ turns: [], originTurnIds: [], nextCursor: null });
+    const projection = { running: true, now: 'thinking', ended: null, entries: [] };
+    state.activePreview.mockResolvedValue({ turnId: 'live-origin', projection });
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: true, value: { activeTurn: null, activePreview: projection } });
+    state.storedHistory.mockResolvedValue({ turns: [{ id: 'stored', seq: 0, initiator: 'user', items: [] }], originTurnIds: ['live-origin'], nextCursor: null });
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: true, value: { activeTurn: null, activePreview: null } });
+    state.activePreview.mockRejectedValue(new Error('Worker transport failed'));
+    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
+      .toMatchObject({ ok: false, error: { message: 'Worker transport failed' } });
+    expect(state.pendingWatchCalls).toEqual([]);
   });
 
   it('retries a native page read crossed by a revert instead of labeling old rows with the new epoch', async () => {
