@@ -211,4 +211,3 @@ it('no notice picks its own corner: every one lands in the single stack', () => 
   notify({ key: 'one-stack', title: 'Import your data', ongoing: true, action: { label: 'Import', onClick() {} } })
   expect(lastOptions(sonner)).not.toHaveProperty('position')
 })
-})
