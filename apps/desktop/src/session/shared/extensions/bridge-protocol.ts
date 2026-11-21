@@ -161,7 +161,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
 // `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
 // Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
-export const EXTENSION_API_VERSION = 60;
+// 61, 62: held by open changes (App credentials; files.pick); left free here.
+// 63 (app-dispatch-core.ts): `dispatch(text, { widget: { app?, view, data?, height? }, to: { chat } })` sends a widget view
+// as whoever works the page, as `widget_send` does for an agent. An older host ignores `widget` and refuses the call as a
+// plain dispatch to a chat, so an App that sends one says 63, or offers it only where `gugu.apiVersion` is 63 or more.
+export const EXTENSION_API_VERSION = 63;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

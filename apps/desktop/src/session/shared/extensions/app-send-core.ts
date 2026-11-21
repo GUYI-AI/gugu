@@ -269,6 +269,40 @@ async function sendToMember(
   return { id };
 }
 
+/**
+ * `dispatch(text, { widget, to: { chat } })` (63): the App view as a message of that chat, written as the person — the
+ * message `widget_send` makes for an agent, through the same `chat.send_widget`. Written as whoever works the page, as
+ * every dispatch to a chat is (`as`: the person's agent; else the person). The database is its only bound (`can_act_as`).
+ */
+async function sendWidget(
+  platform: AppSendPlatform,
+  extensionId: string,
+  chat: string,
+  text: string,
+  widget: NonNullable<ReturnType<typeof dispatchCallOf>['widget']>,
+  as?: string,
+): Promise<{ to: { chat: string }; id: string; widgetId: string }> {
+  const { token, userId } = await platform.account();
+  const { data, error } = await client(token, 'chat').rpc('send_widget', {
+    p_message_id: globalThis.crypto.randomUUID(),
+    p_chat_id: chat,
+    p_sender_user_id: as ?? userId,
+    p_text: text,
+    p_app: widget.app ?? extensionId,
+    p_view: widget.view,
+    p_data: widget.data ?? null,
+    ...(widget.height === undefined ? {} : { p_height: widget.height }),
+  });
+  if (error) {
+    if (error.code === '42501') throw new AppSendError('denied', error.message);
+    if (error.code === '23514') throw new AppSendError('invalid', error.message);
+    throw new AppSendError('failed', error.message);
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { message_id?: string; widget_id?: string } | null;
+  if (!row?.message_id || !row.widget_id) throw new AppSendError('failed', 'The server did not confirm the widget');
+  return { to: { chat }, id: row.message_id, widgetId: row.widget_id };
+}
+
 /** A member's name, as a message the chat sees `@`s them; the database's own refusal says when there is none. */
 async function nameOf(token: string, userId: string): Promise<string> {
   const { data, error } = await client(token, 'identity').from('users').select('display_name').eq('id', userId).maybeSingle();
@@ -330,8 +364,9 @@ export async function dispatchFromApp(
   extensionId: string,
   args: Record<string, unknown>,
   here: DispatchHere,
-): Promise<{ to: DispatchTarget; id?: string; deferred?: true } | { cancelled: true }> {
+): Promise<{ to: DispatchTarget; id?: string; deferred?: true; widgetId?: string } | { cancelled: true }> {
   const call = dispatchCallOf(args);
+  if (call.widget && call.to && 'chat' in call.to) return sendWidget(platform, extensionId, call.to.chat, call.text, call.widget, here.as);
   // A binding is the host's to resolve against its own grant (#1927, desktop `dispatchForApp`), before this: one reaching
   // here has no host that resolves it, and is refused rather than read as any other target.
   if (call.to && 'binding' in call.to) throw new AppSendError('denied', 'This host has no conversation binding to put a draft into');
