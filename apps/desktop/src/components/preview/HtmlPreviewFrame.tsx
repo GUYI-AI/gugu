@@ -1,5 +1,6 @@
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { useEffect, useRef, useState } from 'react';
+import { readOnce } from '@/lib/replica';
 import { Button } from '@/components/ui/Button';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { HtmlPreviewAnnotationContext } from './use-html-preview-annotations';
@@ -8,8 +9,6 @@ import { previewReloadQueue } from './preview-reload';
 import { rendererLogger } from '@/lib/log';
 
 const log = rendererLogger('html-preview');
-
-const REGISTER_RETRIES = 3;
 
 /** 登记一次预览的结果:拿到地址,或一句「起不来」的原因(画在预览位置上)。 */
 export type HtmlPreviewRegistration =
@@ -62,28 +61,17 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     let registered: Extract<HtmlPreviewRegistration, { ok: true }> | null = null;
     setPreview(null);
     setFailed(null);
-    let wait: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
       const content = rawContentRef.current;
-      // A registration that does not come up is tried again a few times (1 s, 2 s, 4 s) before its failure is said.
-      let result: Extract<HtmlPreviewRegistration, { ok: true }> | null = null;
-      for (let tries = 0; !result; tries += 1) {
-        let failure: unknown;
-        try {
-          const answer = await register(content);
-          if (answer.ok) result = answer;
-          else failure = new Error(answer.message);
-        } catch (error) {
-          failure = error;
-        }
-        if (cancelled) {
-          result?.release();
-          return;
-        }
-        if (result) break;
-        if (tries >= REGISTER_RETRIES) throw failure;
-        await new Promise<void>((resolve) => { wait = setTimeout(resolve, 1000 * 2 ** tries); });
-        if (cancelled) return;
+      // A registration that comes up after the frame closed is released just below.
+      const result = await readOnce(async () => {
+        const result = await register(content);
+        if (!result.ok) throw new Error(result.message);
+        return result;
+      }, { retry: 3 });
+      if (cancelled) {
+        if (result.ok) result.release();
+        return;
       }
       registered = result;
       registeredContentRef.current = content;
@@ -94,7 +82,6 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
     });
     return () => {
       cancelled = true;
-      clearTimeout(wait);
       registered?.release();
     };
   }, [register, attempt]);
