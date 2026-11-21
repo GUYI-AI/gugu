@@ -54,13 +54,7 @@ export const groupSettings = replica({
     const w = writesOf(chatId)
     const seqAtStart = w.seq
     const startedDuringWrite = w.inFlight > 0
-    let loaded: GroupChatSettings
-    try {
-      loaded = await chatService.getGroupChatSettings(chatId)
-    } catch (error) {
-      settingsLog.error({ error, chatId }, 'group settings load failed')
-      throw error
-    }
+    const loaded = await chatService.getGroupChatSettings(chatId)
     const shown = groupSettings.peek(chatId)
     if ((startedDuringWrite || w.seq !== seqAtStart) && shown.state === 'value') {
       if (w.inFlight > 0) w.rereadAfter = true

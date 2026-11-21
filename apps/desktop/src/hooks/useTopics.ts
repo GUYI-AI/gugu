@@ -72,14 +72,9 @@ export const topicsOfChat = replica({
   name: 'topicsOfChat',
   scope: 'account',
   read: async (owner: string, sourceChatId: string): Promise<TopicSummary[]> => {
-    try {
-      const { rows, record } = await readTopics(owner, sourceChatId)
-      await record()
-      return rows
-    } catch (error) {
-      topicsLog.error({ error, sourceChatId }, 'list topics of chat failed')
-      throw error
-    }
+    const { rows, record } = await readTopics(owner, sourceChatId)
+    await record()
+    return rows
   },
 })
 

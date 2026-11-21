@@ -10,12 +10,9 @@ import {
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { isSubagentDismissed } from '@renderer/features/sessions/view/subagent-dismissals'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import { rendererLogger } from '@/lib/log'
 import { fetchBackgroundTasks } from './sessionpage-rpc'
 import { replica, useReplica } from '@/lib/replica'
 import { assistantTimelineClient } from '@/components/assistant/assistantTimelineClient'
-
-const log = rendererLogger('mobile/agent-watch/background-tasks')
 
 /** 名单还在时多久再问一次那台机器「哪些命令还活着」:命令跑完、进程没了都不会往时间线里写一行。 */
 export const BACKGROUND_TASKS_POLL_MS = 5000
@@ -55,12 +52,7 @@ export const sessionBackgroundTasks = replica({
   name: 'sessionBackgroundTasks',
   scope: 'account',
   read: async (_owner: string, deviceId: string, sessionId: string, local: boolean): Promise<{ runningCommandTaskIds: string[] | null }> => {
-    try {
-      return await (local ? assistantTimelineClient(true).fetchBackgroundTasks!(deviceId, sessionId) : fetchBackgroundTasks(deviceId, sessionId))
-    } catch (error) {
-      log.info({ error: String(error), deviceId }, 'that computer cannot report its running background tasks')
-      throw error
-    }
+    return local ? assistantTimelineClient(true).fetchBackgroundTasks!(deviceId, sessionId) : fetchBackgroundTasks(deviceId, sessionId)
   },
   fresh: 0,
   refreshEvery: BACKGROUND_TASKS_POLL_MS,
