@@ -10,6 +10,7 @@ import { mobxReadable } from '@/lib/mobxReadable';
 import type { Readable } from '@/lib/selectStore';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { resendNativeInputByPerson } from '@/lib/nativeInputResend';
 
 // Versions only compare within one machine and one link epoch (a restarted host counts from 1 again), so a link coming
 // back drops that machine's views.
@@ -165,8 +166,10 @@ export function discardSessionLifeRow(sessionId: string, messageId: string): Pro
 }
 
 /** Resend one host-owned unknown input only after an explicit click. */
-export function retryUnknownSessionInput(sessionId: string, messageId: string): Promise<void> {
-  return rpcOn(machineRegistry.machineOf(sessionId)).sessions.lifeRetryUnknown(sessionId, messageId);
+export function retryUnknownSessionInput(sessionId: string, messageId: string): Promise<boolean> {
+  const machine = machineRegistry.machineOf(sessionId);
+  return resendNativeInputByPerson(sessionId, messageId, machine,
+    options => rpcOn(machine).sessions.lifeRetryUnknown(sessionId, messageId, options));
 }
 
 /** The person opened or retried this session: its host's session-life starts it (a page never starts a runtime). */
