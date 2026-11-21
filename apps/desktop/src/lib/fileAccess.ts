@@ -2,7 +2,7 @@ import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { attachmentRequest } from '@gugu/core/cloud/attachmentsApi'
 import { createCachedFileSink, type FileChunkCache } from '@gugu/core/shared/fileCache'
-import { createFileResolver, requireFileRange, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileResolver, requireFileRange, snapshotBlob, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentsEndpoint } from './attachmentsEndpoint'
 import { budgetedCacheWriter } from './attachmentCacheBudget'
 import { rendererLogger } from './log'
@@ -69,13 +69,23 @@ const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: asyn
 export const resolveFile = createFileResolver({ ...cloud,
   async local(context) {
     const revision = await native('local', context) as FileRevision | null
-    return revision ? { revision, async open() { return nativeBytes(context, await nativeWithProgress('open', context, { revision }) as { id: string; size: number }) } } : null
+    return revision ? { revision, async open() { return { ...nativeBytes(context, await nativeWithProgress('open', context, { revision }) as { id: string; size: number }), here: true } } } : null
   },
   async ssh(revision, context) {
     const file = await nativeWithProgress('ssh', context, { revision }) as { id: string; size: number } | null
     return file ? nativeBytes(context, file) : null
   },
 })
+
+/** The bytes of `sha256` the main process holds on this machine (its file store, or an original this machine sent): no network. */
+export async function nativeLocalCopy(sha256: string, contentType = ''): Promise<Blob | null> {
+  if (!globalThis.window?.electronAPI) return null
+  const context: FileContext = { ref: { attachment_id: sha256 }, actor: fileReader(), signal: fileReadSignal() }
+  const file = await native('stored', context, { sha256 }) as { id: string; size: number } | null
+  if (!file) return null
+  const bytes = nativeBytes(context, file)
+  try { return await snapshotBlob(bytes, contentType) } finally { await bytes.dispose() }
+}
 
 /** Where a chat file's bytes are kept, from the same metadata batch the resolver reads: no bytes, no transfer. */
 export const fileMetadata = (itemId: string, version?: number) => cloud.metadata({ ref: version === undefined ? { item_id: itemId } : { item_id: itemId, version }, actor: fileReader(), signal: fileReadSignal() })

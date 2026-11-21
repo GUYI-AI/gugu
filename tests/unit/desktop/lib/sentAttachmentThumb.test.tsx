@@ -12,6 +12,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   resolveFile: f.resolve,
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
   fileReadSignal: () => undefined,
+  nativeLocalCopy: async () => null,
   // Holds node:buffer Blobs: jsdom's Blob (and a Response's, here) has no stream(); the renderer's does.
   attachmentCache: async () => ({ match: async (key: string) => f.store.has(key) ? { blob: async () => f.store.get(key) } : undefined,
     put: async (key: string, response: Response) => { f.store.set(key, new NodeBlob([await response.arrayBuffer()])) } }),
@@ -80,6 +81,16 @@ describe('a kept copy opened in full', () => {
     expect(await (bytes as { blob: Blob }).blob.text()).toBe('local png bytes')
     expect(read).not.toHaveBeenCalled()
     expect(dispose).toHaveBeenCalledTimes(1)
+  })
+  it('keeps bytes that came over the network, and none of bytes read from this machine\'s disk', async () => {
+    for (const here of [false, true]) {
+      f.store.clear()
+      const chunk = new Uint8Array(await file.arrayBuffer())
+      f.resolve.mockResolvedValue({ status: 'ready', purpose: 'file', reader: { accountId: 'account-1' }, revision: (metadataFor(sha256) as Extract<FileMetadata, { status: 'ready' }>).revision,
+        read: async () => chunk, stream: async function* () { yield chunk }, dispose: async () => {}, fromDisk: async () => here })
+      expect((await attachmentBytes(source, 'full')).status).toBe('ready')
+      expect(f.store.size).toBe(here ? 0 : 1)
+    }
   })
   it('a read no longer authorized is not answered from the copy', async () => {
     await keepSentAttachment(file)

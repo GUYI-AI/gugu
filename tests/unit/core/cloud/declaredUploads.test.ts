@@ -7,7 +7,7 @@ const server = vi.hoisted(() => ({ plan: vi.fn(), store: vi.fn(), finish: vi.fn(
 const progress = vi.hoisted(() => ({ set: vi.fn(), fail: vi.fn() }))
 const copies = vi.hoisted(() => new Map<string, Blob>())
 const refuse = (status: number, error: string) => Object.assign(new Error(error), { status, error })
-import { createDeclaredUploads } from '@gugu/core/cloud/declaredUploads'
+import { createDeclaredUploads, ORIGINAL_CHANGED } from '@gugu/core/cloud/declaredUploads'
 import { AttachmentsError, contentRequestId } from '@gugu/core/cloud/attachmentsApi'
 const endpoint = async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 't',
   fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -298,6 +298,23 @@ describe('attachment bytes go up behind their message', () => {
     expect(server.finish).toHaveBeenCalledWith(expect.objectContaining({ staging_key: 'pending/message-3' }))
     expect(server.store).toHaveBeenCalledExactlyOnceWith('https://bucket.test/pending/message-3', expect.any(Blob), expect.any(Function))
   }, 15_000)
+
+  // The file uploaded changed or went away before its bytes were up: the upload ends, saying so; no retry can fix it.
+  it('an original that changed fails its upload for good with that reason, during the upload and when resuming it', async () => {
+    const seen: unknown[] = []
+    queue.dispose()
+    queue = createDeclaredUploads({ endpoint, progress: (id, value) => { if (value?.failed) seen.push({ id, ...value }) },
+      copyOf: async () => { throw Object.assign(new Error('changed'), { code: ORIGINAL_CHANGED }) } })
+    server.store.mockRejectedValue(new DOMException('The blob could not be read', 'NotReadableError'))
+    await beginAttachmentUpload(task('message-6'), new Blob(['bytes']), plan('pending/message-6')).catch(() => undefined)
+    expect(seen).toEqual([expect.objectContaining({ id: 'message-6', failed: true, final: true, reason: ORIGINAL_CHANGED })])
+    expect(server.store).toHaveBeenCalledOnce()
+    server.pending.mockResolvedValue({ uploads: [pending('message-7', 'b'.repeat(64))] })
+    await resumeAttachmentUploads()
+    expect(seen.at(-1)).toEqual(expect.objectContaining({ id: 'message-7', failed: true, final: true, reason: ORIGINAL_CHANGED }))
+    await resumeAttachmentUploads()
+    expect(seen.filter(row => (row as { id: string }).id === 'message-7')).toHaveLength(1)
+  })
 
   it('replays a lost rollover response after a restart with the same successor ID and original declaration', async () => {
     const id = '11111111-1111-4111-8111-111111111111'

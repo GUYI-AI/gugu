@@ -1,7 +1,6 @@
 import type { OutboxWiring } from '../../store/chatOutboxWiring'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
-import { keepSentAttachment } from '../../lib/attachmentBytes'
 import { rendererLogger } from '../../lib/log'
 import { SEND_GROUP_MAX_FILES, type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../../lib/attachmentsEndpoint'
@@ -149,9 +148,6 @@ async function commitWhenPrepared(args: BatchArgs, file: File, row: StagedRow, p
   }
   try {
     const prepared = await preparing
-    // Sent bytes are kept by content before the commit, so the committed row draws them instead of downloading them again
-    // (a cloud file's copy was kept as it was declared).
-    if ('local' in prepared && inferAttachmentKind(file) === 'image') void keepSentAttachment(file).catch((error) => rendererLogger('chat/send').error({ error: String(error) }, 'sent image local copy not kept'))
     await args.outbox.commitAttachment(row.message, prepared, {
       message_id: row.message.id, chat_id: args.chatId, sender_user_id: args.senderId,
       file_name: file.name || 'file', content_type: resolveFileMimeType(file), to_user_ids: args.toUserIds ?? [],

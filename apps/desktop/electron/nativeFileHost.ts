@@ -19,6 +19,8 @@ export function createNativeFileHost(deps: {
   /** A task attachment's own copy for the agent (`writeTaskCopy`): its path. */
   taskCopy?(name: string, bytes: Uint8Array, mimeType?: string): Promise<{ path: string; name: string; size: number; mimeType?: string }>
   publication?(chatId: string, owner: string): Promise<boolean>
+  /** This machine's bytes of a sha (`localCopy`): asked only for a read already authorized. */
+  stored?(sha256: string): Promise<Blob | null>
 }) {
   type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; context?: string; name?: string; size?: number; sha?: string;
     sink?: Awaited<ReturnType<typeof createFileSink>>; hash?: ReturnType<typeof createHash>; written?: number; path?: string; busy?: boolean }
@@ -61,10 +63,17 @@ export function createNativeFileHost(deps: {
     },
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
     /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
-    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string },
+    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string },
       report?: (progress: { id: string; done: number; total: number }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
+      if (request.op === 'stored') {
+        const blob = await deps.stored?.(request.sha256!) ?? null
+        if (!blob) return null
+        await check(scope, owner, epoch)
+        const file: FileBytes = { size: blob.size, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} }
+        const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file }); return { id, size: file.size }
+      }
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
         const named = request.progress
         if (typeof named === 'string' && report) context = { ...context, progress: (done, total) => report({ id: named, done, total }) }

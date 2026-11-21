@@ -13,6 +13,7 @@ const boundary = vi.hoisted(() => ({
   document: vi.fn(),
   forward: vi.fn(),
   signed: vi.fn(),
+  local: vi.fn(),
   save: vi.fn(),
   open: vi.fn(),
   close: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => boundary.mobile
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: boundary.read,
-  attachmentPreview: boundary.signed,
+  attachmentPreview: boundary.signed, localAttachmentCopy: boundary.local,
   openAttachmentInSystemApp: boundary.open,
   openAttachmentImages: boundary.image,
   sourceKeyOf: (source: { itemId: string; version: number }) => `${source.itemId}@${source.version}`,
@@ -77,6 +78,7 @@ beforeEach(() => {
     boundary.previewContents.set(url, html)
     return { ok: true, url, update: vi.fn(), release: vi.fn() }
   })
+  boundary.local.mockResolvedValue(null)
   boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content: async () => ({ url: 'https://media.test/signed.mp4', expiresAt: Date.now() + 60_000 }), dispose: vi.fn() })
   boundary.read.mockResolvedValue({ status: 'ready', blob: { text: async () => '<h1>lane report</h1>', arrayBuffer: async () => new ArrayBuffer(4) } })
   boundary.document.mockResolvedValue({ text: '<h1>live report</h1>' })
@@ -224,6 +226,19 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(boundary.open).not.toHaveBeenCalled()
     const download = harness.container.querySelector('button[aria-label="下载"]')
     expect(download).not.toBeNull()
+  })
+
+  // A video this machine already has (it sent it, or opened it before) plays from those bytes: no link is asked for.
+  it('plays a cloud MP4 this machine already has from its bytes, without a streaming lease', async () => {
+    const dispose = vi.fn(async () => {}), content = vi.fn()
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object', sha256: 'c'.repeat(64), content_type: 'video/mp4' }, content, dispose })
+    boundary.local.mockResolvedValue(new Blob(['kept video'], { type: 'video/mp4' }))
+    const urls = { create: vi.fn(() => 'blob:kept-video'), revoke: vi.fn() }
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = urls.create; static revokeObjectURL = urls.revoke })
+    await slot(detail('mp4'))
+    await until('the kept video plays', () => harness.container.querySelector('video')?.getAttribute('src') === 'blob:kept-video')
+    expect(boundary.local).toHaveBeenCalledWith('c'.repeat(64), 'video/mp4')
+    expect(content).not.toHaveBeenCalled(); expect(boundary.read).not.toHaveBeenCalled(); expect(dispose).toHaveBeenCalledTimes(1)
   })
 
   // A video kept on a machine has no signed link: it is read whole like any file, its bar moving while it comes.

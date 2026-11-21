@@ -11,7 +11,7 @@ import { NATIVE_BACK_EVENT } from '../../../../apps/desktop/src/components/ui/sh
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { readingZoomMemory: true } } }))
 vi.mock('@/lib/attachmentBytes', () => ({
   attachmentBytes: async () => ({ status: 'ready', blob: new Blob(['original text']) }),
-  sourceKeyOf: () => 'session-file', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
+  sourceKeyOf: () => 'session-file', attachmentPreview: vi.fn(), localAttachmentCopy: async () => null, openAttachmentInSystemApp: vi.fn(),
 }))
 function Conversation({ mobile }: { mobile: boolean }) {
   const [draft] = useState('unfinished task draft')

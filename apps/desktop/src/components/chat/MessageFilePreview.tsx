@@ -10,7 +10,7 @@ import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attac
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
-import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
+import { attachmentBytes, attachmentPreview, localAttachmentCopy, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
@@ -98,11 +98,17 @@ function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead 
   return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
 async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
-  // A video in the object store plays from its signed link. One kept on a machine (or already here) is read whole like any
-  // other file: with its progress, and from the copy an earlier open kept.
+  // A video this machine already has plays from those bytes; one only in the object store, from its signed link. One kept on
+  // another machine is read whole like any other file: with its progress, and from the copy an earlier open kept.
   if (kind === 'video' && file.source.kind !== 'hosted' && !file.document && !sentFileCopy(file.source)) {
     const preview = await attachmentPreview(file.source)
     if (preview.status !== 'ready') throw new Error(preview.status)
+    const here = preview.revision.source === 'managed-object' ? await localAttachmentCopy(preview.revision.sha256, preview.revision.content_type) : null
+    if (here) {
+      await preview.dispose()
+      const videoUrl = URL.createObjectURL(here)
+      return { content: null, videoUrl, expiresAt: Infinity, release: async () => URL.revokeObjectURL(videoUrl) }
+    }
     if (preview.revision.source === 'managed-object') {
       const renew = async () => {
         const content = await preview.content()

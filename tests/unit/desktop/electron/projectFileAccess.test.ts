@@ -431,7 +431,7 @@ describe('the database\'s version record decides what this device holds', () => 
     // No version named: the current one, which only the database knows.
     expect(await readProjectFile({ item_id: 'item' }, 'owner', 'host-device', env, later)).toEqual(renamed())
     expect(later).toHaveBeenCalledWith({ item_id: 'item' })
-    const provider = localProjectFileProvider({ identity, read: createProjectFileReader({ identity, root: async () => root, env, later }), tempRoot, env, later })
+    const provider = localProjectFileProvider({ identity, read: createProjectFileReader({ identity, root: async () => root, env, later }), root: async () => root, env, later })
     const file = await createFileResolver({ local: provider, metadata: later as never, managed: later as never, ssh: later as never, temporary: later as never })({ ...ref, version: 2 }, actor)
     if (file.status !== 'ready') throw Error('ready expected')
     expect(file.revision).toMatchObject({ version: 2, file_name: 'renamed.bin' })
@@ -520,31 +520,37 @@ describe('local read fence and verified snapshot', () => {
   it('an agent reading by message gets the file on this disk, with no temporary transfer through the cloud', async () => {
     const read = createProjectFileReader({ identity, root: async () => root, env, later: noRecord })
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env, later: noRecord }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, root: async () => root, env, later: noRecord }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
     const file = await createFileResolver(providers)({ message_id: 'message' }, { accountId, actorId: 'agent' })
     if (file.status !== 'ready') throw Error('ready expected')
     expect(await file.read(0, 2)).toEqual(new Uint8Array([83, 83]))
     await file.dispose()
     expect(never).not.toHaveBeenCalled()
   })
-  it('resolves locally before cloud lookup, is lazy, and exposes immutable bytes without paths or writes', async () => {
+  // A held version is read where it is: checked once against its sha, no copy staged; changed after that, it reads no more.
+  it('resolves locally before cloud lookup, is lazy, reads the file in place, and refuses bytes of a changed file', async () => {
     const read = vi.fn(reader())
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never }
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, root: async () => root, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never }
     const file = await createFileResolver(providers)(ref, actor)
     expect(file.status).toBe('ready'); expect(read).not.toHaveBeenCalled(); expect(never).not.toHaveBeenCalled()
     if (file.status !== 'ready') throw Error('ready expected')
     expect(await file.read(500_000, 100)).toEqual(new Uint8Array(bytes.subarray(500_000, 500_100)))
+    expect(await readdir(tempRoot).catch(() => []), 'no copy is staged').toEqual([])
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 0))
-    const all: Uint8Array[] = []
-    for await (const chunk of file.stream()) all.push(chunk)
-    expect(digest(Buffer.concat(all))).toBe(revision.sha256)
+    await expect(file.read(0, 100)).rejects.toMatchObject({ name: 'NotReadableError' })
     expect('path' in file).toBe(false); expect('write' in file).toBe(false); expect(never).not.toHaveBeenCalled()
     await file.dispose()
-    expect(await readdir(tempRoot)).toEqual([])
+  })
+  it('a held file that no longer holds its sha is not opened', async () => {
+    await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
+    const never = vi.fn(async () => { throw Error('Network must remain unused') })
+    const file = await createFileResolver({ local: localProjectFileProvider({ identity, read: reader(), root: async () => root, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never })(ref, actor)
+    if (file.status !== 'ready') throw Error('ready expected')
+    await expect(file.read(0, 1)).rejects.toThrow('Local file changed')
   })
   it('requires cloud ACL for an agent rather than borrowing the person’s local permission', async () => {
-    const provider = localProjectFileProvider({ identity, read: reader(), tempRoot, env, later: noRecord })
+    const provider = localProjectFileProvider({ identity, read: reader(), root: async () => root, env, later: noRecord })
     expect(await provider({ ref, actor: { ...actor, actorId: 'agent' } })).toBeNull()
     accountId = 'other'
     expect(await provider({ ref, actor })).toBeNull()
