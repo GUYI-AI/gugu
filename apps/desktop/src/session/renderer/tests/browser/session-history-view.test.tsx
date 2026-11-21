@@ -146,12 +146,13 @@ import { SESSION_HISTORY_IMPORT_PART } from '@renderer/features/session-history/
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { runInAction } from 'mobx';
 import { followRendererSession, queryClient } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 
 /** 账号上的项目:webapp(这台电脑上的 p1,加上用例绑在别的机器上的)。 */
 function seedAccounts(): void {
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
     accountProjectsStore.list = [{ chatId: 'chat-webapp', name: 'webapp', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'this-computer', localProjectId: 'p1' }, ...world.bound] }];
-    accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.status = 'ready';
   });
 }
