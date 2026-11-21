@@ -431,7 +431,7 @@ export function forgetInMemoryTimelines(): void {
   nativeMemory.clear()
   nativeStored.clear()
   for (const store of [streams, nativeStreams, sessionpageFacts]) {
-    if (Object.keys(store.get()).length > 0) { store.publish({}); store.notify() }
+    if (Object.keys(store.get()).length > 0) store.set({})
   }
 }
 onAccountChange(() => forgetInMemoryTimelines())
