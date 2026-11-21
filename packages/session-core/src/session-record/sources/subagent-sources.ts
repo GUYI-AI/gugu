@@ -1,6 +1,6 @@
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 import type { RecordEntry, RecordImageRef, SessionRecordResume, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
-import type { SessionRecordSourceOptions } from './shared';
+import { deliverInSlices, readSlices, type SessionRecordSourceOptions } from './shared';
 
 /** Follow native child records through the same lifecycle and stream projection as Codex. */
 export function withSubagentSources(
@@ -103,9 +103,19 @@ export function withSubagentSources(
         await Promise.all(order.map(ensureChild));
         await Promise.all(starting.values());
       } finally {
+        // In slices (see `readSlices`). `held` stays up meanwhile so a child's live lines queue behind its history;
+        // whatever queued for a child already passed goes out in the last, synchronous sweep.
         const waiting = held;
+        const pause = readSlices();
+        const sent = new Map(order.map((id) => [id, 0]));
+        for (const id of order) {
+          await deliverInSlices(waiting.get(id)!, (slice) => {
+            sent.set(id, sent.get(id)! + slice.length);
+            sink?.onEntries(slice);
+          }, () => stopped, pause);
+        }
         held = null;
-        for (const id of order) { const entries = waiting.get(id)!; if (entries.length && !stopped) sink?.onEntries(entries); }
+        for (const id of order) { const rest = waiting.get(id)!.slice(sent.get(id)); if (rest.length && !stopped) sink?.onEntries(rest); }
       }
     },
     async catchUp() { if (replacement) return replacement.catchUp?.(); await root.catchUp?.(); await Promise.all(starting.values()); await Promise.all([...children.values()].map((child) => child.catchUp?.())); },
