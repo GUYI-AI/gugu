@@ -517,7 +517,7 @@ export class SessionLife {
 
   private known(sessionId: string): Omit<Entry, 'events'> {
     return this.entries.get(sessionId) ?? { life: hydrateLife(this.ports.store(sessionId).read(sessionId)), reconfigured: false, attempt: 0,
-      version: 0, recoveryEpoch: 0, since: this.ports.now(), run: null, effects: Promise.resolve() };
+      version: 0, recoveryEpoch: 0, resendConfirmations: new Map(), since: this.ports.now(), run: null, effects: Promise.resolve() };
   }
 
   /** Entries whose run holds a process or is building one (starting, ready, stopping); a side chat names its parent. */
