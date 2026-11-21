@@ -58,7 +58,8 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const readError = refreshFailure(reading)
   const error = actionError ?? (readError ? (readError.message || t('settings.tasks.loadFailed')) : null)
   // Edits land after an await (a rollback, a removal): bound to the account this render drew, ❌ the next one's tasks.
-  const entry = agentScheduledTasks.key(agent.id) ? agentScheduledTasks.at(agent.id) : null
+  const owner = agentScheduledTasks.key(agent.id)?.[1] ?? null
+  const entry = useMemo(() => (owner ? agentScheduledTasks.at(agent.id) : null), [agent.id, owner])
   const setTasks = useCallback((edit: (tasks: AgentScheduledTask[]) => AgentScheduledTask[]) => entry?.set((now) => now && edit(now)), [entry])
   const [showForm, setShowForm] = useState(false)
   const [prompt, setPrompt] = useState('')
