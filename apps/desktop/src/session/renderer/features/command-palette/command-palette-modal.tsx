@@ -32,6 +32,7 @@ import { sessionRegistry } from '@renderer/features/sessions/stores/session-regi
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { refreshFailure, replica, useReplica, retryOf, valueOf } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import type { SearchItem } from '@shared/core/search';
 
 const commandPaletteSearch = replica({
@@ -136,14 +137,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           </Command.Group>
         ) : (
           <>
-            {failed && (
-              <div role="alert" className="flex items-center gap-2 px-2 py-2 text-sm text-[var(--em-foreground-destructive)]">
-                <span className="flex-1 truncate">{translate('palette.searchFailed')}</span>
-                <button type="button" className="shrink-0 text-foreground/60 hover:text-foreground" onClick={retryOf(reading)}>
-                  {translate('common.retry')}
-                </button>
-              </div>
-            )}
+            {failed && <ReadFailedLine className="p-2" message={translate('palette.searchFailed')} onRetry={retryOf(reading)} />}
             {!tasks && !failed && (
               <div data-testid="palette-search-pending" className="p-0">
                 {[0, 1, 2].map((row) => <div key={row} className={PALETTE_ITEM_CLASS}><Unknown className="w-48" /></div>)}
