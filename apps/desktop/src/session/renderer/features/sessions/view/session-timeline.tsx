@@ -64,7 +64,7 @@ function useSessionTimelineProjection<T>(
   void store?.messageCount;
   // The turns older than the loaded ones come from their outline, so the rail covers the whole conversation.
   const outline = useStoredOutline(sessionId, store?.chatState.transcript.state.committedTurns[0]?.seq, store?.canLoadOlderHistory === true);
-  return useTranscriptTimeline(store?.chatState.transcript, getSharedChatContext().selfIdentity, select, store?.chatState.session, outline, store?.historyWindow?.state.transcript);
+  return useTranscriptTimeline(store?.chatState.transcript, getSharedChatContext().selfIdentity, select, store?.chatState.session, outline);
 }
 
 const selectTurns = (turns: TimelineTurn[]) => turns;

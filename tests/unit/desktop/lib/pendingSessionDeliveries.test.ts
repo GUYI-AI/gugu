@@ -238,44 +238,43 @@ describe('incoming delivery custody', () => {
 it('resolves unknown native echoes beyond a trimmed first page before publishing the initial transcript', async () => {
   const inputs = projectSessionPendingDeliveries([], view([row('a', 1, 'unknown'), row('b', 2, 'unknown')]), [])
   const newest = [turn('latest', 'Latest response')]
-  const reads: number[] = []
-  const result = await loadPendingDeliveryHistory(newest, 30, inputs, async before => {
-    reads.push(before)
-    return before === 30 ? { turns: [turn('b-echo', envelope('b'))], nextCursor: 20 }
-      : { turns: [turn('a-echo', envelope('a'))], nextCursor: 10 }
+  let reads = 0
+  const result = await loadPendingDeliveryHistory(newest, true, inputs, async () => {
+    reads++
+    return reads === 1 ? { turns: [turn('b-echo', envelope('b'))], hasOlder: true }
+      : { turns: [turn('a-echo', envelope('a'))], hasOlder: true }
   }, () => true)
-  expect(reads).toEqual([30, 20])
-  expect(result.cursor).toBe(10)
+  expect(reads).toBe(2)
+  expect(result.hasOlder).toBe(true)
   const projected = projectPendingMessages([...result.turns, ...newest], null, inputs)
   expect(projected.waiting).toEqual([])
   expect(projected.committed.map(t => t.id)).toEqual(['a-echo', 'b-echo', 'latest'])
 })
 
 
-it('keeps a genuinely unconfirmed input at the tail only after the history cursor is exhausted', async () => {
+it('keeps a genuinely unconfirmed input at the tail only after the history is exhausted', async () => {
   const inputs = projectSessionPendingDeliveries([], view([row('unconfirmed', 1, 'unknown')]), [])
-  const result = await loadPendingDeliveryHistory([turn('latest', 'Other input')], 10, inputs,
-    async () => ({ turns: [turn('old', 'Old input')], nextCursor: null }), () => true)
-  expect(result.cursor).toBeNull()
+  const result = await loadPendingDeliveryHistory([turn('latest', 'Other input')], true, inputs,
+    async () => ({ turns: [turn('old', 'Old input')], hasOlder: false }), () => true)
+  expect(result.hasOlder).toBe(false)
+  expect(result.reason).toBe('end')
   expect(projectPendingMessages(result.turns, null, inputs).waiting).toHaveLength(1)
-  await expect(loadPendingDeliveryHistory([], 10, inputs,
-    async () => ({ turns: [], nextCursor: 10 }), () => true)).rejects.toThrow('cursor did not advance')
 })
 
 it('adds no history request for ordinary sends or when unknown echoes are already in the first page', async () => {
   const read = async () => { throw new Error('Unexpected extra history request') }
-  expect((await loadPendingDeliveryHistory([], 100, [], read, () => true)).pages).toBe(0)
+  expect((await loadPendingDeliveryHistory([], true, [], read, () => true)).pages).toBe(0)
   const input = projectSessionPendingDeliveries([], view([row('a', 1, 'unknown')]), [])
-  expect((await loadPendingDeliveryHistory([turn('native', envelope('a'))], 100, input, read, () => true)).pages).toBe(0)
+  expect((await loadPendingDeliveryHistory([turn('native', envelope('a'))], true, input, read, () => true)).pages).toBe(0)
 })
 
 it('bounds the search and hands an out-of-budget receipt to its later native history exactly once', async () => {
   const inputs = projectSessionPendingDeliveries([], view([row('late', 1, 'unknown')]), [])
   let calls = 0
   const newest = [turn('latest', 'Latest question')]
-  const bounded = await loadPendingDeliveryHistory(newest, 100, inputs, async before => {
+  const bounded = await loadPendingDeliveryHistory(newest, true, inputs, async () => {
     calls++
-    return { turns: [turn(`page-${before}`, 'Unrelated question')], nextCursor: before - 1 }
+    return { turns: [turn(`page-${calls}`, 'Unrelated question')], hasOlder: true }
   }, () => true)
   expect(calls).toBe(6)
   expect(bounded.reason).toBe('pages')
@@ -291,12 +290,12 @@ it('bounds the search and hands an out-of-budget receipt to its later native his
 
 it('does not merge a history page beyond the byte budget', async () => {
   const inputs = projectSessionPendingDeliveries([], view([row('a', 1, 'unknown')]), [])
-  const result = await loadPendingDeliveryHistory([], 100, inputs,
-    async () => ({ turns: [turn('old', 'Unrelated')], nextCursor: 99 }), () => true, { pages: 6, bytes: 1, milliseconds: 1500 })
+  const result = await loadPendingDeliveryHistory([], true, inputs,
+    async () => ({ turns: [turn('old', 'Unrelated')], hasOlder: true }), () => true, { pages: 6, bytes: 1, milliseconds: 1500 })
   expect(result.reason).toBe('bytes')
   expect(result.pages).toBe(1)
   expect(result.turns).toEqual([])
-  expect(result.cursor).toBe(100)
+  expect(result.hasOlder).toBe(true)
 })
 
 it('ends the supplemental read at its UI deadline without waiting for a slow host', async () => {
@@ -304,7 +303,7 @@ it('ends the supplemental read at its UI deadline without waiting for a slow hos
   try {
     const inputs = projectSessionPendingDeliveries([], view([row('a', 1, 'unknown')]), [])
     let calls = 0
-    const pending = loadPendingDeliveryHistory([], 100, inputs, () => { calls++; return new Promise(() => {}) }, () => true)
+    const pending = loadPendingDeliveryHistory([], true, inputs, () => { calls++; return new Promise(() => {}) }, () => true)
     await vi.advanceTimersByTimeAsync(1500)
     const result = await pending
     expect(result.reason).toBe('timeout')

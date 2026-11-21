@@ -244,7 +244,7 @@ class RecordTimeline implements SessionTimeline {
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
-  private journalTurns = new Map<string, TranscriptTurn>();
+  private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
   private terminals: readonly TerminalState[] = [];
   private terminalsDirty = false;
@@ -273,6 +273,7 @@ class RecordTimeline implements SessionTimeline {
   private stopHostTurnEnds: (() => void) | undefined;
   private hostEnds: readonly HostTurnEnd[] = [];
   private hostEnded = new WeakMap<TranscriptTurn, TranscriptTurn>();
+  private placed = new WeakMap<TranscriptTurn, TranscriptTurn>();
   /** Turns handed out by `drainSettled`, and the ids of what they own. */
   private retainedFrom = 0;
   /** Record position of each held turn's first entry (committed, then active), for a fill's cursor. */
@@ -318,7 +319,7 @@ class RecordTimeline implements SessionTimeline {
       );
       await this.deps.journal?.start({
         onEntries: (entries) => {
-          for (const entry of entries) if (entry.committed) this.journalTurns.set(entry.key, entry.committed);
+          for (const entry of entries) if (entry.committed) this.journalTurns.set(entry.key, { turn: entry.committed, recorded: entry.recorded === true });
           this.needsPublish = true;
           this.publish();
         },
@@ -972,7 +973,27 @@ class RecordTimeline implements SessionTimeline {
   private currentTurns(): TranscriptTurn[] {
     const active = this.parser.activeTurn;
     const folded = this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
-    return withRuntimeTurn(withJournalTurns(folded, [...this.journalTurns.values()]), this.runtimeTurn);
+    const journal = [...this.journalTurns.values()];
+    return this.inPlace(withRuntimeTurn(withJournalTurns(folded,
+      journal.filter((line) => !line.recorded).map((line) => line.turn),
+      journal.filter((line) => line.recorded).map((line) => line.turn)), this.runtimeTurn), folded[0]?.seq ?? 0);
+  }
+
+  /**
+   * A turn's `seq` is its place in this timeline: readers order, page and find turns by it. Journal and runtime turns
+   * come numbered by their own source (a notification is always 0), so each turn takes its position here; a turn that
+   * kept its place keeps its object.
+   */
+  private inPlace(turns: TranscriptTurn[], base: number): TranscriptTurn[] {
+    return turns.map((turn, index) => {
+      const seq = base + index;
+      if (turn.seq === seq) return turn;
+      const cached = this.placed.get(turn);
+      if (cached?.seq === seq) return cached;
+      const placed = { ...turn, seq };
+      this.placed.set(turn, placed);
+      return placed;
+    });
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {

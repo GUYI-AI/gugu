@@ -32,9 +32,15 @@ export function usePendingDeliveryHistory({ deviceId, sessionId, local, enabled,
         return { key, extra: [...byId.values()].sort((a, b) => a.seq - b.seq), resolved: [...new Set([...prior.resolved, ...ids])], error }
       })
     }
-    void loadPendingDeliveryHistory(snapshot.turns, enabled ? snapshot.cursor ?? null : null,
-      snapshot.inputs.filter(input => ids.includes(input.id)),
-      before => machineRpc(deviceId, local).sessions.getStoredHistory({ sessionId, before, limit: 100 }), () => alive)
+    let before = enabled ? snapshot.cursor ?? null : null
+    const readOlder = async () => {
+      const page = await machineRpc(deviceId, local).sessions.getStoredHistory({ sessionId, before: before!, limit: 100 })
+      if (page.nextCursor !== null && page.nextCursor >= before!) throw new Error('Session history cursor did not advance')
+      before = page.nextCursor
+      return { turns: page.turns, hasOlder: before !== null }
+    }
+    void loadPendingDeliveryHistory(snapshot.turns, before !== null,
+      snapshot.inputs.filter(input => ids.includes(input.id)), readOlder, () => alive)
       .then(result => finish(result.turns, null), (error: unknown) => finish([], messageForUser(error)))
     return () => { alive = false }
   }, [key, deviceId, sessionId, local, enabled, ready, unknownKey])

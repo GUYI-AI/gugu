@@ -167,11 +167,11 @@ export type RecordBoundary = { messageId?: string } & (
  * （不进时间线，只关掉当前这一轮）。❌ 不许一条同时是两者 —— 那样"这条要不要去重"没有答案。
  */
 export type RecordEntry =
-  | { key: string; at?: number; position?: number; state?: unknown; turn?: string; committed?: never; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
-  | { key: string; at?: number; position?: number; state?: unknown; turn?: never; committed?: never; boundary: RecordBoundary; event?: never; imageOrigins?: never }
-  | { key: string; at?: number; position?: never; state?: never; turn?: never; committed: TranscriptTurn; event?: never; boundary?: never; imageOrigins?: never };
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: string; committed?: never; recorded?: never; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: never; committed?: never; recorded?: never; boundary: RecordBoundary; event?: never; imageOrigins?: never }
+  | { key: string; at?: number; position?: never; state?: never; turn?: never; committed: TranscriptTurn; recorded?: true; event?: never; boundary?: never; imageOrigins?: never };
 // `committed`: a whole turn the record holds already folded (gugu's journal); it goes beside the folded turns, not
-// through the reducer.
+// through the reducer. `recorded`: the agent's record has that turn too; only its outcome counts (`withJournalTurns`).
 // `turn`: this entry is the person's message that starts a turn; the record line's tree id (`record-tree.ts`), which
 // is also the turn's id. A turn a record opens otherwise takes the key of the entry that opened it.
 // `position`: where the record line (or row) that produced the entry starts, as `SessionRecordSource.startingAt` takes it.

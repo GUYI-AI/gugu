@@ -14,16 +14,21 @@ import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
  */
 export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null): TranscriptTurn[] {
   if (!runtime) return [...turns];
-  const ids = identityKeys(runtime);
-  const prompt = openingPrompt(runtime);
+  const same = sameTurnAs(runtime);
   let end = turns.length;
-  while (end > 0) {
-    const turn = turns[end - 1]!;
-    const same = (prompt !== null && openingPrompt(turn) === prompt) || [...identityKeys(turn)].some((key) => ids.has(key));
-    if (!same) break;
-    end -= 1;
-  }
+  while (end > 0 && same(turns[end - 1]!)) end -= 1;
   return [...turns.slice(0, end), runtime];
+}
+
+/**
+ * Whether a turn is `turn` as another source holds it: they share an id the agent numbered (a tool call, an agent
+ * message, the person's message), or open with the same prompt (records that number their lines themselves share no
+ * ids with the runtime).
+ */
+export function sameTurnAs(turn: TranscriptTurn): (other: TranscriptTurn) => boolean {
+  const ids = identityKeys(turn);
+  const prompt = openingPrompt(turn);
+  return (other) => (prompt !== null && openingPrompt(other) === prompt) || [...identityKeys(other)].some((key) => ids.has(key));
 }
 
 /** What an agent itself numbered in a turn: tool calls, its messages, the person's native message. */

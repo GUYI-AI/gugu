@@ -10,11 +10,12 @@ import { SessionRecordNotFoundError, type SessionRecordSourceOptions } from './s
  * Gugu's own journal of a session: what no agent record holds. A harness gugu has no reader for, and the turns gugu
  * itself adds to a session (an agent's notification to its owner), are written here, one whole turn per line, only
  * appended: `{ id, at, turn }`. `<root>/<session id>.jsonl`, `providerSessionId` being gugu's session id.
+ * `recorded`: a turn the agent's record holds too, kept for how it ended when only the runtime knows that.
  *
  * It is read like any record (the same tail reader); its turns come already folded (`RecordEntry.committed`), and the
- * timeline places them among the record's turns by when they started.
+ * timeline places them among the record's turns by when they started (`withJournalTurns`).
  */
-export type JournalLine = { id: string; at: number; turn: TranscriptTurn };
+export type JournalLine = { id: string; at: number; turn: TranscriptTurn; recorded?: true };
 
 export function createGuguJournalSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions): SessionRecordSource {
   return createJsonlTailSource<null>(locator, options, {
@@ -24,7 +25,7 @@ export function createGuguJournalSource(locator: SessionRecordLocator, options?:
     initial: () => null,
     decode: (line) => {
       if (typeof line.id !== 'string' || typeof line.at !== 'number' || !line.turn || typeof line.turn !== 'object') return null;
-      return [{ key: `gugu:${line.id}`, at: line.at, committed: { ...(line.turn as TranscriptTurn), id: line.id } }];
+      return [{ key: `gugu:${line.id}`, at: line.at, committed: { ...(line.turn as TranscriptTurn), id: line.id }, ...(line.recorded === true ? { recorded: true as const } : {}) }];
     },
   });
 }

@@ -12,9 +12,10 @@ import { sessionRecordHarnessForProvider } from '../session-timeline/locate';
 
 /**
  * Gugu's journal of each session (`@gugu/session-core` `sources/gugu-journal.ts` reads it): what no agent record
- * holds, one whole turn per line. The turns of a harness gugu has no record reader for, and the turns gugu adds to
- * any session (an agent's notification to its owner). A line is `{ id, at, turn }`; a later line with the same id is
- * that turn again, changed (a late tail, a revision), and takes its place.
+ * holds, one whole turn per line. The turns of a harness gugu has no record reader for, the turns gugu adds to
+ * any session (an agent's notification to its owner), and a recorded turn's end that only the runtime saw (`recorded`).
+ * A line is `{ id, at, turn }`; a later line with the same id is that turn again, changed (a late tail, a revision),
+ * and takes its place.
  *
  * Writes for one session go one after another; a revert rewrites the file whole (temp file, then rename), which the
  * reader sees as a replaced file and reads again.
@@ -59,8 +60,8 @@ export function journalHasTurns(sessionId: string): boolean {
   try { return statSync(fileOf(sessionId)).size > 0; } catch { return false; }
 }
 
-export function appendJournalTurn(sessionId: string, turn: TranscriptTurn, id = journalLineId(turn), at = turn.startedAt ?? Date.now()): Promise<void> {
-  const line: JournalLine = { id, at, turn };
+export function appendJournalTurn(sessionId: string, turn: TranscriptTurn, recorded = false): Promise<void> {
+  const line: JournalLine = { id: journalLineId(turn), at: turn.startedAt ?? Date.now(), turn, ...(recorded ? { recorded: true as const } : {}) };
   return queued(sessionId, async () => {
     await mkdir(root(), { recursive: true });
     await appendFile(fileOf(sessionId), `${JSON.stringify(line)}\n`, 'utf8');
@@ -99,8 +100,8 @@ export function revertJournal(sessionId: string, anchor: string): Promise<void> 
     const from = lines.findIndex((line) => line.turn.items.some((item) => item.kind === 'message' && item.role === 'user' && item.revertAnchor === anchor));
     if (from < 0) return;
     const kept = lines.slice(0, from);
-    const removed = lines.slice(from).filter((line) => line.turn.items.some((item) => item.kind === 'message' && item.role === 'user')).length;
-    const last = kept.findLastIndex((line) => !line.turn.items.some((item) => item.kind === 'message' && item.ownerNotification));
+    const removed = lines.slice(from).filter((line) => !line.recorded && line.turn.items.some((item) => item.kind === 'message' && item.role === 'user')).length;
+    const last = kept.findLastIndex((line) => !line.recorded && !line.turn.items.some((item) => item.kind === 'message' && item.ownerNotification));
     if (last >= 0 && removed > 0) kept[last] = { ...kept[last]!, turn: markHistoryReverted(kept[last]!.turn, removed, Date.now()) };
     await rewrite(sessionId, kept);
   });
@@ -123,14 +124,17 @@ export function mergeIntoJournal(sessionId: string, incoming: readonly JournalLi
 }
 
 /**
- * A turn the runtime committed, kept here when its agent keeps no record gugu reads (with a record, the record has
- * it). A replay is history the runtime read back, already here.
+ * A turn the runtime committed, kept here when its agent keeps no record gugu reads. With a record, the record has
+ * the turn, but not a failure only the runtime saw (the engine died mid-turn, a prompt never delivered; a revision
+ * when the exit comes after): that turn is kept as `recorded`, for its outcome. A replay is history the runtime read
+ * back, already here.
  */
 export function journalCommittedTurn(event: { sessionId: string; providerId?: string; source: string; turn: TranscriptTurn }): void {
   if (event.source === 'replay') return;
   const provider = event.providerId ?? db.select({ provider: sessions.provider }).from(sessions).where(eq(sessions.id, event.sessionId)).get()?.provider;
-  if (sessionRecordHarnessForProvider(provider) !== null) return;
-  void appendJournalTurn(event.sessionId, event.turn).catch((error: unknown) => {
+  const recorded = sessionRecordHarnessForProvider(provider) !== null;
+  if (recorded && event.turn.outcome?.kind !== 'error') return;
+  void appendJournalTurn(event.sessionId, event.turn, recorded).catch((error: unknown) => {
     log.warn('sessionJournal: a committed turn was not written', { sessionId: event.sessionId, error: String(error) });
   });
 }

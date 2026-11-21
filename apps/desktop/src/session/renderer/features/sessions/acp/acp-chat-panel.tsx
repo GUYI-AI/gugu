@@ -24,7 +24,6 @@ import { sendComposerInput } from './send-composer-input';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { useNativeConversationRead } from '@/hooks/useNativeConversationRead';
 import { useRememberNativeTail } from './use-remember-native-tail';
-import { useOwnerNotifications } from './use-owner-notifications';
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue';
 import { sessionLifeView } from '../stores/session-life-views';
 import { lifeIsStarting } from '@shared/core/sessions/session-life';
@@ -1610,7 +1609,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
 
   const visibility = useConversationVisibility(useContext(SurfaceShownContext));
   useRememberNativeTail(store?.projectId, store?.runtimeSessionId, store?.affordances.isBusy ?? false, visibility.shown);
-  useOwnerNotifications(store, visibility.shown);
   const rootRef = visibility.ref;
   const reading = useNativeConversationRead(store ? machineRegistry.machineOf(store.runtimeSessionId) : null, store?.runtimeSessionId, visibility.shown, () => {
     const transcript = store?.chatState.transcript.state;
@@ -1681,27 +1679,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    * 这里就什么都不做 —— 到顶是常态,❌ 不是错误,不弹任何东西。
    */
   const handleReachStart = useCallback(() => sourceMessage.loadOlder(), [sourceMessage.loadOlder]);
-  /**
-   * @@@history-window — the bottom of a history window is not the conversation's end: reaching it reads the turns
-   * below, and once none are left the live transcript takes over, at its newest turn. The window's last row is held at
-   * the bottom edge first, so what is appended extends below the reader instead of being followed like a new reply.
-   */
-  const handleAtBottomChange = useCallback((bottom: boolean) => {
-    const shownWindow = store?.historyWindow;
-    if (!store || !shownWindow) { reading.onAtBottomChange(bottom); return; }
-    reading.onAtBottomChange(false);
-    if (!bottom) return;
-    if (!shownWindow.hasNewer) { store.closeHistoryWindow(); return; }
-    // An anchor instead of the tail intent the reader's arrival at the bottom just set: the list follows what is
-    // appended under a tail, and holds still under an anchor (also one it cannot place, when that row is folded away).
-    const last = shownWindow.turns.at(-1)?.items.at(-1)?.id;
-    if (last) viewRef.current?.setScrollMode({ kind: 'anchor', itemId: last, edge: 'bottom', offset: 0 });
-    void shownWindow.loadNewer();
-  }, [store, reading.onAtBottomChange]);
-  const returnToLatest = useCallback(() => {
-    store?.closeHistoryWindow();
-    viewRef.current?.scrollToBottom({ behavior: 'auto' });
-  }, [store]);
 
   const isSessionEmpty = useObserver(() => store?.isEmpty ?? false);
   const activeSessionId = store?.sessionId ?? null;
@@ -2206,7 +2183,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           arg.index
         ),
       resolveToolImage: (itemId, index) => store?.resolveToolImage(itemId, index) ?? Promise.resolve(null),
-      onHeldShown: (itemId) => store?.fillHeldTurn(itemId),
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
       onViewMermaid: (arg) => {
@@ -2320,8 +2296,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         <div className="relative min-h-0 flex-1">
           <ChatTranscript
             context={store.chatContext}
-            state={store.shownChatState}
-            onReturnToLatest={store.historyWindow ? returnToLatest : undefined}
+            state={store.chatState}
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
             contentOverlay
@@ -2332,7 +2307,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             commands={transcriptCommands}
             shown={visibility.shown}
             onVisibleItems={reading.onVisibleItems}
-            onAtBottomChange={handleAtBottomChange}
+            onAtBottomChange={reading.onAtBottomChange}
             onReachStart={handleReachStart}
             layout={{ ...chatLayout, agentConversation: true }}
             style={{ position: 'absolute', inset: 0 }}
@@ -2381,7 +2356,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           composerSlot={composerSlot}
           contentOverlaySlot={overlaySlot}
           onViewAttachment={handleAttachmentView}
-          onScrollToBottom={() => { store.closeHistoryWindow(); viewRef.current?.scrollToBottom({ behavior: 'smooth' }); }}
+          onScrollToBottom={() => viewRef.current?.scrollToBottom({ behavior: 'smooth' })}
           modelMenuRequest={modelMenuRequest}
           onModelMenuRequest={() => setModelMenuRequest((value) => value + 1)}
           onMembershipLockChange={setMembershipLock}
