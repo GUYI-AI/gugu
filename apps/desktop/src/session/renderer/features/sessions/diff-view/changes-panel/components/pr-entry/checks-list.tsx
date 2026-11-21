@@ -13,12 +13,13 @@ import {
   type CheckRunBucket,
 } from '@renderer/utils/github';
 import type { PullRequest, PullRequestComment } from '@shared/core/pull-requests/pull-requests';
+import type { Reading } from '@/lib/replica';
 import { CommentsList } from './comments-list';
-import { buildPullRequestSessionItems } from './pull-request-session';
+import { buildPullRequestSessionItems, type PullRequestSessionItem } from './pull-request-session';
 import { usePullRequestComments } from './use-pull-request-comments';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-const EMPTY_COMMENTS: PullRequestComment[] = [];
+const NO_COMMENTS: PullRequestComment[] = [];
 
 const bucketOrder: Record<CheckRunBucket, number> = {
   fail: 0,
@@ -122,14 +123,15 @@ export const PrChecksList = observer(function PrChecksList({
 }) {
   const { translate } = useSessionMessages();
   const { checks } = useSyncCheckRuns(projectId, pr);
-  const commentsQuery = usePullRequestComments(projectId, pr);
-  const comments = commentsQuery.data ?? EMPTY_COMMENTS;
-  const sessionItems = useMemo(
-    () => buildPullRequestSessionItems(pr, comments),
-    [pr, comments]
-  );
+  const comments = usePullRequestComments(projectId, pr);
+  // No number on its host = no comments to read: the description alone.
+  const sessionItems = useMemo((): Reading<PullRequestSessionItem[]> => {
+    if (comments === null) return { state: 'value', value: buildPullRequestSessionItems(pr, NO_COMMENTS), stale: false, error: null };
+    if (comments.state !== 'value') return comments;
+    return { ...comments, value: buildPullRequestSessionItems(pr, comments.value) };
+  }, [pr, comments]);
 
-  if (checks.length === 0 && sessionItems.length === 0 && !commentsQuery.isLoading) {
+  if (checks.length === 0 && sessionItems.state === 'value' && sessionItems.value.length === 0) {
     return (
       <EmptyState
         label={translate('pr.noChecksOrComments')}
@@ -148,11 +150,7 @@ export const PrChecksList = observer(function PrChecksList({
       </section>
       <section>
         <MicroLabel className="px-3 pb-1">{translate('pr.comments')}</MicroLabel>
-        <CommentsList
-          comments={sessionItems}
-          isLoading={commentsQuery.isLoading}
-          error={commentsQuery.error}
-        />
+        <CommentsList comments={sessionItems} />
       </section>
     </div>
   );

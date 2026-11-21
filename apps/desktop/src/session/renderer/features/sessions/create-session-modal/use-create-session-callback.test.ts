@@ -39,7 +39,7 @@ vi.mock('@renderer/lib/ipc', () => ({
   onMachineEvent: () => mocks.stopInstallProgress,
 }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
-  useAgents: () => ({ data: [{ id: 'codex', name: 'Codex', reading: 'not-detected' }] }),
+  useAgents: () => ({ state: 'value', value: [{ id: 'codex', name: 'Codex', reading: 'not-detected' }], stale: false, error: null }),
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => `${key} ${Object.values(params ?? {}).join(' ')}`.trim() }),
@@ -473,7 +473,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('session', expect.objectContaining({ projectId: 'project-1' }));
     expect(mocks.onClose).toHaveBeenCalled();
     expect(mocks.logError).toHaveBeenCalledWith('remember the started configuration failed', { error: 'settings unavailable' });
-    expect(mocks.toast).toHaveBeenCalledWith({ title: 'Couldn’t save defaults', description: 'settings unavailable', tier: 'warning' });
+    expect(mocks.toast).toHaveBeenCalledWith({ title: 'Could not save defaults', description: 'settings unavailable', tier: 'warning' });
   });
 
   it('retries the same created task and stable id after an ambiguous local-session failure', async () => {

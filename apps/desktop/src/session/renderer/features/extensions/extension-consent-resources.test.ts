@@ -28,8 +28,8 @@ describe('consent for an agent\'s resources', () => {
       .toBe(`Read only what your agent keeps in the conversation you select: ${enUSAssistant.resourceKinds.memory}, ${enUSAssistant.resourceKinds['voice-notes']}`);
     expect(describeCapability('chat:resources:write', manifest, say(enUSMessages)))
       .toBe(`Change what your agent keeps in the conversation you select: ${enUSAssistant.resourceKinds.memory}; your agent applies the changes`);
-    expect(describeCapability('chat:resources', manifest, say(zhCNMessages))).toBe('只读取你选定的那条会话里 agent 记着的记忆、语音笔记');
-    expect(describeCapability('chat:resources:write', manifest, say(zhCNMessages))).toBe('改动你选定的那条会话里 agent 记着的记忆，由 agent 照改');
+    expect(describeCapability('chat:resources', manifest, say(zhCNMessages))).toBe('仅读取你选定的会话中 agent 保存的记忆、语音笔记');
+    expect(describeCapability('chat:resources:write', manifest, say(zhCNMessages))).toBe('修改你选定的会话中 agent 保存的记忆，由 agent 执行修改');
     for (const messages of [enUSMessages, zhCNMessages]) {
       const text = describePermissions(manifest, say(messages));
       const labels = messages === enUSMessages ? enUSAssistant.resourceKinds : zhCNAssistant.resourceKinds;
@@ -58,7 +58,7 @@ describe('#50 consent for managing voice notes', () => {
       contributes: { tabs: [{ name: 'main', title: 'Assistant' }] } });
     expect(describeCapability('chat:voice-notes:manage', manifest, say(enUSMessages)))
       .toBe('Transcribe, export or delete the voice notes your agent keeps in the conversation you select; you confirm each delete');
-    expect(describeCapability('chat:voice-notes:manage', manifest, say(zhCNMessages))).toBe('转写、导出或删除你选定的那条会话里 agent 记着的语音笔记，每次删除都由你确认');
+    expect(describeCapability('chat:voice-notes:manage', manifest, say(zhCNMessages))).toBe('转写、导出或删除你选定的会话中 agent 保存的语音笔记，每次删除都需你确认');
     for (const messages of [enUSMessages, zhCNMessages]) expect(describePermissions(manifest, say(messages))).toContain(messages['extensions.permissionsChatVoiceNotesManage']);
   });
 });

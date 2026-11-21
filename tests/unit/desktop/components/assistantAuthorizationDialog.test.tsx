@@ -72,7 +72,7 @@ it.each(['result','exception'] as const)('reports an owner CLI preparation %s fa
  try{
   await f.render();await clickElement(f.h.container.querySelector('footer button:last-child')!)
   expect(prepare).toHaveBeenCalledOnce();expect(login).not.toHaveBeenCalled()
-  expect(fixture.notice).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({tier:'error',title:'飞书的授权工具没准备好，请稍后重新连接。'}))
+  expect(fixture.notice).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({tier:'error',title:'飞书的授权工具准备失败，请稍后重新连接。'}))
   expect(f.h.container.querySelector('[role="alert"]')).toBeNull()
   expect(f.h.container.textContent).not.toContain('internal install diagnostic')
  }finally{f.h.cleanup()}

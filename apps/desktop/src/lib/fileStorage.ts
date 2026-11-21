@@ -19,7 +19,7 @@ export async function writeFileStorage(userId: string, change: Partial<FileStora
 }
 
 /** What the 「文件存储与读取」 dashboard shows: the caller's own cloud copies (chat.file_storage_overview_as). */
-export type FileStorageClass = 'image' | 'temporary' | 'kept'
+export type FileStorageClass = 'temporary' | 'kept'
 export type FileStorageOverview = {
   total_bytes: number
   count: number

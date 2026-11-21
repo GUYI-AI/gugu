@@ -1,10 +1,11 @@
-import type { FormEvent } from 'react';
+import { useRef, type FormEvent } from 'react';
 import { Copy } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { copyExternalLink } from '@renderer/lib/open-external-link';
 import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { rendererLogger } from '@/lib/log';
 
 /**
  * 登录窗口的正文(#2507)—— 两种登录(终端里跑 `<cli> login` / 协议登录)长成同一个样子。
@@ -14,6 +15,13 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  * ⇒ 照连接应用的 CLI 登录(`integration-setup-modal.tsx` 的 `IntegrationCliLogin`)排:一句等待说明、
  *    设备码(有才出)、复制链接;底部主按钮「打开授权页」。只多一格:CLI 要把码贴回去时的输入框。
  */
+/**
+ * Claude Code 存不下登录时的原话(2.1.293:「Couldn't save your login. If your Mac's keychain is locked, unlock it
+ * and log in again.」)。码是对的、坏在钥匙串锁着,原话摆出来像是码填错了 ⇒ 换成一句人能照做的话;
+ * 「重试」会先让系统弹解锁框(`claude/auth.ts` 的 `buildClaudeLoginCommand`)。
+ */
+const KEYCHAIN_LOCKED = /keychain is locked/i;
+
 export type SignInLinkPhase = 'starting' | 'waiting' | 'verifying' | 'failed';
 
 export type SignInCodeEntry = {
@@ -50,7 +58,11 @@ export function SignInLinkBody({
     return (
       <div className="grid gap-2" data-testid="agent-sign-in-failed">
         <p className="text-sm text-foreground">{translate('agentsPage.signInNotFinished')}</p>
-        {failure ? (
+        {failure && KEYCHAIN_LOCKED.test(failure) ? (
+          <p className="text-sm leading-6 text-foreground-destructive" role="alert" data-testid="agent-sign-in-keychain-locked">
+            {translate('agentsPage.signInKeychainLocked')}
+          </p>
+        ) : failure ? (
           <p className="whitespace-pre-wrap font-mono text-xs leading-5 text-foreground-destructive [overflow-wrap:anywhere]" role="alert">
             {failure}
           </p>
@@ -112,6 +124,7 @@ export function SignInLinkBody({
 
 function CodeEntry({ entry, verifying }: { entry: SignInCodeEntry; verifying: boolean }) {
   const { translate } = useSessionMessages();
+  const inputRef = useRef<HTMLInputElement>(null);
   if (!entry.open) {
     if (!entry.canReveal) return null;
     return (
@@ -128,10 +141,24 @@ function CodeEntry({ entry, verifying }: { entry: SignInCodeEntry; verifying: bo
     entry.onSubmit(value);
     form.reset();
   };
+  // 授权码在浏览器那页里,复制过来就是一下「粘贴」;读不到剪贴板就把光标放进框里,让人自己贴。
+  const paste = () => {
+    navigator.clipboard.readText().then(
+      (text) => {
+        if (inputRef.current) inputRef.current.value = text.trim();
+        inputRef.current?.focus();
+      },
+      (error: unknown) => {
+        rendererLogger('settings/agent-sign-in').warn({ error }, 'clipboard read failed');
+        inputRef.current?.focus();
+      }
+    );
+  };
   return (
     <form className="grid gap-2" onSubmit={submit} data-testid="agent-sign-in-code-form">
       <div className="flex items-center gap-2">
         <Input
+          ref={inputRef}
           autoFocus
           name="code"
           autoComplete="off"
@@ -142,6 +169,9 @@ function CodeEntry({ entry, verifying }: { entry: SignInCodeEntry; verifying: bo
           className="font-mono"
           data-testid="agent-sign-in-code-input"
         />
+        <Button type="button" variant="outline" disabled={verifying} onClick={paste} data-testid="agent-sign-in-code-paste">
+          {translate('agentsPage.signInCodePaste')}
+        </Button>
         <Button type="submit" variant="outline" disabled={verifying}>
           {translate('agentsPage.signInCodeSubmit')}
         </Button>

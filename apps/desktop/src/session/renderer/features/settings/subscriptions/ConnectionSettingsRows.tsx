@@ -41,7 +41,7 @@ export function ConnectionSettingsRows({
   busy: boolean
   description: ReactNode
   notice: ReactNode
-  /** 正在用的连接登不上时的「登录」按钮,摆在选择框左边。 */
+  /** 当前账号常驻的登录入口,摆在选择框左边。 */
   signIn?: ReactNode
   /** 连接列表读不出(原因在 `notice` 里):不摆一个一直「正在检查」的选择框。 */
   unreadable?: boolean

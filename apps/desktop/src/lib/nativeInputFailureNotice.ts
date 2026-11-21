@@ -1,4 +1,4 @@
-import { state } from './sessionInputOutboxBridge'
+import { state } from './outbox/kinds/sessionInput'
 import { messageFailureNotice, type MessageFailureAttempt } from './messageFailureNotice'
 import { messageForUser } from './userFacingError'
 import { translateSessionMessage } from '@renderer/localization/locale-store'

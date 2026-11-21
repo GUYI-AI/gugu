@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { Capacitor, registerPlugin } from '@capacitor/core'
 
 export type IOSCalendarAuthorization = 'notDetermined' | 'denied' | 'restricted' | 'writeOnly' | 'fullAccess'
@@ -66,13 +67,13 @@ function permissionStatus(value: unknown): IOSCalendarPermissionStatus {
 }
 
 function invalidStatus(): IOSCalendarPermissionError {
-  return new IOSCalendarPermissionError('invalid_native_status', '未读到有效的日历权限状态，请重新读取。')
+  return new IOSCalendarPermissionError('invalid_native_status', mobileWorkspaceText('ios.calendarStatusInvalid'))
 }
 
 function requireNative(): void {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios'
     || !Capacitor.isPluginAvailable('GuguCalendarPermissions')) {
-    throw new IOSCalendarPermissionError('unavailable', '此安装包暂未提供本机日历权限。')
+    throw new IOSCalendarPermissionError('unavailable', mobileWorkspaceText('ios.calendarUnavailable'))
   }
 }
 

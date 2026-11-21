@@ -21,7 +21,7 @@ export function ImportSyncSettings({ ownerId }: { ownerId: string }) {
   const { settings, refresh } = useAppSettingsKey('dataImport')
   if (settings.state !== 'value') {
     return (
-      <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
+      <SettingsGroup title={t('settings.dataImport.syncTitle')} >
         <SettingsRow title={t('settings.dataImport.autoSync')}
           control={settings.state === 'error' ? (
             <Button variant="secondary" size="sm" onClick={() => { void refresh() }}>{t('settings.dataImport.refresh')}</Button>
@@ -56,7 +56,7 @@ function ReadyImportSyncSettings({ ownerId, reading }: {
   }
 
   return (
-    <SettingsGroup title={t('settings.dataImport.syncTitle')} className="gg-import-sync">
+    <SettingsGroup title={t('settings.dataImport.syncTitle')} >
       <SettingsRow title={t('settings.dataImport.autoSync')}
         description={available ? t('settings.dataImport.syncDescription') : t('settings.dataImport.syncPrerequisite')}
         control={<Switch aria-label={t('settings.dataImport.autoSync')} checked={reading.automatic}

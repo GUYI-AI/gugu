@@ -9,10 +9,13 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 // #7092 免费号首启一条会员模型的任务,签票被拒。owner:「模型不能用，不能说任务不能启动吧」「只是个模型不能用」。
 const invoke = vi.fn();
 const openMembershipPage = vi.fn();
-vi.mock('@renderer/lib/ipc', () => ({ invokeOnMachine: (...args: unknown[]) => invoke(...args) }));
+vi.mock('@renderer/lib/ipc', () => ({
+  invokeOnMachine: (...args: unknown[]) => invoke(...args),
+  rpcOn: () => ({ agents: { modelCatalog: async () => ({ state: { kind: 'unknown' }, refreshing: false, gugu: { offered: true } }) } }),
+}));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ state: 'value', value: [], stale: false, error: null }) }));
 vi.mock('@renderer/features/settings/agents-page/AgentDetailModal', () => ({ AgentDetailModal: () => null }));
 vi.mock('@renderer/features/sessions/session-config/use-composer-model-options', () => ({
   openMembershipPage: () => openMembershipPage(),
@@ -22,16 +25,16 @@ import { SessionStartFailedView } from './session-start-failed-view';
 import type { SessionStartupFailure } from './stores/session-startup-failures';
 import { notifyManager } from '@tanstack/react-query';
 import { queryClient } from '@/lib/replica';
+import { seedPlatformCatalog } from '@renderer/tests/platform-catalog-fixture';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
 
-const CATALOG = {
-  models: [
-    { id: 'glm-5.3-flash', displayName: 'GLM-5.3 Flash', protocol: 'anthropic-messages' },
-    { id: 'glm-5.3', displayName: 'GLM-5.3', protocol: 'anthropic-messages', requiresMembership: true },
-  ],
-  sessionSelection: { modelId: 'glm-5.3' },
-};
+// The account's catalog (what the composer's Gugu group derives from) and the session's own decision (the host's).
+const ROWS = [
+  { id: 'glm-5.3-flash', displayName: 'GLM-5.3 Flash', protocol: 'openai-responses' as const },
+  { id: 'glm-5.3', displayName: 'GLM-5.3', protocol: 'openai-responses' as const, requiresMembership: true },
+];
+const CATALOG = { models: [], sessionSelection: { modelId: 'glm-5.3' } };
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -61,6 +64,7 @@ function button(testId: string): HTMLButtonElement {
 
 beforeEach(() => {
   queryClient.clear();
+  seedPlatformCatalog({ rows: ROWS, providers: ['codex'] });
   invoke.mockReset().mockResolvedValue(CATALOG);
   openMembershipPage.mockReset();
 });
@@ -90,8 +94,8 @@ describe('SessionStartFailedView — the model needs a membership', () => {
 
     const text = container!.textContent ?? '';
     // 要会员的是咕咕提供的那一个:名字照模型按钮的叫法带「咕咕」,❌ 裸名(用户自己的同名模型不用会员)。
-    expect(text).toContain('Gugu GLM-5.3 needs a membership');
-    expect(text).not.toContain('没能启动');
+    expect(text).toContain('Gugu GLM-5.3 requires a membership');
+    expect(text).not.toContain('无法启动');
     expect(text).not.toMatch(/could not start/i);
     expect(text).not.toContain('ModelAccessHttpError');
     expect(text).not.toContain('gugu-models');
@@ -113,12 +117,12 @@ describe('SessionStartFailedView — the model needs a membership', () => {
     await render(<SessionStartFailedView failure={failure} onRetry={() => {}} providerId="codex" />);
 
     const detail = container!.querySelector('[data-testid="session-start-failure-detail"]')?.textContent ?? '';
-    expect(detail).toBe('This Gugu model needs a membership. Switch models, or get a membership, then resend.');
-    expect(detail).not.toContain('没能启动');
+    expect(detail).toBe('This Gugu model requires a membership. Switch models or get a membership, then resend.');
+    expect(detail).not.toContain('无法启动');
   });
 
-  // #7103 咕咕这一侧没说清原因的内部故障:一句「咕咕这边出错了」+ 重试,原文只进日志。
-  it('says "something went wrong on Gugu\'s side" for a Gugu-side failure without a spoken reason', async () => {
+  // #7103 咕咕这一侧没说清原因的内部故障:一句「咕咕服务出错」+ 重试,原文只进日志。
+  it('says "the Gugu service returned an error" for a Gugu-side failure without a spoken reason', async () => {
     const onRetry = vi.fn();
     await render(
       <SessionStartFailedView
@@ -130,7 +134,7 @@ describe('SessionStartFailedView — the model needs a membership', () => {
     );
     expect(container!.querySelector('[data-reason="service-unavailable"]')).not.toBeNull();
     const detail = container!.querySelector('[data-testid="session-start-failure-detail"]')?.textContent ?? '';
-    expect(detail).toBe("Something went wrong on Gugu's side.");
+    expect(detail).toBe('The Gugu service returned an error.');
     expect(container!.textContent).not.toContain('gugu-models');
     expect(container!.querySelector('[data-testid="session-start-switch-model"]')).toBeNull();
     act(() => button('session-start-retry').click());

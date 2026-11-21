@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@renderer/lib/ui/button'
 import { Textarea } from '@renderer/lib/ui/textarea'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
-import { enqueueSessionInput, useQueuedSessionInputs, useSessionInputAccount } from '@/lib/sessionInputOutboxBridge'
+import { enqueueSessionInput, useQueuedSessionInputs, useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput'
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft'
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff'
 import { messageForUser } from '@/lib/userFacingError'
 import { SessionInputQueue } from './SessionInputQueue'
+import { i18n } from '@/i18n/runtime'
 
 /** The task page can accept durable input before its remote workspace has ever mounted. */
 export function OfflineSessionInput({ deviceId, sessionId, label }: { deviceId: string; sessionId: string; label: string }) {
@@ -24,7 +25,7 @@ function OfflineComposer({ deviceId, sessionId, label }: { deviceId: string; ses
   current.current = text
   const edit = useCallback((text: string) => { writeNativeOfflineDraft(deviceId, sessionId, text); current.current = text; setText(text) }, [deviceId, sessionId])
   useEffect(() => registerNativeComposer(sessionId, draft => {
-    if (draft.files?.length) throw new Error('附件草稿已保留，连接恢复后可继续发送')
+    if (draft.files?.length) throw new Error(i18n.t('composer.sessionInput.attachmentsKept', { ns: 'messaging' }))
     edit([current.current, draft.text].filter(Boolean).join('\n'))
   }), [sessionId, edit])
   const send = async () => {

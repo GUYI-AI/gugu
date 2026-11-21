@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { SystemPermission, SystemPermissionState } from '../../platform/types'
 import {
@@ -104,7 +105,7 @@ function SystemPermissionsSection() {
               // 与「我的」入口列表同一种行尾:状态 + ›,整行可点。
               control={(
                 <>
-                  {state !== undefined && <span className="gg-settings-row-value">{t(STATE_KEYS[state])}</span>}
+                  {state !== undefined ? <span className="gg-settings-row-value">{t(STATE_KEYS[state])}</span> : !failed && <Unknown className="w-12" />}
                   <ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />
                 </>
               )}

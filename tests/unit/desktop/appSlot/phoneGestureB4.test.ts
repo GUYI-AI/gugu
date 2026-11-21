@@ -24,7 +24,10 @@ const ORIGIN = 'https://board.acct.apps.gugu.invalid'
 /** The chat compose names: one the person signed in to this page is in (`composeInChat` reads it as them). */
 const CHAT = '0b000000-0000-4000-8000-0000000000b4'
 const DECK = '0c000000-0000-4000-8000-0000000000b4'
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { manifests: [], icons: {}, isEnabled: () => true, manifestFor: () => ({ id: 'board', name: 'Board' }) } }))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (original) => {
+  const installed = { manifests: [], icons: {}, isEnabled: () => true, manifestFor: () => ({ id: 'board', name: 'Board' }) }
+  return { ...(await original<object>()), peekInstalledApps: () => installed, fetchInstalledApps: async () => installed }
+})
 const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '0a000000-0000-4000-8000-0000000000b4' })).toString('base64url')}.s` }))
 const machines = vi.hoisted(() => ({ devices: [] as Device[] }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => machines.devices }))
@@ -119,14 +122,14 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   filesDownload: { ref: { name: 'a.md' } },
   filesForward: { refs: [{ name: 'a.md' }] },
   filesOpenIn: { ref: { name: 'a.md' }, app: 'finder' },
-  filesAnnotateSelection: { file: { workspace: 'session:s-1', id: 'a.md' }, open: { selection: { startLine: 1, endLine: 1, text: 'x' }, rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } } },
-  filesSendSelection: { text: 'x', refs: [{ file: { name: 'a.md' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   showMessage: { id: 'msg-1' },
   showSession: { id: 's-1' },
   dispatch: { text: 'picked' },
   clipboardWriteText: { text: 'hi' },
+  filesSelectionAction: { action: 'cite', file: { name: 'a.md' }, places: [{ at: { lines: '1' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } },
   openLink: { url: 'gugu://ext/radar/radar' },
   cloudWrite: { name: 'radar_save', args: {} },
+  credentialsWrite: { site: 'github.com', method: 'PUT', url: 'https://api.github.com/repos/a/b/pulls/1/merge' },
   pickAgent: {},
   taskMessage: { intent: 'pause' },
   assistantOpen: { name: 'main', screen: 'move' },

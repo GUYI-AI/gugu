@@ -30,6 +30,8 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
 
 import { IOSCalendarPermissionsPage } from '../../../../apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPage'
 import { iosCalendarPermissionsAvailable } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissionsAvailability'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const A = '10000000-0000-0000-0000-000000000001', B = '20000000-0000-0000-0000-000000000002'
 const installationId = '30000000-0000-0000-0000-000000000003'
@@ -40,11 +42,16 @@ const failed = (): IOSOwnerPublicationState => ({ status: 'failed', binding: nul
 const calendar = (ownerId = A, connected = true) => ({ authorization: 'fullAccess', os_readable: true, os_writable: true,
   binding: binding(ownerId), calendarConnected: connected, calendarRevision: installationId })
 let harness: ReturnType<typeof createReactHarness>
-const render = (ownerId: string | null = A) => harness.render(createNode(IOSCalendarPermissionsPage, { ownerId }))
+/** The page's owner is the signed-in account (the calendar connection is that account's replica). */
+const render = async (ownerId: string | null = A) => {
+  if (ownerId) followRendererSession('SIGNED_IN', ownerId)
+  await harness.render(createNode(IOSCalendarPermissionsPage, { ownerId }))
+}
 const retryButton = () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="重新核验本机身份"]')
 const calendarButton = () => Array.from(harness.container.querySelectorAll('button')).find(button => button.textContent === '连接日历' || button.textContent === '断开日历')
 const publish = async (state: IOSOwnerPublicationState) => act(async () => { native.publication = state; native.listeners.forEach(listener => listener()) })
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount(A)
   vi.clearAllMocks(); native.isNative = true; native.platform = 'ios'; native.plugins = new Set(['GuguCalendarPermissions', 'GuguIOSOwner'])
   native.publication = pending('waiting'); native.listeners.clear(); native.foreground.clear()
   native.retry.mockReset().mockResolvedValue(undefined)

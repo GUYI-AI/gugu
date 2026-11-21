@@ -1,19 +1,13 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { replica, useReplica } from '@/lib/replica'
-import { readAgentHomeUpgradeResults } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
+import { useReplica } from '@/lib/replica'
+import { agentHomeUpgradeResults } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { AgentHomeMigrationResultList } from './AgentHomeMigrationResultList'
 import { DataImportSection } from './DataImportSection'
 import { AgentConfigImport } from './AgentConfigImport'
 import { firstInstallImportHomes } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { QwenConfigImport } from './QwenConfigImport'
 import { useExternalImportProviders } from './use-external-import-providers'
-
-const agentHomeUpgradeResults = replica({
-  name: 'agentHomeUpgradeResults',
-  scope: 'device',
-  read: readAgentHomeUpgradeResults,
-})
 
 export function DesktopDataImportSection({ onClose }: { onClose: () => void }) {
   const { providers, historyDialog } = useExternalImportProviders()

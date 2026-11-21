@@ -87,11 +87,6 @@ vi.mock('@renderer/lib/stores/app-state', async () => {
     launchedByAssistant: () => false,
   } }
 })
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { isLoaded: true, manifestFor: () => undefined, appName: () => undefined },
-  // 资源库「扩展」那一格按机器各起一份清单(extensions-host.ts),侧栏经 use-agents 间接带上它。
-  InstalledExtensionsStore: class {},
-}))
 vi.mock('@renderer/features/sessions/archive-session-flow', () => ({
   requestArchiveSession: vi.fn(),
   archiveSessionNow: vi.fn(),
@@ -115,6 +110,10 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+import { installedExtensions } from '@renderer/features/extensions/installed-extensions'
+
+// Nothing installed on this computer (the sidebar's rows name no App).
+installedExtensions.set(['local'], { extensions: [], invalid: [] } as never)
 
 let root: Root
 let host: HTMLDivElement
@@ -318,10 +317,10 @@ it('keeps the copyable addressing name raw while the sidebar row shows the namin
     mount()
     await mounted()
     const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
-    expect(row.textContent).toMatch(/正在起名…|Naming the agent…/)
+    expect(row.textContent).toMatch(/正在生成名称…|Generating name…/)
     const card = await openCard(row)
     const copy = card.querySelector<HTMLElement>('[data-identity-row="sessionName"]')!
-    expect(copy.textContent).toMatch(/正在起名…|Naming the agent…/)
+    expect(copy.textContent).toMatch(/正在生成名称…|Generating name…/)
     await userEvent.click(copy)
     expect(pairOf(clipboard.mock.calls[0][0])).toEqual(['session', 'Codex 5'])
   } finally { clock.mockRestore() }

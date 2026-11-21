@@ -47,10 +47,11 @@ export function wantsTunnel(
 export function tunnelFacts(
   device: Pick<Device, 'device_id' | 'is_online' | 'is_current_device' | 'capabilities'>,
   sshMachines: ReadonlySet<string>,
-  tunnels: TunnelState,
+  /** Main's tunnel state; null = not read yet (no link and no problem known: a wanted machine is "connecting"). */
+  tunnels: TunnelState | null,
   canOpen: boolean,
 ): Pick<RemoteHostDevice, 'tunnel'> {
-  if (!canOpen || sshMachines.has(device.device_id) || !device.is_online || tunnels.ready.includes(device.device_id)) return {}
+  if (!canOpen || sshMachines.has(device.device_id) || !device.is_online || tunnels?.ready.includes(device.device_id)) return {}
   if (!wantsTunnel(device, sshMachines)) return { tunnel: 'off' }
-  return { tunnel: tunnels.problems[device.device_id] ?? 'connecting' }
+  return { tunnel: tunnels?.problems[device.device_id] ?? 'connecting' }
 }

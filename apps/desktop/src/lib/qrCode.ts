@@ -6,14 +6,17 @@ import { replica, useReplica, type Reading } from './replica'
 const qrCodes = replica({
   name: 'qrCode',
   scope: 'device',
-  read: (_device, value: string, width: number, colors: string) =>
-    QRCode.toDataURL(value, { width, margin: 1, color: JSON.parse(colors) as ReturnType<typeof qrColors> }),
+  // `colors` is the palette as JSON; `null` when the theme tokens cannot be read (qrcode then draws its own black on white).
+  read: (_device, value: string, width: number, colors: string) => {
+    const color = JSON.parse(colors) as ReturnType<typeof qrColors> | null
+    return QRCode.toDataURL(value, { width, margin: 1, ...(color ? { color } : {}) })
+  },
   fresh: Infinity,
   keep: 30 * 60_000,
 })
 
 /** A QR code image for `value`, `width` px wide (null = nothing to draw). */
 export function useQrCode(value: string | null, width: number): Reading<string> {
-  return useReplica(qrCodes, value ? [value, width, JSON.stringify(qrColors())] : null)
+  return useReplica(qrCodes, value ? [value, width, JSON.stringify(qrColors() ?? null)] : null)
 }
 

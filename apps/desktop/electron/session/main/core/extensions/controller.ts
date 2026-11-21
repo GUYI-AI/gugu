@@ -925,6 +925,21 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /** API 61 (app-credentials.ts): the saved credential an App uses per website, read and picked in its permissions. Never a value. */
+  appCredentials: async (args: { extensionId: string }) => {
+    try {
+      const { appCredentials } = await import('./app-credentials-instance');
+      return { success: true as const, data: await appCredentials.states(args.extensionId) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  setAppCredential: async (args: { extensionId: string; site: string; credentialId: string | null }) => {
+    try {
+      const { appCredentials } = await import('./app-credentials-instance');
+      appCredentials.pick(args.extensionId, args.site, args.credentialId);
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');

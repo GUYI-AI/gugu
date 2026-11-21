@@ -2,7 +2,13 @@
 import { act } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
-import { createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
+import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
+import { createNode, createReactHarness, renderWithAppProviders, typeInto, waitForCondition } from '../../../support/testHarness'
+
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(),
+  openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 
 vi.mock('../../../../apps/desktop/src/lib/referrals', () => ({ getMyReferral: vi.fn(async () => { throw new Error('unavailable') }) }))
 
@@ -16,7 +22,7 @@ beforeAll(async () => {
   ;({ ReferralAccountPreview } = await import('../../../../apps/desktop/src/components/referralPreview/ReferralPreview'))
 })
 beforeEach(() => { harness = createReactHarness() })
-afterEach(() => { harness.cleanup(); delete document.documentElement.dataset.theme })
+afterEach(() => { harness.cleanup(); vi.restoreAllMocks(); delete document.documentElement.dataset.theme })
 afterAll(() => { vi.unstubAllEnvs() })
 
 const variants = [
@@ -30,10 +36,12 @@ describe.each(variants)('approved referral entry labels (%s, %s)', (locale, them
   })
 
   it('shows the completed empty-search invitation without a review qualifier', async () => {
-    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: { searchResults: [] } })
+    vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
     const input = harness.container.querySelector('input')!
     await typeInto(input, 'missing-person@example.test')
     await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    await waitForCondition(() => harness.container.querySelector('[data-testid="referral-preview-search"]') !== null, 'no invitation')
 
     const invitation = harness.container.querySelector('[data-testid="referral-preview-search"]')
     expect(invitation).not.toBeNull()

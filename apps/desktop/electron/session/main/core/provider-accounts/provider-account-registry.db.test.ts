@@ -17,6 +17,43 @@ describe('ProviderAccountRegistry', () => {
     return fixture.registry.upsertAccount({ providerId, accountId, secret });
   }
 
+  it('atomically commits native reference, duplicate aliases and the default, with idempotent journal replay', async () => {
+    await fixture.registry.upsertAccount({ providerId: 'harness:codex', accountId: 'native', meta: { harnessConnection: { kind: 'native' } } });
+    await fixture.registry.upsertAccount({ providerId: 'harness:codex', accountId: 'old', meta: { displayName: 'Keep label', harnessConnection: { kind: 'account' } } });
+    await fixture.registry.setDefaultAccount('harness:codex', 'old');
+    const commit = { operationId: 'fixture-operation', root: '/synthetic/native', identity: '["chatgpt","person","workspace"]',
+      expected: await fixture.registry.listAccounts('harness:codex'), aliases: ['old'], retained: [], defaultId: 'native' };
+    await fixture.registry.commitCodexNativeReference(commit);
+    await fixture.registry.commitCodexNativeReference(commit);
+    const rows = await fixture.registry.listAccounts('harness:codex');
+    expect(rows).toHaveLength(2);
+    expect(rows.filter(row => row.isDefault).map(row => row.accountId)).toEqual(['native']);
+    expect(rows.find(row => row.accountId === 'old')?.meta).toMatchObject({ displayName: 'Keep label', harnessConnection: { migratedTo: 'native', removed: true } });
+    expect(rows.find(row => row.accountId === 'native')?.meta?.harnessConnection?.nativeOAuth).toEqual({ root: commit.root, identity: commit.identity, operationId: commit.operationId });
+    expect(fixture.secretStore.secrets.size).toBe(0);
+  });
+
+  it('does not partially publish a native reference when a connection changed after preparation', async () => {
+    await fixture.registry.upsertAccount({ providerId: 'harness:codex', accountId: 'native', meta: { harnessConnection: { kind: 'native' } } });
+    const expected = await fixture.registry.listAccounts('harness:codex');
+    await fixture.registry.renameAccount('harness:codex', 'native', 'New label');
+    await expect(fixture.registry.commitCodexNativeReference({ operationId: 'stale', root: '/synthetic/native', identity: 'fixture',
+      expected, aliases: [], retained: [{ id: 'independent', name: 'Independent' }], defaultId: 'independent' })).rejects.toThrow('changed during credential migration');
+    expect(await fixture.registry.listAccounts('harness:codex')).toHaveLength(1);
+    expect((await fixture.registry.getAccount('harness:codex', 'native'))?.meta?.harnessConnection?.nativeOAuth).toBeUndefined();
+  });
+
+  it('relocates a secret: the row points at the new ref, the old secret goes, a missing account changes nothing', async () => {
+    await upsert('mail', 'one', 'old');
+    const previous = (await fixture.registry.getAccount('mail', 'one'))!.credentialRef;
+    fixture.secretStore.secrets.set('vault:c1', 'old');
+    await fixture.registry.relocateSecret('mail', 'one', 'vault:c1');
+    expect((await fixture.registry.getAccount('mail', 'one'))?.credentialRef).toBe('vault:c1');
+    expect(fixture.secretStore.secrets.has(previous)).toBe(false);
+    await expect(fixture.registry.resolveSecret('mail', 'one')).resolves.toBe('old');
+    await expect(fixture.registry.relocateSecret('mail', 'gone', 'vault:c2')).rejects.toThrow('no longer exists');
+  });
+
   it('notifies only after durable account mutations and removes an unsubscribed observer', async () => {
     const snapshots: Promise<unknown>[] = [];
     const listener = vi.fn(() => { snapshots.push(fixture.registry.listAccounts('mail')); });
@@ -260,5 +297,30 @@ describe('ProviderAccountRegistry', () => {
     await upsert('github', 'github.com:42');
     await expect(fixture.registry.isConfigured('github')).resolves.toBe(true);
     await expect(fixture.registry.isConfigured('linear')).resolves.toBe(false);
+  });
+  it('retiring an account keeps its row as a removal record and drops its secret', async () => {
+    const { account } = await fixture.registry.upsertAccount({
+      providerId: 'models:custom', accountId: 'one', secret: 'k-one', meta: { displayName: 'One', customModel: { preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://a.example.test/v1' }], models: [{ id: 'm' }] } },
+    });
+    await fixture.registry.upsertAccount({ providerId: 'models:custom', accountId: 'two', secret: 'k-two' });
+    const retired = await fixture.registry.retireAccount('models:custom', 'one', {
+      displayName: 'One', customModel: { preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://a.example.test/v1' }], models: [{ id: 'm' }], removed: true },
+    });
+    expect(retired).toMatchObject({ accountId: 'one', credentialRef: account.credentialRef, meta: { customModel: { removed: true } } });
+    expect(fixture.secretStore.secrets.has(account.credentialRef)).toBe(false);
+    await expect(fixture.registry.resolveSecret('models:custom', 'one')).resolves.toBeNull();
+    await expect(fixture.registry.resolveSecret('models:custom', 'two')).resolves.toBe('k-two');
+    await expect(fixture.registry.retireAccount('models:custom', 'missing', {})).rejects.toThrow('no longer exists');
+  });
+
+  it('drops the secrets that removal records written earlier still hold, and only those', async () => {
+    const meta = (removed: boolean) => ({ customModel: { preset: null, endpoints: [{ protocol: 'openai-responses' as const, baseUrl: 'https://a.example.test/v1' }], models: [{ id: 'm' }], ...(removed ? { removed } : {}) } });
+    await fixture.registry.upsertAccount({ providerId: 'models:custom', accountId: 'gone', secret: 'k-gone', meta: meta(true) });
+    await fixture.registry.upsertAccount({ providerId: 'models:custom', accountId: 'kept', secret: 'k-kept', meta: meta(false) });
+    await fixture.registry.upsertAccount({ providerId: 'harness:kilocode', accountId: 'old', secret: 'k-old', meta: { harnessConnection: { kind: 'api-key', removed: true } } });
+    await fixture.registry.upsertAccount({ providerId: 'harness:kilocode', accountId: 'live', secret: 'k-live', meta: { harnessConnection: { kind: 'api-key' } } });
+    await expect(fixture.registry.dropRetiredSecrets()).resolves.toBe(2);
+    expect([...fixture.secretStore.secrets.values()].sort()).toEqual(['k-kept', 'k-live']);
+    await expect(fixture.registry.dropRetiredSecrets()).resolves.toBe(2);
   });
 });

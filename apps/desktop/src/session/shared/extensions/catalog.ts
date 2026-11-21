@@ -122,8 +122,6 @@ export function permissionSide(permission: DeclaredPermission): 'see' | 'do' {
  */
 export type InstalledGroup = 'attention' | 'update' | 'active' | 'disabled';
 
-export const INSTALLED_GROUP_ORDER: readonly InstalledGroup[] = ['attention', 'update', 'active', 'disabled'];
-
 /**
  * 云端那口(`MarketUpdatesSummary`)对这一件装着的扩展要说的话,只挑一样(#5410)。
  * `yanked`/`deprecated` 比「有新版」更急 —— 前两者是「这一版不该再信」,后者只是

@@ -3,7 +3,6 @@ import { z } from 'zod'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import type { GuguMcpRequestTracker } from '../gugu-mcp-host'
 import { passwordBetaAgentPort } from '../password-vault/beta-runtime-port'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { passwordSaveFailure } from '../password-vault/save-error'
 import { registerGuguTool } from './register-gugu-tool.mjs'
 
@@ -22,7 +21,6 @@ const saveArguments = z.discriminatedUnion('action', [
 ])
 
 export function registerPasswordBetaTools(server: McpServer, context: () => GuguMcpContext, track: GuguMcpRequestTracker, lifetime: AbortSignal) {
-  if (!PASSWORD_BETA_ENABLED) return
   const result = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] })
   // The person's request card goes through the host action, which needs this call's signal (as gugu-im-server binds it).
   const bound = (signal: AbortSignal): GuguMcpContext => {
@@ -35,7 +33,7 @@ export function registerPasswordBetaTools(server: McpServer, context: () => Gugu
     schema: z.object({ site: z.string().max(253).optional(), query: z.string().max(200).optional(), field: z.string().max(200).optional(), usable: z.boolean().optional(),
       rows: z.string().regex(/^\d+(?:-\d+)?$/).optional() }).strict() },
     async args => { try { return result(await passwordBetaAgentPort().list(context(), args)) } catch { return result({ status: 'unavailable' }) } }, track)
-  registerGuguTool(server, { name: 'password_fill', description: 'Fill values (account, password, an API key, a one-time code) into the inputs of a page in your browser, without ever seeing them, like a person\'s autofill: nothing is submitted, you press the button (登录, 保存) yourself afterwards and read the result. Open the page in your browser first. action=request with url (the page your tab shows), fill [{field, into, value?}] (field: 账号, 密码 or the name of a value; into: a CSS selector of a visible input on that page; value: one you already know and that is not a secret, such as the username; code:true for the current 6-digit code of a saved value holding a TOTP seed). What is saved is used; what is not saved and not given, the person types in (never ask for a secret in chat: call this instead), and may keep it for next time. credentialId is optional: without it the credential saved for that website is used, the person fills in when nothing is saved, or you get the candidates to choose from. With read/write access, on its own websites, into inputs that hide secrets, with every value saved, it is filled at once and this returns status filled. Otherwise it returns pending: the person checks and fills in from a private message; continue other work, the outcome arrives as a delivery (filled, or why not). After filled, press the page\'s button. No value is returned. action=status with requestId. on=screen and on=terminal are not available yet.',
+  registerGuguTool(server, { name: 'password_fill', description: 'Fill values (account, password, an API key, a one-time code) into the inputs of a page in your browser, without ever seeing them, like a person\'s autofill: nothing is submitted, you press the button (Sign in, Save) yourself afterwards and read the result. Open the page in your browser first. action=request with url (the page your tab shows), fill [{field, into, value?}] (field: 账号, 密码 or the name of a value; into: a CSS selector of a visible input on that page; value: one you already know and that is not a secret, such as the username; code:true for the current 6-digit code of a saved value holding a TOTP seed). What is saved is used; what is not saved and not given, the person types in (never ask for a secret in chat: call this instead), and may keep it for next time. credentialId is optional: without it the credential saved for that website is used, the person fills in when nothing is saved, or you get the candidates to choose from. With read/write access, on its own websites, into inputs that hide secrets, with every value saved, it is filled at once and this returns status filled. Otherwise it returns pending: the person checks and fills in from a private message; continue other work, the outcome arrives as a delivery (filled, or why not). After filled, press the page\'s button. No value is returned. action=status with requestId. on=screen and on=terminal are not available yet.',
     // MCP/Anthropic consumers require an object at the root. Validate each action below.
     schema: z.object({ action: z.enum(['request', 'start', 'status']), on: z.enum(['browser', 'screen', 'terminal']).optional(), credentialId: z.string().uuid().optional(),
       url: z.string().url().optional(), browserId: z.string().min(1).optional(), fill: z.array(fillEntrySchema).max(16).optional(),

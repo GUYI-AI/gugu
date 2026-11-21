@@ -26,8 +26,10 @@ vi.mock('@capacitor/core', () => ({
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({}))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => ({}) }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }) }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { applyList: (list: { disabled: string[] }) => shell.lists.push(list) },
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
+  PHONE_HOST: 'phone',
+  installedExtensions: { set: (_args: [string], list: { disabled: string[] }) => shell.lists.push(list) },
+  marketUpdates: { refresh: async () => undefined },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneMarket', () => ({
   phoneMarket: () => ({ onRefreshed: () => () => {}, refresh: async () => {} }),

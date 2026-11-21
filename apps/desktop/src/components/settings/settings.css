@@ -223,8 +223,10 @@ div.gg-settings-nav-group + div.gg-settings-nav-group {
 }
 
 /* 内容列:不论弹窗多宽,正文只排到这一列宽(调研:Linear≈640 / Claude≈697 / Raycast≈532),左右居中。
-   开关与按钮因此总在同一条竖线上,不会被拉到弹窗最右边去。手机上屏幕本来就窄,max-width 不起作用。 */
-div.gg-settings-body > * {
+   开关与按钮因此总在同一条竖线上,不会被拉到弹窗最右边去。手机上屏幕本来就窄,max-width 不起作用。
+   会话页画的那几格包在 SessionUiTheme 的 display: contents 壳里(壳没有盒子),列宽落在格子本身上。 */
+div.gg-settings-body > *,
+div.gg-settings-body [data-session-settings-section] {
   width: 100%;
   max-width: var(--settings-col-w, 720px);
   margin-inline: auto;
@@ -392,3 +394,10 @@ div.gg-settings-identity {
 /* Iconless entries keep the same text column as their siblings. */
 .gg-settings-nav-spacer { display: block; width: var(--icon-sm); height: var(--icon-sm); }
 .gg-settings-nav-pane[data-mobile] .gg-settings-nav-spacer { width: var(--icon-lg); height: var(--icon-lg); }
+
+/* Devices: machines are plain settings rows (hairline between, no tinted list box). */
+.gg-settings-device-list { display: flex; flex-direction: column; }
+.gg-settings-device-row { min-height: 52px; padding: var(--spacing-md) 0; }
+.gg-pane[data-mobile] .gg-settings-device-row { padding-inline: var(--spacing-lg); }
+.gg-settings-device-list > .gg-settings-device-row + .gg-settings-device-row,
+.gg-settings-device-list:not(.hidden) + .gg-settings-row { border-top: 1px solid var(--border-color); }

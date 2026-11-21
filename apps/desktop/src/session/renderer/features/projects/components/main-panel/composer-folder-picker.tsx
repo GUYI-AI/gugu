@@ -52,7 +52,7 @@ export const ComposerFolderPicker = observer(function ComposerFolderPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" className="min-w-72 p-1">
         <DropdownMenuGroup label={translate('projects.folders.pickerTitle')}>
-          {state.folders.map((folder) => (
+          {state.folders.filter((folder) => !folder.placeholder).map((folder) => (
             <DropdownMenuItem key={folder.workspaceId} onClick={() => state.choose(folder.workspaceId)} title={folder.path}>
               <Folder className="size-3.5" />
               {/* 名字优先露全,路径是辅助:挤不下先截路径(❌「项目根...」配一整条路径)。 */}

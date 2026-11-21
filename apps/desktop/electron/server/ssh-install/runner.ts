@@ -433,7 +433,7 @@ export async function runSshInstall(target: SshTarget, run: InstallRun, deps: Ss
       }
       if (viaDesktop) {
         // 那台机器上不了网(或没有 curl / wget):本机下好、经 SSH 传过去。
-        run.appendLog(`── 那台机器连不上下载站,改由本机下载后传过去 ──`)
+        run.appendLog(`── 该设备无法连接下载站,改由本机下载后传输 ──`)
         run.setStep('download', { via: 'desktop', progress: { phase: 'download', done: 0, total: null } })
         let pkg: DesktopPackage
         try {

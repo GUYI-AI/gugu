@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   WINDOW_PROJECTION_HEADER_CHILDREN, WINDOW_PROJECTION_ITEM_FIELDS, WINDOW_PROJECTION_ROOT_FIELDS,
 } from '@gugu/session-wire/session-window-projection';
-import { COMMIT_HEADER_CHILDREN, COMMIT_ITEM_HEADER_FIELDS, commitHeaderFields } from './window-commit-header-fields';
+import { COMMIT_HEADER_CHILDREN, COMMIT_ITEM_HEADER_FIELDS, commitHeaderFields, filterCommitHeader } from './window-commit-header-fields';
 
 const names = (value: string) => value.trim().split(/\s+/).sort();
 const normalized = (value: Readonly<Record<string, string>>) =>
@@ -12,6 +12,11 @@ const normalized = (value: Readonly<Record<string, string>>) =>
  * A field dropped or added on either side would make the host emit headers the
  * renderer rejects, or silently withhold fields the wire promises. */
 describe('host commit header vocabulary equals the public wire vocabulary', () => {
+  it('retains a revoked sign-in reason on the projected failed turn', () => {
+    const header = filterCommitHeader({ target: 'turn', values: { id: 'turn', seq: 0, referenceId: 'ref', initiator: 'user',
+      'outcome.kind': 'error', 'outcome.signInRequired': true, 'outcome.signInReason': 'revoked' }, deferred: [] });
+    expect(header.values['outcome.signInReason']).toBe('revoked');
+  });
   it('has the same item kinds and fields per kind', () => {
     expect(normalized(COMMIT_ITEM_HEADER_FIELDS)).toEqual(normalized(WINDOW_PROJECTION_ITEM_FIELDS));
     for (const kind of Object.keys(WINDOW_PROJECTION_ITEM_FIELDS))

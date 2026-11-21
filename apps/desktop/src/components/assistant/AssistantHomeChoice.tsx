@@ -1,7 +1,6 @@
-import { useMutation } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { cloudComputerFailureKind } from '@gugu/core/cloud/cloudComputer'
-import { refreshCloudComputer } from '../../lib/cloudComputerStore'
+import { cloudComputer, cloudFailureOf, useCloudComputer } from '../../lib/cloudComputer'
 import { Button } from '../ui/Button'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { AgentAvatar } from '../agentAvatar/AgentAvatar'
@@ -29,7 +28,11 @@ export function AssistantHomeChoice({
 }) {
   const { t } = useTranslation('assistant')
   const { t: tc } = useTranslation('common')
-  const cloudCheck = useMutation({ mutationFn: refreshCloudComputer })
+  // 「再试一次」是一条命令(现问一次管家);问的结果在云电脑的读数里。
+  const cloud = useCloudComputer()
+  const [check, setCheck] = useState<'idle' | 'checking' | 'checked'>('idle')
+  const askAgain = () => { setCheck('checking'); void cloudComputer.refresh().finally(() => setCheck('checked')) }
+  const checkFailure = check === 'checked' ? cloudFailureOf(cloud) : null
   const header = <>
     <AgentAvatar name={name} avatar={draftAvatar} id="assistant-draft" size={72} />
     <h1 className="ta-onb-title">{t('setup.homeTitle', { name })}</h1>
@@ -52,10 +55,10 @@ export function AssistantHomeChoice({
         <span className="ta-onb-choice-body">{t('setup.homeCloudBody')}</span>
         <div className="ta-onb-choice-actions">
           {!cloudAvailable ? <>
-            <Button variant="secondary" className="rounded-full" disabled={busy || cloudCheck.isPending} onClick={() => cloudCheck.mutate()}>
-              {cloudCheck.isPending ? <><LoadingIndicator size="inline" />{t('cloud.loading')}</> : t('setup.retry')}
+            <Button variant="secondary" className="rounded-full" disabled={busy || check === 'checking'} onClick={askAgain}>
+              {check === 'checking' ? <><LoadingIndicator size="inline" />{t('cloud.loading')}</> : t('setup.retry')}
             </Button>
-            {!cloudCheck.error ? <span className="ta-onb-note" role="status">{t(cloudCheck.isSuccess ? 'setup.cloudStillUnavailable' : 'setup.cloudNotOpen')}</span> : null}
+            {!checkFailure ? <span className="ta-onb-note" role="status">{t(check === 'checked' ? 'setup.cloudStillUnavailable' : 'setup.cloudNotOpen')}</span> : null}
           </> : <>
             {(member || billingLinksAvailable()) && <Button variant="primary" size="lg" className="rounded-full" disabled={busy} onClick={member ? onCloud : onUpgrade}
               data-testid={member ? 'assistant-setup-claim-cloud' : 'assistant-setup-member'}>
@@ -88,7 +91,7 @@ export function AssistantHomeChoice({
         <span className="ta-onb-choice-body">{t('setup.homeNoComputerBody')}</span>
       </div>}
     </div>
-    {cloudCheck.error ? <p className="ta-onb-error" role="alert">{tc(`cloudComputer.reason.${cloudComputerFailureKind(cloudCheck.error)}`)}</p> : null}
+    {checkFailure ? <p className="ta-onb-error" role="alert">{tc(`cloudComputer.reason.${checkFailure}`)}</p> : null}
     {error ? <p className="ta-onb-error" role="alert" data-testid="assistant-setup-error">{t('setup.failed')}</p> : null}
     {cloudFailure ? <CloudComputerRefusal failure={cloudFailure} prefixKey="devices.cloud.provisionFailed" onUpgrade={onUpgrade} /> : null}
     {back}

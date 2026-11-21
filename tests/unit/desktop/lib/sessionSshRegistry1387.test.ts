@@ -100,17 +100,21 @@ describe('SSH registry after desktop authentication (#1387)', () => {
   })
 
   it('does not cache an IPC failure as a successful empty registry, and logs the reason before retry', async () => {
+    // The registry is the signed-in account's replica (the renderer publishes the session before main's mirror).
+    await import('../../../../apps/desktop/src/lib/replica').then((replica) => replica.followRendererSession('SIGNED_IN', 'owner'))
     const ssh = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
     host.owner = 'owner'
     host.invoke.mockRejectedValueOnce(new Error('IPC channel unavailable'))
     await expect(ssh.sshMachinesReady()).rejects.toThrow('IPC channel unavailable')
-    expect(host.warn).toHaveBeenCalledWith(expect.objectContaining({ error: 'IPC channel unavailable' }), expect.any(String))
+    expect(host.warn).toHaveBeenCalledWith(expect.objectContaining({ model: 'sshMachineAddresses', error: expect.stringContaining('IPC channel unavailable') }), expect.any(String))
     await ssh.sshMachinesReady()
     expect(host.invoke).toHaveBeenCalledTimes(2)
     expect(ssh.isSshMachine('remote-host')).toBe(true)
   })
 
   it('retries a failed refresh even after a previous registry read succeeded', async () => {
+    // The registry is the signed-in account's replica (the renderer publishes the session before main's mirror).
+    await import('../../../../apps/desktop/src/lib/replica').then((replica) => replica.followRendererSession('SIGNED_IN', 'owner'))
     const ssh = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
     host.owner = 'owner'; await ssh.sshMachinesReady()
     host.invoke.mockRejectedValueOnce(new Error('refresh IPC failed'))
@@ -121,13 +125,16 @@ describe('SSH registry after desktop authentication (#1387)', () => {
   })
 
   it('does not let a late pre-login empty reply overwrite the post-login registry', async () => {
+    // The registry is the signed-in account's replica (the renderer publishes the session before main's mirror).
+    await import('../../../../apps/desktop/src/lib/replica').then((replica) => replica.followRendererSession('SIGNED_IN', 'owner'))
     const ssh = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
     const initial = deferred<string[]>()
     host.invoke.mockImplementationOnce(() => initial.promise)
     const early = ssh.sshMachinesReady()
     await vi.waitFor(() => expect(host.invoke).toHaveBeenCalledOnce())
-    host.owner = 'owner'; await ssh.refreshSshMachines()
-    initial.resolve([]); await early
+    // The mirror is acknowledged while the pre-login read is still out: the refresh reads again once that one lands.
+    host.owner = 'owner'; const refreshed = ssh.refreshSshMachines()
+    initial.resolve([]); await refreshed; await early
     expect(ssh.isSshMachine('remote-host')).toBe(true)
   })
 })

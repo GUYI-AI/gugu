@@ -11,7 +11,7 @@ import { appIdentityOf, publisherOf } from '@shared/extensions/app-identity';
 import type { HandedConsent } from '@shared/extensions/install-consent-flow';
 
 /**
- * The package: the card's message (#7290), read as the signed-in person (`resolveAttachmentPackage`) — who published it is
+ * The package: the card's message (#7290), read as its reader (`resolveAttachmentPackage`) — who published it is
  * the server's word on that message, and its bytes are signed by the server; a URL in the message is never trusted.
  */
 export type AttachmentInstall = AttachmentPackage & {

@@ -25,8 +25,8 @@ describe('contributes.hostLinks (API 52)', () => {
   it('opens the Library on that tab', () => {
     expect(hostLinkTarget('library:prompts')).toEqual({ view: 'settings', section: 'prompts' });
     expect(hostLinkTarget('library:themes')).toEqual({ view: 'settings', section: 'general' });
-    expect(hostLinkTarget('library:agents')).toEqual({ view: 'apps', params: { marketPage: 'agents' } });
-    expect(hostLinkTarget('library:integrations')).toEqual({ view: 'apps', params: { marketPage: 'connectors' } });
-    expect(hostLinkTarget('library:mcp')).toEqual({ view: 'apps', params: { marketPage: 'connectors', installedSection: 'connectors' } });
+    expect(hostLinkTarget('library:agents')).toEqual({ view: 'apps', params: { location: { tab: 'agents' } } });
+    expect(hostLinkTarget('library:integrations')).toEqual({ view: 'apps', params: { location: { tab: 'connectors' } } });
+    expect(hostLinkTarget('library:mcp')).toEqual({ view: 'apps', params: { location: { tab: 'connectors', installed: { section: 'connectors', direct: true } } } });
   });
 });

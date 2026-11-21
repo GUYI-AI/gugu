@@ -12,8 +12,17 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
     native.foreground = listener; native.failed = failed; return native.unsubscribe
   },
 } }))
+// The native client behind the replica and the panel's commands: each case puts its own transport here.
+const native2 = vi.hoisted(() => ({ client: null as null | import('../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions').IOSCalendarPermissionClient }))
+vi.mock('../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions', async (original) => ({ ...await original<object>(), iosCalendarPermissions: {
+  read: (owner: string) => native2.client!.read(owner),
+  connect: (binding: never) => native2.client!.connect(binding),
+  disconnect: (binding: never) => native2.client!.disconnect(binding),
+} }))
 
 import { IOSCalendarPermissionsPanel } from '../../../../apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPanel'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 import { IOSCalendarPermissionError } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions'
 import type { IOSCalendarPermissionClient, IOSCalendarPermissionStatus, IOSCalendarSnapshot } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions'
 
@@ -26,19 +35,28 @@ function client(read = vi.fn(async () => status('fullAccess'))): IOSCalendarPerm
   return { read, connect: vi.fn(async () => status('fullAccess', true)), disconnect: vi.fn(async () => status('fullAccess')) }
 }
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { vi.clearAllMocks(); native.foreground = null; native.failed = null; native.active = null; native.activeInitially = false; harness = createReactHarness() })
-afterEach(() => { harness.cleanup(); vi.useRealTimers() })
+beforeEach(async () => {
+  // The connection is the signed-in account's iosCalendarConnection replica: each case starts with nothing read.
+  await freshReplicaAccount('owner-a')
+  vi.clearAllMocks(); native.foreground = null; native.failed = null; native.active = null; native.activeInitially = false; harness = createReactHarness()
+})
+afterEach(() => { harness.cleanup(); vi.useRealTimers(); native2.client = null })
 
 const permissionText = () => harness.container.querySelector('[role="status"]')?.textContent
 const reload = () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="重新读取日历权限"]')!
 const action = () => Array.from(harness.container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '连接日历' || button.textContent === '断开日历')!
-const render = (transport: IOSCalendarPermissionClient, ownerId = 'owner-a') => harness.render(createNode(IOSCalendarPermissionsPanel, { ownerId, client: transport }))
+/** The native client behind the replica (the mocked module); the page's owner is the signed-in account. */
+const render = async (transport: IOSCalendarPermissionClient, ownerId = 'owner-a') => {
+  native2.client = transport
+  followRendererSession('SIGNED_IN', ownerId)
+  await harness.render(createNode(IOSCalendarPermissionsPanel, { ownerId }))
+}
 
 describe('iOS calendar permission panel', () => {
   it('updates a settled native failure when the user changes language without replaying the read', async () => {
     const transport = client(vi.fn().mockRejectedValue(new IOSCalendarPermissionError('invalid_native_status', 'native diagnostic')))
     await render(transport)
-    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('未读到有效的日历权限状态，请重新读取。')
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('无法读取有效的日历权限状态，请重新读取。')
     await act(async () => setLocalePreference('en-US'))
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('Could not read a valid Calendar status. Refresh to try again.')
     expect(harness.container.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh Calendar access')
@@ -79,9 +97,9 @@ describe('iOS calendar permission panel', () => {
   it('shows a native read failure and retries only the status reader', async () => {
     const transport = client(vi.fn().mockRejectedValueOnce(new Error('Internal native failure')).mockResolvedValueOnce(status('denied')))
     await render(transport)
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(action()).toBeUndefined()
-    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('未读到日历连接状态，请重新读取。')
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('无法读取日历连接状态，请重新读取。')
     await clickElement(reload())
     expect(permissionText()).toBe('未连接，未授权')
     expect(harness.container.querySelector('[role="alert"]')).toBeNull()
@@ -122,7 +140,7 @@ describe('iOS calendar permission panel', () => {
 
   it('renders a stale binding as an error without exposing internal details', async () => {
     await render(client(vi.fn().mockRejectedValue({ code: 'stale_context', message: 'Internal owner/install mismatch' })))
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(action()).toBeUndefined()
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('账号或这台手机的身份已变化，请重新打开权限页。')
   })
@@ -132,13 +150,13 @@ describe('iOS calendar permission panel', () => {
     await render(client(vi.fn(() => oldRead.promise)))
     await act(async () => native.failed?.(new Error('Native lifecycle listener failed')))
     await act(async () => oldRead.resolve(status('fullAccess', true)))
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(action()).toBeUndefined()
   })
 
   it('shows native owner refusal without exposing connection actions', async () => {
     await render(client(vi.fn().mockRejectedValue({ code: 'not_granted', message: 'Native owner guard refused' })))
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(action()).toBeUndefined()
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('请在当前账号的权限页查看日历权限。')
   })
@@ -220,7 +238,7 @@ describe('iOS calendar permission panel', () => {
     await render(transport)
     await clickElement(action())
     await act(async () => native.active?.(true))
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(action()).toBeUndefined()
     expect(transport.read).toHaveBeenCalledTimes(3)
     expect(transport.connect).toHaveBeenCalledOnce()
@@ -233,7 +251,7 @@ describe('iOS calendar permission panel', () => {
     vi.mocked(transport.connect).mockRejectedValue({ code: 'stale_context' })
     await render(transport)
     await clickElement(action())
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(transport.read).toHaveBeenCalledTimes(2)
     expect(transport.connect).toHaveBeenCalledOnce()
   })
@@ -261,7 +279,7 @@ describe('iOS calendar permission panel', () => {
     await render(transport)
     await clickElement(action())
     await act(async () => vi.advanceTimersByTimeAsync(5000))
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(transport.read).toHaveBeenCalledTimes(2)
     expect(transport.connect).toHaveBeenCalledOnce()
     expect(native.stopActive).toHaveBeenCalledOnce()
@@ -295,8 +313,41 @@ describe('iOS calendar permission panel', () => {
     vi.mocked(transport.disconnect).mockRejectedValue({ code: 'stale_context', message: 'Native installation changed' })
     await render(transport)
     await clickElement(action())
-    expect(permissionText()).toBe('查不到')
+    expect(permissionText()).toBe('未知')
     expect(action()).toBeUndefined()
     expect(transport.disconnect).toHaveBeenCalledOnce()
+  })
+
+  it('opens again on the last answer (no reading frame) while it is read again', async () => {
+    const again = deferred<IOSCalendarSnapshot>()
+    const transport = client(vi.fn().mockResolvedValueOnce(status('fullAccess', true)).mockReturnValueOnce(again.promise))
+    await render(transport)
+    expect(permissionText()).toBe('已连接')
+    // The panel closed, the run goes on (what it read stays).
+    harness.cleanup({ keepReads: true }); harness = createReactHarness()
+    await render(transport)
+    // The replica's entry draws the first frame; the open still asks the system again.
+    expect(permissionText()).toBe('已连接')
+    expect(transport.read).toHaveBeenCalledTimes(2)
+    await act(async () => again.resolve(status('denied', true)))
+    expect(permissionText()).toBe('权限已撤销')
+  })
+
+  it('F2-3: a cold start draws no connection before native answers in this run (❌ the last run\'s "connected" with its binding)', async () => {
+    const transport = client(vi.fn().mockResolvedValueOnce(status('fullAccess', true)))
+    await render(transport)
+    expect(permissionText()).toBe('已连接')
+    // The App is closed (its snapshot written) and opened again: the grant was revoked in Settings meanwhile.
+    const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
+    harness.cleanup(); harness = createReactHarness()
+    queryClient.clear()
+    vi.resetModules()
+    const fresh = await import('../../../../apps/desktop/src/lib/replica')
+    fresh.followRendererSession('SIGNED_IN', 'owner-a')
+    const panel = await import('../../../../apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPanel')
+    native2.client = client(vi.fn(() => new Promise<IOSCalendarSnapshot>(() => {})))
+    await harness.render(createNode(panel.IOSCalendarPermissionsPanel, { ownerId: 'owner-a' }))
+    expect(permissionText()).not.toBe('已连接')
+    expect(action()).toBeUndefined()
   })
 })

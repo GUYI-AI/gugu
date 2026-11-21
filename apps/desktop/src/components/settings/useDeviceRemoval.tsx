@@ -24,7 +24,10 @@ type DialogState =
   | { kind: 'uninstall'; device: Device; machineKey?: string }
   | { kind: 'versions'; machineKey: string }
 
-export function useDeviceRemoval(machines: readonly DeviceMachine[]): {
+export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved }: {
+  /** After each device this removes (one version of a machine counts): for a surface that reads what a removal changes. */
+  onRemoved?: () => void
+} = {}): {
   /** undefined = this desktop's SSH registry not read yet. */
   addressOf: (deviceId: string) => string | null | undefined
   openRemove: (device: Device) => void
@@ -104,7 +107,8 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[]): {
       log.error({ err: String((err as Error)?.message ?? err), deviceId: device.device_id }, 'remove device failed')
       throw err
     }
-  }, [remove, forget, agents.agents.length])
+    onRemoved?.()
+  }, [remove, forget, agents.agents.length, onRemoved])
 
   const confirmRemove = async () => {
     if (dialog?.kind !== 'remove') return

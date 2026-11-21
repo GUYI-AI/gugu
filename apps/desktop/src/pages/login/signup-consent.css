@@ -1,7 +1,7 @@
 .gugu-signup-consent{width:480px;max-width:100%;display:flex;flex-direction:column;gap:24px;max-height:calc(100svh - 48px)}
 .gugu-signup-consent-header{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
 .gugu-signup-consent-header>img{display:block;width:40px;height:40px;border-radius:var(--radius-control)}
-.gugu-signup-consent-reading{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable}
+.gugu-signup-consent-reading{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .gugu-signup-consent h1{margin:0 0 24px;font-size:var(--font-size-xl);font-weight:600;line-height:var(--lh-page)}
 .gugu-signup-consent-body{display:flex;flex-direction:column;gap:16px}
 .gugu-signup-consent-body p{margin:0;font-size:var(--font-body);line-height:24px;overflow-wrap:anywhere}

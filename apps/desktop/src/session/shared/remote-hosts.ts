@@ -63,6 +63,8 @@ export type RemoteHostDevice = {
    * 缺席 / null = 连着(或还没连过)。远程隧道的机器没有这一格。
    */
   sshLink?: 'signInRequired' | 'unreachable' | 'outdated' | 'updating' | null;
+  /** Whether it is reached over SSH is not known yet: its link is drawn as pending, ❌ offline. */
+  linkUnknown?: true;
   /**
    * The existing heartbeat update, including its target and scope. Ready is awaiting restart,
    * downloading is in progress, failed is an unsuccessful update. Absent means no reported update.
@@ -129,6 +131,11 @@ export type RemoteHostsBridge = {
    */
   openSessionHost?(deviceId: string): SessionHostPipeOpener;
   listDevices(): readonly RemoteHostDevice[];
+  /**
+   * #3433 名下机器的列表读过一次了(设备表读完,或有上次的快照)。没读到之前 `listDevices()` 是空的,而空 ≠ 名下没有别的机器。
+   * 老宿主没有这一格:缺席 = 读过。
+   */
+  devicesRead?(): boolean;
   /** 名下机器变了(上线/离线/改名/新登录一台)时回调;返回退订。 */
   subscribeDevices(listener: () => void): () => void;
   /**

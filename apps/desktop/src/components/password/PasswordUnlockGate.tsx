@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { PasswordSyncView, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { Lock } from '@/lib/icons'
 import { Button } from '../ui/Button'
@@ -24,19 +25,20 @@ export function PasswordUnlockGate({ sync, busy, error, run, clearError, childre
 function UnlockEntry({ sync, busy, error, run, clearError, onRecovered }: {
   sync: LockedSync; busy: boolean; error: string; run: Command; clearError(): void; onRecovered(code: string): void
 }) {
+  const { t } = useTranslation('settings')
   const [recovering, setRecovering] = useState(false)
   const blocked = sync.state === 'blocked'
   return <SettingsPage data-testid="password-unlock-settings">
     <section className="password-unlock-entry" aria-labelledby="password-unlock-title">
       <span className="password-unlock-icon" aria-hidden="true"><Lock size={22} /></span>
-      <h2 id="password-unlock-title" className="password-unlock-title">这台电脑还没解锁密码</h2>
-      {!blocked && <p className="password-unlock-instruction">在另一台设备的咕咕上点「允许」，核对是这串数字</p>}
+      <h2 id="password-unlock-title" className="password-unlock-title">{t('passwords.locked')}</h2>
+      {!blocked && <p className="password-unlock-instruction">{t('passwords.unlockInstruction')}</p>}
       {sync.state === 'refused'
-        ? <Button disabled={busy} className="password-unlock-code-action" onClick={() => { void run({ type: 'sync-ask-again' }) }}>重新申请</Button>
+        ? <Button disabled={busy} className="password-unlock-code-action" onClick={() => { void run({ type: 'sync-ask-again' }) }}>{t('passwords.askAgain')}</Button>
         : !blocked && <div className="password-unlock-code" data-testid="password-unlock-code">
-          {sync.code ? <Code value={sync.code} /> : <span className="font-mono" aria-label="验证码生成中">··· ···</span>}
+          {sync.code ? <Code value={sync.code} /> : <span className="font-mono" aria-label={t('passwords.codeGenerating')}>··· ···</span>}
         </div>}
-      <Button variant={blocked ? 'primary' : 'ghost'} className="password-unlock-recover" disabled={busy} onClick={() => { clearError(); setRecovering(true) }}>用恢复码解锁</Button>
+      <Button variant={blocked ? 'primary' : 'ghost'} className="password-unlock-recover" disabled={busy} onClick={() => { clearError(); setRecovering(true) }}>{t('passwords.unlockWithRecovery')}</Button>
       {!recovering && error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
     </section>
     {recovering && <RecoverSheet mode="unlock" busy={busy} error={error} onClose={() => { clearError(); setRecovering(false) }} onSubmit={async code => {

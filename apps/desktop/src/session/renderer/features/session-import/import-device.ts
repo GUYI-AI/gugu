@@ -7,6 +7,7 @@ import {
   type MachineChoice,
 } from '@renderer/features/remote-hosts/machine-choice';
 import { humanizeRpcError } from './humanize-error';
+import { localizeImportError } from './import-error-copy';
 import { LOCAL_IMPORT_DEVICE, type SessionImportSource } from './import-source';
 
 // #6264「导入会话」的机器选择:与各处同一个选择器(MachinePicker),本机第一、在线的、
@@ -42,7 +43,7 @@ export function importDeviceState(
 
 /**
  * 列表 / 预览 / 导入失败时给人看的那一句(已经是整句,调用方不再套前缀)。
- *  · 本机:主进程给的就是人话,剥掉 IPC 的壳原样说;
+ *  · 本机:主进程给的是原因码(`<码>:<文件名>`,见 import-error-code),按当前语言说人话;认不出的整句剥掉 IPC 的壳原样说;
  *  · 别的机器太旧(不认 `taskpage.sessionImport.*`):说版本太旧、空闲会自己升级;
  *  · 那台机器上没接上扫描器:说那台机器上用不了;
  *  · 没有业务码 = 传输层没问到(超时、断线):说没连上那台机器;
@@ -56,16 +57,18 @@ export function describeImportFailure(
   translate: Translate
 ): string {
   const unknown = translate('sessionImport.unknownError');
+  // 主进程报的原因码（`<码>:<文件名>`）按当前语言说人话；认不出的整句照旧原样当诊断说。
+  const humanize = () => localizeImportError(humanizeRpcError(error, unknown), translate);
   const wrap = (message: string) =>
     kind === 'list'
       ? translate('sessionImport.listFailed', { error: message })
       : kind === 'preview'
         ? translate('sessionImport.previewFailed', { error: message })
         : message;
-  if (source.isLocal) return wrap(humanizeRpcError(error, unknown));
+  if (source.isLocal) return wrap(humanize());
   const code = remoteErrorCode(error);
   if (code && TOO_OLD_CODES.has(code)) return translate('sessionImport.serverTooOld', { device: deviceLabel });
   if (code === 'import_unavailable') return translate('sessionImport.remoteUnavailable', { device: deviceLabel });
   if (!code) return translate('sessionImport.remoteUnreachable', { device: deviceLabel });
-  return wrap(humanizeRpcError(error, unknown));
+  return wrap(humanize());
 }

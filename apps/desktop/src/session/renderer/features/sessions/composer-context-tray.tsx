@@ -46,7 +46,7 @@ export function accountProjects(): AccountProject[] {
 /**
  * 这次建的 agent 进哪个群(在群里派任务 / 群成员里点的「新建 Agent」):建好就进群,结果回这个群。
  * gugu-dev#181:❌「不加入」—— 不进群,结果就回不来。只是一枚说明,不是选择。
- * 读成「进群：群名」(#2548 mock v33 派智能体)。
+ * 读成「加入：群名」(#2548 mock v33 派智能体)。
  */
 export function ComposerBirthGroupChip({ name }: { name: string }) {
   const { translate } = useSessionMessages();

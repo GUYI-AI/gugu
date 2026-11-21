@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantShellActions, AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined }, useMyAssistant: () => ({ state: 'unknown' }) }))
 
 const { installAssistantShellBridge, publishAssistantShell, readAssistantShellBridge } = await import('../../../../apps/desktop/src/lib/assistantShellBridge')
 const { advanceAssistantSetup, appAssistantStatusOf, openAssistantScreen, renameAssistantFor, startAssistantAppStatus } = await import('../../../../apps/desktop/src/lib/assistantAppHost')

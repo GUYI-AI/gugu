@@ -6,6 +6,8 @@ import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRout
 import type { ConnectionBridge,ConnectionWindow } from '@/lib/connectionBridge'
 import { createConnectionClient } from '@gugu/core/cloud/connections'
 import { useConnectionMutationAllowed } from '@/components/connections/connection-mutation-context'
+import { followRendererSession,queryClient } from '@/lib/replica'
+import { connectionRoute,routeCache } from '@/lib/connectionBridge'
 import { createReactHarness,renderWithAppProviders } from '../../../support/testHarness'
 
 let harness: ReturnType<typeof createReactHarness>,route: ConnectionRoute,refresh: () => void
@@ -17,7 +19,9 @@ beforeEach(() => {
   notice.mockClear()
   route = { mode: 'legacy',epoch: '0',phase: 'stable',acceptingNewOperations: true }
   read.mockImplementation(async () => route)
-  const routing = createConnectionRouting({ accountId: () => 'boundary-owner',read,changed: () => {} })
+  // The route's one copy is the account's `connectionRoute` entry, as connection-host.ts wires it.
+  followRendererSession('SIGNED_IN','boundary-owner'); queryClient.removeQueries({ queryKey: [connectionRoute.name] })
+  const routing = createConnectionRouting({ accountId: () => 'boundary-owner',read,changed: () => {},cache: routeCache })
   const bridge: ConnectionBridge = { routing,accountId: () => 'boundary-owner',subscribeAccount: () => () => {},
     subscribeChanges: (_owner,listener) => { refresh = listener; return () => {} },
     metadata: () => { throw new Error('Unexpected owner metadata read') },
@@ -77,7 +81,8 @@ describe('connection shell authority boundary without a query provider', () => {
   it('draws a remounted page at once from the last route instead of waiting for the read',async () => {
     await render()
     await vi.waitFor(() => expect(harness.container.textContent).toContain('Legacy accounts'))
-    harness.cleanup(); harness = createReactHarness()
+    // Unmounted, the app running on: the route is the account's replica entry, there for the next mount.
+    harness.cleanup({ keepReads: true }); harness = createReactHarness()
     read.mockImplementation(() => new Promise(() => {}))
     await render()
     expect(harness.container.textContent).toContain('Legacy accounts')

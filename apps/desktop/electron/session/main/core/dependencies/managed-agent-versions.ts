@@ -5,7 +5,7 @@ import { buildAgentEnv } from '@main/core/pty/pty-env';
 import type { ManagedAgentVersions, ManagedAgentVersionCleanup } from '@shared/core/agents/managed-versions';
 import { managedAgentPrefix, managedMiseBinDir } from './managed-agent-home';
 import { bundledMisePath, miseEnvironment, miseToolName } from './mise-installer';
-import { runMiseProcess } from './mise-process';
+import { MISE_COMMAND_TIMEOUT_MS, runMiseProcess } from './mise-process';
 import type { MiseTarget } from './mise-distribution';
 import { withManagedLauncherPublication } from './managed-launcher-publication';
 
@@ -36,7 +36,7 @@ async function context(target: MiseTarget) {
   await access(mise);
   const env = miseEnvironment(root, path.join(work, 'global.toml'), buildAgentEnv());
   const tool = miseToolName(target);
-  const run = (args: string[], timeout = 15_000) => runMiseProcess(mise, args, { cwd: work, env, signal: AbortSignal.timeout(timeout) });
+  const run = (args: string[]) => runMiseProcess(mise, args, { cwd: work, env, signal: AbortSignal.timeout(MISE_COMMAND_TIMEOUT_MS) });
   const inventory = async (): Promise<Entry[]> => {
     const value: unknown = JSON.parse(await run(['ls', '--json', tool]));
     if (!Array.isArray(value) || value.some(entry => !entry || typeof entry.version !== 'string'
@@ -74,7 +74,7 @@ export async function cleanupManagedAgentVersions(target: MiseTarget, requested:
       for (const version of selected) {
         if (compromised) throw compromised;
         assertOwned();
-        try { await ctx.run(['uninstall', ctx.tool + '@' + version], 60_000); }
+        try { await ctx.run(['uninstall', ctx.tool + '@' + version]); }
         catch (error) { failed.push({ version, error: error instanceof Error ? error.message : String(error) }); }
       }
       if (compromised) throw compromised;

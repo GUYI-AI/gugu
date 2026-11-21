@@ -37,5 +37,5 @@ it('reads only an indexed source/path, pages turns, and retains the realpath bou
   await writeFile(outside, 'private outside content')
   await unlink(filePath)
   await symlink(outside, filePath)
-  await expect(source.read(read)).rejects.toThrow(/扫描目录/)
+  await expect(source.read(read)).rejects.toThrow(/transcript-outside-roots/)
 })

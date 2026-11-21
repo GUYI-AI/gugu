@@ -1,10 +1,9 @@
 import { followLink, openLinkTarget } from '../../lib/guguLinks'
-import { reaction } from 'mobx'
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { readMemberRosterRevision, readRenamedMembers, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
 import { extensionSurfaceStore } from '../../session/renderer/features/extensions/extension-surface-store'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { PHONE_HOST, useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
 import {
   APP_SESSION_FRAME_NAME,
   APP_SHOW_SESSION_EVENT,
@@ -21,6 +20,7 @@ import { useTheme } from '../../store/theme'
 import { useAuth } from '../../store/auth'
 import { hostAppFrame, type PhoneAppBinding } from './phoneAppHost'
 import { phoneApps } from './phoneApps'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
 import { Button } from '../ui/Button'
@@ -40,7 +40,7 @@ interface FramedPage {
  * One App frame on the phone, wherever it is drawn — a chat's tab (GroupTabContent), a session's tab, an App's own page
  * (SessionAppFrame): one host, one set of what it hears, so a page answers the same in each.
  *
- * The App is what the phone's App store has installed now (`installedExtensionsStore`): updated, the frame reloads on the
+ * The App is what the phone's App store has installed now (`installedExtensions('phone')`): updated, the frame reloads on the
  * new version; uninstalled, it goes — its host with it, and the grants it held with the file service. Its page comes
  * from the App's own origin (`phoneApps.pageUrl`, appOrigin.ts), never the gugu page's own: that is why
  * `allow-same-origin` is safe here — the App gets its own storage, and still cannot reach this page.
@@ -97,9 +97,7 @@ export function PhoneAppFrame({
   const { devices } = useDevicesStore()
   const devicesRef = useRef(devices)
   devicesRef.current = devices
-  const [app, setApp] = useState<FramedPage | null>(null)
   const [loaded, setLoaded] = useState<string | null>(null)
-  const [missing, setMissing] = useState(false)
   // The App holds a Back step of its own (a folder it is in, `navigation.onBack`): the back key goes there first, as to a sheet
   // over the page; let go (at its top), the page's own back takes it again. A page kept hidden under a later one holds
   // nothing, nor one with a file open over it (the preview's own back closes that first).
@@ -112,33 +110,19 @@ export function PhoneAppFrame({
   const { t } = useTranslation('messaging')
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
 
-  // The App as installed here now, and where its page is (a new version is another page).
-  useEffect(() => {
-    return reaction(
-      () => {
-        const manifest = installedExtensionsStore.isLoaded && installedExtensionsStore.isEnabled(extensionId) ? installedExtensionsStore.manifestFor(extensionId) : undefined
-        return { loaded: installedExtensionsStore.isLoaded, manifest }
-      },
-      ({ loaded, manifest }) => {
-        if (!manifest) {
-          setApp(null)
-          setMissing(loaded)
-          return
-        }
-        const tab = manifest.contributes.tabs.find((candidate) => candidate.name === tabName)
-        // A tab with no page of its own (or one gugu draws itself) has nothing to put here.
-        const entry = tab?.entry ?? manifest.entry
-        if (!entry || tab?.hostPage) {
-          setApp(null)
-          setMissing(true)
-          return
-        }
-        setMissing(false)
-        setApp({ src: phoneApps.pageUrl(extensionId, entry), version: manifest.version, capabilities: manifest.permissions?.capabilities ?? [] })
-      },
-      { fireImmediately: true, equals: (a, b) => a.loaded === b.loaded && a.manifest === b.manifest },
-    )
-  }, [extensionId, tabName])
+  // The App as installed here now, and where its page is (a new version is another page): a derivation of the reading.
+  const installed = useInstalledApps(PHONE_HOST)
+  const manifest = installed.state === 'value' && installed.value.isEnabled(extensionId) ? installed.value.manifestFor(extensionId) : undefined
+  const tab = manifest?.contributes.tabs.find((candidate) => candidate.name === tabName)
+  // A tab with no page of its own (or one gugu draws itself) has nothing to put here.
+  const entry = manifest && !tab?.hostPage ? tab?.entry ?? manifest.entry : undefined
+  const page: FramedPage | null = manifest && entry ? { src: phoneApps.pageUrl(extensionId, entry), version: manifest.version, capabilities: manifest.permissions?.capabilities ?? [] } : null
+  const pageKey = page ? JSON.stringify(page) : null
+  // One page object per page (the frame is hosted again only when the page itself changes, ❌ at every list the store tells).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pageKey is the page's identity
+  const app = useMemo(() => page, [pageKey])
+  /** Read, and not here (or no page of its own): the way to the App page. Unknown or unreadable is not "missing". */
+  const missing = installed.state === 'value' && !app
 
   // What the host is told about where it is; read when the host starts and on every change.
   const bindingRef = useRef<Omit<PhoneAppBinding, 'capabilities'>>({ extensionId, tabId, tabName, chatId, locale: i18n.language, themeMode: 'light' })
@@ -260,6 +244,9 @@ export function PhoneAppFrame({
       </div>
     )
   }
+  if (installed.state === 'error') {
+    return <div hidden={hidden} className="min-h-0 flex-1 p-4"><RefreshFailed reading={installed} /></div>
+  }
   if (!app) return <div hidden={hidden} className="relative min-h-0 flex-1">{placeholder}</div>
   const documentKey = `${app.version}:${app.src}`
   return (
@@ -267,8 +254,8 @@ export function PhoneAppFrame({
     <div hidden={hidden} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {workingCopy ? <Suspense fallback={null}><OpenedFilePreview
         {...workingCopy} deviceId={session?.deviceId ?? ''} sessionId={session?.id ?? ''}
-        // A working copy is its session's file: its cite goes into that session's composer, the session brought up, as the
-        // desktop's does (draftOfWorkingCopyRefs) — a chat's composer has no such file to point at.
+        // A working copy is its session's file: its cite goes into that session's composer, the session brought up — the
+        // conversation its page belongs to (file-selection.ts `selectionConversationOf`).
         onQuote={(text) => {
           const listed = listedSession(devicesRef.current, liveDeviceSessions(), session?.id ?? '')
           if ('row' in listed) window.dispatchEvent(new CustomEvent<AppShowSessionDetail>(APP_SHOW_SESSION_EVENT, { detail: { ...listed.row, draft: { text } } }))

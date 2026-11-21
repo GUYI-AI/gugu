@@ -187,7 +187,7 @@ it('separates missing grants from unavailable or system-blocked capabilities in 
  await h.render(<ThisDeviceActions bare managePermissions />)
  const group=(id:string)=>h.container.querySelector(`[data-testid="settings-device-actions-${id}"]`)!
  expect(group('available').textContent).toContain('备忘录')
- expect(group('available').textContent).not.toContain('暂时用不了')
+ expect(group('available').textContent).not.toContain('暂不可用')
  expect(group('unsupported').textContent).toContain('日历')
  expect(group('system-blocked').textContent).toContain('通讯录')
  expect(h.container.textContent).not.toContain('任务 Agent')

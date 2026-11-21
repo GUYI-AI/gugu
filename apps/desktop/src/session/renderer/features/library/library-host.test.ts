@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const local = vi.hoisted(() => ({
-  listManagement: vi.fn(),
+  getManagement: vi.fn(),
   install: vi.fn(),
   acquireAuthorization: vi.fn(async () => ({ success: true, credentials: { accessToken: 'tok' } })),
   cancelAuthorization: vi.fn(async () => undefined),
@@ -11,10 +11,7 @@ const local = vi.hoisted(() => ({
 const d22 = vi.hoisted(() => {
   const calls: Array<[string, unknown[]]> = [];
   const answers: Record<string, unknown> = {
-    'agents.listManagement': [
-      { id: 'claude', name: 'Claude Code', status: 'available', reading: 'installed', version: '2.1.0' },
-      { id: 'codex', name: 'Codex', status: 'missing', reading: 'not-detected', version: null },
-    ],
+    'agents.getManagement': { id: 'codex', name: 'Codex', status: 'missing', reading: 'not-detected', version: null },
     'integrations.connect': { success: true },
     'integrations.checkAllConnections': { feishu: { connected: true } },
   };
@@ -37,15 +34,16 @@ const d22 = vi.hoisted(() => {
         ),
     }
   );
-  return { calls, client, failures, events: [] as Array<{ machine: string | null; name: string; cb: (data: unknown) => void }> };
+  return { calls, client, failures, routed: new Map<string, unknown>(), events: [] as Array<{ machine: string | null; name: string; cb: (data: unknown) => void }> };
 });
 
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: {
-    agents: { listManagement: local.listManagement, install: local.install },
+    agents: { getManagement: local.getManagement, install: local.install },
     integrations: { acquireAuthorization: local.acquireAuthorization, cancelAuthorization: local.cancelAuthorization },
   },
-  rpcOn: (machine: string | null) => (machine === 'd22' ? d22.client : {}),
+  routeMachine: (machine: string, client: unknown) => { d22.routed.set(machine, client) },
+  rpcOn: (machine: string | null) => (machine && d22.routed.get(machine)) ?? (machine === 'd22' ? d22.client : {}),
   onMachineEvent: (machine: string | null, event: { name: string }, cb: (data: unknown) => void) => {
     d22.events.push({ machine, name: event.name, cb });
     return () => undefined;
@@ -64,16 +62,13 @@ describe('资源库的取数对象(#6264 一套工作台:同一套控制器,rpc 
     expect(LOCAL_LIBRARY_HOST.remote).toBeNull();
   });
 
-  it('别的机器的列表 = 那台机器报的读数,❌ 问本机', async () => {
+  it('别的机器上的一家 = 那台机器报的读数,❌ 问本机', async () => {
     d22.calls.length = 0;
     const host = createRemoteLibraryHost(device);
-    const list = await host.agents.listManagement();
-    expect(verbs()).toEqual(['agents.listManagement']);
-    expect(local.listManagement).not.toHaveBeenCalled();
-    expect(list.map((a) => [a.id, a.reading])).toEqual([
-      ['claude', 'installed'],
-      ['codex', 'not-detected'],
-    ]);
+    const agent = await host.agents.getManagement('codex');
+    expect(d22.calls).toEqual([['agents.getManagement', ['codex']]]);
+    expect(local.getManagement).not.toHaveBeenCalled();
+    expect(agent?.reading).toBe('not-detected');
     expect(host.key).toBe('remote:d22');
     expect(host.remote).toMatchObject({ deviceId: 'd22', deviceLabel: 'Linux 1', online: true });
   });
@@ -83,12 +78,12 @@ describe('资源库的取数对象(#6264 一套工作台:同一套控制器,rpc 
     const subscribe = vi.fn(() => () => undefined);
     const transport = { rpc: d22.client as NonNullable<Parameters<typeof createRemoteLibraryHost>[2]>['rpc'], onEvent: subscribe };
     const host = createRemoteLibraryHost({ ...device, deviceId: 'phone-target' }, undefined, transport);
-    await host.agents.listManagement();
+    await host.agents.getManagement('codex');
     await host.agents.install('codex', 'mise');
     await host.extensions.api.list();
     host.agents.onInstallProgress(() => undefined);
     host.extensions.onEvent({ name: 'market-progress' }, () => undefined);
-    expect(verbs()).toEqual(['agents.listManagement', 'agents.install', 'extensions.list']);
+    expect(verbs()).toEqual(['agents.getManagement', 'agents.install', 'extensions.list']);
     expect(subscribe).toHaveBeenCalledTimes(2);
   });
 

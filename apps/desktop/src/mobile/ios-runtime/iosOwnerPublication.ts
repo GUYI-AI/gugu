@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import type { SessionCoordinatorSnapshot } from '@/lib/sessionCoordinator'
 import { IOSOwnerClientError, type IOSOwnerBinding, type IOSOwnerClient } from './iosOwnerClient'
 
@@ -23,12 +24,12 @@ function same(a: SessionProjection | null | undefined, b: SessionProjection | nu
   return a === b || !!a && !!b && a.ownerId === b.ownerId && a.accessToken === b.accessToken && a.expiresAt === b.expiresAt
 }
 function safeFailure(cause: unknown, retiring = false): { code: string; message: string } {
-  if (retiring) return { code: 'retirement_failed', message: '本机身份退役尚未完成，请重试。' }
+  if (retiring) return { code: 'retirement_failed', message: mobileWorkspaceText('ios.retirementFailed') }
   if (cause instanceof IOSOwnerClientError) return { code: cause.code, message: cause.message }
   const code = (cause as { code?: unknown } | null)?.code
-  if (code === 'stale_context') return { code, message: '账号或这台手机的身份已变化，请重新核验。' }
-  if (code === 'not_granted') return { code, message: '当前会话尚未通过本机身份核验。' }
-  return { code: 'publication_failed', message: '未能核验本机身份，请重试。' }
+  if (code === 'stale_context') return { code, message: mobileWorkspaceText('ios.ownerStale') }
+  if (code === 'not_granted') return { code, message: mobileWorkspaceText('ios.ownerNotGranted') }
+  return { code: 'publication_failed', message: mobileWorkspaceText('ios.ownerFailed') }
 }
 
 /** A projection of the existing coordinator. It never starts, refreshes or signs out an auth session. */
@@ -83,7 +84,7 @@ export class IOSOwnerPublication {
     }
     catch (cause) {
       if (generation === this.generation) this.setState({ status: 'failed', binding: null, error: safeFailure(cause, true) })
-      throw Object.assign(new Error('本机身份退役尚未完成，请重试。'), { code: 'retirement_failed' })
+      throw Object.assign(new Error(mobileWorkspaceText('ios.retirementFailed')), { code: 'retirement_failed' })
     }
   }
 
@@ -146,7 +147,7 @@ export class IOSOwnerPublication {
       await this.source.captureAuthHandoff()
       if (!this.current(desired, generation)) return
       if (!current || current.ownerId !== desired.ownerId || current.ownerId !== binding.ownerId || current.deviceId !== binding.deviceId
-        || current.installationId !== binding.installationId) throw new IOSOwnerClientError('invalid_native_reply', '本机身份核验结果已变化，请重试。')
+        || current.installationId !== binding.installationId) throw new IOSOwnerClientError('invalid_native_reply', mobileWorkspaceText('ios.ownerChanged'))
       this.setState({ status: 'ready', binding: current, error: null })
     } catch (cause) {
       if (this.current(desired, generation)) this.setState({ status: 'failed', binding: null, error: safeFailure(cause, this.retirementFailed) })

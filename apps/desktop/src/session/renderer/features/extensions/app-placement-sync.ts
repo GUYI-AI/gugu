@@ -1,7 +1,7 @@
 import { autorun } from 'mobx';
 import type { sessionTabView } from '@renderer/features/sessions/session-tab-registry';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { peekInstalledAppsTracked } from './installed-extensions';
 
 type SessionPaneLayout = ReturnType<typeof sessionTabView.createPaneLayoutStore>;
 
@@ -24,12 +24,15 @@ const isResident = (state: unknown): boolean => !(state as { filePath?: string }
  */
 export function startAppPlacementSync(paneLayout: SessionPaneLayout, _sessionId: string): () => void {
   return autorun(() => {
+    const installed = peekInstalledAppsTracked();
+    // Not known yet: nothing is taken; this runs again when it is.
+    if (!installed) return;
     for (const { pane } of paneLayout.groups) {
       const doomed: string[] = [];
       for (const tabId of pane.tabOrder) {
         const entry = pane.entries.get(tabId);
         if (!entry || !parseExtensionTabKind(entry.kind) || !isResident(entry.state)) continue;
-        const contribution = installedExtensionsStore.allTabContributions.find((c) => c.kind === entry.kind);
+        const contribution = installed.allTabContributions.find((c) => c.kind === entry.kind);
         if (contribution?.perSession || (entry.state as { perSession?: true } | undefined)?.perSession) continue;
         if (contribution?.forFiles) doomed.push(tabId);
       }

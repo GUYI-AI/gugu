@@ -9,17 +9,9 @@ export const ct = i18n.getFixedT(null, 'contacts')
 
 // @@@ui-ruler 本地样式副本(rowBase / meta / name / sharedTag / reqBadge / section* / cpane*)已按角色
 // 收口进原语,这里只剩原语不管的那点:头像壳(agent 状态角标挂在它的 ::after 上)、
-// 分区标签的 chevron 与加号、资料卡排版。几何一律取 tokens,❌ 字面量像素。
+// 详情面排版。几何一律取 tokens,❌ 字面量像素。
 export const rowAvatarClass =
   'gg-c-av flex h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 items-center justify-center overflow-hidden rounded-full'
-export const sectionLabelClass = 'gg-c-sec-h !mt-3'
-// 资料卡(cpane):头像 --avatar-xl(96)、名字 --font-size-xl、状态 --font-body。
-export const cpaneCardClass = 'gg-c-cpane-card flex flex-col items-center animate-[ggCNaPop_var(--dur-med)_var(--ease)_both]'
-export const cpaneAvatarClass =
-  'gg-c-cpane-av flex h-[var(--avatar-xl)] w-[var(--avatar-xl)] shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-xl)]'
-export const cpaneNameClass = 'gg-c-cpane-name !mt-5 flex items-center gap-2 text-xl font-semibold text-[var(--fg)]'
-export const cpaneStatusClass = 'gg-c-cpane-status !mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]'
-export const cpaneActionsClass = 'gg-c-cpane-acts !mt-6 flex gap-3'
 // 行内改名/备注输入:控件高与 Button/Field 同一把尺子(--control-h-md)。
 export const inlineInputClass =
   'h-[var(--control-h-md)] min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !px-2 text-sm text-[var(--fg)] outline-none'
@@ -32,7 +24,7 @@ export const detailNoticeClass =
 // 详情面里的卡片行(公开 Agent / 群成员):同一内距、同一圆角、同一边框。
 export const detailCardRowClass =
   'flex min-h-[var(--control-h-touch)] min-w-0 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !p-2'
-// 详情面里的强调小标(Agent / 群密度):药丸小标,与 Chip 同一档。
+// 详情面里的标题(群名 / Agent 名)。
 export const detailTitleClass = 'text-lg font-semibold text-[var(--fg)] [overflow-wrap:anywhere]'
 export const detailPlaceholderClass = 'flex flex-1 items-center justify-center text-sm text-[var(--muted-fg)]'
 export const detailSectionClass = (mobile?: boolean) => (mobile ? '!px-4 !py-5' : '!px-6 !py-6')
@@ -40,12 +32,6 @@ export const detailBodyClass = (mobile?: boolean) =>
   cn(
     'flex-1 overflow-y-auto overflow-x-hidden',
     mobile ? '!px-4 !pt-4 !pb-[max(24px,env(safe-area-inset-bottom))]' : '!px-6 !py-6',
-  )
-
-export const sectionChevronClass = (collapsed: boolean) =>
-  cn(
-    'gg-c-sec-chev flex shrink-0 transition-transform duration-[var(--dur-med)] [transition-timing-function:var(--ease)]',
-    collapsed && '-rotate-90',
   )
 
 export const agentAvatarClass = (tone: AgentContactTone | null) => cn(rowAvatarClass, agentContactAvatarBadgeClass(tone))

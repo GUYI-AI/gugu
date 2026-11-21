@@ -15,7 +15,10 @@ import { RelativeTime } from '@renderer/lib/ui/relative-time';
 import { cn } from '@renderer/utils/utils';
 import { commitRef, refsEqual } from '@shared/core/git/utils';
 import { ChangesListItem } from '../changes-list-item';
-import { useCommitFiles } from './use-commit-files';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import { retryOf, useReplica } from '@/lib/replica';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { commitFiles } from './use-commit-files';
 import { type CommitRange, useCommits } from './use-commits';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -43,7 +46,7 @@ const EMPTY_EXPANDED_HASHES: ReadonlySet<string> = new Set();
 
 function commitRangeIdentity(range: CommitRange | undefined): string {
   if (!range) return 'none';
-  return `${range.source}:${range.baseRefOid}:${range.headRefOid}:${range.revision ?? 0}`;
+  return `${range.source}:${range.baseRefOid}:${range.headRefOid}`;
 }
 
 export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
@@ -60,13 +63,9 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     rangeIdentity,
     hashes: new Set(),
   }));
-  const { data, isFetchingNextPage, hasNextPage, fetchNextPage } = useCommits(
-    projectId,
-    workspaceId,
-    range
-  );
-
-  const commits = data?.pages.flatMap((page) => page.commits) ?? [];
+  const { translate } = useSessionMessages();
+  const { first, pages, more, loadingMore, moreFailed } = useCommits(projectId, workspaceId, range);
+  const commits = pages.flatMap((page) => page.commits);
   const expandedHashes =
     expanded.rangeIdentity === rangeIdentity ? expanded.hashes : EMPTY_EXPANDED_HASHES;
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
@@ -85,44 +84,47 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     });
   };
 
-  if (commits.length === 0 && !isFetchingNextPage) {
-    return <EmptyState label={emptyState.label} description={emptyState.description} />;
-  }
-
+  if (!range) return <EmptyState label={emptyState.label} description={emptyState.description} />;
   return (
-    <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
-      <GrowingList
-        scroller={scroller}
-        count={commits.length}
-        getKey={(index) => commits[index]?.hash ?? index}
-        gap={COMMIT_ROW_GAP}
-        estimateSize={() => ESTIMATED_COMMIT_ROW_HEIGHT}
-        overscan={5}
-        renderLine={(index) => {
-          const commit = commits[index]!;
-          return (
-            <CommitItem
-              commit={commit}
-              isExpanded={expandedHashes.has(commit.hash)}
-              isFirst={index === 0}
-              isLast={index === commits.length - 1}
-              onToggleExpanded={() => toggleExpanded(commit.hash)}
-            />
-          );
-        }}
-      />
-      {hasNextPage && (
-        <div className="flex justify-center py-2">
-          <button
-            className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted transition-colors hover:text-foreground"
-            onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
-          >
-            {isFetchingNextPage ? 'Loading...' : 'Load more'}
-          </button>
+    <ReadingSlot reading={first} placeholder="my-2 h-[125px] w-full" className="px-3 py-2" failed={() => translate('pr.commitsFailed')}>
+      {() => commits.length === 0 ? <EmptyState label={emptyState.label} description={emptyState.description} /> : (
+        <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
+          <GrowingList
+            scroller={scroller}
+            count={commits.length}
+            getKey={(index) => commits[index]?.hash ?? index}
+            gap={COMMIT_ROW_GAP}
+            estimateSize={() => ESTIMATED_COMMIT_ROW_HEIGHT}
+            overscan={5}
+            renderLine={(index) => {
+              const commit = commits[index]!;
+              return (
+                <CommitItem
+                  commit={commit}
+                  isExpanded={expandedHashes.has(commit.hash)}
+                  isFirst={index === 0}
+                  isLast={index === commits.length - 1}
+                  onToggleExpanded={() => toggleExpanded(commit.hash)}
+                />
+              );
+            }}
+          />
+          {moreFailed ? (
+            <ReadFailedLine className="justify-center py-2" message={translate('pr.commitsFailed')} onRetry={retryOf(moreFailed)} />
+          ) : (loadingMore || more) && (
+            <div className="flex justify-center py-2">
+              <button
+                className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted transition-colors hover:text-foreground"
+                onClick={more ?? undefined}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading...' : 'Load more'}
+              </button>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </ReadingSlot>
   );
 });
 
@@ -206,7 +208,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
   const originalRef = useMemo(() => parentRefForCommit(commit), [commit]);
   const modifiedRef = useMemo(() => commitRefForCommit(commit), [commit]);
   const originalSha = useMemo(() => parentShaForCommit(commit), [commit]);
-  const filesQuery = useCommitFiles(projectId, workspaceId, commit.hash, true);
+  const files = useReplica(commitFiles, [projectId, workspaceId, commit.hash]);
   const prefetchDiff = usePrefetchDiffModels(
     projectId,
     workspaceId,
@@ -261,34 +263,25 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
     );
   };
 
-  if (filesQuery.isLoading) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.loadingFiles')}</div>;
-  }
-
-  if (filesQuery.isError) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.filesFailed')}</div>;
-  }
-
-  const files = filesQuery.data ?? [];
-  if (files.length === 0) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div>;
-  }
-
   return (
     <div className="pr-1 pb-1 pl-5">
-      <div className="flex flex-col gap-0.5">
-        {files.map((change) => (
-          <ChangesListItem
-            key={change.path}
-            change={change}
-            isActive={change.path === activePath}
-            className="h-7"
-            onClick={() => openPreview(change)}
-            onDoubleClick={() => openDiff(change)}
-            onMouseEnter={() => prefetchDiff(change.path)}
-          />
-        ))}
-      </div>
+      <ReadingSlot reading={files} placeholder="h-7 w-full" className="py-1" failed={() => translate('pr.filesFailed')}>
+        {(changes) => changes.length === 0 ? <div className="px-1 py-1 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div> : (
+          <div className="flex flex-col gap-0.5">
+            {changes.map((change) => (
+              <ChangesListItem
+                key={change.path}
+                change={change}
+                isActive={change.path === activePath}
+                className="h-7"
+                onClick={() => openPreview(change)}
+                onDoubleClick={() => openDiff(change)}
+                onMouseEnter={() => prefetchDiff(change.path)}
+              />
+            ))}
+          </div>
+        )}
+      </ReadingSlot>
     </div>
   );
 });

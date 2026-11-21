@@ -12,7 +12,7 @@ import { dispatchMatchingHotkeys } from '@renderer/lib/hotkeys/dispatch-matching
 import { events, rpc } from '@renderer/lib/ipc';
 import { observePtyOutput } from '../session-output-observers';
 import { log } from '@renderer/utils/logger';
-import type { AppSettings } from '@shared/core/app-settings';
+import { fetchAppSettingValue } from '@renderer/features/settings/app-settings-client';
 import { ptyExitChannel } from '@shared/core/pty/ptyEvents';
 import { TERMINAL_FONT_SIZE_DEFAULT } from '@shared/core/terminals/terminal-settings';
 import { appPasteChannel, terminalContextMenuActionChannel } from '@shared/events/appEvents';
@@ -343,7 +343,7 @@ export function usePty(
 
       // ── Load settings ──────────────────────────────────────────────────────
       let customFontFamily = '';
-      void (rpc.appSettings.get('terminal') as Promise<AppSettings['terminal']>).then(
+      void fetchAppSettingValue('terminal').then(
         (terminalSettings) => {
           if (disposed) return;
           if (terminalSettings?.fontFamily) {

@@ -70,7 +70,6 @@ export class AgentInstallManager {
 
   async refresh(input: {
     providerId?: string;
-    refreshShellEnv?: boolean;
   }): Promise<Result<void, AgentConfigRefreshError>> {
     if (input.providerId) {
       if (!this.providersById.has(input.providerId)) {
@@ -79,7 +78,7 @@ export class AgentInstallManager {
       await this.manager.probe(input.providerId);
       return ok();
     }
-    await this.manager.probeCategory('agent', { refreshShellEnv: input.refreshShellEnv });
+    await this.manager.probeCategory('agent');
     return ok();
   }
 

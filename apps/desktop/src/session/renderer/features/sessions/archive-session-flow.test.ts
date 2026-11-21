@@ -62,10 +62,11 @@ describe('归档提示与撤销', () => {
     mocks.archiveSession.mockResolvedValue({ archived: [ref('child'), ref('root')], unreached: [] });
   });
 
-  it('keeps the social identity when confirmation was disabled: a dialog that does not show cannot remove it', async () => {
+  // #3366: with the question off, archiving takes the dialog's defaults, so the agent leaves groups and contacts too.
+  it('archives with the dialog\'s defaults when confirmation was disabled: no children, social identity removed', async () => {
     requestArchiveSession({ projectId: 'p1', sessionId: 'root' });
     await flush();
-    expect(mocks.archiveSession).toHaveBeenCalledWith('root', { withChildren: false, removeSocialIdentity: false });
+    expect(mocks.archiveSession).toHaveBeenCalledWith('root', { withChildren: false, removeSocialIdentity: true });
   });
 
   it('an orphan identity (identity: only) is always asked, its option ticked and fixed', () => {

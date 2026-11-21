@@ -139,7 +139,7 @@ export async function runLink(
       adopt(account)
     } catch (error) {
       // 记不下来只是这台还会被别处列出、还接云端转来的 RPC —— 连接本身照样接。
-      io.stderr.write(`没能记下「这台机器是远程 SSH」:${error instanceof Error ? error.message : String(error)}\n`)
+      io.stderr.write(`无法记录「这台机器是远程 SSH」:${error instanceof Error ? error.message : String(error)}\n`)
     }
   }
 

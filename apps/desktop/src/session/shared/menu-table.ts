@@ -24,7 +24,7 @@ export type MenuLabel = { ns: 'session' | 'messaging' | 'contacts'; key: string 
 
 export type MenuIcon =
   | 'read' | 'unread' | 'pin' | 'unpin' | 'sidebar' | 'sidebar-off' | 'rename' | 'bell' | 'archive' | 'fork' | 'copy'
-  | 'reload' | 'history' | 'trash' | 'chat' | 'alias' | 'leave'
+  | 'reload' | 'history' | 'trash' | 'chat' | 'alias' | 'leave' | 'hide'
 
 export type MenuTableItem<A extends string> = {
   id: A

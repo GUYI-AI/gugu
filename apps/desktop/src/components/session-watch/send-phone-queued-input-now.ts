@@ -1,8 +1,8 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { ConversationQueueTarget } from '@/components/chat/useConversationQueue'
 import { assistantTimelineClient, changeConversationQueue } from '@/components/assistant/assistantTimelineClient'
-import { releaseQueuedSessionInput, state } from '@/lib/sessionInputOutboxBridge'
-import { withSessionInputDeadline } from '@/lib/sessionInputOutbox'
+import { releaseQueuedSessionInput, sessionInputTaken, state } from '@/lib/outbox/kinds/sessionInput'
+import { withSessionInputDeadline } from '@/lib/sessionInput'
 import { sessionInputFailureText } from '@/lib/pendingSessionInput'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { phoneTimelineClient } from '../../mobile/local-agent/phoneTimelineClient'
@@ -10,16 +10,14 @@ import type { SessionpageTimelineClient } from './use-timeline-session'
 
 /** Pi's generic stop clears all hosted jobs; its original queue action interrupts only the foreground. */
 export async function sendPhoneQueuedInputNow(target: ConversationQueueTarget, turns: readonly TranscriptTurn[], id: string, steers: boolean): Promise<void> {
-  const own = state(), accountId = own.accountId, valid = own.valid, sender = own.queue
-  if (!sender || !valid()) throw new Error('Session input outbox is not available for this account')
-  const current = () => state().accountId === accountId && state().queue === sender && valid()
+  const own = state(), accountId = own.accountId, valid = own.valid
+  if (!valid()) throw new Error('Session input outbox is not available for this account')
+  const current = () => state().accountId === accountId && valid()
   const input = await releaseQueuedSessionInput(target.sessionId, turns, id, steers, current)
   if (!input) throw new Error(translateSessionMessage('acpFailure.editQueued'))
-  const outbox = await sender
-  await outbox.flush()
+  try { await sessionInputTaken(id) }
+  catch { throw new Error(sessionInputFailureText(state().rows.find(row => row.id === id)?.failure ?? { code: 'phone-unconfirmed' })) }
   if (!current()) throw new Error('Session input account changed')
-  const pending = (await outbox.list()).find(row => row.id === id)
-  if (pending) throw new Error(sessionInputFailureText(pending.failure ?? { code: 'phone-unconfirmed' }))
   if (steers) return
   await prioritizeHostedInput(target, id, target.phoneHost ? phoneTimelineClient : assistantTimelineClient(target.local), current)
 }

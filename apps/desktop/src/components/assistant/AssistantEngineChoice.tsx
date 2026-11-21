@@ -11,6 +11,7 @@ import type { AssistantSetupDraft } from '@/lib/assistantSetup'
 import type { AssistantEngine } from '@/lib/assistantHomeIpc'
 import { AppIcon } from '@renderer/lib/components/app-icon'
 import { useAgent } from '@renderer/lib/stores/use-agents'
+import { agentMetadata } from '@renderer/lib/stores/agent-replicas'
 import { useConnectionAvailability } from '@renderer/features/settings/subscriptions/use-connection-availability'
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel'
 
@@ -20,18 +21,19 @@ const names = { claude: 'Claude', codex: 'Codex' }
 /** Local setup reads this computer, independent of the library's selected remote host. */
 function useLocalEngine(engine: AssistantEngine) {
   const metadata = useAgent(engine)
-  const connection = useConnectionAvailability(engine, null, metadata.data?.reading === 'not-detected')
-  const state = metadata.isPending ? 'checking'
-    : metadata.error || !metadata.data ? 'failed' : connection.state
-  return { agent: metadata.data, state, refresh: () => Promise.all([metadata.refetch(), connection.refresh()]) }
+  const agent = metadata.state === 'value' && !metadata.error ? metadata.value : null
+  const connection = useConnectionAvailability(engine, null, agent?.reading === 'not-detected')
+  const state = metadata.state === 'unknown' ? 'checking' : !agent ? 'failed' : connection.state
+  return { agent: agent ?? undefined, state, refresh: () => Promise.all([agentMetadata.refresh(null, engine), connection.refresh()]) }
 }
 
 /** Fixed geometry: switching engine or credentials only replaces content. */
 export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinue, onBack, setupFailed = false }: {
-  engine: AssistantEngine
+  /** null = not chosen yet. */
+  engine: AssistantEngine | null
   onEngineChange: (engine: AssistantEngine) => void
   draft: AssistantSetupDraft
-  onContinue: () => void
+  onContinue: (engine: AssistantEngine) => void
   onBack: () => void
   setupFailed?: boolean
 }) {
@@ -39,14 +41,16 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
   const claude = useLocalEngine('claude')
   const codex = useLocalEngine('codex')
   const readings = { claude, codex }
-  const selected = readings[engine]
+  // Until the person picks, offer what is already here: Codex when it is installed and Claude is not.
+  const current = engine ?? (claude.agent?.reading === 'not-detected' && codex.agent && codex.agent.reading !== 'not-detected' ? 'codex' : 'claude')
+  const selected = readings[current]
   const connections = useConnectionPanel()
   const { theme } = useTheme()
   const checking = selected.state === 'checking'
   const action = checking ? t('setup.engineChecking')
     : selected.state === 'failed' ? t('setup.engineRetry')
     : selected.state === 'usable' ? t(setupFailed ? 'setup.retry' : 'setup.continue')
-    : t('setup.engineConfigure', { name: names[engine] })
+    : t('setup.engineConfigure', { name: names[current] })
 
   return <>
     <header className="ta-engine-header">
@@ -54,14 +58,15 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
       <Chip><Monitor size={16} />{t('setup.homeComputerTitle')}</Chip>
       <h1 className="ta-onb-title" id="assistant-engine-title">{t('setup.engineTitle')}</h1>
     </header>
-    <RadioGroup value={engine} onValueChange={value => onEngineChange(value as AssistantEngine)}
+    <RadioGroup value={current} onValueChange={value => onEngineChange(value as AssistantEngine)}
       aria-labelledby="assistant-engine-title" className="ta-engine-options" disabled={checking}>
       {engines.map(id => <Radio.Root key={id} nativeButton value={id}
         data-testid={`assistant-engine-${id}`}
         render={<Button variant="option" size="option" className="ta-engine-option">
           <AppIcon id={id} size={40} />
           <span className="ta-engine-copy"><span className="ta-engine-name">{names[id]}</span>
-            {id !== engine && readings[id].state === 'unusable' && <span className="ta-engine-state">{t('setup.engineUnusable')}</span>}
+            {id !== current && readings[id].state === 'unusable' && <span className="ta-engine-state">
+              {t(readings[id].agent?.reading === 'not-detected' ? 'setup.engineNotInstalled' : 'setup.engineSignedOut')}</span>}
           </span>
           <span className="ta-engine-mark"><Radio.Indicator><Check size={16} /></Radio.Indicator></span>
         </Button>} />)}
@@ -71,7 +76,7 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
       {selected.state === 'failed' && <p className="ta-engine-feedback" role="status">{t('setup.engineReadFailed')}</p>}
       <Button variant="primary" size="xl" className="ta-engine-primary" disabled={checking}
         data-testid="assistant-engine-continue" onClick={event => {
-          if (selected.state === 'usable') onContinue()
+          if (selected.state === 'usable') onContinue(current)
           else if (selected.state === 'failed') void selected.refresh()
           else if (selected.agent) connections.show(selected.agent, null, event.currentTarget)
         }}>{action}</Button>

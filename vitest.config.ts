@@ -291,6 +291,9 @@ export default defineConfig({
           name: 'session-main',
           ...unitModuleCache,
           environment: 'node',
+          // The task page's model catalog derives from the account's catalog (lib/agentModelReplicas.ts), whose read module
+          // creates the Supabase client at import: the same dummy config as the other projects.
+          env: guguTestEnv,
           // @@@2633 兜底 GUGU_SESSION_DB_FILE —— 见 session-tooling/vitest-node-setup.ts 里的完整说明。
           // 少了它,import 期就打开数据库的模块会在收集期崩(electron 的 app 在这里是 undefined)。
           setupFiles: [resolve(__dirname, 'apps/desktop/session-tooling/vitest-node-setup.ts')],

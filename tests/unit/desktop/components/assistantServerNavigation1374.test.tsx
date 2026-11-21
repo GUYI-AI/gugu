@@ -22,16 +22,23 @@ vi.mock('@/lib/assistantServerSetup', () => ({
   setUpAssistantOnServer: f.setup, resumeServerAssistant: vi.fn(), AssistantServerSetupError: class extends Error {},
 }))
 vi.mock('@/lib/firstRun', () => ({ takeAssistantStartAtHome: () => true, readOccupation: async () => ({ key: 'other', text: '研究者' }) }))
+vi.mock('@/store/devicesCache', async (original) => ({
+  ...await original<object>(),
+  devicesModel: (await import('../../../../apps/desktop/src/lib/replica')).replica({ name: 'devicesForServerNavigationTest', scope: 'account', read: () => f.list() }),
+}))
+vi.mock('@/lib/assistantServerTargets', () => ({ assistantServerTargets: (rows: unknown) => rows }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: vi.fn() }))
-vi.mock('@/lib/myAssistant', () => ({ reloadMyAssistant: vi.fn() }))
-vi.mock('@/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn() }))
-vi.mock('@gugu/core/cloud/optionalServices', () => ({ cloudComputerEnabled: () => false }))
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn() } }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
+vi.mock('@gugu/core/cloud/optionalServices', async (original) => ({ ...await original<object>(), cloudComputerEnabled: () => false }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 import { AssistantOnboarding } from '@/components/assistant/AssistantOnboarding'
+import { followRendererSession, queryClient } from '@/lib/replica'
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear()
+  queryClient.clear(); followRendererSession('SIGNED_IN', 'owner')
   clearAssistantOnboardingNavigation('owner'); clearAssistantOnboardingNavigation('other')
   f.list.mockResolvedValue([])
   f.setup.mockImplementation((_draft, _device, options) => {

@@ -7,7 +7,7 @@ import { createReactHarness } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 vi.mock('@/components/agentAvatar/AgentAvatar', () => ({ AgentAvatar: () => null }))
-vi.mock('@/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn() }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
 vi.mock('@/components/settings/CloudComputerSection', () => ({ CloudComputerRefusal: () => null }))
 import { AssistantHomeChoice } from '../../../../apps/desktop/src/components/assistant/AssistantHomeChoice'
 
@@ -47,7 +47,7 @@ it('routes server and local choices to their own setup paths', async () => {
   await render()
   expect(query('assistant-setup-home-server')?.textContent).toContain('Linux')
   expect(query('assistant-setup-home-server')?.textContent).not.toContain('Mac')
-  expect(query('assistant-setup-home-computer')?.textContent).toContain('电脑开着时才在线，适合先试试')
+  expect(query('assistant-setup-home-computer')?.textContent).toContain('仅在电脑开机时在线，适合试用')
   await click('assistant-setup-choose-server')
   await click('assistant-setup-install-here')
   expect(callbacks.onServer).toHaveBeenCalledOnce()

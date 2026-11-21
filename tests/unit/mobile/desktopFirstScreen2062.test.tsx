@@ -17,7 +17,7 @@ function createReactHarness() {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const f = vi.hoisted(() => ({ cached: vi.fn(), hydrate: vi.fn(), rpc: vi.fn(), timelineRead: vi.fn(), timelineHydrate: vi.fn(), timelineWrite: vi.fn() }))
-vi.mock('../../../apps/desktop/src/components/session-watch/timeline-cache', () => ({
+vi.mock('../../../apps/desktop/src/components/session-watch/timeline-cache', async (original) => ({ ...await original<object>(),
   readCachedTimeline: f.timelineRead, hydrateCachedTimeline: f.timelineHydrate, writeCachedTimeline: f.timelineWrite,
   readCachedNativeRecord: f.cached, hydrateCachedNativeRecord: f.hydrate, writeCachedNativeRecord: vi.fn(),
 }))

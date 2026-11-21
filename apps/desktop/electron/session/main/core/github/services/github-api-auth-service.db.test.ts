@@ -45,7 +45,7 @@ describe('GitHubApiAuthService', () => {
           login,
           avatarUrl: '',
         },
-      })
+      }, fixture.vault)
     ).account;
   }
 
@@ -59,7 +59,7 @@ describe('GitHubApiAuthService', () => {
       await upsertGitHubAccount(fixture.registry, {
         credentialSource: 'cli',
         providerAccount: { providerId: 'github', providerAccountId, host, login, avatarUrl: '' },
-      })
+      }, fixture.vault)
     ).account;
   }
 

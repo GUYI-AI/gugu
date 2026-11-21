@@ -398,7 +398,7 @@ describe('#2503 session-page sessions carry the designated model', () => {
       expect(response.status).toBe(403)
       const body = await response.json() as { type: string; error: { type: string; code: string; message: string } }
       expect(body).toMatchObject({ type: 'error', error: { type: 'permission_error', code: 'gugu_credential_unavailable' } })
-      expect(body.error.message).toMatch(/^咕咕:你用的咕咕模型要开会员才能用/)
+      expect(body.error.message).toMatch(/^咕咕:当前使用的咕咕模型需要开通会员/)
       // 退避窗口内的第二个请求不再打控制面。
       expect((await send()).status).toBe(403)
       expect(issuePlatformModelAccess).toHaveBeenCalledTimes(1)
@@ -1562,12 +1562,12 @@ describe('#2503 平台凭据随会话续期（含存量 helper 兼容）', () =>
     logged.mockRestore()
   })
   it.each([
-    ['membership', new ModelAccessHttpError('model glm-5.2 requires a membership', 403, 'membership_required'), '咕咕:你用的咕咕模型要开会员才能用'],
+    ['membership', new ModelAccessHttpError('model glm-5.2 requires a membership', 403, 'membership_required'), '咕咕:当前使用的咕咕模型需要开通会员'],
     ['signed out', new ModelAccessHttpError('unauthorized', 401), '咕咕:登录已失效'],
-    ['model gone', new ModelAccessHttpError('no channel sells it', 409, 'model_unavailable'), '咕咕:这个模型现在用不了'],
-    ['service down', new ModelAccessHttpError('boom', 503, 'internal'), '咕咕:咕咕这边出错了'],
+    ['model gone', new ModelAccessHttpError('no channel sells it', 409, 'model_unavailable'), '咕咕:该模型当前不可用'],
+    ['service down', new ModelAccessHttpError('boom', 503, 'internal'), '咕咕:咕咕服务出错'],
     // #7103 不带 reason 的(老服务端的 429)❌ 猜成「额度用完」。
-    ['no reason', new ModelAccessHttpError('会员额度与不过期积分都已用完', 429), '咕咕:咕咕这边出错了'],
+    ['no reason', new ModelAccessHttpError('会员额度与不过期积分都已用完', 429), '咕咕:咕咕服务出错'],
   ] as const)('when issuing fails (%s) the helper fails fast with a plain reason and backs off', async (_label, failure, copy) => {
     const observations = vi.fn()
     const helper = await startClaudeHelperSession(observations)
@@ -1625,7 +1625,7 @@ describe('#2503 平台凭据随会话续期（含存量 helper 兼容）', () =>
       expect(statuses, '递送还挂着,403 不能先出去').toEqual([])
       held.resolve({ delivered: true })
       const failed = await failure
-      expect(failed.stderr.trim()).toMatch(/^咕咕:你用的咕咕模型要开会员才能用/)
+      expect(failed.stderr.trim()).toMatch(/^咕咕:当前使用的咕咕模型需要开通会员/)
       expect(statuses).toEqual([403])
       // 同一轮里后来签出来了(窗口过了、原因没了):先撤掉,再交票。
       called = deferred<void>()

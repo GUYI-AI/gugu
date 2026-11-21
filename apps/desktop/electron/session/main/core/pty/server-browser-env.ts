@@ -1,13 +1,14 @@
 /**
- * #6264 咕咕 server 上「打开网页」的助手脚本与环境变量(照 VS Code 远端:server 给扩展宿主与终端设
+ * #6264 咕咕 server 上「打开网页」的唯一入口(照 VS Code 远端:server 给扩展宿主与终端设
  * `BROWSER=<server>/bin/helpers/browser.sh`,见 vscode src/vs/server/node/extensionHostConnection.ts)。
  *
  *  · `<GUGU_SERVER_HOME>/bin/gugu-browser <网址或文件>` —— 交给 `gugu-server open-url`,它经本机套接字问账号进程,
- *    账号进程转给正看着的桌面(remote-open-external.ts)。
- *  · `<GUGU_SERVER_HOME>/bin/xdg-open` —— 只接网页(http / https、.html):不认 `$BROWSER`、直接调 xdg-open 的程序
- *    (Node 的 `open` 包、`vite --open`)也能开到人那一侧;其余参数原样交给系统里真正的 xdg-open。
- *  · 账号进程起的每个 agent 进程(buildAgentEnv)都带上 `BROWSER`、把这个目录排在 PATH 最前,并带上是哪个账号
- *    (同一个 Linux 用户下可能登着好几个人)。桌面经 SSH 开的「终端」在远端命令里带上同一组(ssh-install/logic.ts)。
+ *    账号进程推给正看着**这条会话**的桌面(remote-open-external.ts)。
+ *  · 只有**会话**的进程(agent 的各条腿、会话里的终端与脚本)起的时候带上 `sessionBrowserEnv`:`BROWSER`、哪个账号、
+ *    哪条会话(`GUGU_TASK_ID`,会话环境里本来就有的那一格)。探针、安装器这些不属于任何会话的进程不带,
+ *    它们开的网页到不了任何人的桌面 —— 这由结构保证,不靠开关。
+ *  · 不冒名 xdg-open:Node 的 `open` 包(自带的 xdg-open)、`vite --open`、gh、Python / Rust 的 webbrowser 都认 `$BROWSER`;
+ *    直接 exec xdg-open 的程序在 server 上找不到它,自己把网址打印出来。
  *
  * 只在 server 模式装;桌面版本机的 agent 本来就在人眼前,`BROWSER` 不动。
  */
@@ -17,7 +18,8 @@ import path from 'node:path';
 import { quoteShellArg } from '@main/utils/shellEscape';
 
 export const BROWSER_HELPER = 'gugu-browser';
-export const XDG_OPEN_SHIM = 'xdg-open';
+/** 旧版装过的冒名 xdg-open:启动时删掉(gugu-node 把这个目录放在 PATH 上)。 */
+const RETIRED_XDG_OPEN = 'xdg-open';
 
 type Helpers = { dir: string; account: string };
 let helpers: Helpers | null = null;
@@ -32,19 +34,23 @@ export function pathWithFirst(dir: string, basePath: string | undefined, delimit
   return [dir, ...parts].join(delimiter);
 }
 
-/** 起 agent / 终端时叠上去的那几格(没装 = 空)。`basePath` 是这条腿本来的 PATH。 */
-export function serverBrowserEnv(basePath: string | undefined): Record<string, string> {
+/** 会话的进程起的时候叠上去的那几格(不是 server = 空)。 */
+export function sessionBrowserEnv(sessionId: string): Record<string, string> {
   if (!helpers) return {};
   return {
     BROWSER: path.join(helpers.dir, BROWSER_HELPER),
-    PATH: pathWithFirst(helpers.dir, basePath),
     GUGU_SERVER_ACCOUNT: helpers.account,
+    GUGU_TASK_ID: sessionId,
   };
 }
 
+/** 叠到一份 spawn 环境上;不是 server 就原样返回(没有就还是没有)。 */
+export function withSessionBrowserEnv(sessionId: string, env: Record<string, string> | undefined): Record<string, string> | undefined {
+  return helpers ? { ...env, ...sessionBrowserEnv(sessionId) } : env;
+}
 
 /**
- * 两个脚本的正文。`launcher` = 起 `gugu-server` 的那几个词(装好的机器上是 `<home>/current/bin/gugu-server`,
+ * 脚本的正文。`launcher` = 起 `gugu-server` 的那几个词(装好的机器上是 `<home>/current/bin/gugu-server`,
  * 升级只切 current 软链,脚本不用重写;开发构建是 node + 入口脚本)。
  */
 export function browserHelperScripts(launcher: readonly string[]): Record<string, string> {
@@ -52,25 +58,9 @@ export function browserHelperScripts(launcher: readonly string[]): Record<string
   return {
     [BROWSER_HELPER]: [
       '#!/bin/sh',
-      '# 咕咕 server:这台机器上的程序要打开网页时,转到正在看这台机器的咕咕桌面上打开(照 VS Code 远端的 $BROWSER)。',
+      '# 咕咕 server:会话里的程序要打开网页时,转到正在看这条会话的咕咕桌面上打开(照 VS Code 远端的 $BROWSER)。',
       '# 由咕咕 server 生成,每次启动重写;改了也会被覆盖。',
       `exec ${run} open-url -- "$@"`,
-      '',
-    ].join('\n'),
-    [XDG_OPEN_SHIM]: [
-      '#!/bin/sh',
-      '# 咕咕 server:网页转到正在看这台机器的咕咕桌面上打开;别的交给系统里的 xdg-open。由咕咕 server 生成。',
-      'case "$1" in',
-      `  http://*|https://*|*.html|*.htm) exec "$(dirname "$0")/${BROWSER_HELPER}" "$1" ;;`,
-      'esac',
-      'self=$(cd "$(dirname "$0")" && pwd)',
-      'IFS=:',
-      'for dir in $PATH; do',
-      '  [ "$dir" = "$self" ] && continue',
-      '  [ -x "$dir/xdg-open" ] && exec "$dir/xdg-open" "$@"',
-      'done',
-      'echo "xdg-open: no program here can open $1" >&2',
-      'exit 3',
       '',
     ].join('\n'),
   };
@@ -127,7 +117,7 @@ function sameContent(file: string, body: string, fsImpl: HelperFs): boolean {
   }
 }
 
-/** 装上(每次启动重写一遍:升级后入口可能换了地方)并记下,之后起的 agent 都带上。返回脚本目录。 */
+/** 装上(每次启动重写一遍:升级后入口可能换了地方)并记下,之后起的会话进程都带上。返回脚本目录。 */
 export function installServerBrowserHelpers(options: {
   serverHome: string;
   account: string;
@@ -140,6 +130,7 @@ export function installServerBrowserHelpers(options: {
   const installed = path.join(options.serverHome, 'current', 'bin', 'gugu-server');
   const launcher = fsImpl.existsSync(installed) ? [installed] : options.fallbackLauncher;
   writeHelperScripts(dir, browserHelperScripts(launcher), fsImpl);
+  fsImpl.rmSync(path.join(dir, RETIRED_XDG_OPEN), { force: true });
   setServerBrowserHelpers({ dir, account: options.account });
   return dir;
 }

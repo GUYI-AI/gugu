@@ -4,6 +4,7 @@ import { customModels } from './custom-models';
 import { customComposerOptions } from './custom-model-options';
 import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
+import { vendorName } from '@/i18n/vendorName';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import type { PlatformModelOption } from '@shared/core/agents/platform-model';
 import { useAgents } from '@renderer/lib/stores/use-agents';
@@ -47,18 +48,21 @@ export function useComposerModelOptions(
   providerId: string | null | undefined,
   /** 会话正在用的平台模型:要会员或被关掉了也照列(见 `composerModelOptions`)。新建页没有。 */
   currentPlatformModelId?: string | null
-): Record<string, ComposerModelOption> | null {
+): Record<string, ComposerModelOption> | null | undefined {
   const { translate } = useSessionMessages();
-  const { data: agents } = useAgents();
-  const agentName = composerOwnTierAgentName(agents, providerId);
+  const agents = useAgents();
+  const agentList = agents.state === 'value' ? agents.value : null;
+  // The heading names the agent: unknown until the list is read, ❌ the raw id renamed when it lands.
+  const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agentList, providerId);
   const remote = useLibraryHost().remote;
   const custom = useReplica(customModels, [remote?.deviceId ?? null]);
   const records = custom.state === 'value' ? custom.value : undefined;
   const error = custom.state === 'unknown' ? null : custom.error;
-  const agent = agents?.find((entry) => entry.id === providerId);
+  const agent = agentList?.find((entry) => entry.id === providerId);
 
   return useMemo(
     () => {
+      if (agentName === null) return undefined;
       const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId);
       if (!providerId) return base;
       const options = records && customComposerOptions(records, agent, remote?.deviceLabel ?? translate('customModels.device'), translate);
@@ -91,7 +95,7 @@ export function assembleComposerModelOptions(
   return composerModelOptions(
     harnessOptions,
     platformModels,
-    { ownTierLabel: composerTierLabel('own', agentName, translate), icon: modelProviderIcon },
+    { ownTierLabel: composerTierLabel('own', agentName, translate), icon: modelProviderIcon, providerName: vendorName },
     currentPlatformModelId
   );
 }
@@ -108,18 +112,17 @@ export function composerTierLabel(
 }
 
 /**
- * 组头里那个 agent 名字的**三级兜底:名字 → id → `'agent'`**。
+ * 组头里那个 agent 名字:名单里没有它(刚退役)或名单读不到(`null`)→ id,那是仅剩的线索;没选 agent → `'agent'`。
  *
- * ⚠️ 最后一格不是凑数。会话页那份旧写法在认不出 agent 时递的是 `null`,`composerModelOptions`
- * 收到 null 就**不给组头** —— 一列模型于是没了「这是谁的」那条界线,而那正是一级分类要回答的
- * 问题。常态下 providerId 都在,所以肉眼看不出来,只有 agents 还没加载完/id 对不上时才显形。
- * ⇒ 这里恒返回非空串,调用点不必再判。判据在 `composer-model-assembly.test.ts`。
+ * ⚠️ 恒返回非空串:`composerModelOptions` 收到空名就**不给组头** —— 一列模型于是没了「这是谁的」那条界线。
+ * 判据在 `composer-model-assembly.test.ts`。
  */
 export function composerOwnTierAgentName(
-  agents: { id: string; name?: string }[] | undefined,
+  agents: readonly { id: string; name?: string }[] | null,
   providerId: string | null | undefined
 ): string {
-  return agents?.find((agent) => agent.id === providerId)?.name ?? providerId ?? 'agent';
+  if (!providerId) return 'agent';
+  return agents?.find((agent) => agent.id === providerId)?.name ?? providerId;
 }
 
 /**

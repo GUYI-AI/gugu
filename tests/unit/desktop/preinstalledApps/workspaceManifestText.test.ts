@@ -11,7 +11,7 @@ import { declaredContexts, parseExtensionManifest } from '../../../../apps/deskt
 const manifest = parseExtensionManifest(
   JSON.parse(readFileSync(resolve(__dirname, '../../../../apps/desktop/preinstalled-apps/workspace/manifest.json'), 'utf8')),
 )
-const TOOLS_LINE = '- 文件 (workspace): Chat files: workspace__list(chat_id), create(chat_id,title,content), read/delete(item_id), edit(item_id,old,new). Edits merge live.'
+const TOOLS_LINE = '- 文件 (workspace): Chat files: workspace__list(chat_id) (download: message_download_file), create(chat_id,title,content), delete(item_id), edit(item_id,old,new).'
 
 describe('the folder App: people read its subtitle, agents read its instructions', () => {
   test('the product page and the installed list show people a line in both languages, never the tool signatures', () => {

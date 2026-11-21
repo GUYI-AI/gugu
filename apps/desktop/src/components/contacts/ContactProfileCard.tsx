@@ -10,6 +10,7 @@ import {
 } from '../contactAgentTone'
 import { Avatar } from '../Avatar'
 import { AgentNeedsUserGlyph } from '../AgentNeedsUserGlyph'
+import { AgentParkedGlyph } from '../AgentParkedGlyph'
 import { CopyValue } from '../CopyValue'
 import { Button } from '../ui/Button'
 import { useTranslation } from 'react-i18next'
@@ -135,6 +136,8 @@ export function AgentContactProfileCard({
         <div className={statusClass(tone)}>
           {tone === 'needs_user' ? (
             <AgentNeedsUserGlyph size={8} />
+          ) : tone === 'parked' ? (
+            <AgentParkedGlyph />
           ) : (
             <span className={statusDotClass(tone)} aria-hidden="true" />
           )}

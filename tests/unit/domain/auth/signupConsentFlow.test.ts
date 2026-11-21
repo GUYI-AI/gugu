@@ -84,7 +84,7 @@ it('does not expose or submit an email before a separate affirmative consent', a
   expect(host.querySelector('[data-signup-consent]')?.textContent).toContain('未满 14 周岁的，请让父母或其他监护人来点同意。')
   expect(host.querySelector<HTMLAnchorElement>('[data-signup-consent] a')?.href).toBe('https://gugu.nextmind.space/zh/privacy.html')
   await click('不同意')
-  expect(host.querySelector('[role="status"]')?.textContent).toContain('你的邮箱不会发给我们。')
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('你的邮箱不会发送给我们。')
   expect(host.querySelector('input')).toBeNull()
   expect(m.accept).not.toHaveBeenCalled()
   expect(m.request).not.toHaveBeenCalled()
@@ -137,7 +137,7 @@ it('keeps a team invitation route available with the original consent adapter di
 it('keeps a rejected or unknown consent write blocked until an explicit retry succeeds', async () => {
   m.accept.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined)
   await click('新用户注册'); await click('同意并继续')
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe('未能保存本次同意，请重试。')
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe('无法保存同意记录，请重试。')
   expect(host.querySelector('input')).toBeNull()
   expect(m.accept).toHaveBeenCalledTimes(1)
   await click('同意并继续')
@@ -162,10 +162,10 @@ it('ignores a delayed acknowledgement after returning to sign-in', async () => {
 })
 
 it('blocks account verification if the registration request fails', async () => {
-  m.request.mockResolvedValueOnce({ success: false, reason: 'signup_consent_required', error: '请升级到新版咕咕再注册。' })
+  m.request.mockResolvedValueOnce({ success: false, reason: 'signup_consent_required', error: '请升级到新版咕咕后再注册。' })
   await click('新用户注册'); await click('同意并继续')
   await input('new@example.test'); await send()
   await send()
   expect(m.verify).not.toHaveBeenCalled()
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe('请升级到新版咕咕再注册。')
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe('请升级到新版咕咕后再注册。')
 })
