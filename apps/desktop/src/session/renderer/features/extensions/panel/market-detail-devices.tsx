@@ -81,8 +81,9 @@ export function useMarketDevicePicker<Reading, Plan>({
     mutationFn: ({ target, plan }: Operation) => install(target, plan),
     onSuccess: async (ok, { target }) => {
       if (!ok) return;
+      // What the reading is made of first (the device's installed list, say), then the reading.
+      await refresh?.(target).catch((error: unknown) => log.warn('Marketplace device inventory refresh failed:', error));
       await marketDeviceReading.refresh(readKey, target.device.id);
-      void refresh?.(target).catch((error: unknown) => log.warn('Marketplace device inventory refresh failed:', error));
     },
     onError: (error, { target }) => {
       log.error('Marketplace install on another computer failed:', { deviceId: target.device.id, error });

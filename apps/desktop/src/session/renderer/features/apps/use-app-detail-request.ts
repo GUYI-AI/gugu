@@ -4,6 +4,7 @@ import { readCachedDevices } from '@/store/devicesCache';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host';
 import { useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { marketEntry } from '@renderer/features/extensions/market-replicas';
 import type { AppDetail } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { toast } from '@renderer/lib/hooks/use-toast';
 
@@ -39,10 +40,10 @@ export function useAppDetailRequest({ target, ready, host, setDetail, detail, ro
         rootRef.current?.scrollIntoView({ block: 'start' });
         return;
       }
-      const result = await host.api.marketEntry({ extensionId: target.extensionId });
+      const entry = await marketEntry.fetch(host.key, target.extensionId);
       if (cancelled) return;
-      if (!result.success || !result.data) throw new Error(result.error ?? 'This App is no longer in the market.');
-      setDetail({ page: 'market', subject: { manifest: result.data.manifest, cloud: result.data.cloud, installRef: result.data.ref } });
+      if (!entry) throw new Error('This App is no longer in the market.');
+      setDetail({ page: 'market', subject: { manifest: entry.manifest, cloud: entry.cloud, installRef: entry.ref } });
     };
     void open().catch((error: unknown) => { if (!cancelled) toast({ title: messageForUser(error), variant: 'destructive' }); });
     return () => { cancelled = true; };
