@@ -264,7 +264,8 @@ function createSessionStub() {
       unhandle: (_scheme: string): void => {}
     },
     clearCache: async (): Promise<void> => {},
-    // 无头宿主没有 Chromium 的代理配置；egress 的 Node 后端逐次读取用户环境里的代理。
+    // 无头宿主没有 Chromium 的代理配置:它的代理只能是环境变量,本来就在 process.env 里(egress/harness-proxy.ts);
+    // egress 的 Node 后端也逐次读取这份环境。
     resolveProxy: async (_url: string): Promise<string> => 'DIRECT',
     clearStorageData: async (_options?: unknown): Promise<void> => {},
     clearData: async (_options?: unknown): Promise<void> => {},

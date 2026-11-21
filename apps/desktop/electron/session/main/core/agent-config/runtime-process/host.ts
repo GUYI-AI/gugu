@@ -51,8 +51,9 @@ const agentConfigWorker = lazyWorker(
     // 直接继承这个 worker 的环境,同一条规矩也在这里用上。
     env: withLoopbackNoProxy({
       ...process.env,
-      // The worker cannot read the host's login-shell snapshot. Resolve proxy values here,
-      // with the same shell/process/system precedence as the agents it configures.
+      // The worker cannot read the host's login-shell snapshot. Resolve proxy values here, with the same
+      // shell/process/system-proxy precedence as the agents it configures (#6892: harness login and model-list
+      // probes run in this worker and reach the internet).
       ...connectionProbeProxyEnv(),
       GUGU_AGENT_AUTH_EXPIRY_FILE: join(
         process.env.GUGU_SERVER_MODE === '1' && process.env.GUGU_SERVER_HOME ? process.env.GUGU_SERVER_HOME : app.getPath('userData'),
