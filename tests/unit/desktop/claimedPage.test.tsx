@@ -6,8 +6,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const store = vi.hoisted(() => ({ claim: vi.fn(() => 1), release: vi.fn() }));
 vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store', () => ({ extensionViewStore: store }));
-vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { isLoaded: false, residentTabContributions: [] },
+// What is installed: not read yet (the slot says nothing about it).
+vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
+  LOCAL_HOST: 'local', PHONE_HOST: 'phone', useInstalledApps: () => ({ state: 'unknown' }),
 }));
 
 import { ClaimedPage } from '../../../apps/desktop/src/components/appSlot/ClaimedPage';

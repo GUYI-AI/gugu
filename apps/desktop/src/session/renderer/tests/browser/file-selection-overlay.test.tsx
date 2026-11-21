@@ -55,6 +55,20 @@ it('Cite drafts the words and the file\'s pill into the conversation; nothing is
   expect(sendMessageToChat).not.toHaveBeenCalled()
 })
 
+it('Cite of a chat folder\'s file drafts its pill alone: the link names the lines, the words are not quoted beside it', async () => {
+  const drafts: Array<{ chatId: string; text: string; refs: { label: string; link: string }[] }> = []
+  const take = (event: Event) => drafts.push((event as CustomEvent).detail)
+  const link = `gugu-file://${crypto.randomUUID()}?v=2#lines=57`
+  document.addEventListener(APP_COMPOSE_EVENT, take)
+  await act(async () => runFileSelection(guest, null, { ...ask('cite'), file: { name: 'RETENTION.md', target: link.replace(/#.*/, '') },
+    pick: { text: 'large files skip project groups', places: [{ at: { lines: '57' } }] } }))
+  document.removeEventListener(APP_COMPOSE_EVENT, take)
+  expect(drafts).toHaveLength(1)
+  expect(drafts[0]!.text).toBe('')
+  expect(drafts[0]!.refs).toEqual([{ label: expect.stringMatching(/^RETENTION\.md \(/), link }])
+  expect(sendMessageToChat).not.toHaveBeenCalled()
+})
+
 it('Send opens the host\'s own line at the selection; only the person\'s submit sends, and a press elsewhere dismisses it', async () => {
   await act(async () => runFileSelection(guest, null, ask('send')))
   await until('the line is open at the selection', () => !!line())

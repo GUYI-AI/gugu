@@ -17,15 +17,20 @@ const h = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  WORKSPACE_APP_ID: 'workspace',
-  installedExtensionsStore: {
+vi.mock('@renderer/features/extensions/installed-extensions', () => {
+  const apps = {
     get enabledTabContributions() { return h.tabs.filter((tab) => h.folderEnabled || tab.extensionId !== 'workspace'); },
     get allTabContributions() { return h.tabs; },
     openableApps: [{ extensionId: 'notes', name: 'Notes', kind: 'notes.main', iconDataUrl: null }],
     tabTitle: (kind: string) => h.tabs.find((tab) => tab.kind === kind)?.title,
-  },
-}));
+    isChatFile: () => false,
+  };
+  return {
+    WORKSPACE_APP_ID: 'workspace', LOCAL_HOST: 'local',
+    useInstalledApps: () => ({ state: 'value', value: apps, stale: false, error: null }),
+    peekInstalledApps: () => apps, peekInstalledAppsTracked: () => apps,
+  };
+});
 vi.mock('@renderer/app/screen-block-context', () => ({ useScreenBlock: () => ({ blockId: null }) }));
 vi.mock('@renderer/features/tabs/pane-context', () => ({ usePaneContext: () => ({ pane: { open: h.open }, paneId: 'pane', isFocusedPane: true }) }));
 vi.mock('@renderer/features/sessions/session-view-context', () => ({
@@ -38,7 +43,7 @@ vi.mock('@renderer/features/sessions/pane-empty-state', () => ({
   sessionWorkspaceActionBlocked: () => null, workspaceBlockedTitle: () => undefined,
 }));
 vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => { const { readValue } = await import('../../../../../../../tests/support/appSettingsDouble'); return { ...await original<object>(), useTerminalEnabled: () => readValue(true) } });
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ state: 'value', value: [], stale: false, error: null }) }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: h.navigate }) }));
 vi.mock('@renderer/lib/commands/use-command-provider', () => ({
   useCommandProvider: ({ getCommands }: { getCommands: () => { execute: () => void }[] }) => { h.command = getCommands()[0]?.execute; },

@@ -41,12 +41,16 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
     return () => { state.inventoryNotes.delete(listener); };
   } },
 }));
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
-  get manifests() { return state.inventory; },
-  get origins() { return {}; },
-  get publishers() { return state.publishers; },
-  isEnabled: (id: string) => !state.disabled.includes(id),
-} }));
+// What is installed here, as the replica reads it (a value): the test's inventory, switches and publishers.
+vi.mock('@/session/renderer/features/extensions/installed-extensions', () => {
+  const installed = {
+    get manifests() { return state.inventory; },
+    get origins() { return {}; },
+    get publishers() { return state.publishers; },
+    isEnabled: (id: string) => !state.disabled.includes(id),
+  };
+  return { LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }), fetchInstalledApps: async () => installed };
+});
 // The native conversation as far as this test needs it: an instance with state of its own (a draft typed in its composer).
 vi.mock('@/components/ChatAreaPanel', async () => {
   const { useEffect } = await import('react');
@@ -63,6 +67,7 @@ vi.mock('@/components/ChatAreaPanel', async () => {
 
 const { AppConversationSurfaceHost } = await import('../../../../apps/desktop/src/components/appSlot/AppConversationSurfaceHost');
 const { readShellSlots } = await import('../../../../apps/desktop/src/lib/shellSlots');
+const { followRendererSession, queryClient } = await import('../../../../apps/desktop/src/lib/replica');
 const { appConversationSurfaceShows, publishAppConversationSurfaces, readAppConversationSurfaceBridge } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge');
 
 let root: Root;
@@ -72,14 +77,27 @@ const bindings = (ownerId = 'owner-a', entries: Record<string, string> = { today
   bindings: Object.fromEntries(Object.entries(entries).map(([id, chatId]) => [id, { ownerId, name: 'main', chatId, handle: `handle-${id}`, authority: `${authority}-${id}` }])) } });
 /** The next read stays out until answered. */
 const waiting = () => {
-  let answer!: (value: unknown) => void;
+  let answer: ((value: unknown) => void) | undefined;
   query.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
-  return (value: unknown) => act(async () => answer(value));
+  return async (value: unknown) => {
+    if (!answer) throw new Error('[no read] main was not asked for the bindings again');
+    const give = answer;
+    await act(async () => give(value));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  };
 };
-const note = (extensionId: string) => act(async () => { for (const listener of state.inventoryNotes) listener({ extensionId }); });
+const note = async (extensionId: string) => {
+  await act(async () => { for (const listener of state.inventoryNotes) listener({ extensionId }); });
+  // What the note put (the App undrawn) reaches the host on react-query's turn: a task boundary, not a wall-clock wait.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+};
 // In the app the inventory is observable and the chat list a subscription; here a fresh handler is what re-renders the host.
 const render = async (visible = true) => {
+  // The bindings are the account's replica: read for the account the session publishes (useAuth here is the same person).
+  if (state.owner) followRendererSession('SIGNED_IN', state.owner); else followRendererSession('SIGNED_OUT', null);
   await act(async () => root.render(<AppConversationSurfaceHost visible={visible} onOpenUserChat={() => undefined} />));
+  // The read's answer handed on (react-query tells its readers on its own turn): a task boundary, not a wall-clock wait.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 };
 const drawn = () => column.querySelector('[data-testid="native-conversation"]');
 const composer = () => column.querySelector<HTMLTextAreaElement>('[data-testid="composer"]');
@@ -88,6 +106,7 @@ const published = () => readAppConversationSurfaceBridge()?.getSnapshot();
 beforeEach(async () => {
   Object.assign(state, { owner: 'owner-a', chats: [{ id: CHAT }], inventory: [placing('today')], disabled: [], publishers: {}, panels: [], shown: [], mounts: 0 });
   query.mockReset().mockResolvedValue(bindings());
+  queryClient.clear();
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   column = document.createElement('div'); document.body.append(column);
   // The session page's App frame left the column for `today`.
@@ -141,10 +160,11 @@ describe('the native conversation beside an App\'s page', () => {
     await render();
     const typed = composer()!; typed.value = 'half a sentence';
     const mounted = state.mounts;
-    // Installed: the inventory changes and is read again; while that read is out, and after it answers the same, it stays.
+    // Installed: main says so (its note names the App) and it is read again; while that read is out, and after it answers
+    // the same, it stays.
     const installed = waiting();
     state.inventory = [placing('today'), plain('other')];
-    await render();
+    await render(); await note('other');
     expect(composer()).toBe(typed);
     await installed(bindings());
     // Updated, and main names it (its grant, its switch): only that App is read again.
@@ -153,7 +173,7 @@ describe('the native conversation beside an App\'s page', () => {
     // Another App placing its page beside its own binding comes and goes: not this column's business.
     query.mockResolvedValue(bindings('owner-a', { today: CHAT, more: OTHER_CHAT }));
     state.inventory = [placing('today'), plain('other', '2.0.0'), placing('more')]; state.chats = [{ id: CHAT }, { id: OTHER_CHAT }];
-    await render();
+    await render(); await note('more');
     query.mockResolvedValue(bindings());
     state.inventory = [placing('today'), plain('other', '2.0.0')]; await note('more');
     await render();
@@ -185,10 +205,17 @@ describe('the native conversation beside an App\'s page', () => {
   it('switched off, uninstalled, updated or reinstalled from elsewhere, this App\'s column goes at once', async () => {
     await render();
     // Switched off, then on; uninstalled, then installed again: only a new read brings it back, not what was read before.
-    for (const [off, on] of [[() => { state.disabled = ['today']; }, () => { state.disabled = []; }], [() => { state.inventory = []; }, () => { state.inventory = [placing('today')]; }]]) {
+    // Main's notes as main sends them (controller.ts): a switch either way and an uninstall name the App; an install does not.
+    const changes = [
+      { off: () => { state.disabled = ['today']; }, on: () => { state.disabled = []; }, onNotes: true },
+      { off: () => { state.inventory = []; }, on: () => { state.inventory = [placing('today')]; }, onNotes: false },
+    ];
+    for (const { off, on, onNotes } of changes) {
       off(); await render(); expect(drawn()).toBeNull(); expect(published()).toEqual({});
+      await note('today');
       const back = waiting();
-      on(); await render(); expect(drawn()).toBeNull();
+      on(); if (onNotes) await note('today');
+      await render(); expect(drawn()).toBeNull();
       await back(bindings()); expect(drawn()).not.toBeNull();
     }
     // Its update, or the same bundle from another publisher: gone before the read, drawn anew once main answers.
@@ -202,10 +229,12 @@ describe('the native conversation beside an App\'s page', () => {
       await read(bindings('owner-a', { today: CHAT }, `after-${index}`));
       expect(drawn()).not.toBeNull(); expect(composer()).not.toBe(typed);
     }
-    // Reinstalled as it was: main answers a new authority for it, so it is a new conversation instance.
+    // Reinstalled as it was (uninstall: main's note; install: none): main answers a new authority, a new conversation instance.
     const typed = composer();
+    state.inventory = []; await render(); await note('today');
+    expect(drawn()).toBeNull();
     query.mockResolvedValue(bindings('owner-a', { today: CHAT }, 'reinstalled'));
-    state.inventory = [placing('today', '2.0.0')]; await render();
+    state.inventory = [placing('today', '2.0.0')]; await render(); await render();
     expect(drawn()).not.toBeNull(); expect(composer()).not.toBe(typed);
   });
 

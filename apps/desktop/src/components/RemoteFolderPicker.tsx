@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Folder, FolderPlus, Home, Link as LinkIcon, RefreshCw } from '@/lib/icons'
+import { deviceFsMakeDirectory } from '../lib/deviceFs'
+import type { DeviceFsEntry } from '@gugu/core/cloud/deviceFsProtocol'
+import { remoteDirectory, RemoteDirectoryError, UNREACHABLE_PATH_CODES, type RemoteDirectory } from '../lib/remoteDirectory'
+import { refreshFailure, useReplica, useReplicaFetching } from '../lib/replica'
 import { FileMark } from '@gugu/session-ui/file-mark'
-import { deviceFsListDirectory, deviceFsMakeDirectory } from '../lib/deviceFs'
-import type { DeviceFsEntry, DeviceFsListResult } from '@gugu/core/cloud/deviceFsProtocol'
 import type { DeviceRpcError } from '../lib/deviceRpc'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
@@ -18,7 +20,6 @@ import {
   joinPath,
   newFolderNameProblem,
   pathSegments,
-  sortEntries,
   splitCompletionDraft,
 } from './remoteFolderPath'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
@@ -34,8 +35,7 @@ type Props = {
   onCancel?: () => void
 }
 
-/** 手上这份目录读数:选择器永远停在一个**确实存在**的文件夹上,选中的就是它。 */
-type Listing = { path: string; entries: DeviceFsEntry[] }
+type Place = { path: string; hidden: boolean }
 
 /**
  * 最近一次「去某个路径」没去成的原因。它不替换手上那份读数 —— 去不成就留在原地、说清楚为什么,
@@ -47,6 +47,12 @@ type NavError =
   | { kind: 'unreachable'; path: string }
 
 type NewFolderState = { name: string; busy: boolean; error: string | null }
+
+function navErrorOf(path: string, error: Error): NavError {
+  if (error instanceof RemoteDirectoryError) return { kind: 'rpc', path, error: error.rpcError }
+  // @@@remote-dir-timeout-hint (#670) - the device-RPC timeout as an actionable message, ❌ the raw timeout string.
+  return { kind: error.name === 'DeviceRpcTimeoutError' ? 'timeout' : 'unreachable', path }
+}
 
 function navErrorMessage(error: NavError, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (error.kind === 'timeout') return t('create.remoteFolders.error.timeout')
@@ -79,22 +85,47 @@ function entryIcon({ kind, name }: DeviceFsEntry) {
 
 export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCancel }: Props) {
   const { t } = useTranslation('agents')
-  const [listing, setListing] = useState<Listing | null>(null)
-  /** 那台机器上的主目录。新版本的机器每次列目录都报;老版本的只能从「列 ~ 得到的路径」认出来。 */
-  const [home, setHome] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  // @@@remote-dir-progress (#848) - show elapsed seconds while loading so the wait for the remote
-  // device-RPC never reads as a frozen "永远 loading" (the call times out at LIST_DIRECTORY_TIMEOUT_MS).
-  const [loadElapsed, setLoadElapsed] = useState(0)
-  const loadTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const [navError, setNavError] = useState<NavError | null>(null)
+  const [target, setTarget] = useState<Place>({ path: initialPath, hidden: false })
+  /** Where it stood when it set off: still shown while `target` is read or failed. */
+  const [from, setFrom] = useState<Place | null>(null)
   const [showHidden, setShowHidden] = useState(false)
-  const [truncatedCount, setTruncatedCount] = useState<number | null>(null)
   const [filter, setFilter] = useState('')
   const [confirmBroad, setConfirmBroad] = useState<'root' | 'home' | null>(null)
   const [newFolder, setNewFolder] = useState<NewFolderState | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const lastRequestRef = useRef<{ path: string; hidden: boolean }>({ path: initialPath, hidden: false })
+
+  const [opened, setOpened] = useState({ deviceId, initialPath })
+  if (opened.deviceId !== deviceId || opened.initialPath !== initialPath) {
+    setOpened({ deviceId, initialPath })
+    setTarget({ path: initialPath, hidden: false })
+    setFrom(null)
+  }
+
+  const asked = useReplica(remoteDirectory, [deviceId, target.path, target.hidden])
+  // 首次打开的起点去不了(被删了、没权限)就退回主目录,❌ 停在一片空白上。
+  const fellBack = from === null && target.path === initialPath && target.path !== '~' && asked.state === 'error'
+    && asked.error instanceof RemoteDirectoryError && UNREACHABLE_PATH_CODES.includes(asked.error.rpcError.code)
+  const current: Place = useMemo(() => (fellBack ? { path: '~', hidden: target.hidden } : target), [fellBack, target])
+  const reading = useReplica(remoteDirectory, fellBack ? [deviceId, current.path, current.hidden] : [deviceId, target.path, target.hidden])
+  const standing = useReplica(remoteDirectory, from ? [deviceId, from.path, from.hidden] : null, { read: false })
+  // An older machine reports its home only when `~` is listed: what a listing of `~` said, if one was read.
+  const tilde = useReplica(remoteDirectory, [deviceId, '~', false], { read: false })
+
+  const listing: RemoteDirectory | null = reading.state === 'value' ? reading.value : standing.state === 'value' ? standing.value : null
+  // A refresh is loading too; a failed one is said beside the listing still shown (❌ the old listing as if current).
+  const refreshing = useReplicaFetching(remoteDirectory, [deviceId, current.path, current.hidden])
+  const loading = reading.state === 'unknown' || refreshing
+  const navError = reading.state !== 'unknown' && reading.error ? navErrorOf(current.path, reading.error) : null
+  const home = listing?.home ?? (tilde.state === 'value' ? tilde.value.home : null)
+  const truncatedCount = listing?.truncated ?? null
+
+  // @@@remote-dir-progress (#848) - elapsed seconds while loading, ❌ a frozen "永远 loading". A view timer, not a read.
+  const [loadElapsed, setLoadElapsed] = useState(0)
+  useEffect(() => {
+    setLoadElapsed(0)
+    if (!loading) return
+    const timer = setInterval(() => setLoadElapsed((s) => s + 1), 1000)
+    return () => clearInterval(timer)
+  }, [loading, current.path, current.hidden])
 
   /**
    * 地址栏可以直接输入路径(与访达「前往文件夹」、文件选择框敲 `/` 同一个习惯):已知路径时一层层点太慢,
@@ -103,113 +134,43 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
    */
   const [pathDraft, setPathDraft] = useState<string | null>(null)
   const pathInputRef = useRef<HTMLInputElement | null>(null)
-  const [completion, setCompletion] = useState<{ dir: string; entries: DeviceFsEntry[] } | null>(null)
   const [highlight, setHighlight] = useState(-1)
 
-  const stopTimer = useCallback(() => {
-    if (loadTimerRef.current) { clearInterval(loadTimerRef.current); loadTimerRef.current = null }
-  }, [])
+  const navigate = useCallback((path: string, hidden: boolean) => {
+    // Stand on what is shown now (a one-moment decision); a target never read stays out of it.
+    const shown = remoteDirectory.peek(deviceId, current.path, current.hidden)
+    if (shown.state === 'value') setFrom(current)
+    setTarget({ path, hidden })
+    setConfirmBroad(null)
+    setFilter('')
+    setNewFolder(null)
+    // Asked again for the folder already shown (refresh / the same path typed): read it now.
+    if (path === current.path && hidden === current.hidden) void remoteDirectory.refresh(deviceId, path, hidden)
+  }, [current, deviceId])
 
-  const navigate = useCallback(
-    async (path: string, hidden: boolean) => {
-      lastRequestRef.current = { path, hidden }
-      abortRef.current?.abort()
-      const controller = new AbortController()
-      abortRef.current = controller
-      setLoading(true)
-      setLoadElapsed(0)
-      stopTimer()
-      loadTimerRef.current = setInterval(() => setLoadElapsed((s) => s + 1), 1000)
-      setNavError(null)
-      setConfirmBroad(null)
-      try {
-        const response = await deviceFsListDirectory(
-          deviceId,
-          { path, show_hidden: hidden },
-          // @@@remote-dir-no-retry (#670) - a directory listing either resolves or it doesn't; retrying
-          { signal: controller.signal, timeoutMs: LIST_DIRECTORY_TIMEOUT_MS, retryOnTimeout: false },
-        )
-        if (controller.signal.aborted) return
-        const result: DeviceFsListResult | undefined = response.result
-        if (!result) {
-          const error = response.error ?? { code: 'internal_error', message: 'empty response' }
-          if (response.error?.code && !['not_found', 'not_a_directory', 'permission_denied', 'path_blocked', 'invalid_path'].includes(response.error.code)) {
-            log.warn({ deviceId, path, error }, 'list-directory failed')
-          }
-          setNavError({ kind: 'rpc', path, error })
-          return
-        }
-        setListing({ path: result.path, entries: sortEntries(result.entries) })
-        if (result.home) setHome(result.home)
-        else if (path === '~') setHome(result.path)
-        setFilter('')
-        setNewFolder(null)
-        setTruncatedCount(response.error?.code === 'too_many_entries' ? result.entries.length : null)
-      } catch (err) {
-        if (controller.signal.aborted || (err as Error)?.name === 'AbortError') return
-        // @@@remote-dir-timeout-hint (#670) - surface the device-RPC timeout as an actionable message
-        // (host unreachable / old build) instead of the raw "设备 RPC timed out after Nms" string.
-        log.warn({ deviceId, path, error: String((err as Error)?.message ?? err) }, 'list-directory threw')
-        setNavError({ kind: (err as Error)?.name === 'DeviceRpcTimeoutError' ? 'timeout' : 'unreachable', path })
-      } finally {
-        if (!controller.signal.aborted) {
-          stopTimer()
-          setLoading(false)
-        }
-      }
-    },
-    [deviceId, stopTimer],
-  )
-
-  // 首次打开:先去调用方给的起点;那里去不了(被删了、没权限)就退回主目录,❌ 停在一片空白上。
-  useEffect(() => {
-    void navigate(initialPath, false)
-    return () => {
-      abortRef.current?.abort()
-      // @@@1647 卸载/重跑即清 elapsed 计时器,**别依赖 navigate 的 async finally**:卸载后 await 未 settle 时
-      // interval 仍会 tick → setState on unmounted → 测试环境 `window is not defined`(污染全员 CI 的 flaky)。
-      stopTimer()
-    }
-  }, [initialPath, navigate, stopTimer])
-  useEffect(() => {
-    if (listing || loading || !navError || navError.kind !== 'rpc') return
-    if (navError.path === '~') return
-    if (['not_found', 'not_a_directory', 'permission_denied', 'path_blocked'].includes(navError.error.code)) {
-      void navigate('~', showHidden)
-    }
-  }, [listing, loading, navError, navigate, showHidden])
-
-
-  const goTo = useCallback((path: string) => { void navigate(path, showHidden) }, [navigate, showHidden])
-  const retry = useCallback(() => {
-    const last = lastRequestRef.current
-    void navigate(last.path, last.hidden)
-  }, [navigate])
+  const goTo = useCallback((path: string) => { navigate(path, showHidden) }, [navigate, showHidden])
+  const retry = useCallback(() => { void remoteDirectory.refresh(deviceId, current.path, current.hidden) }, [current, deviceId])
 
   // ── 地址栏补全 ─────────────────────────────────────────────────────────────
   const draftSplit = pathDraft === null ? null : splitCompletionDraft(pathDraft)
   const completionDir = draftSplit?.dir ?? null
+  // 正在看的就是这个目录:直接用手上的读数,不再跨云问一趟。
+  const completingShown = completionDir !== null && listing !== null && (completionDir === listing.path || (completionDir === '~' && home === listing.path))
+  const [askedDir, setAskedDir] = useState<string | null>(null)
   useEffect(() => {
-    if (completionDir === null) { setCompletion(null); return }
-    // 正在看的就是这个目录:直接用手上的读数,不再跨云问一趟。
-    if (listing && (completionDir === listing.path || (completionDir === '~' && home === listing.path))) {
-      setCompletion({ dir: completionDir, entries: listing.entries })
-      return
-    }
-    let live = true
-    const timer = setTimeout(() => {
-      void deviceFsListDirectory(deviceId, { path: completionDir, show_hidden: true }, { timeoutMs: LIST_DIRECTORY_TIMEOUT_MS, retryOnTimeout: false })
-        .then((response) => {
-          if (live) setCompletion({ dir: completionDir, entries: response.result?.entries ?? [] })
-        })
-        .catch(() => { if (live) setCompletion({ dir: completionDir, entries: [] }) })
-    }, COMPLETION_DEBOUNCE_MS)
-    return () => { live = false; clearTimeout(timer) }
-  }, [completionDir, deviceId, home, listing])
+    if (completionDir === null || completingShown) { setAskedDir(null); return }
+    const timer = setTimeout(() => setAskedDir(completionDir), COMPLETION_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [completionDir, completingShown])
+  const completion = useReplica(remoteDirectory, askedDir !== null && askedDir === completionDir ? [deviceId, askedDir, true] : null)
+  const completionEntries: DeviceFsEntry[] | null = completingShown ? listing.entries : completion.state === 'value' ? completion.value.entries : null
   const suggestions = useMemo(
-    () => (draftSplit && completion && completion.dir === draftSplit.dir ? completionCandidates(completion.entries, draftSplit.prefix) : []),
-    [completion, draftSplit],
+    () => (draftSplit && completionEntries ? completionCandidates(completionEntries, draftSplit.prefix) : []),
+    [completionEntries, draftSplit],
   )
+  // A failed read, or a re-read failing under suggestions from the listing read before (they stay, the failure said over them).
+  const completionFailure = pathDraft !== null && !completingShown ? refreshFailure(completion) : null
+  const completionError = completionFailure ? navErrorOf(completionFailure instanceof RemoteDirectoryError ? completionFailure.path : askedDir ?? '', completionFailure) : null
   useEffect(() => { setHighlight(-1) }, [pathDraft])
 
   const selectPathOnMount = useRef(false)
@@ -223,8 +184,8 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
   }, [])
   const startEditingPath = useCallback((initial?: string) => {
     selectPathOnMount.current = initial === undefined
-    setPathDraft(initial ?? listing?.path ?? initialPath)
-  }, [initialPath, listing])
+    setPathDraft(initial ?? listing?.path ?? current.path)
+  }, [current.path, listing])
   const acceptSuggestion = useCallback((entry: DeviceFsEntry) => {
     if (!draftSplit) return
     setPathDraft(joinPath(draftSplit.dir, entry.name) + '/')
@@ -251,6 +212,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
       const response = await deviceFsMakeDirectory(deviceId, target, { timeoutMs: LIST_DIRECTORY_TIMEOUT_MS })
       if (response.result) {
         setNewFolder(null)
+        void remoteDirectory.refresh(deviceId, listing.path)
         goTo(response.result.path)
         return
       }
@@ -275,7 +237,6 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
     if (!listing || loading) return
     const broad = broadRootKind(listing.path, home)
     if (broad && !force) { setConfirmBroad(broad); return }
-    abortRef.current?.abort()
     onSelect(listing.path)
   }, [home, listing, loading, onSelect])
 
@@ -452,6 +413,11 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             // 浮层公式(docs/design/ui-visual-spec.md §6.3):--radius-surface + 唯一那档 lift,❌ 再叠一圈 border。
             className="absolute top-full right-2 left-9 z-10 m-0 mt-1 list-none rounded-[var(--radius-surface)] bg-[var(--popover)] p-1 shadow-[var(--shadow-lift)]"
           >
+            {completionError ? (
+              <li role="status" data-testid="remote-folder-path-completion-error" className="truncate px-2 py-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]">
+                {navErrorMessage(completionError, t)}
+              </li>
+            ) : null}
             {suggestions.map((entry, index) => (
               <li
                 key={entry.name}
@@ -469,6 +435,11 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
               </li>
             ))}
           </ul>
+        ) : null}
+        {completionError && !(pathDraft !== null && suggestions.length > 0) ? (
+          <span role="status" data-testid="remote-folder-path-completion-error" className="absolute top-full right-2 left-9 z-10 mt-1 truncate rounded-[var(--radius-surface)] bg-[var(--popover)] px-2 py-1 text-[length:var(--font-caption)] text-[var(--danger-fg)] shadow-[var(--shadow-lift)]">
+            {navErrorMessage(completionError, t)}
+          </span>
         ) : null}
       </div>
 
@@ -603,7 +574,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             checked={showHidden}
             onChange={(event) => {
               setShowHidden(event.target.checked)
-              void navigate(listing?.path ?? lastRequestRef.current.path, event.target.checked)
+              navigate(listing?.path ?? current.path, event.target.checked)
             }}
             className="m-0"
           />

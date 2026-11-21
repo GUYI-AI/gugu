@@ -86,14 +86,14 @@ vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: async () 
 vi.mock('@/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 'avatar' } }));
 vi.mock('@/lib/identityReadAdapter', () => ({ readDisplayIdentities: vi.fn() }));
 vi.mock('@/lib/agentModelSelection', () => ({ readAgentModelSelection: vi.fn(), setAgentModelSelection: vi.fn(), platformProtocolForAgentType: vi.fn() }));
-vi.mock('@/lib/cloudComputerStore', () => ({ getCloudComputerState: () => ({ snapshot: { deviceId: 'cloud' } }), provisionCloudComputer: server.provisionCloud, refreshCloudComputer: vi.fn(), wakeCloudComputer: vi.fn() }));
-vi.mock('@/lib/myAssistant', () => ({ reloadMyAssistant: vi.fn() }));
+vi.mock('@/lib/cloudComputer', () => ({ knownCloudDeviceId: () => 'cloud', provisionCloudComputer: server.provisionCloud, readCloudSnapshotNow: vi.fn(), wakeCloudComputer: vi.fn() }));
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn(async () => undefined) } }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { connectionState: () => 'connected' } }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: vi.fn() }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: {} }));
 vi.mock('./assistant-machine', () => ({ openAssistantMachine: vi.fn() }));
 
-import { refreshCloudComputer } from '@/lib/cloudComputerStore';
+import { readCloudSnapshotNow } from '@/lib/cloudComputer';
 import { assistantResumeStore } from '@/lib/assistantSetup';
 import { buildMoveDeps } from './assistant-move-wire';
 import type { MoveSide } from './assistant-move';
@@ -166,7 +166,7 @@ describe('moving to the cloud while another order is open', () => {
     server.rows.push({ id: 'open', operation_id: 'open-op', device_id: device, member_key: 'assistant', owner_user_id: 'owner', existing_agent_user_id: 'agent', phase: 'failed', create_command_id: 'old' });
     server.commands.set('old', status);
     server.provisionCloud.mockRejectedValue(new Error('stop after the order check'));
-    vi.mocked(refreshCloudComputer).mockResolvedValue({ state: 'awake', deviceId: 'cloud' } as never);
+    vi.mocked(readCloudSnapshotNow).mockResolvedValue({ state: 'awake', deviceId: 'cloud' } as never);
   };
   it('cancels an order aimed at a computer', async () => {
     open('elsewhere', 'error');
@@ -180,7 +180,7 @@ describe('moving to the cloud while another order is open', () => {
   });
   it('cancels an order aimed at a computer when no cloud home exists', async () => {
     open('elsewhere', 'error');
-    vi.mocked(refreshCloudComputer).mockResolvedValue({ state: 'none', deviceId: null } as never);
+    vi.mocked(readCloudSnapshotNow).mockResolvedValue({ state: 'none', deviceId: null } as never);
     await expect(toCloud()).rejects.toThrow('stop after the order check');
     expect(server.cancels).toEqual(['open-op']);
   });
@@ -189,7 +189,7 @@ describe('moving to the cloud while another order is open', () => {
     ['the cloud home has no device id yet', { state: 'provisioning', deviceId: null }],
   ])('cancels nothing while %s', async (_name, snapshot) => {
     open('cloud', 'error');
-    vi.mocked(refreshCloudComputer).mockResolvedValue(snapshot as never);
+    vi.mocked(readCloudSnapshotNow).mockResolvedValue(snapshot as never);
     await expect(toCloud()).rejects.toThrow('stop after the order check');
     expect(server.cancels).toEqual([]);
     expect(server.provisionCloud).toHaveBeenCalled();

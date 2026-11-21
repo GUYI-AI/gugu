@@ -5,8 +5,10 @@ async function fixture() {
   const listeners = new Map<string, (value: unknown) => void>()
   vi.stubGlobal('window', { electronAPI: {
     eventOn: (name: string, cb: (value: unknown) => void) => { listeners.set(name, cb); return () => { listeners.delete(name) } },
-    invoke: async (name: string) => name === 'server-ssh-machines:list' ? [] : { ready: [], problems: {} },
+    invoke: async (name: string) => name === 'server-ssh-machines:describe' ? [] : { ready: [], problems: {} },
   } })
+  // The SSH machine list is the signed-in account's replica.
+  ;(await import('@/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
   const channel = await import('@/lib/sshLinkChannel')
   return { channel, emit: (state: unknown) => listeners.get('tunnel-machines:changed')!(state) }
 }
@@ -47,7 +49,8 @@ describe('task-host tunnel event wait', () => {
     const { channel, emit } = await fixture()
     channel.wantTunnels([{ deviceId: 'direct', label: 'Direct' }, { deviceId: 'failed', label: 'Failed' }])
     await channel.sshMachinesReady()
-    channel._setSshMachineIdsForTesting(['direct'])
+    // The machine list says 'direct' is an SSH machine (the replica entry routing reads).
+    ;(await import('@/lib/sshMachineAddresses')).sshMachineAddresses.set([], [['direct', 'direct']])
     emit({ ready: [], problems: { failed: 'visitorFailed' } })
     await channel.waitForTunnel('direct')
     await channel.waitForTunnel('failed')

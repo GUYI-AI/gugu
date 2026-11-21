@@ -1,7 +1,8 @@
 import { rendererLogger } from '../../lib/log'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
 import type { AttachmentPackage } from '../../session/shared/extensions/attachment-install'
 import { appsHere } from './appsHere'
+import { HERE_HOST } from './hereHost'
 
 const log = rendererLogger('app-slot/update-unasked')
 
@@ -23,7 +24,7 @@ export function updateUnasked(pkg: AttachmentPackage): Promise<boolean> {
 }
 
 async function install(pkg: AttachmentPackage): Promise<boolean> {
-  if (!appsHere || Object.keys(installedExtensionsStore.publishers).length === 0) return false
+  if (!appsHere || !HERE_HOST || Object.keys((await fetchInstalledApps(HERE_HOST)).publishers).length === 0) return false
   const result = await appsHere.installAttachment({ ...pkg, unasked: true })
   const data = result.data
   if (!result.success || !data || !data.installed) return false

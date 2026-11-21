@@ -3,6 +3,12 @@ import type { AuthUser } from '../../apps/desktop/src/store/auth'
 import type { TeamApi, TeamRole, TeamSignInResult, TeamProfile, CurrentTeamContext, TeamMember, TeamInvitation } from '../../apps/desktop/src/features/team/types'
 import { TeamApiError } from '../../apps/desktop/src/features/team/errors'
 
+/** The team runtime in a test (`vi.mock('@/features/team/runtime', …teamRuntimeDouble)`): its `teamApi` is `teamApiDouble.current`. */
+export const teamApiDouble: { current: TeamApi | null } = { current: null }
+export const teamRuntimeDouble = {
+  teamApi: new Proxy({} as TeamApi, { get: (_target, key) => teamApiDouble.current![key as keyof TeamApi] }),
+}
+
 export const teamInvitationCapability = 'synthetic-team-invitation-'.repeat(2)
 export function teamInvitationFixture(): TeamInvitation {
   const fragment = `?region=cn#invitation_token=${teamInvitationCapability}`

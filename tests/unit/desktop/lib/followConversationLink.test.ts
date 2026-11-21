@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), open: vi.fn(), image: vi.fn(), f
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocks.get } }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ getCurrentAuthUserId: async () => 'owner' }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', async (original) => ({ ...await original<object>(), openLinkTarget: mocks.open, followLink: mocks.follow }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ openAttachmentImage: mocks.image }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ openAttachmentImage: mocks.image })))
 vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: mocks.notice }))
 import { followConversationLink, openMessageAttachment } from '../../../../apps/desktop/src/lib/followConversationLink'
 import { OpenSuperseded } from '../../../../apps/desktop/src/lib/guguLinks'

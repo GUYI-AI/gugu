@@ -13,7 +13,7 @@ import '@/components/settings/settings.css';
 import '@/styles/tokens.css';
 
 const tourFixture = vi.hoisted(() => ({ value: null as null | { step: 'contacts'; status: 'skipped' } }));
-vi.mock('@/lib/productTour', async original => ({ ...await original<object>(), useProductTourState: () => ({ data: tourFixture.value }) }));
+vi.mock('@/lib/productTour', async original => ({ ...await original<object>(), useProductTourState: () => ({ state: 'value', value: tourFixture.value, stale: false, error: null }) }));
 vi.mock('@/platform', async original => {
   const actual = await original<typeof import('@/platform')>();
   return { ...actual, platform: { ...actual.platform, kind: 'electron' } };
@@ -21,6 +21,7 @@ vi.mock('@/platform', async original => {
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/lib/deviceProjects', async (original) => ({ ...await original<object>(), listMyDeviceProjects: async () => ({}) }));
+vi.mock('@/store/devicesRead', () => ({ readDevices: async () => [] }));
 // File storage is a key of the account's own settings row (lib/ownSettings): an empty row = the defaults.
 vi.mock('@gugu/core/cloud/userSettings', async (original) => ({ ...await original<object>(), readUserSettingsConfig: async () => ({}) }));
 vi.mock('@/lib/fileStorage', async (original) => {

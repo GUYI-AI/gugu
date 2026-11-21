@@ -12,7 +12,10 @@ export function startShellChromeTone(): void {
   if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('GuguShellChrome')) return
   const sync = () => {
     const tone = readEffectiveHostTheme()
-    shellChrome.syncTone({ tone, preference: readThemePreference() }).catch((error: unknown) => log.error({ tone, error: String(error) }, 'the system bars did not take the page tone'))
+    const preference = readThemePreference()
+    // Not known yet: the bars keep the tone the shell started with until it is.
+    if (preference === null) return
+    shellChrome.syncTone({ tone, preference }).catch((error: unknown) => log.error({ tone, error: String(error) }, 'the system bars did not take the page tone'))
   }
   sync()
   subscribeToHostTheme(sync)

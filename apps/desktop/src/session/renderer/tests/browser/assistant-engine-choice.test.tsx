@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { queryClient } from '@/lib/replica';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { createRoot, type Root } from 'react-dom/client';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -39,7 +39,9 @@ vi.mock('@renderer/lib/ipc', async original => {
   const agents = { get: async (id: string) => agent(id), getManagement: async (id: string) => agent(id),
     listIcons: async () => ({}), getSettings: async () => null,
     modelCatalog: async () => ({ state: { kind: 'ready', models: [] }, refreshing: false }) };
-  return { ...actual, rpc: new Proxy({}, { get: (_, key) => key === 'agents' ? agents : new Proxy({}, { get: () => pending }) }) };
+  const rpc = new Proxy({}, { get: (_, key) => key === 'agents' ? agents : new Proxy({}, { get: () => pending }) });
+  // This computer's readings go through `rpcOn(null)` (the agent readings take the machine first).
+  return { ...actual, rpc, rpcOn: (machine: string | null) => machine === null ? rpc : actual.rpcOn(machine) };
 });
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({
@@ -71,6 +73,8 @@ vi.mock('@renderer/lib/stores/use-agent-auth-status', async original => ({
   useAgentAuthStatus: () => ({ auth: null, refresh: async () => {} }),
   useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => null), refresh: async () => {} }),
 }));
+// Assistant setup runs inside the signed-in app: the model catalog it refreshes after a switch is an account's reading.
+followRendererSession('SIGNED_IN', 'reader');
 let root: Root;
 let host: HTMLDivElement;
 let client: QueryClient;

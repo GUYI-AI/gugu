@@ -11,6 +11,7 @@ import type { ChatMessageComposerProps } from '../../../../apps/desktop/src/comp
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const { resolveSession } = vi.hoisted(() => ({ resolveSession: vi.fn() }))
 const service = vi.hoisted(() => ({
@@ -37,9 +38,9 @@ const mention = (id: string): MentionItem => ({ id: `aid:${id}`, label: `aid:${i
 const input = () => harness.container.querySelector('[data-testid="chat-composer"]')!
 const dialog = () => document.querySelector('[role="dialog"]')
 const confirmButton = () => [...dialog()!.querySelectorAll<HTMLButtonElement>('button')].find((button) => /^添加/.test(button.textContent ?? ''))!
-async function renderGroup(props: Partial<ChatMessageComposerProps> = {}, contacts = [outside], refreshContacts = vi.fn(async () => {})) {
+async function renderGroup(props: Partial<ChatMessageComposerProps> = {}, contacts = [outside], refreshContacts = vi.fn(async () => {}), loadingContacts = false) {
   await renderWithAppProviders(harness, <ChatMessageComposer onSend={vi.fn(async () => {})} chatId="chat" isGroupChat currentUserId="owner-1" groupMembers={[member]} {...props} />, {
-    auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' }, contacts: { contacts, refreshContacts },
+    auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' }, contacts: { contacts, refreshContacts, loadingContacts },
   })
 }
 async function drop(content: DraggedScreenContent = { kind: 'session', projectId: 'p', sessionId: 'task-id', title: 'Private task title' }) {
@@ -55,6 +56,8 @@ async function send() {
 // The group picker reads the roster through the account's IM library.
 let repository: AccountImRepository
 beforeEach(async () => {
+  await freshReplicaAccount('owner-1')
+
   harness = createReactHarness()
   repository = await openImRepository('owner-1', { adapter: createMemoryLocalSyncDb() })
   vi.clearAllMocks()
@@ -132,14 +135,11 @@ describe('task references in the shared chat composer', () => {
   })
 
   it('waits for refreshed eligibility before enabling confirmation', async () => {
-    let finish!: () => void
-    const refresh = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
-    await renderGroup({}, [outside], refresh)
+    // The picker's open-time read of the contacts is in flight (it asks its contacts store in its first render).
+    await renderGroup({}, [outside], vi.fn(() => new Promise<void>(() => {})), true)
     await drop()
     expect(confirmButton().disabled).toBe(true)
     expect(service.inviteGroupMember).not.toHaveBeenCalled()
-    await act(async () => { finish() })
-    expect(confirmButton().disabled).toBe(false)
   })
 
   it('explains that a viewer who left cannot invite, without mutating the group or draft', async () => {

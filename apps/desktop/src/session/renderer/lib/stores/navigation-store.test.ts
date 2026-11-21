@@ -7,7 +7,7 @@ vi.mock('@renderer/lib/modal/modal-store', () => ({
 
 vi.mock('./app-state', () => ({
   appState: {
-    history: { push: vi.fn(), replaceCurrent: vi.fn() },
+    history: { start: vi.fn(), push: vi.fn(), replaceCurrent: vi.fn() },
     sidebar: { revealActiveSession: vi.fn() },
   },
 }));
@@ -170,6 +170,16 @@ describe('NavigationStore place params', () => {
     store.navigate('apps', { location: { tab: 'market', detail: { page: 'market', extensionId: 'notes' } } });
     const [list, page] = pushedApps();
     expect(list!.place).not.toEqual(page!.place);
+  });
+
+  it('the first navigation after a launch starts the back stack at the view it landed on, without its dialog', () => {
+    const store = buildStore();
+    store.restoreSnapshot({ currentViewId: 'apps', viewParams: { apps: { location: { tab: 'market' } } } });
+    store.updateViewParams('apps', { agentDetail });
+    store.navigate('home');
+    expect(appState.history.start).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'view', viewId: 'apps', params: { location: { tab: 'market' } },
+    }));
   });
 
   it('a move inside the current view rewrites the step it is on instead of adding one', () => {

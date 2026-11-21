@@ -20,14 +20,15 @@ vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc',
   },
 }))
 const phoneMcp = vi.hoisted(() => ({ servers: [{ tools: 'tools.js' }] as Record<string, string>[] }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: {
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (original) => {
+  const installed = {
     manifests: [],
     isEnabled: () => true,
     manifestFor: (id: string) => (id === 'spexcode' ? { id, name: 'SpexCode', version: '0.7.0', contributes: { tabs: [], mcpServers: phoneMcp.servers } } : undefined),
     icons: {},
-  },
-}))
+  }
+  return { ...(await original<object>()), peekInstalledApps: () => installed, fetchInstalledApps: async () => installed }
+})
 // The phone's own App data store (the shell's), for a page in a chat.
 const own = vi.hoisted(() => ({ read: vi.fn(async () => 'phone') }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', async (original) => {

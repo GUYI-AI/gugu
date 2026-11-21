@@ -5,19 +5,21 @@
 // ❌ 跟订阅者走 —— 关掉订阅页再开,上一次的读数立刻在。
 // 取不到就说取不到 —— 余额与窗口两条链路各自落地,一条挂了不会把另一条一起吞掉,也绝不
 // 用 0 之类的假数字顶上。
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
 import { deriveSpendingPower, quotaSpendWindows, type SpendingPower } from '@gugu/core/billing'
 import {
   subscribePrivateUserEventBus,
   unsubscribePrivateUserEventBus,
-  type PrivateUserEventBusHandle,
 } from '../realtimeChannel'
-import { replica, useReplica } from '../replica'
+import { onReturn, refreshFailure, replica, useReplica } from '../replica'
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
 import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
 import { readCreditV2Account } from './v2/runtime'
+import { rendererLogger } from '../log'
+
+const planLog = rendererLogger('billing/plan')
 
 export interface SpendingSnapshot {
   /** unknown = 这个账号在这台设备上还没读到过;界面画占位,❌ 画「—」或 0。 */
@@ -70,9 +72,15 @@ const creditAccount = replica({
     }
   },
   persist: { maxBytes: 2048, maxEntries: 1 },
+  // 实时那一路(广播、回到前台)只在有人看着时挂着;数据本身跟账号走,没人看也不清。
+  watch: { start: (owner) => watchBilling(owner) },
+  // Fed by that feed (and read again when it starts): ❌ read again by every surface that shows the credits.
+  fresh: Infinity,
+  // Back to the foreground: a membership bought on the web meanwhile writes no credits, so no broadcast came (#5899).
+  refreshOnFocus: true,
 })
 
-// 计费版本:库的广播、回到前台各推进一次;用量页据此重取会员。
+// 计费版本:库的计费广播推进一次;用量页据此重读积分日表与流水(回到前台它们各自重读,refreshOnFocus)。
 let activityRevision = 0
 const revisionListeners = new Set<() => void>()
 function bumpActivity(): void {
@@ -85,50 +93,61 @@ function refreshAll(): void {
   void creditAccount.refresh()
 }
 
-function refreshWhenVisible(): void {
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-  // 回到前台:人可能刚在网页上开通或续费了会员。那只写会员表(bind_subscription → user_quota_periods)、
-  // 不碰 user_credits,库的广播不会响 —— 推进计费版本,让读会员的那一处(用量页)也跟着重取(#5899)。
-  bumpActivity()
-  refreshAll()
+function watchBilling(userId: string): () => void {
+  const handle = subscribePrivateUserEventBus(userId, 'spending_power_changed', () => {
+    bumpActivity()
+    refreshAll()
+  }, {
+    // Reconnects also re-fetch once, closing any event gap while the socket was unavailable.
+    onSubscribed: () => refreshAll(),
+  })
+  return () => {
+    unsubscribePrivateUserEventBus(handle)
+  }
 }
 
-// 实时那一路(广播、回到前台)只在有人看着时挂着;数据本身跟账号走,没人看也不清。
-let watchers = 0
-let watchedUserId: string | null = null
-let billingEventHandle: PrivateUserEventBusHandle | null = null
-
-function watch(userId: string): () => void {
-  watchers += 1
-  if (watchers === 1) {
-    window.addEventListener('focus', refreshWhenVisible)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
+/**
+ * The account's plan changed (a membership bought, renewed or lapsed): what it unlocks may differ. While followed, the
+ * credits are read again on every return to the app, whether or not a surface shows them (a membership bought on the web
+ * is pushed nowhere, #7056); a surface showing them adds their billing feed.
+ */
+export function onPlanChange(listener: () => void): () => void {
+  if (!officialServicesEnabled()) return () => undefined
+  const planOf = (reading: ReturnType<typeof creditAccount.peek>): string | null =>
+    (reading.state === 'value' ? JSON.stringify(reading.value.plan ?? null) : null)
+  let seen = planOf(creditAccount.peek())
+  const stopChanges = creditAccount.subscribe([], ({ reading }) => {
+    const plan = planOf(reading)
+    if (plan === null) return
+    if (seen !== null && plan !== seen) {
+      planLog.info({ from: seen, to: plan }, 'the account plan changed: following surfaces read again')
+      listener()
+    } else if (seen === null) planLog.info({ plan }, 'the account plan is known (followed from here)')
+    seen = plan
+  })
+  // A surface showing the credits reads them on the same return: that read on its way is joined, ❌ restarted (a second
+  // request in the same millisecond).
+  const readNow = () => {
+    if (!creditAccount.isFetching()) void creditAccount.reread().catch(() => undefined)
   }
-  if (watchedUserId !== userId) {
-    if (billingEventHandle) unsubscribePrivateUserEventBus(billingEventHandle)
-    watchedUserId = userId
-    billingEventHandle = subscribePrivateUserEventBus(userId, 'spending_power_changed', () => {
-      bumpActivity()
-      refreshAll()
-    }, {
-      // Reconnects also re-fetch once, closing any event gap while the socket was unavailable.
-      onSubscribed: () => refreshAll(),
-    })
-  }
-  return () => {
-    watchers -= 1
-    if (watchers > 0) return
-    window.removeEventListener('focus', refreshWhenVisible)
-    document.removeEventListener('visibilitychange', refreshWhenVisible)
-    if (billingEventHandle) unsubscribePrivateUserEventBus(billingEventHandle)
-    billingEventHandle = null
-    watchedUserId = null
-  }
+  if (seen === null) readNow()
+  const stopReturns = onReturn(readNow)
+  return () => { stopReturns(); stopChanges() }
 }
 
 /** 手动催一次(充值回来、用户点刷新)。 */
 export function refreshSpendingPower(): Promise<void> {
   return officialServicesEnabled() ? creditAccount.refresh() : Promise.resolve()
+}
+
+/** Whether the account is a member (a paid tier); null = not known (not read yet, or its plan unreadable): ❌ taken as free. */
+export function isMember(spending: SpendingSnapshot): boolean | null {
+  return spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
+}
+
+/** Why the plan cannot be said: the read failed, or the plan's did while the balance's did not (a value without membership). */
+export function membershipFailure(spending: SpendingSnapshot): string | null {
+  return spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
 }
 
 export function useSpendingPower(user: { id: string } | null): SpendingSnapshot {
@@ -138,12 +157,11 @@ export function useSpendingPower(user: { id: string } | null): SpendingSnapshot 
     (listener) => { revisionListeners.add(listener); return () => { revisionListeners.delete(listener) } },
     () => activityRevision,
   )
-  useEffect(() => (userId ? watch(userId) : undefined), [userId])
 
   return useMemo((): SpendingSnapshot => {
     if (reading.state === 'unknown') return { ...UNKNOWN_SNAPSHOT, activityRevision: revision }
     // 一次读失败就整份不要了、说清为什么:❌ 留着上一次的余额(#2503,没读到的数不冒充现在的数)。
-    const failure = reading.state === 'error' ? reading.error : reading.error
+    const failure = refreshFailure(reading)
     if (failure) {
       return { ...UNKNOWN_SNAPSHOT, state: 'error', balanceError: message(failure), windowsError: message(failure), activityRevision: revision }
     }

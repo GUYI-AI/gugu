@@ -15,7 +15,9 @@ import { Switch } from '@renderer/lib/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { isSpentOneTimeAutomation, type Automation } from '@shared/core/automations/automation';
-import { useAutomationEventBridge, useAutomations } from '../use-automations';
+import { useAutomations } from '../use-automations';
+import { useAgents } from '@renderer/lib/stores/use-agents';
+import { Unknown } from '@/components/ui/Unknown';
 import { useAutomationSettingsAutoSave } from '../useAutomationSettingsAutoSave';
 import { AutomationSettingsFields } from './AutomationSettingsFields';
 import { NextRunBanner } from './NextRunBanner';
@@ -47,7 +49,30 @@ export const AutomationDetailView = observer(function AutomationDetailView(
   );
 });
 
-const AutomationSettingsDetailView = observer(function AutomationSettingsDetailView({
+/**
+* The form seeds once, from the machine's agent list: it is mounted once that list is read, ❌ seeded with no agent
+* (an empty choice would be saved). A machine that cannot act now is not asked: its form is drawn read-only at once.
+*/
+const AutomationSettingsDetailView = observer(function AutomationSettingsDetailView(props: AutomationDetailViewProps) {
+  const { translate } = useSessionMessages();
+  const agents = useAgents();
+  if (agents.state !== 'unknown' || props.readOnly) return <AutomationSettingsForm {...props} />;
+  return (
+    <div className="flex h-full flex-col" data-testid="automation-detail-pending">
+      <SheetHeader title={translate('automations.detailsLabel')} onClose={props.onClose} />
+      <div className="flex flex-col gap-2 px-4">
+        <Unknown className="h-9 w-full" />
+        <Unknown className="h-8 w-full rounded-lg" />
+        <Unknown className="my-2 h-8 w-48" />
+      </div>
+      <div className="min-h-0 flex-1 px-4 pb-4">
+        <Unknown className="h-full w-full" />
+      </div>
+    </div>
+  );
+});
+
+const AutomationSettingsForm = observer(function AutomationSettingsForm({
   automation,
   onClose,
   onDelete,
@@ -62,8 +87,6 @@ const AutomationSettingsDetailView = observer(function AutomationSettingsDetailV
     { value: 'runs', label: translate('automations.tabRuns') },
     { value: 'settings', label: translate('automations.tabSettings') },
   ];
-
-  useAutomationEventBridge(automation.id);
 
   const { formState, setCronExpr, handlePromptBlur, handleNameBlur, saveError } =
     useAutomationSettingsAutoSave(automation);
@@ -188,7 +211,6 @@ const AgentScheduleDetailView = observer(function AgentScheduleDetailView({
   const { translate } = useSessionMessages();
   const [name, setName] = useState(automation.name);
   const { rename, runNow } = useAutomations();
-  useAutomationEventBridge(automation.id);
 
   const agent = automation.agentSession;
   const gone = agent?.gone ?? true;

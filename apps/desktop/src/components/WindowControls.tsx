@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
+import { createSelectStore, useSelect, type Readable, type SelectStore } from '../lib/selectStore'
 import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import {
@@ -36,32 +37,35 @@ export interface WindowChromeState {
   labels: WindowChromeLabels
 }
 
+// 最大化状态与本地化按钮名在主进程:preload 同步交出首值,之后主进程推来(④,属于这扇窗口)。第一次有人读时才接上。
+type ChromeFacts = Omit<WindowChromeState, 'dw'>
+// One window, one bridge: kept with the bridge it follows (a test may hand another).
+let chrome: { dw: DesktopWindowBridge; facts: SelectStore<ChromeFacts> } | null = null
+let noBridgeFacts: ChromeFacts | null = null
+const NO_BRIDGE: Readable<ChromeFacts> = {
+  get: () => {
+    const documentLocale = typeof document === 'undefined' ? null : document.documentElement.lang
+    return noBridgeFacts ??= { maximized: false, labels: hostCatalog(isResolvedLocale(documentLocale) ? documentLocale : 'zh-CN').windowChrome }
+  },
+  subscribe: () => () => undefined,
+}
+
+function chromeOf(dw: DesktopWindowBridge | undefined): Readable<ChromeFacts> {
+  if (!dw) return NO_BRIDGE
+  if (chrome?.dw !== dw) {
+    const facts = createSelectStore<ChromeFacts>({ maximized: dw.isMaximizedSync(), labels: dw.getChromeLabels?.() ?? NO_BRIDGE.get().labels })
+    dw.onMaximizedChange((maximized) => facts.set({ ...facts.get(), maximized }))
+    dw.onChromeLabelsChange?.((labels) => facts.set({ ...facts.get(), labels }))
+    chrome = { dw, facts }
+  }
+  return chrome.facts
+}
+
 /** 最大化状态与本地化按钮名(主进程随宿主语言推送)。标题栏的「视图」菜单也读同一份。 */
 function useWindowChromeState(): WindowChromeState {
   const dw = typeof window !== 'undefined' ? window.desktopWindow : undefined
-  const [maximized, setMaximized] = useState(false)
-  const [labels, setLabels] = useState<WindowChromeLabels>(() => {
-    if (dw?.getChromeLabels) return dw.getChromeLabels()
-    const documentLocale = typeof document === 'undefined' ? null : document.documentElement.lang
-    return hostCatalog(isResolvedLocale(documentLocale) ? documentLocale : 'zh-CN').windowChrome
-  })
-
-  useEffect(() => {
-    if (!dw) return
-    let active = true
-    void dw.isMaximized().then((m) => {
-      if (active) setMaximized(m)
-    })
-    const unsubscribe = dw.onMaximizedChange(setMaximized)
-    const unsubscribeLabels = dw.onChromeLabelsChange?.(setLabels)
-    return () => {
-      active = false
-      unsubscribe()
-      unsubscribeLabels?.()
-    }
-  }, [dw])
-
-  return { dw, maximized, labels }
+  const facts = useSelect(chromeOf(dw), (value) => value, Object.is)
+  return { dw, ...facts }
 }
 
 /** 最小化 / 最大化(还原) / 关闭 三颗钮。高度随宿主那一行走,宽度是 Windows 惯例的 46。 */

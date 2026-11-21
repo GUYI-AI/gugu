@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { ASSISTANT_APP_ID, openAssistantEntry, useAssistantEntryTarget } from '@/lib/assistantEntry';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 
 /**
  * The assistant App's page, restored by the window (or opened by an old link) while the App is not here to draw it: not installed
@@ -12,7 +12,7 @@ import { installedExtensionsStore } from '@renderer/features/extensions/installe
  */
 export function useAssistantPageNotHere(appId: string | undefined, drawn: boolean): boolean {
   const target = useAssistantEntryTarget();
-  const loaded = installedExtensionsStore.isLoaded;
+  const loaded = useInstalledApps(LOCAL_HOST).state === 'value';
   const notHere = appId === ASSISTANT_APP_ID && !drawn && target.kind !== 'app';
   useEffect(() => {
     if (notHere && loaded) openAssistantEntry();

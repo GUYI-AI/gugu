@@ -13,6 +13,7 @@ import {
 import { sessionConversationTabId } from '../view/session-pane-policy';
 import { sessionPaneReady } from '../session-pane-ready';
 import { rpc } from '@renderer/lib/ipc';
+import { homeDirectory } from '@renderer/lib/machine-paths';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
 import { rendererLogger } from '../../../../../lib/log';
 import { fileBaseName, isAbsolutePath, isPathInsideWorkspace, resolveWorkspacePath } from './workspace-path';
@@ -38,13 +39,6 @@ function resolveEditorFilePath(workspacePath: string, filePath: string): string 
   return resolvedPath;
 }
 
-/** Cached `rpc.app.getHomeDirectory()` —— home 在会话内不变,一次 RPC 终身复用。 */
-let homeDirectoryPromise: Promise<string> | null = null;
-function fetchHomeDirectory(): Promise<string> {
-  homeDirectoryPromise ??= rpc.app.getHomeDirectory();
-  return homeDirectoryPromise;
-}
-
 /**
  * `~/x` → 家目录下的绝对路径,语义与主进程 `expandAbsoluteOrTildePath` 同一条(只认 `~/` 前缀)。
  * 不展开的话 `~` 会被当工作区相对路径拼成 `<ws>/~/…`,报一条指向不存在位置的误导 toast。
@@ -53,12 +47,11 @@ function fetchHomeDirectory(): Promise<string> {
 async function expandHomeTildePath(filePath: string): Promise<string> {
   if (!filePath.startsWith('~/')) return filePath;
   try {
-    const home = (await fetchHomeDirectory()).replace(/[\\/]+$/, '');
+    // home 在会话内不变:the account's `homeDirectory` replica reads it once (a failed read is read again next time).
+    const home = (await homeDirectory.fetch()).replace(/[\\/]+$/, '');
     return `${home}/${filePath.slice(2)}`;
   } catch (error: unknown) {
-    // 一次瞬时的 RPC 失败(桥没就绪等)不能污染整个会话 —— 释放缓存,下次点击重试,
-    // ❌ 把 rejected promise 记一辈子,那 `~/` 就永久退回误导 toast。
-    homeDirectoryPromise = null;
+    // 一次瞬时的 RPC 失败(桥没就绪等)不能污染整个会话:the reading is an error, and the next click reads again.
     sessionLog.warn({ err: String(error), filePath }, 'getHomeDirectory failed; keeping ~ path');
     return filePath;
   }

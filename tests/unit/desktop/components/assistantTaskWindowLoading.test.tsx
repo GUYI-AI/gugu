@@ -30,7 +30,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', async original 
   } },
 }))
 vi.mock('../../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: vi.fn(), retrySessionInputs: vi.fn(), useQueuedSessionInputs: () => [] }))
-vi.mock('../../../../apps/desktop/src/components/session-watch/timeline-cache', () => ({
+vi.mock('../../../../apps/desktop/src/components/session-watch/timeline-cache', async (original) => ({ ...await original<object>(),
   readCachedTimeline: () => null, hydrateCachedTimeline: async () => null, writeCachedTimeline: () => {},
   readCachedNativeRecord: () => null, hydrateCachedNativeRecord: async () => null, writeCachedNativeRecord: () => {},
 }))
@@ -49,7 +49,13 @@ vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevices
 vi.mock('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory', async original => ({ ...await original<object>(),
   useLiveDeviceSessions: () => ({}),
   listedSession: () => ({ row: { deviceId: (directory.device as { device_id: string }).device_id, session: directory.session } }) }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
+// What is installed: no App gives a task a tab of its own (the real module pulls the whole session page in).
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => {
+  const apps = { enabledTabContributions: [], allTabContributions: [], manifests: [], manifestFor: () => undefined, appName: () => undefined, isEnabled: () => true }
+  const reading = { state: 'value', value: apps, stale: false, error: null }
+  return { LOCAL_HOST: 'local', PHONE_HOST: 'phone', useInstalledApps: () => reading, peekInstalledApps: () => apps, peekInstalledAppsTracked: () => apps,
+    installedExtensions: { set: () => undefined }, marketUpdates: { refresh: async () => undefined } }
+})
 vi.mock('../../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 
 /** What the provider's own record holds for the task's first turn, as the bounded window hands it out. */

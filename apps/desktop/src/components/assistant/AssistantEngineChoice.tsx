@@ -11,6 +11,7 @@ import type { AssistantSetupDraft } from '@/lib/assistantSetup'
 import type { AssistantEngine } from '@/lib/assistantHomeIpc'
 import { AppIcon } from '@renderer/lib/components/app-icon'
 import { useAgent } from '@renderer/lib/stores/use-agents'
+import { agentMetadata } from '@renderer/lib/stores/agent-replicas'
 import { useConnectionAvailability } from '@renderer/features/settings/subscriptions/use-connection-availability'
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel'
 
@@ -20,10 +21,10 @@ const names = { claude: 'Claude', codex: 'Codex' }
 /** Local setup reads this computer, independent of the library's selected remote host. */
 function useLocalEngine(engine: AssistantEngine) {
   const metadata = useAgent(engine)
-  const connection = useConnectionAvailability(engine, null, metadata.data?.reading === 'not-detected')
-  const state = metadata.isPending ? 'checking'
-    : metadata.error || !metadata.data ? 'failed' : connection.state
-  return { agent: metadata.data, state, refresh: () => Promise.all([metadata.refetch(), connection.refresh()]) }
+  const agent = metadata.state === 'value' && !metadata.error ? metadata.value : null
+  const connection = useConnectionAvailability(engine, null, agent?.reading === 'not-detected')
+  const state = metadata.state === 'unknown' ? 'checking' : !agent ? 'failed' : connection.state
+  return { agent: agent ?? undefined, state, refresh: () => Promise.all([agentMetadata.refresh(null, engine), connection.refresh()]) }
 }
 
 /** Fixed geometry: switching engine or credentials only replaces content. */

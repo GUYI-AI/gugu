@@ -1,25 +1,40 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { useLibraryHost } from '@renderer/features/library/library-host';
+import { queryClient, refreshFailure, replica, useReplica, type Reading } from '@/lib/replica';
+import { writeOver } from '@/lib/replicaWrite';
+import { keepLibraryHost, libraryHostOf, useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
+import { managementAgents } from '@renderer/lib/stores/agent-replicas';
 import type { GuguToolsOff } from '@shared/gugu-tool-groups';
 import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpProvided, LibraryMcpServer } from '@shared/mcp-library';
 
-const harnessKey = (hostKey: string, agentId: string) => ['mcpLibrary', 'harness', hostKey, agentId] as const;
+/** The MCP library of a library host (@@@client-state-model). No push: `reload` reads it again. */
+export const mcpLibraryServers = replica({
+  name: 'mcpLibraryServers',
+  scope: 'device',
+  read: (_owner: string, hostKey: string): Promise<LibraryMcpServer[]> => libraryHostOf(hostKey).mcpLibrary.list(),
+})
+
+export const mcpProvided = replica({
+  name: 'mcpProvided',
+  scope: 'device',
+  read: (_owner: string, hostKey: string): Promise<LibraryMcpProvided> => libraryHostOf(hostKey).mcpLibrary.provided(),
+})
+
+export const harnessMcpServers = replica({
+  name: 'harnessMcpServers',
+  scope: 'device',
+  read: async (_owner: string, hostKey: string, agentId: string): Promise<LibraryMcpHarnessServer['server'][]> =>
+    (await libraryHostOf(hostKey).mcpLibrary.harnessServers([agentId])).map((row) => row.server),
+})
 
 /**
- * 一家自己配的那几台 —— 段头展开才读(`enabled`),一家一个查询:读哪一家只等哪一家,一家读不了只坏它那一组。
+ * 一家自己配的那几台 —— 段头展开才读(参数 null 前不读),一家一个条目:读哪一家只等哪一家,一家读不了只坏它那一组。
  * 照读那一家的配置文件,❌ 跑它的 CLI(好几家 `mcp list` 会把每台 stdio server 起一遍)。
  */
-export function useHarnessMcpServers(agentId: string, enabled: boolean) {
-  const host = useLibraryHost();
-  return useQuery({
-    queryKey: harnessKey(host.key, agentId),
-    queryFn: async (): Promise<LibraryMcpHarnessServer['server'][]> =>
-      (await host.mcpLibrary.harnessServers([agentId])).map((row) => row.server),
-    enabled: enabled && host.remote?.online !== false,
-    ...(host.remote ? { retry: false } : {}),
-  });
+export function useHarnessMcpServers(agentId: string, enabled: boolean): Reading<LibraryMcpHarnessServer['server'][]> {
+  const host = keepLibraryHost(useLibraryHost());
+  return useReplica(harnessMcpServers, enabled ? [host.key, agentId] : null, { read: host.remote?.online !== false });
 }
 
 /**
@@ -27,50 +42,30 @@ export function useHarnessMcpServers(agentId: string, enabled: boolean) {
  * 各家的只读(由那一家自己加载);检测它们的结果只留在这一页,不记下来 —— 那不是咕咕的记录。
  */
 export function useMcpLibrary() {
-  const queryClient = useQueryClient();
-  const host = useLibraryHost();
-  const listKey = ['mcpLibrary', host.key] as const;
+  const host = keepLibraryHost(useLibraryHost());
   const reachable = host.remote?.online !== false;
-  const list = useQuery({
-    queryKey: listKey,
-    queryFn: () => host.mcpLibrary.list(),
-    enabled: reachable,
-    ...(host.remote ? { retry: false } : {}),
-  });
-
+  const list = useReplica(mcpLibraryServers, [host.key], { read: reachable });
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
-  const providedKey = ['mcpLibrary', 'provided', host.key] as const;
-  const provided = useQuery({
-    queryKey: providedKey,
-    queryFn: () => host.mcpLibrary.provided(),
-    enabled: reachable,
-    ...(host.remote ? { retry: false } : {}),
-  });
+  const provided = useReplica(mcpProvided, [host.key], { read: reachable });
   const agents = useManagementAgents();
   const installed = useMemo(
-    () => (agents.data ?? []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
-    [agents.data]
+    () => (agents.state === 'value' ? agents.value : []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
+    [agents]
   );
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: listKey });
-  const add = useMutation({ mutationFn: (servers: LibraryMcpServer[]) => host.mcpLibrary.add(servers), onSettled: invalidate });
-  const update = useMutation({ mutationFn: (server: LibraryMcpServer) => host.mcpLibrary.update(server), onSettled: invalidate });
-  const remove = useMutation({ mutationFn: (name: string) => host.mcpLibrary.remove(name), onSettled: invalidate });
+  const invalidate = () => void mcpLibraryServers.refresh(host.key);
+  const add = useMutation({ mutationFn: (servers: LibraryMcpServer[]) => host.mcpLibrary.add(servers), onSettled: invalidate }, queryClient);
+  const update = useMutation({ mutationFn: (server: LibraryMcpServer) => host.mcpLibrary.update(server), onSettled: invalidate }, queryClient);
+  const remove = useMutation({ mutationFn: (name: string) => host.mcpLibrary.remove(name), onSettled: invalidate }, queryClient);
   const setEnabledByDefault = useMutation({
     mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => host.mcpLibrary.setEnabledByDefault(name, enabled),
     onSettled: invalidate,
-  });
+  }, queryClient);
 
-  // 内置那台的工具组开关:先改这一页上的读数(开关不回弹),失败回滚、再以宿主那一份为准。
+  // 工具组开关点下就画;拒了就重读宿主那一份(I4)。
   const setGuguToolsOff = useMutation({
-    mutationFn: (off: GuguToolsOff) => host.mcpLibrary.setGuguToolsOff(off),
-    onMutate: (off) => {
-      const before = queryClient.getQueryData<LibraryMcpProvided>(providedKey);
-      if (before) queryClient.setQueryData<LibraryMcpProvided>(providedKey, { ...before, guguToolsOff: off });
-      return before;
-    },
-    onError: (_error, _off, before) => before && queryClient.setQueryData(providedKey, before),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: providedKey }),
-  });
+    mutationFn: (off: GuguToolsOff) =>
+      writeOver(mcpProvided, [host.key], (before) => before && { ...before, guguToolsOff: off }, () => host.mcpLibrary.setGuguToolsOff(off)),
+  }, queryClient);
 
   // 正在检测的那几台(键 = `gugu:<名>` 或 `<家>:<名>`),以及各家那几台这一页上检测出来的结果。
   const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
@@ -89,9 +84,12 @@ export function useMcpLibrary() {
     }
   };
 
+  const failures = { servers: refreshFailure(list), agents: refreshFailure(agents), provided: refreshFailure(provided) };
   return {
-    servers: list.data ?? [],
-    provided: provided.data,
+    servers: list.state === 'value' ? list.value : null,
+    /** A failed read of 咕咕's own list / the installed agents, also over what is still drawn (❌ the kept copy shown as current). */
+    failures,
+    provided,
     /** 装了的那几家,各一个折叠的段头;配置等展开才读。 */
     installed,
     /**
@@ -103,10 +101,7 @@ export function useMcpLibrary() {
       const reads = await Promise.allSettled(
         installed.map(async (agent) => ({
           agent,
-          servers: await queryClient.fetchQuery({
-            queryKey: harnessKey(host.key, agent.id),
-            queryFn: async () => (await host.mcpLibrary.harnessServers([agent.id])).map((row) => row.server),
-          }),
+          servers: await harnessMcpServers.fetch(host.key, agent.id),
         }))
       );
       for (const read of reads) {
@@ -116,15 +111,16 @@ export function useMcpLibrary() {
       return names;
     },
     // 各家那几组只等「装了哪几家」(段头要画出来);各家的配置等展开才读。
-    isLoading: list.isLoading || agents.isLoading || provided.isLoading,
-    error: list.error ?? agents.error ?? provided.error,
-    hasData: list.data !== undefined,
-    listLoading: list.isLoading,
-    listError: list.error,
+    isLoading: (reachable && (list.state === 'unknown' || provided.state === 'unknown')) || agents.state === 'unknown',
+    error: failures.servers ?? failures.agents ?? failures.provided,
+    hasData: list.state === 'value',
+    listLoading: reachable && list.state === 'unknown',
+    listError: failures.servers,
     reload: () => {
-      void list.refetch();
-      void provided.refetch();
-      void queryClient.invalidateQueries({ queryKey: ['mcpLibrary', 'harness', host.key] });
+      void mcpLibraryServers.refresh(host.key);
+      void mcpProvided.refresh(host.key);
+      void harnessMcpServers.refresh(host.key);
+      void managementAgents.refresh(host.remote?.deviceId ?? null);
     },
     isBusy: add.isPending || update.isPending || remove.isPending,
     add: add.mutateAsync,

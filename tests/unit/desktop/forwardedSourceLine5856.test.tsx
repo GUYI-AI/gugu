@@ -21,7 +21,8 @@ vi.mock('../../../apps/desktop/src/lib/supabase', () => ({
 }))
 
 const { MessageMetaRow } = await import('../../../apps/desktop/src/components/chat/MessageMetaRow')
-const { resetForwardedSourceCacheForTests } = await import('../../../apps/desktop/src/lib/forwardedSource')
+const { forwardedSource } = await import('../../../apps/desktop/src/lib/forwardedSource')
+const { queryClient } = await import('../../../apps/desktop/src/lib/replica')
 
 function sourceRow(name: string | null, kind = 'group') {
   return { data: [{ source_chat_id: 'chat-src', source_chat_kind: kind, source_chat_name: name }], error: null }
@@ -30,7 +31,7 @@ function sourceRow(name: string | null, kind = 'group') {
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
-  resetForwardedSourceCacheForTests()
+  queryClient.removeQueries({ queryKey: [forwardedSource.name] })
 })
 afterEach(() => { harness.cleanup(); vi.clearAllMocks() })
 
@@ -39,10 +40,13 @@ async function renderRow(forwardedFromMessageId: string | null) {
     harness,
     createNode(MessageMetaRow, { targetingLabels: [], forwardedFromMessageId, viaApp: null, viaAppSender: null }),
   )
-  // 出处是异步取的:合批的 microtask + rpc 的 then,都冲干净再断言。
-  await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+  // 出处是异步取的:rpc 的 then 落定(react-query 在自己的下一拍通知读者)再断言。
+  if (forwardedFromMessageId) await act(async () => { await vi.waitFor(() => expect(rpc).toHaveBeenCalled()) })
+  await act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve() })
 }
 
+const placeholder = () => harness.container.querySelector('[data-unknown]')
+const failed = () => harness.container.querySelector('[data-refresh-failed]')
 const badgeText = () =>
   harness.container.querySelector('[data-testid="message-forwarded-badge"]')?.textContent ?? ''
 
@@ -79,33 +83,36 @@ describe('转发留痕 ——「引自:某某线」', () => {
     expect(badgeText()).toContain('引自：甲线')
 
     await renderRow('msg-b')
-    // msg-b 的往返还挂着:此刻退回只显「转发」,而不是把甲线的出处安到乙消息头上。
-    expect(badgeText()).toBe('↪ 转发')
+    // msg-b 的往返还挂着:此刻是「引自 …」大小的占位 —— ❌ 甲线的出处安到乙消息头上,❌ 先画「转发」再变「引自」。
+    expect(badgeText()).toBe('')
+    expect(placeholder()).not.toBeNull()
 
-    await act(async () => { releaseB?.(); await Promise.resolve(); await Promise.resolve() })
-    expect(badgeText()).toContain('引自：乙线')
+    await act(async () => { releaseB?.(); for (let i = 0; i < 5; i++) await Promise.resolve() })
+    await vi.waitFor(() => expect(badgeText()).toContain('引自：乙线'))
   })
 
   it('读失败 ❌ 不进缓存 —— 一次抖动不许让这条消息的「引自」永远消失', async () => {
     rpc.mockRejectedValueOnce(new Error('network hiccup'))
     await renderRow('msg-flaky')
-    expect(badgeText()).toBe('↪ 转发')
+    // A failure is said (with a retry), ❌ drawn as 「转发」 — that would read as "no source".
+    await vi.waitFor(() => expect(failed()).not.toBeNull())
+    expect(badgeText()).toBe('')
     expect(rpc).toHaveBeenCalledTimes(1)
 
     // 重挂一次:如果失败被缓存成「没有出处」,下面这次就不会再发请求,出处永远回不来。
-    harness.cleanup()
+    harness.cleanup({ keepReads: true })
     harness = createReactHarness()
     rpc.mockResolvedValue(sourceRow('发版协调'))
     await renderRow('msg-flaky')
     expect(rpc).toHaveBeenCalledTimes(2)
-    expect(badgeText()).toContain('引自：发版协调')
+    await vi.waitFor(() => expect(badgeText()).toContain('引自：发版协调'))
   })
 
   it('反例:读成功(哪怕结果是「没有出处」)要进缓存,❌ 不许每次重绘都再问一遍', async () => {
     rpc.mockResolvedValue({ data: [], error: null })
     await renderRow('msg-none')
     expect(rpc).toHaveBeenCalledTimes(1)
-    harness.cleanup()
+    harness.cleanup({ keepReads: true })
     harness = createReactHarness()
     await renderRow('msg-none')
     expect(rpc).toHaveBeenCalledTimes(1)

@@ -39,7 +39,8 @@ function ConnectorItems({ render, directManagement }: Props) {
       const harnessNames = await library.harnessNames()
       showMcpForm({
         initial: server,
-        existing: library.servers,
+        // A row was clicked: the list it came from is read.
+        existing: library.servers ?? [],
         harnessNames,
         onSuccess: ([updated]) => { if (updated) void library.update({ ...updated, enabledByDefault: server.enabledByDefault }).catch(reportEditFailure) },
       })
@@ -50,7 +51,7 @@ function ConnectorItems({ render, directManagement }: Props) {
     notify({ tier: 'error', title: t('installedManager.connectorEditFailed') })
   }
 
-  const installedMcp = library.servers.map((server): InstalledItem => ({
+  const installedMcp = (library.servers ?? []).map((server): InstalledItem => ({
     id: `mcp:${server.name}`,
     name: server.name,
     icon: (size) => <span className="gg-installed-connector-icon" style={{ width: size, height: size }}><Plug size={Math.round(size * .55)} /></span>,
@@ -59,8 +60,9 @@ function ConnectorItems({ render, directManagement }: Props) {
     setEnabled: (value) => library.setEnabledByDefault(server.name, value),
     remove: async () => { await library.remove(server.name) },
   }))
-  const connectedApps = connections.integrations.flatMap((integration): InstalledItem[] => {
-    if (!connections.configuredConnections[integration.id]) return []
+  const configured = connections.configuredConnections
+  const connectedApps = (configured ? connections.integrations ?? [] : []).flatMap((integration): InstalledItem[] => {
+    if (!configured![integration.id]) return []
     const canRemove = mutationAllowed && !keptByPlatform(integration) && (!host.connectionMetadata || !!deviceId)
     return [{
       id: `integration:${integration.id}`,
@@ -98,7 +100,7 @@ function ConnectorItems({ render, directManagement }: Props) {
   return (
     <div className="gg-installed-connector-pane">
       {render([...connectedApps, ...installedMcp], {
-        loading: (library.listLoading && !library.hasData) || (!connections.hasConfiguredConnections && !connections.configuredConnectionsError),
+        loading: (library.listLoading && !library.hasData) || (connections.configuredConnections === null && !connections.configuredConnectionsError),
         error: !!library.listError || !!connections.configuredConnectionsError || !!connections.listError,
       })}
       {directManagement && (

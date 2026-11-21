@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { openLink } from '../lib/guguLinks'
 import { useToast } from '../components/toastContext'
 import {
+  agentPresenceReadable,
   getAgentPresenceSnapshot,
-  neverObservedAgentPresence,
   subscribeAgentPresence,
-  type AgentPresenceState,
 } from '../lib/agentPresenceStore'
+import { useSelect, type Readable } from '../lib/selectStore'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { i18n } from '@/i18n'
 
@@ -16,33 +16,12 @@ import { i18n } from '@/i18n'
 
 // @@@unified-presence-hook - Thin selector over AgentPresenceStore. The store handles transport, fusion,
 
-// @@@3839 C — 单数与批量 hook 走**同一条**初始化路径:两者都在 useState 的 initializer 里读 store。
-// 只在 useEffect 里读会让暖缓存也先画一帧 `确认中`(passive effect 在 paint 之后才跑),而那一帧与
-// 「真的从未观测过」在屏幕上一模一样 —— 用户分不出,判据也分不出。
-// 「没观测过长什么样」由 store 单点定义,这里 ❌ 不留第二份字面量(原 emptyState 就是那份副本)。
-function initialPresenceState(agentUserId: string | null | undefined): AgentPresenceState {
-  if (!agentUserId) return neverObservedAgentPresence('')
-  return getAgentPresenceSnapshot(agentUserId) ?? neverObservedAgentPresence(agentUserId)
-}
-
+// @@@3839 C — 单数与批量 hook 读同一个 store(经 `agentPresenceReadable` / `useSelect`):首帧就是 store 里存着的那一条,
+// 换 agent 时同一次渲染就换成新 agent 的那一条;「没观测过长什么样」由 store 单点定义。
 export function useAgentDisplayStatus(agentUserId: string | null | undefined) {
   const { toast } = useToast()
-  const [state, setState] = useState<AgentPresenceState>(() => initialPresenceState(agentUserId))
-  const [trackedAgentUserId, setTrackedAgentUserId] = useState(agentUserId)
+  const state = useSelect(agentPresenceReadable(agentUserId ?? ''), (presence) => presence, Object.is)
   const [opening, setOpening] = useState(false)
-
-  // @@@3839 换 agent 时在**渲染期**换掉 state(React 的 adjust-state-on-prop-change),不在 effect 里补一刀:
-  // effect 那一刀会让 store 在挂载时被读两次(initializer 一次、effect 一次),两次读之间的任何变化都会
-  // 让首帧与次帧不一致;而在 effect 落地之前,组件还会顶着**上一个 agent** 的状态渲染一帧。
-  if (trackedAgentUserId !== agentUserId) {
-    setTrackedAgentUserId(agentUserId)
-    setState(initialPresenceState(agentUserId))
-  }
-
-  useEffect(() => {
-    if (!agentUserId) return
-    return subscribeAgentPresence(agentUserId, setState)
-  }, [agentUserId])
 
   // @@@acp-no-wake (#1099) - ACP 下 agent = spawn+stdio,设备在线即可触达、发消息自动启动该会话;
   // 不存在 terminal 时代「先唤醒再用」的机制。原 wake() 动作 + chatService.wakeAgent 已删。
@@ -79,48 +58,23 @@ export function useAgentDisplayStatuses(
     [agentUserIds],
   )
   const stableIds = useMemo(() => (idsKey ? idsKey.split(',') : []), [idsKey])
-  const [statuses, setStatuses] = useState<Record<string, AgentDisplayStatus>>(() => {
-    const initial: Record<string, AgentDisplayStatus> = {}
-    for (const id of stableIds) {
+  const presences = useMemo<Readable<readonly string[]>>(() => ({
+    get: () => stableIds,
+    subscribe: (listener) => {
+      const offs = stableIds.map((id) => subscribeAgentPresence(id, () => listener()))
+      return () => { for (const off of offs) off() }
+    },
+  }), [stableIds])
+  // Batch consumers are aggregate/group surfaces. Pending is not a resolved member state: it stays absent until a
+  // snapshot or event arrives, instead of flashing a false group dot.
+  const statuses = useSelect(presences, (ids) => {
+    const resolved: Record<string, AgentDisplayStatus> = {}
+    for (const id of ids) {
       const snapshot = getAgentPresenceSnapshot(id)
-      if (snapshot && snapshot.source !== 'pending') initial[id] = snapshot.status
+      if (snapshot && snapshot.source !== 'pending') resolved[id] = snapshot.status
     }
-    return initial
+    return resolved
   })
-
-  useEffect(() => {
-    if (stableIds.length === 0) {
-      setStatuses((prev) => (Object.keys(prev).length === 0 ? prev : {}))
-      return
-    }
-    setStatuses((prev) => {
-      const next: Record<string, AgentDisplayStatus> = {}
-      for (const id of stableIds) {
-        const snapshot = getAgentPresenceSnapshot(id)
-        if (snapshot && snapshot.source !== 'pending') next[id] = snapshot.status
-      }
-      return Object.keys(prev).toString() === Object.keys(next).toString() && Object.entries(next).every(([key, status]) => prev[key] === status) ? prev : next
-    })
-    const unsubs = stableIds.map((id) =>
-      subscribeAgentPresence(id, (state) => {
-        // Batch consumers are aggregate/group surfaces. Pending is not a resolved member state, so
-        // keep it absent until a snapshot/event arrives instead of flashing a false group dot.
-        if (state.source === 'pending') {
-          setStatuses((prev) => {
-            if (!(id in prev)) return prev
-            const next = { ...prev }
-            delete next[id]
-            return next
-          })
-          return
-        }
-        setStatuses((prev) => (prev[id] === state.status ? prev : { ...prev, [id]: state.status }))
-      }),
-    )
-    return () => {
-      for (const off of unsubs) off()
-    }
-  }, [idsKey, stableIds])
 
   return statuses
 }

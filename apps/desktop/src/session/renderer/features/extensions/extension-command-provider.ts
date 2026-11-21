@@ -9,7 +9,7 @@ import { openApp } from './app-dock';
 import { declaredMenuCommands, declaredToolbarCommands, runExtensionCommand } from './extension-commands';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { extensionViewStore } from './extension-view-store';
-import { installedExtensionsStore, type ExtensionTabContributionEntry } from './installed-extensions-store';
+import { peekInstalledAppsTracked, type ExtensionTabContributionEntry } from './installed-extensions';
 
 /** The dock chooses the existing page; its toolbar/menu's binding delivers the command once it is ready. */
 async function openAndRun(tab: ExtensionTabContributionEntry, commandId: string): Promise<void> {
@@ -39,7 +39,7 @@ async function openAndRun(tab: ExtensionTabContributionEntry, commandId: string)
 export function createExtensionCommandProvider(): CommandProvider {
   return {
     scopeId: 'app',
-    getCommands: () => installedExtensionsStore.allTabContributions
+    getCommands: () => (peekInstalledAppsTracked()?.allTabContributions ?? [])
       // A file opener needs the file selected by its own menu, not a blank global App page; a card needs its message.
       .filter((tab) => tab.enabled && tab.ownPage && !tab.hidden && !tab.hostSettings)
       .flatMap((tab) => [...new Map([...declaredMenuCommands(tab.kind), ...declaredToolbarCommands(tab.kind)]

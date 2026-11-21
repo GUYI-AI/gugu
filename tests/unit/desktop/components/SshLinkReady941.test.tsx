@@ -14,12 +14,17 @@ vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: async (...args: unknown[]) =>
   return { result: args[1] === 'server.versionMatch.activity' ? { busyAgents: state.busyAgents } : { requested: !state.refused } }
 } }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: state.devices }) }))
+const problems = vi.hoisted(() => ({ byProblem: new Map<string, Map<string, string>>(), none: new Map() }))
+const problemsNow = vi.hoisted(() => () => {
+  if (!state.ssh) return problems.none
+  if (!problems.byProblem.has(state.problem)) problems.byProblem.set(state.problem, new Map([['remote', state.problem]]))
+  return problems.byProblem.get(state.problem)!
+})
 vi.mock('@/lib/sshLinkChannel', () => ({
   isSshMachine: () => state.ssh,
-  subscribeSshLinkProblems: (listener: (value: Map<string, string>) => void) => {
-    listener(new Map(state.ssh ? [['remote', state.problem]] : []))
-    return () => {}
-  },
+  // The channel's link problems store (read with useSelect): one map per state, a stable reference.
+  sshLinkProblems: { get: () => problemsNow(), subscribe: () => () => {} },
+  sshUpgrades: { get: () => problems.none, subscribe: () => () => {} },
   subscribeSshSignInPrompts: (listener: (event: { deviceId: string; prompt: unknown }) => void) => {
     state.onPrompt = listener
     return () => { state.onPrompt = null }

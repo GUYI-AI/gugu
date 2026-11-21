@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { act, createRef } from 'react'
-import { runInAction } from 'mobx'
-import { installedExtensionsStore } from '../../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions } from '../../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../../apps/desktop/src/session/shared/extensions/manifest'
 import enMessaging from '../../../../../apps/desktop/src/i18n/locales/en-US/messaging'
 import zhMessaging from '../../../../../apps/desktop/src/i18n/locales/zh-CN/messaging'
@@ -12,6 +11,8 @@ import { chat, clickElement, createNode, createReactHarness, renderWithAppProvid
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
 import { publishInnerSidebarPresent } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
+// This device's Apps are the desktop's (the header's 「打开 App」 lists the ones installed here).
+vi.mock('../../../../../apps/desktop/src/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
 // #2609 The search item's shortcut label follows the platform; these cases describe macOS (⌘F).
 vi.mock('@tanstack/react-hotkeys', async (original) => ({
   ...await original<typeof import('@tanstack/react-hotkeys')>(),
@@ -37,10 +38,7 @@ beforeEach(() => {
   harness = createReactHarness()
   headerWidth = 900
   vi.clearAllMocks()
-  runInAction(() => {
-    installedExtensionsStore.manifests = [parseExtensionManifest({ id: 'toolbar-app', name: 'Toolbar App', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Toolbar App' }] } })]
-    installedExtensionsStore.disabled = []
-  })
+  installedExtensions.set(['local'], { extensions: [parseExtensionManifest({ id: 'toolbar-app', name: 'Toolbar App', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Toolbar App' }] } })], invalid: [], disabled: [] } as never)
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     return { x: 0, y: 0, left: 0, top: 0, width: this.hasAttribute('data-chat-area-header') ? headerWidth : 32, height: 40, right: headerWidth, bottom: 40, toJSON() {} }
   })
@@ -51,7 +49,7 @@ beforeEach(() => {
     unobserve() {}
   })
 })
-afterEach(() => { runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = [] }); harness.cleanup(); resizeCallbacks.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { installedExtensions.set(['local'], { extensions: [], invalid: [], disabled: [] } as never); harness.cleanup(); resizeCallbacks.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[] } = {}) {
   if (options.stripNarrow) { harness.container.className = 'session-tab-bar'; harness.container.setAttribute('data-strip-narrow', '') }

@@ -7,6 +7,8 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 import { setLocalePreference } from '@/i18n'
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+import { followRendererSession } from '@/lib/replica'
+import { thisDeviceId } from '@/store/thisDevice'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { machineRegistry } from '@renderer/lib/machine-routing'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
@@ -81,8 +83,10 @@ describe('project picker › folders (#2640)', () => {
       ],
       'p-memor': [{ workspaceId: 'ws-4', projectId: 'p-memor', kind: 'root', path: '/Users/apple/Desktop/projects/memor', deviceId: null, offline: false }],
     }
+    // This computer is the replica `thisDeviceId`'s, for the account signed in.
+    followRendererSession('SIGNED_IN', 'tester')
+    thisDeviceId.set([], 'this-computer')
     runInAction(() => {
-      accountProjectsStore.localDeviceId = 'this-computer'
       accountProjectsStore.status = 'ready'
       accountProjectsStore.list = [
         project('chat-gugu', 'gugu', [{ deviceId: 'this-computer', localProjectId: 'p-gugu' }, { deviceId: 'mac1-id', localProjectId: 'p-gugu-mac1' }]),

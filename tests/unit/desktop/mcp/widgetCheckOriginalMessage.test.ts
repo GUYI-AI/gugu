@@ -16,19 +16,18 @@ let registeredId = widgetId, bodyWid = widgetId, visible = true, member = true, 
 const contentOf = () => JSON.stringify({ v: 2, app: 'vote', view: 'poll', text: 'Dinner', wid: bodyWid, data: { file: 'poll.json' } })
 beforeEach(() => {
   registeredId = bodyWid = widgetId; visible = member = true; retracted = deleted = false
-  io.restGet.mockReset().mockImplementation(async (path: string) => {
-    const [table, query] = path.split('?'), params = new URLSearchParams(query)
-    if (table === 'messages' && params.get('id') === `eq.${messageId}`) return [{ id: messageId, chat_id: 'chat-1', sender_user_id: 'sender', content_type: 'widget', content: contentOf(), retracted_at: retracted ? '2026-11-03' : null, deleted_for_user_ids: deleted ? ['agent-1'] : [] }]
-    return []
-  })
+  io.restGet.mockReset().mockResolvedValue([])
   io.restRpc.mockReset().mockImplementation(async (name: string, args: Record<string, unknown>) => {
     if (name === 'widget_origin') {
       if (args.p_widget_id === registeredId) return [{ widget_id: registeredId, origin_message_id: messageId, is_retracted: retracted }]
       // Another message's widget, which a forged historical body may name.
       return args.p_widget_id === 'someone-elses-widget' ? [{ widget_id: 'someone-elses-widget', origin_message_id: 'other-message', is_retracted: false }] : []
     }
-    if (name === 'can_read_message') return visible && args.p_message_id === messageId && args.p_user_id === 'agent-1'
-    if (name === 'list_member_ids') return member ? [{ user_id: 'agent-1' }] : []
+    // The server reads as the agent: a whisper it is no party to, or a chat it is not in, has no row.
+    if (name === 'messages_by_id_as') {
+      return visible && member && args.p_as === 'agent-1' && args.p_id === messageId
+        ? [{ id: messageId, chat_id: 'chat-1', sender_user_id: 'sender', content_type: 'widget', content: contentOf(), retracted_at: retracted ? '2026-11-03' : null, deleted_for_me: deleted }] : []
+    }
     throw new Error(`Unexpected RPC ${name}`)
   })
 })
@@ -45,8 +44,8 @@ it('checks a typed original message when the registered widget has a different i
   const { result, run } = await check({ message_id: `msg:${messageId}` })
   expect(result, JSON.stringify(result)).not.toHaveProperty('isError', true)
   expect(run).toHaveBeenCalledWith(expect.objectContaining({ widget: expect.objectContaining({ id: widgetId, originMessageId: messageId, senderId: 'sender' }) }), undefined)
-  expect(io.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: widgetId })
-  expect(io.restGet.mock.calls.map(([path]) => String(path).split('?')[0])).not.toContain('widgets')
+  expect(io.restRpc).toHaveBeenCalledWith('widget_origin', { p_widget_id: widgetId, p_as: 'agent-1' })
+  expect(io.restGet).not.toHaveBeenCalled()
 })
 
 it('keeps a historical message on its own id when its body names another widget', async () => {

@@ -41,6 +41,7 @@ import '@gugu/session-shared/animation-visibility.css'
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
 import { installErrorSummaryConsent } from './lib/errorSummaryConsent'
+import { installReadOnReturn } from './lib/foregroundReturn'
 
 // Before the first render: the phone's system font size decides how large text is drawn (textScale.ts).
 installTextScale()
@@ -58,6 +59,8 @@ startFirstRunApps()
 // `data-scrolling`,显隐规则在 styles/tokens.css。装在这里而不是某个组件的 effect 里:
 // 它是一条进程级的 DOM 监听,与任何一棵 React 子树的生死无关。
 installScrollbarAutoHide()
+// Reads on a return to the app (`refreshOnFocus`): once per return from another application or a hidden page.
+installReadOnReturn()
 
 // @@@1238-platform-attr / @@@822 — surface the OS to CSS so the frameless title bar can reserve the
 // right window-control inset only where it actually draws controls. Mac keeps native traffic lights

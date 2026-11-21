@@ -114,7 +114,7 @@ function fakeMainProcess(options: { sshMachines: string[]; open?: (deviceId: str
   }
   const api = {
     invoke: async (channel: string, arg: unknown) => {
-      if (channel === 'server-ssh-machines:list') return options.sshMachines
+      if (channel === 'server-ssh-machines:describe') return options.sshMachines.map((deviceId) => ({ deviceId, display: deviceId }))
       if (channel === 'ssh-link:open') {
         opened.push(arg as string)
         records.note()
@@ -162,6 +162,8 @@ function whenRecorded(step: string, ok: () => boolean): Promise<void> {
 async function load(main: ReturnType<typeof fakeMainProcess>) {
   vi.resetModules()
   ;(globalThis as Record<string, unknown>).window = { electronAPI: main.api }
+  // The SSH machine list is the signed-in account's (main filters by it; the renderer reads it as that account's replica).
+  ;(await import('@/lib/replica')).followRendererSession('SIGNED_IN', 'user-1')
   return import('@/lib/deviceRpc')
 }
 

@@ -4,6 +4,7 @@ import { useContactsStore } from '../store/contactsContext'
 import { useDevicesStore } from '../store/devicesContext'
 import { assistantHomePlace, type AssistantHomePlace } from './assistantHome'
 import { useMyAssistantContact } from './myAssistant'
+import { cloudSnapshotOf, useCloudComputer } from './cloudComputer'
 
 /**
  * 咕咕自己那几页(开通、设置、连接应用,画在它 App 的面板上)读的:它是谁、住哪(云上 / 某台电脑)、这台电脑能不能当家。
@@ -12,15 +13,16 @@ import { useMyAssistantContact } from './myAssistant'
  */
 export function useAssistantHome() {
   const { contacts, loadingContacts } = useContactsStore()
-  const { cloudComputer, devices, loading: devicesLoading } = useDevicesStore()
-  const snapshot = cloudComputer?.snapshot ?? null
+  const { devices, loading: devicesLoading } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
+  const snapshot = cloudSnapshotOf(cloudComputer)
   const cloudDeviceId = snapshot?.deviceId ?? null
-  const mine = useMyAssistantContact(contacts, cloudDeviceId)
+  const mine = useMyAssistantContact(contacts)
   const contact = mine.contact
   const localDeviceId = platform.capabilities.agentRuntime ? devices.find((d) => d.is_current_device)?.device_id ?? null : null
   const home: AssistantHomePlace | null = useMemo(
     () => (contact ? assistantHomePlace(mine.homeDeviceId, devices, cloudDeviceId) : null),
     [contact, mine.homeDeviceId, devices, cloudDeviceId],
   )
-  return { identityLoading: mine.loading || loadingContacts || devicesLoading, mine, contact, home, localDeviceId, snapshot, cloudDeviceId, cloudComputer, devices }
+  return { identityLoading: mine.reading.state === 'unknown' || loadingContacts || devicesLoading, mine, contact, home, localDeviceId, snapshot, cloudDeviceId, cloudComputer, devices }
 }
