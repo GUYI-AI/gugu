@@ -6,6 +6,7 @@ import { mergeMemberReadSeqs } from '@gugu/core/shared/ui/messageState'
 import { readsWholeChat } from '@gugu/core/shared/ui/chatModels'
 import { i18n } from '@/i18n'
 import { shareRows } from '../lib/chatProjectionAlgebra'
+import { sameReactions } from '@gugu/core/shared/ui/messageListModels'
 
 // @@@realtime-single-msg-mutations — 从 store/chat.tsx 抽出的「实时事件只改动单条消息」处理：全局删除
 // (#1729) 与表情回应变更 (#1873)。二者都对「当前打开会话窗口 + 话题视图 + L2」按 message_id 就地改一条，
@@ -44,21 +45,13 @@ export async function applyReactionChangedEvent(
   const overlays = await chatService.fetchMessageOverlays([{ id: reactedId, chat_id: activeChatId }], userId)
   const reactions = overlays.get(reactedId)?.reactions
   if (!reactions) return
-  const overlay = { reactions }
-  m.setMessagesAndCache((prev) => {
-    let changed = false
-    const next = prev.map((msg) => {
-      if (msg.id !== reactedId) return msg
-      changed = true
-      return { ...msg, reactions: overlay.reactions }
-    })
-    // The overlay read already patched the stored row (loadMessageOverlays); this is the view.
-    return changed ? next : prev
-  }, activeChatId)
+  // The overlay read already patched the stored row (loadMessageOverlays), whose publication normally shows it; patch only views still behind.
+  const patch = (rows: MessageItem[]) => rows.some(msg => msg.id === reactedId && !sameReactions(msg.reactions, reactions))
+    ? rows.map(msg => (msg.id === reactedId ? { ...msg, reactions } : msg))
+    : rows
+  m.setMessagesAndCache(patch, activeChatId)
   // 话题回复上的回应同样活更新（thread 视图不走 L2 持久化，内存 patch 即可）。
-  m.setThreadMessages((prev) =>
-    prev.map((msg) => (msg.id === reactedId ? { ...msg, reactions: overlay.reactions } : msg)),
-  )
+  m.setThreadMessages(patch)
 }
 
 // @@@1888 — 「可见 ⇒ 已读」的唯一 chokepoint。此前水位推进散在 chat.tsx 的 5 个手工点（快照提交/

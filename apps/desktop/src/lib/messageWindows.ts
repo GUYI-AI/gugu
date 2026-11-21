@@ -1,5 +1,6 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { orderMessages } from '@gugu/core/shared/ui/messageTimeline'
+import { shallowEqualMessage } from '@gugu/core/shared/ui/messageListModels'
 import type { ImMessageWrite } from '../session/shared/core/im-messages'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
 
@@ -34,9 +35,13 @@ export function setMessageWindow(accountId: string, chatId: string, root: string
   const windows = accounts.get(accountId)
   if (!windows) return
   if (root) for (const [id, window] of windows) if (window.chatId === chatId && window.root && window.root !== root) windows.delete(id)
-  const sorted = orderMessages(rows).slice(-MAX_WINDOW)
+  // A store read returns fresh objects for unchanged rows: keep the published ones, and publish only a real change.
+  const previous = windows.get(key(chatId, root))?.rows ?? []
+  const shown = new Map(previous.map(row => [row.id, row]))
+  const sorted = orderMessages(rows).slice(-MAX_WINDOW).map(row => { const old = shown.get(row.id); return old && shallowEqualMessage(old, row) ? old : row })
   windows.set(key(chatId, root), { chatId, root, rows: sorted })
-  if (!root) publishers.get(accountId)?.(chatId, sorted)
+  const unchanged = previous.length === sorted.length && sorted.every((row, index) => row === previous[index])
+  if (!root && !unchanged) publishers.get(accountId)?.(chatId, sorted)
 }
 
 /** Null means the account is not open (logged out or not yet initialized). An empty window is still authoritative. */

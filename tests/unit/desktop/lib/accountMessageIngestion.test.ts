@@ -5,7 +5,7 @@ import { ackOutboxRecord, openImRepository } from '../../../../apps/desktop/src/
 import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { ingestMessages, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
-import { clearMessageWindows, messageWindow } from '../../../../apps/desktop/src/lib/messageWindows'
+import { clearMessageWindows, initializeMessageWindows, messageWindow, publishMessageWindows, setMessageWindow } from '../../../../apps/desktop/src/lib/messageWindows'
 import { ChatWindowCache } from '../../../../apps/desktop/src/store/chatWindowCache'
 import { bindRepositoryMessageCache } from '../../../../apps/desktop/src/store/chatDiskWindow'
 import { serializeComposerCard, type QuestionCard } from '../../../../packages/core/src/shared/ui/taskCardModels'
@@ -203,4 +203,17 @@ it('removes an inaccessible refreshed body and rejects a refresh crossing the ch
   expect(messageRevisionWrites('viewer', [missing], '2').revisions).toMatchObject([{ writes: [{ type: 'delete', chatId: 'room', id: 'card' }] }])
   expect(() => messageRevisionWrites('viewer', [{ ...missing, payload: { chat_id: 'wrong-room', message_id: 'card', message: row('card') } }], '2')).toThrow('malformed message')
   expect(r.notify).not.toHaveBeenCalled()
+})
+
+it('a store re-read of unchanged rows keeps the published rows and does not publish again', () => {
+  initializeMessageWindows('viewer')
+  const publish = vi.fn()
+  publishMessageWindows('viewer', publish)
+  const first = row('kept', 1)
+  setMessageWindow('viewer', 'room', null, [first])
+  setMessageWindow('viewer', 'room', null, [{ ...first }])
+  expect(publish).toHaveBeenCalledTimes(1)
+  expect(messageWindow('viewer', 'room')![0]).toBe(first)
+  setMessageWindow('viewer', 'room', null, [{ ...first, content: 'edited' }])
+  expect(publish).toHaveBeenCalledTimes(2)
 })
