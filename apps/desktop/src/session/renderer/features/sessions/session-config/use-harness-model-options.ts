@@ -1,5 +1,6 @@
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import { harnessCatalogToOptions } from './harness-model-field';
 
@@ -21,8 +22,7 @@ export function useHarnessModelOptions(
   leg: SessionpageLeg
 ) {
   const catalog = useHarnessModelCatalog(providerId, leg);
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const capabilities = providerId
     ? (agents?.find((agent) => agent.id === providerId)?.capabilities ?? null)
     : null;

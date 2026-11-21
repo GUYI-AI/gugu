@@ -8,6 +8,7 @@ import { getAgentInstallErrorPresentation } from '@renderer/features/settings/ag
 import { installProgressLine } from '@renderer/features/settings/agents-page/install-progress-line';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import { agentInstallProgressChannel } from '@shared/events/appEvents';
@@ -73,8 +74,7 @@ export function useRemoteInstallBeforeCreate(
   providerId: string | null | undefined
 ): { beforeCreate: (() => Promise<void>) | undefined; note: ReactElement | null } {
   const { translate } = useSessionMessages();
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const agent = agents?.find((candidate) => candidate.id === providerId) ?? null;
   const [remoteInstall, setRemoteInstall] = useState<RemoteInstall | null>(null);
   const beforeCreate =

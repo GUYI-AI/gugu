@@ -23,6 +23,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { appState } from '@renderer/lib/stores/app-state';
 import { useAgentInstallationStatuses, useInstallingAgents } from '@renderer/lib/stores/use-agent-installation-statuses';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import { sessionpageLegFor } from '@shared/core/sessions/provider-selection';
@@ -105,8 +106,7 @@ type AgentNotice = { kind: 'none' | 'installing'; text: string } | null;
  */
 function useSampleAgentNotice(): AgentNotice {
   const { translate, locale } = useSessionMessages();
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const statusesReading = useAgentInstallationStatuses().reading;
   const installing = useInstallingAgents();
   if (!agents || statusesReading.state !== 'value') return null;

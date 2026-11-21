@@ -2,6 +2,7 @@ import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { useState } from 'react';
 import { DEFAULT_CRON_STATE, toCron } from '@renderer/lib/CronPicker/cron-utils';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import type { Automation } from '@shared/core/automations/automation';
 import { sessionViewOfRuntime } from '@shared/core/sessions/sessions';
 import type {
@@ -37,8 +38,7 @@ export function useAutomationFormState(
   const seedConfig = seed?.sessionConfig;
   const seedPrompt =
     seedSessionConfig?.prompt ?? initialTemplate?.defaultSessionConfig.initialPrompt;
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   // #6264 已安排看的是哪台机器,项目就只在那台机器的项目里挑(同一张项目表,见 firstMountedProjectId)。
   const machine = useAutomationsHost().remote?.deviceId ?? null;
 

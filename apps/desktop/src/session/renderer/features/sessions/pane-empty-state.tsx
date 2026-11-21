@@ -19,6 +19,7 @@ import { cn } from '@renderer/utils/utils';
 import type { CommandId } from '@shared/commands';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { workspaceBackend } from './workspace-backend/workspace-backend';
 import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -53,8 +54,7 @@ export function useSessionWorkspaceActions(
   // spec session-resume 临时会话:分不出来时这一项**渲染成 disabled 并说明原因**,
   // ❌ 不是点了没反应 —— 远程项目没有本地 ACP runtime，未声明 fork 的 provider 也不能冒充。
   // Unknown (undefined) is not evidence the provider cannot fork: startSideSession checks again (canStartSideSession).
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = terminalShown(useTerminalEnabled());
 
