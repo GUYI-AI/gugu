@@ -8,11 +8,16 @@ import { createReactHarness, renderWithAppProviders } from '../../../../../../..
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-import type { LifeView } from '@shared/core/sessions/session-life';
+import type { LifeView, NativeInputRetryOptions, NativeInputRetryResult } from '@shared/core/sessions/session-life';
 import { renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { i18n } from '@/i18n';
+import { ModalRenderer } from '@renderer/lib/modal/modal-renderer';
+import { modalStore } from '@renderer/lib/modal/modal-store';
+import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 
-const { retry, resend, discard } = vi.hoisted(() => ({ retry: vi.fn(async () => {}), resend: vi.fn(async () => {}), discard: vi.fn(async () => {}) }));
+const { retry, resend, discard } = vi.hoisted(() => ({ retry: vi.fn(async () => {}),
+  resend: vi.fn(async (_sessionId: string, _messageId: string, _options?: NativeInputRetryOptions): Promise<NativeInputRetryResult> => ({ kind: 'done' })),
+  discard: vi.fn(async () => {}) }));
 const hostLife = vi.hoisted(() => ({ view: null as LifeView | null }));
 const hostHistory = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: hostLife.view, error: null, current: () => hostLife.view }) }));
@@ -22,14 +27,17 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const 
 vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
 let harness: ReturnType<typeof createReactHarness>;
-afterEach(() => {
+afterEach(async () => {
+  modalStore.closeModal();
   harness?.cleanup();
   Object.assign(state(), { accountId: null, rows: EMPTY, valid: () => false });
   retry.mockClear();
-  resend.mockClear();
+  resend.mockReset();
+  resend.mockResolvedValue({ kind: 'done' });
   discard.mockClear();
   hostLife.view = null;
   hostHistory.read.mockReset();
+  await i18n.changeLanguage('en-US');
 });
 
 it('clears an unknown incoming marker when the phone already has its native bubble', async () => {
@@ -74,7 +82,8 @@ it.each([false, true])('only resends an unmatched phone input on an explicit cli
   if (supported) {
     expect(action?.textContent).toMatch(/Resend|重发/);
     await userEvent.click(action!);
-    expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'not-landed');
+    // The explicit click negotiates consent; a successful host still completes in one call.
+    expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'not-landed', { allowConfirmation: true });
   } else {
     expect(action).toBeNull();
     expect(resend).not.toHaveBeenCalled();
@@ -214,7 +223,8 @@ it('offers resend and discard on a failed host row and discard on an unknown one
   await until('the failed row offers both actions', () => !!document.querySelector('[data-testid="message-send-failed-menu"]'));
   expect(document.querySelector('[data-testid="message-send-discard"]')).not.toBeNull();
   await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!);
-  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-refused');
+  // Failed host rows use the same explicit recovery API, without changing their notice/discard actions.
+  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-refused', { allowConfirmation: true });
   await until('the menu closes', () => !document.querySelector('[data-testid="message-send-failed-menu"]'));
   const unknown = trigger(1);
   expect(unknown.getAttribute('aria-label')).toBe(i18n.t('message.sendStatus.failedHint', { ns: 'messaging' }));
@@ -226,4 +236,43 @@ it('offers resend and discard on a failed host row and discard on an unknown one
   await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-discard"]')!);
   expect(discard).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-unknown');
   expect(retry).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['en-US', false], ['en-US', true], ['zh-CN', false], ['zh-CN', true],
+] as const)('phone recovery uses plain %s copy and submits consent only on confirmation (%s)', async (locale, confirmed) => {
+  await page.viewport(390, 844);
+  await i18n.changeLanguage(locale);
+  hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
+    pending: { count: 1, items: [{ seq: 1, messageId: 'tail-input', kind: 'session-direct', text: 'old input', preview: 'old input',
+      state: 'unknown', failure: null, resendable: true, discardable: true }] } };
+  resend.mockResolvedValueOnce({ kind: 'confirmation-required', confirmation: 'phone-row-consent', reason: 'native_tail_does_not_cover_history', detail: 'EACCES /fixture/private/raw-detail-marker' });
+  const send = vi.fn();
+  harness = createReactHarness();
+  harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
+  await renderWithAppProviders(harness, <SessionLocalizationProvider>
+    <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+      sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={send} pendingSends={[]} sending={false} agentWorking={false}
+      onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />
+    <ModalRenderer />
+  </SessionLocalizationProvider>, { contacts: {} });
+  await until('the unresolved phone input is visible', () => !!harness.container.querySelector('[data-testid="message-send-failed"]'));
+  expect(resend).not.toHaveBeenCalled();
+  await act(async () => { await userEvent.click(harness.container.querySelector<HTMLElement>('[data-testid="message-send-failed"]')!); });
+  await until('the existing phone failure menu is open', () => !!document.querySelector('[data-testid="message-send-retry"]'));
+  await act(async () => { await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!); });
+  await until('the existing native delivery confirmation is open', () => !!document.querySelector('[role="dialog"]'));
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain(locale === 'zh-CN' ? 'Agent 那边的对话记录' : "the agent's conversation record");
+  expect(dialog.textContent).toContain(locale === 'zh-CN' ? '再次发送可能产生重复' : 'could create a duplicate');
+  expect(dialog.textContent).not.toMatch(/原生记录|native history/i);
+  expect(dialog.textContent).not.toContain('native_tail_does_not_cover_history');
+  expect(dialog.textContent).not.toContain('raw-detail-marker');
+  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'tail-input', { allowConfirmation: true });
+  const label = locale === 'zh-CN' ? (confirmed ? /^仍然重发/ : /^取消$/) : (confirmed ? /^Send again anyway/ : /^Cancel$/);
+  await act(async () => { await userEvent.click(page.getByRole('button', { name: label })); });
+  await until('confirmation is settled', () => !modalStore.isOpen && resend.mock.calls.length === (confirmed ? 2 : 1));
+  if (confirmed) expect(resend).toHaveBeenNthCalledWith(2, 'phone-task', 'tail-input', { allowConfirmation: true, confirmation: 'phone-row-consent' });
+  expect(harness.container.querySelectorAll('[data-user-card]')).toHaveLength(1);
+  expect(send).not.toHaveBeenCalled(); expect(retry).not.toHaveBeenCalled(); expect(discard).not.toHaveBeenCalled();
 });
