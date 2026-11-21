@@ -253,6 +253,19 @@ function rememberVersionReading(context: IExecutionContext, key: string, reading
   runtimeVersionReadings.set(context, perContext);
 }
 
+/**
+ * The oldest harness version this client runs on every declared surface (interpreter floors excluded).
+ * First run reuses a copy already on the machine when it meets this; session start enforces the same floors.
+ */
+export function harnessSupportedFloor(descriptor: Pick<SessionBundleDescriptor, 'runtimeCompatibility'> | undefined): string | null {
+  let floor: string | null = null;
+  for (const entry of Object.values(descriptor?.runtimeCompatibility ?? {}).flat()) {
+    if (entry.kind !== 'semver-supported-floor' || entry.runtime === 'node') continue;
+    if (!floor || semver.gt(entry.supportedFloor, floor)) floor = entry.supportedFloor;
+  }
+  return floor;
+}
+
 /** 装新版 / 改了选择 ⇒ 之前判定兼容的版本全部作废(WeakMap 没有 clear,换一张新的)。 */
 export function clearRuntimeVersionProbeCache(): void {
   runtimeVersionReadings = new WeakMap();
