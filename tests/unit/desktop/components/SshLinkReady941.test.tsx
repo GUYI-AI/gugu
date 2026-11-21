@@ -6,7 +6,7 @@ import { translateSessionMessage } from '../../../../apps/desktop/src/session/re
 import { act } from 'react'
 import { ToastContext } from '@/components/toastContext'
 import type { SshUpgradeEvent } from '@/lib/sshLink'
-vi.mock('@/lib/notices', async (original) => (await import('../../../support/inlineLiveNotice')).withInlineLiveNotice(await original<object>()))
+vi.mock('@/components/LiveNotice', () => import('../../../support/inlineLiveNotice'))
 
 const state = vi.hoisted(() => ({ devices: [] as Device[], ssh: false, calls: [] as unknown[][], busyAgents: 0 as number | undefined, refused: false, restartError: false, onUpgrade: null as ((event: SshUpgradeEvent) => void) | null, problem: 'waitingIdle', onPrompt: null as ((event: { deviceId: string; prompt: unknown }) => void) | null }))
 vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: async (...args: unknown[]) => {

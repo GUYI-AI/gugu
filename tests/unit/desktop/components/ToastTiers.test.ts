@@ -19,6 +19,7 @@ vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => n
 import { ToastProvider } from '../../../../apps/desktop/src/components/Toast'
 import { ToastContext, type ToastType } from '../../../../apps/desktop/src/components/toastContext'
 import { dismissNotice, notify } from '../../../../apps/desktop/src/lib/notices'
+import { LiveNotice } from '../../../../apps/desktop/src/components/LiveNotice'
 import { TOAST_DWELL_MS } from '../../../../apps/desktop/src/lib/toastTiers'
 import { createReactHarness } from '../../../support/testHarness'
 
@@ -210,4 +211,16 @@ it('no notice picks its own corner: every one lands in the single stack', () => 
   expect(lastOptions(sonner.success)).not.toHaveProperty('position')
   notify({ key: 'one-stack', title: 'Import your data', ongoing: true, action: { label: 'Import', onClick() {} } })
   expect(lastOptions(sonner)).not.toHaveProperty('position')
+})
+
+it('a live notice is one notice for its whole life: shown on mount, updated in place, gone on unmount', async () => {
+  const harness = createReactHarness()
+  await harness.render(createElement(LiveNotice, { noticeKey: 'live-contract', title: 'Installing', ongoing: true }))
+  const id = lastOptions(sonner).id
+  await harness.render(createElement(LiveNotice, { noticeKey: 'live-contract', title: 'Installed', ongoing: true }))
+  expect(sonner.mock.calls.at(-1)?.[0]).toBe('Installed')
+  expect(lastOptions(sonner).id).toBe(id)
+  sonner.dismiss.mockClear()
+  harness.cleanup()
+  expect(sonner.dismiss).toHaveBeenCalledWith(id)
 })

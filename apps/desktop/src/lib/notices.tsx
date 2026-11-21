@@ -1,4 +1,4 @@
-import { isValidElement, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { isValidElement, type ReactNode } from 'react'
 import { toast as sonner } from 'sonner'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { TOAST_DWELL_MS, isReadableTier, type ToastTier } from './toastTiers'
@@ -124,15 +124,4 @@ export function dismissNotice(key: string): void {
   liveIds.delete(key)
   dismissedByApp.add(id)
   sonner.dismiss(id)
-}
-
-/**
- * A notice that mirrors a component's state: rendered = shown, every render updates it in place, unmounted = gone (the user
- * closing it calls onDismiss; the owner then stops rendering it). For cards whose content is live (progress, a prompt, a
- * reminder): the owning component keeps its state, the one NoticeHost draws it.
- */
-export function LiveNotice({ noticeKey, ...notice }: Omit<Notice, 'key'> & { noticeKey: string }): null {
-  useLayoutEffect(() => { notify({ ...notice, key: noticeKey }) })
-  useEffect(() => () => dismissNotice(noticeKey), [noticeKey])
-  return null
 }

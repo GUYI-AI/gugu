@@ -23,7 +23,7 @@ import { InlineAction } from './settings/addServer/InlineAction'
 import { CommandBlock } from './settings/addServer/CommandBlock'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { useToast } from './toastContext'
-import { LiveNotice } from '@/lib/notices'
+import { LiveNotice } from '@/components/LiveNotice'
 import { messageForUser } from '@/lib/userFacingError'
 import { useSshLinkProblems } from '../hooks/useSshLinkProblems'
 

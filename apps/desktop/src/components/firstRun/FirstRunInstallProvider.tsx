@@ -8,7 +8,7 @@ import { getAgentInstallErrorPresentation } from '@renderer/features/settings/ag
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { rpc } from '@renderer/lib/ipc'
 import { Button } from '../ui/Button'
-import { LiveNotice } from '@/lib/notices'
+import { LiveNotice } from '@/components/LiveNotice'
 import { FirstRunInstallContext } from './first-run-install-context'
 
 type InstallTask = { id: FirstRunHarness; state: 'installing' | 'done' | 'failed'; error?: string }

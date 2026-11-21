@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, CheckCircle2, AlertTriangle } from '@/lib/icons'
-import { LiveNotice } from '../lib/notices'
+import { LiveNotice } from '@/components/LiveNotice'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { platform } from '../platform'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'

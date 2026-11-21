@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
-vi.mock('@/lib/notices', async (original) => (await import('../../../support/inlineLiveNotice')).withInlineLiveNotice(await original<object>()))
+vi.mock('@/components/LiveNotice', () => import('../../../support/inlineLiveNotice'))
 
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async () => ({ scanAgentHomes: async () => ({ success: true, data: [] }) }),
