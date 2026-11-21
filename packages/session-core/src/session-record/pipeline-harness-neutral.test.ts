@@ -8,8 +8,8 @@ import type { SessionRecordHarness } from './contract';
  * timeline (fold, pages, archive) and the reducer never ask which harness wrote a line. Adding a harness adds an
  * adapter under `sources/` and a case in `index.ts`, and changes nothing here.
  */
-const HARNESSES: Record<SessionRecordHarness, true> = { claude: true, codex: true, opencode: true, copilot: true, hermes: true, qwen: true, pi: true, codebuddy: true };
-const PIPELINE = ['./timeline.ts', './sources/record-tree.ts', './sources/jsonl-tail-source.ts', './sources/tail-reader.ts'];
+const HARNESSES: Record<SessionRecordHarness, true> = { claude: true, codex: true, opencode: true, copilot: true, hermes: true, qwen: true, pi: true, codebuddy: true, gugu: true };
+const PIPELINE = ['./timeline.ts', './journal-turns.ts', './runtime-turn.ts', './sources/record-tree.ts', './sources/jsonl-tail-source.ts', './sources/tail-reader.ts'];
 const REDUCER = '../acp/reducer/';
 
 it('no module downstream of the adapters branches on a harness', async () => {

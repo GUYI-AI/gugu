@@ -11,6 +11,7 @@ import { pendingNativePublications } from './native-publication-journal';
 const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, root: '', sourceTurn: 'runtime-turn' }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mocks.db) throw new Error('Missing fixture'); return mocks.db; } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+vi.mock('electron', () => ({ app: { getPath: () => mocks.root } }));
 vi.mock('../projects/utils', () => ({ resolveWorkspace: () => ({ path: mocks.root }) }));
 vi.mock('./session-activity-source', () => ({ readCurrentTurnIdentity: async () => mocks.sourceTurn }));
 const { commitOwnerNotification, ownerNotificationFile } = await import('./owner-notifications');
@@ -40,6 +41,9 @@ it('atomically journals a real explicit owner notification once while offline', 
   expect(await commitOwnerNotification(context, input, async () => {})).toEqual(receipt);
   expect(pendingNativePublications()).toHaveLength(1);
   expect(records()[0]!.items[0]).toMatchObject({ _meta: { guguPublicationId: pendingNativePublications()[0]!.id } });
+  // The timeline reads it from the session's journal, once.
+  const journal = (await readFile(join(mocks.root, 'session-journal', 's.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { id: string });
+  expect(journal.map(line => line.id)).toEqual([expect.stringMatching(/^owner-notify:11111111-1111-4111-8111-111111111111@\d+$/)]);
 });
 it.each(['signed-out', 'rebound'] as const)('does not commit a notification after its publication scope becomes %s', async state => {
   publicationHost = startNativeConversationPublicationHost({

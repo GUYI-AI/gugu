@@ -107,7 +107,8 @@ import {
 } from './archive-store';
 import { createFoldClient, type FoldClient } from './fold-client';
 import { watchSessionState, type SessionStateWatch } from './live-permissions';
-import { locateSessionRecord, type SessionRecordLocation } from './locate';
+import { locateSessionRecord, sessionRecordHarnessForProvider, type SessionRecordLocation } from './locate';
+import { ensureJournal, journalHasTurns, journalLocator } from '../sessions/session-journal';
 import { OpenedFileError, readOpenedFileChunk } from './opened-file';
 import { sessionOpenedFile, sessionOutputs } from '../sessions/session-outputs';
 import { createStandInTimeline } from './stand-in-timeline';
@@ -157,7 +158,10 @@ function fail<T>(code: string, message: string): SessionTimelineResult<T> {
  * 显式置 null = fail loud（`timeline_unavailable`），❌ 不返回空时间线冒充「这条会话没内容」。
  */
 export type SessionTimelineFactory = (input: {
-  locator: SessionRecordLocator;
+  /** The agent's record; null = it has none gugu reads, and the journal is all there is. */
+  locator: SessionRecordLocator | null;
+  /** Gugu's journal of the session (`session-journal.ts`), read beside the record. */
+  journal?: SessionRecordLocator | null;
   conversationId: string;
   /** 记录里认出来的提问宿主能不能代答(#6798);能 ⇒ 提问结算带上整份题目。 */
   answerableQuestions?: boolean;
@@ -170,24 +174,28 @@ export type SessionTimelineFactory = (input: {
  * 会让每一个只想测服务层记账的用例都替记录源交税（也会把原生模块拖进不需要它的进程）。
  * 真开一份时间线的那一刻才加载。
  */
-const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
-  const { createSessionRecordSource, createSessionTimeline } = await import(
+const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
+  const { createSessionRecordSource, createSessionTimeline, emptyRecordSource } = await import(
     '@gugu/session-core/session-record'
   );
+  const own = locator ?? journal;
+  if (!own) throw new Error(`session ${sessionId}: neither a record nor a journal to read`);
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
-  const archive = readMode === 'snapshot' ? null : await foldedArchive({ locator, sessionId, parentLineage, answerableQuestions });
+  const archive = !locator || readMode === 'snapshot' ? null : await foldedArchive({ locator, sessionId, parentLineage, answerableQuestions });
   const row = readSessionRow(sessionId, { includeArchived: true });
   const pty = row && row.runtime !== 'acp';
-  const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
+  const source = locator ? createSessionRecordSource(locator, { readMode, parentLineage }) : emptyRecordSource(own);
+  const timeline = await createSessionTimeline(source, {
     sessionId,
-    ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
+    ...(pty && locator ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
+    ...(journal ? { journal: createSessionRecordSource(journal) } : {}),
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });
   try {
     // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
     const last = timeline.getSnapshot().turns.at(-1);
-    if (pty && last && !last.outcome && last.startedAt !== undefined
+    if (pty && locator && last && !last.outcome && last.startedAt !== undefined
       && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
       const latest = readSessionRow(sessionId, { includeArchived: true });
       if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
@@ -548,11 +556,14 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
   }
 
   const location = locateRow(row);
-  if (!location.supported) {
+  // An ACP session's journal holds the turns gugu adds to it, and all its turns when its agent keeps no record gugu reads.
+  const journal = summaryRuntime(row.runtime) === 'acp' ? journalLocator(conversationId) : null;
+  if (!location.supported && !(journal && journalOnly(row))) {
     // 没有记录可读也要打得开(spec session-always-openable):给一个只含第一句话的替身,
     // 为什么、怎么再试由各端按会话摘要画在转录末尾。❌ 回 record_unsupported 让它变成一行点不开的灰字。
     return { ok: true, value: standInEntry(row) };
   }
+  if (journal) await ensureJournal(conversationId);
   if (!timelineFactory) {
     return fail(
       'timeline_unavailable',
@@ -579,7 +590,7 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
   const generation = resetGeneration;
   // 审批只有 ACP 腿有可结算的请求 id；TUI 腿的审批画在终端里，没有通道
   // （`write-bridge` 对它 fail loud）。所以这条订阅只对 ACP 腿开。
-  const promise = factory({ locator: location.locator, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
+  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
     if (generation !== resetGeneration) {
       timeline.dispose();
       throw new Error('会话时间线服务在这份记录打开的过程中被重置了');
@@ -629,6 +640,11 @@ function firstMessageOf(row: SessionRow): string | null {
   return session.initialQueue?.[0]?.text ?? session.firstUtterance ?? null;
 }
 
+/** Its agent keeps no record gugu reads, and gugu's journal has its turns. */
+function journalOnly(row: SessionRow): boolean {
+  return summaryRuntime(row.runtime) === 'acp' && sessionRecordHarnessForProvider(row.provider) === null && journalHasTurns(row.id);
+}
+
 function standInEntry(row: SessionRow): TimelineEntry {
   return {
     conversationId: row.id,
@@ -638,7 +654,7 @@ function standInEntry(row: SessionRow): TimelineEntry {
       createdAt: rowCreatedAt(row),
       recordAvailable: () => {
         const current = readSessionRow(row.id);
-        return current !== null && locateRow(current).supported;
+        return current !== null && (locateRow(current).supported || journalOnly(current));
       },
     }),
     refs: 1,

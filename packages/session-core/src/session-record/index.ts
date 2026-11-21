@@ -8,6 +8,8 @@
 export * from './contract';
 export { readNativeInputTail, type NativeInputTail } from './native-input-evidence';
 export { identityKeys } from './runtime-turn';
+export type { JournalLine } from './sources/gugu-journal';
+export { emptyRecordSource } from './journal-turns';
 
 export {
   createSessionTimeline,
@@ -59,6 +61,7 @@ import { createOpencodeSqliteSource } from './sources/opencode-sqlite';
 import { createQwenJsonlSource } from './sources/qwen-jsonl';
 import { createPiJsonlSource } from './sources/pi-jsonl';
 import { createCodebuddyJsonlSource } from './sources/codebuddy-jsonl';
+import { createGuguJournalSource } from './sources/gugu-journal';
 import type { SessionRecordSourceOptions } from './sources/shared';
 
 /**
@@ -89,6 +92,8 @@ export function createSessionRecordSource(
       return createPiJsonlSource(locator, options);
     case 'codebuddy':
       return createCodebuddyJsonlSource(locator, options);
+    case 'gugu':
+      return createGuguJournalSource(locator, options);
   }
 }
 

@@ -78,6 +78,12 @@ vi.mock('./native-preview-events', () => ({
     return () => { previewListeners.delete(listener); };
   },
 }));
+// The journal lives under the app's data directory; these sessions keep none.
+vi.mock('../sessions/session-journal', () => ({
+  ensureJournal: async () => undefined,
+  journalHasTurns: () => false,
+  journalLocator: (sessionId: string) => ({ harness: 'gugu', providerSessionId: sessionId, roots: [] }),
+}));
 vi.mock('../extensions/extension-bridge-relay', () => ({ requestExtensionInstallConsent: vi.fn(), closeExtensionInstallConsent: vi.fn() }));
 vi.mock('@renderer/features/extensions/install-consent', () => ({ askInShell: vi.fn(), installConsentPrompt: vi.fn() }));
 vi.mock('../sessions/agent-question-store', () => ({

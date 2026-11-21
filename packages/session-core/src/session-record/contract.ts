@@ -62,7 +62,8 @@ import type { InstallationReading } from '../host-dependencies/runtime/types';
  * 读侧认得的**记录格式**(一族共用一个解码器),不是 provider id:opencode 这一格也装着 mimocode。
  * provider → 格式那张表在宿主的 `locate.ts`。
  */
-export type SessionRecordHarness = 'claude' | 'codex' | 'opencode' | 'copilot' | 'hermes' | 'qwen' | 'pi' | 'codebuddy';
+export type SessionRecordHarness = 'claude' | 'codex' | 'opencode' | 'copilot' | 'hermes' | 'qwen' | 'pi' | 'codebuddy' | 'gugu';
+// `gugu`: gugu's own journal of a session (`sources/gugu-journal.ts`), for what no agent record holds.
 
 
 /**
@@ -166,8 +167,11 @@ export type RecordBoundary = { messageId?: string } & (
  * （不进时间线，只关掉当前这一轮）。❌ 不许一条同时是两者 —— 那样"这条要不要去重"没有答案。
  */
 export type RecordEntry =
-  | { key: string; at?: number; position?: number; state?: unknown; turn?: string; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
-  | { key: string; at?: number; position?: number; state?: unknown; turn?: never; boundary: RecordBoundary; event?: never; imageOrigins?: never };
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: string; committed?: never; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: never; committed?: never; boundary: RecordBoundary; event?: never; imageOrigins?: never }
+  | { key: string; at?: number; position?: never; state?: never; turn?: never; committed: TranscriptTurn; event?: never; boundary?: never; imageOrigins?: never };
+// `committed`: a whole turn the record holds already folded (gugu's journal); it goes beside the folded turns, not
+// through the reducer.
 // `turn`: this entry is the person's message that starts a turn; the record line's tree id (`record-tree.ts`), which
 // is also the turn's id. A turn a record opens otherwise takes the key of the entry that opened it.
 // `position`: where the record line (or row) that produced the entry starts, as `SessionRecordSource.startingAt` takes it.

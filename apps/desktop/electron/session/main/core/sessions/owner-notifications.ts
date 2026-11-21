@@ -16,6 +16,7 @@ import { readCurrentTurnIdentity } from './session-activity-source';
 import { setOwnerNotificationHead } from './owner-notification-state';
 import { nativePublicationContext } from './native-publication-host';
 import { recordNativePublicationTurn } from './native-publication-turn';
+import { appendJournalTurn } from './session-journal';
 export { ownerNotificationHead } from './owner-notification-state';
 
 export type OwnerNotificationInput = {
@@ -76,6 +77,7 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
     if (publication && publication.agentUserId !== input.agent_user_id) throw new Error('Owner notification identity changed before publication');
     const at = Date.now();
     let publish: (() => void) | undefined;
+    let written: TranscriptTurn | undefined;
     const seq = db.transaction(tx => {
       const current = tx.select().from(sessions).where(eq(sessions.id, context.sessionId)).get();
       if (!current || current.archivedAt || current.projectId !== context.projectId || current.workspaceId !== context.workspaceId) throw new Error('The sending session changed before the owner notification committed');
@@ -85,11 +87,14 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
         outcome: { kind: 'done' }, items: [{ kind: 'message', id: `${sourceId}:message:${input.request_id}`, seq: 0, role: 'assistant',
           text: input.text || files![0]!.name, at, ownerNotification: { requestId: input.request_id, requestHash, ...(sourceTurnId ? { sourceTurnId } : {}), ...(files ? { files } : {}) } }] }, context.sessionId, next) }, tx);
       tx.insert(sessionTurns).values({ id: `${context.sessionId}:${next}`, sessionId: context.sessionId, seq: next, turnId: sourceId, data: JSON.stringify(turn) }).run();
+      written = turn;
       setOwnerNotificationHead(context.sessionId, next, tx);
       publish = noteNativeConversationReplies(context.sessionId, turn, turn, tx);
       return next;
     });
     publish?.();
+    // The timeline reads the notification from the session's journal, where it lies among the agent's turns by time.
+    await appendJournalTurn(context.sessionId, { ...written!, id: sourceId });
     events.emit(sessionChangedChannel, { sessionId: context.sessionId, projectId: context.projectId, changes: { nativeOwnerNotificationSeq: true } });
     return { status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, seq, ...(files?.[0] ? { file_name: files[0].name } : {}) };
   });

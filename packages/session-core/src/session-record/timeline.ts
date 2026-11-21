@@ -1,4 +1,5 @@
 import { withRuntimeTurn } from './runtime-turn';
+import { withJournalTurns } from './journal-turns';
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
 import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
@@ -115,6 +116,8 @@ export type SessionTimelineDeps = {
    * 能 ⇒ 提问结算带上整份 `questions`(契约里「有 questions 就能代答」)。
    */
   answerableQuestions?: boolean;
+  /** Gugu's journal of this session (`sources/gugu-journal.ts`): its whole turns go among the record's by start time. */
+  journal?: SessionRecordSource | null;
   /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). A fill drains here. */
   onApplied?: (timeline: SessionTimeline) => void;
   /** Where the source starts when no archive is restored (a fill from the tail, `SessionRecordSource.startingAt`). */
@@ -240,6 +243,8 @@ class RecordTimeline implements SessionTimeline {
   private liveReply: SessionLiveReply | null = null;
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
+  /** The journal's turns by key, in journal order; read again with the journal, never archived. */
+  private journalTurns = new Map<string, TranscriptTurn>();
   private liveReplyDirty = false;
   private terminals: readonly TerminalState[] = [];
   private terminalsDirty = false;
@@ -311,6 +316,18 @@ class RecordTimeline implements SessionTimeline {
         },
         restored ? (this.deps.archive as TimelineArchive).resume : this.deps.resume ?? undefined
       );
+      await this.deps.journal?.start({
+        onEntries: (entries) => {
+          for (const entry of entries) if (entry.committed) this.journalTurns.set(entry.key, entry.committed);
+          this.needsPublish = true;
+          this.publish();
+        },
+        onReset: () => {
+          this.journalTurns = new Map();
+          this.needsPublish = true;
+          this.publish();
+        }
+      });
     } finally {
       this.suspended = false;
     }
@@ -694,6 +711,7 @@ class RecordTimeline implements SessionTimeline {
 
   async catchUp(): Promise<void> {
     await this.source.catchUp?.();
+    await this.deps.journal?.catchUp?.();
   }
 
   /**
@@ -745,6 +763,7 @@ class RecordTimeline implements SessionTimeline {
     this.resetTimer = null;
     this.subscribers.clear();
     this.source.stop();
+    this.deps.journal?.stop();
   }
 
   // ─── 内部 ──────────────────────────────────────────────────────────────────
@@ -763,7 +782,7 @@ class RecordTimeline implements SessionTimeline {
         // 边界不是内容：它不进时间线，只把当前这一轮关掉并给它结局。
         // 没有活着的一轮时 reducer 自己 no-op，所以重复的边界是安全的。
         this.parser.settleTurn(outcomeOf(entry.boundary), at);
-      } else {
+      } else if (entry.event) {
         // An event for a drained turn would otherwise land in the newest turn: drop it, as a settled stored row is never revised.
         if (this.prunedOwners.size && eventOwnerIds(entry.event).some((id) => this.prunedOwners.has(id))) {
           this.prunedDrops += 1;
@@ -952,7 +971,8 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const active = this.parser.activeTurn;
-    return withRuntimeTurn(this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]), this.runtimeTurn);
+    const folded = this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    return withRuntimeTurn(withJournalTurns(folded, [...this.journalTurns.values()]), this.runtimeTurn);
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {

@@ -30,6 +30,7 @@ import { prepareWindowCommitStorage } from '../../session-timeline/window-projec
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { publishNativeMessagePreviewChanged } from '../../session-timeline/native-preview-events';
 import { createHistoryReverter } from './history-revert';
+import { journalCommittedTurn, revertJournal } from '@main/core/sessions/session-journal';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
 import { applyStartToAuthExpiry, applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
 import { clearProviderSessionMissing, markProviderSessionMissing } from '@main/core/sessions/mark-provider-session-missing';
@@ -285,6 +286,7 @@ const acpWorker = lazyWorker(
       const committed = await connectWindowCommitHost(handle.client.turnCommitted.handle(undefined), event => {
         // #6264 Keep authentication authority independent of bounded history publication.
         void applyTurnToAuthExpiry(event, authExpiryWriter);
+        journalCommittedTurn(event);
       }, handle.connection, prepareWindowCommitStorage);
       handle.scope.add(() => committed.close());
       const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
@@ -719,7 +721,10 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
     revertSession: createHistoryReverter({
       boundary: storedRevertBoundary,
       revert: client.revertSession,
-      truncate: truncateStoredHistory,
+      truncate: async (sessionId, boundary, anchor) => {
+        await truncateStoredHistory(sessionId, boundary);
+        await revertJournal(sessionId, anchor);
+      },
       finish: (sessionId) => detachedClient.finishHistoryRevert({ sessionId }),
     }),
     adapterProvenance: (input) => detachedClient.adapterProvenance(input),

@@ -561,6 +561,13 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 那次 tmux 后台清扫落定(改名改到一半被它看见会收掉后台)。段 2 失败不拦启动:不写 .done、下次重试,失败项响亮记下。
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
+  // The turns only the old turn table holds go into the session journals before a migration can drop that table.
+  try {
+    const { exportStoredTurnsToJournals } = await import('./core/sessions/session-journal-export')
+    await exportStoredTurnsToJournals(sqlite, app.getPath('userData'))
+  } catch (error) {
+    log.error('sessionJournal: export failed; retrying next start', { error: String(error) })
+  }
   await initializeDatabase()
   const { migrateCustomModelConnections, dropRemovedConnectionKeys } = await import('./core/agents/custom-models')
   migrateCustomModelConnections()
