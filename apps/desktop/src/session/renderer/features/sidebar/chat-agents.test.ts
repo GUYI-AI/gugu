@@ -20,7 +20,6 @@ const idle = presentAgentStatus({ reading: { status: 'idle', detail: null } });
 const entry = (id: string, fields: Partial<ChatAgentEntry> = {}): ChatAgentEntry => ({
   id,
   projectId: 'p-other',
-  isPinned: false,
   time: 0,
   presentation: idle,
   ...fields,
@@ -115,26 +114,26 @@ describe('counts on the section header and the project row', () => {
 });
 
 describe('the agents section', () => {
-  it('one flat list, no group headers: needs you, then running, then the rest', () => {
+  it('one flat list, most recent interaction first, whatever the status', () => {
     const list = chatAgentSection([
       entry('quiet', { time: 3 }),
       entry('busy', { presentation: running, time: 1 }),
       entry('blocked', { presentation: waiting, time: 2 }),
       entry('background', { presentation: parked, time: 4 }),
     ], disclosure);
-    expect(rowIds(list)).toEqual(['blocked', 'background', 'busy', 'quiet']);
+    expect(rowIds(list)).toEqual(['background', 'quiet', 'blocked', 'busy']);
     expect(list).toMatchObject({ total: 4, overflow: 0 });
   });
 
-  it('pinned first within its tier, then newest first', () => {
+  it('never interacted: by when it was created, among the others; equal times by id', () => {
     const list = chatAgentSection([
-      entry('old-pinned', { presentation: running, time: 1, isPinned: true }),
-      entry('new', { presentation: running, time: 9 }),
-      entry('mid', { presentation: running, time: 5 }),
-      entry('idle-pinned', { time: 0, isPinned: true }),
-      entry('idle-new', { time: 8 }),
+      entry('b-tie', { time: 5 }),
+      entry('fresh', { createdAt: new Date(7).toISOString() }),
+      entry('a-tie', { time: 5 }),
+      entry('acted', { time: 9 }),
+      entry('unknown'),
     ], disclosure);
-    expect(rowIds(list)).toEqual(['old-pinned', 'new', 'mid', 'idle-pinned', 'idle-new']);
+    expect(rowIds(list)).toEqual(['acted', 'fresh', 'a-tie', 'b-tie', 'unknown']);
   });
 
   it('forks hang under their parent, listed only while the parent is expanded, with the branch pill', () => {
@@ -162,29 +161,24 @@ describe('the agents section', () => {
   });
 
   it(`shows ${CHAT_AGENT_LIMIT} families, then one 「Show more」 for whatever is left, running or not; opened, everything`, () => {
-    const blocked = Array.from({ length: 3 }, (_, index) => entry(`blocked-${index}`, { presentation: waiting, time: 100 - index }));
     const busy = Array.from({ length: 6 }, (_, index) => entry(`busy-${index}`, { presentation: running, time: 100 - index }));
-    const quiet = Array.from({ length: 8 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
-    const agents = [...quiet, ...busy, ...blocked];
+    const quiet = Array.from({ length: 8 }, (_, index) => entry(`quiet-${index}`, { time: 90 - index }));
+    const agents = [...quiet, ...busy];
     const folded = chatAgentSection(agents, disclosure);
-    expect(rowIds(folded)).toEqual([...ids(blocked), ...ids(busy), ...ids(quiet.slice(0, CHAT_AGENT_LIMIT - 9))]);
-    expect(folded).toMatchObject({ total: 17, overflow: 17 - CHAT_AGENT_LIMIT });
+    expect(rowIds(folded)).toEqual([...ids(busy), ...ids(quiet.slice(0, CHAT_AGENT_LIMIT - 6))]);
+    expect(folded).toMatchObject({ total: 14, overflow: 14 - CHAT_AGENT_LIMIT });
 
     // Opened: every family; the row stays (it now reads Collapse).
     const opened = chatAgentSection(agents, { ...disclosure, showAll: true });
-    expect(rowIds(opened)).toEqual([...ids(blocked), ...ids(busy), ...ids(quiet)]);
-    expect(opened.overflow).toBe(17 - CHAT_AGENT_LIMIT);
-
-    // Fewer running: the rest fills the room up to the cap.
-    const fewBusy = chatAgentSection([...quiet, ...busy.slice(0, 1)], disclosure);
-    expect(rowIds(fewBusy)).toEqual(['busy-0', ...ids(quiet)]);
-    expect(fewBusy.overflow).toBe(0);
+    expect(rowIds(opened)).toEqual([...ids(busy), ...ids(quiet)]);
+    expect(opened.overflow).toBe(14 - CHAT_AGENT_LIMIT);
   });
 
-  it('needs you never folds away, even past the cap: then nothing else is shown until opened', () => {
-    const blocked = Array.from({ length: CHAT_AGENT_LIMIT + 2 }, (_, index) => entry(`blocked-${index}`, { presentation: waiting, time: 100 - index }));
-    const list = chatAgentSection([entry('busy', { presentation: running }), ...blocked, entry('quiet')], disclosure);
-    expect(rowIds(list)).toEqual(ids(blocked));
+  it('needs you never folds away: past the cap it shows after the others, in its own order', () => {
+    const quiet = Array.from({ length: CHAT_AGENT_LIMIT + 2 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
+    const blocked = [entry('blocked-old', { presentation: waiting, time: 2 }), entry('blocked-older', { presentation: waiting, time: 1 })];
+    const list = chatAgentSection([...blocked, ...quiet], disclosure);
+    expect(rowIds(list)).toEqual([...ids(quiet.slice(0, CHAT_AGENT_LIMIT)), 'blocked-old', 'blocked-older']);
     expect(list.overflow).toBe(2);
   });
 
@@ -287,18 +281,18 @@ describe("#2574 a standalone agent's sub-agents", () => {
     expect(twice.byId.get('grandchild')?.parentSessionId).toBe('sub-quiet');
   });
 
-  it('list like a group\'s 智能体: needs you, then running, then the rest; a grandchild stays folded under its parent', () => {
+  it('list like a group\'s 智能体: most recent first, whatever the status; a grandchild stays folded under its parent', () => {
     const subAgents = subAgentsOf(families, 'solo');
     const folded = chatAgentSection(subAgents, disclosure);
-    expect(rowIds(folded)).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(rowIds(folded)).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(folded.rows.find((row) => row.sessionId === 'sub-quiet')).toMatchObject({ hasChildren: true });
     expect(chatAgentCounts(subAgents)).toEqual({ total: 4, running: 1 });
     const open = chatAgentSection(subAgents, { ...disclosure, expanded: new Set(['sub-quiet']) });
     expect(open.rows.map(({ sessionId, depth }) => [sessionId, depth])).toEqual([
-      ['sub-asks', 0],
-      ['sub-busy', 0],
       ['sub-quiet', 0],
       ['grandchild', 1],
+      ['sub-busy', 0],
+      ['sub-asks', 0],
     ]);
   });
 });

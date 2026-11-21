@@ -259,7 +259,7 @@ describe('inner sidebar', () => {
     await render();
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
-    expect(sessionRows()).toEqual(['shop-task', 'shop-idle', 'shop-chat-agent']);
+    expect(sessionRows()).toEqual(['shop-chat-agent', 'shop-idle', 'shop-task']);
   });
 
   it('#3367 a sub-session dragged onto the Agents header goes back to the top level; a top-level one is not taken', async () => {
@@ -389,10 +389,10 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-inner-topics-drill]')).toBeNull();
   });
 
-  it('one flat list, no 「needs you」 / 「running」 headers: needs you, then running, then the rest; past 10 one 「Show more」 opens to Collapse', async () => {
+  it('one flat list, no 「needs you」 / 「running」 headers, most recent first; needs you past 10 still shows; one 「Show more」 opens to Collapse', async () => {
     state.items = [
-      ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 100 - index)),
       ...Array.from({ length: 5 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
+      ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 90 - index)),
       item('asks', 'p-shop', waiting, 0),
     ];
     openProject('p-shop');
@@ -400,8 +400,8 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
     expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).not.toContain('sidebar.needsYou');
     expect(agentsCount()).toBe('13');
-    expect(sessionRows()).toEqual(['asks', ...Array.from({ length: 7 }, (_, index) => `run-${index}`), 'idle-0', 'idle-1']);
-    expect(moreRows()).toEqual(['sidebar.showMore:3']);
+    expect(sessionRows()).toEqual([...Array.from({ length: 5 }, (_, index) => `idle-${index}`), ...Array.from({ length: 5 }, (_, index) => `run-${index}`), 'asks']);
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
     await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
     expect(sessionRows()).toHaveLength(13);
     expect(moreRows()).toEqual(['sidebar.showLess']);
@@ -609,7 +609,7 @@ describe('a standalone agent with sub-agents', () => {
   });
   const head = () => host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-slot="button"]');
 
-  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, needs you → running → rest', async () => {
+  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, most recent first', async () => {
     const shell = createRoot(document.createElement('div'));
     await act(async () => shell.render(<ShellProbe />));
     openSession('solo-task');
@@ -627,7 +627,7 @@ describe('a standalone agent with sub-agents', () => {
     expect(sections()).toEqual(['agents']);
     expect(readShellSlots()!.getSlots().has('inner-topics:dm-solo')).toBe(false);
     // The grandchild stays folded under its parent; the count is every sub-agent.
-    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(agentsCount()).toBe('4');
     expect(innerSidebarChat.get()).toEqual(solo);
     expect(shellColumnPresent).toBe(true);
@@ -728,7 +728,7 @@ describe('a standalone agent with sub-agents', () => {
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     openSession('solo-task');
     await render();
-    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(agentsCount()).toBe('4');
   });
 
@@ -744,7 +744,7 @@ describe('a standalone agent with sub-agents', () => {
     state.items = state.items.filter((entry) => entry.id !== 'sub-asks');
     await render();
     expect(state.placementReads).toBeGreaterThan(reads);
-    expect(sessionRows()).toEqual(['sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy']);
   });
 
   it('an agent living in a group or a project is no standalone agent: no column of its own, sub-agents or not', async () => {
