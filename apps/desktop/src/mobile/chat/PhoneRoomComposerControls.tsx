@@ -12,10 +12,11 @@ import { Popover } from '@/components/ui/Popover'
 import { Check, ChevronRight, Hash, MessageCircle, Users } from '@/lib/icons'
 import { agentDisplayStatusText } from '@/lib/agentStatusText'
 import { useChatStore } from '@/store/chatContext'
+import { useAgentRecentActivity } from '@/hooks/useAgentDisplayStatus'
 import { useAgentSessionRow } from '../../components/session-watch/useAgentSessionRow'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
-import { roomAgentEntry, roomTopicChoices } from './room-composer-models'
+import { roomAgentEntry, roomAgentsByRecentActivity, roomTopicChoices } from './room-composer-models'
 import { PhoneNavigationPicker } from './PhoneNavigationPicker'
 import '../../components/session-watch/create-controls-catalog'
 import './room-composer-catalog'
@@ -41,11 +42,13 @@ export function PhoneRoomComposerControls(props: PhoneRoomComposerControlsProps)
 
 function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, members, roster, userId, profileOpener, onOpenAgent }: PhoneRoomComposerControlsProps) {
   const { t } = useTranslation('mobileRoomControls')
-  const { chats } = useChatStore('chats')
+  const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
   const topicsButton = useRef<HTMLButtonElement>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
-  const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
+  const roomAgents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
+  const activity = useAgentRecentActivity(roomAgents.map(agent => agent.id))
+  const agents = roomAgentsByRecentActivity(roomAgents, id => activity[id]?.lastActiveAt, id => identitiesById[id]?.created_at)
   const titleCount = view === 'agents' ? (roster.ready ? agents.length : undefined) : (topicsReady ? choices.topics.length : undefined)
   const menu = phoneMenuBar('room', { topics: true, agents: true })
   const choose = (topic: TopicSummary | null) => {
