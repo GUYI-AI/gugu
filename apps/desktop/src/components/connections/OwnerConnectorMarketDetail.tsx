@@ -2,7 +2,7 @@ import type { AssistantConnectedApp } from '@/components/assistant/assistant-app
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon';
 import { chatChannels } from './connection-replicas';
 import { WechatConnectDialog } from '@/components/settings/channels/WechatConnectDialog';
-import { useChatChannels } from '@/components/settings/channels/WechatAppConnection';
+import { useChatChannels } from '@/components/settings/channels/channelAgents';
 import { useOwnerConnectionStore } from '@/lib/connectionBridge';
 import { useDevicesStore } from '@/store/devicesContext';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';

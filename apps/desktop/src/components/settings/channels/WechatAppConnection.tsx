@@ -1,30 +1,16 @@
 import '@/i18n/registerAssistantCatalog'
 import '@/i18n/registerSettingsCatalog'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppConnectionHero } from '../../assistant/AppConnectionHero'
 import { Button } from '../../ui/Button'
 import { SettingsNote } from '../SettingsPrimitives'
-import type { ChatChannelList } from '@gugu/core/cloud/chatChannels'
 import { ConnectedChannels } from './ChatChannelsPanel'
-import { rendererChatChannelsClient } from '@/lib/chatChannels'
-import { useReplica, retryOf } from '@/lib/replica'
+import { retryOf } from '@/lib/replica'
 import { chatChannels } from '@/components/connections/connection-replicas'
 import { WechatConnectDialog } from './WechatConnectDialog'
+import { useChatChannels } from './channelAgents'
 import { ChannelBrandIcon } from './ChannelBrandIcon'
-
-/** The account's chat channels for a surface that connects WeChat: the channels client, the reading, its list and `apply`. */
-export function useChatChannels() {
-  const client = useMemo(() => rendererChatChannelsClient(), [])
-  const reading = useReplica(chatChannels, [])
-  // A change answers with the whole list after an await: it goes into the account this render drew (bound now, held across
-  // the await by the handler), ❌ whichever account is signed in when it answers.
-  const owner = chatChannels.key()?.[1] ?? null
-  const entry = useMemo(() => (owner ? chatChannels.at() : null), [owner])
-  // No cloud computer (`absent`): no channels to list, and nothing to connect.
-  const list = reading.state === 'value' && !('absent' in reading.value) ? reading.value : null
-  return { client, reading, list, apply: (next: ChatChannelList) => { entry?.set(next) } }
-}
 
 /** WeChat uses its existing authorization transport; the app detail has the same surface as every provider. */
 export function WechatAppConnection({ connectOnly = false }: { connectOnly?: boolean } = {}) {

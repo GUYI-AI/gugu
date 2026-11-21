@@ -5,7 +5,7 @@ import { createNode, createReactHarness, deferred } from '../../../support/testH
 
 const read = vi.hoisted(() => vi.fn())
 const bus = vi.hoisted(() => ({ subscribed: null as null | (() => void), off: vi.fn() }))
-const log = vi.hoisted(() => ({ error: vi.fn() }))
+const log = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/storedAgentTurnFailures', () => ({ readStoredAgentTurnFailures: read }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => log }))
@@ -38,6 +38,7 @@ beforeEach(async () => {
   read.mockReset().mockResolvedValue(empty)
   bus.off.mockClear()
   log.error.mockClear()
+  log.warn.mockClear()
   window.localStorage.clear()
 })
 afterEach(() => { ui.cleanup(); vi.useRealTimers() })
@@ -50,7 +51,8 @@ describe('automatic reply-status read recovery (#1896)', () => {
     await advance(63_000)
     expect(read).toHaveBeenCalledTimes(1)
     await act(async () => slow.reject(new Error('statement timeout')))
-    expect(log.error).toHaveBeenCalledWith({ scope: { chatId: 'chat', threadRootId: null }, error: 'Error: statement timeout' }, 'could not read agent reply outcome')
+    // Each failed read is logged once, by the replica (lib/replica readFromKey).
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ model: 'storedAgentTurnFailures', error: 'Error: statement timeout' }), 'storedAgentTurnFailures: read failed')
     await advance(999)
     expect(read).toHaveBeenCalledTimes(1)
     await advance(1)
@@ -67,7 +69,7 @@ describe('automatic reply-status read recovery (#1896)', () => {
       await advance(1)
       expect(read).toHaveBeenCalledTimes(index + 2)
     }
-    expect(log.error).toHaveBeenCalledTimes(delays.length + 1)
+    expect(log.warn).toHaveBeenCalledTimes(delays.length + 1)
   })
 
   it('starts again at one second after a successful recovery', async () => {
@@ -117,7 +119,7 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(read).toHaveBeenCalledTimes(2)
     expect(current()).toBe('cmd')
     // The superseded read logged its own failure once; nothing retried it.
-    expect(log.error).toHaveBeenCalledTimes(1)
+    expect(log.warn).toHaveBeenCalledTimes(1)
   })
 
   it('cancels scheduled recovery on unmount', async () => {
