@@ -21,7 +21,9 @@ export const projectGroupBindings = replica({
     if (!bound.success) throw new Error(JSON.stringify(bound.error));
     return bound.data;
   },
-  fresh: platform.capabilities.agentRuntime ? Infinity : 0,
+  // Fed by the machine's change event where it is heard (Infinity), read on each show otherwise. Asked when read, ❌ at
+  // module load (the platform is not a load-time dependency of everything importing the projects stores).
+  get fresh() { return platform.capabilities.agentRuntime ? Infinity : 0; },
   watch: {
     group: (machine) => machine,
     start: (_owner, machine) => direct(machine)
