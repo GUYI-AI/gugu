@@ -176,7 +176,8 @@ export function AssistantOnboarding({
     }
   }, [setupDraft, ownerUserId])
 
-  const installHere = useCallback(async (chosen: AssistantEngine) => {
+  // `chosen` is the engine the person continued with; a recovery that resumed on mount never showed the step, so none.
+  const installHere = useCallback(async (chosen?: AssistantEngine) => {
     if (!localDeviceId) return
     setBusy('computer')
     setInstalling(localInstallationStarted.current)
@@ -264,7 +265,7 @@ export function AssistantOnboarding({
                   } catch (e) { log.error({ error: String(e) }, 'assistant preparation cleanup retry failed'); return }
                   finally { setCancelling(false) }
                 }
-                if (engine) void installHere(engine)
+                void installHere(engine ?? undefined)
               }} disabled={cancelling}>{t(setupEnded ? 'setup.startNew' : 'setup.retry')}</Button>
             </> : <p className="ta-onb-sub inline-flex items-center gap-2">
               <LoadingIndicator size="inline" />
