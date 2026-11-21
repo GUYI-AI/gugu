@@ -76,6 +76,21 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
 }
 describe('SessionCoordinator', () => {
   beforeEach(() => vi.useRealTimers())
+  it('keeps a failed encrypted-storage migration unresolved without signing out or refreshing', async () => {
+    vi.useFakeTimers()
+    const error = Object.assign(new Error('请重试'), { code: 'auth_storage_unavailable' })
+    const h = harness({ loadPersistedSession: vi.fn(async () => { throw error }) })
+    const stop = h.coordinator.start()
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'degraded', error })
+      expect(h.deps.getSession).not.toHaveBeenCalled()
+      expect(h.deps.refreshSession).not.toHaveBeenCalled()
+      expect(h.deps.signOut).not.toHaveBeenCalled()
+      expect(h.deps.clearPersistedSession).not.toHaveBeenCalled()
+      expect(h.deps.publishSession).not.toHaveBeenCalled()
+    } finally { stop(); vi.useRealTimers() }
+  })
   it('awaits remote notification cleanup before sign-out and credential removal', async () => {
     const cleanup = deferred<void>()
     const prepareSignOut = vi.fn(() => cleanup.promise)

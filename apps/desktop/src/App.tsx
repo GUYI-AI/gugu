@@ -21,6 +21,8 @@ import { ImagePreviewProvider } from './components/ImagePreviewProvider'
 import { SessionExpiredNotice } from './components/SessionExpiredNotice'
 import { AndroidChatBackgroundWatch } from './mobile/AndroidChatBackgroundWatch'
 import { FullScreenLoader } from './components/FullScreenLoader'
+import { AuthStorageRecovery } from './components/AuthStorageRecovery'
+import { authStorageRecoveryAction } from './lib/authStorageFailure'
 import { FirstRunGate } from './components/firstRun/FirstRunGate'
 import { ShellErrorBoundary } from './components/ShellErrorBoundary'
 import { ReleaseNotesOpener } from './components/ReleaseNotesOpener'
@@ -154,6 +156,11 @@ export default function App() {
 
   if (loading) {
     return <FullScreenLoader />
+  }
+
+  const storageAction = authStorageRecoveryAction(session.error)
+  if (!user && session.status === 'degraded' && storageAction) {
+    return <ThemeProvider><AuthStorageRecovery action={storageAction} /></ThemeProvider>
   }
 
   // @@@4323 Tooltip.Provider 挂在这里而不是逐个触发器上:开合延迟是一份,分组行为
