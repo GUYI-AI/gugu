@@ -5,7 +5,7 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { SubscriptionModelRows } from '@/components/settings/SubscriptionModelRows';
 
 const fixture = vi.hoisted(() => ({ expired: false, credentialKind: 'oauth', buttons: [] as Array<Record<string, unknown>> }));
-vi.mock('./listed-connections', () => ({ useConnectionDetails: () => ({ data: {
+vi.mock('./listed-connections', () => ({ useConnectionDetails: () => ({ state: 'value', value: {
   status: { kind: 'authenticated', account: 'fixture-account', credentialKind: fixture.credentialKind }, plan: { payer: 'subscription' },
 } }) }));
 vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({ useAgentAuthStatus: () => ({ auth: fixture.expired

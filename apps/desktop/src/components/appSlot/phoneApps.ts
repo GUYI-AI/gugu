@@ -2,7 +2,8 @@ import { registerPlugin } from '@capacitor/core'
 import { readDisplayIdentities } from '../../lib/identityReadAdapter'
 import { rendererLogger } from '../../lib/log'
 import { redrawImage } from '../../lib/redrawImage'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, marketUpdates as marketUpdatesReplica, PHONE_HOST, type InstalledExtensionsList } from '../../session/renderer/features/extensions/installed-extensions'
+import { definePhoneStore, unwrap } from '../../session/renderer/features/extensions/extensions-api'
 import { askInShell, installConsentPrompt, type InstallConsentAsk } from '../../session/renderer/features/extensions/install-consent'
 import { extensionContentSecurityPolicy } from '../../session/shared/extensions/app-csp'
 import { appDataTooLarge } from '../../session/shared/extensions/app-data'
@@ -53,8 +54,8 @@ export { PHONE_CAPABILITIES } from '../../session/shared/extensions/app-platform
  * phone does is keep the files: the shell's App store (GuguAppStorePlugin) holds each version under <id>@<version>, and
  * serves every App from an origin of its own (AppOrigins.java).
  *
- * What is installed is told to `installedExtensionsStore`, the store the desktop fills from main: the card, the group's
- * panel and 「用 X 打开」 read one store on both.
+ * What is installed is told to the `installedExtensions` replica (host `phone`), as the desktop's main fills `local`: the card, the group's
+ * panel and 「用 X 打开」 read one model on both.
  */
 
 interface AppStorePlugin {
@@ -133,7 +134,7 @@ interface Index {
   firstRun?: FirstRunRecord
   /**
    * The Apps the person switched off (161 10-16: every App has its switch, as on the desktop): the desktop's
-   * `.disabled-extensions.json`, the same list read the same way (`installedExtensionsStore.isEnabled`) — not opened, not
+   * `.disabled-extensions.json`, the same list read the same way (`InstalledApps.isEnabled`) — not opened, not
    * offered for a file, not in a menu; its files, data and what it was allowed stay. Uninstalling takes it off the list:
    * a reinstall arrives switched on.
    */
@@ -178,12 +179,13 @@ function rememberedAll(): Record<string, string> {
  */
 const cspOf = (manifest: ExtensionManifest) => extensionContentSecurityPolicy(`${location.origin} ${gateOrigin(manifest.id)}`, manifest.permissions?.network ?? [])
 
-function tell(): void {
+/** What is installed here, in the shape main lists it (L9). */
+function listed(): InstalledExtensionsList {
   const installed = Object.values(index.installed)
   // Each installed App read with the desktop's one check, as the desktop reads its folders: one this build no longer runs
   // (installed under an older apiVersion, say) is not opened — listed as invalid with its refusal as it is, still removable.
   const checked = installed.map((record) => ({ record, parsed: safeParseExtensionManifest(record.manifest) }))
-  installedExtensionsStore.applyList({
+  return {
     extensions: [...shipped, ...checked.flatMap(({ parsed }) => (parsed.ok ? [parsed.manifest] : []))],
     invalid: checked.flatMap(({ record, parsed }) => (parsed.ok ? [] : [{ dirName: record.manifest.id, reason: parsed.issues.join('; ') }])),
     icons: Object.assign({ ...shippedIcons }, ...installed.map((record) => record.icons)) as Record<string, string>,
@@ -205,7 +207,18 @@ function tell(): void {
     ]),
     openWith: rememberedAll(),
     publishers: Object.fromEntries(installed.map((record) => [record.manifest.id, record.publisher])),
-  })
+    unreadable,
+  }
+}
+
+let toldVersions: string | null = null
+function tell(): void {
+  const list = listed()
+  installedExtensions.set([PHONE_HOST], list)
+  // An App updated by itself (owner 10-19): what the market says of it is read again.
+  const versions = list.extensions.map((manifest) => `${manifest.id}@${manifest.version}`).join(' ')
+  if (toldVersions !== null && versions !== toldVersions) void marketUpdatesReplica.refresh(PHONE_HOST)
+  toldVersions = versions
 }
 
 let loading: Promise<void> | null = null
@@ -1056,6 +1069,13 @@ export const phoneApps = {
   remembered: (key: string): string | null => rememberedAll()[key] ?? null,
   pageUrl,
   data,
-  /** Every App on this phone that is not shipped: the ones the person can uninstall. */
-  installedFromChats: (): ExtensionManifest[] => Object.values(index.installed).map((record) => record.manifest),
 }
+
+// The replicas of what is installed here and what the market says of it read through this store (installed-extensions.ts).
+definePhoneStore({
+  list: async () => {
+    await ready()
+    return listed()
+  },
+  marketUpdates: async () => unwrap(await marketUpdates(), 'The update check'),
+})

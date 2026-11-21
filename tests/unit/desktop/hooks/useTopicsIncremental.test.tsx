@@ -38,10 +38,12 @@ const changed = async (...keys: { chat_id: string; entity_id?: string }[]) => {
 }
 let seen: TopicSummary[] = []
 let seenError: string | null = null
+let reload = () => {}
 function Probe() {
   const state = useTopicsOfChat('line', subscribe)
   seen = state.topics ?? []
   seenError = state.error
+  reload = state.reload
   return null
 }
 let harness: ReturnType<typeof createReactHarness>
@@ -93,15 +95,16 @@ describe('useTopicsOfChat follows topic changes, not line messages', () => {
     expect(seen.map((row) => row.name)).toEqual(['new'])
   })
 
-  it('clears a failed topic read when a later revision refresh succeeds', async () => {
+  it('a failed topic read reads the whole line again (I1); the line\'s answer is what shows, its failure the line\'s', async () => {
     await open([topic('t1', null)])
-    listTopicsOfChat.mockRejectedValueOnce(new Error('topic read failed'))
+    listTopicsOfChat.mockRejectedValueOnce(new Error('topic read failed')).mockResolvedValueOnce([topic('t1', null, { name: 'recovered' })])
     await changed({ chat_id: 'line', entity_id: 't1' })
-    expect(seenError).toBe('topic read failed')
-    listTopicsOfChat.mockResolvedValueOnce([topic('t1', null, { name: 'recovered' })])
-    await changed({ chat_id: 'line', entity_id: 't1' })
-    expect(seen.map(row => row.name)).toEqual(['recovered'])
+    await vi.waitFor(() => expect(seen.map(row => row.name)).toEqual(['recovered']))
     expect(seenError).toBeNull()
+    listTopicsOfChat.mockRejectedValueOnce(new Error('topic read failed')).mockRejectedValueOnce(new Error('line read failed'))
+    await changed({ chat_id: 'line', entity_id: 't1' })
+    await vi.waitFor(() => expect(seenError).toBe('line read failed'))
+    expect(seen.map(row => row.name)).toEqual(['recovered'])
   })
 
   it.each(['failure then recovery', 'success then failure'] as const)('orders same-millisecond reads correctly: %s', async order => {
@@ -109,20 +112,20 @@ describe('useTopicsOfChat follows topic changes, not line messages', () => {
     try {
       await open([topic('t1', null)])
       if (order === 'failure then recovery') {
-        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure'))
+        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure')).mockRejectedValueOnce(new Error('same-clock failure'))
         await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBe('same-clock failure')
+        await vi.waitFor(() => expect(seenError).toBe('same-clock failure'))
         // Even an unchanged payload is a successful recovery and must clear the preceding error.
         listTopicsOfChat.mockResolvedValueOnce([topic('t1', null)])
-        await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBeNull()
+        await act(async () => reload())
+        await vi.waitFor(() => expect(seenError).toBeNull())
       } else {
         listTopicsOfChat.mockResolvedValueOnce([topic('t1', null, { name: 'fresh' })])
         await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBeNull()
-        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure'))
+        await vi.waitFor(() => expect(seenError).toBeNull())
+        listTopicsOfChat.mockRejectedValueOnce(new Error('same-clock failure')).mockRejectedValueOnce(new Error('same-clock failure'))
         await changed({ chat_id: 'line', entity_id: 't1' })
-        expect(seenError).toBe('same-clock failure')
+        await vi.waitFor(() => expect(seenError).toBe('same-clock failure'))
         expect(seen.map(row => row.name)).toEqual(['fresh'])
       }
     } finally { clock.mockRestore() }

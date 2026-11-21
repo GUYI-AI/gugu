@@ -10,9 +10,7 @@
 import type { ServerSshInstallFailureReason, ServerSshInstallPrompt } from './serverSshInstall'
 
 export const SERVER_SSH_MACHINES_CHANNELS = {
-  /** 这台桌面上用 SSH 装上的机器的设备 id(invoke,回 string[])。 */
-  list: 'server-ssh-machines:list',
-  /** 同上,带给人看的地址(invoke,回 SshMachineSummary[])。 */
+  /** 这台桌面上用 SSH 装上的机器(设备 id + 给人看的地址;invoke,回 SshMachineSummary[])。渲染层只读这一份。 */
   describe: 'server-ssh-machines:describe',
   /** 忘掉一台(invoke,设备 id → boolean)。移除这台机器时调用。 */
   forget: 'server-ssh-machines:forget',

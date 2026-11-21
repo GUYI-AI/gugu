@@ -2,8 +2,8 @@ import { SquareArrowRight } from '@/lib/icons'
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { messageActionItems } from './messageActionItems'
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { queryClient } from '../../lib/replica'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { readOnce } from '../../lib/replica'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
 import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
 import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
@@ -126,7 +126,6 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
 
 /** The host's preview wherever a file opens: messages, the chat's folder and an App's peek. */
 export function MessageFilePreview({ file, mobile = false, fill = false, tabbed = false, readOnly = false, message, onForward, onBack, onClose }: { file: PreviewFile | HostedPreviewFile; mobile?: boolean; fill?: boolean; tabbed?: boolean; readOnly?: boolean; message?: MessageItem; onForward?: (message: MessageItem) => void; onBack?: () => void; onClose: () => void }) {
-  const reader = useId()
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const kind = classifyDocumentPreview(file)
@@ -177,22 +176,16 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     setRead(null)
     setFraction(undefined)
     const source = file.source
-    const queryKey = ['file-preview-read', reader, key, kind, attempt]
-    if (kind !== 'unsupported') void queryClient.fetchQuery({
-      queryKey, gcTime: 0, retry: (failures, error) => failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true,
-      queryFn: async ({ signal }) => {
-        let done: PreviewRead
-        try { done = await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }) }
-        catch (error) {
-          if (signal.aborted) throw signal.reason
-          const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
-          if (holder) throw new OfflinePreviewRead(holder, error)
-          throw error
-        }
-        if (signal.aborted) { void done.acknowledged?.catch(() => {}); await done.release?.(); throw signal.reason }
-        return done
-      },
-    }).then(
+    // A read that lands after the preview closed is released below; a failure then is not read again.
+    if (kind !== 'unsupported') void readOnce(async () => {
+      try { return await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }) }
+      catch (error) {
+        if (!live) throw error
+        const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
+        if (holder) throw new OfflinePreviewRead(holder, error)
+        throw error
+      }
+    }, { retry: (failures, error) => live && failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true }).then(
       (done) => {
         release = done.release
         // Shown before the server acknowledged the read: a refusal takes it down and says why.
@@ -202,15 +195,15 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       },
       (error) => {
         if (!live) return
-        // The query already checked the holder afresh. Cancellation must not start another metadata read after sign-out.
+        // The read already checked the holder afresh. A closed preview must not start another metadata read after sign-out.
         const offline = error instanceof OfflinePreviewRead ? error.holder : null
         setWaitingFor(offline)
         setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
       },
     )
-    return () => { live = false; void queryClient.cancelQueries({ queryKey, exact: true }); queryClient.removeQueries({ queryKey, exact: true }); void release?.() }
+    return () => { live = false; void release?.() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- source kind/id/version and the preview kind identify the bytes; attempt reads them again
-  }, [key, kind, file.document, message?.id, message?.chat_id, t, attempt, reader])
+  }, [key, kind, file.document, message?.id, message?.chat_id, t, attempt])
   const renewVideo = async (video: HTMLVideoElement) => {
     const current = read
     if (video.dataset.renewing) return

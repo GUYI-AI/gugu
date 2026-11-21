@@ -5,7 +5,7 @@ import { clickElement, createNode, createReactHarness, waitForCondition } from '
 
 const io = vi.hoisted(() => ({ save: vi.fn(async (_userId: string, _state: unknown): Promise<void> => undefined) }))
 vi.mock('../../../../apps/desktop/src/lib/productTour', async (original) => ({
-  ...await original<Record<string, unknown>>(), saveProductTourState: io.save, useRememberProductTourState: () => () => undefined,
+  ...await original<Record<string, unknown>>(), saveProductTourState: io.save,
 }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 // The primitive owns floating geometry; this suite measures the workflow, not jsdom's zero-sized layout.

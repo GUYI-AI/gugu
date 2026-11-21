@@ -37,6 +37,7 @@ import { DeviceMachineConfigurations } from './DeviceMachineConfigurations'
 import { DeviceMachineArchive } from './DeviceMachineArchive'
 import { useDeviceRemoval } from '../settings/useDeviceRemoval'
 import { useAssistantPanelBack } from '../../lib/assistantPanelPage'
+import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 
 export function AssistantDevicesPage({ cloudDeviceId, openedDeviceId, onOpenDevice, panelNavigation = false }: {
   panelNavigation?: boolean
@@ -46,8 +47,9 @@ export function AssistantDevicesPage({ cloudDeviceId, openedDeviceId, onOpenDevi
 }) {
   const { t } = useTranslation('settings')
   const groupText = useDeviceActionGroupText()
-  const { devices, phones, cloudComputer } = useDevicesStore()
-  const snapshot = cloudComputer?.snapshot ?? null
+  const { devices, phones } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
+  const snapshot = cloudSnapshotOf(cloudComputer)
   const cloudId = cloudDeviceId ?? snapshot?.deviceId ?? null
   const machines = useMemo(() => deviceMachines(withoutAssistantHome([...devices, ...(phones ?? [])], cloudId)), [devices, phones, cloudId])
   const { active, archived } = useDeviceMachineSections(machines)

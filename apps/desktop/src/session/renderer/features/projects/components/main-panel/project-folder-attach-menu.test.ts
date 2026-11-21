@@ -15,7 +15,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 }));
 vi.mock('@renderer/lib/chat/sender-avatar', () => ({
   senderAvatarUrl: (fromId: string) => `avatar:${fromId}`,
-  subscribeSenderAvatars: () => () => {},
+  senderAvatarChanges: { get: () => 0, subscribe: () => () => {} },
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   events: { on: () => () => {} },

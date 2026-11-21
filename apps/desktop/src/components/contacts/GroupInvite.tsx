@@ -10,7 +10,7 @@ import { messageForUser } from '@/lib/userFacingError';
  *
  * 视觉复用共享控件和字阶；二维码载荷、查询与入群流程留在原来的链路。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { X } from '@/lib/icons'
 import type {
   ContactGroupChat,
@@ -18,7 +18,6 @@ import type {
   PublicGroupInviteLookupResult,
 } from '@gugu/core/shared/types/contacts'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { contactsService } from '../../lib/contacts'
 import { groupInviteLinkFor } from '../../lib/groupInviteShareUrl'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 import { useGroupInviteJoin } from '../../lib/groupInviteJoin'
@@ -31,7 +30,9 @@ import { GroupInviteActions } from '../chat/GroupInviteShare'
 import { FieldRow } from '../contactsDetailControls'
 import { groupSettings } from '../chat/useGroupChatSettings'
 import { groupRoster } from '../../hooks/useRoomCollab'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
+import { RefreshFailed } from '../ui/RefreshFailed'
+import { publicGroupInvite } from '../../lib/publicGroupInvite'
 
 /** 群资料上的「邀请」一行:复制链接 + 海报(带码),与邀请单同一份动作。项目群不拉人(gugu-dev#181):不给动作,说一句原因。 */
 export function GroupInviteRow({ group }: { group: ContactGroupChat }) {
@@ -195,9 +196,6 @@ function PublicGroupInviteSearchResult({
 }) {
   const { t } = useTranslation('contacts')
   if (!lookup) return null
-  if (lookup.status === 'lookup_error') {
-    return <div style={{ padding: 16, color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookupFailed')}</div>
-  }
   if (lookup.status === 'not_found' || !lookup.group) {
     return <div style={{ padding: 16, color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.notFound')}</div>
   }
@@ -218,36 +216,21 @@ export function GroupInviteJoinModal({
   onClose: () => void
 }) {
   const { t } = useTranslation('contacts')
-  const [lookup, setLookup] = useState<PublicGroupInviteLookupResult | null>(null)
-  const [loading, setLoading] = useState(true)
-  const { joining, joinError, join, reset } = useGroupInviteJoin()
-
-  useEffect(() => {
-    let cancelled = false
-    reset()
-    setLoading(true)
-    setLookup(null)
-    contactsService.lookupPublicGroupInvite(publicId)
-      .then((result) => { if (!cancelled) setLookup(result) })
-      .catch((error) => {
-        console.error('[ContactsPanel] public group lookup failed', error)
-        if (!cancelled) setLookup({ status: 'lookup_error', group: null })
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [publicId, reset])
+  const reading = useReplica(publicGroupInvite, [publicId])
+  const { joining, joinError, join } = useGroupInviteJoin()
+  const group = reading.state === 'value' ? reading.value.group : null
 
   const onJoin = useCallback(async () => {
-    const group = lookup?.group
     if (!group || !joinToken || joining) return
+    const entry = publicGroupInvite.at(publicId)
     try {
       const result = await join(group, joinToken)
-      setLookup({ status: result.status === 'joined' ? 'joined' : 'available', group: result.group })
+      entry.set({ status: result.status === 'joined' ? 'joined' : 'available', group: result.group })
       if (result.status === 'joined') onClose()
     } catch {
       // useGroupInviteJoin owns the localized error and logs the original failure.
     }
-  }, [lookup?.group, joinToken, joining, join, onClose])
+  }, [group, publicId, joinToken, joining, join, onClose])
 
   return (
     <Sheet
@@ -262,10 +245,19 @@ export function GroupInviteJoinModal({
           <span style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--text-primary)' }}>{t('groupInvite.joinTitle')}</span>
           <IconButton aria-label={t('common.close')} onClick={onClose}><X size={16} /></IconButton>
         </div>
-        {loading ? (
+        {reading.state === 'unknown' ? (
           <div style={{ padding: 16, color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookingUp')}</div>
+        ) : reading.state === 'error' ? (
+          <div style={{ padding: 16, color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>
+            {t('groupInvite.lookupFailed')}{' '}
+            <Button variant="ghost" size="sm" onClick={retryOf(reading)}>{t('common.retry')}</Button>
+          </div>
         ) : (
-          <PublicGroupInviteSearchResult lookup={lookup} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
+          <>
+            <PublicGroupInviteSearchResult lookup={reading.value} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
+            {/* Looked up before, its lookup again failing: what was read stays, the failure said with a retry (❌ drawn as current). */}
+            {reading.error ? <div className="px-4 pb-4"><RefreshFailed reading={reading} /></div> : null}
+          </>
         )}
       </div>
     </Sheet>

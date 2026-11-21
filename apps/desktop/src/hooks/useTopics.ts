@@ -5,9 +5,8 @@
 //
 // 可见继承来源、参与靠说话:这个 hook 只负责把服务端算好的 is_participant 端上来,
 // ❌ 不在客户端二次判断谁看得见谁被通知(那归 RLS 与数据库触发器,客户端再判一遍就是第二个属主)。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useIsFetching } from '@tanstack/react-query'
-import { queryClient, replica, useReplica } from '../lib/replica'
+import { useCallback, useEffect, useMemo } from 'react'
+import { replica, useReplica } from '../lib/replica'
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { topicService } from '../lib/topics'
 import { rendererLogger } from '../lib/log'
@@ -21,8 +20,8 @@ const topicsLog = rendererLogger('chat/topics')
 export interface UseTopicsOfChatResult {
   /** null until read (`loading`). */
   topics: TopicSummary[] | null
-  /** 锚点卡按来源消息分组:一条来源消息可能长出多条话题,所以值是数组而非单条。 */
-  bySourceMessageId: Map<string, TopicSummary[]>
+  /** 锚点卡按来源消息分组:一条来源消息可能长出多条话题,所以值是数组而非单条。null = 还没读到(哪条消息下都不画锚点卡)。 */
+  bySourceMessageId: Map<string, TopicSummary[]> | null
   loading: boolean
   error: string | null
   /** 开完一条话题后调它,让来源消息底下的锚点卡当场长出来。 */
@@ -73,14 +72,9 @@ export const topicsOfChat = replica({
   name: 'topicsOfChat',
   scope: 'account',
   read: async (owner: string, sourceChatId: string): Promise<TopicSummary[]> => {
-    try {
-      const { rows, record } = await readTopics(owner, sourceChatId)
-      await record()
-      return rows
-    } catch (error) {
-      topicsLog.error({ error, sourceChatId }, 'list topics of chat failed')
-      throw error
-    }
+    const { rows, record } = await readTopics(owner, sourceChatId)
+    await record()
+    return rows
   },
 })
 
@@ -97,23 +91,13 @@ export function useTopicsOfChat(
   // Keyed by the line: switching lines never hands out the previous line's topics, and a line seen before has its topics
   // on the first frame (#6519) while it is read again.
   const reading = useReplica(topicsOfChat, sourceChatId ? [sourceChatId] : null)
-  const key = sourceChatId ? topicsOfChat.key(sourceChatId) : null
-  const fetching = useIsFetching({ queryKey: key ?? ['topicsOfChat:none'], exact: true }, queryClient) > 0
   // null until the line's topics are read: no anchor card and no topic list yet, ❌ an empty list that says「没有话题」.
   const topics = reading.state === 'value' ? reading.value : null
   const failure = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
-  const loading = !!sourceChatId && (reading.state === 'unknown' || fetching)
-  // One topic's failed read: said on this line until the line's topics are updated after it (that topic read again, or
-  // the whole line).
-  const [topicError, setTopicError] = useState<{ chatId: string; message: string; afterUpdateCount: number } | null>(null)
-  // Success writes have an order even when the clock does not advance between two reads.
-  const updateCount = key ? queryClient.getQueryState(key)?.dataUpdateCount ?? 0 : 0
-  const shownTopicError = topicError && topicError.chatId === sourceChatId && topicError.afterUpdateCount >= updateCount ? topicError.message : null
+  const loading = !!sourceChatId && reading.state === 'unknown'
 
   const reload = useCallback(() => { if (sourceChatId) void topicsOfChat.refresh(sourceChatId) }, [sourceChatId])
 
-  const loadingRef = useRef(loading)
-  loadingRef.current = loading
   useEffect(() => {
     if (!sourceChatId || !subscribeAccountRevision) return
     let active = true
@@ -124,19 +108,19 @@ export function useTopicsOfChat(
       const read = ++reads
       latest.set(topicChatId, read)
       const current = () => active && latest.get(topicChatId) === read
+      // Bound before the awaits: a topic read for this account lands in it (❌ the next one's line).
+      const entry = topicsOfChat.at(sourceChatId)
       try {
         const { rows, record } = await readTopics(userId, sourceChatId, topicChatId)
         if (!current()) return
         await record()
         if (!current()) return
-        topicsOfChat.set([sourceChatId], (shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
-        // A successful unchanged payload may be structurally shared, so also clear this local error explicitly.
-        setTopicError(previous => previous?.chatId === sourceChatId ? null : previous)
+        entry.set((shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
       } catch (err) {
         if (!current()) return
-        topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed')
-        const errorKey = topicsOfChat.key(sourceChatId)
-        setTopicError({ chatId: sourceChatId, message: (err as Error)?.message ?? String(err), afterUpdateCount: errorKey ? queryClient.getQueryState(errorKey)?.dataUpdateCount ?? 0 : 0 })
+        // One topic could not be read: read the whole line again (I1).
+        topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed; reading the line again')
+        reload()
       }
     }
     const unsubscribe = subscribeAccountRevision('chat_changed', (operations) => {
@@ -144,7 +128,7 @@ export function useTopicsOfChat(
         const { chatId, entityId } = readRevisionResourceKey(operation.payload, 'chat_changed')
         if (chatId !== sourceChatId || !entityId) continue
         // The whole-line read still in flight may predate this change: read the line again instead.
-        if (loadingRef.current) reload()
+        if (topicsOfChat.isFetching(sourceChatId)) reload()
         else void refresh(entityId)
       }
     })
@@ -155,9 +139,9 @@ export function useTopicsOfChat(
   }, [sourceChatId, subscribeAccountRevision, reload, userId])
 
   const bySourceMessageId = useMemo(() => {
+    if (!topics) return null
     const index = new Map<string, TopicSummary[]>()
-    // @@@reading-default - topics not read: no anchor card for any message yet (the surface's decision, useTopicSurface)
-    for (const topic of topics ?? []) {
+    for (const topic of topics) {
       const bucket = index.get(topic.source_message_id)
       if (bucket) bucket.push(topic)
       else index.set(topic.source_message_id, [topic])
@@ -165,5 +149,5 @@ export function useTopicsOfChat(
     return index
   }, [topics])
 
-  return { topics, bySourceMessageId, loading, error: shownTopicError ?? (failure ? failure.message ?? String(failure) : null), reload }
+  return { topics, bySourceMessageId, loading, error: failure ? failure.message ?? String(failure) : null, reload }
 }

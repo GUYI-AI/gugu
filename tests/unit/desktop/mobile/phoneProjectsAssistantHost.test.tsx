@@ -18,6 +18,14 @@ const state = vi.hoisted(() => ({
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({
   useDevicesStore: () => ({ devices: state.devices, phones: [], cloudComputer: state.cloudComputer }),
 }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (original) => ({
+  ...await original<object>(),
+  // The cloud computer reading, as the replica gives it (here always read).
+  useCloudComputer: () => {
+    const cloud = state.cloudComputer as { available: boolean; snapshot: unknown } | null
+    return cloud ? { state: 'value', value: cloud.available ? { available: true, snapshot: cloud.snapshot } : { available: false }, stale: false, error: null } : { state: 'unknown' }
+  },
+}))
 vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({
   listMyDeviceProjects: async () => { state.reads++; return state.records },
 }))

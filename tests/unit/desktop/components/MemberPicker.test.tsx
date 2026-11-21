@@ -124,3 +124,16 @@ describe('member picker', () => {
     expect(chips()).toEqual([])
   })
 })
+
+describe('the open-time read of the contacts (F1-6)', () => {
+  it('waits from the first frame: no "selection unavailable" judged by the list as last read, confirmation held', async () => {
+    // The picker asks its contacts store to read again as it opens; the store's own reading says the read is on its way.
+    const refreshContacts = vi.fn(() => new Promise<void>(() => {}))
+    const picker = createNode(MemberPicker, { title: 'Add', confirmLabel: (n: number) => `Add ${n}`, initialSelectedIds: ['newcomer'], onConfirm: () => {}, onClose: () => {} })
+    await renderWithAppProviders(harness, picker, { ...providers, contacts: { ...providers.contacts, loadingContacts: true, refreshContacts } })
+    expect(refreshContacts).toHaveBeenCalled()
+    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+    const button = [...harness.container.querySelectorAll('button')].find((b) => /^Add/.test(b.textContent ?? ''))
+    expect(button?.disabled).toBe(true)
+  })
+})

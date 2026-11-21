@@ -33,6 +33,7 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
 }));
 
 const { useAppComposerActions } = await import('../../../../apps/desktop/src/components/appSlot/appComposerActions');
+const { followRendererSession, queryClient } = await import('../../../../apps/desktop/src/lib/replica');
 type Menu = ReturnType<typeof useAppComposerActions>;
 
 const VIEWS = [
@@ -59,6 +60,9 @@ beforeEach(() => {
   state.notes.clear();
   list.mockReset().mockResolvedValue({ success: true, data: { actions: VIEWS } });
   run.mockReset();
+  // The entries are an account replica (appComposerActions): read for the account signed in, which owns the column.
+  followRendererSession('SIGNED_IN', 'owner-a');
+  queryClient.clear();
   root = createRoot(document.createElement('div'));
 });
 afterEach(() => act(async () => root.unmount()));
@@ -128,6 +132,29 @@ describe('the 「+」 entries of an App beside the person\'s own assistant chat'
     await render({ ...column, authority: 'stamp-2' });
     expect(menu).toBeUndefined();
     await act(async () => answer({ success: true, data: { actions: VIEWS.slice(0, 1) } }));
+    await settle();
     expect(menu?.map((entry) => entry.id)).toEqual(['app-ideas']);
+  });
+
+  // Push-fed (fresh: Infinity): a column remounted while nobody watched main's notes may hold entries a note changed
+  // meanwhile; the watcher starting again reads them once (❌ a second read of a first read on its way).
+  it('remounted with entries kept from before, the watcher starting again reads them once more', async () => {
+    await render();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    await act(async () => root.unmount());
+    expect(state.notes.size).toBe(0);
+    root = createRoot(document.createElement('div'));
+    list.mockResolvedValueOnce({ success: true, data: { actions: VIEWS.slice(0, 1) } });
+    await render();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(menu!.map((entry) => entry.id)).toEqual(['app-ideas']);
+  });
+
+  it('a first mount reads once (the watcher starting does not read the entry again)', async () => {
+    await render();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
   });
 });

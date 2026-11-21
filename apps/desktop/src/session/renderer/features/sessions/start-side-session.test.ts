@@ -56,6 +56,7 @@ vi.mock('./view/session-pane-policy', () => ({
 
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { canStartSideSession, startSideSession } from './start-side-session';
+import { followRendererSession, queryClient } from '@/lib/replica';
 
 /** 这个替身下一次被调用时 resolve:startSideSession 先异步问能不能分叉,之后才打开 / 报错。 */
 function nextCall(mock: ReturnType<typeof vi.fn>): Promise<void> {
@@ -76,6 +77,8 @@ function agent(fork: 'supported' | 'none' | 'pty-only'): AgentPayload {
 describe('runtime-only side chat entry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
+    followRendererSession('SIGNED_IN', 'tester');
     mocks.source.runtime = 'acp';
     mocks.source.providerSessionId = 'source-provider-session';
     mocks.askedMachines.length = 0;

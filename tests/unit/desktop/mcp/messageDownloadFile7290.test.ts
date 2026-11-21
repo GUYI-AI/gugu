@@ -20,7 +20,9 @@ const envelope = '[附件] deck.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))) })
 
-// `message` is the row as the owner's token reads it: null for a whisper the owner is no party to (RLS whisper_visible_to).
+const OWNER = '22222222-2222-4222-8222-222222222222'
+const ownerToken = `h.${Buffer.from(JSON.stringify({ sub: OWNER })).toString('base64url')}.s`
+// `message` is the row as the owner reads it: null for a whisper the owner is no party to (chat.message_visible_to).
 async function setup(message: Record<string, unknown> | null, opts: { agentSees?: boolean; signed?: boolean; bytes?: Buffer; pending?: number; fileName?: string; revision?: { item_id: string; version: number } } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'gugu-download-test-'))
   homes.push(home)
@@ -28,16 +30,16 @@ async function setup(message: Record<string, unknown> | null, opts: { agentSees?
   const fetched: string[] = []
   const ownerReads: string[] = []
   const deps = {
-    restGet: async (path: string) => {
-      ownerReads.push(path)
-      expect(path).toBe('messages?id=eq.m1&select=chat_id')
-      return message ? [message] : []
-    },
+    restGet: async (path: string) => { throw new Error(`no owner-token read: ${path}`) },
     restRpc: async (name: string, body: Record<string, unknown>) => {
-      // #84 agent 看不见时,会再问一句这条线是不是主人与好友的私聊(这里是群,不是 → 照旧拒)。
+      // #84 agent 读不到时,会再问一句这条线是不是主人与好友的私聊(这里是群,不是 → 照旧拒)。
       if (name === 'chat_facts') return [{ id: body.p_chat_id, kind: 'group', source_chat_id: null, group_prompt: null }]
-      expect([name, body]).toEqual(['can_read_message', { p_message_id: 'm1', p_user_id: AGENT }])
-      return opts.agentSees ?? true
+      expect(name).toBe('messages_by_id_as')
+      expect(body).toMatchObject({ p_id: 'm1' })
+      if (body.p_as === AGENT) return (opts.agentSees ?? true) ? [{ id: 'm1', chat_id: CHAT }] : []
+      expect(body.p_as).toBe(OWNER)
+      ownerReads.push('m1')
+      return message ? [message] : []
     },
     resolveFile: async (ref: Record<string, unknown>, actorId: string) => {
       asked.push([ref]); expect(actorId).toBe(AGENT)
@@ -47,7 +49,7 @@ async function setup(message: Record<string, unknown> | null, opts: { agentSees?
       return verifiedFileHandle(opts.bytes ?? Buffer.from('bytes'), { file_name: opts.fileName ?? 'notes.pdf', content_type: 'application/pdf', ...opts.revision })
     },
   }
-  const context = { agentId: AGENT, supabaseUrl: '', anonKey: '', getAccessToken: async () => 'token', guguHome: home, threadRootId: null }
+  const context = { agentId: AGENT, supabaseUrl: '', anonKey: '', getAccessToken: async () => ownerToken, guguHome: home, threadRootId: null }
   const call = () => callTool(context, 'message_download_file', { source_message_id: 'msg:m1' }, deps)
   return { call, asked, fetched, ownerReads, home }
 }
@@ -169,15 +171,15 @@ describe('message_download_file by source_message_id (#7290)', () => {
       calls.push([ref, actor]); return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'deck.pdf', item_id: 'item-1', version: 3 })
     } }
     const receipt = JSON.parse(await callTool(context, 'message_download_file', { source_message_id: 'msg:m1' }, {
-      restGet: async () => [{ id: 'm1', chat_id: CHAT, content: envelope, content_type: 'attachment', file_item_id: 'item-1', file_version: 3, file_blob_id: null }],
-      restRpc: async () => true,
+      restGet: async () => { throw Error('No owner-token read') },
+      restRpc: async () => [{ id: 'm1', chat_id: CHAT, content: envelope, content_type: 'attachment', file_item_id: 'item-1', file_version: 3, file_blob_id: null }],
       fetch: async () => { throw Error('No independent object fetch is permitted') },
     }))
     expect(calls).toEqual([[{ message_id: 'm1' }, AGENT]])
     expect(await readFile(receipt.file_path, 'utf8')).toBe('bytes')
   })
 
-  // A whisper to the agent: the owner's token reads no row of it, the agent (can_read_message, the resolver) reads it all.
+  // A whisper to the agent: its owner reads no row of it, the agent (messages_by_id_as, the resolver) reads it all.
   test('whisper attachment to this agent: read as this agent, never through the owner\'s row', async () => {
     const { call, fetched, asked, ownerReads } = await setup(null, { fileName: '1000015896.jpg' })
     expect(JSON.parse(await call())).toMatchObject({ source_message_id: 'msg:m1', file_name: '1000015896.jpg' })
@@ -291,6 +293,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
   test('refuses: a message the agent cannot see, one without an attachment, a deleted file, one it may no longer read', async () => {
     const hidden = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null }, { agentSees: false })
     await expect(hidden.call()).rejects.toThrow('there is no message m1 you can read')
+    expect(hidden.ownerReads).toEqual(['m1'])
     // No attachment, a file deleted from the folder, a retracted one: the resolver, reading as the agent, finds nothing.
     const gone = await setup({ id: 'm1', chat_id: CHAT, content: 'hi', content_type: 'text', file_item_id: null, file_version: null }, { signed: false })
     await expect(gone.call()).rejects.toThrow('message m1 has no attachment, or its file was deleted')

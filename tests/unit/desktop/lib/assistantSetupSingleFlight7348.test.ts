@@ -26,14 +26,14 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ getCurrentAuthUser
 const ipc = vi.hoisted(() => ({ invoke: vi.fn(async () => ({ workdir: '/home/assistant', home: '/home' })) }))
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ipc }))
 vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => ({ prepareLocalAssistantSetup: async () => ({ workdir: '/home/assistant', home: '/home' }) }))
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => ({ provisionCloudComputer: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', () => ({ provisionCloudComputer: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', async () => {
   const { buildLookUrl, lookObjectPath } = await import('../../../../apps/desktop/src/components/agentAvatar/look')
   return { contactsService: { agentLookAvatarUrl: (look: import('../../../../apps/desktop/src/components/agentAvatar/look').AgentLook) =>
     buildLookUrl(`https://db.example/storage/v1/object/public/avatars/${lookObjectPath(look.color)}`, look.rest, look.wear) } }
 })
 const { DEFAULT_ASSISTANT_LOOK, parseAgentLook, wornOf } = await import('../../../../apps/desktop/src/components/agentAvatar/look')
-const { provisionCloudComputer } = await import('../../../../apps/desktop/src/lib/cloudComputerStore')
+const { provisionCloudComputer } = await import('../../../../apps/desktop/src/lib/cloudComputer')
 
 const { setUpAssistantOnThisComputer, resumeLocalAssistant, setupStillStarting, AssistantSetupError, claimCloudAssistant, refreshLocalAssistantHome } = await import('../../../../apps/desktop/src/lib/assistantSetup')
 

@@ -1,12 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useSyncExternalStore, useRef } from 'react'
+import { useState, useLayoutEffect, useSyncExternalStore, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
 import { Trans, useTranslation } from 'react-i18next'
 import { authService } from '../lib/auth'
 import { sessionCoordinator } from '../lib/sessionCoordinator'
 import { googleLogin } from '../lib/googleLogin'
-import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
-import { readGoogleProviderEnabled } from '../lib/authProviderSettings'
+import { googleProviderEnabled } from '../lib/authProviderSettings'
+import { useReplica } from '../lib/replica'
 import { Button } from '@/components/ui/Button'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
@@ -42,7 +42,9 @@ export function LoginPage() {
   const { t: tTeam } = useTranslation('team')
   const invitation = useSyncExternalStore(teamInvitation.subscribe, teamInvitation.getSnapshot)
   const [teamMode, setTeamMode] = useState(false)
-  const [googleEnabled, setGoogleEnabled] = useState<boolean | null>(null)
+  const providers = useReplica(googleProviderEnabled, googleLogin.available ? [] : null)
+  // null = not known yet (the sign-in methods draw a placeholder). An unreadable answer hides the Google button.
+  const googleEnabled = !googleLogin.available ? false : providers.state === 'unknown' ? null : providers.state === 'value' && providers.value
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
   const [otpCode, setOtpCode] = useState('')
@@ -65,14 +67,6 @@ export function LoginPage() {
   const showTeam = teamMode || (invitation.pending && !google.busy && !loading && !otpRequestPending)
   const showConsent = !showTeam && signupConsentAdapter.enabled && registering && !confirmedConsent
   useLayoutEffect(() => googleEnabled === null ? retainStartupMotion() : undefined, [googleEnabled])
-
-  useEffect(() => {
-    if (!googleLogin.available) { setGoogleEnabled(false); return }
-    const controller = new AbortController()
-    void readGoogleProviderEnabled(getSupabaseUrl(), getSupabaseAnonKey(), undefined, controller.signal)
-      .then(enabled => { if (!controller.signal.aborted) setGoogleEnabled(enabled) })
-    return () => controller.abort()
-  }, [])
 
   const handleRequestOtp = (e: React.FormEvent) => {
     e.preventDefault()

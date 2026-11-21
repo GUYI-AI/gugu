@@ -1107,7 +1107,6 @@ export default {
       "pickFolder": "Choose folder",
       "offline": "Offline",
       "noMachine": "No computer is online",
-      "readingDirectory": "Reading this computer's projects folder",
       "noDefaultDirectory": "This computer has no default projects folder",
       "invalidName": "A project name cannot contain / \\ : * ? \" < > |",
       "pathTaken": "This folder is already used by “{{name}}”",

@@ -1,11 +1,12 @@
-import { skipToken, useInfiniteQuery } from '@tanstack/react-query'
+import { useReplicaPages } from '@/lib/replicaPages'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
+import { teamUsagePage } from './replicas'
 import { useTranslation } from 'react-i18next'
-import { useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/Button'
 import { PaneEmptyState } from '@/components/ui/PaneEmptyState'
 import { formatCredits } from '@/lib/billing/spendingPowerCopy'
-import { teamKeys, useTeamApi, useTeamSession } from './context'
-import { TeamAsyncState } from './TeamPrimitives'
+import { useTeamSession } from './context'
+import { TeamReadingState } from './TeamPrimitives'
 import { teamFailureCopy } from './copy'
 import type { TeamStopReason } from './types'
 
@@ -21,16 +22,14 @@ export function TeamPauseState({ reason, onUsage, onContact, onTopUp }: { reason
 
 export function TeamUsage({ onPause }: { onPause: (reason: TeamStopReason) => void }) {
   const { t, i18n } = useTranslation('team')
-  const api = useTeamApi(), session = useTeamSession(), { user } = useAuth(), context = session.context
-  const query = useInfiniteQuery({
-    queryKey: [...teamKeys.account(user?.id ?? ''), 'my-usage', context?.team_id, context?.scope.label], initialPageParam: null as string | null,
-    queryFn: context && user ? ({ pageParam, signal }) => api.myUsage({ cursor: pageParam ?? undefined, limit: 50 }, signal) : skipToken,
-    enabled: session.status === 'ready', getNextPageParam: page => page.next_cursor ?? undefined,
-  })
-  if (query.isPending || query.isError) return <TeamAsyncState pending={query.isPending} error={query.error} retry={() => { void query.refetch() }} />
-  const usage = query.data.pages[0], records = query.data.pages.flatMap(page => page.records)
+  const session = useTeamSession(), context = session.context
+  const list = useReplicaPages(teamUsagePage, session.status === 'ready' && context ? [context.team_id, context.scope.label] : null,
+    page => page.next_cursor)
+  if (list.first.state !== 'value') return <TeamReadingState reading={list.first} />
+  const usage = list.first.value, records = list.pages.flatMap(page => page.records)
   const date = new Intl.DateTimeFormat(i18n.resolvedLanguage, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' })
   return <div className="gg-team-usage">
+    <RefreshFailed reading={list.first} />
     <div className="gg-team-my-summary"><small>{t('monthUsed')}</small><strong>{formatCredits(usage.used_credits)}</strong><span>{usage.scope.label}</span></div>
     <div className="gg-team-value-row"><span>{t('monthCap')}</span><span>{usage.cap_credits === null ? t('noCap') : formatCredits(usage.cap_credits)}</span></div>
     <div className="gg-team-value-row"><span>{t('monthRemaining')}</span><span>{usage.headroom_credits === null ? t('unlimited') : formatCredits(usage.headroom_credits)}</span></div>
@@ -40,6 +39,7 @@ export function TeamUsage({ onPause }: { onPause: (reason: TeamStopReason) => vo
     {records.length ? <div className="gg-team-list">{records.map(row => <div className="gg-team-usage-record" key={row.id}>
       <span><b>{row.label}</b><small>{date.format(new Date(row.occurred_at))}</small></span><span>{formatCredits(row.credits)}</span>
     </div>)}</div> : <PaneEmptyState caption={t('noUsage')} />}
-    {query.hasNextPage && <Button disabled={query.isFetchingNextPage} onClick={() => { void query.fetchNextPage() }}>{t('more')}</Button>}
+    {list.moreFailed && <RefreshFailed reading={list.moreFailed} />}
+    {(list.more || list.loadingMore) && <Button disabled={list.loadingMore} onClick={() => list.more?.()}>{t('more')}</Button>}
   </div>
 }

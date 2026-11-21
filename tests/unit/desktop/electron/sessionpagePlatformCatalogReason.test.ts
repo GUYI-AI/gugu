@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/electron/sessionpage/sessionpage-session-agent
   localAgentForSession: async () => null,
 }))
 
-const { sessionpagePlatformCatalog } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-platform-catalog')
+const { sessionpagePlatformCatalog, sessionpagePlatformGate } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-platform-catalog')
 
 const authProvider = {
   getAuth: async () => ({ accessToken: 't', refreshToken: null, userId: 'owner-1' }),
@@ -62,6 +62,13 @@ describe('平台模型目录缺席的原因码', () => {
     expect(noRuntime.catalogError).toBe('gugu-models:runtime-not-connected')
 
     // 这三道门都在取目录之前就关了。
+    expect(listPlatformModels).not.toHaveBeenCalled()
+  })
+
+  it('the gate on its own (what the composer reads with the harness catalog) is the same answer, without listing', () => {
+    expect(sessionpagePlatformGate({ authProvider, providerId: 'no-such-engine', surface: 'tui' })).toBe('gugu-models:not-routable')
+    expect(sessionpagePlatformGate({ authProvider: null, providerId: 'codex', surface: 'tui' })).toBe('gugu-models:runtime-not-connected')
+    expect(sessionpagePlatformGate({ authProvider, providerId: 'codex', surface: 'tui' })).toBeNull()
     expect(listPlatformModels).not.toHaveBeenCalled()
   })
 })

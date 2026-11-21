@@ -9,6 +9,9 @@ import { Sheet } from './ui/Sheet'
 import { Button } from './ui/Button'
 import { Switch } from './ui/Switch'
 import { platform } from '../platform'
+import { appVersion } from '../lib/appVersion'
+import { useReplica } from '../lib/replica'
+import { Unknown } from './ui/Unknown'
 import {
   FEEDBACK_MODULES,
   FEEDBACK_CONTENT_MAX,
@@ -32,7 +35,6 @@ import {
   type FeedbackDraftImage,
 } from '../lib/feedbackDraft'
 
-declare const __APP_VERSION__: string
 
 // @@@4326 致谢插画 —— 咕咕捧着刚寄到的那封反馈信。官网现役 mascot(gugu-edge-mascot)为参考图,
 // 同一套黑描边 / 黄喙 / 鼠尾草绿挎包,所以它与产品其它咕咕是同一只鸟。透明底单张:白身子在深色主题上
@@ -72,12 +74,8 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
     'screenshot-size': t('feedback.validation.screenshotSize'),
   })[code]
 
-  // 版本:构建期常量打底,Electron 上用主进程实时值刷新(同 AboutSection,拒不吞错)。
-  const [version, setVersion] = useState(__APP_VERSION__)
-  useEffect(() => {
-    if (!platform.capabilities.appVersion) return
-    void platform.getAppVersion().then(setVersion)
-  }, [])
+  // 版本:与「设置 → 关于」同一份(lib/appVersion.ts)。未知时诊断行画占位;提交时取值。
+  const versionReading = useReplica(appVersion, [])
 
   // 把当前表单快照进 ref,供关窗写草稿 + 载入时判「是否仍为空态」(避免闭包读到旧值)。
   const submittedRef = useRef(false)
@@ -187,7 +185,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
         content,
         module,
         screenshots: shots.map((shot) => dataUrlToFile(shot.dataUrl, shot.name)),
-        appVersion: version,
+        appVersion: await appVersion.fetch(),
         platform: platform.kind,
         diagnostics: feedbackDiagnosticsWithLog(collectFeedbackDiagnostics(), attachedLog),
       })
@@ -339,7 +337,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
           {/* 自动附带信息提示 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 'var(--radius-control)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginBottom: 16 }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><g fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 17v-6" /><circle cx="12" cy="7.5" r="0.5" fill="currentColor" /></g></svg>
-            {t('feedback.diagnostics', { version })}
+            {versionReading.state === 'value' ? t('feedback.diagnostics', { version: versionReading.value }) : <Unknown className="w-48" />}
           </div>
         </div>
 

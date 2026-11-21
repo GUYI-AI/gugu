@@ -1,32 +1,9 @@
-import { ConnectionError, parseConnectionSnapshot, type ConnectionClient, type ConnectionSnapshot } from '@gugu/core/cloud/connections'
+import { ConnectionError, type ConnectionClient, type ConnectionSnapshot } from '@gugu/core/cloud/connections'
 import type { ConnectionMetadataItem, ConnectionMetadataSnapshot } from './connection-metadata'
 import { createConnectionMetadataStore, type ConnectionMetadataCache } from './connection-metadata-store'
 import { assertConnectionApplicationAvailable } from './connection-action-guard'
 
 export const ownerConnectionResourceKey = (scopeKey: string, resourceKey: string) => JSON.stringify([scopeKey, resourceKey])
-
-export function isOwnerConnectionMetadataCache(value: unknown, ownerId: string): value is ConnectionMetadataSnapshot {
-  try {
-    const snapshot = value as ConnectionMetadataSnapshot
-    if (snapshot.version !== 1 || !Array.isArray(snapshot.items) || !Array.isArray(snapshot.application)) return false
-    const items = snapshot.items.map(item => {
-      if (item.owner_user_id !== ownerId || item.domain !== 'integrations' || !item.source || item.body_item_id !== null
-        || item.resource_key !== (item.source.resourceKey.startsWith('catalog:') ? item.source.resourceKey : ownerConnectionResourceKey(item.source.scopeKey,item.source.resourceKey)))
-        throw new Error('CONNECTION_CACHE_INVALID')
-      const { publicMetadata, ...data } = item.data
-      return { ...item.source,deviceId: item.device_id,revision: item.revision,data,publicMetadata: publicMetadata ?? null,
-        document: null,bodySha256: item.body_sha256,deletedAt: item.deleted_at,staleAt: item.stale_at ?? null,
-        observedAt: item.observed_at,updatedAt: item.updated_at }
-    })
-    const application = snapshot.application.map(change => {
-      if (change.domain !== 'integrations') throw new Error('CONNECTION_CACHE_INVALID')
-      const [scopeKey,resourceKey] = JSON.parse(change.resourceKey) as [unknown,unknown]
-      return { ...change,status: (change as typeof change & { wireStatus?: string }).wireStatus ?? change.status,scopeKey,resourceKey }
-    })
-    parseConnectionSnapshot({ version: 1,state: 'ready',revision: snapshot.revision,items,application })
-    return true
-  } catch { return false }
-}
 
 /** A renderer projection only. Mutations retain the service's exact scope/key;
  * the encoded display identity keeps equal keys on two devices separate. */

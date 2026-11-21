@@ -10,15 +10,25 @@ import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
-import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { DeviceScopeNoticeLine } from '@renderer/features/remote-hosts/device-scope-picker';
 import { deviceScopeNotice } from '@renderer/features/remote-hosts/device-scope-notice';
-import { registerInstalledExtensionTabs } from '@renderer/features/extensions/register-extension-tabs';
 import { setExtensionEnabled } from '@renderer/features/extensions/set-extension-enabled';
 import { openApp, openAppInWindow, pinToDock, quitApp, unpinFromDock } from '@renderer/features/extensions/app-dock';
-import type { ExtensionDisclosureLevel } from '@renderer/features/extensions/installed-extensions-store';
+import {
+  installedExtensions,
+  marketUpdates,
+  peekInstalledApps,
+  setAutoUpdate,
+  setDisclosure as setDisclosureOn,
+  updateCountOf,
+  useInstalledApps,
+  type ExtensionDisclosureLevel,
+} from '@renderer/features/extensions/installed-extensions';
+import { useReplica, refreshFailure } from '@/lib/replica';
+import { writeOver } from '@/lib/replicaWrite';
+import { Unknown } from '@/components/ui/Unknown';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -33,10 +43,11 @@ import { askInShell, installConsentPrompt, type InstallConsentAsk } from '@rende
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallGrant, type InstallAlsoOnMachine } from '@shared/extensions/host-actions';
 import { findRemoteHostsBridge } from '@shared/remote-hosts';
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere';
+import { extensionAgentStatus, extensionDataBytes, marketChanged, marketEntry, marketInstallRanking, marketSearch, marketShelf } from '@renderer/features/extensions/market-replicas';
+import { revokedPermissions } from './NotificationSettingsCard';
 import { AgentMarketContent, type AgentMarketFilter } from '@renderer/features/extensions/panel/agent-market-content';
 import { AddConnectorButton, ConnectorMarketPage } from '@renderer/features/extensions/panel/connector-market-page';
 import { DesktopExtensionMarket, type DesktopMarketShelf } from '@renderer/features/extensions/panel/desktop-extension-market';
-import { keepShelf, keptShelfItems } from '@renderer/features/extensions/panel/kept-shelf';
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
 import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle';
 import { MarketDetailConfirmations, MarketDetailDialog } from '@renderer/features/extensions/panel/market-detail-dialog';
@@ -87,33 +98,16 @@ type ShelfItem = MarketListItem;
  */
 type ShelfState = DesktopMarketShelf | { status: 'loading' | 'error' };
 
-/** The inventory (what is installed), as this screen has read it so far. */
-type InventoryState = 'loading' | 'ready' | 'error';
-
-/**
- * 每台机器的市场那一块,这一页上次画出来的样子(不带搜索词那一份,按 `host.key`):再打开、换机器再换回来,先画它,
- * 同时照常从那台机器手上的目录读一遍、原地换上(owner 10-16「本地有缓存啊」)。重启后的第一帧也是它(kept-shelf.ts)。
- */
-const lastShelf = new Map<string, DesktopMarketShelf>();
-type KeptExtra = Pick<DesktopMarketShelf, 'invalid' | 'total' | 'page'>;
-
-function shelfOf(hostKey: string): DesktopMarketShelf | undefined {
-  const inRun = lastShelf.get(hostKey);
-  if (inRun) return inRun;
-  const kept = keptShelfItems<ShelfItem, KeptExtra>(hostKey);
-  if (!kept?.extra) return undefined;
-  const shelf: DesktopMarketShelf = {
-    status: 'ready', query: '', errorKind: null, items: kept.items, hasMore: false, loadingMore: false, ...kept.extra,
-  };
-  lastShelf.set(hostKey, shelf);
-  return shelf;
-}
-
 /**
  * 常驻的 App 页(apps-views `retained`)切走再回来不重挂,所以「打开这一页」= 每次重新看见。两次之间至少隔这么久:目录自己
  * `max-age=60`,隔不到一分钟再取,Chromium 的 HTTP 缓存答的还是同一份。
  */
 export const MARKET_REOPEN_MIN_MS = 60_000;
+
+/** The permissions taken back from one App, in a list read (an App it names none for has none taken back). */
+function takenBack(byApp: Record<string, string[]>, extensionId: string): string[] {
+  return byApp[extensionId] ?? [];
+}
 
 /** 「上次更新于」的那个时刻:今天的只写几点几分,不是今天的带上日期。 */
 function marketStaleTime(iso: string, locale: string): string {
@@ -146,17 +140,28 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // 动作经设备 RPC 转到它的主进程,它自己的窗口跟着补上 / 撤下 tab。页面长相不变。
   const library = useLibraryHost();
   const host = library.extensions;
-  const store = host.store;
   const api = host.api;
   const remote = library.remote;
   // 看的是另一台机器、它此刻连不上:市场清单问不了(问了只会挂满超时)。
   const machineOffline = Boolean(remote && !remote.online);
   const remoteRef = useRef(remote);
   remoteRef.current = remote;
+  const hostKeyRef = useRef(host.key);
+  hostKeyRef.current = host.key;
+  // A machine that is offline is not asked; what was read of it is drawn read-only (this and the three reads below).
+  const installed = useInstalledApps(host.key, { read: !machineOffline });
+  const apps = installed.state === 'value' ? installed.value : null;
+  const updatesReading = useReplica(marketUpdates, [host.key], { read: !machineOffline });
+  const updates = updatesReading.state === 'value' ? updatesReading.value.summary ?? null : null;
   // 别的机器读清单没读到(离线 / server 太旧 / 问不通):页面上说一句人话,❌ 弹一条带原文的失败 toast。
-  const [inventoryError, setInventoryError] = useState<unknown>(null);
+  const revokedReading = useReplica(revokedPermissions, [host.key], { read: !machineOffline });
+  const revoked = revokedReading.state === 'value' ? revokedReading.value : null;
+  // #6387
+  const agentStatusReading = useReplica(extensionAgentStatus, [host.key], { read: !machineOffline });
+  const agentStatus = agentStatusReading.state === 'value' ? agentStatusReading.value : null;
+  const inventoryError = refreshFailure(installed) ?? refreshFailure(revokedReading) ?? refreshFailure(agentStatusReading);
   const notice = deviceScopeNotice(
-    { remote, error: inventoryError, hasData: store.isLoaded, now: Date.now(), cloud: remoteHostsStore.cloudScope(remote?.deviceId) },
+    { remote, error: inventoryError, hasData: installed.state === 'value', now: Date.now(), cloud: remoteHostsStore.cloudScope(remote?.deviceId) },
     translate
   );
   const showConfirm = useShowModal('confirmActionModal');
@@ -190,13 +195,36 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const [query, setQuery] = useState('');
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
   const debouncedQuery = useDebounce(tab === 'market' ? query.trim() : '', 250);
-  const [shelf, setShelf] = useState<ShelfState>(() => shelfOf(host.key) ?? { status: 'loading' });
-  const shelfRef = useRef(shelf);
-  shelfRef.current = shelf;
+  // Loading more is a new key: the pages already drawn stay drawn from the previous key until it lands, and when it fails.
+  const [paging, setPaging] = useState({ query: '', pages: 1 });
+  const pages = paging.query === debouncedQuery ? paging.pages : 1;
+  const shelfReading = useReplica(marketShelf, machineOffline || inventoryOnly ? null : [host.key]);
+  // The market's home (featured, its order, popular) is drawn from the shelf and the install ranking together: read with
+  // the shelf, and the home waits for it (an unreadable ranking = the catalog's order). ❌ The home drawn without it and
+  // re-sorted when it lands: the first open of Apps showed one page, then another.
+  const rankingReading = useReplica(marketInstallRanking, machineOffline || inventoryOnly ? null : []);
+  const searchArgs: [string, string, number] | null = machineOffline || inventoryOnly || debouncedQuery === '' ? null : [host.key, debouncedQuery, pages];
+  const searchReading = useReplica(marketSearch, searchArgs);
+  const searchBefore = useReplica(marketSearch, searchArgs && pages > 1 ? [host.key, debouncedQuery, pages - 1] : null, { read: false });
+  const fullShelf = shelfReading.state === 'value' ? shelfReading.value : null;
+  // A failed read is said above the market with a retry; what was read stays drawn.
+  const shownFailure = debouncedQuery === '' ? refreshFailure(shelfReading) : refreshFailure(searchReading);
+  const shelf: ShelfState = useMemo((): ShelfState => {
+    if (debouncedQuery === '') {
+      if (fullShelf && rankingReading.state !== 'unknown') return { ...fullShelf, status: 'ready', query: '', hasMore: false, loadingMore: false };
+      return shelfReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
+    }
+    const read = searchReading.state === 'value' ? { found: searchReading.value, loadingMore: false }
+      : searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: searchReading.state === 'unknown' } : null;
+    if (!read) return searchReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
+    return { ...read.found, status: 'ready', query: debouncedQuery, loadingMore: read.loadingMore };
+  }, [debouncedQuery, fullShelf, shelfReading.state, rankingReading.state, searchReading, searchBefore]);
+  const retryShelf = () => {
+    if (debouncedQuery === '') void marketShelf.refresh(host.key);
+    else void marketSearch.refresh(host.key, debouncedQuery, pages);
+  };
   // 后台那趟没取到:手上那份照旧画,页头安静写一句「上次更新于 …」(那份的时刻)。❌ 弹错、❌ 错误面板。
   const [marketStale, setMarketStale] = useState<string | null>(null);
-  // 页面画着的那份目录是哪一刻的:同一刻的「变了」(推送和 marketRefresh 的回答各报一次)只重读一回。
-  const shelfFetchedAt = useRef<string | null>(null);
   // Market pages' subjects read for Apps the list has not got (a link, a page of the list not read yet), by id.
   const [subjects, setSubjects] = useState<Record<string, MarketSubject>>({});
   const subjectOf = (extensionId: string): MarketSubject | undefined => {
@@ -220,12 +248,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (previousAppsLocation()) navigateBack(true);
     else moveAppsLocation(() => home);
   };
-  // Boot may have filled the store already; then the page opens on that copy and
-  // re-reads behind it (stale-while-revalidate) rather than flashing a skeleton
-  // over rows it could show.
-  const [inventory, setInventory] = useState<InventoryState>(
-    store.isLoaded ? 'ready' : 'loading'
-  );
   // What is in flight, in two copies: the state is what the screen draws, the
   // ref is what the guards read. A guard on state alone lets a double click
   // through — both clicks land in the same tick, before the first has rendered
@@ -267,12 +289,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const permissionsInFlight = useRef<Record<string, true>>({});
   // On/off switches in flight, by extension id.
   const [switching, setSwitching] = useState<Record<string, true>>({});
-  const [dataCleared, setDataCleared] = useState(0);
 
-  // Which declared hosts the user has taken back, per extension. Held here
-  // rather than in the tab store: it is what this screen manages, and no other
-  // surface asks the question.
-  const [revoked, setRevoked] = useState<Record<string, string[]>>({});
 
   // `useSessionMessages` hands back a fresh closure every render, so keying an
   // effect on it turns "read once on mount" into "read on every render" — and
@@ -282,8 +299,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const translateRef = useRef(translate);
   translateRef.current = translate;
 
-  // #6387 各扩展给 agent 的程序:几个会话在用、最近一次没起来的原因。随清单一起读。
-  const [agentStatus, setAgentStatus] = useState<Record<string, ExtensionAgentStatus>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -295,31 +310,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // skipped the withdrawal read as well, drawing every switch ON while main
       // enforced a host as off.) The screen that manages this inventory reads
       // it; one list call is not worth a stale one.
-      await store.load();
-      const permissions = await api.revoked();
-      // Swallowing this would draw every switch ON while the main process is
-      // hard-failing on the same read — the screen would claim a permission is
-      // granted that activation refuses to honour.
-      if (!permissions.success || !permissions.data) {
-        throw new Error(permissions.error ?? 'permissions unreadable');
-      }
-      setRevoked(permissions.data);
-      const agents = await api.agentStatus();
-      if (!agents.success || !agents.data) throw new Error(agents.error ?? 'agent status unreadable');
-      setAgentStatus(agents.data);
-      setInventoryError(null);
-      setInventory('ready');
+      const hostKey = hostKeyRef.current;
+      // What the market says is about what is installed: read again with it (unread, the page's own read is on its way).
+      if (marketUpdates.peek(hostKey).state !== 'unknown') void marketUpdates.refresh(hostKey);
+      // Not read yet: the read this page's mount began is the one (❌ a second); read already: read again now. A read that
+      // fails is thrown (❌ every switch drawn on while main enforces one off).
+      await Promise.all([installedExtensions, revokedPermissions, extensionAgentStatus]
+        .map((model) => (model.peek(hostKey).state === 'unknown' ? model.fetch(hostKey) : model.reread(hostKey))));
     } catch (error) {
       log.error('extension inventory unreadable:', error);
-      if (remoteRef.current) {
-        // 别的机器:那一句话在页头(deviceScopeNotice),不弹 toast。
-        setInventoryError(error);
-        setInventory('error');
-        return;
-      }
-      // The tab shows the failure in place with a way back (below); the toast
-      // reaches whoever is on the other tab.
-      setInventory('error');
+      // 别的机器:那一句话在页头(deviceScopeNotice,从读数来),不弹 toast。
+      if (remoteRef.current) return;
+      // The toast reaches whoever is on the other tab.
       toast({
         title: translateRef.current('extensions.loadFailed'),
         description: messageForUser(error),
@@ -329,107 +331,12 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     }
   }, []);
 
-  // The shelf is read separately from the inventory: it does not change when
-  // something is installed, and its failure has its own face (an error panel on
-  // the market tab) rather than a toast over the whole screen.
-  //
-  // 分页:`readShelf` 从第 0 页取起(换搜索词、打开、重试都从这儿起),`loadMore` 取下一页拼在后面。
-  // 一个自增的序号挡住乱序:慢的旧请求回来时,如果搜索词已经换了,它的结果直接丢掉。
-  // 读的是那台机器手上的目录(market-snapshot.ts),❌ 等下载站。同一个搜索词再读一遍(打开时、目录变了、重试)时
-  // 画着的那份留着、读回来原地换上 —— ❌ 骨架、❌ 回到顶上;`pages` = 已经翻到的那几页一起重读,下面的不会少掉一截。
-  const shelfRequest = useRef(0);
-  const readShelf = useCallback(async (search = '', pages = 1) => {
-    const ticket = (shelfRequest.current += 1);
-    const keeps = (current: ShelfState) => current.status === 'ready' && current.query === search && !current.errorKind;
-    setShelf((current) => (keeps(current) ? current : { status: 'loading' }));
-    try {
-      const result = await api.market({ page: 0, query: search });
-      if (ticket !== shelfRequest.current) return;
-      // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
-      if (!result.success || !result.data) throw new Error('market unreadable');
-      for (const entry of result.data.invalid) {
-        // The reason is for whoever fixes the bundle, not for the person browsing;
-        // the row on screen says only that it could not be listed.
-        log.warn(`extension catalog: ${entry.dirName} could not be listed: ${entry.reason}`);
-      }
-      if (result.data.error) {
-        // 连不上这件事本身要留痕:界面上有那一句,日志里有原话。
-        log.warn(`extension market unreachable: ${result.data.error}`);
-      }
-      let items = result.data.extensions;
-      let last = result.data;
-      for (let page = 1; last.hasMore && (search === '' || page < pages); page += 1) {
-        const next = await api.market({ page, query: search });
-        if (ticket !== shelfRequest.current) return;
-        // 默认分类浏览使用完整目录，搜索结果仍按页加载。
-        if (!next.success || !next.data || next.data.errorKind) {
-          if (search === '') throw new Error('The complete market catalog could not be read');
-          break;
-        }
-        const seen = new Set(items.map((item) => item.manifest.id));
-        items = [...items, ...next.data.extensions.filter((item) => !seen.has(item.manifest.id))];
-        last = next.data;
-      }
-      shelfFetchedAt.current = result.data.fetchedAt;
-      const ready: DesktopMarketShelf = {
-        status: 'ready',
-        query: search,
-        errorKind: result.data.errorKind,
-        items,
-        invalid: result.data.invalid,
-        total: last.total,
-        page: last.page,
-        hasMore: last.hasMore,
-        loadingMore: false,
-      };
-      setShelf(ready);
-      // 下次打开先画这份完整目录。
-      if (search === '' && !ready.errorKind) {
-        lastShelf.set(host.key, ready);
-        keepShelf<ShelfItem, KeptExtra>(host.key, items, null, { invalid: ready.invalid, total: ready.total, page: ready.page });
-      }
-    } catch (error) {
-      if (ticket !== shelfRequest.current) return;
-      // Not an empty shelf. A missing or unreadable catalog is a packaging
-      // fault: the tab says so, and the path goes to the log. 画着同一个词的那份时照旧画它(重读没读到,不是读不到)。
-      log.error('extension catalog unreadable:', error);
-      setShelf((current) =>
-        current.status === 'ready' && current.query === search && !current.errorKind ? current : { status: 'error' }
-      );
-    }
-  }, []);
-
-  const loadMore = useCallback(async () => {
-    if (shelf.status !== 'ready' || shelf.query !== debouncedQuery || shelf.errorKind || !shelf.hasMore || shelf.loadingMore) return;
-    const ticket = shelfRequest.current;
-    const nextPage = shelf.page + 1;
-    setShelf({ ...shelf, loadingMore: true });
-    try {
-      const result = await api.market({ page: nextPage, query: debouncedQuery });
-      if (ticket !== shelfRequest.current) return;
-      // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
-      if (!result.success || !result.data || result.data.errorKind) throw new Error('market unreadable');
-      const data = result.data;
-      setShelf((current) => {
-        if (current.status !== 'ready') return current;
-        // 同一个 id 不画两次:两页之间清单若被改动(发布了新扩展),边界会挪一格。
-        const seen = new Set(current.items.map((item) => item.manifest.id));
-        return {
-          ...current,
-          items: [...current.items, ...data.extensions.filter((item) => !seen.has(item.manifest.id))],
-          total: data.total,
-          page: data.page,
-          hasMore: data.hasMore,
-          loadingMore: false,
-        };
-      });
-    } catch (error) {
-      if (ticket !== shelfRequest.current) return;
-      // 下一页没取到:已经画出来的留着,底部的「加载更多」还在,用户可以再点。
-      log.warn('extension catalog next page unreadable:', error);
-      setShelf((current) => (current.status === 'ready' ? { ...current, loadingMore: false } : current));
-    }
-  }, [shelf, debouncedQuery]);
+  // A page that failed is read again by its retry (❌ the next one asked past it).
+  const canLoadMore = shelf.status === 'ready' && shelf.hasMore && !shelf.loadingMore && shownFailure === null;
+  const loadMore = () => {
+    if (!canLoadMore || debouncedQuery === '') return;
+    setPaging({ query: debouncedQuery, pages: pages + 1 });
+  };
 
   // 底部哨兵:滚到它就取下一页 —— 往下滚本身就是「我还要看」,❌ 不再要一次点击
   // (owner 2026-09-14:「我不要手动点才能加载更多,下滚不就可以加载更多了吗」)。
@@ -437,7 +344,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef(loadMore);
   loadMoreRef.current = loadMore;
-  const canLoadMore = shelf.status === 'ready' && shelf.query === debouncedQuery && !shelf.errorKind && shelf.hasMore && !shelf.loadingMore;
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !canLoadMore || typeof IntersectionObserver === 'undefined') return;
@@ -462,36 +368,44 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   useBrowseList(rootRef, scroller, browsing?.subject.manifest.id, shelf.status === 'ready' ? shelf.items.length : 0);
 
   /**
-   * 一个扩展当前在市场上的那一版:先看已经取到的页,没有就定点问一次。
-   * 清单是分页的,装着的那个未必在已取到的页里;连不上就 undefined。
+   * 一个扩展当前在市场上的那一版:先看已经取到的页(清单是分页的),没有就定点问一次。
+   * null = 市场里没有它;市场读不到就 reject —— 两者对人说的不一样。
    */
   const shelfItemFor = useCallback(
-    async (extensionId: string): Promise<ShelfItem | undefined> => {
-      const loaded =
-        shelf.status === 'ready' ? shelf.items.find((item) => item.manifest.id === extensionId) : undefined;
-      if (loaded) return loaded;
-      const result = await api.marketEntry({ extensionId }).catch(() => null);
-      return result?.success && result.data ? result.data : undefined;
-    },
-    [shelf]
+    async (extensionId: string): Promise<ShelfItem | null> =>
+      fullShelf?.items.find((item) => item.manifest.id === extensionId) ?? (await marketEntry.fetch(hostKeyRef.current, extensionId)),
+    [fullShelf]
   );
+  const withShelfItem = async (extensionId: string, name: string, act: (item: ShelfItem) => void): Promise<void> => {
+    try {
+      const item = await shelfItemFor(extensionId);
+      if (item) act(item);
+      else toast({ title: translate('extensions.notInMarket', { name }), tier: 'error' });
+    } catch (error) {
+      log.warn('market entry unreadable:', error);
+      toast({
+        title: translate('extensions.marketUnavailable'),
+        tier: 'error',
+        action: { label: translate('extensions.retry'), onClick: () => void withShelfItem(extensionId, name, act) },
+      });
+    }
+  };
 
   // 下载站那一趟回来了(打开这一页时去的那趟,或者别处 —— 启动、安装 —— 去的):变了,市场这一块和「有新版 / 被撤回」
   // 一起从新的那份重读(两边永远是同一刻,10-08 的一致性);没变什么都不重画;没取到,照旧画手上那份、页头写「上次更新于 …」。
-  const debouncedQueryRef = useRef(debouncedQuery);
-  debouncedQueryRef.current = debouncedQuery;
+  const fullShelfRef = useRef(fullShelf);
+  fullShelfRef.current = fullShelf;
   const onMarketRefreshed = (refreshed: MarketRefreshed) => {
     if (refreshed.outcome === 'failed') {
       setMarketStale(refreshed.fetchedAt);
       return;
     }
     setMarketStale(null);
-    if (refreshed.outcome !== 'changed' || refreshed.fetchedAt === shelfFetchedAt.current) return;
-    shelfFetchedAt.current = refreshed.fetchedAt;
-    const current = shelfRef.current;
-    void readShelf(debouncedQueryRef.current, current.status === 'ready' ? current.page + 1 : 1);
+    // 变了:这台机器的市场那几份重读(推送和回答报的同一刻只读一回,marketChanged 按那一刻去重);画着的那份就是这一刻的也不读。
+    if (refreshed.outcome !== 'changed' || refreshed.fetchedAt === fullShelfRef.current?.fetchedAt) return;
+    if (!marketChanged(host.key, refreshed.fetchedAt)) return;
     // 本机那份「有新版」由 wireMarketRefresh 跟着推送重查;别的机器的推送未必转得过来,这里查。
-    if (!host.local) void store.checkUpdates();
+    if (!host.local) void marketUpdates.refresh(host.key);
   };
   const onMarketRefreshedRef = useRef(onMarketRefreshed);
   onMarketRefreshedRef.current = onMarketRefreshed;
@@ -510,10 +424,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (!shown || (remote && !remote.online)) return;
     if (openedAt.current !== null && Date.now() - openedAt.current < MARKET_REOPEN_MIN_MS) return;
     openedAt.current = Date.now();
+    // With it 「有什么要告诉你的」 too (spec:启动时一次、打开设置页时一次,❌ 轮询;启动时那一次是 wire-market-refresh 的)。
     void refresh();
-    // 打开设置页时也查一次「有什么要告诉你的」(spec:启动时一次、打开设置页时一次,
-    // ❌ 轮询)。embedded.tsx 已经在启动时查过一次;这里是「打开设置页时」那一次。
-    void store.checkUpdates();
     if (inventoryOnly) return;
     // 这一次和下面的市场清单都先从那台机器手上的目录答(❌ 等下载站);同时让它去下载站取一趟,回来的结果走
     // onMarketRefreshed。结果用回答带回:别的机器的推送未必转得到这个窗口。比这一版旧的机器没有这一问,照旧现取。
@@ -524,13 +436,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       })
       .catch((error: unknown) => log.warn('App market refresh not asked:', error));
   }, [refresh, shown, inventoryOnly]);
-
-  // 首次与每次搜索词变化:从第 0 页重来。读的是手上那份目录,和上面那趟更新检查同一份;
-  // 下载站那趟取回来变了,两边由 onMarketRefreshed 一起重读。
-  useEffect(() => {
-    if (inventoryOnly || (remote && !remote.online)) return;
-    void readShelf(debouncedQuery);
-  }, [readShelf, debouncedQuery, remote?.online, inventoryOnly]);
 
   /**
    * 从市场装:装法只有一条 —— main 的 installExtensionFromMarket(群里的「用 X 打开」、首启那一页、agent 的 app_install 走的
@@ -682,21 +587,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (inFlight.current[manifest.id] === 'installing') return;
     beginPending(manifest.id, 'installing');
     // 「装好了」那句只给第一次装上的;更新、换版本不说(它本来就在)。
-    const firstInstall = !store.manifests.some((entry) => entry.id === manifest.id);
+    const firstInstall = apps === null || !apps.manifests.some((entry) => entry.id === manifest.id);
     try {
       const result = await run();
       if (!result.success) {
         throw new Error(result.error ?? '');
       }
+      // This window's tab providers follow the list, no restart; another machine's follow in its own window.
+      // With what is installed, its 「有新版」 (cleared, or the next one after the version just installed).
       await refresh();
-      // 装的这台机器上现在这一版,清出「有新版」的提示（或者换成刚装的这版还在跑的下一个）。
-      void store.checkUpdates();
-      // Its tab types become available now — no restart, per the product contract.
-      // 另一台机器的 tab 由它自己的窗口补上(它收到清单变了的事件);这里只管本机窗口。
-      if (host.local) await registerInstalledExtensionTabs();
       if (firstInstall) setJustInstalled(manifest.id);
       // "Did it work" and "what next" in one breath: the tab is where it went.
-      // What a task's「+」lists: the App's own page, by its name in this language (installedExtensionsStore.mainTabOf); an App
+      // What a task's「+」lists: the App's own page, by its name in this language (installedExtensions → mainTabOf); an App
       // whose tabs only open files or come one per task has nothing there to put, and says nothing about it.
       const name = localizedManifestText(manifest, locale).name;
       const hasPage = manifest.contributes.tabs.some((tab) => declaredContexts(tab).length === 0 && !tab.perSession);
@@ -738,28 +640,16 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     setPendingPermissions(permissionsInFlight.current);
     const apply = (list: readonly string[], on: boolean) =>
       on ? list.filter((entry) => entry !== permission) : [...new Set([...list, permission])];
-    setRevoked((current) => ({
-      ...current,
-      [manifest.id]: apply(current[manifest.id] ?? [], granted),
-    }));
+    const take = (revoked: (current: string[]) => string[]) => (current: Record<string, string[]> | undefined) =>
+      current && { ...current, [manifest.id]: revoked(current[manifest.id] ?? []) };
     try {
-      const result = await api.setPermissionGranted({
-        extensionId: manifest.id,
-        permission,
-        granted,
-      });
-      if (!result.success || !result.data) {
-        throw new Error(result.error ?? '');
-      }
-      // What main enforces wins over what was assumed.
-      setRevoked((current) => ({ ...current, [manifest.id]: result.data.revoked }));
+      // What main enforces wins over what was assumed; refused and unreadable again, back to what was read before (I4).
+      await writeOver(revokedPermissions, [host.key], take((list) => apply(list, granted)), async () => {
+        const result = await api.setPermissionGranted({ extensionId: manifest.id, permission, granted });
+        if (!result.success || !result.data) throw new Error(result.error ?? '');
+        return result.data.revoked;
+      }, (settled) => take(() => settled));
     } catch (error) {
-      // Roll back this one switch only: another switch on the same extension may
-      // have landed meanwhile, and it keeps its own result.
-      setRevoked((current) => ({
-        ...current,
-        [manifest.id]: apply(current[manifest.id] ?? [], !granted),
-      }));
       toast({
         title: translateRef.current('extensions.permissionChangeFailed'),
         description: messageForUser(error),
@@ -800,18 +690,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // The far-left rail is this machine's: its own Apps that are on and have a page of their own (no file to open).
   // 「打开」 in an App's details goes by the same rule: it does what the App's icon on the rail does.
   const onRail = (manifest: ExtensionManifest) =>
-    !remote && store.isEnabled(manifest.id) && !store.isPreinstalled(manifest.id) && Boolean(store.mainTabOf(manifest.id));
+    !remote && apps !== null && apps.isEnabled(manifest.id) && !apps.isPreinstalled(manifest.id) && Boolean(apps.mainTabOf(manifest.id));
   const dockToggle = (manifest: ExtensionManifest) =>
     !onRail(manifest)
       ? undefined
       : () =>
-          void (store.dock.includes(manifest.id) ? unpinFromDock : pinToDock)(manifest.id).catch((error: unknown) => {
+          void (apps!.dock.includes(manifest.id) ? unpinFromDock : pinToDock)(manifest.id).catch((error: unknown) => {
             log.error('dock change refused:', error);
             toast({ title: translateRef.current('extensions.dockFailed'), description: messageForUser(error), tier: 'error' });
           });
   const setDisclosure = async (manifest: ExtensionManifest, level: ExtensionDisclosureLevel) => {
     try {
-      await store.setDisclosure(manifest.id, level);
+      await setDisclosureOn(host.key, manifest.id, level);
     } catch (error) {
       log.error('extension disclosure refused:', error);
       toast({ title: translateRef.current('extensions.disclosureFailed'), description: messageForUser(error), tier: 'error' });
@@ -851,7 +741,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const result = await host.api.uninstall({ extensionId: app.id, lastAnywhere });
       if (!result.success) throw new Error(result.error ?? '');
       await refresh();
-      void store.checkUpdates();
       // 它的设置页随它一起没了:回到进来的地方(市场页还在,按钮回到「安装」);从别处直接进来的回「已安装」。
       const here = currentAppsLocation();
       if (here.detail?.page === 'manage' && here.detail.extensionId === app.id) {
@@ -861,16 +750,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // Uninstall is the one irreversible action here. When the bundle is on the
       // shelf the way back is one click on the toast; a hand-picked folder has
       // no shelf copy, so the toast only reports.
-      const onShelf = await shelfItemFor(app.id);
+      // The market unreadable is said as such; its 「重新安装」 asks the market again on the click.
+      const onShelf = await shelfItemFor(app.id).catch((error: unknown) => {
+        log.warn('market entry unreadable:', error);
+        return 'unreadable' as const;
+      });
+      const reinstall = () => void withShelfItem(app.id, app.name, (item) => void installFromShelf(item.ref, app.id));
       toast({
         title: translate('extensions.uninstalled', { name: app.name }),
         tier: 'success',
-        ...(onShelf && {
-          action: {
-            label: translate('extensions.reinstall'),
-            onClick: () => void installFromShelf(onShelf.ref, app.id),
-          },
-        }),
+        ...(onShelf === 'unreadable'
+          ? { description: translate('extensions.reinstallMarketUnreadable'), action: { label: translate('extensions.reinstall'), onClick: reinstall } }
+          : onShelf && { action: { label: translate('extensions.reinstall'), onClick: () => void installFromShelf(onShelf.ref, app.id) } }),
       });
     } catch (error) {
       toast({
@@ -885,14 +776,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
 
   // ── derived views ───────────────────────────────────────────────────────
-  const installedById = useMemo(
-    () => new Map(store.manifests.map((manifest) => [manifest.id, manifest])),
-    // mobx: `manifests` is observable; observer() re-renders when it changes.
-    [store.manifests]
-  );
+  const installedById = useMemo(() => (apps ? new Map(apps.manifests.map((manifest) => [manifest.id, manifest])) : null), [apps]);
 
   const noticeOf = (manifest: ExtensionManifest): InstalledRowNotice | undefined => {
-    const updates = store.updates;
     if (!updates) return undefined;
     const yanked = updates.yanked[manifest.id];
     if (yanked) return { kind: 'yanked', reason: yanked.reason, installable: yanked.installable };
@@ -914,21 +800,23 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
    * 有能装的新版 = 更新;能打开 = 打开;都不是 = 只说「已安装」。`item` 是它在市场上的那一版(没有就只看装着的)。
    */
   const lifecycleOf = (extensionId: string, item?: Pick<ShelfItem, 'manifest' | 'cloud'>): AppLifecycle => {
+    // ❌ 「安装」 for an App that may be installed.
+    if (!apps || !installedById) return null;
     const installed = installedById.get(extensionId);
-    const fork = store.origins[extensionId] === 'fork';
+    const fork = apps.origins[extensionId] === 'fork';
     return appLifecycle({
       installed,
-      enabled: installed ? store.isEnabled(installed.id) : false,
-      updateVersion: fork ? undefined : store.updates?.updates[extensionId]?.version,
+      enabled: installed ? apps.isEnabled(installed.id) : false,
+      updateVersion: fork ? undefined : updates?.updates[extensionId]?.version,
       offered: fork ? undefined : item,
-      preinstalled: store.isPreinstalled(extensionId),
+      preinstalled: apps.isPreinstalled(extensionId),
       canOpen: installed ? onRail(installed) : false,
     }, translate);
   };
 
   const runLifecycle = (extensionId: string, item?: Pick<ShelfItem, 'manifest' | 'cloud' | 'ref'>) => {
     const state = lifecycleOf(extensionId, item);
-    const installed = installedById.get(extensionId);
+    const installed = installedById?.get(extensionId);
     if (!state) return;
     if (state.kind === 'get' && item) void installFromShelf(item.ref, extensionId);
     // 更新:没新增权限直接换(按「更新」本身就是同意,spec「装与卸」);新增了的照旧问那几项。
@@ -936,6 +824,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     else if (state.kind === 'enable' && installed) void switchExtension(installed, true);
     else if (state.kind === 'open') openApp(extensionId);
   };
+
 
   /** 「对 agent 说」点一句:新建任务那一页,这句已经填在输入框里(它读新建框那一格草稿)。只在本机。 */
   const askAgent = remote
@@ -945,7 +834,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         navigate('new-session');
       };
 
-  const resourceOf = (extensionId: string) => ({ kind: 'app' as const, target: { kind: 'app-detail' as const, extensionId, deviceId: remote?.deviceId ?? readCachedDevices().find(device => device.is_current_device)?.device_id }, facts: store.updates?.forkBehind?.[extensionId] ? ['behind' as const] : [] });
+  const resourceOf = (extensionId: string) => ({ kind: 'app' as const, target: { kind: 'app-detail' as const, extensionId, deviceId: remote?.deviceId ?? readCachedDevices().find(device => device.is_current_device)?.device_id }, facts: updates?.forkBehind?.[extensionId] ? ['behind' as const] : [] });
   const menuOf = (manifest: ExtensionManifest) => ({
     resource: resourceOf(manifest.id),
     onSettings: () => openInstalledDetail(manifest),
@@ -953,33 +842,32 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     onOpenInWindow: onRail(manifest) ? () => void openAppInWindow(manifest.id) : undefined,
     onForward: host.local ? () => forwardExtension(manifest) : undefined,
     autoUpdate: autoUpdateOf(manifest),
-    onUninstall: store.isPreinstalled(manifest.id) ? undefined : () => confirmUninstall(manifest),
+    onUninstall: apps!.isPreinstalled(manifest.id) ? undefined : () => confirmUninstall(manifest),
   });
   // 「自动更新」(owner 10-19):市场装的才有。这台机器(或资源库里那一台)的主进程记着;打开回来,它当场更新一遍。
   const autoUpdateOf = (manifest: ExtensionManifest) => {
-    const on = store.autoUpdates(manifest.id);
+    const on = apps!.autoUpdates(manifest.id);
     if (on === null) return undefined;
     return {
       on,
       onToggle: (next: boolean) =>
-        void store.setAutoUpdate(manifest.id, next).catch((error: unknown) => {
+        void setAutoUpdate(host.key, manifest.id, next).catch((error: unknown) => {
           log.error('auto-update switch refused:', error);
           toast({ title: translateRef.current('extensions.switchFailed'), description: messageForUser(error), tier: 'error' });
         }),
     };
   };
   const toggleOf = (manifest: ExtensionManifest) =>
-    store.isPreinstalled(manifest.id) ? undefined : (enabled: boolean) => void switchExtension(manifest, enabled);
+    apps!.isPreinstalled(manifest.id) ? undefined : (enabled: boolean) => void switchExtension(manifest, enabled);
 
-  const installedRows = store.manifests
+  const installedRows = (apps ? apps.manifests : [])
     .filter((manifest) => matchesExtensionQuery(manifest, query))
     .sort((a, b) => a.name.localeCompare(b.name));
   const extensionShelf: ShelfState = shelf.status === 'ready' && shelf.query !== debouncedQuery
     ? { status: 'loading' }
     : shelf;
   const marketRows = shelf.status === 'ready' ? shelf.items : [];
-  const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID)
-    ?? lastShelf.get(host.key)?.items.find((item) => item.manifest.id === ASSISTANT_APP_ID);
+  const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID);
 
   const openInstalledDetail = (manifest: ExtensionManifest) => {
     setJustInstalled(null);
@@ -998,7 +886,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
   // A link names only the App: it settles on its settings or its market page (beside the market list).
   useAppDetailRequest({
-    page: location.detail, deviceId: location.deviceId, ready: inventory === 'ready', host, rootRef,
+    page: location.detail, deviceId: location.deviceId, ready: installed.state === 'value', host, rootRef,
     hasSubject: (extensionId) => subjectOf(extensionId) !== undefined,
     onSubject: keepSubject,
     onPage: (settled) => moveAppsLocation((here) => here.detail
@@ -1044,7 +932,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     try {
       const result = await api.setTabHidden({ extensionId: manifest.id, tab: name, hidden });
       if (!result.success || !result.data) throw new Error(result.error ?? '');
-      store.applyHiddenTabs(result.data);
+      const hiddenTabs = result.data;
+      installedExtensions.set([host.key], (list) => list && { ...list, hiddenTabs });
     } catch (error) {
       log.error('hidden tab refused:', error);
       toast({ title: translate('extensions.tabHiddenFailed'), description: messageForUser(error), tier: 'error' });
@@ -1063,7 +952,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           if (host.local) await quitApp(manifest.id);
           const result = await api.clearAppData({ extensionId: manifest.id });
           if (!result.success) throw new Error(result.error ?? '');
-          setDataCleared((count) => count + 1);
+          void extensionDataBytes.refresh(host.key, manifest.id);
           toast({ title: translate('extensions.manageDataCleared', { name }), tier: 'success' });
         } catch (error) {
           log.error('App data not cleared:', error);
@@ -1090,7 +979,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const name = localizedManifestText(manifest, locale).name;
       const state = lifecycleOf(manifest.id);
       const currentVersion = manifest.version;
-      const icon = store.appIcons[manifest.id];
+      const icon = apps!.appIcons[manifest.id];
       return {
         id: manifest.id,
         name,
@@ -1100,21 +989,22 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           : <AppIcon id={manifest.id} size={size} />,
         open: onOpenInstalledApp ? () => onOpenInstalledApp(manifest.id) : undefined,
         busy: !!pending[manifest.id] || !!switching[manifest.id],
-        enabled: store.isEnabled(manifest.id),
-        setEnabled: store.isPreinstalled(manifest.id) ? undefined : (next) => switchExtension(manifest, next),
+        enabled: apps!.isEnabled(manifest.id),
+        setEnabled: apps!.isPreinstalled(manifest.id) ? undefined : (next) => switchExtension(manifest, next),
         update: state?.kind === 'update' ? async () => {
           await installFromShelf({ extensionId: manifest.id, version: state.version }, manifest.id, { singleMachine: true });
-          if (store.manifests.find((entry) => entry.id === manifest.id)?.version !== state.version) {
+          if (peekInstalledApps(host.key)?.manifests.find((entry) => entry.id === manifest.id)?.version !== state.version) {
             throw new Error('The app update did not complete');
           }
         } : undefined,
-        remove: store.isPreinstalled(manifest.id) ? undefined : async () => {
+        remove: apps!.isPreinstalled(manifest.id) ? undefined : async () => {
           await uninstall(manifest);
-          if (store.manifests.some((entry) => entry.id === manifest.id)) throw new Error('The app was not removed');
+          if (peekInstalledApps(host.key)?.manifests.some((entry) => entry.id === manifest.id)) throw new Error('The app was not removed');
         },
       };
     });
-    for (const entry of store.invalid) {
+    // Not read yet: no rows, and the page says it is loading (`loading` below).
+    if (apps) for (const entry of apps.invalid) {
       const id = entry.dirName;
       items.push({
         id,
@@ -1123,11 +1013,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         busy: !!pending[id],
         remove: async () => {
           await uninstall({ id, name: id });
-          if (store.invalid.some((row) => row.dirName === id)) throw new Error('The app was not removed');
+          if (peekInstalledApps(host.key)?.invalid.some((row) => row.dirName === id)) throw new Error('The app was not removed');
         },
       });
     }
-    return renderInstalledApps(items, { loading: inventory === 'loading', error: inventory === 'error' });
+    return renderInstalledApps(items, { loading: installed.state === 'unknown', error: installed.state === 'error' });
   }
 
   const header = (aside?: ReactNode) => (
@@ -1135,7 +1025,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   );
 
   // 别的机器此刻给不出清单、手上也没有上次的:只说那一句。页头照画 —— 换机器的选择器在页头上,❌ 让人困在这一句里。
-  if (notice && !store.isLoaded) {
+  if (notice && installed.state !== 'value') {
     return (
       <div className="mk" data-testid="extensions-store" ref={rootRef}>
         {header(location.detail && (
@@ -1152,24 +1042,24 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const listed = marketRows.find((row) => row.manifest.id === detail.subject.manifest.id);
     const subject = listed ? { manifest: listed.manifest, cloud: listed.cloud, installRef: listed.ref } : detail.subject;
     const { manifest } = subject;
-    const installed = installedById.get(manifest.id);
+    const installedHere = installedById?.get(manifest.id);
     const item = { manifest, cloud: subject.cloud, ref: subject.installRef };
     return (
       <div className="pt-10 pb-14">
         <AppProductPage
           // 点「类似 App」是换一个 App:整页重来,❌ 带着上一个的截图、展开的版本历史画一帧。
           key={manifest.id}
-          subject={{ ...subject, installedVersion: installed?.version }}
-          iconDataUrl={installed ? store.appIcons[installed.id] : undefined}
+          subject={{ ...subject, installedVersion: installedHere?.version }}
+          iconDataUrl={installedHere ? apps!.appIcons[installedHere.id] : undefined}
           lifecycle={lifecycleOf(manifest.id, item)}
           pending={pending[manifest.id]}
           pendingPercent={downloadPercent[manifest.id]}
           locale={locale}
           translate={translate}
           machine={remote?.deviceLabel}
-          api={api}
+          hostKey={host.key}
           readOnly={!!notice?.readOnly}
-          justInstalled={justInstalled === manifest.id && Boolean(installed)}
+          justInstalled={justInstalled === manifest.id && Boolean(installedHere)}
           backLabel={fromSettings ? translate('extensions.appSettings') : undefined}
           onBack={() => {
             closePage({ ...location, detail: undefined });
@@ -1177,8 +1067,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           }}
           onLifecycle={() => runLifecycle(manifest.id, item)}
           onInstallVersion={(ref) => void installFromShelf(ref, manifest.id)}
-          onManage={installed ? () => openPage({ page: 'manage', extensionId: manifest.id }) : undefined}
-          onForward={installed && host.local ? () => forwardExtension(installed) : undefined}
+          onManage={installedHere ? () => openPage({ page: 'manage', extensionId: manifest.id }) : undefined}
+          onForward={installedHere && host.local ? () => forwardExtension(installedHere) : undefined}
           onAsk={askAgent}
           similar={similarOf(manifest)}
           resource={resourceOf(manifest.id)}
@@ -1197,24 +1087,40 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   }
 
   // ── App 设置页:只管装着的这一份。别处把它卸了就回清单 ──
-  const managed = detail?.page === 'manage' ? installedById.get(detail.extensionId) : undefined;
-  if (detail?.page === 'manage' && managed) {
-    const origin = store.origins[managed.id];
-    const inMarket = (origin === 'market' || origin === 'fork') && !store.updates?.gone?.includes(managed.id);
-    const enabled = store.isEnabled(managed.id);
+  const managed = detail?.page === 'manage' ? installedById?.get(detail.extensionId) : undefined;
+  // ❌ every switch drawn on (AP2).
+  if (detail?.page === 'manage' && managed && apps && !revoked) {
+    return (
+      <div className="mk" data-testid="extensions-manage" ref={rootRef}>
+        {revokedReading.state === 'error' ? (
+          <div className="mk-status" role="alert">
+            <CircleAlert className="size-4 shrink-0" />
+            <span className="min-w-0">{translate('extensions.loadFailed')}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void refresh()}>{translate('extensions.retry')}</Button>
+          </div>
+        ) : <Unknown className="h-24 w-full" />}
+      </div>
+    );
+  }
+  if (detail?.page === 'manage' && managed && apps && revoked) {
+    const origin = apps.origins[managed.id];
+    // 「在市场查看」 and the versions: a market App not said to be gone (the market's word not known yet: not gone).
+    const inMarket = (origin === 'market' || origin === 'fork') && !updates?.gone?.includes(managed.id);
+    const enabled = apps.isEnabled(managed.id);
     const menu = menuOf(managed);
     // One gugu ships is where gugu puts it, and other Apps and every task lean on it: this page shows it and manages nothing that could break it.
-    const builtIn = store.isPreinstalled(managed.id);
+    const builtIn = apps.isPreinstalled(managed.id);
+    const hiddenTabs = apps.hiddenTabsOf(managed.id);
     return (
       <div className="mk" data-testid="extensions-manage" ref={rootRef}>
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />}
         <AppManagePage
           key={managed.id}
           manifest={managed}
-          iconDataUrl={store.appIcons[managed.id]}
+          iconDataUrl={apps.appIcons[managed.id]}
           enabled={enabled}
           switching={switching[managed.id] === true}
-          lifecycle={appLifecycle({ installed: managed, enabled, preinstalled: store.isPreinstalled(managed.id), canOpen: onRail(managed) }, translate)}
+          lifecycle={appLifecycle({ installed: managed, enabled, preinstalled: apps.isPreinstalled(managed.id), canOpen: onRail(managed) }, translate)}
           pending={pending[managed.id]}
           pendingPercent={downloadPercent[managed.id]}
           locale={locale}
@@ -1225,22 +1131,19 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           backLabel={detail.fromApp ? localizedManifestText(managed, locale).name : translate(previousAppsLocation()?.installed ? 'extensions.tabInstalled' : 'extensions.title')}
           notice={noticeOf(managed)}
           origin={origin}
-          variants={store.variants[managed.id]}
-          revoked={revoked[managed.id] ?? []}
+          variants={apps.variants[managed.id]}
+          revoked={takenBack(revoked, managed.id)}
+          hostKey={host.key}
           pendingPermissions={pendingPermissionsOf(managed.id)}
-          agentStatus={agentStatus[managed.id]}
+          agentStatus={agentStatus?.[managed.id]}
           permissionsNote={builtIn ? translate('extensions.permissionsNoteBuiltIn') : undefined}
-          disclosure={builtIn ? undefined : store.disclosure[managed.id]}
+          disclosure={builtIn ? undefined : apps.disclosure[managed.id]}
           givenApi={builtIn ? undefined : api}
-          docked={store.dock.includes(managed.id)}
-          hiddenTabs={store.hiddenTabs[managed.id] ?? []}
-          prompts={enabled && managed.contributes.prompts?.length ? <AppPromptsSection extensionId={managed.id} store={store} /> : undefined}
-          settingsApi={{
-            read: () => api.settings({ extensionId: managed.id }),
-            save: (settings) => api.setSettings({ extensionId: managed.id, settings }),
-          }}
+          docked={apps.dock.includes(managed.id)}
+          hiddenTabs={hiddenTabs}
+          prompts={enabled && managed.contributes.prompts?.length ? <AppPromptsSection extensionId={managed.id} store={apps} /> : undefined}
+          settingsApi={{ save: (settings) => api.setSettings({ extensionId: managed.id, settings }) }}
           autoUpdate={inMarket ? menu.autoUpdate : undefined}
-          dataBytesKey={dataCleared}
           resource={menu.resource}
           onBack={() => {
             if (detail.fromApp) {
@@ -1315,7 +1218,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               onClick={() => openAppsLocation({ ...location, installed: { section: 'agents', deviceId: location.deviceId } })}>
               <Archive className="size-4" aria-hidden />
               {translate('extensions.tabInstalled')}
-              {store.updateCount > 0 && <span className="mk-seg-dot" aria-hidden />}
+              {apps && updates && updateCountOf(updates, apps) > 0 ? <span className="mk-seg-dot" aria-hidden /> : null}
             </Button>
             {tab === 'connectors' && <AddConnectorButton />}
           </div>
@@ -1334,7 +1237,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 onCategoryChange={setAgentCategory}
                 onOpenAgentDetail={openMarketAgentDetail}
                 assistant={assistantMarketItem}
-                assistantInstalled={inventory === 'ready' ? installedById.has(ASSISTANT_APP_ID) : undefined}
+                assistantInstalled={installedById ? installedById.has(ASSISTANT_APP_ID) : undefined}
                 assistantLoading={shelf.status === 'loading'}
                 onOpenAssistant={() => assistantMarketItem && openShelfDetail(assistantMarketItem)}
                 assistantResource={resourceOf(ASSISTANT_APP_ID)}
@@ -1359,11 +1262,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </div>
               )}
 
-              {!machineOffline && extensionShelf.status === 'error' && (
+              {!machineOffline && (extensionShelf.status === 'error' || shownFailure) && (
                 <div className="mk-status" role="alert">
                   <CircleAlert className="size-4 shrink-0" />
                   <span className="min-w-0">{translate('extensions.marketUnavailable')}</span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void readShelf(debouncedQuery)}>
+                  <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
                     {translate('extensions.retry')}
                   </Button>
                 </div>
@@ -1376,19 +1279,20 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   // ❌ 再画「这里还没有 App」:读不到清单和清单是空的是两件事。
                   <div className="mk-status" role="status" data-testid="extension-market-offline">
                     <span>{translate('extensions.marketOfflineUnreachable')}</span>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void readShelf(debouncedQuery)}>
+                    <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
                       {translate('extensions.retry')}
                     </Button>
                   </div>
                 ) : (
                   <DesktopExtensionMarket
                     shelf={extensionShelf}
+                    scores={rankingReading.state === 'value' ? rankingReading.value : null}
                     query={extensionShelf.query}
                     category={chip}
                     onCategoryChange={setChip}
                     sort={location.sort}
                     onSortChange={(sort) => moveAppsLocation((here) => ({ ...here, sort }))}
-                    installedIds={inventory === 'ready' ? new Set(installedById.keys()) : undefined}
+                    installedIds={installedById ? new Set(installedById.keys()) : undefined}
                     onOpen={openShelfDetail}
                     resourceOf={resourceOf}
                     sentinelRef={sentinelRef}

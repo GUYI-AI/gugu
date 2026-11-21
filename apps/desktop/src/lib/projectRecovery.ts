@@ -1,29 +1,35 @@
-import { useEffect, useSyncExternalStore } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useSyncExternalStore } from 'react'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import type { ProjectRecoveryError, UnavailableProject } from '@/session/shared/projects'
 import { i18n } from '@/i18n/runtime'
-import { cachedDevicesAccount, subscribeCachedDevices } from '@/store/devicesCache'
-import { queryClient } from './replica'
+import { replica, useReplica } from './replica'
 import { noteGroupArchived, readArchivedGroups, subscribeArchivedGroups } from './archivedGroupsRead'
 
 const local = () => rpcOn(null).projects
-const key = (account: string | null) => ['unavailable-local-projects', account] as const
 
-/** One read per account across both sidebar row trees; focus reads the current filesystem again. */
+/**
+ * This computer's projects whose folder is gone: one read per account across both sidebar row trees. A return to the app
+ * reads again (an Electron window stays visible while Finder has the focus; coming back must re-probe the folders).
+ */
+const unavailableProjects = replica({
+  name: 'unavailableLocalProjects',
+  scope: 'account',
+  networkMode: 'always',
+  fresh: Infinity,
+  refreshOnFocus: true,
+  read: () => local().listUnavailableProjects(),
+})
+
 export function useUnavailableProjects(enabled = true) {
-  const account = useSyncExternalStore(subscribeCachedDevices, cachedDevicesAccount, () => null)
   const archived = useSyncExternalStore(subscribeArchivedGroups, readArchivedGroups, readArchivedGroups)
-  const query = useQuery({ queryKey: key(account), queryFn: () => local().listUnavailableProjects(),
-    enabled: enabled && !!account, staleTime: Infinity, refetchOnWindowFocus: 'always' }, queryClient)
-  useEffect(() => {
-    if (!enabled || !account) return
-    // Electron windows remain visible while Finder has focus. Returning from Finder must re-probe the folders.
-    const refresh = () => { void queryClient.refetchQueries({ queryKey: key(account) }, { cancelRefetch: false }) }
-    window.addEventListener('focus', refresh)
-    return () => window.removeEventListener('focus', refresh)
-  }, [account, enabled])
-  return { ...query, projects: enabled ? (query.data ?? []).filter(project => !project.chatId || !archived.has(project.chatId)) : [] }
+  const reading = useReplica(unavailableProjects, enabled ? [] : null)
+  // Not read (or not asked): no row is known to be unavailable, so none is drawn as one.
+  return reading.state === 'value' ? reading.value.filter(project => !project.chatId || !archived.has(project.chatId)) : undefined
+}
+
+/** Read the folders again now and answer them; a failed read throws (a cleanup must not confirm from a stale list). */
+export function readUnavailableProjects(): Promise<UnavailableProject[]> {
+  return unavailableProjects.reread()
 }
 
 type RefusalType = ProjectRecoveryError['type'] | 'state-changed'
@@ -52,7 +58,7 @@ async function groupIsArchived(chatId: string): Promise<boolean> {
   return data.status === 'archived'
 }
 
-async function recoverFolder(project: UnavailableProject, path: string): Promise<void> {
+export async function recoverUnavailableProject(project: UnavailableProject, path: string): Promise<void> {
   const checked = await local().inspectProjectRecovery(project.id, path)
   if (!checked.success) throw new ProjectRecoveryRefusal(checked.error.type, checked.error.message)
   // A refusal (including missing topic evidence) must leave the local project unchanged.
@@ -63,27 +69,20 @@ async function recoverFolder(project: UnavailableProject, path: string): Promise
   const result = await local().restoreProjectFolder(project.id, path)
   if (!result.success) throw new ProjectRecoveryRefusal(result.error.type, result.error.message)
   if (project.chatId) noteGroupArchived(project.chatId, false)
-  await refreshProjectRecovery()
-}
-
-export async function refreshProjectRecovery(): Promise<void> {
-  await queryClient.invalidateQueries({ queryKey: key(cachedDevicesAccount()) })
-}
-
-export async function recoverUnavailableProject(project: UnavailableProject, path: string): Promise<void> {
-  await recoverFolder(project, path)
+  await unavailableProjects.refresh()
 }
 
 /** The existing-folder action is the only post-cleanup recovery entry. No name/inode guessing. */
 export async function recoverRetainedProjectAtPath(path: string): Promise<string | null> {
   const project = await local().findRetainedProjectAtPath(path)
   if (!project?.chatId || !await groupIsArchived(project.chatId)) return null
-  await recoverFolder(project, path)
+  await recoverUnavailableProject(project, path)
   return project.id
 }
 
 export async function archiveUnavailableProjects(confirmed: readonly UnavailableProject[]): Promise<void> {
-  const current = await local().listUnavailableProjects()
+  // Checked against the list read now (the shown one may be minutes old).
+  const current = await readUnavailableProjects()
   const eligible = new Map(current.map(project => [project.id, project]))
   if (confirmed.some(project => eligible.get(project.id)?.chatId !== project.chatId || eligible.get(project.id)?.path !== project.path)) throw new ProjectRecoveryRefusal('state-changed', 'unavailable projects changed after confirmation')
   const { currentGroupAdmin } = await import('./groupAdmin')
@@ -93,5 +92,5 @@ export async function archiveUnavailableProjects(confirmed: readonly Unavailable
     await admin.archive(chatId)
     noteGroupArchived(chatId, true)
   }
-  await refreshProjectRecovery()
+  await unavailableProjects.refresh()
 }

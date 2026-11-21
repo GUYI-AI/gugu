@@ -1,5 +1,5 @@
 import { JSDOM } from 'jsdom';
-import { observable, runInAction } from 'mobx';
+import { observable, reaction, runInAction } from 'mobx';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,7 @@ import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/a
 
 const mocks = vi.hoisted(() => ({
   binding: null as null | {
-    status: { current(): AuthStatusModelState };
+    status: { follow(listener: (state: AuthStatusModelState) => void): () => void };
     sendInput: ReturnType<typeof vi.fn>;
     resize: ReturnType<typeof vi.fn>;
     markUrlHandled: ReturnType<typeof vi.fn>;
@@ -26,7 +26,7 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
     create: async () => {
       if (mocks.startFailure) throw mocks.startFailure;
       mocks.binding = {
-        status: { current: () => state.get() },
+        status: { follow: (listener) => reaction(() => state.get(), listener, { fireImmediately: true }) },
         sendInput: vi.fn(),
         resize: vi.fn(),
         markUrlHandled: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock('@renderer/lib/open-external-link', () => ({
   copyExternalLink: async () => true,
 }));
 vi.mock('./AcpAuthenticateSignIn', () => ({ AcpAuthenticateSignIn: () => null }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ data: null }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ state: 'value', value: null, stale: false, error: null }) }));
 vi.mock('@/components/settings/addServer/CommandBlock', () => ({ CommandBlock: () => null }));
 vi.mock('@/i18n/registerSettingsCatalog', () => ({}));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: (...args: unknown[]) => mocks.logged.push(args) }) }));

@@ -192,11 +192,29 @@ describe('share and invite surfaces use the approved roles without changing acti
     await until('the lookup sheet finished entering', () => dialog.getAnimations({ subtree: true }).every((animation) => animation.playState === 'finished'));
     expect(tier(textElement(dialog, t('groupInvite.joinTitle')))).toEqual([16, 24]);
     expect(tier(textElement(dialog, t('groupInvite.lookingUp')))).toEqual([14, 20]);
-    await act(async () => lookup.resolve({ status: 'lookup_error', group: null }));
-    expect(tier(textElement(dialog, t('groupInvite.lookupFailed')))).toEqual([14, 20]);
+    // A failed lookup is a rejection (contactsService.lookupPublicGroupInvite throws); the dialog says so, with a retry.
+    await act(async () => lookup.reject(new Error('lookup_public_group failed')));
+    const failed = [...dialog.querySelectorAll<HTMLElement>('div')].findLast((element) => element.textContent?.startsWith(t('groupInvite.lookupFailed')));
+    expect(failed, t('groupInvite.lookupFailed')).toBeTruthy();
+    expect(tier(failed!)).toEqual([14, 20]);
+    expect(t('common.retry')).not.toBe('common.retry');
+    expect(failed!.querySelector('button')?.textContent).toBe(t('common.retry'));
     const close = dialog.querySelector<HTMLButtonElement>(`[aria-label="${t('common.close')}"]`)!;
     expect(close.getBoundingClientRect().height).toBe(32);
     await userEvent.click(close);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+  it('a group looked up before whose lookup again fails stays drawn and says the failure with a retry', async () => {
+    const lookup = vi.spyOn(contactsService, 'lookupPublicGroupInvite').mockResolvedValue({ status: 'available', group } as never);
+    harness = createReactHarness();
+    await renderWithAppProviders(harness, createNode(GroupInviteJoinModal, { publicId: 7334, joinToken: 'invite-fixture-token', onClose: () => undefined }), { chat: {} });
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await until('the group is drawn', () => dialog.textContent?.includes(group.name) === true);
+    expect(dialog.querySelector('[data-refresh-failed]')).toBeNull();
+    lookup.mockRejectedValue(new Error('lookup_public_group failed'));
+    const { publicGroupInvite } = await import('@/lib/publicGroupInvite');
+    await act(async () => { await publicGroupInvite.refresh(7334).catch(() => undefined); });
+    await until('the failed lookup again is said', () => !!dialog.querySelector('[data-refresh-failed]'));
+    expect(dialog.textContent).toContain(group.name);
   });
 });

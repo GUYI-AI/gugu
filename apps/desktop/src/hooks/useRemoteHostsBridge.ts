@@ -1,30 +1,30 @@
+import { cloudSnapshotOf, useCloudComputer } from '../lib/cloudComputer'
 import { remoteWorkspaceDevices } from './remoteWorkspaceDevices'
-import type { Reading } from '../lib/replica'
+import { useReplica, type Reading } from '../lib/replica'
 import { machineKeyOf } from '@gugu/core/shared/deviceMachines'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { serverMachineNotices } from '@gugu/core/cloud/serverMachineHealth'
 import type { SshSignInState } from '../lib/serverSshMachines'
 import { useSshSignInStates } from './useSshSignInStates'
 import {
   canOpenTunnels,
-  currentSshMachineIds,
-  currentTunnelState,
+  isSshMachine,
   requestSshServerUpgrade,
   signInSshMachine,
-  subscribeSshMachineIds,
-  subscribeTunnelState,
+  tunnelLinks,
   wantTunnels,
 } from '../lib/sshLinkChannel'
-import { tunnelFacts, wantsTunnel, type TunnelState } from '../lib/tunnelMachines'
-import { sshLinkFacts } from '../lib/sshLinkOnline'
+import { tunnelFacts, wantsTunnel } from '../lib/tunnelMachines'
+import { remoteLinkFacts } from '../lib/sshLinkOnline'
 import { useSshLinkProblems } from './useSshLinkProblems'
+import { useSshMachineIds } from './useSshMachines'
 import { useDevicesStore } from '../store/devicesContext'
 import { openMachineSessionHostPipe } from '../lib/remoteSessionHost'
 import { retryServerVersionMatch } from '../lib/serverVersionRetry'
 import { requestCloudVersionMatch } from '../lib/cloudVersionMatch'
 import { listDevicesOnceIdentified } from '../lib/listDevicesOnceIdentified'
 import { CloudComputerWakeError } from '@gugu/core/cloud/cloudComputer'
-import { wakeAndWaitOnline } from '../lib/cloudComputerStore'
+import { wakeAndWaitOnline } from '../lib/cloudComputer'
 import { reconnectMachine } from '../session/renderer/lib/machine-clients'
 import { isAssistantHome } from '../lib/assistantHome'
 import { useAssistantName } from './useAssistantHomeLabel'
@@ -34,6 +34,7 @@ import {
   type RemoteHostDevice,
   type RemoteHostsBridge,
 } from '../session/shared/remote-hosts'
+
 
 /**
  * #6264 把「名下别的机器」和「到那台机器会话页宿主的线」交给会话页(见 session/shared/remote-hosts.ts)。
@@ -45,11 +46,12 @@ export function useRemoteHostsBridge(
   pickFolder: (deviceId: string, initialPath: string) => Promise<string | null>,
   openAddMachine?: () => void,
 ): void {
-  const { devices, loading, cloudComputer } = useDevicesStore()
+  const { devices, loading } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   const currentDevice = devices.find(device => device.is_current_device)
   const currentMachineKey = currentDevice ? machineKeyOf(currentDevice) : null
   // #7199 个人助理住的那台:会话页里说到它,说的是它本人(名字由「助理」App 的壳认出来;还没认出 = 「个人助理」)。
-  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const homeId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const homeIdRef = useRef(homeId)
   homeIdRef.current = homeId
   useEffect(() => {
@@ -58,14 +60,18 @@ export function useRemoteHostsBridge(
     return () => window.removeEventListener('gugu:cloud-version-matched', ready)
   }, [])
   const homeName = useAssistantName()
+  // This desktop's SSH machines; null = not read yet: each link is not known (remoteLinkFacts), nothing is asked.
   const sshMachines = useSshMachineIds()
   // 离线的 SSH 机器:这个账号在那台机器上的登录还在不在(侧栏与会话里说「登录已失效」而不只是「离线」)。
-  const sshAddress = useCallback((deviceId: string) => (sshMachines.has(deviceId) ? deviceId : null), [sshMachines])
+  const sshAddress = useCallback((deviceId: string) => (sshMachines?.has(deviceId) ? deviceId : null), [sshMachines])
   const signIns = useSshSignInStates(devices, sshAddress)
   const linkProblems = useSshLinkProblems()
-  const tunnels = useTunnelState()
+  // Main's tunnel links; not read yet = none known linked (a wanted machine shows "connecting"), ❌ "down".
+  const tunnelReading = useReplica(tunnelLinks, canOpenTunnels() ? [] : null)
+  const tunnels = tunnelReading.state === 'value' ? tunnelReading.value : null
   // 远程隧道:在线、中转通着、这台电脑没有它的 SSH 映射的那几台,交给主进程经中转连过去(连通了就有终端 / 浏览器 / 端口)。
   useEffect(() => {
+    if (!sshMachines) return
     wantTunnels(
       devices
         .filter((device) => wantsTunnel(device, sshMachines))
@@ -80,20 +86,21 @@ export function useRemoteHostsBridge(
           machineId: device.machine_id,
           ...(machineKeyOf(device) === currentMachineKey ? { isCurrentMachine: true as const } : {}),
           label: isAssistantHome(device, homeId) ? homeName : device.label,
-          ...sshLinkFacts(sshMachines.has(device.device_id), linkProblems.get(device.device_id) ?? null, device.is_online),
+          ...remoteLinkFacts(device.device_id, sshMachines, linkProblems.get(device.device_id) ?? null, device.is_online),
           platform: device.platform,
           lastSeenAt: device.last_seen_at || null,
           sessionDigest: device.session_digest ?? null,
-          directTerminal: sshMachines.has(device.device_id) || tunnels.ready.includes(device.device_id),
-          ...(!sshMachines.has(device.device_id) && tunnels.ready.includes(device.device_id) ? { viaTunnel: true as const } : {}),
-          ...tunnelFacts(device, sshMachines, tunnels, canOpenTunnels()),
+          directTerminal: sshMachines !== null && (sshMachines.has(device.device_id) || tunnelLinked(tunnels, device.device_id)),
+          ...(sshMachines !== null && !sshMachines.has(device.device_id) && tunnelLinked(tunnels, device.device_id) ? { viaTunnel: true as const } : {}),
+          ...(sshMachines !== null ? tunnelFacts(device, sshMachines, tunnels, canOpenTunnels()) : {}),
           hostKind: device.capabilities?.host_kind === 'phone' ? undefined : device.capabilities?.host_kind,
           connectVia: device.capabilities?.connect_via,
           version: device.capabilities?.app_version ?? null,
           signInExpiredAt:
-            sshMachines.has(device.device_id) && linkProblems.get(device.device_id) === 'notSignedIn'
-              ? null
-              : signInExpiredAt(signIns.get(device.device_id)),
+            sshMachines === null ? undefined
+              : sshMachines.has(device.device_id) && linkProblems.get(device.device_id) === 'notSignedIn'
+                ? null
+                : signInExpiredAt(signIns.get(device.device_id)),
           notices: serverMachineNotices(device.capabilities),
           ...(device.capabilities?.server_update ? { serverUpdate: device.capabilities.server_update } : {}),
           ...(device.cloud_computer ? { cloudComputer: device.cloud_computer } : {}),
@@ -160,7 +167,7 @@ export function useRemoteHostsBridge(
       },
       // #7403 那台的咕咕太旧、不认这一问:远程 SSH 由这台桌面替它升级;远程隧道 / 云电脑请它自己当场换(设备行「重试」同一条)。
       matchServerVersion: (deviceId, options) =>
-        currentSshMachineIds().has(deviceId)
+        isSshMachine(deviceId)
           ? requestSshServerUpgrade(deviceId, { force: options?.retry === true })
           : homeIdRef.current === deviceId ? requestCloudVersionMatch(deviceId, options?.retry === true) : retryServerVersionMatch(deviceId),
     }
@@ -168,23 +175,8 @@ export function useRemoteHostsBridge(
   }, [enabled])
 }
 
-function useTunnelState(): TunnelState {
-  const [state, setState] = useState<TunnelState>(() => currentTunnelState())
-  useEffect(() => {
-    setState(currentTunnelState())
-    return subscribeTunnelState(setState)
-  }, [])
-  return state
-}
-
-/** 这台桌面上用 SSH 装上的机器(主进程记的本机映射,只算此刻登着的账号);装上新的一台时跟着变。 */
-function useSshMachineIds(): ReadonlySet<string> {
-  const [ids, setIds] = useState<ReadonlySet<string>>(() => currentSshMachineIds())
-  useEffect(() => {
-    setIds(currentSshMachineIds())
-    return subscribeSshMachineIds(setIds)
-  }, [])
-  return ids
+function tunnelLinked(tunnels: { ready: readonly string[] } | null, deviceId: string): boolean {
+  return tunnels !== null && tunnels.ready.includes(deviceId)
 }
 
 /** 登录没了(失效 / 那台机器上登出 / 被移除)的时刻;还登着或问不到 = null。 */

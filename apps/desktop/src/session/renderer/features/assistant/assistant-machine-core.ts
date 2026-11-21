@@ -1,3 +1,4 @@
+import type { AssistantPanelItem } from '@gugu/core/cloud/assistantPanel';
 // #7199 助理主页读写云电脑上的文件(核心:问哪台、走哪条线由调用方交进来,桌面与手机壳共用):全走那台机器已有的动词(cloudpc.4 起就有,❌ 为这一页另开协议)——
 //   列目录 = files.browseDirectory;读、写、删、改名、建夹、分块上传 = 主目录那个项目的 workspace.files.*。
 // 助理在主目录里干活(云电脑开通时就是这样建的),所以主目录项目就是它的工作区:管家写的 CLAUDE.md、
@@ -171,21 +172,23 @@ function entryTime(entry: DirectoryEntry): string | null {
   return null;
 }
 
+/** Pure: derived at render; each card's text is read when it is shown. */
+export function memoryNotesOf(rows: readonly AssistantPanelItem[], memoryDir: string): { notes: MemoryEntry[]; index: string | null } {
+  const notes = rows.filter(row => typeof row.data.relativePath === 'string' && !String(row.data.relativePath).includes('/')
+    && /\.md$/i.test(String(row.data.relativePath)) && !['MEMORY.md','working-context.md'].includes(String(row.data.relativePath)))
+    .map(row => {
+      const file = String(row.data.relativePath)
+      const kind = file === 'owner-profile.md' ? 'user' : ['user','feedback','project','reference','other'].includes(String(row.data.kind)) ? row.data.kind as MemoryNote['kind'] : 'reference'
+      return { file,title: String(row.data.title ?? file),description: '',kind,body: '',path: joinPath(memoryDir,file),
+        modifiedAt: typeof row.data.modifiedAt === 'string' ? row.data.modifiedAt : row.updated_at,contentPending: true,contentRevision: row.revision }
+    })
+  notes.sort((a,b) => b.modifiedAt.localeCompare(a.modifiedAt))
+  return { notes,index: null }
+}
+
 /** 它的记忆夹:每条一个 .md(新改的在前),外加索引 MEMORY.md;夹子还没有 = 空。 */
 export async function readMemoryNotes(machine: AssistantMachine): Promise<{ notes: MemoryEntry[]; index: string | null }> {
-  if (machine.panel) {
-    const rows = await machine.panel.collection('memory')
-    const notes = rows.filter(row => typeof row.data.relativePath === 'string' && !String(row.data.relativePath).includes('/')
-      && /\.md$/i.test(String(row.data.relativePath)) && !['MEMORY.md','working-context.md'].includes(String(row.data.relativePath)))
-      .map(row => {
-        const file = String(row.data.relativePath)
-        const kind = file === 'owner-profile.md' ? 'user' : ['user','feedback','project','reference','other'].includes(String(row.data.kind)) ? row.data.kind as MemoryNote['kind'] : 'reference'
-        return { file,title: String(row.data.title ?? file),description: '',kind,body: '',path: joinPath(machine.paths.memoryDir,file),
-          modifiedAt: typeof row.data.modifiedAt === 'string' ? row.data.modifiedAt : row.updated_at,contentPending: true,contentRevision: row.revision }
-      })
-    notes.sort((a,b) => b.modifiedAt.localeCompare(a.modifiedAt))
-    return { notes,index: null }
-  }
+  if (machine.panel) return memoryNotesOf(await machine.panel.collection('memory'),machine.paths.memoryDir)
   const [entries, index] = await Promise.all([listDirectory(machine, machine.paths.memoryDir), readText(machine, machine.paths.memoryIndex)]);
   const hints = memoryIndexHints(index ?? '');
   // The recovery pointer belongs to the coordinator, not the person's memory cards.

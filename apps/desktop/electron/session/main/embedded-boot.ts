@@ -289,6 +289,7 @@ export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。
 export {
   setPlatformModelCatalogResolver,
+  setPlatformModelGate,
   type PlatformCatalogModel,
   type PlatformModelCatalogQuery,
   type PlatformModelCatalogResolver,
@@ -369,6 +370,7 @@ export {
 } from '@main/core/extensions/extension-bridge-relay'
 import { reconcileResourceSampler, stopResourceSampler } from '@main/core/resource-monitor/resource-sampler'
 import { ensureAgentDependenciesProbed, localDependencyManager } from '@main/core/dependencies/dependency-managers'
+import { warmBundledMise } from '@main/core/dependencies/mise-installer'
 import { ensureAgentInstalled } from '@main/core/agents/ensure-agent-installed'
 import { projectManager } from '@main/core/projects/project-manager'
 import { runtimeManager } from '@main/core/runtime/runtime-manager'
@@ -812,7 +814,11 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
 
   // --- Post-registration reconcilers (index.ts:185-215). Fire-and-forget. ---
   void reconcileResourceSampler()
-  const discover = () => ensureAgentDependenciesProbed(localDependencyManager)
+  const discover = () => {
+    // Optional startup work, like the inventory: the first agent install should not pay mise's first launch.
+    void warmBundledMise()
+    return ensureAgentDependenciesProbed(localDependencyManager)
+  }
   const discovery = options.scheduleDiscovery ? options.scheduleDiscovery(discover) : discover()
   discovery.catch((e: unknown) => {
     log.error('Failed to probe dependencies:', e)

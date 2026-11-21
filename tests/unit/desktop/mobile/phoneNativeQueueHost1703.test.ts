@@ -24,7 +24,7 @@ vi.mock('@/components/session-watch/sessionpage-rpc', () => ({
   },
 }))
 vi.mock('@/mobile/local-agent/phoneTimelineClient', () => ({ phoneTimelineClient: {} }))
-vi.mock('@/store/devicesCache', () => ({ subscribeCachedDevices: () => () => {} }))
+vi.mock('@/store/devicesCache', () => ({ devicesModel: { subscribe: () => () => {} } }))
 vi.mock('@/session/shared/remote-sessions/session-directory', () => ({
   directoryDevices: () => [{ device_id: 'host', is_online: true, capabilities: {} }],
   liveDeviceSessions: () => ({ host: { cached: false, connected: true, sessions: remote.runtime ? [

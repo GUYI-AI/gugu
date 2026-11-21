@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { PasswordSyncRequest, PasswordSyncView, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
-import { publishPasswordSnapshot } from '@/lib/passwordBetaNotifications'
+import { passwordVault } from '@/lib/passwordBetaNotifications'
 import { i18n } from '@/i18n'
 import '@/i18n/registerSettingsCatalog'
 
@@ -24,12 +24,15 @@ export function usePasswordCommand() {
   const run = useCallback(async (command: PasswordUiCommand): Promise<Reply | undefined> => {
     setBusy(true)
     try {
+      // Bound before the vault answers: a reply that lands after the account changed is not put into the next one.
+      const vault = passwordVault.at()
       const reply = await window.passwordVaultBeta?.invoke(command)
       if (!reply?.ok) { setError(passwordErrorText(reply?.code ?? '')); return undefined }
-      publishPasswordSnapshot(reply.snapshot); setError('')
+      vault.set(reply.snapshot); setError('')
       return reply
     } catch { setError(passwordErrorText('')); return undefined }
     finally { setBusy(false) }
   }, [])
-  return { busy, error, run, clear: () => setError('') }
+  const clear = useCallback(() => setError(''), [])
+  return { busy, error, run, clear }
 }

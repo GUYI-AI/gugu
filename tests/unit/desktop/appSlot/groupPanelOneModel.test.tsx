@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { folderItem, isFolderItem, WORKSPACE_APP_KIND } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
@@ -8,23 +9,26 @@ import { chatLayoutOf, chatPaneOf, infoTabOf, openInfoTab, openPanelItem, panelF
 import { tabFullscreen } from '../../../../apps/desktop/src/session/renderer/features/tabs/tab-fullscreen'
 import { extensionSurfaceStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-surface-store'
 import { extensionViewStore, residentPageKey, residentPlace } from '../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store'
-import {
-  installedExtensionsStore,
-  type InstalledExtensionsList,
-} from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { ask, chatTabs, linkShell, pill, shownItem, type ChatTabsProps } from './chatTabsHarness'
 
+// 最近打开: an open is kept through the chat database (useChatOpener `noteOpened`); never the network here.
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
 }))
 // No App runtime under jsdom: this device's Apps answer nothing; the group's shared packages are the test's.
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), appChatFile: vi.fn(), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), appChatFile: vi.fn(), setOpenWithDefault: vi.fn() },
 }))
 const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>() }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => sharedHere.packages,
-  subscribeSharedPackages: () => () => {},
+/** The packages shared in the chat, as the chat's attachments say them. */
+const sharedList = () => [...sharedHere.packages.values()] as { card: { source: { kind: string; url?: string }; messageId: string }; manifest: unknown }[]
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => sharedList().map((pkg) => pkg.card),
+  readPackageSummary: async (source: unknown) => ({ ok: true, manifest: sharedList().find((pkg) => JSON.stringify(pkg.card.source) === JSON.stringify(source))!.manifest }),
+  newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
 }))
@@ -35,13 +39,22 @@ vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages'
  * page reads them. Only where each is drawn differs.
  */
 
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account (every describe).
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   // jsdom has no checkVisibility: an unseen slot claims no page, which is all this file needs of it.
   HTMLElement.prototype.checkVisibility = () => false
+  // What is installed here is read (nothing, unless a test installs): a file's page waits for it before it is claimed.
+  installedExtensions.set(['local'], { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
 })
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
 afterEach(() => {
   harness.cleanup()
   HTMLElement.prototype.checkVisibility = originalCheckVisibility
@@ -55,6 +68,7 @@ const fullSwitch = () => harness.container.querySelector<HTMLButtonElement>('[da
 const NONE: { id: string; title: string }[] = []
 
 describe('the slot header', () => {
+  // The chat's shared packages are an account replica: read for a signed-in account, as in the product.
   // owner 10-26 选 A:页签就是标题、× 和「最大化 / 还原」(TabHost.tabFill),页里不再横一行;没有页签条(手机)照旧一个页头。
   it('in a block draws no row of its own; its tab fills the block and back; outside a block no full switch either', async () => {
     const tab = openPanelItem('full-switch', boardPage())!
@@ -115,7 +129,7 @@ describe('the slot header', () => {
   // The board App came from a card in a chat (the only kind a group's newer package may replace, E-05), unless said.
   const install = (toolbar: { id: string; title: string }[], menu: { id: string; title: string }[], version = '1.0.0', origin = 'attachment') =>
     act(() =>
-      installedExtensionsStore.applyList({
+      installedExtensions.set(['local'], {
         extensions: toolbar === NONE ? [] : [{ id: 'board', name: 'Board', version, defaultLocale: 'en', contributes: { tabs: [{ name: 'main', title: 'Board', toolbar, menu }] } }],
         invalid: [],
         origins: { board: origin },
@@ -184,7 +198,7 @@ describe('the slot header', () => {
 // went to its files — one with none opened nothing at all.
 describe('an App opened in the group (「在本群打开」)', () => {
   const installTabs = (tabs: { name: string; title: string; opensFiles?: Record<string, string[]>; chatFile?: string }[]) =>
-    act(() => installedExtensionsStore.applyList({ extensions: [{ id: 'board', name: 'Board', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs } }], invalid: [] } as unknown as InstalledExtensionsList))
+    act(() => installedExtensions.set(['local'], { extensions: [{ id: 'board', name: 'Board', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs } }], invalid: [] } as unknown as InstalledExtensionsList))
 
   it('the folder asked for is a tab of its own beside the chat, pushing the App back into the strip, with no Back', async () => {
     const chatId = 'folder-entry-7590'

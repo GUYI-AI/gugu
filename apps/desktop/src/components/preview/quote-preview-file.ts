@@ -35,7 +35,11 @@ export function placeLabel(place: SelectionPlace): string {
   return place.label ?? (place.at.lines ? selectionPosition({ text: '', at: { lines: place.at.lines } }) : '');
 }
 
-/** What a cite puts in a composer: the words quoted, then a pill per place (the file's name and where), as one draft. */
+/**
+ * What a cite puts in a composer: a pill per place (the file's name and where), as one draft. The pill's link names the
+ * lines, so the words picked are not quoted beside it. A computer's file cited into a chat has no pill: there the words
+ * are quoted, the file named by its path (`quote`).
+ */
 export interface SelectionCite { quote: string; refs: AppComposeRef[]; draft: string }
 
 /** A cite of a file named where it lives (`FileReference`); without places, of the file whole. */
@@ -45,14 +49,14 @@ export function selectionCite(conversation: AnnotationConversation, file: FileRe
     const label = placeLabel(place);
     return { label: label ? `${file.name} (${label})` : file.name, link: placeTarget(file, place) };
   }) : [{ label: file.name, link: file.target }];
-  const quote = pick?.text ? selectedTextQuote({ text: pick.text, ...(pick.code ? { code: true } : {}) }) : '';
   // A chat's pills are its folder's files; a file on a computer is named in words, its path written out — a chat has no
   // pill that opens it (a session's composer does: its working copy is where the path is read).
   if (conversation.kind === 'chat' && !parseGroupFileLink(file.target)) {
+    const quote = pick?.text ? selectedTextQuote({ text: pick.text, ...(pick.code ? { code: true } : {}) }) : '';
     const named = [quote, ...refs.map(({ label, link }) => `${label}: ${link}`)].filter(Boolean).join('\n\n');
     return { quote: named, refs: [], draft: named };
   }
-  return { quote, refs, draft: pillCite(quote, refs.map(({ label, link }) => ({ label, target: link }))).draft };
+  return { quote: '', refs, draft: pillCite('', refs.map(({ label, link }) => ({ label, target: link }))).draft };
 }
 
 /** Use the App file-reference producer and its existing draft delivery, including membership and version checks. */
@@ -60,7 +64,7 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
   const session = getRendererSession();
   if (!session) throw new Error('Sign in to quote this file');
   const detail = await composeInChat({ account: async () => ({ token: session.access_token, userId: session.user.id }) }, {
-    text: selection ? selectedTextQuote(selection) : '',
+    text: '',
     refs: [{
       file: { id: itemId },
       version,
@@ -72,5 +76,5 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
 
 /** The same task-file reference text in desktop and phone composers. */
 export function workspaceFileQuote(path: string, selection: FileViewerSelection | null): string {
-  return fileCite(selection ? selectedTextQuote(selection) : '', [{ file: { id: path }, label: selection ? selectionPosition(selection) : '' }]).draft;
+  return fileCite('', [{ file: { id: path }, label: selection ? selectionPosition(selection) : '' }]).draft;
 }

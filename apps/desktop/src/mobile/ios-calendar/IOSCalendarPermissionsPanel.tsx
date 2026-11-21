@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { platform } from '@/platform'
-import { IOSCalendarPermissionError, iosCalendarPermissions, type IOSCalendarPermissionClient, type IOSCalendarSnapshot } from './iosCalendarPermissions'
+import { IOSCalendarPermissionError, iosCalendarPermissions as client, type IOSCalendarSnapshot } from './iosCalendarPermissions'
+import { iosCalendarConnection } from './iosCalendarConnection'
+import { useReplica } from '@/lib/replica'
 import { waitForCalendarAppActive } from './waitForCalendarAppActive'
 
 type PermissionRead =
@@ -36,50 +38,63 @@ function statusText(current: PermissionRead, t: TFunction<'settings'>): string {
   return t('iosCalendar.disconnected', { authorization: t(STATUS_TEXT[current.status.authorization]) })
 }
 
+/** A connect / disconnect of this panel: going, or settled with what to say (a message, or a failure with nothing to show). */
+type Change =
+  | { ownerId: string; kind: 'changing'; operation: 'connect' | 'disconnect' }
+  | { ownerId: string; kind: 'settled'; message?: string }
+  | { ownerId: string; kind: 'failed'; message: string }
+
 /** Native owner/category truth is required before displaying or changing a connection. */
-export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermissions }: {
-  ownerId: string
-  client?: IOSCalendarPermissionClient
-}) {
+export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
   const { t } = useTranslation('settings')
-  const [snapshot, setSnapshot] = useState<PermissionRead>({ ownerId, kind: 'loading' })
-  const latestRequest = useRef<symbol | null>(null)
+  // The connection is the account's iosCalendarConnection replica (read on open, dropped and read again on foreground).
+  const reading = useReplica(iosCalendarConnection, [])
+  const [change, setChange] = useState<Change | null>(null)
+  /** The foreground observer failed: nothing read after it is shown until the person asks again. */
+  const [observerFailure, setObserverFailure] = useState<{ ownerId: string; message: string } | null>(null)
   const mutation = useRef<symbol | null>(null)
   const recovery = useRef<AbortController | null>(null)
-  const current = snapshot.ownerId === ownerId ? snapshot : { ownerId, kind: 'loading' as const }
+  const owner = useRef(ownerId)
+  owner.current = ownerId
+  const shownChange = change?.ownerId === ownerId ? change : null
+  const shownFailure = observerFailure?.ownerId === ownerId ? observerFailure : null
+  const current: PermissionRead = shownChange?.kind === 'changing' ? { ownerId, kind: 'changing', operation: shownChange.operation }
+    : shownChange?.kind === 'failed' ? { ownerId, kind: 'failed', message: shownChange.message }
+    : shownFailure ? { ownerId, kind: 'failed', message: shownFailure.message }
+    : reading.state === 'unknown' ? { ownerId, kind: 'loading' }
+    : reading.state === 'error' || reading.error ? { ownerId, kind: 'failed', message: failureMessage(reading.error) }
+    : { ownerId, kind: 'ready', status: reading.value, ...(shownChange?.kind === 'settled' && shownChange.message ? { message: shownChange.message } : {}) }
 
-  const refresh = useCallback(async () => {
+  const recheck = useCallback(() => {
     // The permission sheet can foreground the App before native finish completes.
     if (mutation.current) return
-    const request = Symbol('calendar-permission-read')
-    latestRequest.current = request
-    setSnapshot({ ownerId, kind: 'loading' })
-    try {
-      const status = await client.read(ownerId)
-      if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'ready', status })
-    } catch (cause) {
-      if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'failed', message: failureMessage(cause) })
-    }
-  }, [ownerId, client])
+    setChange(null)
+    setObserverFailure(null)
+    void iosCalendarConnection.reset()
+  }, [])
 
   const changeConnection = async (operation: 'connect' | 'disconnect') => {
     if (current.kind !== 'ready' || mutation.current) return
     const request = Symbol('calendar-connection-change')
-    latestRequest.current = request
+    const startedFor = ownerId
+    const entry = iosCalendarConnection.at()
+    const still = () => mutation.current === request && owner.current === startedFor
     mutation.current = request
-    setSnapshot({ ownerId, kind: 'changing', operation })
+    setChange({ ownerId: startedFor, kind: 'changing', operation })
     let recoveryController: AbortController | undefined
     try {
       const status = await client[operation](current.status.binding)
-      if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'ready', status })
+      if (!still()) return
+      entry.set(status)
+      setChange(null)
     } catch (cause) {
       // A lost reply is not evidence that native persistence did not run.
       // Read actual state once; never replay the connection operation here.
-      if (latestRequest.current !== request) return
+      if (!still()) return
       try {
         let status: IOSCalendarSnapshot
         try {
-          status = await client.read(ownerId)
+          status = await client.read(startedFor)
         } catch (readFailure) {
           // EventKit can answer before the dismissed sheet restores the native
           // foreground guard. Retry only the read once, never the OS request.
@@ -89,16 +104,17 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
           recoveryController = controller
           recovery.current = controller
           const active = await waitForCalendarAppActive(controller.signal)
-          if (latestRequest.current !== request) return
+          if (!still()) return
           if (!active) throw readFailure
-          status = await client.read(ownerId)
+          status = await client.read(startedFor)
         }
+        if (!still()) return
         const denied = status.authorization === 'denied' || status.authorization === 'restricted'
         const foregroundRefusal = (cause as { code?: unknown } | null)?.code === 'not_granted'
-        if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'ready', status,
-          message: denied && foregroundRefusal ? undefined : failureMessage(cause) })
+        entry.set(status)
+        setChange({ ownerId: startedFor, kind: 'settled', ...(denied && foregroundRefusal ? {} : { message: failureMessage(cause) }) })
       } catch {
-        if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'failed', message: failureMessage(cause) })
+        if (still()) setChange({ ownerId: startedFor, kind: 'failed', message: failureMessage(cause) })
       }
     } finally {
       recoveryController?.abort()
@@ -107,18 +123,18 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
     }
   }
 
+  // A failed foreground observer means later grant changes go unnoticed: say so, show nothing read after it.
   useEffect(() => {
     let alive = true
-    void refresh()
-    const unsubscribe = platform.subscribeAppForeground(() => { if (alive) void refresh() }, cause => {
+    const unsubscribe = platform.subscribeAppForeground(() => { if (alive) recheck() }, cause => {
       if (!alive) return
       recovery.current?.abort()
-      latestRequest.current = null
       mutation.current = null
-      setSnapshot({ ownerId, kind: 'failed', message: failureMessage(cause) })
+      setChange(null)
+      setObserverFailure({ ownerId, message: failureMessage(cause) })
     })
-    return () => { alive = false; latestRequest.current = null; mutation.current = null; recovery.current?.abort(); unsubscribe() }
-  }, [ownerId, refresh])
+    return () => { alive = false; mutation.current = null; recovery.current?.abort(); unsubscribe() }
+  }, [ownerId, recheck])
 
   const authorization = current.kind === 'ready' ? current.status.authorization : null
   const detail = authorization === 'writeOnly' ? 'iosCalendar.fullAccessRequired'
@@ -137,7 +153,7 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
         onClick={() => void changeConnection(current.status.calendarConnected ? 'disconnect' : 'connect')}>
         {t(current.status.calendarConnected ? 'iosCalendar.disconnect' : 'iosCalendar.connect')}
       </Button>}
-      <Button size="sm" variant="secondary" disabled={busy} aria-label={t('iosCalendar.refreshLabel')} onClick={() => void refresh()}>{t('iosCalendar.refresh')}</Button>
+      <Button size="sm" variant="secondary" disabled={busy} aria-label={t('iosCalendar.refreshLabel')} onClick={recheck}>{t('iosCalendar.refresh')}</Button>
       </div>
     </div>} />
   </SettingsGroup>

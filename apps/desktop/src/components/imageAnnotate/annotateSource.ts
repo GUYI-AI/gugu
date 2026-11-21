@@ -13,3 +13,8 @@ export async function annotationItem(item: ImageViewerItem): Promise<ImageViewer
   })
   return { ...item, source: { chatId: detail.chatId } }
 }
+
+/** Whether "Done" can send to or save in a chat: the item names its chat, or it is a folder file whose chat `annotationItem` asks. */
+export function hasAnnotationSource(item: ImageViewerItem): boolean {
+  return !!item.source?.chatId || item.resource?.target.kind === 'file'
+}

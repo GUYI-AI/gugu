@@ -6,12 +6,16 @@ import { AssistantOnboarding } from '@/components/assistant/AssistantOnboarding'
 import { i18n } from '@/i18n';
 import '@/styles/tokens.css';
 
-const services = vi.hoisted(() => ({ kind: 'web' as 'web' | 'capacitor', membership: vi.fn(async () => null) }));
+const services = vi.hoisted(() => ({ kind: 'web' as 'web' | 'capacitor', membership: vi.fn(() => ({ state: 'value', membership: { tier: 'free' } })) }));
 vi.mock('@/platform', async original => {
   const actual = await original<typeof import('@/platform')>();
   return { ...actual, platform: { ...actual.platform, get kind() { return services.kind; } } };
 });
-vi.mock('@/lib/billing/membership', () => ({ getMembership: services.membership }));
+vi.mock('@/lib/billing/useSpendingPower', async original => ({
+  ...await original<object>(),
+  refreshSpendingPower: () => undefined,
+  useSpendingPower: (user: unknown) => (user ? services.membership() : { state: 'unknown', membership: null }),
+}));
 vi.mock('@/lib/firstRun', async original => ({
   ...await original<object>(),
   readFirstRunProgress: async () => ({ stage: 'done', occupation: { key: 'research' }, harness: [], tour: null }),

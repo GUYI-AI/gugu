@@ -21,7 +21,7 @@ it('keeps the same detail slots while the action metadata is loading',async()=>{
 it('never presents an unreadable progress sample as complete or a zero MB ratio',async()=>{
  vi.useFakeTimers()
  const read=vi.fn<()=>Promise<CliDownloadProgress>>().mockResolvedValueOnce({phase:'download',receivedBytes:1048576,totalBytes:2097152} as CliDownloadProgress).mockRejectedValue(Error('unavailable'))
- await h.render(createElement(CliInstallProgress,{read,idle:createElement('p',null,'preparing')}))
+ await h.render(createElement(CliInstallProgress,{source:'sample',read,idle:createElement('p',null,'preparing')}))
  expect(h.container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
  await act(async()=>{await vi.advanceTimersByTimeAsync(750)})
  // 读不到就不知道还在不在下:退回调用方的「正在准备连接」,❌ 留着旧比例或说在下载。
@@ -30,15 +30,15 @@ it('never presents an unreadable progress sample as complete or a zero MB ratio'
  expect(h.container.textContent).toBe('preparing')
 })
 it('shows no download bar or wording when the tool is already installed or preinstalled',async()=>{
- await h.render(createElement(CliInstallProgress,{read:async()=>null,idle:createElement('p',null,'preparing')}))
+ await h.render(createElement(CliInstallProgress,{source:'installed',read:async()=>null,idle:createElement('p',null,'preparing')}))
  expect(h.container.querySelector('[role="progressbar"]')).toBeNull()
  expect(h.container.textContent).toBe('preparing')
- await h.render(createElement(CliInstallProgress,{read:async()=>null}))
+ await h.render(createElement(CliInstallProgress,{source:'preinstalled',read:async()=>null}))
  expect(h.container.textContent).toBe('')
 })
 it('uses indeterminate kit progress for unknown or tiny download totals',async()=>{
  for (const totalBytes of [null,0,5]) {
-  await h.render(createElement(CliInstallProgress,{read:async()=>({phase:'download',receivedBytes:0,totalBytes} as CliDownloadProgress)}))
+  await h.render(createElement(CliInstallProgress,{source:`total-${totalBytes}`,read:async()=>({phase:'download',receivedBytes:0,totalBytes} as CliDownloadProgress)}))
   expect(h.container.querySelector('[role="progressbar"]')?.hasAttribute('aria-valuenow')).toBe(false)
   expect(h.container.textContent).not.toContain('0.0')
  }

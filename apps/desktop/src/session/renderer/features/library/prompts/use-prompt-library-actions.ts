@@ -7,7 +7,7 @@
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { withOverrides, type PromptLibraryPrompt, type PromptOverride, type PromptState } from '@shared/prompt-library';
 import type { PromptFormResult } from './prompt-modal';
 import { deletePrompt, overridePrompt, savePrompt, usePromptLibrary } from './use-prompt-library';
@@ -24,12 +24,15 @@ export function showPromptDeleted(prompt: PromptLibraryPrompt, title: string, un
   toast({ key: `prompt-deleted:${prompt.id}`, title, action: { label: undoLabel, onClick: () => void savePrompt(prompt) }, duration: 8000 });
 }
 
-export type AppPromptRow = (typeof installedExtensionsStore.appPrompts)[number] & { state: PromptState };
+export type AppPromptRow = InstalledApps['appPrompts'][number] & { state: PromptState };
 
 export interface PromptLibraryActions {
   prompts: PromptLibraryPrompt[];
-  /** Enabled Apps' prompts as the person sees them (`withOverrides`), hidden ones included so they can be restored. */
-  appPrompts: AppPromptRow[];
+  /** Enabled Apps' prompts as seen (`withOverrides`), hidden ones included; null while what is installed is unknown. */
+  appPrompts: AppPromptRow[] | null;
+  appPromptsFailed: Error | null;
+  /** Reads what is installed again (with `appPromptsFailed`). */
+  appPromptsRetry?: () => Promise<void>;
   /** 第一次读、还没读到。 */
   isLoading: boolean;
   /** 读写任一在途 → 入口置灰。 */
@@ -52,7 +55,9 @@ export interface PromptLibraryActions {
   restoreAppPrompt(prompt: AppPromptRow): void;
 }
 
-export function usePromptLibraryActions(store: Pick<typeof installedExtensionsStore, 'appPrompts'> = installedExtensionsStore): PromptLibraryActions {
+export function usePromptLibraryActions(store?: Pick<InstalledApps, 'appPrompts'>): PromptLibraryActions {
+  const installed = useInstalledApps(store ? null : LOCAL_HOST);
+  const apps = store ?? (installed.state === 'value' ? installed.value : null);
   const { value: prompts, overrides, isLoading, isSaving, error, hasData, reload } = usePromptLibrary();
   const showPromptModal = useShowModal('promptModal');
   const { translate } = useSessionMessages();
@@ -71,7 +76,9 @@ export function usePromptLibraryActions(store: Pick<typeof installedExtensionsSt
 
   return {
     prompts,
-    appPrompts: withOverrides(store.appPrompts, overrides),
+    appPrompts: apps && withOverrides(apps.appPrompts, overrides),
+    appPromptsFailed: !store && installed.state === 'error' ? installed.error : null,
+    appPromptsRetry: !store && installed.state === 'error' ? installed.retry : undefined,
     isLoading,
     isBusy: isLoading || isSaving,
     error,
