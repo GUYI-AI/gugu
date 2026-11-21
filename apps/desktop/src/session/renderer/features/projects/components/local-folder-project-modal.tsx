@@ -23,10 +23,10 @@ export type LocalFolderProjectModalProps = BaseModalProps<string>;
 export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProjectModalProps) {
   const { translate } = useSessionMessages();
   // 树从宿主的家目录长起:从 / 开始翻没意义。
-  const home = useReplica(homeDirectory, ['local']);
+  const home = useReplica(homeDirectory, []);
   const [path, setPath] = useState('');
   // 选中的目录不是 git 仓库:放行,给一句提示,❌ 替用户 init。
-  const inspection = useReplica(projectPathInspection, path ? ['local', path] : null);
+  const inspection = useReplica(projectPathInspection, path ? [path] : null);
   // Also a read again (the path picked again) failing over the hint read before: said, ❌ the old hint shown as current.
   const inspectionFailure = refreshFailure(inspection);
   const [submitState, setSubmitState] = useState<'idle' | 'creating'>('idle');

@@ -48,7 +48,7 @@ async function expandHomeTildePath(filePath: string): Promise<string> {
   if (!filePath.startsWith('~/')) return filePath;
   try {
     // home 在会话内不变:the account's `homeDirectory` replica reads it once (a failed read is read again next time).
-    const home = (await homeDirectory.fetch('local')).replace(/[\\/]+$/, '');
+    const home = (await homeDirectory.fetch()).replace(/[\\/]+$/, '');
     return `${home}/${filePath.slice(2)}`;
   } catch (error: unknown) {
     // 一次瞬时的 RPC 失败(桥没就绪等)不能污染整个会话:the reading is an error, and the next click reads again.
