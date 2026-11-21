@@ -81,6 +81,13 @@ it('logs unexpected host errors and returns a coded failure without their path',
   expect(mocks.warn).toHaveBeenCalledWith(expect.any(String), { error, sourceRoot: '/source' });
 });
 
+it('preserves a known project failure so settings can show its localized reason', async () => {
+  mocks.bind.mockRejectedValueOnce(new Error('project-not-git:work'));
+  expect((await importCodexTasks([{ id: 'one', revision: 'r1' }])).items).toEqual([
+    { id: 'one', status: 'failed', message: 'project-not-git:work' },
+  ]);
+});
+
 it('plans, stages, verifies the native managed path, then binds a resumable chat task', async () => {
   mocks.append.mockImplementation(async (_home, _paths, options) => options.validate('/staged'));
   const result = await importCodexTasks([{ id: 'one', revision: 'r1' }]);
@@ -116,10 +123,10 @@ it('puts archived ancestor segments in the same bundle without binding them as t
 
 it('never binds when native preparation or managed metadata validation fails', async () => {
   mocks.prepare.mockRejectedValueOnce(new Error('native read failed'));
-  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('native read failed');
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-task-failed:');
   expect(mocks.bind).not.toHaveBeenCalled();
   mocks.verify.mockRejectedValueOnce(new Error('wrong metadata'));
-  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('wrong metadata');
+  await expect(importCodexTasks([{ id: 'one', revision: 'r1' }])).rejects.toThrow('codex-import-task-failed:');
   expect(mocks.bind).not.toHaveBeenCalled();
 });
 

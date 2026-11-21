@@ -13,7 +13,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import '@/styles/tokens.css'
 
 const api = vi.hoisted(() => ({ scanCodexTasks: vi.fn(), importCodexTasks: vi.fn(), cancelCodexTaskImport: vi.fn(), codexTaskImportProgress: vi.fn() }))
-vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionImport: api }) }))
+vi.mock('@renderer/lib/ipc', async load => ({ ...await load<typeof import('@renderer/lib/ipc')>(), rpcOn: () => ({ sessionImport: api }) }))
 vi.mock('@/lib/sessionCoordinator', () => ({ sessionCoordinator: { getSnapshot: () => ({ user: { id: 'fixture' } }), subscribe: () => () => {} } }))
 vi.mock('@/components/settings/data-import/import-replicas', () => ({ importSourceCounts: { refresh: vi.fn() }, importedSourceHistory: { refresh: vi.fn() } }))
 vi.mock('@/components/settings/data-import/import-sync-preferences', () => ({ updateImportSettings: vi.fn(async () => {}) }))

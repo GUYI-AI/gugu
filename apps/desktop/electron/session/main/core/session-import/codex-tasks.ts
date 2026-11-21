@@ -111,7 +111,9 @@ export async function importCodexTasks(params: readonly ImportCodexTaskParams[])
       } catch (error) {
         signal.throwIfAborted();
         log.warn('[codex-task-import] Task binding failed', { error, sourceRoot, filePath: join(home.configRoot, row.relativePath), sessionId: row.id });
-        result.items.push({ id: row.id, status: 'failed', message: importErrorMessage('codex-import-task-failed', basename(row.relativePath)) });
+        const known = error instanceof Error && parseImportError(error.message);
+        result.items.push({ id: row.id, status: 'failed', message: known ? error.message
+          : importErrorMessage('codex-import-task-failed', basename(row.relativePath)) });
       }
     }
     return result;
