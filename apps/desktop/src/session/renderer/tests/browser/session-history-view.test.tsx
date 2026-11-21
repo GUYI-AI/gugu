@@ -624,6 +624,26 @@ describe('会话历史(按目录分节)核心合同', () => {
     }
   });
 
+  it.each([
+    ['zh-CN', '读取失败：imp-8.jsonl 不存在或无法读取'],
+    ['en-US', 'Failed to read: imp-8.jsonl is missing or cannot be read'],
+  ] as const)('预览读不到文件(%s):按界面语言说人话,只带文件名,❌ 硬编码中文或完整路径(#3447)', async (locale, sentence) => {
+    setLocalePreference(locale);
+    // 主进程只递原因码 + 文件名(完整路径只进它的日志);本机 IPC 再套外壳和类名(真 Electron 45 实测的整句)。
+    mocks.previewLocalSession.mockRejectedValue(
+      new Error("Error invoking remote method 'sessionImport.previewLocalSession': TranscriptAccessError: transcript-unreadable:imp-8.jsonl")
+    );
+    render();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    // 第三行是 not-imported:点开就读预览。
+    (screen.getByTestId('session-history-row').all()[2].element() as HTMLElement).click();
+    const detail = screen.getByTestId('session-history-detail');
+    await expect.element(detail.getByText(sentence)).toBeVisible();
+    const error = detail.getByText(sentence).element().textContent ?? '';
+    expect(error).not.toContain('/');
+    if (locale === 'en-US') expect(error).not.toMatch(/[㐀-鿿]/u);
+  });
+
   it('点一行展开详情(咕咕行含 session id),再点收起;已归档的行:恢复走唯一路径并刷新', async () => {
     // 主进程的 restoreSession 每放回一条都发一次 archivedAt: null 的 session:changed;面板靠它刷新(#6956)。
     mocks.restore.mockImplementation(async (ref: { projectId: string; sessionId: string }) => {

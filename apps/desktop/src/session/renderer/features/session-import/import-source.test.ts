@@ -176,4 +176,20 @@ describe('#6264 导入会话按机器切换', () => {
       )
     ).toBe('sessionImport.listFailed(error=读不到索引)');
   });
+
+  it('本机原因码按词条说(只带文件名),预览/导入各套各的前缀;认不出的整句仍原样', () => {
+    // 真 Electron 45 实测:自定义错误的类名也会出现在 message 里(`TranscriptAccessError: <码>:<名字>`)。
+    const wrapped = (message: string) => new Error(`Error invoking remote method 'sessionImport.previewLocalSession': ${message}`);
+    expect(describeImportFailure(wrapped('TranscriptAccessError: transcript-unreadable:imp-8.jsonl'), { isLocal: true }, '本地', 'preview', translate)).toBe(
+      'sessionImport.previewFailed(error=sessionImport.error.transcriptUnreadable(name=imp-8.jsonl))'
+    );
+    // 导入:前缀由调用方的 importFailed 套,这里只给那一句。
+    expect(describeImportFailure(wrapped('Error: session-no-cwd:'), { isLocal: true }, '本地', 'import', translate)).toBe(
+      'sessionImport.error.sessionNoCwd(name=sessionImport.error.unnamedFile)'
+    );
+    // 别的机器(版本够新)报同一种码:同样按词条说,❌ 当原始诊断。
+    expect(
+      describeImportFailure(Object.assign(new Error('project-directory-unavailable:work'), { code: 'import_failed' }), { isLocal: false }, 'd22', 'import', translate)
+    ).toBe('sessionImport.error.projectDirectoryUnavailable(name=work)');
+  });
 });

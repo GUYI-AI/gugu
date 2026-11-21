@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   ensureRepositoryWorkspace: vi.fn(() => 'workspace-repo-1'),
   openProject: vi.fn(),
   preview: vi.fn(),
+  warn: vi.fn(),
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -33,6 +34,7 @@ vi.mock('@main/core/projects/operations/ensure-repository-workspace', () => ({
 vi.mock('@main/core/projects/operations/openProject', () => ({
   openProject: mocks.openProject,
 }));
+vi.mock('@main/lib/logger', () => ({ log: { warn: mocks.warn } }));
 vi.mock('./host-source', () => ({
   getLocalSessionSource: () => ({ preview: mocks.preview }),
 }));
@@ -92,6 +94,7 @@ describe('importLocalSession', () => {
     mocks.openProject.mockResolvedValue({ success: true, data: { repositoryWorkspaceId: null } });
     mocks.preview.mockReset();
     mocks.preview.mockResolvedValue(previewOf({}));
+    mocks.warn.mockReset();
   });
 
   afterEach(() => {
@@ -269,7 +272,7 @@ describe('importLocalSession', () => {
       expect(mocks.createLocalProject).not.toHaveBeenCalled();
     });
 
-    it('挂不上就报出真实原因并停下，不留一个建不了任务的项目', async () => {
+    it('挂不上就停下，界面说打不开这个文件夹、真实原因进日志，不留一个建不了任务的项目', async () => {
       mocks.openProject.mockResolvedValue({
         success: false,
         error: { type: 'error', message: 'git rev-parse --show-toplevel failed (exit 128)' },
@@ -283,7 +286,12 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('rev-parse');
+      ).rejects.toThrow('project-open-failed:webapp');
+      // 真实原因(git 的输出)写日志排查用;message 里只有码和文件夹名,不会把它和完整目录带到界面上。
+      expect(mocks.warn).toHaveBeenCalledWith(
+        '[session-import] import failed: project-open-failed',
+        expect.objectContaining({ directory: '/work/webapp', message: 'git rev-parse --show-toplevel failed (exit 128)' }),
+      );
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
   });
@@ -429,7 +437,7 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: null,
         })
-      ).rejects.toThrow('工作目录');
+      ).rejects.toThrow('session-no-cwd:');
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
 
@@ -444,7 +452,7 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('会话 id');
+      ).rejects.toThrow('session-no-id:');
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
 
@@ -459,7 +467,46 @@ describe('importLocalSession', () => {
           title: '标题',
           cwd: '/work/webapp',
         })
-      ).rejects.toThrow('project-not-found');
+      ).rejects.toThrow('session-create-failed:');
+      // 界面只说「无法创建」;内部类型留给日志排查,不进 message。
+      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: session-create-failed', {
+        engine: 'claude-code',
+        type: 'project-not-found',
+      });
+    });
+  });
+
+  describe('项目落点失败:message 只带码和文件夹名,完整目录进日志', () => {
+    const params = {
+      engine: 'claude-code' as const,
+      providerSessionId: CLAUDE_SESSION,
+      filePath: '/f.jsonl',
+      title: '标题',
+      cwd: '/work/webapp',
+    };
+
+    it.each(['invalid-directory', 'inspect-failed'])('建项目 %s → project-directory-unavailable', async (type) => {
+      mocks.createLocalProject.mockResolvedValue({ success: false, error: { type } });
+
+      const failure = await importLocalSession(params).catch((error: Error) => error);
+
+      expect(failure).toMatchObject({ message: 'project-directory-unavailable:webapp', code: 'project-directory-unavailable' });
+      expect((failure as Error).message).not.toContain('/work');
+      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: project-directory-unavailable', { directory: '/work/webapp', type });
+      expect(mocks.createSession).not.toHaveBeenCalled();
+    });
+
+    it('建项目的其它失败 → project-open-failed', async () => {
+      mocks.createLocalProject.mockResolvedValue({ success: false, error: { type: 'not-repository' } });
+
+      await expect(importLocalSession(params)).rejects.toThrow('project-open-failed:webapp');
+      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: project-open-failed', { directory: '/work/webapp', type: 'not-repository' });
+    });
+
+    it('挂载时目录已不在 → project-directory-unavailable', async () => {
+      mocks.openProject.mockResolvedValue({ success: false, error: { type: 'path-not-found' } });
+
+      await expect(importLocalSession(params)).rejects.toThrow('project-directory-unavailable:webapp');
     });
   });
 });

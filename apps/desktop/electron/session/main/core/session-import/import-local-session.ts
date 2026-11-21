@@ -9,6 +9,7 @@ import { ensureRepositoryWorkspace } from '@main/core/projects/operations/ensure
 import { getLocalProjectByPath } from '@main/core/projects/operations/getProjects';
 import { openProject } from '@main/core/projects/operations/openProject';
 import { sessionService } from '@main/core/sessions/session-service';
+import { log } from '@main/lib/logger';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import {
@@ -18,6 +19,7 @@ import {
   type LocalSessionEngine,
   type LocalSessionPreview,
 } from '@shared/core/session-import/session-import';
+import { importError, type ImportErrorCode } from '@shared/core/session-import/import-error-code';
 import { buildWorkspaceConfigFromPreset } from '@shared/core/workspaces/build-workspace-config-from-preset';
 import { getLocalSessionSource } from './host-source';
 
@@ -40,26 +42,13 @@ function sessionIdFor(engine: LocalSessionEngine, providerSessionId: string): st
   return engine === 'claude-code' ? providerSessionId : randomUUID();
 }
 
-/** 把项目创建失败的内部枚举翻成人话——用户看到「invalid-directory」等于没说。 */
-function describeCreateProjectError(type: string, directory: string): string {
-  switch (type) {
-    case 'invalid-directory':
-    case 'inspect-failed':
-      return `该会话所在的目录不存在或无法读取：${directory}`;
-    case 'not-repository':
-      return `无法把 ${directory} 作为项目打开`;
-    default:
-      return `无法把 ${directory} 加成项目（${type}）`;
-  }
-}
-
-/** 把 openProject 的失败翻成人话——「path-not-found」对用户等于没说。 */
-function describeOpenProjectError(
-  error: { type: string; message?: string },
-  directory: string
-): string {
-  if (error.type === 'path-not-found') return `目录已经不在了：${directory}`;
-  return error.message ? `${directory}（${error.message}）` : directory;
+/**
+ * 导入失败抛带码的错：message 只带 `<码>:<名字>`（界面按码说人话，见 `sessionImport.error.*`），
+ * 完整目录和内部类型写日志，❌ 拼进 message —— 它会原样出现在用户界面里。
+ */
+function importFailure(code: ImportErrorCode, name: string, context: Record<string, unknown>): Error {
+  log.warn(`[session-import] import failed: ${code}`, context);
+  return importError(code, name);
 }
 
 /**
@@ -75,8 +64,10 @@ function describeOpenProjectError(
 async function mountImportProject<T extends { id: string; path: string }>(project: T): Promise<T> {
   const opened = await openProject(project.id);
   if (!opened.success) {
-    throw new Error(
-      `无法打开该会话所在的项目：${describeOpenProjectError(opened.error, project.path)}`
+    throw importFailure(
+      opened.error.type === 'path-not-found' ? 'project-directory-unavailable' : 'project-open-failed',
+      basename(project.path) || project.path,
+      { directory: project.path, type: opened.error.type, message: 'message' in opened.error ? opened.error.message : undefined },
     );
   }
   return project;
@@ -107,7 +98,12 @@ async function resolveImportProject(workingDirectory: string) {
     automatic: true,
   });
   if (!created.success) {
-    throw new Error(describeCreateProjectError(created.error.type, workingDirectory));
+    const unavailable = created.error.type === 'invalid-directory' || created.error.type === 'inspect-failed';
+    throw importFailure(
+      unavailable ? 'project-directory-unavailable' : 'project-open-failed',
+      basename(workingDirectory) || workingDirectory,
+      { directory: workingDirectory, type: created.error.type },
+    );
   }
   return await mountImportProject(created.data);
 }
@@ -135,11 +131,11 @@ export async function bindLocalSession(
 ): Promise<ImportLocalSessionResult> {
   const providerSessionId = preview.providerSessionId.trim();
   if (!providerSessionId) {
-    throw new Error('这条会话没有可用的会话 id，无法恢复原会话');
+    throw importFailure('session-no-id', '', { engine: params.engine, filePath: params.filePath });
   }
   const workingDirectory = preview.cwd?.trim();
   if (!workingDirectory) {
-    throw new Error('读不出这条会话的工作目录，导入后无法在原位置继续');
+    throw importFailure('session-no-cwd', '', { engine: params.engine, filePath: params.filePath });
   }
 
   const provider = LOCAL_SESSION_ENGINE_PROVIDER[params.engine];
@@ -197,7 +193,7 @@ export async function bindLocalSession(
     });
     if (!created.success) {
       // ❌ 别在这里再写一次「导入失败：」——界面已经带了这个前缀，重复一遍只是噪音。
-      throw new Error(`无法创建该会话（${created.error.type}）`);
+      throw importFailure('session-create-failed', '', { engine: params.engine, type: created.error.type });
     }
 
     return {
