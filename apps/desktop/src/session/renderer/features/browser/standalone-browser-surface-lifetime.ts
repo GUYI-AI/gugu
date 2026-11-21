@@ -36,12 +36,16 @@ export function mountStandaloneBrowserSurface(options: {
   };
   publish({ frame: null, state: 'connecting', error: null });
   const fail = (error: unknown) => publish({ error, state: 'closed' });
-  const resize = () => {
+  const measureViewport = () => {
     const { width, height } = viewport.getBoundingClientRect();
     publish({ viewport: { width, height } });
-    if (watchId && width >= 100 && height >= 100) {
-      void rpc.browser.controlTaskPage({ watchId, control: { action: 'resize', width: Math.round(width), height: Math.round(height),
-        scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)) } }).catch(fail);
+    if (width < 100 || height < 100 || width > 8000 || height > 8000) return;
+    return { width: Math.round(width), height: Math.round(height), scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)) };
+  };
+  const resize = (previous?: ReturnType<typeof measureViewport>) => {
+    const size = measureViewport();
+    if (watchId && size && (size.width !== previous?.width || size.height !== previous?.height || size.scale !== previous?.scale)) {
+      void rpc.browser.controlTaskPage({ watchId, control: { action: 'resize', ...size } }).catch(fail);
     }
   };
   const stopProjection = () => {
@@ -58,8 +62,9 @@ export function mountStandaloneBrowserSurface(options: {
     const host: ProjectionHost = {
       projection: {
         watch: async ({ watchId: id }) => {
-          await rpc.browser.watchStandalonePage({ browserId, watchId: id });
-          if (active()) { watchId = id; resize(); }
+          const initialViewport = active() ? measureViewport() : undefined;
+          await rpc.browser.watchStandalonePage({ browserId, watchId: id, viewport: initialViewport });
+          if (active()) { watchId = id; resize(initialViewport); }
         },
         unwatch: ({ watchId: id }) => rpc.browser.unwatchTaskPage(id).then(() => undefined),
         send: ({ watchId: id, packet }) => rpc.browser.sendTaskPage({ watchId: id, packet }),

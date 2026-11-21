@@ -133,12 +133,12 @@ describe('standalone page dialogs', () => {
     expect(f.page.answers).toEqual([true]);
   });
 
-  it('leaves a page-unload question alone', async () => {
+  it('cancels a page-unload question without showing another dialog', async () => {
     const f = fixture();
     f.open('beforeunload', 'leave site?');
     await f.settle();
     expect(f.shown).toHaveLength(0);
-    expect(f.page.answers).toEqual([]);
+    expect(f.page.answers).toEqual([false]);
   });
 
   it('keeps the dialog pending while there is no window to show it on', async () => {

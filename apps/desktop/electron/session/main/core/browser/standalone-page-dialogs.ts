@@ -30,7 +30,7 @@ type Pending = {
  *   unless an agent holds the page, which receives the dialog and decides;
  * - whoever answers first wins; an answer from elsewhere (the agent, or Chrome closing it when the page moves on) closes the one
  *   in front of the person;
- * - prompt is cancelled at once, as in the built-in browser, and the question before leaving a page is left alone.
+ * - prompt and beforeunload are cancelled at once, as in the built-in browser.
  */
 export function wireStandalonePageDialogs(page: DialogPage, ask: AskPerson): void {
   let pending: Pending | null = null;
@@ -72,7 +72,7 @@ export function wireStandalonePageDialogs(page: DialogPage, ask: AskPerson): voi
 
   page.on('javascript-dialog', (...args: unknown[]) => {
     const { type, message } = args[0] as { type: string; message: string }; // What PageTarget emits for Page.javascriptDialogOpening.
-    if (type === 'prompt') { void page.answerJavaScriptDialog(false).catch(() => undefined); return; }
+    if (type === 'prompt' || type === 'beforeunload') { void page.answerJavaScriptDialog(false).catch(() => undefined); return; }
     if (type !== 'alert' && type !== 'confirm') return;
     // Chrome shows one dialog at a time, so one still here is an alert kept to be shown or one Chrome has already dropped.
     // It is never answered now: an answer goes to whichever dialog Chrome is showing, which is the new one.

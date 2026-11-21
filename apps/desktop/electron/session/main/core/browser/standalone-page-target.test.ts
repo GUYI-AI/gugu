@@ -379,6 +379,38 @@ describe('a standalone page: it has the size of its pane', () => {
     expect(f.sentMethods('Emulation.setDeviceMetricsOverride')[0]?.params).toMatchObject({ width: 370, height: 700 });
   });
 
+  it('applies a pane resize after Chrome has restored its layout following a screen capture', async () => {
+    let captureStarted!: () => void;
+    const started = new Promise<void>(resolve => { captureStarted = resolve; });
+    let finishCapture!: () => void;
+    const captured = new Promise<void>(resolve => { finishCapture = resolve; });
+    let width = 756;
+    const f = await fixture({
+      'Page.getFrameTree': () => ({ frameTree: { frame: { id: 'main', loaderId: 'document' } } }),
+      'Page.getLayoutMetrics': () => ({ cssVisualViewport: { clientWidth: width, clientHeight: 413, pageX: 0, pageY: 0, scale: 1 } }),
+      'Page.captureScreenshot': async () => {
+        const oldWidth = width;
+        captureStarted();
+        await captured;
+        width = oldWidth; // Chromium restores the emulation parameters saved at capture start.
+        return { data: 'frame' };
+      },
+      'Emulation.setDeviceMetricsOverride': params => { width = Number(params.width); },
+    });
+    const screening = f.target.startScreen(() => {});
+    await started;
+    const resize = f.target.control({ action: 'resize', width: 361, height: 795, scale: 1 });
+    try {
+      await f.settle();
+      expect(f.sentMethods('Emulation.setDeviceMetricsOverride')).toHaveLength(0);
+    } finally {
+      finishCapture();
+      await Promise.all([screening, resize]);
+      await f.target.stopScreen();
+    }
+    expect(width).toBe(361);
+  });
+
   it('gives up waiting when the page closes before it was sized', async () => {
     const f = await fixture();
     const waiting = f.target.sized();

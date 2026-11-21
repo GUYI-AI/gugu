@@ -7,6 +7,7 @@ export class TaskPageViewport {
   private viewport: Viewport | undefined;
   private factor = 1;
   private pending: Promise<void> = Promise.resolve();
+  private layoutTail: Promise<unknown> = Promise.resolve();
   private firstSize!: () => void;
   private readonly sizedOnce = new Promise<void>(resolve => { this.firstSize = resolve; });
   constructor(private readonly send: (method: string, params: Record<string, unknown>) => Promise<unknown>) {}
@@ -29,10 +30,17 @@ export class TaskPageViewport {
     return this.apply();
   }
 
+  /** Chrome can temporarily change emulation for a screenshot, then restore the layout it saved. */
+  withStableLayout<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.layoutTail.then(operation);
+    this.layoutTail = next.catch(() => {});
+    return next;
+  }
+
   private apply(): Promise<void> {
     if (!this.viewport) return Promise.resolve(); // Saved zoom can arrive before the first pane measurement.
     const { width, height, scale } = this.viewport, factor = this.factor;
-    const next = this.pending.catch(() => {}).then(async () => {
+    const next = this.withStableLayout(async () => {
       await this.send('Emulation.setDeviceMetricsOverride', {
         width: Math.max(1, Math.round(width / factor)), height: Math.max(1, Math.round(height / factor)),
         deviceScaleFactor: scale * factor, mobile: false,

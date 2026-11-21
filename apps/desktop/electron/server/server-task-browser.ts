@@ -148,6 +148,7 @@ const windowAddress = (url: string | undefined) => url ? url : 'about:blank';
 export class PageTarget extends EventEmitter implements TaskPageContents, WindowOwner {
   async hostCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
     await this.viewport.ready();
+    if (method === 'Page.captureScreenshot') return this.captureScreenshot(params);
     if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
     if (method === 'Page.reload') this.reloadAsked = true;
     return this.connection.send(method, params, this.watchSession);
@@ -156,6 +157,12 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
     if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
     return this.connection.send(method, params, this.watchSession);
   });
+  private captureScreenshot(params: Record<string, unknown> = {}): Promise<unknown> {
+    return this.viewport.withStableLayout(() => {
+      if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
+      return this.connection.send('Page.captureScreenshot', params, this.watchSession);
+    });
+  }
   setZoomFactor(factor: number): Promise<void> { return this.viewport.zoom(factor); }
   /** Resolves when Gugu has given the page the size of its pane; rejects if the page closes first. */
   sized(): Promise<void> {
@@ -204,6 +211,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
   title = '';
   url = 'about:blank';
   private readonly capture = new TaskPageCapture((method, params) => {
+    if (method === 'Page.captureScreenshot') return this.captureScreenshot(params);
     if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
     return this.connection.send(method, params, this.watchSession);
   }, this.feedback, () => !this.destroyed && !!this.watchSession,
@@ -607,7 +615,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
         const target = read.result?.value;
         if (read.exceptionDetails || !target) throw new Error('The selected page could not be read');
         if (!control.capture) return { target };
-        const capture = await this.connection.send('Page.captureScreenshot', { format: 'png' }, session) as { data?: string };
+        const capture = await this.captureScreenshot({ format: 'png' }) as { data?: string };
         if (!capture.data || this.url !== target.url) throw new Error('The page changed during selection');
         return { target, screenshot: `data:image/png;base64,${capture.data}` };
       }

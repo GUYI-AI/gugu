@@ -20,8 +20,9 @@ const deferred = <T,>() => {
 };
 const mounted = { success: true, ready: true, state: { url: 'http://localhost', title: 'Fixture', canGoBack: false, canGoForward: false } };
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
-function start() {
+function start(size?: { width: number; height: number }) {
   const viewport = document.createElement('div'), picture = document.createElement('div');
+  if (size) vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect(size));
   const onHandle = vi.fn(), changes = createStandaloneSurfaceState();
   return { changes, onHandle, lifetime: mountStandaloneBrowserSurface({ browserId: 'fixture', partition: 'persist:fixture',
     initialUrl: 'http://localhost', visible: true, viewport, picture, changes, onHandle }) };
@@ -76,6 +77,18 @@ describe('standalone page stream lifetime', () => {
     expect(view.changes.get()).toMatchObject({ state: 'live', frame: { width: 800, height: 600 } });
     view.lifetime.close();
     expect(newClose).toHaveBeenCalledOnce();
+  });
+
+  it('sends the pane size before the watch can start capturing', async () => {
+    mocks.mountPage.mockResolvedValueOnce(mounted);
+    mocks.mountProjection.mockResolvedValueOnce({ close: vi.fn(async () => {}) });
+    const view = start({ width: 360.5, height: 795 });
+    await flush();
+    const host = mocks.mountProjection.mock.calls[0][0];
+    await host.projection.watch({ watchId: 'first-watch' });
+    expect(mocks.watch).toHaveBeenCalledWith({ browserId: 'fixture', watchId: 'first-watch',
+      viewport: { width: 361, height: 795, scale: 1 } });
+    view.lifetime.close();
   });
 
   it('exposes a mount failure without claiming that the page is ready', async () => {

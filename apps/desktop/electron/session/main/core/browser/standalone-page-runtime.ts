@@ -5,6 +5,7 @@ import { browserCloseTabChannel, browserOpenInNewTabChannel, browserPageEventCha
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout } from '@shared/browser-page-layout';
 import type { AnnotationConversation } from '@shared/browser-annotation';
 import type { BrowserKernelKind } from '@shared/browser-kernel';
+import { readTaskPageControl, type TaskPageControl } from '@shared/browser-task-page';
 import { newTabSharesPartition, normalizeBrowserProfileSelection } from '@shared/browser';
 import type { BrowserPageCommand } from './browser-page-views';
 import type { TaskPageContents, TaskPageScreenTarget } from '../../../../server/server-task-browser';
@@ -215,11 +216,17 @@ export async function copyStandaloneScreenshot(browserId: string) {
   return true;
 }
 
-export async function watchStandalonePage(input: { browserId: string; watchId: string }) {
-  return watchTaskPageConnection(input.watchId, () => connectTaskPageScreen(`standalone:${input.browserId}`,
-    async () => standaloneScreen(input.browserId),
-    packet => events.emit(browserTaskPagePacketChannel, { watchId: input.watchId, packet }),
-    state => events.emit(browserTaskPageStateChannel, { watchId: input.watchId, state }), true));
+export async function watchStandalonePage(input: { browserId: string; watchId: string;
+  viewport?: Omit<Extract<TaskPageControl, { action: 'resize' }>, 'action'>;
+}) {
+  return watchTaskPageConnection(input.watchId, async () => {
+    const page = await standaloneScreen(input.browserId);
+    const viewport = input.viewport && readTaskPageControl({ ...input.viewport, action: 'resize' });
+    if (viewport) await page.control(viewport);
+    return connectTaskPageScreen(`standalone:${input.browserId}`, async () => page,
+      packet => events.emit(browserTaskPagePacketChannel, { watchId: input.watchId, packet }),
+      state => events.emit(browserTaskPageStateChannel, { watchId: input.watchId, state }), true);
+  });
 }
 
 export async function closeStandalonePage(browserId: string) {

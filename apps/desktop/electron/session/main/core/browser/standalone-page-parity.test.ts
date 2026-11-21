@@ -32,7 +32,9 @@ vi.mock('./standalone-kernel-service', () => ({ standaloneKernelService: () => (
   },
 }) }));
 import { browserController } from './controller';
-import { browserKernelBindings, standaloneCommand } from './standalone-page-runtime';
+import { browserKernelBindings, standaloneCommand, watchStandalonePage } from './standalone-page-runtime';
+import { watchTaskPageConnection } from './remote-task-page';
+import { connectTaskPageScreen } from './task-page-screen';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,6 +47,31 @@ describe('existing browser interactions after changing engine', () => {
     expect(m.zoom).toHaveBeenCalledWith(0.5);
     expect(m.host).not.toHaveBeenCalledWith('Emulation.setPageScaleFactor', expect.anything());
   });
+  it('finishes the first pane resize before it connects a picture viewer', async () => {
+    let finishResize!: () => void;
+    let resizeStarted!: () => void;
+    const started = new Promise<void>(resolve => { resizeStarted = resolve; });
+    m.control.mockImplementationOnce(() => {
+      resizeStarted();
+      return new Promise<void>(resolve => { finishResize = resolve; });
+    });
+    vi.mocked(watchTaskPageConnection).mockImplementationOnce(async (_id, connect) => {
+      await connect();
+      return { success: true };
+    });
+    const watching = watchStandalonePage({ browserId: 'parity', watchId: 'first-picture',
+      viewport: { width: 361, height: 795, scale: 1 } });
+    await Promise.race([started, watching]);
+    try {
+      expect(m.control).toHaveBeenCalledWith({ action: 'resize', width: 361, height: 795, scale: 1 });
+      expect(connectTaskPageScreen).not.toHaveBeenCalled();
+    } finally {
+      finishResize?.();
+      await watching;
+    }
+    expect(connectTaskPageScreen).toHaveBeenCalledOnce();
+  });
+
   it('retains ignoreCache on force reload; normal reload stays normal', async () => {
     await standaloneCommand('parity', 'reloadIgnoringCache');
     expect(m.host).toHaveBeenCalledWith('Page.reload', { ignoreCache: true });
