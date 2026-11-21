@@ -94,15 +94,21 @@ describe('chatFile in a manifest', () => {
 });
 
 describe('the file an App names for a chat', () => {
+  const named = async (manifest: Parameters<typeof files.appInChat>[1]) => {
+    const answer = await files.appInChat(CHAT, manifest);
+    if (!('open' in answer)) throw new Error('expected the file it names');
+    return answer.open;
+  };
+
   it('found at the top of the chat folder, it opens as that file opened with that tab', async () => {
     rows = [{ ...base, id: BOARD, filename: NAME, parent_id: null }];
-    const detail = await files.appChatFile(CHAT, parseExtensionManifest(app(naming)));
+    const detail = await named(parseExtensionManifest(app(naming)));
     expect(detail).toMatchObject({ chatId: CHAT, itemId: BOARD, name: NAME, choice: { kind: 'one', candidate: { tabKind: 'kanban.file', suffix: '.board.json' } } });
     expect(calls).not.toContain('workspace_create_document_as');
   });
 
   it('not there yet, it is made empty for the person — {} for JSON, which the App fills', async () => {
-    const detail = await files.appChatFile(CHAT, parseExtensionManifest(app(naming)));
+    const detail = await named(parseExtensionManifest(app(naming)));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ filename: NAME, content: '{}', content_type: 'application/json' });
     expect(detail.itemId).toBe(rows[0]!.id);
@@ -110,14 +116,14 @@ describe('the file an App names for a chat', () => {
 
   it('two making it at once: the later one, named apart by the folder, goes again, and both open the first', async () => {
     theirsLandsFirst = true;
-    const detail = await files.appChatFile(CHAT, parseExtensionManifest(app(naming)));
+    const detail = await named(parseExtensionManifest(app(naming)));
     expect(detail.itemId).toBe(BOARD);
     expect(rows.map((row) => row.filename)).toEqual([NAME]);
     expect(calls).toContain('workspace_delete_as');
   });
 
-  it('an App that names none is refused, said: its own page is what opens it in a chat', async () => {
-    await expect(files.appChatFile(CHAT, parseExtensionManifest(app({ opensFiles: { chat: ['.board.json'] } })))).rejects.toMatchObject({ code: 'not-found' });
-    await expect(files.appChatFile(CHAT, undefined)).rejects.toMatchObject({ code: 'not-found' });
+  it('an App that names none answers its files here instead; one not installed is refused', async () => {
+    await expect(files.appInChat(CHAT, parseExtensionManifest(app({ opensFiles: { chat: ['.board.json'] } })))).resolves.toEqual({ files: [] });
+    await expect(files.appInChat(CHAT, undefined)).rejects.toMatchObject({ code: 'not-found' });
   });
 });

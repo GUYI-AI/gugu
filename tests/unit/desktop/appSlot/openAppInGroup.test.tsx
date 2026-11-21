@@ -19,7 +19,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => host.runs, grantable: (manifest: unknown) => host.grantable(manifest), installAttachment: vi.fn(), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => host.runs, grantable: (manifest: unknown) => host.grantable(manifest), installAttachment: vi.fn(), groupFileOpener: vi.fn(), appInChat: vi.fn(async () => ({ success: true, data: { files: [] } })), setOpenWithDefault: vi.fn() },
 }))
 const card = vi.hoisted(() => ({ manifest: null as unknown }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
@@ -104,20 +104,20 @@ describe('the chat on screen answers 「在本群打开」 (useChatOpener)', () 
 
   it('a link naming the App\'s own page opens the file it names here, as its card does: no second tab beside that one', async () => {
     const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
-    const appChatFile = vi.fn(async () => ({ success: false, error: 'read the file it names' }))
-    Object.assign(appsHere!, { appChatFile })
+    const appInChat = vi.fn(async () => ({ success: false, error: 'read the file it names' }))
+    Object.assign(appsHere!, { appInChat })
     const withChatFile = app([OWN_PAGE, { ...GROUP_FILES, name: 'file', chatFile: 'x.board.json' } as Tab])
     install(withChatFile)
     await harness.render(createElement(Chat, { id: 'link-1' }))
     askNow('link-1', { app: 'board', tab: 'main' })
     await act(async () => { await Promise.resolve() })
-    expect(appChatFile).toHaveBeenCalledWith({ chatId: 'link-1', extensionId: 'board' })
+    expect(appInChat).toHaveBeenCalledWith({ chatId: 'link-1', extensionId: 'board' })
     expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.main')
     // A tab the App does not have says so; it does not fall through to the file.
-    appChatFile.mockClear()
+    appInChat.mockClear()
     askNow('link-1', { app: 'board', tab: 'gone' })
     await act(async () => { await Promise.resolve() })
-    expect(appChatFile).not.toHaveBeenCalled()
+    expect(appInChat).not.toHaveBeenCalled()
     expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.gone')
     // Naming another tab still opens that one.
     askNow('link-1', { app: 'board', tab: 'file' })

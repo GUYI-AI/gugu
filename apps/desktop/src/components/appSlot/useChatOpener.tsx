@@ -209,25 +209,14 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
           void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, from)).catch(error => setUnopened(String(error)))
           return
         }
-        if (namesFile) {
-          void appsHere!.appChatFile({ chatId: resourceChatId ?? chatId, extensionId: ask.app }).then((result) => {
-            if (!live || asked !== asking.current) return
-            if (!result.success || !result.data) setUnopened(result.error || 'no answer')
-            else void Promise.resolve(openResolved(result.data, from)).catch(error => setUnopened(String(error)))
-          })
-        } else {
-          void appsHere!.groupFilesOpenedBy({ chatId: resourceChatId ?? chatId, extensionId: ask.app }).then((result) => {
-            if (!live || asked !== asking.current) return
-            if (!result.success || !result.data) {
-              setUnopened(result.error || 'no answer')
-              return
-            }
-            const files = result.data
-            // One opens; several, or none yet, are said in the same sheet — a click never comes to nothing.
-            if (files.length === 1) void openGroupFile(files[0]!.itemId, from)
-            else setAppFiles({ chatId, from, appName: installed.appName(ask.app) ?? ask.app, files })
-          })
-        }
+        void appsHere!.appInChat({ chatId: resourceChatId ?? chatId, extensionId: ask.app }).then((result) => {
+          if (!live || asked !== asking.current) return
+          if (!result.success || !result.data) setUnopened(result.error || 'no answer')
+          else if ('open' in result.data) void Promise.resolve(openResolved(result.data.open, from)).catch(error => setUnopened(String(error)))
+          // One opens; several, or none yet, are said in the same sheet — a click never comes to nothing.
+          else if (result.data.files.length === 1) void openGroupFile(result.data.files[0]!.itemId, from)
+          else setAppFiles({ chatId, from, appName: installed.appName(ask.app) ?? ask.app, files: result.data.files })
+        })
       }
       const known = peekInstalledApps(HERE_HOST!)
       if (known) decide(known)
