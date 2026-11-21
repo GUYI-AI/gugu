@@ -20,7 +20,7 @@ let fixture: Awaited<ReturnType<typeof openFixture>>;
 let root: string;
 let old: ReturnType<typeof canonicalPath>;
 let selected: ReturnType<typeof canonicalPath>;
-function insertFolder(id: string, folder: string, chatId: string | null) {
+function insertFolder(id: string, folder: ReturnType<typeof canonicalPath>, chatId: string | null) {
   fixture.db.insert(workspaces).values({ id, type: 'local', kind: 'project-root', location: 'local', path: folder, key: computeWorkspaceKey(folder), chatId, sort: 1 }).run();
 }
 beforeEach(async () => {

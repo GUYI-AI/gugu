@@ -249,7 +249,7 @@ describe('inner sidebar', () => {
 
   it('#3367 a sub-session dragged onto the Agents header goes back to the top level; a top-level one is not taken', async () => {
     state.items = [...state.items, item('shop-sub', 'p-shop', idle, 0, 'shop-task')];
-    openProject('p-shop');
+    openChat('shop-chat');
     await render();
     const header = host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"] > div')!;
     const drag = (type: 'dragover' | 'drop', sessionId: string) => {

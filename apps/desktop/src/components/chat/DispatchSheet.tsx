@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
-import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
+import { useGroupAgents } from '@/lib/agentSessionsBridge'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
 import { sendableConversations, sendablePickRows } from './forwardMessageUtils'
 import { useAuth } from '../../store/auth'
@@ -34,7 +34,7 @@ const NEW_AGENT = 'new:agent'
 export const DispatchSheet = observer(function DispatchSheet() {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById, activeChatId, messages } = useChatStore('chats', 'identitiesById', 'activeChatId', 'messages')
-  const projectMembers = useProjectGroupMembers()
+  const groupAgents = useGroupAgents()
   const owned = useOwnedAgents()
   const { user } = useAuth()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -90,7 +90,7 @@ export const DispatchSheet = observer(function DispatchSheet() {
   // Ranked as the chat's @ is: history counts only when the sheet is over that chat (or its topic).
   const here = chats.some((chat) => chat.id === activeChatId && (chat.id === asked.chat?.id || chat.source_chat_id === asked.chat?.id))
   const rank = <T extends { id: string; name: string; type: 'human' | 'agent' }>(rows: T[]) => rankMentionCandidates(rows, query, { chatId: here ? activeChatId : asked.chat?.id, currentUserId: user?.id, messages: here ? messages : [],
-    participantIds: chats.find((chat) => chat.id === asked.chat?.id)?.member_user_ids, projectMemberIds: projectMembers.get(asked.chat?.id ?? ''), now: Date.now() })
+    participantIds: chats.find((chat) => chat.id === asked.chat?.id)?.member_user_ids, groupAgentIds: groupAgents.get(asked.chat?.id ?? ''), now: Date.now() })
   const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => rank((asked.chat?.members ?? []).filter((member) => member.kind === kind).map((member) => ({ ...member, type: member.kind })))
     .map((member) => ({
       id: `member:${member.id}`,
