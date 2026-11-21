@@ -8,6 +8,7 @@ import { CheckIcon, XIcon } from '../../../icons'
 import * as React from 'react';
 import type { FixedDataSlotProps } from '../fixed-data-slot';
 import * as styles from './combobox.css';
+import { OpenLayer } from '@session-ui/react/primitives/open-layer';
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 
@@ -121,6 +122,7 @@ function ComboboxContent({
         className={styles.positioner}
         style={{ zIndex, ...positionerStyle }}
       >
+        <OpenLayer />
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
           data-chips={!!anchor}
