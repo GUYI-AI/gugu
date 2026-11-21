@@ -40,6 +40,21 @@ vi.mock('./host-source', () => ({
 }));
 
 import { bindLocalSession, importLocalSession } from './import-local-session';
+import { humanizeRpcError } from '@renderer/features/session-import/humanize-error';
+import { localizeImportError } from '@renderer/features/session-import/import-error-copy';
+import { enUSSessionWorkflowMessages, zhCNSessionWorkflowMessages } from '@renderer/localization/messages-session-workflows';
+
+/**
+ * 这条错到用户界面上说的那句:本机 IPC 的外壳 + 渲染层按当前语言查词条(真词条表,{name}/{reason} 插值)。
+ * 用它断言「界面上有本地化的原因」,而不是只看主进程抛了什么码。
+ */
+function uiSays(error: Error, locale: 'en' | 'zh'): string {
+  const catalog = (locale === 'en' ? enUSSessionWorkflowMessages : zhCNSessionWorkflowMessages) as Record<string, string>;
+  const translate = ((key: string, values?: Record<string, unknown>) =>
+    (catalog[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''))) as never;
+  const wrapped = new Error(`Error invoking remote method 'sessionImport.importLocalSession': Error: ${error.message}`);
+  return localizeImportError(humanizeRpcError(wrapped, 'unknown'), translate);
+}
 
 const CLAUDE_SESSION = '11111111-2222-3333-4444-555555555555';
 const CODEX_SESSION = '019fa62b-9ddb-7373-a1b8-807548106894';
@@ -272,25 +287,25 @@ describe('importLocalSession', () => {
       expect(mocks.createLocalProject).not.toHaveBeenCalled();
     });
 
-    it('挂不上就停下，界面说打不开这个文件夹、真实原因进日志，不留一个建不了任务的项目', async () => {
-      mocks.openProject.mockResolvedValue({
-        success: false,
-        error: { type: 'error', message: 'git rev-parse --show-toplevel failed (exit 128)' },
-      });
+    it('挂不上就停下，界面上有本地化的原因（不是只剩一句打不开），原始报错进日志，不留一个建不了任务的项目', async () => {
+      const gitSays = 'fatal: not a git repository (or any of the parent directories): .git';
+      mocks.openProject.mockResolvedValue({ success: false, error: { type: 'error', message: gitSays } });
 
-      await expect(
-        importLocalSession({
-          engine: 'claude-code',
-          providerSessionId: CLAUDE_SESSION,
-          filePath: '/f.jsonl',
-          title: '标题',
-          cwd: '/work/webapp',
-        })
-      ).rejects.toThrow('project-open-failed:webapp');
-      // 真实原因(git 的输出)写日志排查用;message 里只有码和文件夹名,不会把它和完整目录带到界面上。
+      const failure = await importLocalSession({
+        engine: 'claude-code',
+        providerSessionId: CLAUDE_SESSION,
+        filePath: '/f.jsonl',
+        title: '标题',
+        cwd: '/work/webapp',
+      }).catch((error: Error) => error);
+
+      expect((failure as Error).message).toBe('project-not-git:webapp');
+      expect(uiSays(failure as Error, 'en')).toBe('The folder webapp could not be opened as a project: it is not a Git repository');
+      expect(uiSays(failure as Error, 'zh')).toBe('无法把文件夹 webapp 作为项目打开：它不是 Git 仓库');
+      // 原始报错(git 的输出)与完整目录只进日志。
       expect(mocks.warn).toHaveBeenCalledWith(
-        '[session-import] import failed: project-open-failed',
-        expect.objectContaining({ directory: '/work/webapp', message: 'git rev-parse --show-toplevel failed (exit 128)' }),
+        '[session-import] import failed: project-not-git',
+        expect.objectContaining({ directory: '/work/webapp', message: gitSays }),
       );
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
@@ -476,7 +491,7 @@ describe('importLocalSession', () => {
     });
   });
 
-  describe('项目落点失败:message 只带码和文件夹名,完整目录进日志', () => {
+  describe('项目落点失败:界面说本地化的原因，message 只带码和文件夹名，完整目录与原始报错进日志', () => {
     const params = {
       engine: 'claude-code' as const,
       providerSessionId: CLAUDE_SESSION,
@@ -484,29 +499,47 @@ describe('importLocalSession', () => {
       title: '标题',
       cwd: '/work/webapp',
     };
+    const PREFIX_EN = 'The folder webapp could not be opened as a project';
+    const PREFIX_ZH = '无法把文件夹 webapp 作为项目打开';
+    // [场景, 谁失败, 失败内容, 码, 英文原因, 中文原因]
+    const cases = [
+      ['建项目:不是目录/不存在', 'create', { type: 'invalid-directory', path: '/work/webapp', message: 'Invalid directory' }, 'project-not-found', 'it no longer exists, was moved, or is not a folder', '它已不存在、被移走了，或不是文件夹'],
+      ['建项目:读不了(EACCES)', 'create', { type: 'inspect-failed', path: '/work/webapp', message: "EACCES: permission denied, stat '/work/webapp'" }, 'project-permission-denied', 'Gugu does not have permission to read it', '咕咕没有读取它的权限'],
+      ['建项目:读不了(ENOENT)', 'create', { type: 'inspect-failed', path: '/work/webapp', message: "ENOENT: no such file or directory, stat '/work/webapp'" }, 'project-not-found', 'it no longer exists, was moved, or is not a folder', '它已不存在、被移走了，或不是文件夹'],
+      ['建项目:打不开仓库(不是 git 仓库)', 'create', { type: 'open-repository-failed', path: '/work/webapp', message: 'fatal: not a git repository (or any of the parent directories): .git' }, 'project-not-git', 'it is not a Git repository', '它不是 Git 仓库'],
+      ['挂载:目录已不在', 'open', { type: 'path-not-found', path: '/work/webapp' }, 'project-not-found', 'it no longer exists, was moved, or is not a folder', '它已不存在、被移走了，或不是文件夹'],
+      ['挂载:macOS 权限弹窗未答', 'open', { type: 'path-access-blocked', path: '/work/webapp' }, 'project-permission-denied', 'Gugu does not have permission to read it', '咕咕没有读取它的权限'],
+      ['挂载:git 说没权限', 'open', { type: 'error', message: "fatal: cannot change to '/work/webapp': Permission denied" }, 'project-permission-denied', 'Gugu does not have permission to read it', '咕咕没有读取它的权限'],
+    ] as const;
 
-    it.each(['invalid-directory', 'inspect-failed'])('建项目 %s → project-directory-unavailable', async (type) => {
-      mocks.createLocalProject.mockResolvedValue({ success: false, error: { type } });
+    it.each(cases)('%s → %s 的原因', async (_name, stage, failure, code, reasonEn, reasonZh) => {
+      if (stage === 'create') mocks.createLocalProject.mockResolvedValue({ success: false, error: failure });
+      else mocks.openProject.mockResolvedValue({ success: false, error: failure });
 
-      const failure = await importLocalSession(params).catch((error: Error) => error);
+      const thrown = await importLocalSession(params).catch((error: Error) => error);
 
-      expect(failure).toMatchObject({ message: 'project-directory-unavailable:webapp', code: 'project-directory-unavailable' });
-      expect((failure as Error).message).not.toContain('/work');
-      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: project-directory-unavailable', { directory: '/work/webapp', type });
+      expect(thrown).toMatchObject({ message: `${code}:webapp`, code });
+      expect((thrown as Error).message).not.toContain('/work');
+      expect(uiSays(thrown as Error, 'en')).toBe(`${PREFIX_EN}: ${reasonEn}`);
+      expect(uiSays(thrown as Error, 'zh')).toBe(`${PREFIX_ZH}：${reasonZh}`);
+      expect(mocks.warn).toHaveBeenCalledWith(
+        `[session-import] import failed: ${code}`,
+        expect.objectContaining({ directory: '/work/webapp', type: failure.type }),
+      );
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
 
-    it('建项目的其它失败 → project-open-failed', async () => {
-      mocks.createLocalProject.mockResolvedValue({ success: false, error: { type: 'not-repository' } });
+    it('认不出的原因 → 界面一句通用的本地化文案，原始报错只进日志', async () => {
+      const raw = 'UNIQUE constraint failed: projects.path';
+      mocks.createLocalProject.mockResolvedValue({ success: false, error: { type: 'init-failed', path: '/work/webapp', message: raw } });
 
-      await expect(importLocalSession(params)).rejects.toThrow('project-open-failed:webapp');
-      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: project-open-failed', { directory: '/work/webapp', type: 'not-repository' });
-    });
+      const thrown = await importLocalSession(params).catch((error: Error) => error);
 
-    it('挂载时目录已不在 → project-directory-unavailable', async () => {
-      mocks.openProject.mockResolvedValue({ success: false, error: { type: 'path-not-found' } });
-
-      await expect(importLocalSession(params)).rejects.toThrow('project-directory-unavailable:webapp');
+      expect((thrown as Error).message).toBe('project-open-failed:webapp');
+      expect(uiSays(thrown as Error, 'en')).toBe(`${PREFIX_EN}. See the Gugu log for details.`);
+      expect(uiSays(thrown as Error, 'zh')).toBe(`${PREFIX_ZH}，详情见咕咕日志。`);
+      expect(uiSays(thrown as Error, 'en')).not.toContain('UNIQUE');
+      expect(mocks.warn).toHaveBeenCalledWith('[session-import] import failed: project-open-failed', expect.objectContaining({ message: raw }));
     });
   });
 });

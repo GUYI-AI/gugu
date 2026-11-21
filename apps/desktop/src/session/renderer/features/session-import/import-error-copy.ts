@@ -2,18 +2,27 @@ import { parseImportError, type ImportErrorCode } from '@shared/core/session-imp
 import type { Translate } from '@renderer/features/remote-hosts/connection-status';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 
+type ImportErrorCopy = {
+  key: SessionMessageLookupKey;
+  /** 有原因的句子：`key` 里留 `{reason}`，原因本身是另一条词条（同一句话套不同的原因）。 */
+  reason?: SessionMessageLookupKey;
+};
+
 /** 码 → 词条。新增码时 `satisfies` 逼着这里补一条，词条两种语言都要有（词条表类型把关）。 */
 export const IMPORT_ERROR_COPY = {
-  'transcript-unreadable': 'sessionImport.error.transcriptUnreadable',
-  'transcript-outside-roots': 'sessionImport.error.transcriptOutsideRoots',
-  'transcript-empty': 'sessionImport.error.transcriptEmpty',
-  'transcript-no-identity': 'sessionImport.error.transcriptNoIdentity',
-  'session-no-id': 'sessionImport.error.sessionNoId',
-  'session-no-cwd': 'sessionImport.error.sessionNoCwd',
-  'session-create-failed': 'sessionImport.error.sessionCreateFailed',
-  'project-directory-unavailable': 'sessionImport.error.projectDirectoryUnavailable',
-  'project-open-failed': 'sessionImport.error.projectOpenFailed',
-} as const satisfies Record<ImportErrorCode, SessionMessageLookupKey>;
+  'transcript-unreadable': { key: 'sessionImport.error.transcriptUnreadable' },
+  'transcript-outside-roots': { key: 'sessionImport.error.transcriptOutsideRoots' },
+  'transcript-empty': { key: 'sessionImport.error.transcriptEmpty' },
+  'transcript-no-identity': { key: 'sessionImport.error.transcriptNoIdentity' },
+  'session-no-id': { key: 'sessionImport.error.sessionNoId' },
+  'session-no-cwd': { key: 'sessionImport.error.sessionNoCwd' },
+  'session-create-failed': { key: 'sessionImport.error.sessionCreateFailed' },
+  'project-not-found': { key: 'sessionImport.error.projectOpenFailedReason', reason: 'sessionImport.error.projectReasonNotFound' },
+  'project-permission-denied': { key: 'sessionImport.error.projectOpenFailedReason', reason: 'sessionImport.error.projectReasonPermissionDenied' },
+  'project-not-git': { key: 'sessionImport.error.projectOpenFailedReason', reason: 'sessionImport.error.projectReasonNotGit' },
+  // 认不出的原因:界面只说通用一句,原始报错在主进程日志里。
+  'project-open-failed': { key: 'sessionImport.error.projectOpenFailed' },
+} as const satisfies Record<ImportErrorCode, ImportErrorCopy>;
 
 /**
  * 本机 IPC 回到渲染层的 message 带着自定义错误的类名(真 Electron 实测:
@@ -29,7 +38,9 @@ const ERROR_NAME_PREFIX = /^(?:[A-Za-z]*Error:\s*)+/;
 export function localizeImportError(message: string, translate: Translate): string {
   const info = parseImportError(message.replace(ERROR_NAME_PREFIX, ''));
   if (!info) return message;
-  return translate(IMPORT_ERROR_COPY[info.code], {
+  const copy: ImportErrorCopy = IMPORT_ERROR_COPY[info.code];
+  return translate(copy.key, {
     name: info.name || translate('sessionImport.error.unnamedFile'),
+    ...(copy.reason ? { reason: translate(copy.reason) } : {}),
   });
 }

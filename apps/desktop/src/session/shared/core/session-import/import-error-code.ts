@@ -18,7 +18,10 @@ export const IMPORT_ERROR_CODES = [
   'session-no-id',
   'session-no-cwd',
   'session-create-failed',
-  'project-directory-unavailable',
+  // 项目落点（把会话所在的文件夹开成项目）失败：常见原因各一个码，认不出的归 project-open-failed（原始报错进日志）。
+  'project-not-found',
+  'project-permission-denied',
+  'project-not-git',
   'project-open-failed',
 ] as const;
 

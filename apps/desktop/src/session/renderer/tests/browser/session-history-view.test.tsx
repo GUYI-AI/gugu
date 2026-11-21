@@ -644,6 +644,23 @@ describe('会话历史(按目录分节)核心合同', () => {
     if (locale === 'en-US') expect(error).not.toMatch(/[㐀-鿿]/u);
   });
 
+  it.each([
+    ['zh-CN', '导入失败：无法把文件夹 webapp 作为项目打开：咕咕没有读取它的权限'],
+    ['en-US', 'Import failed: The folder webapp could not be opened as a project: Gugu does not have permission to read it'],
+  ] as const)('导入时文件夹读不了(%s):界面说「文件夹 X 无法作为项目打开：<本地化原因>」,❌ 完整路径或原始报错(#3447)', async (locale, sentence) => {
+    setLocalePreference(locale);
+    // 主进程抛 `<码>:<文件夹名>`,本机 IPC 再套外壳(完整目录与原始 EACCES 只进它的日志)。
+    mocks.importLocalSession.mockRejectedValue(
+      new Error("Error invoking remote method 'sessionImport.importLocalSession': Error: project-permission-denied:webapp")
+    );
+    render();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    // 第三行是 not-imported:它的动作是「导入」。
+    (screen.getByTestId('session-history-action').all()[2].element() as HTMLElement).click();
+    await expect.element(screen.getByText(sentence)).toBeVisible();
+    expect(screen.getByText(sentence).element().textContent).not.toMatch(/EACCES|\/work|\/Users/);
+  });
+
   it('点一行展开详情(咕咕行含 session id),再点收起;已归档的行:恢复走唯一路径并刷新', async () => {
     // 主进程的 restoreSession 每放回一条都发一次 archivedAt: null 的 session:changed;面板靠它刷新(#6956)。
     mocks.restore.mockImplementation(async (ref: { projectId: string; sessionId: string }) => {

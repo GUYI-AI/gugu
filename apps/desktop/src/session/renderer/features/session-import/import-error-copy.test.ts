@@ -11,22 +11,27 @@ const speak = (catalog: Record<string, string>) =>
     (catalog[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''))) as never;
 
 describe('import error copy', () => {
+  const keysOf = (code: (typeof IMPORT_ERROR_CODES)[number]): string[] => {
+    const copy: { key: string; reason?: string } = IMPORT_ERROR_COPY[code];
+    return copy.reason ? [copy.key, copy.reason] : [copy.key];
+  };
+
   it('has a message for every code, in both languages, with the same placeholders', () => {
     expect(Object.keys(IMPORT_ERROR_COPY).sort()).toEqual([...IMPORT_ERROR_CODES].sort());
     for (const code of IMPORT_ERROR_CODES) {
-      const key = IMPORT_ERROR_COPY[code];
-      const en = (enUSSessionWorkflowMessages as Record<string, string>)[key];
-      const zh = (zhCNSessionWorkflowMessages as Record<string, string>)[key];
-      expect(en, `${key} en`).toBeTruthy();
-      expect(zh, `${key} zh`).toBeTruthy();
-      expect(placeholders(zh), key).toEqual(placeholders(en));
+      for (const key of keysOf(code)) {
+        const en = (enUSSessionWorkflowMessages as Record<string, string>)[key];
+        const zh = (zhCNSessionWorkflowMessages as Record<string, string>)[key];
+        expect(en, `${key} en`).toBeTruthy();
+        expect(zh, `${key} zh`).toBeTruthy();
+        expect(placeholders(zh), key).toEqual(placeholders(en));
+      }
     }
   });
 
   it('English copy contains no Chinese, so the English UI never renders a hardcoded zh sentence', () => {
-    for (const key of [...Object.values(IMPORT_ERROR_COPY), 'sessionImport.error.unnamedFile'] as const) {
-      expect((enUSSessionWorkflowMessages as Record<string, string>)[key], key).not.toMatch(CJK);
-    }
+    const keys = [...IMPORT_ERROR_CODES.flatMap(keysOf), 'sessionImport.error.unnamedFile'];
+    for (const key of keys) expect((enUSSessionWorkflowMessages as Record<string, string>)[key], key).not.toMatch(CJK);
   });
 
   it('says a missing file in the UI language and shows the file name only', () => {
@@ -45,6 +50,22 @@ describe('import error copy', () => {
     expect(localizeImportError('Error: TypeError: session-no-id:', translate)).toBe(
       'This session has no usable session ID, so the original session cannot be resumed'
     );
+  });
+
+  it.each([
+    ['project-not-found', 'The folder work could not be opened as a project: it no longer exists, was moved, or is not a folder', '无法把文件夹 work 作为项目打开：它已不存在、被移走了，或不是文件夹'],
+    ['project-permission-denied', 'The folder work could not be opened as a project: Gugu does not have permission to read it', '无法把文件夹 work 作为项目打开：咕咕没有读取它的权限'],
+    ['project-not-git', 'The folder work could not be opened as a project: it is not a Git repository', '无法把文件夹 work 作为项目打开：它不是 Git 仓库'],
+  ] as const)('%s: the folder name plus a localized reason, in both languages', (code, en, zh) => {
+    expect(localizeImportError(`${code}:work`, speak(enUSSessionWorkflowMessages))).toBe(en);
+    expect(localizeImportError(`${code}:work`, speak(zhCNSessionWorkflowMessages))).toBe(zh);
+  });
+
+  it('an unrecognised project failure says one generic localized sentence (the raw error is in the log, not here)', () => {
+    expect(localizeImportError('project-open-failed:work', speak(enUSSessionWorkflowMessages))).toBe(
+      'The folder work could not be opened as a project. See the Gugu log for details.'
+    );
+    expect(localizeImportError('project-open-failed:work', speak(zhCNSessionWorkflowMessages))).toBe('无法把文件夹 work 作为项目打开，详情见咕咕日志。');
   });
 
   it('falls back to a generic file name when the code carries none', () => {

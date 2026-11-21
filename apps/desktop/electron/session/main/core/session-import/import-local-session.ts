@@ -22,6 +22,7 @@ import {
 import { importError, type ImportErrorCode } from '@shared/core/session-import/import-error-code';
 import { buildWorkspaceConfigFromPreset } from '@shared/core/workspaces/build-workspace-config-from-preset';
 import { getLocalSessionSource } from './host-source';
+import { projectFailureCode } from './project-failure-reason';
 
 // @@@sessionpage 导入本机已有会话 (spec session-page-import)。
 //
@@ -64,11 +65,12 @@ function importFailure(code: ImportErrorCode, name: string, context: Record<stri
 async function mountImportProject<T extends { id: string; path: string }>(project: T): Promise<T> {
   const opened = await openProject(project.id);
   if (!opened.success) {
-    throw importFailure(
-      opened.error.type === 'path-not-found' ? 'project-directory-unavailable' : 'project-open-failed',
-      basename(project.path) || project.path,
-      { directory: project.path, type: opened.error.type, message: 'message' in opened.error ? opened.error.message : undefined },
-    );
+    const message = 'message' in opened.error ? opened.error.message : undefined;
+    throw importFailure(projectFailureCode({ type: opened.error.type, message }), basename(project.path) || project.path, {
+      directory: project.path,
+      type: opened.error.type,
+      message,
+    });
   }
   return project;
 }
@@ -98,12 +100,12 @@ async function resolveImportProject(workingDirectory: string) {
     automatic: true,
   });
   if (!created.success) {
-    const unavailable = created.error.type === 'invalid-directory' || created.error.type === 'inspect-failed';
-    throw importFailure(
-      unavailable ? 'project-directory-unavailable' : 'project-open-failed',
-      basename(workingDirectory) || workingDirectory,
-      { directory: workingDirectory, type: created.error.type },
-    );
+    const message = 'message' in created.error ? created.error.message : undefined;
+    throw importFailure(projectFailureCode({ type: created.error.type, message }), basename(workingDirectory) || workingDirectory, {
+      directory: workingDirectory,
+      type: created.error.type,
+      message,
+    });
   }
   return await mountImportProject(created.data);
 }
