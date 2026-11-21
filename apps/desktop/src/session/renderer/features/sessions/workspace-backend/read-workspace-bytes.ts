@@ -1,9 +1,13 @@
 import { base64ToBytes } from '@shared/lib/base64';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
-import { OPENED_FILE_MAX_BYTES } from '@gugu/session-core/session-record/contract';
+import { OPENED_FILE_MAX_BYTES, REMOTE_WORKSPACE_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
 import { EDITOR_CONFIRM_FILE_BYTES } from '@renderer/lib/editor/file-size-limits';
 import { getFileKind } from '@renderer/lib/editor/fileKind';
 import { workspaceRpc } from './workspace-backend';
+
+/** As long as the chunks on the line at once may take to come through: the machine's link waits behind them, its heartbeats too. */
+const LINE_BUDGET_MS = 1_000;
+const MOST_AHEAD = 4;
 
 /**
  * A file of a workspace read where it is, in chunks (`readChunk`, routed to whichever machine the workspace is on): no
@@ -11,17 +15,32 @@ import { workspaceRpc } from './workspace-backend';
  */
 export async function readWorkspaceBytes(projectId: string, workspaceId: string, path: string, maxBytes = Infinity): Promise<BlobPart[]> {
   const files = workspaceRpc(projectId).files;
-  const parts: BlobPart[] = [];
-  for (let offset = 0, size = Infinity; offset < size;) {
-    const result = await files.readChunk(projectId, workspaceId, { path, offset, length: 512 * 1024 });
+  const read = async (offset: number) => {
+    const result = await files.readChunk(projectId, workspaceId, { path, offset, length: REMOTE_WORKSPACE_CHUNK_BYTES });
     if (!result.success) throw new Error(String(result.error.type));
-    size = result.data.size;
-    if (size > maxBytes) throw Object.assign(new Error('too large'), { code: 'too-large' });
-    const bytes = base64ToBytes(result.data.data);
-    if (bytes.length === 0 && offset < size) throw new Error('The file changed while it was read');
-    parts.push(bytes.slice().buffer);
-    offset += bytes.length;
-  }
+    return { size: result.data.size, bytes: base64ToBytes(result.data.data) };
+  };
+  const asked = Date.now();
+  const first = await read(0);
+  const size = first.size;
+  if (size > maxBytes) throw Object.assign(new Error('too large'), { code: 'too-large' });
+  // @@@read-ahead - each chunk is a round trip to the file's machine. Asked one after another, a file on another machine
+  // was mostly waiting (3 MB over a 150 ms line: about 2 s, where its bytes take 1.2 s). The rest are asked several at a
+  // time — as many as the first chunk's speed brings through in LINE_BUDGET_MS — and kept in order.
+  const ahead = Math.max(1, Math.min(MOST_AHEAD, Math.floor(first.bytes.length / Math.max(1, Date.now() - asked) * LINE_BUDGET_MS / REMOTE_WORKSPACE_CHUNK_BYTES)));
+  if (first.bytes.length === 0 && size > 0) throw new Error('The file changed while it was read');
+  const offsets: number[] = [];
+  for (let offset = first.bytes.length; offset < size; offset += REMOTE_WORKSPACE_CHUNK_BYTES) offsets.push(offset);
+  const parts: BlobPart[] = [first.bytes.slice().buffer];
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(ahead, offsets.length) }, async () => {
+    while (next < offsets.length) {
+      const k = next++, offset = offsets[k]!;
+      const chunk = await read(offset);
+      if (chunk.size !== size || chunk.bytes.length !== Math.min(REMOTE_WORKSPACE_CHUNK_BYTES, size - offset)) throw new Error('The file changed while it was read');
+      parts[k + 1] = chunk.bytes.slice().buffer;
+    }
+  }));
   return parts;
 }
 
