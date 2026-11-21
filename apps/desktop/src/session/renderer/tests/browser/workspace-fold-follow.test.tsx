@@ -1,11 +1,10 @@
 /**
- * @@@list-clip — folding the list, either way, moves the page with the one spring: in every frame its left edge is on the
- * list's drawn edge and its right edge stays put, so its width follows the motion. A collapse and an expand change the
- * page's layout at the same moments, ❌ one at the start and the other where it lands.
+ * @@@list-clip — folding the list, either way, moves the page with the one spring (panel-track): in every frame its left
+ * edge is on the list's drawn edge, and it is laid out once: at its wider width for the whole move (a collapse from the
+ * start, an expand until it lands), running past the shell's right edge ❌ short of it. Its width never follows the frames.
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
-import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
@@ -55,7 +54,7 @@ async function foldFrames(shell: HTMLElement) {
   // The list is clipped at its edge, and the edge's handle rides on it.
   const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
   const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-  const before = { width: surface.offsetWidth, edge: edgeOf(handle) };
+  const before = { width: surface.offsetWidth, edge: edgeOf(handle), right: shell.getBoundingClientRect().right - surface.getBoundingClientRect().right };
   await userEvent.click([...shell.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
   const frames = await edgeMotion(handle, before.edge, (edge) => {
     const page = surface.getBoundingClientRect();
@@ -81,8 +80,11 @@ it('a fold moves the page with the list\'s edge in every frame, the same way in 
     folds.push({ before, end });
     const gaps = frames.map((frame) => Math.round(frame.gap));
     expect(new Set(gaps).size, `${direction}: the page's left edge follows the list's edge (${gaps.join(',')})`).toBe(1);
-    const rights = frames.map((frame) => Math.round(frame.right));
-    expect(new Set(rights).size, `${direction}: the page's right edge stays put (${rights.join(',')})`).toBe(1);
+    expect(frames.every((frame) => frame.right <= Math.round(before.right) + 0.5), `${direction}: the page always reaches the shell's right edge`).toBe(true);
+    // Laid out once: a collapse at its start, an expand where it lands; in between the page keeps the wider width.
+    const widths = [before.width, ...frames.map((frame) => frame.width)];
+    const changes = widths.filter((width, i) => i > 0 && width !== widths[i - 1]).length;
+    expect(changes, `${direction}: the page is laid out once (${widths.join(',')})`).toBe(1);
     // One way, no jump back: the list's edge only moves toward where it lands.
     const edges = frames.map((frame) => frame.edge);
     const step = direction === 'collapse' ? -1 : 1;
@@ -96,8 +98,8 @@ it('a fold moves the page with the list\'s edge in every frame, the same way in 
 });
 
 function InnerColumn() {
-  const width = useInnerSidebarFrame();
-  return <motion.div data-region="inner-sidebar" className="h-full shrink-0" style={{ width }} />;
+  useInnerSidebarFrame();
+  return <div data-region="inner-sidebar" className="h-full w-full" />;
 }
 
 it('a place without the list takes no space or motion from it after a resize, while folding, or on return', async () => {
@@ -115,7 +117,7 @@ it('a place without the list takes no space or motion from it after a resize, wh
   </div>);
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
   const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-  const list = shell.querySelector<HTMLElement>('aside')!;
+  const list = shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
   const button = (label: string) => [...harness.container.querySelectorAll('button')].find(button => button.textContent === label)!;
   const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
   const start = handle.getBoundingClientRect().left + handle.getBoundingClientRect().width / 2;
@@ -137,7 +139,7 @@ it('a place without the list takes no space or motion from it after a resize, wh
     await expect.poll(() => list.getBoundingClientRect().width).toBe(landedWidth);
     await expect.poll(() => shell.firstElementChild!.getBoundingClientRect().width).toBe(landedWidth);
     await expect.poll(() => surface.getBoundingClientRect().left - shell.querySelector('[data-region="inner-sidebar"]')!.getBoundingClientRect().right).toBeCloseTo(0);
-    expect(shell.querySelector('aside'), 'returning keeps the same list').toBe(list);
+    expect(shell.querySelector('[data-workspace-left-panel]'), 'returning keeps the same list').toBe(list);
   }
 });
 

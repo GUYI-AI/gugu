@@ -1,7 +1,12 @@
 import { motion, type MotionValue } from 'framer-motion';
 import { useRef } from 'react';
 import { cn } from '@renderer/utils/utils';
-import { PANEL_SNAP_RATIO } from './panel-motion';
+
+/**
+ * 拖分隔条到目标宽度的一半以下就判定为"收起"(Codex 同款:它的 `min * 0.5`)。
+ * 比"拖到 0 才算收起"好用得多 —— 手不用拖到底,而且松手位置离阈值远,不会误判。
+ */
+export const PANEL_SNAP_RATIO = 0.5;
 
 /** 键盘调宽的步长 —— 与 react-resizable-panels 的方向键行为同档,别让改造把纯键盘用户丢下。 */
 const KEYBOARD_STEP_PX = 16;
