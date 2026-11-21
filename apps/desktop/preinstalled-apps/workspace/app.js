@@ -292,6 +292,7 @@ const STRINGS = {
     openIn: 'Open in',
     symlink: 'Symbolic link',
     savedSkipped: 'Saved {name}; {n} links left out: {names}',
+    savedSkipped_one: 'Saved {name}; {n} link left out: {names}',
     forwardTooLarge: "{name} wasn't forwarded: at most 512 MB go at once. Download it instead.",
     forwardChanging: "{name} wasn't forwarded: it is being changed. Forward it once it settles.",
     confirmRemoveCopy: 'Permanently delete "{name}"?',
@@ -312,7 +313,9 @@ const STRINGS = {
     here: '(here now)',
     cancel: 'Cancel',
     items: '{n} items',
+    items_one: '{n} item',
     confirmRemoveFolder: 'Delete it and its {n} items',
+    confirmRemoveFolder_one: 'Delete it and its {n} item',
     confirmRemoveFolderAll: 'Delete it and everything in it',
     nameTaken: '“{name}” is already in this folder',
     alreadyThere: '“{name}” was already here: the new one is “{new}”.',
@@ -510,6 +513,7 @@ const STRINGS = {
     pickPrev: 'Previous',
     pickNext: 'Next',
     savedFiles: '{n} files saved.',
+    savedFiles_one: '{n} file saved.',
     keptFiles: '{n} changed.',
     skippedNotMine: '{n} not uploaded by you, left as they are.',
     skippedNoCopy: '{n} without a cloud copy, left as they are.',
@@ -585,6 +589,8 @@ function remember(key, value) {
 }
 
 const fmt = (template, values) => template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''))
+// A count's words: the key's `_one` form when there is one of it (English "1 item"; Chinese has no such form).
+const counted = (key, values) => fmt((values.n === 1 && state.t[`${key}_one`]) || state.t[key], values)
 
 function isZh(locale) {
   return String(locale || '').toLowerCase().startsWith('zh')
@@ -2004,7 +2010,6 @@ function whenOf(iso, now) {
 
 // Narrow rows show the modified time; the same rows add a size column where wide. Activity stays in hover and Details.
 function metaOf(entry, now) {
-  const t = state.t
   const cells = []
   if (isFolder(entry)) {
     // A chat folder already read counts what it holds here, kept current by its changes; one not entered yet says the
@@ -2013,7 +2018,7 @@ function metaOf(entry, now) {
     // The list counts up to 1000: 1000 there means 1000 or more.
     const n = inCopy(entry) ? undefined : state.listed.has(entry.id) ? inside(entry.id).filter(visibleEntry).length
       : entry.childCount >= 1000 ? '999+' : entry.childCount
-    if (n !== undefined) cells.push(['size', fmt(t.items, { n })])
+    if (n !== undefined) cells.push(['size', counted('items', { n })])
   } else {
     const when = whenOf(changedAt(entry), now)
     if (when) cells.push(['when', when])
@@ -2272,7 +2277,7 @@ function rowMenu(li, entry, canDelete = false) {
     ? [{ text: t.rename, run: () => startRename(li, entry) }, ...(copy ? [] : [{ text: t.move, run: () => showMoveDialog(entry) }])] : []
   const remove = canWriteHere(entry) && !entry.systemRole && canDelete
     ? [{ text: t.remove, run: () => removeFile(entry), ask: copy ? fmt(t.confirmRemoveCopy, { name: entry.name }) : folder && !knownBelow(entry.id) ? t.confirmRemoveFolderAll
-      : folder && under(entry.id).length ? fmt(t.confirmRemoveFolder, { n: under(entry.id).length }) : t.confirmRemove }] : []
+      : folder && under(entry.id).length ? counted('confirmRemoveFolder', { n: under(entry.id).length }) : t.confirmRemove }] : []
   const groups = []
   if (folder && copy) groups.push([open], canWriteHere() ? makeHereItems(() => enterFolder(entry.id)) : [], [{ text: t.download, run: () => downloadEntry(entry) }, ...copyActions(entry)], change, remove)
   else if (folder) groups.push([open], change, remove)
@@ -2391,7 +2396,7 @@ async function downloadEntry(entry) {
   const row = inCopy(entry) ? transferRow(state.t.downloading, entry.name) : null
   try {
     const saved = await (row ? gugu.files.download(entry, { onProgress: row.progress, signal: row.signal }) : gugu.files.download(entry)) // false: the person cancelled the save dialog, nothing to say
-    if (saved?.skipped) showBanner(fmt(state.t.savedSkipped, { name: entry.name, n: saved.skipped.length, names: saved.skipped.join(', ') }), 'info')
+    if (saved?.skipped) showBanner(counted('savedSkipped', { name: entry.name, n: saved.skipped.length, names: saved.skipped.join(', ') }), 'info')
     else if (row && saved) showBanner(fmt(state.t.saved, { name: entry.name }), 'info')
   } catch (error) {
     if (!row?.signal.aborted) showBanner(failureText(error), 'error')
@@ -4336,7 +4341,7 @@ async function downloadPicked() {
   hideBanner()
   try {
     const saved = await gugu.files.download(entries)
-    if (typeof saved === 'number' && saved > 0) showBanner(fmt(state.t.savedFiles, { n: saved }), 'info')
+    if (typeof saved === 'number' && saved > 0) showBanner(counted('savedFiles', { n: saved }), 'info')
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
