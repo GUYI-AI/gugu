@@ -99,7 +99,7 @@ const USAGE = `用法:
   gugu-server agent-home import <provider> [--groups settings,mcp,...]
   gugu-server agent-home skip <provider>
   gugu-server open-url <网址或文件>
-                                 在正看着这台机器的咕咕桌面上打开网页(这台机器上的 $BROWSER 就是它)
+                                 在正看着这条会话的咕咕桌面上打开网页(会话进程的 $BROWSER 就是它)
   gugu-server resume
                                  通知保留的账号进程恢复连接并立即补收消息
   gugu-server match-version (--desktop <桌面 id> --version <版本> | --apply <版本>)
