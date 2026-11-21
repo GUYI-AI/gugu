@@ -145,6 +145,7 @@ import { SessionHistoryMainPanel } from '@renderer/features/session-history/sess
 import { SESSION_HISTORY_IMPORT_PART } from '@renderer/features/session-history/session-history-import-part';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { runInAction } from 'mobx';
+import { followRendererSession, queryClient } from '@/lib/replica';
 
 /** 账号上的项目:webapp(这台电脑上的 p1,加上用例绑在别的机器上的)。 */
 function seedAccounts(): void {
@@ -333,9 +334,13 @@ describe('会话历史(按目录分节)核心合同', () => {
     container?.remove();
     root = null;
     container = null;
+    queryClient.clear();
+    followRendererSession('SIGNED_OUT', null);
   });
 
   beforeEach(async () => {
+    // The preview is an account replica: it reads for whoever is signed in.
+    followRendererSession('SIGNED_IN', 'reader');
     await page.viewport(1280, 860);
     setLocalePreference('zh-CN');
     entry.params = {};
