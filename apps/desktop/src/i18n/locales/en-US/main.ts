@@ -1017,7 +1017,6 @@ export default {
     "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
-    "resizeChatList": "Resize chat list",
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",
       "title": "Cannot connect to the server"

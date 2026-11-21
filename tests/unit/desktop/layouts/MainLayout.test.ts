@@ -296,13 +296,6 @@ vi.mock('../../../../apps/desktop/src/components/SettingsPanel', async () => {
     }
   }
 })
-vi.mock('../../../../apps/desktop/src/layouts/ResizableChatListPane', () => ({
-  ResizableChatListPane: ({ children, hidden }: { children: unknown; hidden?: boolean }) => hidden ? null : children
-}))
-vi.mock('../../../../apps/desktop/src/layouts/ResizableChatListPaneStorage', () => ({
-  readStoredChatListPaneWidth: () => 320,
-  writeStoredChatListPaneWidth: vi.fn()
-}))
 vi.mock('../../../../apps/desktop/src/store/contactsContext', async () => {
   const actual = await vi.importActual<typeof import('../../../../apps/desktop/src/store/contactsContext')>(
     '../../../../apps/desktop/src/store/contactsContext'

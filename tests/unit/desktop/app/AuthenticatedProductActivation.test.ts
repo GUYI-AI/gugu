@@ -216,7 +216,6 @@ vi.mock('../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame'
   EmdashSessionFrame: () => null,
   prewarmEmdashAssets: vi.fn(),
 }))
-vi.mock('../../../../apps/desktop/src/layouts/ResizableChatListPane', () => ({ ResizableChatListPane: () => null }))
 vi.mock('../../../../apps/desktop/src/store/contactsContext', () => ({
   useContactsStore: () => ({ contacts: [], pendingRequests: [] }),
 }))

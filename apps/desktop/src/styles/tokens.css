@@ -1789,12 +1789,6 @@ body.barcode-scanner-active #root {
 .gg-ghost[data-tone='strong']:not(:disabled) { color: var(--muted-fg); }
 @media (hover: hover) { .gg-ghost[data-tone='strong']:hover:not(:disabled) { color: var(--fg); } }
 
-/* 拖拽把手:列宽 resizer。hover/拖动中 = --selected 填充(SSOT .resizer)——「可拖」要有可见 affordance,
-   ❌ 只在拖动中才给反馈。宿主注意别再内联 background(内联会压死类的 :hover)。 */
-.gg-resizer { transition: background var(--dur-fast) var(--ease); }
-.gg-resizer:hover,
-.gg-resizer[data-dragging] { background: var(--selected); }
-
 /* @@@2322 win/linux 自绘窗控钮(WindowControls):hover 从命令式 e.currentTarget.style 迁到类。
    色值逐值保持现状;关闭钮 hover 红底 #E81123 是 Windows 平台惯例,专属色保留,❌ 归一到 --hover/--danger。 */
 .gg-winctl {

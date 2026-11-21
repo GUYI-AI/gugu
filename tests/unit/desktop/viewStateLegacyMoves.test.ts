@@ -18,19 +18,12 @@ async function start(values: Record<string, string>, load: () => Promise<unknown
 
 beforeEach(() => { localStorage.clear() })
 
-it('pane widths: the sidebar, the inner column, the chat list and the topic split', async () => {
+it('pane widths: the sidebar and the inner column', async () => {
   const { readInterface } = await start({ 'gugu.taskpage.sidebarWidth': '300', 'gugu.taskpage.innerSidebarWidth': '333' },
     () => import('../../../apps/desktop/src/session/renderer/lib/layout/layout-provider'))
   expect(readInterface('gugu.taskpage.sidebarWidth')).toBe(300)
   expect(readInterface('gugu.taskpage.innerSidebarWidth')).toBe(333)
-  const chatList = await import('../../../apps/desktop/src/layouts/ResizableChatListPaneStorage')
-  const topic = await import('../../../apps/desktop/src/components/chat/topicSplitModels')
-  localStorage.setItem('gugu.chatListPane.width', '320'); localStorage.setItem('gugu.topicSplitPane.width', '400')
-  vi.resetModules()
-  const [chatList2, topic2] = [await import('../../../apps/desktop/src/layouts/ResizableChatListPaneStorage'), await import('../../../apps/desktop/src/components/chat/topicSplitModels')]
-  expect(chatList2.readStoredChatListPaneWidth()).toBe(chatList.clampChatListPaneWidth(320))
-  expect(topic2.readStoredTopicSplitWidth()).toBe(topic.clampTopicSplitWidth(400))
-  expect(left('gugu.taskpage.sidebarWidth', 'gugu.taskpage.innerSidebarWidth', 'gugu.chatListPane.width', 'gugu.topicSplitPane.width')).toEqual([])
+  expect(left('gugu.taskpage.sidebarWidth', 'gugu.taskpage.innerSidebarWidth')).toEqual([])
 })
 
 it('a preview\'s zoom, the automation templates fold', async () => {

@@ -110,7 +110,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. */}
       {!sidebarHidden ? (
         <PanelResizeHandle
-          edge="end"
           offset={leftAnimatedWidth}
           ariaLabel={translate('task.resizeSidebar')}
           // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
@@ -131,7 +130,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西。 */}
       {innerSidebarShown && !sidebarHidden ? (
         <PanelResizeHandle
-          edge="end"
           offset={innerEdge}
           ariaLabel={translate('task.resizeInnerSidebar')}
           // 从该画的宽起拖:窗口窄时它可能正被夹着,从存着的宽起拖会先空拖一截。
@@ -159,9 +157,9 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         {mainContent}
         {sidebarHidden ? null : innerSidebarRestore}
       </div>
-      {!sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
+      {!sidebarHidden ? <PanelResizeDragGuard offset={leftAnimatedWidth} /> : null}
       {/* #2642 正文的页签条压在内层栏分隔条的右半截上:守卫排在正文后面,那半截才是拖宽度而 ❌ 拖窗口。 */}
-      {innerSidebarShown && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={innerEdge} /> : null}
+      {innerSidebarShown && !sidebarHidden ? <PanelResizeDragGuard offset={innerEdge} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
       {sidebarHidden ? null : <ShellSidebarToggle />}
     </div>
