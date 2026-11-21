@@ -67,7 +67,8 @@
     "./lib": "./src/lib/index.ts",
     "./pty": "./src/pty/index.ts",
     "./acp/commands": "./src/acp/commands.ts",
-    "./acp/models/session": "./src/acp/models/session.ts"
+    "./acp/models/session": "./src/acp/models/session.ts",
+    "./session-record/host-turn-end": "./src/session-record/host-turn-end.ts"
   },
   "scripts": {
     "test": "vitest run"

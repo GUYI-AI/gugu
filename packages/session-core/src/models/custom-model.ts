@@ -76,12 +76,18 @@ export const sessionModelSelectionSchema = z.discriminatedUnion('kind', [
 export type SessionModelSelection = z.infer<typeof sessionModelSelectionSchema>;
 export type CustomModelRef = Extract<SessionModelSelection, { kind: 'custom' }>;
 
+/** Where a connection was found on this machine. Never carries the key or its fingerprint. */
+export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env']);
+export type DiscoverySource = z.infer<typeof discoverySourceSchema>;
+
 export const customModelConnectionSchema = z.object({
   id: z.string(),
   name: z.string(),
   credentialRef: z.string(),
   keySaved: z.boolean(),
   ...customModelMetaSchema.shape,
+  /** Present when this machine already had the connection configured; `keyLast4` is all the renderer learns of the key. */
+  discovered: z.object({ source: discoverySourceSchema, keyLast4: z.string().max(4) }).optional(),
 });
 export type CustomModelConnection = z.infer<typeof customModelConnectionSchema>;
 

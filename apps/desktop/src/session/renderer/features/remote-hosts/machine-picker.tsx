@@ -319,6 +319,8 @@ export function MachinePicker({
                     if (machine.cloudComputer === 'wake-failed' || (wakeOnPick === 'always' && machine.cloudComputer)) {
                       void remoteHostsStore.wakeCloudComputer(machine.id);
                     }
+                    // 选一台要先登录的远程 SSH 机器 = 要用它:当场登录(提问浮在窗口顶上那张卡片里)。
+                    if (machine.needsSignIn) void remoteHostsStore.signIn(machine.id);
                     onSelect(machine.id);
                   }}
                 >

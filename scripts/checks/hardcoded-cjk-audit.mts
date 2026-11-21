@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +7,21 @@ const require = createRequire(import.meta.url)
 const ts = require('typescript') as typeof import('typescript')
 type Node = import('typescript').Node
 
-export type HardcodedCjkCategory = 'user-visible' | 'developer' | 'false-positive'
+/**
+ * Every user-visible string must exist in both zh-CN and en-US. This check fails on two shapes:
+ * - `user-visible`: a CJK literal in renderer source that is not routed through a catalog;
+ * - `english-catalog`: a CJK value inside an English catalog (it renders Chinese in the English UI).
+ * Chinese that legitimately stays in source (a bilingual catalog keyed by locale, text an agent reads,
+ * data such as sample content or matching tables) is listed file by file, with a reason, in
+ * `hardcoded-cjk-exceptions.json`. An exception that no longer matches anything fails as stale.
+ *
+ * @@@roots - the renderer and the session UI packages. The main process (`apps/desktop/electron`) is
+ * not a root: most CJK there is agent-facing tool text or diagnostics, and its user-visible strings
+ * (dialogs, tray, menus, notifications) go through `apps/desktop/shared/host-localization.ts`, whose
+ * en-US block is checked here as an English catalog.
+ */
+export type HardcodedCjkCategory = 'user-visible' | 'english-catalog' | 'excepted' | 'developer' | 'false-positive'
+export type HardcodedCjkExceptionClass = 'C' | 'D' | 'E'
 
 export interface HardcodedCjkRow {
   file: string
@@ -19,27 +33,87 @@ export interface HardcodedCjkRow {
   reason: string
 }
 
+export interface HardcodedCjkException {
+  file: string
+  text?: string
+  class: HardcodedCjkExceptionClass
+  reason: string
+}
+
+export interface HardcodedCjkExceptions {
+  englishCatalogAllowed: { text: string; reason: string }[]
+  exceptions: HardcodedCjkException[]
+}
+
 export interface HardcodedCjkAudit {
   total: number
   categories: Record<HardcodedCjkCategory, number>
   fileDistribution: Record<HardcodedCjkCategory, Record<string, number>>
   rows: HardcodedCjkRow[]
+  failures: HardcodedCjkRow[]
+  staleExceptions: string[]
 }
 
-const CJK = /[\u3400-\u9fff]/u
-const CJK_GLOBAL = /[\u3400-\u9fff]/gu
-const SOURCE_ROOT = 'apps/desktop/src'
+export interface HardcodedCjkOptions {
+  roots?: readonly string[]
+  exceptionsFile?: string
+}
 
-function sourceFilesBelow(root: string, directory: string = root): string[] {
-  return readdirSync(directory, { withFileTypes: true })
-    .flatMap((entry): string[] => {
-      const absolute = path.join(directory, entry.name)
-      return entry.isDirectory() ? sourceFilesBelow(root, absolute) : [absolute]
-    })
-    .filter((file) => /\.tsx?$/.test(file))
-    .filter((file) => !file.includes(`${path.sep}session${path.sep}`))
-    .filter((file) => !file.includes(`${path.sep}i18n${path.sep}locales${path.sep}`))
-    .filter((file) => !/\.(?:test|spec)\.[^.]+$/.test(file))
+const CJK = /[㐀-鿿]/u
+const CJK_GLOBAL = /[㐀-鿿]/gu
+const CATEGORIES: readonly HardcodedCjkCategory[] = ['user-visible', 'english-catalog', 'excepted', 'developer', 'false-positive']
+const FAILING: ReadonlySet<HardcodedCjkCategory> = new Set(['user-visible', 'english-catalog'])
+
+export const DEFAULT_ROOTS = [
+  'apps/desktop/src',
+  'packages/session-ui/src',
+  'packages/session-chat-ui/src',
+  'apps/desktop/shared/host-localization.ts',
+] as const
+export const DEFAULT_EXCEPTIONS_FILE = 'scripts/checks/hardcoded-cjk-exceptions.json'
+
+/**
+ * Catalog files. Inside an `english` block every CJK value fails unless `englishCatalogAllowed` covers it;
+ * a `translation` block is the Chinese side and is not scanned. A block is the nearest enclosing variable
+ * or property whose name matches; `'file'` means the whole file.
+ */
+interface CatalogFile {
+  file: RegExp
+  english?: RegExp | 'file'
+  translation?: RegExp | 'file'
+}
+
+const CATALOGS: readonly CatalogFile[] = [
+  { file: /^apps\/desktop\/src\/i18n\/locales\/en-US\//, english: 'file' },
+  { file: /^apps\/desktop\/src\/i18n\/locales\/(?!en-US\/)[^/]+\//, translation: 'file' },
+  {
+    file: /^apps\/desktop\/src\/session\/renderer\/localization\/messages[^/]*\.ts$/,
+    english: /^enUS/,
+    translation: /^zhCN/,
+  },
+  { file: /^packages\/session-chat-ui\/src\/localization\.tsx$/, english: /^fallbackMessages$/ },
+  { file: /^apps\/desktop\/src\/features\/team\/catalog\.ts$/, english: /^en$/, translation: /^zh$/ },
+]
+
+function toPosix(file: string): string {
+  return file.split(path.sep).join('/')
+}
+
+function isScannedSource(relative: string): boolean {
+  return /\.tsx?$/.test(relative)
+    && !/\.(?:test|spec|stories)\.[^.]+$/.test(relative)
+    && !/(?:^|\/)(?:tests|__tests__|fixtures|__fixtures__)\//.test(relative)
+}
+
+function sourceFilesBelow(root: string, target: string): string[] {
+  const absolute = path.resolve(root, target)
+  if (!existsSync(absolute)) throw new Error(`hardcoded-cjk-audit: root does not exist: ${target}`)
+  if (statSync(absolute).isFile()) return [toPosix(path.relative(root, absolute))]
+  return readdirSync(absolute, { withFileTypes: true })
+    .flatMap((entry) => entry.isDirectory()
+      ? sourceFilesBelow(root, path.join(target, entry.name))
+      : [toPosix(path.join(target, entry.name))])
+    .filter(isScannedSource)
     .sort()
 }
 
@@ -93,7 +167,49 @@ function isStructuralPropertyName(node: Node): boolean {
     && parent.name === node
 }
 
-function classify(node: Node, value: string): { category: HardcodedCjkCategory; reason: string } {
+function blockName(node: Node): string | null {
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text
+  if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))) return node.name.text
+  return null
+}
+
+const ENGLISH_LOCALE_KEYS: ReadonlySet<string> = new Set(['en-US', 'en'])
+const CHINESE_LOCALE_KEYS: ReadonlySet<string> = new Set(['zh-CN', 'zh'])
+
+/**
+ * @@@locale-keyed - an object literal keyed by locale (`{ 'zh-CN': …, 'en-US': … }`, the shape every
+ * `registerLocaleNamespace` call and the local bilingual tables use) is a catalog wherever it appears:
+ * the Chinese side is skipped only when the same object also has an English side, and the English side
+ * is checked like any English catalog.
+ */
+function localeKeyedRole(node: Node): 'english' | 'translation' | null {
+  if (!ts.isPropertyAssignment(node) || !ts.isObjectLiteralExpression(node.parent)) return null
+  const name = blockName(node)
+  if (name === null) return null
+  if (ENGLISH_LOCALE_KEYS.has(name)) return 'english'
+  if (!CHINESE_LOCALE_KEYS.has(name)) return null
+  const hasEnglish = node.parent.properties.some((property) => {
+    const sibling = blockName(property)
+    return sibling !== null && ENGLISH_LOCALE_KEYS.has(sibling)
+  })
+  return hasEnglish ? 'translation' : null
+}
+
+function catalogRole(node: Node, catalog: CatalogFile | undefined): 'english' | 'translation' | null {
+  if (catalog?.english === 'file') return 'english'
+  if (catalog?.translation === 'file') return 'translation'
+  for (let current = node.parent; current; current = current.parent) {
+    const keyed = localeKeyedRole(current)
+    if (keyed) return keyed
+    const name = blockName(current)
+    if (name === null || !catalog) continue
+    if (catalog.english instanceof RegExp && catalog.english.test(name)) return 'english'
+    if (catalog.translation instanceof RegExp && catalog.translation.test(name)) return 'translation'
+  }
+  return null
+}
+
+function classifySource(node: Node, value: string): { category: HardcodedCjkCategory; reason: string } {
   if (ts.isRegularExpressionLiteral(node)) return { category: 'false-positive', reason: 'regular-expression' }
   if (isStructuralPropertyName(node) || ts.isLiteralTypeNode(node.parent)) {
     return { category: 'false-positive', reason: 'structural-literal' }
@@ -105,18 +221,58 @@ function classify(node: Node, value: string): { category: HardcodedCjkCategory; 
   if (cjkOnly && /^咕+$/.test(cjkOnly)) return { category: 'false-positive', reason: 'brand-only' }
 
   const call = enclosingCall(node)
-  if (call) {
-    if (diagnosticLoggerCall(call)) return { category: 'developer', reason: 'diagnostic-call' }
-  }
+  if (call && diagnosticLoggerCall(call)) return { category: 'developer', reason: 'diagnostic-call' }
   return { category: 'user-visible', reason: 'product-value' }
 }
 
-export function auditHardcodedCjk(root: string = process.cwd()): HardcodedCjkAudit {
-  const sourceRoot = path.resolve(root, SOURCE_ROOT)
+export function loadExceptions(root: string, exceptionsFile: string = DEFAULT_EXCEPTIONS_FILE): HardcodedCjkExceptions {
+  const parsed = JSON.parse(readFileSync(path.resolve(root, exceptionsFile), 'utf8')) as Partial<HardcodedCjkExceptions>
+  const englishCatalogAllowed = parsed.englishCatalogAllowed ?? []
+  const exceptions = parsed.exceptions ?? []
+  for (const entry of englishCatalogAllowed) {
+    if (!entry.text || !entry.reason) throw new Error(`hardcoded-cjk-audit: englishCatalogAllowed entry needs text and reason: ${JSON.stringify(entry)}`)
+  }
+  for (const entry of exceptions) {
+    if (!entry.file || !entry.reason || !['C', 'D', 'E'].includes(entry.class)) {
+      throw new Error(`hardcoded-cjk-audit: exception needs file, class C/D/E and reason: ${JSON.stringify(entry)}`)
+    }
+  }
+  return { englishCatalogAllowed, exceptions }
+}
+
+function normalized(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+export function auditHardcodedCjk(root: string = process.cwd(), options: HardcodedCjkOptions = {}): HardcodedCjkAudit {
+  const roots = options.roots ?? DEFAULT_ROOTS
+  const { englishCatalogAllowed, exceptions } = loadExceptions(root, options.exceptionsFile)
+  const usedAllowed = new Set<number>()
+  const usedExceptions = new Set<number>()
   const rows: HardcodedCjkRow[] = []
-  for (const absoluteFile of sourceFilesBelow(root, sourceRoot)) {
-    const file = path.relative(root, absoluteFile)
-    const sourceText = readFileSync(absoluteFile, 'utf8')
+
+  const englishAllowed = (value: string): boolean => {
+    let rest = value
+    englishCatalogAllowed.forEach((entry, index) => {
+      if (rest.includes(entry.text)) {
+        usedAllowed.add(index)
+        rest = rest.split(entry.text).join('')
+      }
+    })
+    return !CJK.test(rest)
+  }
+
+  const excepted = (file: string, text: string): HardcodedCjkException | null => {
+    const index = exceptions.findIndex((entry) => entry.file === file && (entry.text === undefined || normalized(entry.text) === text))
+    if (index < 0) return null
+    usedExceptions.add(index)
+    return exceptions[index]!
+  }
+
+  for (const file of [...new Set(roots.flatMap((target) => sourceFilesBelow(root, target)))]) {
+    const catalog = CATALOGS.find((candidate) => candidate.file.test(file))
+    if (catalog?.translation === 'file') continue
+    const sourceText = readFileSync(path.resolve(root, file), 'utf8')
     const sourceFile = ts.createSourceFile(
       file,
       sourceText,
@@ -127,15 +283,29 @@ export function auditHardcodedCjk(root: string = process.cwd()): HardcodedCjkAud
     const visit = (node: Node): void => {
       if (isTextNode(node)) {
         const value = textValue(node, sourceFile)
-        if (CJK.test(value)) {
+        const role = CJK.test(value) ? catalogRole(node, catalog) : null
+        if (CJK.test(value) && role !== 'translation') {
           const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+          const text = normalized(value)
+          let verdict: { category: HardcodedCjkCategory; reason: string }
+          if (role === 'english' && !isStructuralPropertyName(node)) {
+            verdict = englishAllowed(value)
+              ? { category: 'false-positive', reason: 'english-catalog-allowed' }
+              : { category: 'english-catalog', reason: 'cjk-in-english-catalog' }
+          } else {
+            verdict = classifySource(node, value)
+            if (verdict.category === 'user-visible') {
+              const exception = excepted(file, text)
+              if (exception) verdict = { category: 'excepted', reason: `${exception.class}: ${exception.reason}` }
+            }
+          }
           rows.push({
             file,
             line: position.line + 1,
             column: position.character + 1,
             kind: ts.SyntaxKind[node.kind],
-            text: value.replace(/\s+/g, ' ').trim(),
-            ...classify(node, value),
+            text,
+            ...verdict,
           })
         }
       }
@@ -144,26 +314,34 @@ export function auditHardcodedCjk(root: string = process.cwd()): HardcodedCjkAud
     visit(sourceFile)
   }
 
+  const staleExceptions = [
+    ...exceptions
+      .filter((_entry, index) => !usedExceptions.has(index))
+      .map((entry) => `exception ${entry.file}${entry.text === undefined ? '' : ` "${entry.text}"`} matches no CJK literal`),
+    ...englishCatalogAllowed
+      .filter((_entry, index) => !usedAllowed.has(index))
+      .map((entry) => `englishCatalogAllowed "${entry.text}" matches no English catalog value`),
+  ]
+
   const categories = Object.fromEntries(
-    ['user-visible', 'developer', 'false-positive'].map((category) => [
-      category,
-      rows.filter((row) => row.category === category).length,
-    ]),
-  )
+    CATEGORIES.map((category) => [category, rows.filter((row) => row.category === category).length]),
+  ) as Record<HardcodedCjkCategory, number>
   const fileDistribution = Object.fromEntries(
-    Object.keys(categories).map((category) => {
+    CATEGORIES.map((category) => {
       const counts = new Map<string, number>()
       for (const row of rows.filter((candidate) => candidate.category === category)) {
         counts.set(row.file, (counts.get(row.file) ?? 0) + 1)
       }
       return [category, Object.fromEntries([...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])))]
     }),
-  )
+  ) as Record<HardcodedCjkCategory, Record<string, number>>
   return {
     total: rows.length,
-    categories: categories as Record<HardcodedCjkCategory, number>,
-    fileDistribution: fileDistribution as Record<HardcodedCjkCategory, Record<string, number>>,
+    categories,
+    fileDistribution,
     rows,
+    failures: rows.filter((row) => FAILING.has(row.category)),
+    staleExceptions,
   }
 }
 
@@ -173,6 +351,17 @@ function isMainModule() {
 
 if (isMainModule()) {
   const result = auditHardcodedCjk()
-  console.log(JSON.stringify(result, null, 2))
-  if (result.categories['user-visible'] > 0) process.exitCode = 1
+  if (process.argv.includes('--json')) {
+    console.log(JSON.stringify(result, null, 2))
+  } else {
+    for (const row of result.failures) {
+      console.error(`${row.file}:${row.line}:${row.column} [${row.category}] ${row.text}`)
+    }
+    for (const stale of result.staleExceptions) console.error(`stale: ${stale}`)
+    console.log(`hardcoded-cjk-audit: ${JSON.stringify(result.categories)}, stale exceptions ${result.staleExceptions.length}`)
+    if (result.failures.length > 0) {
+      console.error('Move user-visible Chinese into the zh-CN and en-US catalogs, or list the file in scripts/checks/hardcoded-cjk-exceptions.json with its class and reason.')
+    }
+  }
+  if (result.failures.length > 0 || result.staleExceptions.length > 0) process.exitCode = 1
 }

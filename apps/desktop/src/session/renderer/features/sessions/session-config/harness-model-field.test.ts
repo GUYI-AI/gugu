@@ -25,7 +25,7 @@ describe('harnessCatalogNotice: probe failure localization', () => {
     const state = { kind: 'unavailable', reason: 'Model catalog probe failed', reasonCode: 'probe-failed' } as const;
     setLocalePreference('en-US');
     const english = harnessCatalogNotice(state, 'Pi', translateSessionMessage);
-    expect(english?.detail).toContain("Couldn't read Pi's model catalog");
+    expect(english?.detail).toContain("Could not read Pi's model catalog");
     expect(english?.detail).toContain('Gugu gateway model');
     expect(english?.detail).toContain('Pi sign-in');
     expect(english?.detail).not.toMatch(/[\u4e00-\u9fff]/);

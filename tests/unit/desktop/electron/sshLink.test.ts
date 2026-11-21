@@ -468,7 +468,7 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     expect(writes).toEqual([])
     expect(links.send('old', envelope('taskhost.call', 'ordinary'))).toBe(true)
     expect(onMessage).toHaveBeenCalledWith('old', expect.objectContaining({ payload: expect.objectContaining({
-      type: 'taskhost.call:reply', request_id: 'ordinary', error: { code: 'server_outdated', message: '请更新那台机器上的咕咕' },
+      type: 'taskhost.call:reply', request_id: 'ordinary', error: { code: 'server_outdated', message: '请更新该设备上的咕咕' },
     }) }))
     for (const type of SERVER_UPDATE_CONTROL_RPCS) expect(links.send('old', envelope(type, type))).toBe(true)
     expect(links.send('old', envelope('file.get', 'file'))).toBe(true)

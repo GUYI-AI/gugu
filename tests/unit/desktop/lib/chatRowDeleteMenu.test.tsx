@@ -47,7 +47,7 @@ it('offers a distinct confirmed history deletion while hiding remains immediate'
   expect(scope.clear).not.toHaveBeenCalled()
   const dialog = document.querySelector('[role=dialog]')!
   expect(dialog.textContent).toContain('清空「设计评审」的聊天记录？')
-  expect(dialog.textContent).toContain('只清你这边，其他成员不受影响。')
+  expect(dialog.textContent).toContain('仅清空你的聊天记录，其他成员不受影响。')
   expect(document.querySelector('[role=dialog] [role=checkbox]')).toBeNull()
   await clickElement(document.querySelector<HTMLElement>('[data-testid=conversation-delete-submit]')!)
   await vi.waitFor(() => expect(scope.clear).toHaveBeenCalledWith('chat'))

@@ -373,7 +373,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     const fork = await connectTo(social({ forkOf: 'Claude 1' }))
     const nativeFork = await fork.callTool({ name: 'group_list', arguments: {} })
     expect(nativeFork.isError).toBe(true)
-    expect(text(nativeFork)).toContain('运行时分叉')
+    expect(text(nativeFork)).toContain('is a runtime fork of')
     expect(await fork.callTool({ name: 'catalog_call', arguments: { tool: 'group_list', args: {} } })).toEqual(nativeFork)
   })
 

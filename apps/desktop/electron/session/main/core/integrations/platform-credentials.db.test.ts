@@ -840,7 +840,7 @@ describe('credentials the platform keeps (#921)', () => {
       platform.state.putFault = { status: 502, code: 'upstream_unavailable' };
 
       await b.service.refresh({ maxAgeMs: 0 });
-      const unavailable = { connected: false, errorType: 'provider_unavailable', error: "高德地图 isn't available right now; try again later." };
+      const unavailable = { connected: false, errorType: 'provider_unavailable', error: '高德地图 is currently unavailable. Try again later.' };
       expect(await b.service.check('amap')).toEqual(unavailable);
       expect(await b.service.checkAccounts('amap')).toEqual([{ accountId: 'default', ...unavailable }]);
       expect(b.fixture.secretStore.secrets.get(AMAP_SECRET_REF)).toBe(JSON.stringify({ apiKey: GOOD }));

@@ -173,5 +173,7 @@ export const transcriptTurnSchema = z.object({
   terminals: z.array(terminalStateSchema).optional(),
   /** Durable settlement for the whole turn; absent for replayed history without an explicit end. */
   outcome: transcriptTurnOutcomeSchema.optional(),
+  /** Host-confirmed engine end when the native record never closed this turn. Native late outcomes replace it. */
+  hostEnd: z.object({ at: z.number() }).optional(),
 });
 export type TranscriptTurn = z.infer<typeof transcriptTurnSchema>;

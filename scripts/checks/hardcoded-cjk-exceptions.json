@@ -1,0 +1,49 @@
+{
+  "englishCatalogAllowed": [
+    { "text": "简体中文", "reason": "A language's own name, shown in the language picker in every UI language." },
+    { "text": "allowed 咕咕 to", "reason": "The installed phone app is labelled 咕咕 in the system's Health Connect list; the sentence quotes that label." },
+    { "text": "for 咕咕", "reason": "The installed phone app is labelled 咕咕 in system settings; the sentence quotes that label." },
+    { "text": "find 咕咕", "reason": "The installed app is labelled 咕咕 in system settings; the sentence quotes that label." },
+    { "text": "Apps → 咕咕 →", "reason": "Android settings path; the installed app is labelled 咕咕." },
+    { "text": "drag 咕咕 into Applications", "reason": "The macOS app bundle in the .dmg is named 咕咕." }
+  ],
+  "exceptions": [
+    { "file": "apps/desktop/src/session/app-runtime/glue-entry.ts", "class": "C", "reason": "App-page runtime bundle without the host catalogs: every sentence is chosen by the page's locale (zh ? … : …) with its English beside it." },
+    { "file": "apps/desktop/src/session/app-runtime/markdown-entry.ts", "class": "C", "reason": "App-page runtime bundle: the copy label is chosen by the document language with its English beside it." },
+    { "file": "apps/desktop/src/session/app-runtime/ui/ui-core.ts", "class": "C", "reason": "App-page runtime bundle: relative time chosen by locale with its English beside it." },
+    { "file": "apps/desktop/src/components/assistant/assistant-panel-integrations.ts", "class": "C", "reason": "Fallback name chosen by locale ('应用' / 'Application')." },
+    { "file": "apps/desktop/src/pages/login/SignupConsentStep.tsx", "class": "C", "reason": "Policy link token chosen by the signup language ('《隐私政策》' / 'Privacy Policy')." },
+    { "file": "apps/desktop/src/session/renderer/features/extensions/panel/desktop-extension-market.tsx", "class": "C", "reason": "Replacement applied only when the locale is Chinese." },
+
+    { "file": "apps/desktop/src/mobile/phone-device/phoneActionCatalog.ts", "class": "D", "reason": "Phone device-action tool descriptions, argument validation errors and confirmation questions, read by the calling agent." },
+    { "file": "apps/desktop/src/mobile/phone-device/phoneDataActions.ts", "class": "D", "reason": "Phone data-action tool descriptions and validation errors, read by the calling agent." },
+    { "file": "apps/desktop/src/mobile/phone-device/phoneActionProvider.ts", "class": "D", "reason": "Device-action errors and confirmation questions returned to the calling agent." },
+    { "file": "apps/desktop/src/mobile/phone-device/phoneDeviceRpcHost.ts", "class": "D", "reason": "RPC errors returned to the calling computer's agent." },
+    { "file": "apps/desktop/src/mobile/phone-device/phoneHealth.ts", "class": "D", "reason": "Exercise names inside health data returned to the agent." },
+    { "file": "apps/desktop/src/mobile/local-agent/phoneAgentWebAction.ts", "class": "D", "reason": "Device-action outcome messages returned to the phone agent." },
+    { "file": "apps/desktop/src/session/shared/extensions/assistant-app.ts", "class": "D", "reason": "Sender name and state-change messages delivered to the assistant agent." },
+    { "file": "apps/desktop/src/session/shared/extensions/task-message.ts", "class": "D", "reason": "Words sent to the agent on a person's behalf, chosen by locale." },
+    { "file": "apps/desktop/src/session/shared/extensions/authoring-guide.ts", "class": "D", "reason": "App authoring guide read by agents; the Chinese is example content." },
+    { "file": "apps/desktop/src/session/shared/extensions/app-listing.ts", "class": "D", "reason": "Listing checks for App authors (agents); quotes the product page's Chinese section names." },
+    { "file": "apps/desktop/src/session/shared/extensions/app-files-core.ts", "class": "D", "reason": "API error for App code; the Chinese is an example folder path." },
+    { "file": "apps/desktop/src/session/shared/extensions/app-runtime-protocol.ts", "class": "D", "reason": "API documentation for App code; the Chinese is an example folder path." },
+    { "file": "apps/desktop/src/session/app-runtime/files-entry.ts", "class": "D", "reason": "API error for App code; the Chinese is an example folder path." },
+    { "file": "apps/desktop/src/session/shared/core/sessions/session-title-namer.ts", "class": "D", "reason": "Prompt for the title-naming model; lists Chinese request verbs to leave out." },
+
+    { "file": "apps/desktop/src/components/agentAvatar/engine/spec.ts", "class": "E", "reason": "Avatar design spec: zh names and design hints for expressions and states, not rendered in the product." },
+    { "file": "apps/desktop/src/components/agentAvatar/engine/characters.ts", "class": "E", "reason": "Avatar design spec name, not rendered in the product." },
+    { "file": "apps/desktop/src/components/agentAvatar/engine/gl.ts", "class": "E", "reason": "Shader source; the Chinese is GLSL comments." },
+    { "file": "apps/desktop/src/session/shared/preview/preview-link-script.ts", "class": "E", "reason": "Injected script source; the Chinese is script comments." },
+    { "file": "apps/desktop/src/session/renderer/features/sample-project/content/zh-CN.ts", "class": "E", "reason": "Chinese sample project content, chosen for the zh-CN locale." },
+    { "file": "apps/desktop/src/session/renderer/features/sample-project/content/en-US.ts", "class": "E", "reason": "Sample project content: the agent's recorded Chinese search queries." },
+    { "file": "apps/desktop/src/lib/assistantSetup.ts", "class": "E", "reason": "Name ideas offered for the assistant, mixing Chinese and English names." },
+    { "file": "apps/desktop/src/lib/systemNoticeText.ts", "class": "E", "reason": "Matches the Chinese sentences the server writes, to translate them." },
+    { "file": "apps/desktop/src/lib/assistantWorkTitle.ts", "class": "E", "reason": "Matches the stored placeholder title of old rows." },
+    { "file": "apps/desktop/src/lib/contactsListSort.ts", "class": "E", "reason": "Pinyin boundary characters for sorting." },
+    { "file": "apps/desktop/src/components/assistant/assistant-app-connections.ts", "class": "E", "reason": "Search alias for WeChat." },
+    { "file": "apps/desktop/src/components/productTour/FeatureTour.tsx", "class": "E", "reason": "Caption track label: the language's own name." },
+    { "file": "apps/desktop/src/session/renderer/features/extensions/panel/agent-market-content.tsx", "class": "E", "reason": "Matches the publisher value the market data uses for open-source agents." },
+    { "file": "apps/desktop/src/session/renderer/features/sessions/session-config/model-provider.ts", "class": "E", "reason": "Vendor display names are proper nouns kept out of i18n by design (see ModelProvider.name)." },
+    { "file": "apps/desktop/src/session/shared/core/projects/session-home-project.ts", "class": "E", "reason": "Persisted project name, fixed so that switching the language never changes a stored value." }
+  ]
+}

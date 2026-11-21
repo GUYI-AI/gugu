@@ -11,6 +11,20 @@
   :root {
     --text-link: var(--em-foreground-info);
     --font-family-mono: var(--em-font-mono);
+    /* mermaid 图读的名字（宿主那边在 tokens.css）。App 色板没有图表分类色，饼图等的分类色用 pele 自带的。 */
+    --pele-bg: var(--em-background);
+    --pele-fg: var(--em-foreground);
+    --pele-muted: var(--em-foreground-muted);
+    --pele-line: var(--em-foreground-muted);
+    --pele-surface: var(--em-background-3);
+    --pele-surface-alt: var(--em-background-1);
+    --pele-border: var(--em-border-1);
+    --pele-accent: var(--em-foreground-info);
+    --pele-critical: var(--em-danger);
+    --pele-error: var(--em-danger);
+    --pele-font: var(--em-font-sans);
+    --pele-font-mono: var(--em-font-mono);
+    --pele-radius: var(--em-radius-document);
   }
 
   /* 画出来的 mermaid 图（宿主文档面用的同一个渲染器）：宽了自己横着滚。 */

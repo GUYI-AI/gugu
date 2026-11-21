@@ -83,7 +83,7 @@ describe('project home menus open for real', () => {
     ));
     await until(() => menuItems().length > 0 || thrown.length > 0, 'detach menu');
     expect(thrown).toEqual([]);
-    expect(menuItems()).toContain('从项目中摘除');
+    expect(menuItems()).toContain('从项目中移除');
     await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
     expect(detach).toHaveBeenCalledWith(ROOT);
     const undo = feedback.toast.mock.calls[0][0].action.onClick;
@@ -105,7 +105,7 @@ describe('project home menus open for real', () => {
     await until(() => menuItems().length > 0 || thrown.length > 0, 'detach menu');
     const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
     expect(item.getAttribute('aria-disabled')).toBe('true');
-    expect(item.getAttribute('title')).toContain('至少要有一个文件夹');
+    expect(item.getAttribute('title')).toContain('至少需要一个文件夹');
     await act(async () => item.click());
     expect(detach).not.toHaveBeenCalled();
   });
@@ -133,7 +133,7 @@ describe('project home menus open for real', () => {
     expect(menuItems()).toEqual([
       expect.stringContaining('项目根目录'),
       expect.stringContaining('gugu-wt'),
-      expect.stringContaining('挂'),
+      expect.stringContaining('添加文件夹'),
     ]);
   });
 });

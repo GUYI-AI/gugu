@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { IOSOwnerBinding } from '../ios-runtime/iosOwnerClient'
 
@@ -43,8 +44,8 @@ export class IOSAgentError extends Error {
   constructor(public readonly code: string, message: string) { super(message); this.name = 'IOSAgentError' }
 }
 export const iosHostFailure = (cause: unknown): IOSAgentError => cause instanceof IOSAgentError ? cause
-  : new IOSAgentError(typeof (cause as { code?: unknown } | null)?.code === 'string' ? (cause as { code: string }).code : 'host_failed', '本机宿主操作未完成，请重试。')
-const invalid = () => new IOSAgentError('invalid_native_reply', '未读到有效的本机宿主结果。')
+  : new IOSAgentError(typeof (cause as { code?: unknown } | null)?.code === 'string' ? (cause as { code: string }).code : 'host_failed', mobileWorkspaceText('ios.hostFailed'))
+const invalid = () => new IOSAgentError('invalid_native_reply', mobileWorkspaceText('ios.hostReplyInvalid'))
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export function sameIOSBinding(a: IOSOwnerBinding | null, b: IOSOwnerBinding | null): boolean {
   return a === b || !!a && !!b && a.ownerId === b.ownerId && a.deviceId === b.deviceId && a.installationId === b.installationId
@@ -89,7 +90,7 @@ const native = registerPlugin<{
 }>('GuguAgent')
 function available(): boolean { return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('GuguAgent') }
 function requireBinding(binding: IOSOwnerBinding): IOSOwnerBinding {
-  if (!available()) throw new IOSAgentError('unavailable', '此安装包暂未提供本机宿主。')
+  if (!available()) throw new IOSAgentError('unavailable', mobileWorkspaceText('ios.hostUnavailable'))
   if (!uuid.test(binding.ownerId) || !uuid.test(binding.installationId) || binding.deviceId !== `phone-${binding.installationId}-${binding.ownerId}`) throw invalid()
   return { ownerId: binding.ownerId, deviceId: binding.deviceId, installationId: binding.installationId }
 }
@@ -108,7 +109,7 @@ export const iosAgentClient: IOSAgentClient = {
   },
   async call<T>(input: IOSOwnerBinding, id: string, channel: IOSHostChannel, args: readonly unknown[]) {
     const binding = requireBinding(input)
-    if (!uuid.test(id)) throw new IOSAgentError('invalid_args', '请保留原始本机请求标识。')
+    if (!uuid.test(id)) throw new IOSAgentError('invalid_args', mobileWorkspaceText('ios.requestIdInvalid'))
     const reply = object(await native.hostCall({ expectedBinding: binding, id, channel, args }))
     const hasResult = Object.hasOwn(reply, 'result')
     if (hasResult === Object.hasOwn(reply, 'error')) throw invalid()

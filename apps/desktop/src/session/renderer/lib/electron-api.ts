@@ -25,7 +25,7 @@ export function findSessionHostBridge(): SessionHostBridge | null {
 export function electronApi(): SessionHostBridge {
   const api = findSessionHostBridge()
   if (!api) {
-    throw new Error('[session] 宿主桥不可用:桌面版缺 preload 注入,网页版缺任务页宿主连接')
+    throw new Error('[session] host bridge unavailable: the desktop app lacks the preload injection, the web app lacks the task page host connection')
   }
   return api
 }

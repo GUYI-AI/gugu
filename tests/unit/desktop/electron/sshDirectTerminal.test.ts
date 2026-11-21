@@ -164,6 +164,10 @@ describe('共享连接', () => {
     const ensure = buildEnsureMasterArgs(target, '/tmp/d/cm-%C')
     expect(ensure).toEqual(expect.arrayContaining(['ControlMaster=auto', 'ControlPath=/tmp/d/cm-%C', 'ControlPersist=yes', '-p', '2222', '-J', 'jump']))
     expect(ensure.slice(-3)).toEqual(['--', 'alice@box', 'exit 0'])
+    // 没有共享连接(Windows):登录只认证一次(记下指纹、装上钥匙),❌ 带任何 Control 选项。
+    const once = buildEnsureMasterArgs(target, null)
+    expect(once.some(arg => arg.startsWith('Control'))).toBe(false)
+    expect(once.slice(-3)).toEqual(['--', 'alice@box', 'exit 0'])
     const forward = buildMuxForwardArgs(target, { controlPath: '/tmp/d/cm-%C', localPort: 4000, remotePort: 3000, op: 'forward' })
     expect(forward).toEqual(expect.arrayContaining(['-O', 'forward', '-L', '127.0.0.1:4000:localhost:3000', '-p', '2222', '-J', 'jump']))
     expect(forward.slice(-2)).toEqual(['--', 'alice@box'])
@@ -216,9 +220,9 @@ describe('经本机套接字找账号进程(link / open-url / match-version 共�
   it('checks only the current identity and never selects another directory', () => {
     expect(accountRequestError(account(), UID)).toBeNull()
     expect(accountRequestError(account(), null)).toBeNull()
-    expect(accountRequestError(account({ signedIn: false }), UID)).toContain('还没有登录')
+    expect(accountRequestError(account({ signedIn: false }), UID)).toContain('尚未登录')
     expect(accountRequestError(account(), 'other')).toContain('a@b.c')
-    expect(accountRequestError(null, null)).toContain('还没有登录')
+    expect(accountRequestError(null, null)).toContain('尚未登录')
   })
 
   it('进程没在跑(套接字不在):人话', () => {

@@ -31,7 +31,7 @@ describe('telling an agent its display name changed', () => {
     expect(verdict).toBe('accepted')
     expect(injected).toHaveLength(1)
     expect(injected[0]!.sessionId).toBe(SESSION)
-    expect(injected[0]!.text).toMatch(/^<gugu_delivery route="system" from="咕咕系统" from_id="system:gugu" msg="msg:/)
+    expect(injected[0]!.text).toMatch(/^<gugu_delivery route="system" from="Gugu" from_id="system:gugu" msg="msg:/)
     expect(injected[0]!.text).toContain('Your display name is now "小研究员"')
     expect(injected[0]!.text).toContain('there is no one to reply to')
   })

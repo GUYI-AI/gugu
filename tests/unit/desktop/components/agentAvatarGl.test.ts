@@ -36,12 +36,14 @@ describe('共用 GL 画布', () => {
   })
 
   it('一张素材这次解码失败:不记成「永远失败」,下次再要就再试', async () => {
-    let decodes = 0
+    let loads = 0
     vi.stubGlobal('Image', class {
-      src = ''
-      decode() {
-        decodes += 1
-        return decodes === 1 ? Promise.reject(new Error('decode failed')) : Promise.resolve()
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      set src(_url: string) {
+        loads += 1
+        const ok = loads !== 1
+        queueMicrotask(() => (ok ? this.onload : this.onerror)?.())
       }
     })
     vi.stubGlobal('createImageBitmap', async () => ({ width: 4, height: 4, close() {} }))
@@ -52,7 +54,7 @@ describe('共用 GL 画布', () => {
     expect(gl.has('body')).toBe(false)
     expect(await gl.loadTexture('body', 'body.webp', { w: 4, h: 4 })).toBe(true)
     expect(gl.has('body')).toBe(true)
-    expect(decodes).toBe(2)
+    expect(loads).toBe(2)
   })
 
   it('一批里每一趟占一格,从左往右排、排满换行;排不下且已有格子 = 先抄走再来;空着时不够就放大画布', () => {
@@ -77,10 +79,8 @@ describe('共用 GL 画布', () => {
 
   it('本体和它的部件拼在一张图集里:一格里的几片攒成一次绘制;换了纹理才另画一次', async () => {
     vi.stubGlobal('Image', class {
-      src = ''
-      decode() {
-        return Promise.resolve()
-      }
+      onload: (() => void) | null = null
+      set src(_url: string) { queueMicrotask(() => this.onload?.()) }
     })
     vi.stubGlobal('createImageBitmap', async () => ({ width: 8, height: 8, close() {} }))
     const draws: [unknown, number][] = []
@@ -105,7 +105,7 @@ describe('共用 GL 画布', () => {
   })
 
   it('肩部覆盖使用网格顶点的不透明度,普通素材保持原有不透明度', async () => {
-    vi.stubGlobal('Image', class { src = ''; decode() { return Promise.resolve() } })
+    vi.stubGlobal('Image', class { onload: (() => void) | null = null; set src(_url: string) { queueMicrotask(() => this.onload?.()) } })
     vi.stubGlobal('createImageBitmap', async () => ({ width: 8, height: 8, close() {} }))
     const uploaded: Float32Array[] = []
     const context = new Proxy(fakeContext(), {

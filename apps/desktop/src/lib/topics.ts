@@ -11,6 +11,7 @@ import { currentGroupAdmin } from './groupAdmin'
 //   · 沉降 —— 纯列表位置,由 last_message_at 派生,不落任何状态位。
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { chatDb, getCurrentAuthUserId } from './supabase'
+import { i18n } from '@/i18n/runtime'
 
 export type CreateTopicInput = {
   topicId?: string
@@ -46,16 +47,6 @@ export type AgentFloodAdjustment = {
   undone_at: string | null
 }
 
-/**
- * 面包屑要区分的三种来源状态。'unreadable' 是 @@@5856 找茬第八轮补上的第三态:
- * 行还在、只是这个人读不到 —— 它既不是 'readable' 也不是 'gone',
- * 把它并进任何一边都会在界面上说一句假话。
- */
-export type TopicSourceState =
-  | { kind: 'readable'; preview: string }
-  | { kind: 'unreadable' }
-  | { kind: 'gone' }
-
 export const topicService = {
   /** Archive as the signed-in human; the backend checks source-conversation authority. */
   async archiveTopic(chatId: string): Promise<void> {
@@ -85,11 +76,11 @@ export const topicService = {
     const row = (Array.isArray(data) ? data[0] : data) as RawCreatedTopic | undefined
     const chatId = text(row?.chat_id)
     // fail loud:RPC 回了空行说明来源校验在服务端就没过,❌ 不许静默返回一个假的空话题。
-    if (!row || !chatId) throw new Error('create_topic 没有返回话题 —— 来源消息可能已被删除')
+    if (!row || !chatId) throw new Error('create_topic returned no topic; the source message may have been deleted')
     return {
       chat_id: chatId,
       public_id: typeof row.public_id === 'number' ? row.public_id : null,
-      name: text(row.name) ?? '话题',
+      name: text(row.name) ?? i18n.t('topic.untitled', { ns: 'messaging' }),
       source_chat_id: text(row.source_chat_id) ?? input.sourceChatId,
       source_message_id: text(row.source_message_id) ?? input.sourceMessageId,
       creator_user_id: text(row.creator_user_id),
@@ -113,7 +104,7 @@ export const topicService = {
       if (!chatId || !sourceMessageId) continue
       rows.push({
         chat_id: chatId,
-        name: text(raw.name) ?? '话题',
+        name: text(raw.name) ?? i18n.t('topic.untitled', { ns: 'messaging' }),
         source_message_id: sourceMessageId,
         creator_user_id: text(raw.creator_user_id),
         last_message_at: text(raw.last_message_at),
@@ -123,23 +114,6 @@ export const topicService = {
       })
     }
     return rows
-  },
-
-  /**
-   * 话题来源的状态(面包屑用)。@@@5856 找茬第八轮:这里原先走 message_reply_preview,
-   * 而它返回 0 行有**两种**原因 —— 「真没了」和「行还在、你读不到」。客户端只有两态,
-   * 于是把后者显示成「来源消息已被删除」,那是一句假话(消息没被删,别人都看得见)。
-   * 现在由服务端把两件事分开(chat.topic_source_state),客户端如实转述。
-   */
-  async getSourceState(topicChatId: string): Promise<TopicSourceState> {
-    const { data, error } = await chatDb.rpc('topic_source_state', { p_topic_chat_id: topicChatId })
-    if (error) throw new Error(error.message)
-    const row = (Array.isArray(data) ? data[0] : data) as { state?: unknown; preview?: unknown } | undefined
-    const state = text(row?.state)
-    // 读不到这条话题本身 ⇒ 一行都不回。那时 ❌ 不许下「来源没了」的结论。
-    if (state === 'readable') return { kind: 'readable', preview: text(row?.preview) ?? '' }
-    if (state === 'gone') return { kind: 'gone' }
-    return { kind: 'unreadable' }
   },
 
   /** 一条群里目前那条「自动转 passive」系统消息对应的台账(没有就是 null)。 */

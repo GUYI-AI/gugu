@@ -34,7 +34,7 @@ describe('platform block carries no per-harness tool naming (#6192)', () => {
   it('keeps harness tool-name decoration out of the constant platform block', () => {
     expect(GUGU_PLATFORM_BLOCK).not.toMatch(/mcp__|gugu_<tool>|Pi `|Claude `|Codex `/)
     expect(GUGU_PLATFORM_BLOCK).not.toContain('canonical suffix')
-    expect(guguSessionSurfaceBlock('acp', 'claude', true)).toContain('Your harness lists each 咕咕 tool as')
+    expect(guguSessionSurfaceBlock('acp', 'claude', true)).toContain('Your harness lists each Gugu tool as')
     const fallback = 'Call the tool exactly as your tool list names it, not by the bare suffix.'
     expect(GUGU_PLATFORM_BLOCK).not.toContain(fallback)
     for (const provider of ['amp', 'antigravity']) {
@@ -93,7 +93,7 @@ describe('a routing or usage sentence has one owner (#6634 问题 15)', () => {
 describe('tool usage belongs to schemas and assistant duplicates keep one owner', () => {
   it('retains product-specific delegation triggers and the catalog search boundary', () => {
     const surface = guguSessionSurfaceBlock('acp', 'claude', true)
-    expect(surface).toContain('「起一个 agent」「创建一个小弟」')
+    expect(surface).toContain('("start an agent", "spawn a helper")')
     expect(surface).toContain('Never substitute one for a requested Gugu session')
     expect(GUGU_PLATFORM_BLOCK).toContain("these tools are invisible to your harness's tool search")
   })
@@ -114,7 +114,7 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
     expect(install.description).toContain('Switching an App on belongs to the person')
     expect(GUGU_APPS_SEARCH_LINE).not.toContain('Never edit')
     expect(GUGU_APPS_SEARCH_LINE).toContain('To install an App or change its version, use app_install.')
-    expect(GUGU_APPS_SEARCH_LINE).toContain('来一局狼人杀')
+    expect(GUGU_APPS_SEARCH_LINE).toContain("let's play a round of werewolf")
   })
 
   it('keeps all group guidance and general style when suppressing only the assistant acknowledgement duplicate', () => {

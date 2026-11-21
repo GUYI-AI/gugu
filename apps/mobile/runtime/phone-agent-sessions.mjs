@@ -46,7 +46,7 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
             const row = peers.get(target.deviceId).find(row => row.sessionId === target.sessionId || row.session_id === target.sessionId)
             recipient = row?.agentUserId ?? row?.agent_user_id?.replace(/^user:/, '') ?? row?.identity?.users?.id
           }
-          if (!recipient) throw new Error('附件收件会话没有 Agent 身份')
+          if (!recipient) throw new Error('The attachment recipient session has no Agent identity')
           recipientIds.push(recipient)
         }
         const artifacts = await Promise.all(files.map(descriptor => authorizedPhoneArtifact({ agent, job, store, authorize }, descriptor.file_path)))
@@ -58,7 +58,7 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
           store.state.sessionFileOutbox ??= {}
           const fingerprint = JSON.stringify({ file: descriptor, recipients: recipientIds, sha256: file.sha256 })
           const entry = store.state.sessionFileOutbox[id] ??= { fingerprint }
-          if (entry.fingerprint !== fingerprint) throw new Error('附件请求号已绑定另一份文件或收件人')
+          if (entry.fingerprint !== fingerprint) throw new Error('This attachment request id is already bound to another file or recipient')
           if (entry.reference) { refs.push(entry.reference); continue }
           const reference = await uploadSessionFile(await cloud.attachmentEndpoint(), descriptor, {
             agentId: agent.agentUserId, sessionId: agent.sessionId, recipients: recipientIds, expectedSha256: file.sha256,
@@ -113,7 +113,7 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
     if (action.action === 'get' || action.action === 'stop') {
       const id = action.session_id ?? agent.sessionId
       if (!local().some((row) => row.sessionId === id)) return cross.runOnSession(id, caller(), { ...action, session_id: id }, signal)
-      if (action.action === 'stop' && id === agent.sessionId) throw new Error('session_stop 停另一条会话；本轮结束请直接回复，不要停止自己')
+      if (action.action === 'stop' && id === agent.sessionId) throw new Error('session_stop stops another session; to end this turn just reply, do not stop yourself')
       return here({ ...action, session_id: id }, callId)
     }
     if (action.action === 'children') {
@@ -133,19 +133,19 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
         const args = definition.schema.parse(rawArgs)
         let run
         // Reuse the real registrar's typed ID, list-window and per-item preview logic without an MCP transport.
-        registerSessionpageTools({ registerTool: (_name, _options, handler) => { run = handler } }, [definition], (action, innerSignal) => dispatch(action, callId, innerSignal), () => '手机会话宿主尚未就绪', async (work) => work)
+        registerSessionpageTools({ registerTool: (_name, _options, handler) => { run = handler } }, [definition], (action, innerSignal) => dispatch(action, callId, innerSignal), () => 'The phone session host is not ready yet', async (work) => work)
         const answer = await run(args, { signal })
-        if (answer.isError) throw new Error(answer.content?.[0]?.text ?? '会话工具执行失败')
+        if (answer.isError) throw new Error(answer.content?.[0]?.text ?? 'The session tool failed')
         return { ...answer, details: answer.content?.[0]?.text ? JSON.parse(answer.content[0].text) : null }
       },
     }
   })
   tools.push({
-    name: 'session_peers', label: '查看任务 Agent', description: '这台手机或指定设备上的真实会话名录。收件人使用行中的 session:<id>、aid:<Agent ID> 或 gugu:<number>；不要猜名字或裸编号。',
+    name: 'session_peers', label: 'View task Agents', description: 'The real session directory on this phone or a given device. Address recipients by the row\'s session:<id>, aid:<Agent ID> or gugu:<number>; never guess names or bare numbers.',
     parameters: { type: 'object', properties: { device: { type: 'string' }, name: { type: 'string' }, rows: { type: 'string' }, status: { type: 'string' }, pinned: { type: 'boolean' } } },
     execute: async (callId, args, signal) => {
       const target = args.device ? String(args.device).replace(/^device:/, '') : deviceId
-      if (args.device && !String(args.device).startsWith('device:')) throw new Error('device 必须使用 session_devices 返回的 device: 地址')
+      if (args.device && !String(args.device).startsWith('device:')) throw new Error('device must be a device: address returned by session_devices')
       const rows = await dispatch({ action: 'peers', device: target }, callId, signal)
       const shown = rows.map((row) => ({ ...row, session_id: row.sessionId ? `session:${row.sessionId}` : row.session_id, agent_user_id: row.agentUserId ? `user:${row.agentUserId}` : row.agent_user_id, is_self: row.agentUserId === agent.agentUserId }))
       return result(windowResult({ namesOf: (row) => [row.name, row.title, row.identity?.users?.display_name], statusFilter: true, keep: (row, filter) => matchesAgentStatus(row, filter.status) && (filter.pinned === undefined || row.pinned === filter.pinned) }, shown, args))

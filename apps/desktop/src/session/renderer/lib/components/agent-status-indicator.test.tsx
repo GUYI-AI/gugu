@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// #7243(owner 2026-10-15):任务页的 agent 状态不画咕咕小鸟 —— 在跑 = 墨色转圈字形、后台运行中 = 同一枚字形静止、
+// #7243(owner 2026-10-15):任务页的 agent 状态不画咕咕小鸟 —— 在跑 = 墨色转圈字形、后台运行中 = 黄色双竖线、
 // 等你 = 黄点、出错 = 红点、空闲不画。判的是渲染出来的东西:每一态都没有小鸟的画布。
 import { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -43,13 +43,13 @@ describe('任务页的状态字形(#7243)', () => {
     const frames = [...container.querySelectorAll('.cli-spinner__strip > span')].map((frame) => frame.textContent);
     expect(frames.length).toBeGreaterThan(1);
     for (const frame of frames) expect(frame).toMatch(/^[⠀-⣿]$/u);
-    expect(container.querySelector('[data-animate="false"]')).toBeNull();
   });
 
-  it('后台运行中 = 同一枚字形静止', () => {
+  it('后台运行中 = 双竖线(AgentParkedGlyph),不是转圈字形', () => {
     renderGlyph('working', 'parked');
     expectNoBird();
-    expect(container.querySelector('[data-animate="false"]')?.textContent).toBe('⠋');
+    expect(container.querySelector('[data-agent-status-glyph="parked"]')).not.toBeNull();
+    expect(container.querySelector('.cli-spinner')).toBeNull();
   });
 
   it('等你 = 黄点,出错 = 红点', () => {

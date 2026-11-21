@@ -12,6 +12,23 @@ afterEach(() => {
   while (cleanup.length) cleanup.pop()?.()
 })
 
+// A busy browser may draw fewer than four frames in 400/600ms. Observe the
+// required samples instead of using elapsed time as proof that frames arrived.
+async function waitForDrawnSamples(label: string, count: () => number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let frame = 0
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(frame)
+      reject(new Error(`${label}: received ${count()} drawn-frame samples within 12000ms; need >3`))
+    }, 12_000)
+    const check = () => {
+      if (count() > 3) { clearTimeout(timeout); resolve(); return }
+      frame = requestAnimationFrame(check)
+    }
+    check()
+  })
+}
+
 // Reported on a phone: opening a long conversation again drew one frame about a screen above the
 // latest reply, then jumped to it. Rows mounting in a frame measure taller than their estimate;
 // the reader following the tail must see the bottom in that very frame, not one frame later.
@@ -97,8 +114,8 @@ it.each([390, 1024])(
       host.remove()
     })
     await until('rows mounted', () => host.querySelectorAll('[data-item-id]').length > 0)
-    await new Promise((resolve) => setTimeout(resolve, 600))
-    sampling = false
+    try { await waitForDrawnSamples('tail while rows mount', () => drawn.length) }
+    finally { sampling = false }
     expect(drawn.length).toBeGreaterThan(3)
     expect(
       drawn.filter((frame) => frame.gap > 1),
@@ -180,8 +197,8 @@ it.each([390, 1024])(
     composer.style.height = '90px'
     slot.append(composer)
     sample()
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    sampling = false
+    try { await waitForDrawnSamples('composer arrival', () => overlaps.length) }
+    finally { sampling = false }
     expect(overlaps.length).toBeGreaterThan(3)
     expect(
       overlaps.filter((overlap) => overlap > 0),

@@ -17,7 +17,7 @@ export function PhoneAgentActions(): null {
           provider: getPhoneDeviceActionProvider,
         })
         await nativeAgent.webActionResult({ ownerId: request.ownerId, id: request.id, result })
-      })().catch((error: unknown) => rendererLogger('phone-agent-actions').warn({ error }, '手机动作未能返回'))
+      })().catch((error: unknown) => rendererLogger('phone-agent-actions').warn({ error }, 'phone action did not return'))
     })
     return () => { disposed = true; void pending.then((listener) => listener.remove()) }
   }, [])

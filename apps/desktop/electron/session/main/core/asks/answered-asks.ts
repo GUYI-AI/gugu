@@ -1,4 +1,4 @@
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import type { AnsweredAsk, Settlement } from '@gugu/session-core/session-record/contract';
 import { db } from '@main/db/client';
 import { kv } from '@main/db/schema';
@@ -35,8 +35,9 @@ export function clearAnsweredAsk(sessionId: string): boolean {
   return db.delete(kv).where(eq(kv.key, `${PREFIX}${sessionId}`)).run().changes > 0;
 }
 
-/** Every session's record in one read, for the session list. */
-export function readAnsweredAsks(): Map<string, AnsweredAsk> {
-  const rows = db.select({ key: kv.key, value: kv.value }).from(kv).where(like(kv.key, `${PREFIX}%`)).all();
+/** These sessions' records (every session's when omitted) in one read, for the session list. */
+export function readAnsweredAsks(sessionIds?: readonly string[]): Map<string, AnsweredAsk> {
+  const rows = db.select({ key: kv.key, value: kv.value }).from(kv)
+    .where(sessionIds ? inArray(kv.key, sessionIds.map(id => `${PREFIX}${id}`)) : like(kv.key, `${PREFIX}%`)).all();
   return new Map(rows.map(row => [row.key.slice(PREFIX.length), JSON.parse(row.value) as AnsweredAsk]));
 }

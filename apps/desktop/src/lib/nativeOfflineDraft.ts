@@ -1,5 +1,6 @@
 import { state } from './sessionInputOutboxBridge'
 import { clearViewState, readViewState, writeViewState, type ViewPanel } from './viewStateTable'
+import { i18n } from '@/i18n/runtime'
 
 // A task session's unsent input, per account, device and session: in the view-state table (panel `draft`, the same caps as
 // a chat's), from the first frame.
@@ -35,7 +36,7 @@ export function readNativeOfflineDraft(deviceId: string | null, sessionId: strin
 }
 export function writeNativeOfflineDraft(deviceId: string | null, sessionId: string, text: string): void {
   const id = panel(deviceId, sessionId)
-  if (!id) throw new Error('当前账号的会话输入尚未就绪')
+  if (!id) throw new Error(i18n.t('composer.sessionInput.accountNotReady', { ns: 'messaging' }))
   if (text) writeViewState(id, { text })
   else clearViewState(id)
   for (const listener of [...listeners]) listener()

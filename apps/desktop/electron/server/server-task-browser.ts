@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
 import { browserPageFeedback } from '@shared/browser-page-feedback';
+import { FALLBACK_LOCALE } from '@/i18n/locale';
 import { TaskPageCapture } from './server-task-page-capture';
 
 /**
@@ -102,7 +103,8 @@ class PipeConnection extends EventEmitter {
 
 /** One task's page as a WebContents-shaped object; each `attach` is one flattened CDP session on its target. */
 class PageTarget extends EventEmitter implements TaskPageContents {
-  readonly feedback = browserPageFeedback(this);
+  // A headless server has no person's language to read: its captions use the product default.
+  readonly feedback = browserPageFeedback(this, () => FALLBACK_LOCALE);
   private session: string | null = null;
   private readonly children = new Set<string>();
   private readonly native = new EventEmitter();
