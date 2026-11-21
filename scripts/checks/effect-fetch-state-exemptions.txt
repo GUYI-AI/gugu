@@ -43,6 +43,7 @@ features/team/TeamTopupDialog.tsx: effect-flow(command) - settling this checkout
 hooks/useWakeCloudComputer.ts: effect-flow(command) - opening a page on a sleeping cloud computer wakes it once (a command); its state is read from the cloudComputer replica
 lib/assistantClose.ts: reading-default(route) - a one-moment routing decision outside rendering: not read yet = not known to be the assistant, the delete takes the general path (today's behaviour)
 lib/sshLinkChannel.ts: reading-default(route) - routing decision of this moment (not drawn): a list not read yet routes through the cloud, as before it is read; `sshMachinesReady` is awaited first where it matters
+mobile/AndroidChatBackgroundWatch.tsx: effect-flow(event) - follows whether the app is in the foreground (a local flag) and hears the permission request event; the permission itself is the replica `systemPermission`
 mobile/agent-watch/CreateSessionPage.tsx: effect-flow(lifecycle) - acquire this editor's account-bound draft and settle its hydration/cleanup barrier.
 mobile/market/phoneMarketTargets.ts: reading-default(paired) - a device not read yet is not among the ones it is installed on; its row says so by `status` ('checking')
 session/renderer/app/aux-window-host.tsx: effect-flow(lifecycle) - activates the App surface in this window (a command: starts it; the handle lives as long as this window holds it)
