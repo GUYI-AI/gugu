@@ -169,7 +169,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // A machine that is offline is not asked; what was read of it is drawn read-only (this and the three reads below).
   const installed = useInstalledApps(host.key, { read: !machineOffline });
   const apps = installed.state === 'value' ? installed.value : null;
-  const inventory = installed.state === 'unknown' ? 'loading' : installed.state === 'error' ? 'error' : 'ready';
   const updatesReading = useReplica(marketUpdates, [host.key], { read: !machineOffline });
   const updates = updatesReading.state === 'value' ? updatesReading.value.summary ?? null : null;
   // 别的机器读清单没读到(离线 / server 太旧 / 问不通):页面上说一句人话,❌ 弹一条带原文的失败 toast。
@@ -228,15 +227,13 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const shownFailure = debouncedQuery === '' ? refreshFailure(shelfReading) : refreshFailure(searchReading);
   const shelf: ShelfState = useMemo((): ShelfState => {
     if (debouncedQuery === '') {
-      if (fullShelf) return { status: 'ready', query: '', errorKind: fullShelf.errorKind, items: fullShelf.items, invalid: fullShelf.invalid, total: fullShelf.total, page: fullShelf.page, hasMore: false, loadingMore: false };
+      if (fullShelf) return { ...fullShelf, status: 'ready', query: '', hasMore: false, loadingMore: false };
       return shelfReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
     }
     const read = searchReading.state === 'value' ? { found: searchReading.value, loadingMore: false }
       : searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: searchReading.state === 'unknown' } : null;
     if (!read) return searchReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
-    const { found } = read;
-    return { status: 'ready', query: debouncedQuery, errorKind: found.errorKind, items: found.items, invalid: found.invalid, total: found.total, page: found.page, hasMore: found.hasMore,
-      loadingMore: read.loadingMore };
+    return { ...read.found, status: 'ready', query: debouncedQuery, loadingMore: read.loadingMore };
   }, [debouncedQuery, fullShelf, shelfReading.state, searchReading, searchBefore]);
   const retryShelf = () => {
     if (debouncedQuery === '') void marketShelf.refresh(host.key);
@@ -1113,7 +1110,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         },
       });
     }
-    return renderInstalledApps(items, { loading: inventory === 'loading', error: inventory === 'error' });
+    return renderInstalledApps(items, { loading: installed.state === 'unknown', error: installed.state === 'error' });
   }
 
   const header = (aside?: ReactNode) => (
@@ -1340,7 +1337,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 onCategoryChange={setAgentCategory}
                 onOpenAgentDetail={openMarketAgentDetail}
                 assistant={assistantMarketItem}
-                assistantInstalled={inventory === 'ready' ? installedById!.has(ASSISTANT_APP_ID) : undefined}
+                assistantInstalled={installedById ? installedById.has(ASSISTANT_APP_ID) : undefined}
                 assistantLoading={shelf.status === 'loading'}
                 onOpenAssistant={() => assistantMarketItem && openShelfDetail(assistantMarketItem)}
                 assistantResource={resourceOf(ASSISTANT_APP_ID)}
@@ -1391,7 +1388,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   query={extensionShelf.query}
                   category={chip}
                   onCategoryChange={setChip}
-                  installedIds={inventory === 'ready' ? new Set(installedById!.keys()) : undefined}
+                  installedIds={installedById ? new Set(installedById.keys()) : undefined}
                   onOpen={openShelfDetail}
                   resourceOf={resourceOf}
                   sentinelRef={sentinelRef}
@@ -1415,7 +1412,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             {/* Which Apps have a new version (the rows' update marks, the tab's dot) could not be read again: said with a retry. */}
             {!machineOffline ? <RefreshFailed reading={updatesReading} /> : null}
 
-            {(inventory === 'loading' || installedAgents.inventory.reading.state === 'unknown') && installedCount === 0 && (
+            {(installed.state === 'unknown' || installedAgents.inventory.reading.state === 'unknown') && installedCount === 0 && (
               <div className="mk-sec">
                 <InstalledRowsSkeleton label={translate('extensions.loading')} />
               </div>
@@ -1493,7 +1490,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </ul>
               </section>
             )}
-            {inventory === 'ready' && installedAgents.inventory.reading.state === 'value' && installedCount === 0 && (
+            {apps && installedAgents.inventory.reading.state === 'value' && installedCount === 0 && (
               <div className="mk-empty">
                 {query.trim() === '' ? translate('extensions.empty') : translate('extensions.noMatch', { query: query.trim() })}
                 {query.trim() === '' && (
