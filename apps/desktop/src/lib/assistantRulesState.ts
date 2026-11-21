@@ -7,10 +7,13 @@ import { useTranslation } from 'react-i18next'
 import { desktopIpc } from '../platform/desktopIpc'
 import { ASSISTANT_HOME_CHANNELS, type AssistantRulesState } from './assistantHomeIpc'
 import { notify } from './notices'
-import { replica, useReplica, type Reading } from './replica'
+import { replica } from './replica'
 import '../i18n/registerMainCatalog'
 
-/** Main's answer for the signed-in account; no desktop IPC = `{pending: false, stuck: false}` (a value). Pushed; ❌ kept (would flash "preparing"). */
+/**
+ * Main's answer for the signed-in account; no desktop IPC = `{pending: false, stuck: false}` (a value). Pushed; ❌ kept (would
+ * flash "preparing"). Unknown until main answers: the entry is not drawn as preparing meanwhile (❌ a literal "not waiting" either).
+ */
 export const assistantRulesState = replica({
   name: 'assistantRulesState',
   scope: 'account',
@@ -29,12 +32,6 @@ export const assistantRulesState = replica({
     },
   },
 })
-
-
-/** Unknown until main answers: the entry is not drawn as preparing meanwhile (❌ a literal "not waiting" either). */
-export function useAssistantRulesState(): Reading<AssistantRulesState> {
-  return useReplica(assistantRulesState, [])
-}
 
 /** The one notice for a truly stuck wait: shown when it becomes stuck, in place (by key) if it is shown already. */
 export function useAssistantRulesStuckNotice(stuck: boolean): void {

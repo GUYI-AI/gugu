@@ -28,7 +28,8 @@ import { membershipSettingsSection } from '../../lib/billing/settingsDestination
 import { rendererLogger } from '../../lib/log'
 import { installShellSlots } from '../../lib/shellSlots'
 import { platform } from '../../platform'
-import { useAssistantRulesState, useAssistantRulesStuckNotice } from '../../lib/assistantRulesState'
+import { assistantRulesState, useAssistantRulesStuckNotice } from '../../lib/assistantRulesState'
+import { useReplica } from '../../lib/replica'
 import { AssistantOnboarding } from './AssistantOnboarding'
 import { QuickChatSettingsGroup } from './ComputerHomeSettings'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
@@ -200,7 +201,7 @@ export function AssistantShellHost() {
     return () => window.clearInterval(timer)
   }, [contact, ownerUserId])
   const preparing = !contact && (snapshot?.state === 'provisioning' || localPreparing)
-  const rules = useAssistantRulesState()
+  const rules = useReplica(assistantRulesState, [])
   useAssistantRulesStuckNotice(rules.state === 'value' && rules.value.stuck)
   // 它已经有了、这台电脑上那一次开通却没走完(开通页没等到它起来):接着推完,让它先开口(见 lib/assistantSetupFinish)。
   const contactId = contact?.id ?? null
