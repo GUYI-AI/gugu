@@ -17,7 +17,6 @@ import {
   firstMountedProjectId,
   getProjectStore,
 } from '../projects/stores/project-selectors';
-import { useProjectGitContext } from '../sessions/create-session-modal/use-project-git-context';
 import { useSessionName } from '../sessions/create-session-modal/use-session-name';
 import { useWorkspaceConfig } from '../sessions/create-session-modal/use-workspace-config';
 import { useInitialSessionState } from '../sessions/session-config/initial-session-section';
@@ -112,7 +111,7 @@ export function useAutomationFormState(
     initialSession.setSessionView(sessionViewOfRuntime(seedType));
   }
 
-  const { repositoryWorkspaceId } = useProjectGitContext(effectiveProjectId);
+  const repositoryWorkspaceId = (effectiveProjectId ? asMounted(getProjectStore(effectiveProjectId)) : undefined)?.data.repositoryWorkspaceId ?? null;
 
   const sessionName = useSessionName({
     generatedName: seedConfig?.sessionConfig.name,
