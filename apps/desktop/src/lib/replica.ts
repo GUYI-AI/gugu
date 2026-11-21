@@ -523,7 +523,7 @@ export type Replica<A extends unknown[], V> = {
   at(...args: A): { set(value: V | ((old: V | undefined) => V | undefined)): void }
   /** Mark stale and read again where shown; without arguments, every entry of this model. */
   refresh(...args: Partial<A>): Promise<void>
-  /** Read again now, shown or not (`refresh` only marks an entry nobody shows), and return the new value. */
+  /** Read again now, shown or not (`refresh` only marks an entry nobody shows), and return the new value: never the answer of a read begun before this call. */
   reread(...args: A): Promise<V>
   /** Hear when an entry changes, for code outside React (React: `useReplica`). Arguments left out match any; only the current account's entries. */
   subscribe(args: Partial<A>, listener: (entry: Entry<A, V>) => void): () => void
@@ -694,10 +694,15 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       if (owner) await refreshWhere(definition as Definition<unknown[], unknown>, matching(definition as Definition<unknown[], unknown>, owner, args))
     },
     reread: async (...args) => {
+      const k = requireKey(args)
       await model.refresh(...args)
-      // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once). Not shown, read now.
-      const state = queryClient.getQueryState(requireKey(args))
-      return state?.data !== undefined && !state.isInvalidated ? state.data as V : model.fetch(...args)
+      // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once).
+      const state = queryClient.getQueryState(k)
+      if (state?.data !== undefined && !state.isInvalidated) return state.data as V
+      // Not shown: a read already on its way began before this call. Let it land, then read anew (❌ answer with it).
+      const query = queryClient.getQueryCache().find({ queryKey: k, exact: true })
+      if (query && query.state.fetchStatus !== 'idle') await query.promise?.catch(() => undefined)
+      return queryClient.fetchQuery({ ...options(k), staleTime: 0 }) as Promise<V>
     },
   }
   models.set(definition.name, model as unknown as Replica<unknown[], unknown>)
