@@ -18,10 +18,8 @@
 .first-run-harness-choice h2 { margin: 0; font-size: var(--font-title); line-height: var(--lh-title); font-weight: 600; color: var(--text-primary); }
 .first-run-harness-actions { margin-top: 0; }
 .first-run-harness-actions > button { width: 100%; }
-.first-run-install-notification { position: fixed; right: 16px; bottom: 16px; z-index: var(--z-toast); width: min(340px, calc(100vw - 32px)); padding: var(--spacing-lg); border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--card); color: var(--text-primary); font-size: var(--font-body); line-height: var(--lh-body); }
-.first-run-install-notification-heading, .first-run-install-task-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-.first-run-install-notification-heading strong { font-weight: 500; }
-.first-run-install-task { margin-top: var(--spacing-md); }
+.first-run-install-task-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
+.first-run-install-task + .first-run-install-task { margin-top: var(--spacing-md); }
 .first-run-install-task-heading > span:not(:first-child) { color: var(--text-secondary); }
 @media (max-width: 480px) { .first-run-harness-choices { grid-template-columns: 1fr; } }
 /* 全屏步骤(规范 3):顶上「n / N」,底部左「上一步」右主按钮。 */

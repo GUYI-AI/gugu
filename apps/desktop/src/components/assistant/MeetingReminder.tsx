@@ -7,8 +7,8 @@ import { platform } from '../../platform'
 import { readAssistantShellBridge } from '../../lib/assistantShellBridge'
 import type { VoiceNoteWindowRequest } from '../../session/shared/extensions/voice-note-session'
 import { Button } from '../ui/Button'
-import { IconButton } from '../ui/IconButton'
-import { Mic, X } from '../../lib/icons'
+import { Mic } from '../../lib/icons'
+import { LiveNotice } from '../../lib/notices'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { useDevicePreferences } from '../../lib/devicePreferences'
@@ -60,7 +60,7 @@ function clock(iso: string | null): string {
 
 /**
  * #7199 会议提醒:这台电脑日历里有会快开始时(前 1 分钟,开始后 5 分钟内),
- * 右上角一张小卡「会议即将开始 · 开始录音」;窗口不在前台时再发一条系统通知。点「开始录音」= 打开助理 App 开录,
+ * 提示栈里一张常驻卡「会议即将开始 · 开始录音」;窗口不在前台时再发一条系统通知。点「开始录音」= 打开助理 App 开录,
  * 录下的这条带着这场会的名字交给助理。日历读的是「设备 → 这台电脑能做的事」里连上的那一份,没连上就不提醒。
  * 只在有个人助理时看(录下的要交给它整理)。
  */
@@ -102,53 +102,38 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     return () => window.clearInterval(timer)
   }, [enabled])
 
-  // 没有个人助理了(退出登录、云电脑没了):挂着的这张也收起。
-  if (!meeting || !enabled) return null
-
-  const start = async () => {
+  const start = async (current: UpcomingMeeting) => {
     setStarting(true)
     setFailed(false)
     window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
     // The assistant's page (its App), where the recording bar shows; the recording itself is the host's.
     openAssistantEntry()
-    const ok = await startMeetingNote({ title: meeting.title, start: meeting.start, end: meeting.end }).catch(() => false)
+    const ok = await startMeetingNote({ title: current.title, start: current.start, end: current.end }).catch(() => false)
     setStarting(false)
     if (ok) setMeeting(null)
     else setFailed(true)
   }
 
-  // 一张小卡:右上角浮着,左边一道强调色,标题 + 「HH:mm - HH:mm」,右边「开始录音」,角上关掉。
+  // 一张常驻提示:标题 +「会议 · HH:mm - HH:mm」,「开始录音」,关闭钮收起。没有个人助理了(退出登录、云电脑没了)也收起。
+  if (!meeting || !enabled) return null
   return (
-    <div
-      role="alertdialog"
-      aria-label={t('meeting.heading')}
-      data-testid="meeting-reminder"
-      className="fixed right-4 top-12 z-[var(--z-banner)] flex w-[380px] max-w-[calc(100vw-32px)] items-center gap-3 rounded-[var(--radius-surface)] bg-[var(--menu-bg)] py-3 pl-3 pr-2 text-[var(--menu-fg)] shadow-[var(--shadow-lift)]"
-    >
-      <span aria-hidden className="h-10 w-1 shrink-0 rounded-full bg-[var(--danger)]" />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <strong className="truncate text-[length:var(--font-body)] font-semibold">{meeting.title || t('meeting.heading')}</strong>
-        <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-          {[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}
-        </span>
-        {failed ? <span className="text-[length:var(--font-caption)] text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}
-      </div>
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={starting || recording}
-        title={recording ? t('meeting.recording') : undefined}
-        onClick={() => void start()}
-        data-testid="meeting-reminder-start"
-      >
-        <span className="inline-flex items-center gap-1 [&>svg]:h-4 [&>svg]:w-4">
-          <Mic />
-          {recording ? t('meeting.recording') : t('meeting.startRecording')}
-        </span>
-      </Button>
-      <IconButton size="sm" aria-label={t('meeting.dismiss')} title={t('meeting.dismiss')} onClick={() => setMeeting(null)}>
-        <X />
-      </IconButton>
-    </div>
+    <LiveNotice noticeKey="meeting-reminder" title={meeting.title || t('meeting.heading')} ongoing onDismiss={() => setMeeting(null)}
+      description={<div data-testid="meeting-reminder" className="flex flex-col items-start gap-2">
+        <span>{[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}</span>
+        {failed ? <span className="text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={starting || recording}
+          title={recording ? t('meeting.recording') : undefined}
+          onClick={() => void start(meeting)}
+          data-testid="meeting-reminder-start"
+        >
+          <span className="inline-flex items-center gap-1 [&>svg]:h-4 [&>svg]:w-4">
+            <Mic />
+            {recording ? t('meeting.recording') : t('meeting.startRecording')}
+          </span>
+        </Button>
+      </div>} />
   )
 }

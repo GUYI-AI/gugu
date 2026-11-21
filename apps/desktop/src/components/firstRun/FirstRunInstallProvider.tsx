@@ -8,6 +8,7 @@ import { getAgentInstallErrorPresentation } from '@renderer/features/settings/ag
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { rpc } from '@renderer/lib/ipc'
 import { Button } from '../ui/Button'
+import { LiveNotice } from '@/lib/notices'
 import { FirstRunInstallContext } from './first-run-install-context'
 
 type InstallTask = { id: FirstRunHarness; state: 'installing' | 'done' | 'failed'; error?: string }
@@ -53,14 +54,11 @@ export function FirstRunInstallProvider({ children, showNotification = true }: {
     <FirstRunInstallContext.Provider value={start}>
       {children}
       {showNotification && tasks.length > 0 && !hidden ? (
-        <aside className="first-run-install-notification" aria-label={t('firstRun.backgroundInstall')} aria-live="polite" data-testid="first-run-install-notification">
-          <div className="first-run-install-notification-heading">
-            <strong>{t('firstRun.backgroundInstall')}</strong>
-            <Button size="sm" variant="ghost" onClick={() => setHidden(true)}>{t('firstRun.hideInstall')}</Button>
-          </div>
-          {tasks.map((task) => <InstallTaskRow key={task.id} task={task} onRetry={() => start([task.id])}
-            onCancel={() => { void rpc.agents.cancelInstall(task.id).catch((error: unknown) => update({ ...task, error: messageForUser(error) })) }} />)}
-        </aside>
+        <LiveNotice noticeKey="first-run-install" title={t('firstRun.backgroundInstall')} ongoing onDismiss={() => setHidden(true)}
+          description={<div data-testid="first-run-install-notification">
+            {tasks.map((task) => <InstallTaskRow key={task.id} task={task} onRetry={() => start([task.id])}
+              onCancel={() => { void rpc.agents.cancelInstall(task.id).catch((error: unknown) => update({ ...task, error: messageForUser(error) })) }} />)}
+          </div>} />
       ) : null}
     </FirstRunInstallContext.Provider>
   )

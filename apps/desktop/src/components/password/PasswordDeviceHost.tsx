@@ -1,12 +1,10 @@
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { createPortal } from 'react-dom'
 import type { PasswordSyncRequest } from '@gugu/core/shared/passwordBetaProtocol'
 import { usePasswordVault, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
-import { X } from '@/lib/icons'
+import { LiveNotice } from '@/lib/notices'
 import { Button } from '../ui/Button'
-import { IconButton } from '../ui/IconButton'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from '../settings/SettingsPrimitives'
@@ -17,7 +15,7 @@ const name = (t: TFunction<'settings'>, request: PasswordSyncRequest) => request
 
 /**
  * The key to the passwords travels when a device joins the account, not from a settings page. On a device that already
- * has the passwords, a newly signed-in one asks here; on the new one, the same digits show in a corner card that blocks
+ * has the passwords, a newly signed-in one asks here; on the new one, the same digits show in a notice that blocks
  * nothing. Either can be put aside; the notification list brings it back. Mounted once, above the whole signed-in app.
  */
 export function PasswordDeviceHost() {
@@ -57,24 +55,20 @@ export function PasswordDeviceHost() {
           onClick={() => { void run({ type: 'sync-reject', deviceId: request.deviceId }) }}>{t(request.stage === 'mismatch' ? 'passwords.deny' : 'passwords.notMe')}</Button>
       </div>
     </Sheet>}
-    {/* At the document root, like the sheets: a freshly signed-in device is usually still in the first-run guide,
-        which keeps the app mounted but not rendered. */}
-    {joining && !cardClosed && createPortal(<div role="status" data-testid="password-join-card"
-      className="fixed right-4 top-12 z-[var(--z-banner)] flex w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 rounded-[var(--radius-surface)] bg-[var(--menu-bg)] p-4 text-[var(--menu-fg)] shadow-[var(--shadow-lift)]">
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1 text-[length:var(--font-body)] font-semibold">{t(joining.state === 'refused' ? 'passwords.joinRefused' : 'passwords.joinAsk')}</div>
-        <IconButton size="sm" aria-label={t('passwords.close')} onClick={() => setCardClosed(true)}><X size={14} /></IconButton>
-      </div>
-      {joining.state === 'refused'
-        ? <><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{t('passwords.refusedHint')}</div>
-          {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
-          <Button size="sm" className="self-start" disabled={busy} data-testid="password-join-again" onClick={() => { void run({ type: 'sync-ask-again' }) }}>{t('passwords.askAgain')}</Button></>
-        : joining.state === 'joining' && joining.code
-          ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{t('passwords.joinCompare')}</div></>
-          : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{t('passwords.joinOpenOther')}</div>}
-      {stale}
-      {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>{t('passwords.useRecoveryInstead')}</Button>}
-    </div>, document.body)}
+    {/* A freshly signed-in device is usually still in the first-run guide; the one notice outlet is mounted above it. */}
+    {joining && !cardClosed && <LiveNotice noticeKey="password-join" title={t(joining.state === 'refused' ? 'passwords.joinRefused' : 'passwords.joinAsk')}
+      ongoing onDismiss={() => setCardClosed(true)}
+      description={<div role="status" data-testid="password-join-card" className="flex flex-col items-start gap-2">
+        {joining.state === 'refused'
+          ? <><div>{t('passwords.refusedHint')}</div>
+            {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+            <Button size="sm" disabled={busy} data-testid="password-join-again" onClick={() => { void run({ type: 'sync-ask-again' }) }}>{t('passwords.askAgain')}</Button></>
+          : joining.state === 'joining' && joining.code
+            ? <><Code value={joining.code} /><div>{t('passwords.joinCompare')}</div></>
+            : <div>{t('passwords.joinOpenOther')}</div>}
+        {stale}
+        {joining.recovery && <Button variant="ghost" size="sm" onClick={() => { clear(); setRecovering(true) }}>{t('passwords.useRecoveryInstead')}</Button>}
+      </div>} />}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}
       onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setRecovering(false); setNewCode(reply.recoveryCode) } }} />}
     {newCode && <RecoveryCodeSheet code={newCode} fresh onClose={() => setNewCode(undefined)} />}

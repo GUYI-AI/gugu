@@ -1,5 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import type { SessionPaneTab } from '@gugu/session-core/session-record/contract';
 import type { TabOpenIntent } from '@shared/view-state';
 import { closeSessionPaneTab, sessionPaneTabs } from './session-pane-tabs';
@@ -72,7 +72,7 @@ export async function openPathWithFailureToast(
   const result = await rpc.app.openPath(filePath, workspace);
   if (!result.success) {
     sessionLog.error({ err: result.error, filePath }, 'openPath failed');
-    toast.error(translateSessionMessage('taskError.openFileFailed', { path: '[path]' }), { description: messageForUser(result.error) });
+    notify({ title: translateSessionMessage('taskError.openFileFailed', { path: '[path]' }), description: messageForUser(result.error), tier: 'error' });
   }
 }
 
@@ -84,7 +84,7 @@ async function openDirectoryInFileManager(dirPath: string): Promise<void> {
   const result = await rpc.app.openIn({ app: 'finder', path: dirPath });
   if (!result?.success) {
     sessionLog.error({ err: result?.error, dirPath }, 'openIn(finder) failed');
-    toast.error(translateSessionMessage('taskError.openFileFailed', { path: '[path]' }), { description: messageForUser(result?.error) });
+    notify({ title: translateSessionMessage('taskError.openFileFailed', { path: '[path]' }), description: messageForUser(result?.error), tier: 'error' });
   }
 }
 
@@ -267,7 +267,7 @@ export async function openExternalFilePath(
       .catch(() => null);
     if (stat?.success) {
       if (!stat.data.exists) {
-        toast.error(translateSessionMessage('taskError.fileNotFound', { path: filePath }));
+        notify({ title: translateSessionMessage('taskError.fileNotFound', { path: filePath }), tier: 'error' });
         return;
       }
       if (stat.data.isDirectory) {
@@ -329,7 +329,7 @@ export function makeFileLinkHandlers(
       // A click on a link: what fails is said with the same toast an open that fails says, not left in the console.
       await openFileInSessionEditor(projectId, sessionId, filePath, { ...opts, ...(at ? { at } : {}) }).catch((error: unknown) => {
         sessionLog.error({ err: String(error), filePath }, 'opening a linked file failed');
-        toast.error(translateSessionMessage('taskError.openFileFailed', { path: '[path]' }), { description: messageForUser(error) });
+        notify({ title: translateSessionMessage('taskError.openFileFailed', { path: '[path]' }), description: messageForUser(error), tier: 'error' });
       });
     },
     onOpenExternal: (filePath) => {

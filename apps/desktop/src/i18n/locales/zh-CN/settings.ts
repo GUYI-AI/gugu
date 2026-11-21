@@ -534,7 +534,6 @@ export default {
       "refused": "「{{name}}」上的咕咕 server 拒绝了连接。",
       "notSignedIn": "「{{name}}」未登录，请在「设置 → 设备」中重新添加。",
       "notInstalled": "「{{name}}」上未安装咕咕 server，请在「设置 → 设备」中重新添加。",
-      "dismiss": "收起"
     },
     "approveServer": {
       "title": "批准机器",
@@ -1363,7 +1362,6 @@ export default {
     "notMe": "不是我",
     "joinRefused": "另一台设备已拒绝此电脑使用你的密码",
     "joinAsk": "请在另一台设备上允许此电脑使用你的密码",
-    "close": "关闭",
     "refusedHint": "如为误操作，可重新申请。",
     "askAgain": "重新申请",
     "joinCompare": "两台设备上的数字一致时，请在该设备上点击「允许」。",

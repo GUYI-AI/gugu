@@ -534,7 +534,6 @@ export default {
       "refused": "Gugu server on {{name}} refused the connection.",
       "notSignedIn": "{{name}} is not signed in. Re-add it in Settings → Devices.",
       "notInstalled": "Gugu server is not installed on {{name}}. Re-add it in Settings → Devices.",
-      "dismiss": "Dismiss"
     },
     "approveServer": {
       "title": "Approve machine",
@@ -1363,7 +1362,6 @@ export default {
     "notMe": "Not me",
     "joinRefused": "Another device declined to let this computer use your passwords",
     "joinAsk": "Allow this computer to use your passwords on another device",
-    "close": "Close",
     "refusedHint": "If this was a mistake, request again.",
     "askAgain": "Request again",
     "joinCompare": "When the digits on both devices match, click Allow on the other device.",

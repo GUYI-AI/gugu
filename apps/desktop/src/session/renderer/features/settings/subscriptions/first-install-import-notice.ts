@@ -29,7 +29,7 @@ export function showFirstInstallImportNotice(homes: readonly AgentHomeScan[]): v
   const t = i18n.getFixedT(null, 'main')
   notify({
     key, title: t('firstInstallImport.title'), description: t('firstInstallImport.description'),
-    ongoing: true, presentation: 'first-install-import', onDismiss: handled,
+    ongoing: true, onDismiss: handled,
     action: { label: t('settings.dataImport.action'), onClick: () => {
       openShellSettings('data-import')
       handled()

@@ -83,6 +83,25 @@ const childProcessImportGate = ['node:child_process', 'child_process'].map((name
     '起子进程用 @gugu/core/local/childProcess:同一套 API,windowsHide 默认 true(Windows 上不弹黑框)。要人看见窗口的(「用 X 打开」)显式写 windowsHide: false。'
 }))
 
+// Renderer value imports that would pull Node-only code into the page (#6264).
+const rendererImportGates = [
+  {
+    name: '@gugu/session-core/acp',
+    allowTypeImports: true,
+    message: 'Renderer value imports must use @gugu/session-core/acp/client.'
+  },
+  {
+    name: '@gugu/session-core/session-record',
+    allowTypeImports: true,
+    message: '渲染进程的值导入走 @gugu/session-core/session-record/contract:根出口带 Node-only 的记录源,会让整页白屏(#6264)。'
+  }
+]
+// One notice host, one position, one outlet: only lib/notices and NoticeHost talk to sonner.
+const noticeOutletGate = {
+  name: 'sonner',
+  message: 'Notices go through lib/notices (notify / dismissNotice / LiveNotice).'
+}
+
 module.exports = {
   root: true,
   env: { browser: true, es2020: true, node: true },
@@ -176,18 +195,19 @@ module.exports = {
         '@typescript-eslint/no-restricted-imports': [
           'error',
           {
-            paths: [
-              {
-                name: '@gugu/session-core/acp',
-                allowTypeImports: true,
-                message: 'Renderer value imports must use @gugu/session-core/acp/client.'
-              },
-              {
-                name: '@gugu/session-core/session-record',
-                allowTypeImports: true,
-                message: '渲染进程的值导入走 @gugu/session-core/session-record/contract:根出口带 Node-only 的记录源,会让整页白屏(#6264)。'
-              }
-            ]
+            paths: [...rendererImportGates, noticeOutletGate]
+          }
+        ]
+      }
+    },
+    {
+      // The one notice outlet itself (same rule, minus the sonner gate: overrides replace it whole).
+      files: ['apps/desktop/src/lib/notices.tsx', 'apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/**/*.test.{ts,tsx}'],
+      rules: {
+        '@typescript-eslint/no-restricted-imports': [
+          'error',
+          {
+            paths: rendererImportGates
           }
         ]
       }
