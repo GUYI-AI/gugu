@@ -12,8 +12,9 @@ import { ct } from './contactsPanelStyles'
 
 const drawerClass = 'relative flex w-[400px] min-w-[360px] shrink-0 flex-col border-l border-[var(--border)] empty:hidden'
 
+// The drawer is the window's right column: its close leaves the window controls their room (`--titlebar-controls-width`, Linux).
 export function DrawerClose({ onClose }: { onClose: () => void }) {
-  return <span className="absolute right-3 top-3 z-10"><IconButton title={ct('common.close')} onClick={onClose}><X size={14} /></IconButton></span>
+  return <span className="absolute right-[calc(0.75rem+var(--titlebar-controls-width,0px))] top-3 z-10"><IconButton title={ct('common.close')} onClick={onClose}><X size={14} /></IconButton></span>
 }
 
 export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDrawer, testId, children }: {
