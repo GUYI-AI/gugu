@@ -153,6 +153,24 @@ it('opens the draft photo in the shared image viewer with the selected bytes', a
   }
 })
 
+it('an edited draft image takes the original\'s place, and its marker notes join the draft text', async () => {
+  const view = vi.fn<(request: ImageViewerRequest) => void>()
+  const unregister = registerImageViewerHost(view)
+  try {
+    await mount(<ChatMessageComposer chatId="attachment-edit-image" isGroupChat onSend={vi.fn(async () => {})} />)
+    await pick('photo', ['first.png', 'second.png'])
+    await act(async () => (tiles()[0] as HTMLElement).click())
+    const image = view.mock.calls[0]![0].items[0]!
+    const edited = new File([await (await fetch(await image.preview!())).blob()], 'first-annotated.png', { type: 'image/png' })
+    image.release?.()
+    await act(async () => image.replace!(edited, '① 这里'))
+    await vi.waitFor(() => expect([...tiles()].map(tile => tile.getAttribute('title'))).toEqual([expect.stringContaining('first-annotated.png'), expect.stringContaining('second.png')]))
+    expect(editor().textContent).toContain('① 这里')
+  } finally {
+    unregister()
+  }
+})
+
 it('removing the final attachment keeps the menu hidden for text and keyboard editing hides the whole row', async () => {
   await mount(<div data-chat-composer="">{menu}<ChatMessageComposer chatId="attachment-and-text" isGroupChat onSend={vi.fn(async () => {})} /></div>)
   await pick('file', ['keep.txt'])
