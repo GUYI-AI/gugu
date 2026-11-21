@@ -126,7 +126,11 @@ function osNow(): PhoneOsState | null {
   return reading.state === 'value' ? reading.value : null
 }
 
-/** All readers share ordering, including the settings page while both endpoints are off. */
+/**
+ * A new read of the OS state (heartbeat, foreground return, the settings page through refreshPhoneDevice); only the
+ * latest one started lands. ❌ `phoneOsState.reread()`: on an entry nobody shows it joins a read already on its way, which
+ * may have begun before the person changed a permission in the system settings.
+ */
 async function readLatestOs(isCurrent: () => boolean): Promise<boolean> {
   const revision = ++osReadRevision
   let os: PhoneOsState
