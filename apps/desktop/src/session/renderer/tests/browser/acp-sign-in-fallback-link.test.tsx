@@ -35,17 +35,20 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
   AcpAuthLoginBinding: {
     create: async () => ({
       status: {
-        current: () => ({
-          status: { kind: 'unauthenticated' },
-          login: {
-            methodId: 'codebuddy-international',
-            startedAt: 1,
-            transport: 'acp-authenticate',
-            pendingUrl: { id: 'u1', url: LINK },
-            exit: null,
-            outcome: null,
-          },
-        }),
+        follow: (listener: (state: unknown) => void) => {
+          listener({
+            status: { kind: 'unauthenticated' },
+            login: {
+              methodId: 'codebuddy-international',
+              startedAt: 1,
+              transport: 'acp-authenticate',
+              pendingUrl: { id: 'u1', url: LINK },
+              exit: null,
+              outcome: null,
+            },
+          });
+          return () => {};
+        },
       },
       dispose: mocks.dispose,
     }),

@@ -9,6 +9,7 @@ const hoisted = vi.hoisted(() => ({
   replicas: [] as FakeReplica[],
   failingTopics: new Set<string>(),
   cancelLogin: { calls: 0 },
+  heldFeeds: { count: 0 },
 }));
 
 vi.mock('@gugu/session-wire', async (importOriginal) => {
@@ -53,9 +54,20 @@ vi.mock('../agent-config/runtime-client', () => ({
       hoisted.cancelLogin.calls += 1;
       return { success: true, data: undefined };
     },
-    agents: { state: () => ({ topic: 'agents.list' }) },
     loginOutput: { handle: () => ({ topic: 'loginOutput' }) },
   }),
+}));
+// 登录态读的是设置页那份 `agentConfigList`:只记它的推送挂着几份(结构量:失败以后还挂着的份数)。
+vi.mock('../stores/live/agent-config-list', () => ({
+  agentConfigList: {
+    hold: () => {
+      hoisted.heldFeeds.count += 1;
+      return () => { hoisted.heldFeeds.count -= 1; };
+    },
+    reread: async () => ({}),
+    peek: () => ({ state: 'unknown' }),
+    subscribe: () => () => {},
+  },
 }));
 vi.mock('../pty/xterm-log-sink', () => ({ createXtermLogSink: () => ({ reset: () => {}, append: () => {} }) }));
 const { AcpLiveSession } = await import('./acp-live-session');
@@ -67,6 +79,7 @@ beforeEach(() => {
   hoisted.replicas.length = 0;
   hoisted.failingTopics.clear();
   hoisted.cancelLogin.calls = 0;
+  hoisted.heldFeeds.count = 0;
 });
 
 describe('create() that fails on one replica releases the ones it already holds', () => {
@@ -86,7 +99,7 @@ describe('create() that fails on one replica releases the ones it already holds'
     expect(undisposed()).toEqual([]);
   });
 
-  it('AcpAuthLoginBinding: the login output fails → the status replica is disposed and the started login is cancelled', async () => {
+  it('AcpAuthLoginBinding: the login output fails → the status feed is released and the started login is cancelled', async () => {
     hoisted.failingTopics.add('loginOutput');
 
     await expect(
@@ -97,8 +110,9 @@ describe('create() that fails on one replica releases the ones it already holds'
       })
     ).rejects.toThrow('snapshot failed: loginOutput');
 
-    expect(hoisted.replicas.map((replica) => replica.topic)).toEqual(['agents.list', 'loginOutput']);
+    expect(hoisted.replicas.map((replica) => replica.topic)).toEqual(['loginOutput']);
     expect(undisposed()).toEqual([]);
+    expect(hoisted.heldFeeds.count).toBe(0);
     expect(hoisted.cancelLogin.calls).toBe(1);
   });
 });

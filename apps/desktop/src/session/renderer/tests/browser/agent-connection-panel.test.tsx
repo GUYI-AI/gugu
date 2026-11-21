@@ -168,7 +168,12 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
       resize: () => {},
       markUrlHandled: () => {},
       dispose: () => {},
-      status: { current: () => ({ status: { kind: 'unauthenticated' }, login: null }) }
+      status: {
+        follow: (listener: (state: unknown) => void) => {
+          listener({ status: { kind: 'unauthenticated' }, login: null })
+          return () => {}
+        }
+      }
     })
   }
 }))
