@@ -184,25 +184,26 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
     return opened
   }
 
+  /** Chats not read yet are read together, in one IndexedDB transaction. */
   async function load(rows: AccountRows, chatIds: Iterable<string>): Promise<void> {
-    await Promise.all([...chatIds].filter(chatId => !rows.loaded.has(chatId)).map(chatId => {
-      const key = JSON.stringify([rows.accountId, chatId])
-      let pending = loads.get(key)
-      if (!pending) {
-        pending = (async () => {
-          const db = await handle.get()
-          const transaction = db.transaction(['messages', 'ranges', 'tombstones'], 'readonly')
+    const keyOf = (chatId: string) => JSON.stringify([rows.accountId, chatId])
+    const missing = [...new Set(chatIds)].filter(chatId => !rows.loaded.has(chatId) && !loads.has(keyOf(chatId)))
+    if (missing.length) {
+      const reading = (async () => {
+        const db = await handle.get()
+        const transaction = db.transaction(['messages', 'ranges', 'tombstones'], 'readonly')
+        await Promise.all(missing.map(async chatId => {
           const [messages, ranges, tombstones] = await Promise.all([
             requestResult(transaction.objectStore('messages').index('chat').getAll([rows.accountId, chatId])) as Promise<MessageRecord[]>,
             requestResult(transaction.objectStore('ranges').getAll(chatRange(rows.accountId, chatId))) as Promise<RangeRecord[]>,
             requestResult(transaction.objectStore('tombstones').getAll(chatRange(rows.accountId, chatId))) as Promise<TombstoneRecord[]>,
           ])
           rows.fill(chatId, messages, ranges, tombstones)
-        })().finally(() => loads.delete(key))
-        loads.set(key, pending)
-      }
-      return pending
-    }))
+        }))
+      })().finally(() => { for (const chatId of missing) loads.delete(keyOf(chatId)) })
+      for (const chatId of missing) loads.set(keyOf(chatId), reading)
+    }
+    await Promise.all([...new Set(chatIds)].flatMap(chatId => loads.get(keyOf(chatId)) ?? []))
   }
 
   /** Runs the contract in memory, then commits its writes in one IndexedDB transaction. Any failure drops the memory copy. */
