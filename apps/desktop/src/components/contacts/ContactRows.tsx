@@ -2,6 +2,7 @@ import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/cont
 import type { ContactRowMenuActions } from './ContactRowActions'
 import { GroupSectionRow, PersonContactRow } from './ContactRowItems'
 import { ct } from './contactsPanelStyles'
+import { useGroupRowFacts } from './groupRowFacts'
 
 // 通讯录分组页 / 搜索里人行、群行、agent 右键菜单要的那一份选中态与动作:ContactsPanel 给一次,各处读这里。
 /** 一个分组里每种行要的那一份选中态与动作(右键菜单同款 chat-scoped 动作,#886 / #1694)。由 ContactsPanel 给一次。 */
@@ -30,6 +31,7 @@ export type ContactsRowHandlers = {
 }
 
 export function useContactRowRenderers(h: ContactsRowHandlers) {
+  const groupFacts = useGroupRowFacts()
   const hasContactMenu = !!(h.onPin && h.onMarkUnread && h.onToggleNotif && h.onRemove)
   const contactMenu = (c: ContactUser): ContactRowMenuActions | undefined => !hasContactMenu ? undefined : {
     removeLabel: h.getContactRemoveLabel(c), contact: c, // #5645 → 「设置备注」
@@ -63,7 +65,7 @@ export function useContactRowRenderers(h: ContactsRowHandlers) {
       />
     ),
     renderGroup: (g: ContactGroupChat) => (
-      <GroupSectionRow key={g.id} group={g} selected={g.id === h.selectedGroupId} pinned={pinnedGroup(g)} onSelect={() => h.onSelectGroup(g)} menu={groupMenu(g)} />
+      <GroupSectionRow key={g.id} group={g} selected={g.id === h.selectedGroupId} pinned={pinnedGroup(g)} facts={groupFacts(g)} onSelect={() => h.onSelectGroup(g)} menu={groupMenu(g)} />
     ),
   }
 }
