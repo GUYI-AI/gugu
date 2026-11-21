@@ -18,7 +18,7 @@ function authErrorMessage(error: AgentConfigAuthError): string {
  *
  * 状态由 agent-config worker 的 `AgentAuthManager` 探出来并发布进 `agents.list` 这份 live state
  * (`packages/session-runtime/src/agent-config/runtime/auth.ts`);登录终端(`AgentSignInModal` 经
- * `AcpAuthLoginBinding`)订阅的就是同一份。所以这里只做两件事:
+ * `AcpAuthLoginBinding`)读的就是这同一个 `agentConfigList`。所以这里只做两件事:
  *
  *  1. 订阅那份 state,取这一家的 `auth` 格 —— 登录终端跑完把新读数发布进来时,这一行**自己**就翻。
  *  2. 挂载时请 worker 探一次(`refreshAuthStatus`,在途按「这一家 × 这一份 CLI」去重)。

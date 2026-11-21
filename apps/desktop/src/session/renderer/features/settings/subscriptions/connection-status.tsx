@@ -3,8 +3,9 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { resolveAccountTargets } from '../agents-page/agent-account'
-import { useListedConnections } from './listed-connections'
-import { errorText, useSubscriptionPlan } from './subscription-queries'
+import { refreshFailure } from '@/lib/replica'
+import { useConnectionDetails, useListedConnections } from './listed-connections'
+import { useSubscriptionPlan } from './subscription-queries'
 import { payerLine } from './subscription-view'
 
 /**
@@ -19,14 +20,21 @@ export function useConnectionStatus(
   const { translate } = useSessionMessages()
   const { connections, form } = useListedConnections(machine, agent)
   const currentConnection = connections.state === 'value' ? connections.value.find((connection) => connection.current) : undefined
-  // 有连接可管的家先等连接读回来:套餐、额度都按那个连接问。
+  // 有连接可管的家先等连接读回来:套餐按那个连接问,读的是那个连接的那一份读数(与菜单里那一行同一份)。
   const ready = form === null || !!currentConnection
-  const plan = useSubscriptionPlan(machine, agent.id, currentConnection?.id, ready)
+  const details = useConnectionDetails(machine, agent.id, form !== null ? currentConnection?.id : undefined)
+  const providerPlan = useSubscriptionPlan(machine, agent.id, form === null)
   const { auth } = useAgentAuthStatus(agent.id, undefined, { machine })
-  const description = plan.state === 'value'
-    ? payerLine(plan.value, translate, false)
-    : plan.state === 'error'
-      ? translate('subscriptions.unavailable.error', { message: errorText(plan.error) })
+  const payer = form === null
+    ? providerPlan.state === 'value' ? providerPlan.value : undefined
+    : details.state === 'value' ? details.value.plan ?? undefined : undefined
+  const failure = form === null
+    ? providerPlan.state === 'error' ? providerPlan.error.message : null
+    : details.state === 'value' ? details.value.planError ?? null : refreshFailure(details)?.message ?? null
+  const description = payer
+    ? payerLine(payer, translate, false)
+    : failure !== null
+      ? translate('subscriptions.unavailable.error', { message: failure })
       : null
   // null = 还说不出:它要用的那几份(有账号登录的家:登录态;有连接的家:连接;套餐)还没读到。
   // 一次写定,❌ 先写「查询中」、再写付费方、再换成账号。没有账号登录的家(Pi 这类)登录态永远是空的,不等它。
@@ -41,9 +49,8 @@ export function useConnectionStatus(
           : auth?.status.kind === 'authenticated' && auth.status.account
             ? auth.status.account
             : description
-  const payer = plan.state === 'value' ? plan.value : undefined
   const badge = payer?.plan ?? (payer?.payer === 'api-key' || payer?.payer === 'custom-endpoint' ? 'API' : undefined)
-  return { identity, badge, plan, ready, currentConnection, connections }
+  return { identity, badge, ready, currentConnection, connections }
 }
 
 export function ConnectionStatusLine({

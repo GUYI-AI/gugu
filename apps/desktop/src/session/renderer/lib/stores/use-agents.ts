@@ -48,7 +48,7 @@ export function useManagementAgent(id: string) {
  */
 export function useAgentIcon(id: string, enabled = true): AgentIconAsset | null | undefined {
   // `enabled: false`: the caller already holds the asset (a catalog row), so the table is not asked for.
-  const icons = useReplica(agentIcons, enabled ? [] : null);
+  const icons = useReplica(agentIcons, enabled ? [null] : null);
   if (icons.state === 'unknown') return undefined;
   return icons.state === 'value' ? icons.value[id] ?? null : null;
 }

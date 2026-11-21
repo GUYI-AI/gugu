@@ -2,7 +2,6 @@ import { ExternalLink } from '@/lib/icons'
 // 「复制去那台机器上敲」的一行命令:与设置 → 设备里那几处同一个 CommandBlock,❌ 另写一份孪生体。
 import { CommandBlock } from '@/components/settings/addServer/CommandBlock';
 import '@/i18n/registerSettingsCatalog';
-import { reaction } from 'mobx';
 import { useEffect, useRef, useState } from 'react';
 import { AcpAuthLoginBinding } from '@renderer/lib/acp/auth-login-binding';
 import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/agent-config';
@@ -75,7 +74,7 @@ export type AgentSignInModalArgs = {
 
 /** 登录绑定的那张面 —— 本机与远端各一种,窗口不分。 */
 type LoginBinding = Pick<AcpAuthLoginBinding, 'sendInput' | 'resize' | 'markUrlHandled' | 'dispose'> & {
-  status: { current(): AuthStatusModelState };
+  status: { follow(listener: (state: AuthStatusModelState) => void): () => void };
   /** 再问一次登录态(本机那种有;远端那台由它自己判成没成)。 */
   refreshStatus?: () => void;
 };
@@ -262,28 +261,24 @@ function LinkSignIn({
         binding.resize(LOGIN_COLS, LOGIN_ROWS);
         // 挂载这一刻的登录态是**登录前**的读数,❌ 当成本次的结果(判据与为什么见 `login-success.ts`)。
         const progress = { sawInitialReading: false };
-        stop = reaction(
-          () => binding.status.current(),
-          (current) => {
-            startedSignedOut ??= rereadOnReturn(current);
-            if (loginAttemptSucceeded(current, progress)) {
-              // 凭据已落地 ⇒ 这一趟的进程可以收掉(登完不退出的家不收就一直挂着)。
-              binding.dispose(true);
-              bindingRef.current = null;
-              onSuccessRef.current();
-              return;
-            }
-            progress.sawInitialReading = true;
-            const pending = pendingUrlToOpen(current, handled);
-            if (pending) {
-              handled.add(pending.id);
-              setLink(pending.url);
-              binding.markUrlHandled(pending.id);
-            }
-            setState(current);
-          },
-          { fireImmediately: true }
-        );
+        stop = binding.status.follow((current) => {
+          startedSignedOut ??= rereadOnReturn(current);
+          if (loginAttemptSucceeded(current, progress)) {
+            // 凭据已落地 ⇒ 这一趟的进程可以收掉(登完不退出的家不收就一直挂着)。
+            binding.dispose(true);
+            bindingRef.current = null;
+            onSuccessRef.current();
+            return;
+          }
+          progress.sawInitialReading = true;
+          const pending = pendingUrlToOpen(current, handled);
+          if (pending) {
+            handled.add(pending.id);
+            setLink(pending.url);
+            binding.markUrlHandled(pending.id);
+          }
+          setState(current);
+        });
       },
       (error: unknown) => {
         // 起不来是宿主那头的故障,原文进日志;界面只说「没有登录成功」并给「重试」。
