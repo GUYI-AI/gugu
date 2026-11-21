@@ -38,12 +38,8 @@ interface CommandPaletteProps {
 
 const GROUP_CLASS = '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-foreground/50';
 
-/** O and P differ only in their initial input; the prefix is the mode's only state. */
-export function CommandPaletteModal(props: CommandPaletteProps & BaseModalProps) {
-  return <Palette key={props.initialQuery ?? ''} {...props} />;
-}
-
-function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseModalProps) {
+/** O and P differ only in their initial input; the prefix is the mode's only state. Each opening starts fresh (ModalRenderer keys it). */
+export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseModalProps) {
   // Picking a row is the palette doing its job: close it as done (focus goes where the row leads; see @@@modal-focus-return).
   const done = () => onSuccess(undefined);
   const [query, setQuery] = useState(initialQuery);
