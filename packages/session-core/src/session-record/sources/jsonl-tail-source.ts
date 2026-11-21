@@ -53,60 +53,34 @@ export function createJsonlTailSource<S>(
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
   let prefixBytes = 0;
-  /** A whole read is running: a line asking for another read waits until it ends (`readWhole`). */
+  /** A read from `start` is running: a line asking to read again waits for its end (`readAgain`). */
   let reading = false;
+  /** What a read again starts from: `format.initial()` gives it while that read runs. */
+  let seed: S | null = null;
+  const initial = format.initial.bind(format);
+  format = { ...format, initial: () => seed === null ? initial() : structuredClone(seed) };
 
   const emit = (lines: string[], offsets: number[], file = path, seekable = true) => {
     if (stopped || !sink) return;
     const events = sink;
     emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
       file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, seekable ? offsets : undefined);
-    const next = reading ? null : format.again?.(state);
-    if (next) void replay(next).catch((error: unknown) => warn('重读失败', { path, error: (error as Error).message }));
+    if (!reading && format.again?.(state)) void whole(() => readAgain(events)).catch((error: unknown) => warn('重读失败', { path, error: (error as Error).message }));
   };
 
-  const open = (found: string): TailReader => {
-    const mine: TailReader = new TailReader(
-      found,
-      pollInterval(options),
-      {
-        // A replaced reader may still be handing over lines it read before: they are read again by its successor.
-        onLines: (lines, offsets) => { if (reader === mine) emit(lines, offsets); },
-        onRestart: (reason) => {
-          if (reader !== mine) return;
-          state = format.initial();
-          sink?.onReset(reason);
-        }
-      },
-      warn,
-      options?.fill
-    );
-    return mine;
-  };
-
-  /** Prefixes, then the record from its start; again while a line asks for it (`JsonlTailFormat.again`). */
-  const readWhole = async (read: (reader: TailReader) => Promise<void>) => {
+  const whole = async (read: () => Promise<void>) => {
     reading = true;
-    try {
-      for (;;) {
-        if (format.prefixes) await streamPrefixes(path!);
-        await read(reader!);
-        const next = stopped ? null : format.again?.(state);
-        if (!next) return;
-        sink?.onReset('source_replaced');
-        state = next;
-      }
-    } finally { reading = false; }
+    try { await read(); } finally { reading = false; }
   };
 
-  /** A tailed line asked for another read: a fresh reader reads the record again, then tails it. */
-  const replay = async (next: S) => {
-    reader?.stop();
-    sink?.onReset('source_replaced');
-    state = next;
-    reader = open(path!);
-    await readWhole((fresh) => fresh.readFromStart(emit));
-    reader?.start();
+  /** While a line asks for it (`JsonlTailFormat.again`): drop what was read, and read the record again through `start`. */
+  const readAgain = async (events: SessionRecordSourceEvents) => {
+    for (let next = format.again?.(state); next && !stopped; next = format.again?.(state)) {
+      reader?.stop();
+      events.onReset('source_replaced');
+      seed = next;
+      try { await start(events); } finally { seed = null; }
+    }
   };
 
   const streamPrefixes = async (found: string) => {
@@ -136,11 +110,24 @@ export function createJsonlTailSource<S>(
       const found = await format.resolve();
       if (stopped) return; // 找文件的工夫里已经被拆了
       path = found;
-      reader = open(found);
+      reader = new TailReader(
+        found,
+        pollInterval(options),
+        {
+          onLines: emit,
+          onRestart: (reason) => {
+            state = format.initial();
+            events.onReset(reason);
+          }
+        },
+        warn,
+        options?.fill
+      );
       if (options?.readMode === 'snapshot') {
         if (resume) events.onReset('source_replaced');
         state = format.initial();
-        await readWhole((whole) => whole.readSnapshot(emit));
+        if (format.prefixes) await streamPrefixes(found);
+        await reader.readSnapshot(emit);
         return;
       }
       const data = resume?.data as ResumeData<S> | undefined;
@@ -149,24 +136,16 @@ export function createJsonlTailSource<S>(
       // 先读后装 ⇒ 那一段按初始状态编号，键与存档里前几轮撞车，被上层去重表当成重复整条丢掉(#6357)。
       state = canResume ? structuredClone(data!.state) : format.initial();
       prefixBytes = canResume ? data!.prefixBytes ?? 0 : 0;
-      let resumed = false;
-      if (canResume) {
-        reading = true;
-        try { resumed = await reader.resumeFrom(data!.tail, emit); } finally { reading = false; }
-      }
-      const again = resumed ? format.again?.(state) : null;
-      if (again) {
-        events.onReset('source_replaced');
-        state = again;
-        await readWhole((whole) => whole.readFromStart(emit));
-      } else if (!resumed) {
+      const resumed = canResume ? await reader.resumeFrom(data!.tail, emit) : false;
+      if (!resumed) {
         // 要过存档、却没能续上 ⇒ 必须显式作废上层那份状态:不说的话整份重读会被旧去重表全部吃掉，
         // 留下一份过期且不再更新的历史。
         if (resume) events.onReset('source_replaced');
         state = format.initial();
-        await readWhole((whole) => whole.readFromStart(emit));
+        if (format.prefixes) await streamPrefixes(found);
+        await reader.readFromStart(emit);
       }
-      reader?.start();
+      reader.start();
     },
     catchUp: async () => { if (options?.readMode !== 'snapshot') await reader?.catchUp(); },
     readImage: readRecordImage,
@@ -207,5 +186,11 @@ export function createJsonlTailSource<S>(
       sink = null;
     }
   };
+  // A whole read (initial, snapshot or resume) ends first; only then is the record read again, at most once more.
+  const start = source.start.bind(source);
+  source.start = (events, resume) => whole(async () => {
+    await start(events, resume);
+    await readAgain(events);
+  });
   return source;
 }
