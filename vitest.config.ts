@@ -296,7 +296,11 @@ export default defineConfig({
           env: guguTestEnv,
           // @@@2633 兜底 GUGU_SESSION_DB_FILE —— 见 session-tooling/vitest-node-setup.ts 里的完整说明。
           // 少了它,import 期就打开数据库的模块会在收集期崩(electron 的 app 在这里是 undefined)。
-          setupFiles: [resolve(__dirname, 'apps/desktop/session-tooling/vitest-node-setup.ts')],
+          // @@@file-flush — see vitest-file-flush.ts: these suites asked for ~2.9k physical flushes per run.
+          setupFiles: [
+            resolve(__dirname, 'apps/desktop/session-tooling/vitest-node-setup.ts'),
+            resolve(__dirname, 'apps/desktop/session-tooling/vitest-file-flush.ts'),
+          ],
           include: [
             'apps/desktop/electron/session/**/*.test.ts',
             // ACP 适配器(dist-electron/runtime 里跑的那几个 .mjs)从前没有任何 project 收它们,
@@ -325,6 +329,8 @@ export default defineConfig({
         test: {
           name: 'session-main-db',
           environment: 'node',
+          // @@@file-flush — see vitest-file-flush.ts: ~8.5k physical flushes per run, the mac CI's main stall.
+          setupFiles: [resolve(__dirname, 'apps/desktop/session-tooling/vitest-file-flush.ts')],
           include: [
             'apps/desktop/electron/session/main/core/**/*.db.test.ts',
             'apps/desktop/electron/session/main/db/*.db.test.ts',
