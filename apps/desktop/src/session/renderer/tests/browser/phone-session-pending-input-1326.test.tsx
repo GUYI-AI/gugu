@@ -242,7 +242,7 @@ it.each([false, true])('phone native recovery explains the real tail limit and d
   hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
     pending: { count: 1, items: [{ seq: 1, messageId: 'tail-input', kind: 'session-direct', text: 'old input', preview: 'old input',
       state: 'unknown', failure: null, resendable: true, discardable: true }] } };
-  resend.mockResolvedValueOnce({ kind: 'confirmation-required', confirmation: 'phone-row-consent', reason: 'native_tail_does_not_cover_history' });
+  resend.mockResolvedValueOnce({ kind: 'confirmation-required', confirmation: 'phone-row-consent', reason: 'native_tail_does_not_cover_history', detail: 'EACCES /fixture/private/raw-detail-marker' });
   const send = vi.fn();
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
@@ -261,6 +261,8 @@ it.each([false, true])('phone native recovery explains the real tail limit and d
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(dialog.textContent).toContain('only the latest part');
   expect(dialog.textContent).toContain('could create a duplicate');
+  expect(dialog.textContent).not.toContain('native_tail_does_not_cover_history');
+  expect(dialog.textContent).not.toContain('raw-detail-marker');
   expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'tail-input', { allowConfirmation: true });
   await act(async () => { await userEvent.click(page.getByRole('button', { name: confirmed ? /^Send again anyway/ : /^Cancel$/ })); });
   await until('confirmation is settled', () => !modalStore.isOpen && resend.mock.calls.length === (confirmed ? 2 : 1));
