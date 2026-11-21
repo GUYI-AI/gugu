@@ -12,7 +12,7 @@
 // fail-loud:台账读不到 / 撤回失败,都把错误显示在这条消息底下 —— ❌ 不静默吞,
 // 否则用户点了一下什么都没发生,而档位其实没还原。
 import { Button } from '../ui/Button'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { topicService } from '../../lib/topics'
 import { agentFloodAdjustment } from '../../lib/agentFloodAdjustments'
@@ -59,7 +59,6 @@ export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFl
   const loadError = reading.state === 'error'
   const [undoError, setUndoError] = useState<{ messageId: string } | null>(null)
   // 原因进日志、不进文案:用户拿内部失败描述做不了任何事(user-copy-leak 闸的判据)。
-  useEffect(() => { if (reading.state === 'error') floodLog.error({ error: reading.error, messageId }, 'agent flood ledger read failed') }, [reading, messageId])
 
   const undo = useCallback(async () => {
     if (!adjustment || busy) return

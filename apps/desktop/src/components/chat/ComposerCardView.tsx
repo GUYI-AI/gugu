@@ -15,7 +15,6 @@ import { useAvatarIdentity } from '../../lib/avatarIdentity'
 import { myAgentJoinRequests } from '../../lib/agentJoinRequests'
 import { useReplica } from '../../lib/replica'
 import { thisDeviceId } from '../../store/thisDevice'
-import { rendererLogger } from '../../lib/log'
 import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
@@ -219,8 +218,6 @@ function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: st
   return { local: true, label: null }
 }
 
-const joinLog = rendererLogger('chat/task-card-join')
-
 /**
  * 我的卡、agent 还没坐进这个群时:它的入群请求是待审还是被拒。请求一变,库给发起人发 friend_requests_changed,
  * 卡就跟着重读 —— 同意(它也随之坐进来)、拒绝都不用刷新页面。坐进来了就不读。还没读到 = 'unknown':卡上不写状态,
@@ -233,9 +230,6 @@ function useMyAgentJoin(chatId: string | null, agentUserId: string | null): 'pen
     if (!chatId || !agentUserId) return
     return subscribeAccountRevision('friend_requests_changed', () => { void myAgentJoinRequests.refresh(chatId) })
   }, [chatId, agentUserId, subscribeAccountRevision])
-  useEffect(() => {
-    if (reading.state === 'error') joinLog.error({ chatId, agentUserId, error: String(reading.error) }, 'reading the agent join request for a task card failed')
-  }, [reading, chatId, agentUserId])
   if (!chatId || !agentUserId) return null
   if (reading.state !== 'value') return reading.state === 'unknown' ? 'unknown' : null
   const status = reading.value.get(agentUserId)

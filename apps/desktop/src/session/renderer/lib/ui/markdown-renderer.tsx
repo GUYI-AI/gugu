@@ -1,6 +1,5 @@
-import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { refreshFailure, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { workspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
@@ -35,9 +34,6 @@ const ResolvedImage: React.FC<{
   const path = images.pathOf(src);
   const reading = useReplica(workspaceImage, path ? [images.projectId, images.workspaceId, path] : null);
   const failed = refreshFailure(reading);
-  useEffect(() => {
-    if (failed) rendererLogger('markdown/image').error({ error: failed }, 'image resolution failed');
-  }, [failed]);
 
   if (reading.state === 'error') {
     return <span className="text-foreground-muted inline-block text-xs">[{messageForUser(reading.error)}]</span>;
