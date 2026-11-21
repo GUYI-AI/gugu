@@ -569,8 +569,10 @@ export interface SessionTimeline {
   /**
    * 交出此刻的存档，供宿主存盘、下次开这条会话时直接装回来。
    * 返回 null = 这条时间线存不了（记录源不支持续读）——那只是慢，不是错。
+   * `maxSourceBytes`: the most native bytes the archive may cover, by default the main thread's budget
+   * (`TIMELINE_ARCHIVE_MAX_SOURCE_BYTES`); a fold off the main thread passes `Number.MAX_SAFE_INTEGER`.
    */
-  archive?(): Promise<TimelineArchive | null>;
+  archive?(maxSourceBytes?: number): Promise<TimelineArchive | null>;
   /** A fill only: hand out settled turns as the record streams, so a long record never sits on one heap. */
   drainSettled?(): { turns: TranscriptTurn[]; starts: Array<TurnStart | null>; prunedDrops: number; resets: number };
   /** A fill only: where each turn still held (committed, then the active one) starts in the record, if the source says. */

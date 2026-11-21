@@ -105,7 +105,9 @@ import {
   loadTimelineArchive,
   pruneTimelineArchives,
   saveTimelineArchive,
+  timelineArchiveFile,
 } from './archive-store';
+import { createFoldClient, type FoldClient } from './fold-client';
 import { watchSessionState, type SessionStateWatch } from './live-permissions';
 import { locateSessionRecord, type SessionRecordLocation } from './locate';
 import { OpenedFileError, readOpenedFileChunk } from './opened-file';
@@ -175,7 +177,7 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
     '@gugu/session-core/session-record'
   );
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
-  const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
+  const archive = readMode === 'snapshot' ? null : await foldedArchive({ locator, sessionId, parentLineage, answerableQuestions });
   const row = readSessionRow(sessionId, { includeArchived: true });
   const pty = row && row.runtime !== 'acp';
   const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
@@ -201,6 +203,28 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
     throw error;
   }
 };
+
+let foldClient: FoldClient | null = null;
+
+/** The record folded on the fold thread (`fold.ts`); if that thread fails, the stored archive and a fold here. */
+async function foldedArchive(input: { locator: SessionRecordLocator; sessionId: string; parentLineage?: readonly RecordLineageNode[]; answerableQuestions?: boolean }) {
+  const checkpoint = timelineArchiveFile(input.sessionId);
+  if (!checkpoint) return null;
+  try {
+    const archive = await (foldClient ??= createFoldClient((message, detail) => log.warn(message, detail))).fold({
+      locator: input.locator,
+      sessionId: input.sessionId,
+      checkpoint,
+      ...(input.parentLineage ? { parentLineage: input.parentLineage } : {}),
+      ...(input.answerableQuestions ? { answerableQuestions: true } : {}),
+    });
+    void pruneTimelineArchives();
+    return archive;
+  } catch (error) {
+    log.warn('sessionTimeline: fold thread failed; folding on the main thread', { sessionId: input.sessionId, error: String(error) });
+    return loadTimelineArchive(input.sessionId);
+  }
+}
 
 let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;
 
