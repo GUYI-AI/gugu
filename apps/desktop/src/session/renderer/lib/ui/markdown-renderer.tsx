@@ -39,7 +39,7 @@ const ResolvedImage: React.FC<{
     return <span className="text-foreground-muted inline-block text-xs">[{messageForUser(reading.error)}]</span>;
   }
   if (path && reading.state === 'unknown') return <Unknown className="h-24 w-40" />;
-  const dataUrl = reading.state === 'value' ? reading.value : null;
+  const dataUrl = reading.state === 'value' ? reading.value?.dataUrl : null;
   if (!dataUrl) return <span className="text-foreground-muted inline-block text-xs">[Image not found: {src}]</span>;
   return (
     <>

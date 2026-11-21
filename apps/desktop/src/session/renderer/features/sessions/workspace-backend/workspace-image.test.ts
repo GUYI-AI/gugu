@@ -24,9 +24,9 @@ beforeEach(() => {
 
 describe('workspace images', () => {
   it('a missing file is null, a failed read is an error', async () => {
-    mocks.readImage.mockResolvedValueOnce({ success: true, data: { success: false } });
+    mocks.readImage.mockResolvedValueOnce({ success: true, data: { success: false, error: 'ENOENT: not found' } });
     await expect(workspaceImage.fetch('p', 'w', 'gone.png')).resolves.toBeNull();
-    mocks.readImage.mockResolvedValueOnce({ success: false, error: 'boom' });
+    mocks.readImage.mockResolvedValue({ success: false, error: 'boom' });
     await workspaceImage.prefetch('p', 'w', 'bad.png');
     expect(workspaceImage.peek('p', 'w', 'bad.png').state).toBe('error');
   });
@@ -50,10 +50,10 @@ describe('workspace images', () => {
     mocks.readImage.mockResolvedValueOnce({ success: true, data: { success: true, dataUrl: 'data:old' } })
       .mockResolvedValueOnce({ success: true, data: { success: true, dataUrl: 'data:new' } });
     const [first] = show('a.png');
-    await vi.waitFor(() => expect(workspaceImage.peek('p', 'w', 'a.png')).toMatchObject({ value: 'data:old' }));
+    await vi.waitFor(() => expect(workspaceImage.peek('p', 'w', 'a.png')).toMatchObject({ value: { dataUrl: 'data:old' } }));
     first!();
     const [again] = show('a.png');
-    await vi.waitFor(() => expect(workspaceImage.peek('p', 'w', 'a.png')).toMatchObject({ value: 'data:new' }));
+    await vi.waitFor(() => expect(workspaceImage.peek('p', 'w', 'a.png')).toMatchObject({ value: { dataUrl: 'data:new' } }));
     again!();
   });
 });
