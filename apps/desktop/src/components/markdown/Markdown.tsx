@@ -88,7 +88,6 @@ function onlyText(children: ReactNode): string | null {
 
 function MermaidRenderer({ code, isIncomplete }: CustomRendererProps) {
   const density = useContext(DensityContext)
-  const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
   if (isIncomplete) {
     return (
       <pre>
@@ -96,7 +95,7 @@ function MermaidRenderer({ code, isIncomplete }: CustomRendererProps) {
       </pre>
     )
   }
-  return <MermaidDiagram chart={code} isDark={theme === 'dark'} compact={density === 'compact'} />
+  return <MermaidDiagram chart={code} compact={density === 'compact'} />
 }
 
 const SVG_FAILURE = { 'too-large': 'tooLarge', invalid: 'invalid', 'no-viewbox': 'noViewbox' } as const

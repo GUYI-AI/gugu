@@ -25,6 +25,13 @@ const HOST_TOKENS: Record<string, string> = {
   ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`c${n}`, `--chart-${n}`])),
 };
 
+/** Calls `onChange` when the host's light/dark truth, `<html data-theme>` (written only by host-theme.ts), flips. */
+export function subscribeHostTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => observer.disconnect();
+}
+
 /** Token → colour as the element the figure is drawn in resolves it now (light or dark). */
 export function svgPalette(element: Element): Record<string, string> {
   const style = getComputedStyle(element);
