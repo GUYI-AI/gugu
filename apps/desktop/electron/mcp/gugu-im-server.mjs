@@ -954,7 +954,7 @@ export async function extensionAttachmentOf(context, messageId, injected = {}) {
 
 /** Registry identity is authoritative; its message is read as the agent. */
 async function readableWidgetOf(deps, widgetId) {
-  const [origin] = await deps.restRpc('widget_origin', { p_widget_id: widgetId, p_as: deps.context.agentId })
+  const [origin] = await deps.restRpc('widget_origin', { p_widget_id: widgetId })
   if (!origin || origin.is_retracted) return null
   const message = await messageAs(deps, origin.origin_message_id)
   if (!message || message.content_type !== 'widget' || message.retracted_at || message.deleted_for_me) return null
@@ -979,7 +979,7 @@ export async function widgetCheckScopeOf(context, target, injected = {}) {
   const message = messageId === undefined ? null : await messageAs(deps, id)
   if (message) {
     for (const candidate of new Set([parseWidgetMessage(message.content)?.wid, id].filter(Boolean))) {
-      const [origin] = await deps.restRpc('widget_origin', { p_widget_id: candidate, p_as: deps.context.agentId })
+      const [origin] = await deps.restRpc('widget_origin', { p_widget_id: candidate })
       if (origin?.origin_message_id === id) { widgetId = candidate; break }
     }
   }

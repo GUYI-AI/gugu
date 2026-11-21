@@ -45,9 +45,9 @@ async function render(options: { mobile?: boolean; contacts?: Parameters<typeof 
 const $ = (selector: string) => harness.container.querySelector(selector) as HTMLElement | null
 const input = () => $(`[data-testid="${AUTOMATION_TEST_IDS.contactsSearchInput}"]`) as HTMLInputElement
 const results = () => $('[data-testid="contacts-search-results"]')
-// 桌面:结果铺在右边;人和群是行([data-search-hit]),设备分组里的 agent 是导图节点([data-contact-id])。
+// 桌面:结果铺在右边;人和群是行([data-search-hit]),设备分组里的 agent 是家族里的节点([data-contact-id])。
 const hits = () => Array.from(results()?.querySelectorAll<HTMLElement>('[data-search-hit], [data-contact-id]') ?? [])
-const titles = () => hits().map((hit) => (hit.querySelector('.gg-list-row-title') ?? hit.querySelector('[data-map-name]'))?.textContent)
+const titles = () => hits().map((hit) => (hit.querySelector('.gg-list-row-title') ?? hit.querySelector('[data-agent-name]'))?.textContent)
 const sections = () => Array.from(results()?.querySelectorAll('[data-slot="section-label"]') ?? []).map((label) => label.textContent)
 const subtitle = (index: number) => hits()[index]?.querySelector('.gg-list-row-subtitle')?.textContent
 const drawerTitle = () => $('[data-testid="contacts-detail-drawer"] [data-slot="pane-header"]')?.textContent ?? ''
