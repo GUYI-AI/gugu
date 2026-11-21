@@ -37,7 +37,7 @@ export interface PlatformCatalogModel {
   requiresMembership: boolean
   /** 目录 `hidden`(#7056):他在设置「模型」页关掉了这一条。只认 true,旧服务端不带 ⇒ false。 */
   hidden: boolean
-  /** What a model menu shows and the effort picker intersects (#6447); not carried across restarts (absent = not known yet). */
+  /** What a model menu shows and the effort picker intersects (#6447). */
   creditMultiplier?: number | null
   /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
   creditMultipliers?: Partial<Record<ModelAccessProtocol, number>>
