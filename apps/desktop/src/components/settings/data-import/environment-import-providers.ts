@@ -117,7 +117,7 @@ export function withCodexTaskImport(transcripts: ImportProvider): ImportProvider
         else {
           result.failed++
           result.details!.push({ id: item.id, title: titles.get(item.id) ?? item.id, category: 'tasks', status: 'failed',
-            reason: item.status === 'changed' ? 'source-changed' : item.status === 'missing' ? 'source-missing' : item.message })
+            reason: item.status === 'changed' ? 'source-changed' : item.status === 'missing' ? 'source-missing' : 'message' in item ? item.message : undefined })
         }
       }
       result.failed += snapshot.blocked.length
