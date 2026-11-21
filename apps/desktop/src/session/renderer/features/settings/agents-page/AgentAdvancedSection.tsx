@@ -19,6 +19,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import { useAgentSettings } from '@renderer/lib/stores/use-agent-settings';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 import { OutdatedSourceBadge } from './agent-status-badge';
 import type { RegistryRow } from './installation-sources';
@@ -70,7 +71,7 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
 }: AgentAdvancedSectionProps) {
   const [open, setOpen] = useState(false);
   const { translate } = useSessionMessages();
-  const { value: storedConfig, isOverridden, isLoading, update, reset } = useAgentSettings(agentId);
+  const { value: storedConfig, isOverridden, isLoading, error: settingsError, retry: retrySettings, update, reset } = useAgentSettings(agentId);
 
   const form = useForm({ defaultValues: makeDefaultValues(storedConfig) });
 
@@ -144,6 +145,7 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
       </div>
       <CollapsibleContent className="pt-2">
         {children}
+        <RefreshFailed error={settingsError} onRetry={retrySettings} />
         <SettingsGroup>
           {registries.length > 0 && (
             <SettingsRow

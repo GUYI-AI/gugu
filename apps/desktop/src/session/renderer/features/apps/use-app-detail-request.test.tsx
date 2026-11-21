@@ -8,14 +8,24 @@ import { describe, expect, it, vi } from 'vitest';
 const toast = vi.hoisted(() => vi.fn());
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast }));
 vi.mock('@/store/devicesCache', () => ({ readCachedDevices: () => [] }));
+// This computer's market entry, as its App API answers it.
+const api = vi.hoisted(() => ({ marketEntry: vi.fn() }));
+vi.mock('@renderer/features/extensions/extensions-api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@renderer/features/extensions/extensions-api')>(),
+  extensionsApiOf: () => api,
+}));
 
 const { useAppDetailRequest } = await import('./use-app-detail-request');
+const { installedExtensions } = await import('@renderer/features/extensions/installed-extensions');
+const { queryClient } = await import('@/lib/replica');
 
 async function request(installed: string[], market: Record<string, unknown> | null, page: { page?: 'manage' | 'market'; extensionId: string } = { extensionId: 'notes' }, hasSubject = false) {
+  queryClient.clear();
   const onPage = vi.fn();
   const onSubject = vi.fn();
-  const marketEntry = vi.fn(async () => (market ? { success: true, data: market } : { success: false, error: 'not in the market' }));
-  const host = { key: 'local', store: { manifests: installed.map((id) => ({ id })), variants: {} }, api: { marketEntry } };
+  const marketEntry = api.marketEntry.mockReset().mockImplementation(async () => (market ? { success: true, data: market } : { success: true, data: null }));
+  installedExtensions.set(['local'], { extensions: installed.map((id) => ({ id })), invalid: [], variants: {} } as never);
+  const host = { key: 'local' };
   function Probe() {
     useAppDetailRequest({ page, ready: true, host: host as never, hasSubject: () => hasSubject, onPage, onSubject, rootRef: { current: null } });
     return null;

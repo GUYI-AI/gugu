@@ -4,7 +4,8 @@ import { Sheet } from '../components/ui/Sheet'
 import { PaneHeader } from '../components/ui/Pane'
 import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
-import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
+import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
 import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
@@ -329,7 +330,11 @@ function InnerLayout({
       await askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
-    openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
+    openOwnApp: (extensionId, tab) => {
+      const page = peekInstalledApps(LISTED_HOST)?.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`)
+      if (!page) throw new Error('App tab is unavailable')
+      setOpenedPhoneApp({ kind: page.kind, name: page.extensionName })
+    },
     openProject: (projectId) => { setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('project', { projectId }) },
     openChat: openChatTarget,
     openAssistant: (tasks) => {

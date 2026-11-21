@@ -1,13 +1,13 @@
+import type { Reading } from '@/lib/replica';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { DEFAULT_SESSION_AUTO_APPROVE } from '@shared/core/sessions/default-session-autonomy';
+import type { SessionSettings } from '@shared/core/app-settings';
 
-/** The `sessions` fields the new-task flow starts from; the settings surface draws the reading itself (SessionSettingsRows). */
-export function useSessionSettings() {
-  const { settings } = useAppSettingsKey('sessions');
-  const sessions = settings.state === 'value' ? settings.value.value : undefined;
-  return {
-    autoGenerateName: sessions?.autoGenerateName ?? false,
-    autoApproveByDefault: sessions?.autoApproveByDefault ?? DEFAULT_SESSION_AUTO_APPROVE,
-    includeIssueContextByDefault: sessions?.includeIssueContextByDefault ?? true,
-  };
+export type NewTaskSettings = Pick<SessionSettings, 'autoGenerateName' | 'autoApproveByDefault' | 'includeIssueContextByDefault'>;
+
+/** The new-task flow seeds its state once, so it waits for these, ❌ starts from defaults. */
+export function useSessionSettings(): { settings: Reading<NewTaskSettings>; reload: () => void } {
+  const { settings, reload } = useAppSettingsKey('sessions');
+  if (settings.state !== 'value') return { settings, reload };
+  const { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault } = settings.value.value;
+  return { settings: { ...settings, value: { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault } }, reload };
 }

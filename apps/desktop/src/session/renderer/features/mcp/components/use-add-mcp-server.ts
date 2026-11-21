@@ -15,7 +15,8 @@ export function useAddMcpServer(library: Pick<ReturnType<typeof useMcpLibrary>, 
   return async () => {
     try {
       showServerModal({
-        existing: library.servers,
+        // A click on a drawn page: the list is read by then (the page draws a placeholder before).
+        existing: library.servers ?? [],
         harnessNames: await library.harnessNames(),
         onSuccess: (servers) => void library.add(servers.map((server) => ({ ...server, enabledByDefault: true }))).catch(onFailure),
       });

@@ -11,9 +11,10 @@ import { cancelProvisionOperation, completedSingleProvisionSession, completeProv
 import { readAgentModelSelection, setAgentModelSelection, platformProtocolForAgentType } from '@/lib/agentModelSelection';
 import type { AgentModelSelection } from '@gugu/core/shared/agentModelSelection';
 import { cloudMoveModel, moveModelSelection, sameMoveModel } from './assistant-move-model';
-import { getCloudComputerState, provisionCloudComputer, refreshCloudComputer, wakeCloudComputer } from '@/lib/cloudComputerStore';
+import { knownCloudDeviceId, provisionCloudComputer, readCloudSnapshotNow, wakeCloudComputer } from '@/lib/cloudComputer';
 import { contactsService } from '@/lib/contacts';
-import { reloadMyAssistant } from '@/lib/myAssistant';
+import { myAssistant } from '@/lib/myAssistant';
+import { replica } from '@/lib/replica';
 import { desktopIpc } from '@/platform/desktopIpc';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -291,6 +292,17 @@ export async function recoverPendingMove(ownerUserId: string, assistantId: strin
 }
 
 /**
+* The move left half-done (「接着搬」): main's journal; its localStorage copy draws the first frame. Read again when a move
+* ends (❌ per progress tick).
+*/
+export const moveRecovery = replica({
+  name: 'moveRecovery',
+  scope: 'account',
+  read: (owner: string, assistantId: string) => recoverPendingMove(owner, assistantId),
+  local: (owner: string, assistantId: string) => pendingMove(owner, assistantId) ?? undefined,
+});
+
+/**
  * 上次没搬完的那一次(没有 = null)。日志没记旧家是哪台(老版本留下的)、或不是这位助理的 = 不当成可接着搬,
  * ❌ 拿它去猜旧家(此刻「它住哪」在接过之后已经是新家)。
  */
@@ -365,14 +377,14 @@ export function buildMoveDeps(
       journal,
       onProgress,
       async isAdopted() {
-        const cloud = getCloudComputerState().snapshot?.deviceId ?? (await refreshCloudComputer().catch(() => null))?.deviceId ?? null;
+        const cloud = knownCloudDeviceId() ?? (await readCloudSnapshotNow().catch(() => null))?.deviceId ?? null;
         return !!cloud && (await homeDeviceOf(env.assistantId)) === cloud;
       },
       async adopt() {
         // An order aimed at the cloud home is the manager's own and it retries that order itself; any other would block this move.
         // Without a device id or a definite "none" the two cannot be told apart, so nothing is cancelled.
         const open = await openAdoption(env);
-        const cloud = open ? await refreshCloudComputer() : null;
+        const cloud = open ? await readCloudSnapshotNow() : null;
         if (open && cloud && (cloud.deviceId || cloud.state === 'none') && open.device_id !== cloud.deviceId) await cancelAdoption(env, open.operation_id);
         try {
           await provisionCloudComputer({ assistant: { existingAgentUserId: env.assistantId } });
@@ -386,17 +398,17 @@ export function buildMoveDeps(
           }
         }
         const deviceId = await until('the cloud home to take the assistant', ADOPT_TIMEOUT_MS, async () => {
-          const snapshot = await refreshCloudComputer().catch(() => null);
+          const snapshot = await readCloudSnapshotNow().catch(() => null);
           if (snapshot?.state === 'error') throw new Error(snapshot.error ?? 'cloud computer reported an error');
           if (!snapshot?.deviceId || snapshot.state !== 'awake' || snapshot.adopting) return null;
           return (await homeDeviceOf(env.assistantId)) === snapshot.deviceId ? snapshot.deviceId : null;
         });
         await cloudDeviceReady(deviceId);
-        reloadMyAssistant(env.ownerUserId);
+        void myAssistant.refresh();
       },
       async openTarget() {
         // 接着搬时 isAdopted 直接为真、不会走 adopt 里的叫醒:云上那台可能已经睡了,先醒着、连上再往里拷。
-        const deviceId = getCloudComputerState().snapshot?.deviceId ?? (await refreshCloudComputer().catch(() => null))?.deviceId ?? null;
+        const deviceId = knownCloudDeviceId() ?? (await readCloudSnapshotNow().catch(() => null))?.deviceId ?? null;
         if (!deviceId) throw new Error('the cloud home has no device yet');
         await wakeCloudComputer();
         await cloudDeviceReady(deviceId);
@@ -457,7 +469,7 @@ export function buildMoveDeps(
       if (phase === 'awaiting_terminal') throw new Error('the assistant is still starting on this computer');
       if (phase === 'failed') throw new Error(result.outcome.member.error ?? 'adopt failed');
       completedSingleProvisionSession(result);
-      reloadMyAssistant(env.ownerUserId);
+      void myAssistant.refresh();
     },
     restart: () => restartAssistant(env.assistantId),
     restoreOnline: () => restoreOnlineAssistant(env.assistantId),

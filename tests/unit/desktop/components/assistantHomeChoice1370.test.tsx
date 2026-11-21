@@ -7,7 +7,7 @@ import { createReactHarness } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 vi.mock('@/components/agentAvatar/AgentAvatar', () => ({ AgentAvatar: () => null }))
-vi.mock('@/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn() }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
 vi.mock('@/components/settings/CloudComputerSection', () => ({ CloudComputerRefusal: () => null }))
 import { AssistantHomeChoice } from '../../../../apps/desktop/src/components/assistant/AssistantHomeChoice'
 

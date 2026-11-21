@@ -15,16 +15,19 @@ const state = vi.hoisted(() => ({
   gate: Promise.resolve(),
 }))
 
+// This device's Apps are the desktop's.
+vi.mock('../../../../apps/desktop/src/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ warn: () => undefined }) }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: {
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (original) => {
+  const installed = {
     get publishers() {
       return state.publishers
     },
     locale: 'en-US',
     manifestFor: () => undefined,
-  },
-}))
+  }
+  return { ...(await original<object>()), peekInstalledApps: () => installed, fetchInstalledApps: async () => installed }
+})
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
   appsHere: {
     async installAttachment(args: { messageId: string; unasked?: boolean }) {

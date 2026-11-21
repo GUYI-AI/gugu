@@ -1,3 +1,4 @@
+import { Unknown } from '@/components/ui/Unknown';
 import { CircleAlert } from '@/lib/icons'
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { useIntegrationAccounts } from '@renderer/features/integrations/use-integration-accounts';
@@ -61,14 +62,16 @@ export function IntegrationGridCard({
   );
 }
 
-/** 列表行右侧的「N 个账号」:只给能连多个账号的那几家;读不到就不写(❌ 写成 0)。 */
+/** 「N 个账号」:读不到就不写(❌ 写成 0;详情页说读不到);问不到也没读过:不写(❌ 一直闪的占位)。 */
 function AccountCount({ integrationId }: { integrationId: string }) {
   const { translate } = useSessionMessages();
-  const { supported, accounts } = useIntegrationAccounts(integrationId, true, { check: false });
-  if (!supported || accounts.length === 0) return null;
+  const { accounts, reachable } = useIntegrationAccounts(integrationId, true, { check: false });
+  // Being read: a slot the count's size (❌ nothing, then the count pushed in).
+  if (accounts.state === 'unknown') return reachable ? <Unknown className="w-14 text-xs" /> : null;
+  if (accounts.state === 'error' || !accounts.value.supported || accounts.value.accounts.length === 0) return null;
   return (
     <span className="shrink-0 text-xs text-foreground-muted">
-      {translate('integrations.accountCount', { count: accounts.length })}
+      {translate('integrations.accountCount', { count: accounts.value.accounts.length })}
     </span>
   );
 }

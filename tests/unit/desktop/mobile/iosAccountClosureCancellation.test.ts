@@ -7,7 +7,7 @@ import type { PhoneCloseAcknowledgement } from '../../../../apps/desktop/src/com
 const ios = vi.hoisted(() => ({ owner: '11111111-1111-4111-8111-111111111111' as string | null,
   prepare: vi.fn(), retire: vi.fn(), cancel: vi.fn(),
   native: { receipt: { put: vi.fn(), get: vi.fn(), remove: vi.fn() }, eraseLocal: vi.fn() } }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ios.owner ? { user: { id: ios.owner } } : null }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ios.owner ? { user: { id: ios.owner } } : null, observeRendererSession: () => () => {} }))
 vi.mock('../../../../apps/desktop/src/platform/iosAccountClosure', () => ({ nativeIOSAccountClosure: ios.native }))
 vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient', () => ({
   prepareIOSSignOut: ios.prepare, cancelIOSSignOut: ios.cancel, iosOwnerClient: { retire: ios.retire },

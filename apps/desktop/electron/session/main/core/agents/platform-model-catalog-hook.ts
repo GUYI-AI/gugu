@@ -1,3 +1,4 @@
+import type { HarnessCatalogLookup } from './harness-model-catalog';
 // @@@4972 「咕咕提供的模型」在会话页这一侧的读取口 —— 与 emdash-platform-injector / emdash-pty-sessionpage-hook
 // 同一个模式:这棵树拥有**钩子点**,咕咕宿主拥有**钩子返回什么**。
 //
@@ -58,4 +59,24 @@ export function setPlatformModelCatalogResolver(fn: PlatformModelCatalogResolver
 
 export function getPlatformModelCatalogResolver(): PlatformModelCatalogResolver | null {
   return resolver;
+}
+
+/**
+ * 那道门(`sessionpagePlatformGate`)的答案:这一家在这条腿上给不给咕咕那一组,不给为什么(原因码)。
+ * composer 从 `agents.modelCatalog` 的回包读它(`AgentModelCatalogAnswer`)—— 本来就要读的那一格,
+ * ❌ 多一趟往返,❌ 渲染层另算一份。宿主没装 ⇒ 说不出 ⇒ `host-not-ready`(controller.ts)。
+ */
+export type GuguModelsOffer = { offered: true } | { offered: false; reason: string };
+/** `agents.modelCatalog` 的回包:harness 自家那一份 + 咕咕那一组的门。 */
+export type AgentModelCatalogAnswer = HarnessCatalogLookup & { gugu: GuguModelsOffer };
+export type PlatformModelGate = (query: PlatformModelCatalogQuery) => string | null;
+
+let gate: PlatformModelGate | null = null;
+
+export function setPlatformModelGate(fn: PlatformModelGate | null): void {
+  gate = fn;
+}
+
+export function getPlatformModelGate(): PlatformModelGate | null {
+  return gate;
 }

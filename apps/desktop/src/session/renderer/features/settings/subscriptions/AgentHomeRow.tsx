@@ -1,29 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AgentHomePreparationStatus } from '@/components/settings/data-import/AgentHomePreparationStatus'
 import { Button } from '@/components/ui/Button'
 import { SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { messageForUser } from '@/lib/userFacingError'
-import { replica, useReplica } from '@/lib/replica'
-import { openAgentHomeImport, readAgentHome } from './ensure-agent-home'
-import { queryView } from './subscription-queries'
-
-const agentHome = replica({
-  name: 'agentHome',
-  scope: 'device',
-  fresh: 0,
-  read: (_device: string, machine: string | null, providerId: string) => readAgentHome(providerId, machine),
-})
+import { refreshFailure, useReplica } from '@/lib/replica'
+import { agentHome, openAgentHomeImport } from './ensure-agent-home'
 
 export function AgentHomeRow({ providerId, machine, disabled = false }: { providerId: string; machine: string | null; disabled?: boolean }) {
   const { t, i18n } = useTranslation('main')
-  const { data: home, error: readError } = queryView(useReplica(agentHome, [machine, providerId], { read: !disabled }))
-  const preparing = !!home?.migrationPreparation
-  useEffect(() => {
-    if (!preparing || disabled) return
-    const timer = setInterval(() => { void agentHome.refresh(machine, providerId).catch(() => {}) }, 1000)
-    return () => clearInterval(timer)
-  }, [preparing, disabled, machine, providerId])
+  const reading = useReplica(agentHome, [machine, providerId], { read: !disabled })
+  const home = reading.state === 'value' ? reading.value : undefined
+  const readError = refreshFailure(reading)
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const error = actionError ?? (readError && messageForUser(readError))

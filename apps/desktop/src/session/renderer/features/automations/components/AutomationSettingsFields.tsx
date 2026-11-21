@@ -34,7 +34,6 @@ export function AutomationSettingsFields({
     cronExpr,
     workspaceConfig,
     effectiveProjectId,
-    isUnborn,
     setProjectId,
   } = state;
 
@@ -65,7 +64,6 @@ export function AutomationSettingsFields({
           workspaceConfig={workspaceConfig}
           initialSession={initialSession}
           projectId={effectiveProjectId}
-          isUnborn={isUnborn}
           hasPR={false}
           includeIssueContextByDefault={false}
         >

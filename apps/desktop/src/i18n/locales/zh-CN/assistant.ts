@@ -860,6 +860,7 @@ export default {
     "morePrompt": "「灵感」里的这些我看过了，根据你对我的了解再换一批。"
   },
   "quickChat": {
+    "settingUnreadable": "暂时读不到快速聊天的状态。",
     "title": "和{{name}}快速聊天",
     "assistant": "咕咕",
     "close": "关闭快速聊天",

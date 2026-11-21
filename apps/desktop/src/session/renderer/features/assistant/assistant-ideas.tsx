@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { setIdeasEntryHidden, useIdeasEntryHidden } from '@/lib/assistantIdeas';
 import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { ideaGroups, type TodayFeedView, type TodayIdea } from './assistant-today-file';
+import { ideaGroups, type TodayIdea, type TodayRead } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import type { Reading } from '@/lib/replica';
 
 /**
  * #7199 「灵感」:输入框右上方一颗「灵感」胶囊,点开一块面板,一张卡 = 一件它现在就能替你做的事,
@@ -30,14 +32,14 @@ export function IdeasEntry({ assistantId, busy, onOpen, label, icon }: { assista
 }
 
 export function IdeasPanel({
-  view,
+  today,
   assistantId,
   name,
   askInChat,
   onClose,
   layout,
 }: {
-  view: TodayFeedView;
+  today: Reading<TodayRead>;
   assistantId: string;
   name: string;
   askInChat: (draft: string) => void;
@@ -91,50 +93,51 @@ export function IdeasPanel({
           </div>
         </div>
       ) : null}
-      <IdeasBody view={view} name={name} fill={fill} />
+      <IdeasBody today={today} name={name} fill={fill} />
     </div>
   );
 }
 
-function IdeasBody({ view, name, fill }: { view: TodayFeedView; name: string; fill: (draft: string) => void }) {
-  const { t } = useTranslation('assistant');
-  const note = (body: ReactNode, action?: { label: string; draft: string }, testId?: string) => (
+function Note({ children, action, testId }: { children: ReactNode; action?: { label: string; onClick?: () => void }; testId?: string }) {
+  return (
     <div className="ta-card" data-testid={testId}>
       <AssistantEmpty
         action={
           action ? (
-            <button type="button" className="ta-pill-btn" onClick={() => fill(action.draft)}>
+            <button type="button" className="ta-pill-btn" onClick={action.onClick}>
               {action.label}
             </button>
           ) : undefined
         }
       >
-        {body}
+        {children}
       </AssistantEmpty>
     </div>
   );
-  if (view.state === 'loading')
-    return note(
-      <span className="inline-flex items-center gap-2">
-        <LoadingIndicator size="inline" />
-        {t('ideas.loading')}
-      </span>
-    );
-  if (view.state === 'error')
-    return (
-      <div className="ta-card" data-testid="assistant-ideas-unreadable">
-        <AssistantEmpty
-          action={
-            <button type="button" className="ta-pill-btn" onClick={view.retry}>
-              {t('machine.retry')}
-            </button>
-          }
-        >
+}
+
+function IdeasBody({ today, name, fill }: { today: Reading<TodayRead>; name: string; fill: (draft: string) => void }) {
+  const { t } = useTranslation('assistant');
+  return (
+    <ReadingSlot reading={today}
+      placeholder={<Note><span className="inline-flex items-center gap-2"><LoadingIndicator size="inline" />{t('ideas.loading')}</span></Note>}
+      failed={(_error, retry) => (
+        <Note action={{ label: t('machine.retry'), onClick: retry }} testId="assistant-ideas-unreadable">
           {t('ideas.unreadable')}
-        </AssistantEmpty>
-      </div>
-    );
-  const read = view.read;
+        </Note>
+      )}>
+      {(value) => <IdeasRead read={value} name={name} fill={fill} />}
+    </ReadingSlot>
+  );
+}
+
+function IdeasRead({ read, name, fill }: { read: TodayRead; name: string; fill: (draft: string) => void }) {
+  const { t } = useTranslation('assistant');
+  const note = (body: ReactNode, action?: { label: string; draft: string }, testId?: string) => (
+    <Note action={action && { label: action.label, onClick: () => fill(action.draft) }} testId={testId}>
+      {body}
+    </Note>
+  );
   if (read.state === 'invalid') return note(t('today.invalid', { name, problem: read.problem }), { label: t('today.fix', { name }), draft: t('today.fixPrompt', { problem: read.problem }) }, 'assistant-ideas-invalid');
   const part = read.state === 'ok' ? read.file.ideas : ({ state: 'none' } as const);
   if (part.state === 'invalid')

@@ -2,12 +2,10 @@ import { EMPTY_INTEGRATION_SUMMARIES,useAssistantIntegrationSummaries } from '@/
 import { useLocale } from '@/i18n'
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import type { ConnectionStatus } from '@/session/shared/issue-providers'
-import { cachedAssistantPanelIntegration,peekAssistantPanelIntegration,peekAssistantPanelIntegrations,readAssistantPanelIntegrations,readAssistantPanelIntegration } from '@/components/assistant/assistant-panel-integrations'
-import { machineKey, usePhoneRead } from './usePhoneRead'
+import { assistantIntegrationDetail,connectionList,useAssistantIntegrationDetail,useConnectionList } from '@/components/assistant/assistant-panel-reads'
 import type { PhoneMachineState } from './phoneMachine'
-import { useEffect } from 'react'
 import { useConnectionAuthority,useOwnerConnectionStore } from '@/lib/connectionBridge'
-import { readOwnerConnectionMetadata,peekOwnerConnectionMetadata,CONNECTIONS_CHANGED } from '@/components/connections/owner-connection-metadata'
+import { refreshFailure } from '@/lib/replica'
 
 
 export type PhoneIntegrations = {
@@ -21,7 +19,8 @@ export type PhoneIntegrations = {
 
 /**
  * 云端连接应用:问它家里那台(与桌面资源库「集成」同一组动词 integrations.*,手机走 machineRpc 那条线)。
- * 醒着、且人在连接应用那几页(`active`)才问;每次走进来重问一遍(人可能刚在电脑上连好),重问时先留着上一次的。
+ * 人在连接应用那几页(`active`)才读(replica `connectionList`,连接那一份变了 / 面板变了就再读;再读时照旧摆着上一次的)。
+ * `error` 也是再读失败、上一次的还摆着的那种(`data` 照旧给):画的人在旁边说一句(❌ 当成现在的)。
  */
 export function usePhoneIntegrations(machine: PhoneMachineState, active: boolean): { data: PhoneIntegrations | null; loading: boolean; error: unknown; retry: () => void } {
   const { resolvedLocale } = useLocale()
@@ -29,23 +28,22 @@ export function usePhoneIntegrations(machine: PhoneMachineState, active: boolean
   const authority = useConnectionAuthority(),ownerMode = authority.route?.mode === 'owner'
   const owner = useOwnerConnectionStore(null,authority.route,ownerMode)
   const panel = ownerMode ? owner : authority.route?.mode === 'legacy' ? ready?.panel : undefined
-  const key = active && panel ? `integrations|${panel.ownerId}|${authority.route!.mode}|${authority.route!.epoch}|${ownerMode ? 'all' : machineKey(ready!)}|${resolvedLocale}` : null
-  const read = usePhoneRead(key,() => ownerMode ? readOwnerConnectionMetadata(owner!,resolvedLocale) : readAssistantPanelIntegrations(panel!,resolvedLocale),
-    'read connection metadata',undefined,() => ownerMode ? owner && peekOwnerConnectionMetadata(owner,resolvedLocale) : peekAssistantPanelIntegrations(panel,resolvedLocale))
-  useEffect(() => { if (!ownerMode || !active) return; window.addEventListener(CONNECTIONS_CHANGED,read.reload)
-    return () => window.removeEventListener(CONNECTIONS_CHANGED,read.reload) },[ownerMode,active,read.reload])
-  const items = useAssistantIntegrationSummaries(panel,read.state === 'ok' ? read.data.items : EMPTY_INTEGRATION_SUMMARIES,resolvedLocale)
-  return { data: key && read.state === 'ok' ? { ...read.data,items } : null,loading: authority.loading || !!key && read.state === 'loading',
-    error: authority.error ?? (key && read.state === 'error' ? read.error : null),retry: () => { void authority.reload(); read.reload() } }
+  const reading = useConnectionList(panel,ownerMode,resolvedLocale,active)
+  const listed = reading.state === 'value' ? reading.value : null
+  const items = useAssistantIntegrationSummaries(panel,listed ? listed.items : EMPTY_INTEGRATION_SUMMARIES,resolvedLocale)
+  const shown = active && !!panel
+  return { data: shown && listed ? { ...listed,items } : null,loading: authority.loading || shown && reading.state === 'unknown',
+    error: authority.error ?? (shown ? refreshFailure(reading) : null),
+    retry: () => { void authority.reload(); void connectionList.refresh() } }
 }
 
+/** The opened application's full catalog entry (replica `assistantIntegrationDetail`); a full summary is itself. `error` with `data`: a refresh failed over it. */
 export function usePhoneIntegrationDetail(machine: PhoneMachineState,summary: IntegrationMetadata | null | undefined) {
   const { resolvedLocale } = useLocale()
   const panel = machine.state === 'ready' ? machine.machine.panel : undefined
-  const cached = cachedAssistantPanelIntegration(panel,summary?.id,resolvedLocale,summary?.catalogVersion)
-  const read = usePhoneRead(panel && summary?.metadataOnly && !cached ? `integration-detail|${panel.ownerId}|${panel.assistantId}|${summary.id}|${summary.catalogVersion ?? ''}|${resolvedLocale}` : null,
-    () => readAssistantPanelIntegration(panel!,summary!.id,resolvedLocale,summary?.catalogVersion),'read selected application',undefined,() => peekAssistantPanelIntegration(panel,summary?.id,resolvedLocale))
-  return { data: summary?.metadataOnly ? cached ?? (read.state === 'ok' ? read.data : null) : summary,
-    error: !cached && summary?.metadataOnly && read.state === 'error' ? read.error : null,
-    loading: summary?.metadataOnly === true && !cached && read.state === 'loading',reload: read.reload }
+  const { summaryIsFull, reading } = useAssistantIntegrationDetail(panel,summary,resolvedLocale)
+  return { data: summaryIsFull ? summary : reading.state === 'value' ? reading.value : null,
+    error: summaryIsFull ? null : refreshFailure(reading),
+    loading: !summaryIsFull && !!panel && reading.state === 'unknown',
+    reload: () => { void assistantIntegrationDetail.refresh() } }
 }

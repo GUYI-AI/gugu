@@ -16,6 +16,7 @@ import { errorText } from '@renderer/features/settings/subscriptions/subscriptio
 import { ConnectionModelPicker, useConnectionModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { retryOf, valueOf } from '@/lib/replica';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
 import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
@@ -32,7 +33,9 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const [presetId, setPresetId] = useState(connection?.preset ?? (connection ? 'custom' : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? 'custom'));
   const preset = providerPresets.find(({ id }) => id === presetId);
   const accountProvider = presetId === 'claude-subscription' ? 'claude' : presetId === 'chatgpt-subscription' ? 'codex' : null;
-  const { data: agents, error: agentsError, refetch: refetchAgents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = valueOf(agentsReading);
+  const agentsError = agentsReading.state === 'error' ? agentsReading.error : null;
   const accountAgent = agents?.find(agent => agent.id === accountProvider);
   const labelOf = (id: string) => id === 'claude-subscription' ? translate('customModels.claudeAccount') : id === 'chatgpt-subscription' ? translate('customModels.codexAccount') : (name => name ? vendorName(name) : translate('customModels.custom'))(providerPresets.find(item => item.id === id)?.name);
   const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
@@ -139,7 +142,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
               </ComboboxContent>
             </Combobox>
           </label>}
-          {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={() => { void refetchAgents(); }}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+          {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           {!preset && <label>{translate('customModels.address')}<Input data-testid="custom-model-address-0" type="url" required value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
           <label>API Key<Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? translate('customModels.keySaved') : undefined} onChange={(event) => setApiKey(event.target.value)} /></label>
           {keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}

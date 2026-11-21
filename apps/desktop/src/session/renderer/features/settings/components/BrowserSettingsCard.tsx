@@ -47,7 +47,7 @@ type Translate = ReturnType<typeof useSessionMessages>['translate'];
 export function BrowserSettingsCard() {
   const api = useAppSettingsKey('browser');
   return (
-    <SettingValue reading={api.settings} placeholder="h-64 w-full" onReadAgain={() => void api.refresh()}
+    <SettingValue reading={api.settings} placeholder="h-64 w-full"
       errorText={api.settings.state === 'error' ? messageForUser(api.settings.error) : undefined}>
       {({ value }) => <BrowserSettingsForm browserSettings={value} api={api} />}
     </SettingValue>
@@ -507,7 +507,7 @@ const defaultBrowser = replica({
   name: 'defaultBrowser',
   scope: 'device',
   read: () => rpc.browser.defaultBrowser() as Promise<{ name: string; supported: boolean }>,
-  persist: { maxBytes: 512, maxEntries: 1 },
+  persist: { maxBytes: 256, maxEntries: 1 },
 });
 
 function ImportLoginsRow({

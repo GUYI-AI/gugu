@@ -229,8 +229,6 @@ export function parseTodayFile(text: string): TodayParse {
 export type TodayRead = { state: 'none' } | { state: 'ok'; file: TodayFile; updatedAt: string } | { state: 'invalid'; problem: string };
 
 /** 页面此刻读到哪一步:还在读 / 读不到(带重试)/ 读到了(第一天、有简报、读不懂)。 */
-export type TodayFeedView = { state: 'loading' } | { state: 'error'; error: unknown; retry: () => void } | { state: 'read'; read: TodayRead };
-
 /** 它早晚改这一份;没有「文件夹变了」的推送到页面这边,每分钟再问一次(与「动态」页刷新信息流同一个节奏)。 */
 export const TODAY_REFRESH_MS = 60_000;
 

@@ -21,8 +21,9 @@ const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
 const deviceFreeCredits = replica({
   name: 'deviceFreeCreditsStatus',
   scope: 'account',
+  networkMode: 'always',
   read: async () => (await platform.readDeviceFreeCreditsStatus?.()) ?? null,
-  persist: { maxBytes: 512, maxEntries: 1 },
+  persist: { maxBytes: 256, maxEntries: 1 },
 });
 
 /** Gugu membership: the plan on a summary surface, then its credits as rows. `actions` sit beside top-up (the Settings page's refresh). */

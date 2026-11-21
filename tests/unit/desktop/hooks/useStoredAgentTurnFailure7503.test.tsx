@@ -14,16 +14,23 @@ vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
   unsubscribePrivateUserEventBus: bus.off,
 }))
 import { useStoredAgentTurnFailure } from '../../../../apps/desktop/src/hooks/useStoredAgentTurnFailure'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
+/** Every failure a render drew, in order: an answer drawn even for one commit is in here. */
+const drawnFailures: (string | null)[] = []
 const failure = (revision = 'one', commandId = 'cmd') => ({ agentUserId: 'agent', commandId, revision, at: 1, reason: 'weeklyQuota' })
 function Probe({ chatId = 'chat', thread = null, anyChat = false }: { chatId?: string; thread?: string | null; anyChat?: boolean }) {
   const state = useStoredAgentTurnFailure(anyChat ? 'any-chat' : { chatId, threadRootId: thread }, ['agent'])
+  drawnFailures.push(state.failure?.commandId ?? null)
   return <div><span data-failure>{state.failure?.commandId}</span><button onClick={() => state.dismiss('cmd')}>dismiss</button></div>
 }
 let ui: ReturnType<typeof createReactHarness>
 const current = () => ui.container.querySelector('[data-failure]')?.textContent
 const emit = (extra = {}) => act(async () => { bus.listener?.({ id: 'cmd', agent_user_id: 'agent', chat_id: 'chat', thread_root_id: null, status: 'error', ...extra }) })
-beforeEach(() => { ui = createReactHarness(); read.mockReset().mockResolvedValue([]); bus.off.mockClear(); recover.agents = []; window.localStorage.clear() })
+beforeEach(async () => {
+  await freshReplicaAccount('owner')
+  drawnFailures.length = 0
+  ui = createReactHarness(); read.mockReset().mockResolvedValue([]); bus.off.mockClear(); recover.agents = []; window.localStorage.clear() })
 afterEach(() => ui.cleanup())
 
 describe('其他设备的额度通知由命令结果驱动', () => {
@@ -49,6 +56,14 @@ describe('其他设备的额度通知由命令结果驱动', () => {
     expect(read).toHaveBeenCalledTimes(2)
     await act(async () => bus.onSubscribed?.())
     expect(read).toHaveBeenCalledTimes(3)
+  })
+  it('reopening a chat reads its failures once: the subscribed notice joins the open\'s own read', async () => {
+    await ui.render(createNode(Probe, {}))
+    expect(read).toHaveBeenCalledTimes(1)
+    ui.cleanup({ keepReads: true }); ui = createReactHarness()
+    await ui.render(createNode(Probe, {}))
+    await act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() })
+    expect(read).toHaveBeenCalledTimes(2)
   })
   // A task page reads its agent over every chat: an event from any chat of that agent refreshes it.
   it('任务页按 Agent 读：任何聊天来的事件都刷新，别的 Agent 不刷', async () => {
@@ -80,10 +95,23 @@ describe('其他设备的额度通知由命令结果驱动', () => {
     expect(current()).toBe('cmd')
   })
 
-  it('迟到的旧读数不能盖掉新事件的结果', async () => {
+  // A refresh while the first read is on its way: not restarted, not dropped — marked, and read once more
+  // when that read lands; the late answer is never the last word.
+  it('迟到的旧读数不能盖掉新事件的结果：在途的首读落地后再读一次，只读一次', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])
-    await ui.render(createNode(Probe, {})); await emit(); expect(current()).toBe('new')
-    await act(async () => old.resolve([failure('one', 'old')])); expect(current()).toBe('new')
+    await ui.render(createNode(Probe, {})); await emit(); await emit()
+    expect(read).toHaveBeenCalledTimes(1)
+    await act(async () => old.resolve([failure('one', 'old')]))
+    await vi.waitFor(() => expect(current()).toBe('new'))
+    expect(read).toHaveBeenCalledTimes(2)
+  })
+  it('在途的首读失败（等重试）时，事件那次读马上补上，不等退避', async () => {
+    const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])
+    await ui.render(createNode(Probe, {})); await emit()
+    expect(read).toHaveBeenCalledTimes(1)
+    await act(async () => old.reject(new Error('old timeout')))
+    await vi.waitFor(() => expect(current()).toBe('new'))
+    expect(read).toHaveBeenCalledTimes(2)
   })
   it('切聊天立即清掉前一个主体，旧请求失败也不能把错误挂到新聊天', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([])

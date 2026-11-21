@@ -9,8 +9,8 @@ import { composerDrafts } from '../../../apps/desktop/src/session/renderer/featu
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { accountProjectsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
-import { followRendererSession } from '../../../apps/desktop/src/lib/replica'
 import { runInAction } from 'mobx'
+import { freshReplicaAccount } from '../../support/replicaAccount'
 
 type ComposerClient = ReturnType<typeof useAui>['composer']
 const state = vi.hoisted(() => ({ owner: 'creation-navigation', composer: null as ComposerClient | null }))
@@ -72,8 +72,9 @@ const pageOn = (on: Device, props: Omit<Parameters<typeof CreateSessionPage>[0],
   store.devices = [on]
   return createNode(CreateSessionPage, props)
 }
-beforeEach(() => {
-  followRendererSession('SIGNED_IN', state.owner)
+beforeEach(async () => {
+  await freshReplicaAccount(state.owner)
+
   harness = createReactHarness()
   state.composer = null
   state.owner = 'creation-navigation'

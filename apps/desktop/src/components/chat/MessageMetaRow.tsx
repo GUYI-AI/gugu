@@ -3,10 +3,13 @@ import { ActivitySourceBadge } from './ActivitySourceBadge'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { AgentSentBadge } from './AgentSentBadge'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
-import { useForwardedSource } from '../../hooks/useForwardedSource'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '../appSlot/hereHost'
+import { Unknown } from '../ui/Unknown'
+import { useReplica } from '../../lib/replica'
+import { forwardedSource } from '../../lib/forwardedSource'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { useChatStore } from '../../store/chatContext'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 
@@ -64,10 +67,13 @@ export function MessageMetaRow({ targetingLabels, forwardedFromMessageId, viaApp
   )
 }
 
-// App 的名字在它的 manifest 里,只有装着这个 App 的机器(扩展清单那份 store)叫得出;别的端只认得 id,就写 id。
-const ViaAppBadge = observer(function ViaAppBadge({ appId, sender }: { appId: string; sender: string | null }) {
+// App 的名字在它的 manifest 里,只有装着这个 App 的机器(`installedExtensions` 那份清单)叫得出;读到了没装(或这端没有 App)
+// 就写 id;清单还没读到时名字处画占位,❌ 先写 id 再换成名字。
+function ViaAppBadge({ appId, sender }: { appId: string; sender: string | null }) {
   const { t } = useTranslation('messaging')
-  const app = installedExtensionsStore.appName(appId) ?? appId
+  const installed = useInstalledApps(HERE_HOST)
+  if (HERE_HOST && installed.state === 'unknown') return <Unknown className="w-24 text-[length:var(--font-caption)]" />
+  const app = installed.state === 'value' ? installed.value.appName(appId) ?? appId : appId
   return (
     <span
       data-testid={AUTOMATION_TEST_IDS.messageViaAppBadge}
@@ -77,14 +83,18 @@ const ViaAppBadge = observer(function ViaAppBadge({ appId, sender }: { appId: st
       {sender === null ? t('message.viaApp', { app }) : t('message.viaAppFor', { app, name: sender })}
     </span>
   )
-})
+}
 
 // 只有转发来的消息才需要会话列表来叫出出处的名字 —— 所以只有它订阅 chats。
 // 放在元指示行本体里时,每条气泡都订阅 chats,任何一条会话的预览变了全部气泡的这一行都重渲。
 function ForwardedBadge({ forwardedFromMessageId }: { forwardedFromMessageId: string }) {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
-  const source = useForwardedSource(forwardedFromMessageId)
+  // Unknown until read: a placeholder the size of the 「引自 …」 pill, ❌ 「转发」 that turns into 「引自 …」 when it lands.
+  const reading = useReplica(forwardedSource, [forwardedFromMessageId])
+  if (reading.state === 'unknown') return <Unknown className="h-[var(--lh-caption)] w-24" />
+  if (reading.state === 'error') return <RefreshFailed reading={reading} />
+  const source = reading.value
   // 来源是私聊时 chats.name 是空的 —— 服务端只回它存的那个字段,「这条线叫什么」是渲染层的事。
   // ❌ 不在服务端 join identity 去拼名字:forwarded_source 是 SECURITY INVOKER,能读到这一行
   // 就说明读者本来就在那条线里 ⇒ 它一定在自己的会话列表里,本地就叫得出名字。

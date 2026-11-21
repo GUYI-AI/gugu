@@ -227,7 +227,7 @@ export interface ChatComposerProps {
   disabledPlaceholder?: string;
 
   agentOptions?: ComposerAgentOption[] | null;
-  /** 智能体名单还在路上:名单还空着时画占位(ComposerAgentLoading)。 */
+  /** 智能体名单(或这一框选中的那一家)还在路上:选择器的位置画占位(ComposerAgentLoading),❌ 先画「智能体」再换成名字。 */
   agentOptionsLoading?: boolean;
   selectedAgent?: string;
   onAgentChange?: (agentId: string) => void;
@@ -246,6 +246,8 @@ export interface ChatComposerProps {
 
   modelOptions?: Record<string, ComposerModelOption> | null;
   selectedModel?: string;
+  /** The model options are not read yet: the model trigger holds the name's place (see ComposerModelMenu). */
+  modelUnknown?: boolean;
   onModelChange?: (modelId: string) => void;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
@@ -444,6 +446,7 @@ export function ChatComposer({
   onModelChange,
   modelMenuOpenRequest,
   modelSettingNotice,
+  modelUnknown,
   modelMenuNotice,
   onModelMenuOpen,
   modelUnlock,
@@ -785,6 +788,7 @@ export function ChatComposer({
                 triggerTitle={selectedAgentTitle}
                 modelItems={modelItems}
                 selectedModel={selectedModel}
+                modelUnknown={modelUnknown}
                 onModelChange={onModelChange}
                 openRequest={modelMenuOpenRequest}
                 settingNotice={modelSettingNotice}
@@ -1031,10 +1035,10 @@ export function ChatComposer({
               )}
               {/* Harness (agent) selector first, then model — owner-specified order: gugu wants
                   the Harness picked explicitly first rather than folded into the model trigger's icon. */}
-              {agentOptionsLoading && !agentOptions?.length && (
-                <ComposerAgentLoading label={translate('composer.agent')} title={translate('composer.agentsLoading')} />
+              {agentOptionsLoading && (
+                <ComposerAgentLoading title={translate('composer.agentsLoading')} />
               )}
-              {agentOptions && agentOptions.length > 0 && !(agentLocked && hideLockedAgent) && (
+              {!agentOptionsLoading && agentOptions && agentOptions.length > 0 && !(agentLocked && hideLockedAgent) && (
                 <ComposerAgentSelector
                   options={agentOptions}
                   selectedId={selectedAgent}

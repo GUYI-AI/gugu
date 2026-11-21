@@ -1,6 +1,6 @@
-import type { GitBranchRef } from '@gugu/session-core/git';
-import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { queryClient } from '@/lib/replica';
 import { useSessionSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
 import { rpc } from '@renderer/lib/ipc';
 import type { LinkedIssue } from '@shared/core/linked-issue';
@@ -11,13 +11,12 @@ import { useWorkspaceConfig } from './use-workspace-config';
 
 export type LinkedType = 'issue' | 'pr' | null;
 
+type NameRequest = { key: string; input: { title?: string; description?: string } };
+
 export type CreateSessionState = ReturnType<typeof useCreateSessionState>;
 
 export function useCreateSessionState(
   projectId: string | undefined,
-  defaultBranch: GitBranchRef | undefined,
-  isUnborn: boolean,
-  currentBranch: string | null,
   repositoryWorkspaceId: string | null | undefined,
   initialPR?: PullRequest,
   initialLinkedType: LinkedType = null,
@@ -38,8 +37,8 @@ export function useCreateSessionState(
     runInProjectDir?: boolean;
   }
 ) {
-  const { autoGenerateName: autoGenerateNameSetting } = useSessionSettings();
-  const autoGenerateName = autoGenerateNameSetting || opts?.requireGeneratedName === true;
+  const { settings } = useSessionSettings();
+  const autoGenerateName: boolean | null = opts?.requireGeneratedName === true ? true : settings.state === 'value' ? settings.value.autoGenerateName : null;
 
   const [linkedType, setLinkedTypeRaw] = useState<LinkedType>(initialPR ? 'pr' : initialLinkedType);
   const [linkedIssue, setLinkedIssueRaw] = useState<LinkedIssue | null>(null);
@@ -57,65 +56,45 @@ export function useCreateSessionState(
   // Stable random key for the "plain task" name generation — one per modal session.
   const randomKey = useMemo(() => crypto.randomUUID(), []);
 
-  // Random name query — used when no issue/PR is selected yet.
   const hasLinkedEntity =
     (linkedType === 'issue' && linkedIssue !== null) || (linkedType === 'pr' && linkedPR !== null);
-  const { data: randomName, isPending: isRandomPending } = useQuery({
-    queryKey: ['generateSessionName', 'random', randomKey],
-    queryFn: () => rpc.sessionCreate.generateSessionName({}),
-    enabled: autoGenerateName && !hasLinkedEntity,
-    refetchOnWindowFocus: false,
-  });
-
   // Issue-derived name (Linear can derive directly from branchName; others need AI)
   const directIssueSessionName = getIssueSessionName(linkedIssue);
-  const shouldGenerateFromIssue =
-    autoGenerateName &&
-    linkedType === 'issue' &&
-    linkedIssue !== null &&
-    directIssueSessionName === null;
-  const { data: issueGeneratedName, isPending: isIssuePending } = useQuery({
-    queryKey: ['generateSessionName', linkedIssue?.title ?? null, linkedIssue?.description ?? null],
-    queryFn: () =>
-      rpc.sessionCreate.generateSessionName({
-        title: linkedIssue!.title,
-        description: linkedIssue!.description,
-      }),
-    enabled: shouldGenerateFromIssue,
-    refetchOnWindowFocus: false,
-  });
 
-  // PR-derived name
-  const shouldGenerateFromPR = autoGenerateName && linkedType === 'pr' && linkedPR !== null;
-  const { data: prGeneratedName, isPending: isPRPending } = useQuery({
-    queryKey: ['generateSessionName', linkedPR?.title ?? null, linkedPR?.description ?? null],
-    queryFn: () =>
-      rpc.sessionCreate.generateSessionName({
-        title: linkedPR!.title,
-        description: linkedPR!.description ?? undefined,
-      }),
-    enabled: shouldGenerateFromPR,
-    refetchOnWindowFocus: false,
-  });
-
-  // Pick the effective generated name and pending state based on linked type + selection.
-  const generatedName = (() => {
+  /** An LLM command whose answer fills an editable input: asked once per request, never read again as data. */
+  const request = useMemo((): NameRequest | null => {
+    if (autoGenerateName !== true) return null;
     if (linkedType === 'issue' && linkedIssue !== null) {
-      return directIssueSessionName ?? (shouldGenerateFromIssue ? issueGeneratedName : undefined);
+      return directIssueSessionName !== null ? null : {
+        key: `issue\u0000${linkedIssue.title}\u0000${linkedIssue.description ?? ''}`,
+        input: { title: linkedIssue.title, description: linkedIssue.description },
+      };
     }
     if (linkedType === 'pr' && linkedPR !== null) {
-      return shouldGenerateFromPR ? prGeneratedName : undefined;
+      return {
+        key: `pr\u0000${linkedPR.title}\u0000${linkedPR.description ?? ''}`,
+        input: { title: linkedPR.title, description: linkedPR.description ?? undefined },
+      };
     }
-    // No entity selected yet — fall back to random placeholder name.
-    return autoGenerateName ? randomName : undefined;
-  })();
+    return hasLinkedEntity ? null : { key: `random\u0000${randomKey}`, input: {} };
+  }, [autoGenerateName, linkedType, linkedIssue, linkedPR, directIssueSessionName, hasLinkedEntity, randomKey]);
 
-  const isPending = (() => {
-    if (linkedType === 'issue' && linkedIssue !== null)
-      return shouldGenerateFromIssue && isIssuePending;
-    if (linkedType === 'pr' && linkedPR !== null) return shouldGenerateFromPR && isPRPending;
-    return autoGenerateName && isRandomPending;
-  })();
+  const generate = useMutation({
+    mutationFn: (asked: NameRequest) => rpc.sessionCreate.generateSessionName(asked.input),
+  }, queryClient);
+  const { mutate } = generate;
+  useEffect(() => {
+    if (request) mutate(request);
+  }, [request?.key, mutate]);
+  const answeredThis = request !== null && generate.variables?.key === request.key;
+  const suggestion = answeredThis && generate.isSuccess ? generate.data : undefined;
+
+  const generatedName = linkedType === 'issue' && linkedIssue !== null && directIssueSessionName !== null
+    ? directIssueSessionName
+    : suggestion;
+  // Not read yet, or asked and not answered: pending. A failed suggestion is not pending (the input is left to fill).
+  const isPending = autoGenerateName === null
+    || (request !== null && !(answeredThis && (generate.isSuccess || generate.isError)));
 
   const sessionName = useSessionName({
     generatedName,

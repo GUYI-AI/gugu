@@ -37,3 +37,17 @@ describe('远程 SSH 的机器在不在线只看设备连接(一个读数,各处
     expect(withSshLinkOnline(rows, new Set(['srv']), new Map())[0]).toBe(rows[0])
   })
 })
+
+describe('a machine whose SSH-ness is not known yet (CODE-REVIEW-4 Q4)', () => {
+  it('is drawn as pending: neither the cloud offline nor a sign-in state', async () => {
+    const { remoteLinkFacts } = await import('../../../../apps/desktop/src/lib/sshLinkOnline')
+    const { hostConnectionState } = await import('../../../../apps/desktop/src/session/renderer/features/remote-hosts/connection-status')
+    const facts = remoteLinkFacts('box', null, null, false)
+    expect(facts).toEqual({ isOnline: false, linkUnknown: true })
+    expect(hostConnectionState({ online: facts.isOnline, loading: false, unreachable: false, linkUnknown: facts.linkUnknown === true })).toBe('connecting')
+    // Positive control: once the list says it is not an SSH machine, the cloud's offline is what it is.
+    const known = remoteLinkFacts('box', new Set(), null, false)
+    expect(hostConnectionState({ online: known.isOnline, loading: false, unreachable: false })).toBe('offline')
+    expect(remoteLinkFacts('box', new Set(['box']), 'notSignedIn', true)).toEqual({ isOnline: false, sshLink: null })
+  })
+})

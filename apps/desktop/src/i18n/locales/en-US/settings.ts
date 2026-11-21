@@ -490,7 +490,6 @@ export default {
       "provisionFailed": "Could not set it up: ",
       "provisionFailedShort": "Setup failed",
       "wakeFailed": "Could not connect: ",
-      "stateFailed": "Could not read Gugu's status: ",
       "or": ", or ",
       "cancelProvision": "cancel",
       "steps": {
@@ -597,6 +596,7 @@ export default {
         "next": "Then open the link it prints and click “Allow”. The code expires in 15 minutes.",
         "wgetToggle": "No curl? Use wget",
         "curlToggle": "Use curl",
+        "limitCheckFailed": "Couldn’t check the machine limit just now; checking again.",
         "waiting": "Waiting for the machine…",
         "appeared": "{{name}} added"
       },
@@ -817,6 +817,7 @@ export default {
     },
     "lastSeen": "Last online {{time}}",
     "listFailed": "Could not load devices. Check your network.",
+    "sshListFailed": "Could not read which machines this computer reaches over SSH.",
     "loading": "Loading devices...",
     "loginState": {
       "reconnecting": "Reconnecting",
@@ -1304,6 +1305,8 @@ export default {
     "agentCount_other": "{{count}} Agents",
     "noMatches": "No matching passwords",
     "empty": "No saved passwords",
+    "retry": "Retry",
+    "requestHandled": "This save request was already handled or has expired.",
     "addTitle": "Add password",
     "requestSave": "{{agent}} asks you to save this password. The values it provided are filled in. Check or complete them, then click Add.",
     "requestEdit": "{{agent}} asks you to update this password. The values it provided are filled in. Check or complete them, then click Save.",

@@ -792,7 +792,7 @@ describe('话题里能点名谁', () => {
 })
 
 describe('useTopicsOfChat', () => {
-  let observed: { topics: TopicSummary[]; loading: boolean; error: string | null; byMessage: Map<string, TopicSummary[]> }
+  let observed: { topics: TopicSummary[]; loading: boolean; error: string | null; byMessage: Map<string, TopicSummary[]> | null }
   let reload: () => void
 
   function Probe({ sourceChatId }: { sourceChatId: string | null }) {
@@ -831,7 +831,7 @@ describe('useTopicsOfChat', () => {
     })
     expect(observed.topics.map((row) => row.chat_id)).toEqual(['topic-b'])
     expect(observed.loading).toBe(false)
-    expect([...observed.byMessage.keys()]).toEqual(['msg-b'])
+    expect([...observed.byMessage!.keys()]).toEqual(['msg-b'])
   })
 
   it('sourceChatId 为 null 时不请求（话题上不再开话题，单层不嵌套）', async () => {
@@ -853,8 +853,8 @@ describe('useTopicsOfChat', () => {
     ])
     await harness.render(createElement(Probe, { sourceChatId: 'chat-A' }))
     await act(async () => { await Promise.resolve() })
-    expect(observed.byMessage.get('msg-1')?.map((row) => row.chat_id)).toEqual(['topic-a', 'topic-b'])
-    expect(observed.byMessage.get('msg-2')?.map((row) => row.chat_id)).toEqual(['topic-c'])
+    expect(observed.byMessage!.get('msg-1')?.map((row) => row.chat_id)).toEqual(['topic-a', 'topic-b'])
+    expect(observed.byMessage!.get('msg-2')?.map((row) => row.chat_id)).toEqual(['topic-c'])
 
     expect(listTopicsOfChat).toHaveBeenCalledTimes(1)
     await act(async () => { reload(); await Promise.resolve() })

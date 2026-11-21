@@ -58,7 +58,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
 
   // gugu-dev#181 项目就是群(账号上的项目 = 它的项目群):项目群从哪个话题叫到了你,壳发过来的那一份。
   const groupChatId = ref?.chatId;
-  const unavailable = useUnavailableProjects().projects.find(row => row.id === projectId || row.chatId === groupChatId);
+  const unavailable = useUnavailableProjects()?.find(row => row.id === projectId || row.chatId === groupChatId);
   const chatSignals = useSidebarChatSignals();
   const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
 

@@ -7,7 +7,7 @@ import type { AssistantMachine } from '@/session/renderer/features/assistant/ass
 import { AssistantEmpty } from '@/session/renderer/features/assistant/assistant-ui-parts'
 import type { PhonePageProps } from './MobileAssistantApp'
 import type { PhoneMachineState } from './phoneMachine'
-import { type PhoneRead } from './usePhoneRead'
+import type { Reading } from '@/lib/replica'
 
 /** 门过了之后的页:工作区已经打开(❌ 再判 opening / error)。 */
 export type OpenedPageProps = Omit<PhonePageProps, 'machine'> & { machine: AssistantMachine }
@@ -50,18 +50,16 @@ export function ReadFailed({ title, error, onRetry: _onRetry }: { title: string;
   return <AssistantEmpty title={title}><span role={(error as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'}>{assistantPanelFailure(error,t)}</span></AssistantEmpty>
 }
 
-/** 一次读的三种结果:在读 / 读失败(说哪一步)/ 读到了交给 children。 */
-export function ReadView<T>({ read, failedTitle, children }: { read: PhoneRead<T> & { reload: () => void }; failedTitle: string; children: (data: T) => ReactNode }) {
+/** 一次读的三种结果:在读 / 读失败(说哪一步)/ 读到了交给 children(重读没成:列着上一次的,上面一句说这一次没读到)。 */
+export function ReadView<T>({ reading, failedTitle, children }: { reading: Reading<T>; failedTitle: string; children: (data: T) => ReactNode }) {
   const { t } = useTranslation('assistant')
-  const error = useAssistantReadError(read.state === 'loading',read.state === 'error' ? read.error : null)
-  // usePhoneRead owns recovery. A second retry timer here used to reset its
-  // entire attempt key, hiding each error behind another initial spinner.
+  const error = useAssistantReadError(reading.state === 'unknown',reading.state === 'error' ? reading.error : null)
   if (error) return <AssistantEmpty title={failedTitle}><span role={(error as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'}>{assistantPanelFailure(error,t)}</span></AssistantEmpty>
-  if (read.state !== 'ok') return <ReadingNow />
-  // 重读没成:列着的是上一次读到的,上面一句说这一次没读到(❌ 只留旧的、不说)。
-  if (read.refreshError) return <>
-    <p role={(read.refreshError as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'} className="ta-page-sub text-foreground-error" data-testid="assistant-read-refresh-failed">{assistantPanelFailure(read.refreshError,t)}</p>
-    {children(read.data)}
+  if (reading.state !== 'value') return <ReadingNow />
+  // ❌ 只留旧的、不说。
+  if (reading.error) return <>
+    <p role={(reading.error as { code?: string })?.code === 'unprepared' ? 'status' : 'alert'} className="ta-page-sub text-foreground-error" data-testid="assistant-read-refresh-failed">{assistantPanelFailure(reading.error,t)}</p>
+    {children(reading.value)}
   </>
-  return <>{children(read.data)}</>
+  return <>{children(reading.value)}</>
 }

@@ -1,13 +1,14 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { AlertTriangle, CalendarClock, Pencil, X } from '@/lib/icons';
-import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   formatScheduleWhen,
   scheduleMissText,
   scheduleRuleText,
 } from '@renderer/features/automations/session-schedule-format';
-import { sessionSchedulesQueryKey } from '@renderer/features/automations/use-session-schedules';
+import { sessionSchedules } from '@renderer/features/automations/automation-replicas';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { refreshFailure, type Reading } from '@/lib/replica';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpcOn } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -23,6 +24,17 @@ import {
 import { sessionComposerTrayTriggerClassName } from './session-composer-styles';
 import { SessionScheduleTimeEditor } from './session-schedule-time-editor';
 import type { TriggerConfig } from '@shared/core/automations/config';
+
+/** Taken by the chip or the failure; free while not known (most tasks have none: ❌ a placeholder that gives way). */
+export function scheduleSlotShown(reading: Reading<readonly SessionSchedule[]>): boolean {
+  return refreshFailure(reading) !== null || (reading.state === 'value' && reading.value.length > 0);
+}
+
+/** The chip; a read that failed (none read, or a re-read over the chip drawn) said beside it with a retry. */
+export function SessionScheduleSlot({ machine, reading }: { machine: string | null; reading: Reading<readonly SessionSchedule[]> }) {
+  const failed = <RefreshFailed reading={reading} />;
+  return reading.state === 'value' ? <><SessionScheduleChip machine={machine} schedules={reading.value} />{failed}</> : failed;
+}
 
 /**
  * 这个任务给自己排的定时(#7221 schedule_create):一颗芯片,写下一个几点回来 · 回来做什么,一行,长了截断、
@@ -114,7 +126,6 @@ function ViewAllLink({ onNavigate }: { onNavigate: () => void }) {
 /** 弹层里的一条:几点回来 · 标题,重复的规则,没送到的原因;动作只有真能做的那几个。 */
 function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machine: string | null }) {
   const { locale, translate } = useSessionMessages();
-  const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -140,7 +151,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
         await api.deleteAutomation(schedule.id);
         if (kind === 'cancel') toast({ title: translate('sessionSchedule.cancelled', { title: schedule.title }) });
       }
-      void queryClient.invalidateQueries({ queryKey: sessionSchedulesQueryKey(machine) });
+      void sessionSchedules.refresh(machine);
     } catch (error) {
       log.error('session schedule action failed', { kind, scheduleId: schedule.id, error: String(error) });
       const code = error instanceof Error ? error.message : '';

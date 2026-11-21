@@ -34,6 +34,7 @@ const h = vi.hoisted(() => {
     marketRefresh: vi.fn(answer({ outcome: 'unchanged', fetchedAt: '2026-09-28T00:00:00.000Z' })),
     marketEntry: vi.fn(offline),
     installFromFolder: vi.fn(),
+    installFromMarket: vi.fn(),
     uninstall: vi.fn(async () => ({ success: true })),
   };
   return { manifest, api, agentList: vi.fn(async (): Promise<unknown[]> => []), showConfirm: vi.fn(), pickFolder: vi.fn(async () => '/tmp/notes-next') };
@@ -45,8 +46,8 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('@renderer/lib/ipc', () => ({
-  rpc: { extensions: {}, agents: { listIcons: async () => ({}) }, viewState: { save: vi.fn(async () => ({ success: true })) } },
-  rpcOn: () => ({ agents: { list: async () => [] } }),
+  rpc: { extensions: h.api, agents: { listIcons: async () => ({}) }, viewState: { save: vi.fn(async () => ({ success: true })) } },
+  rpcOn: () => ({ agents: { list: async () => [], listManagement: h.agentList, listAgentInstallationStatus: async () => [] } }),
   events: { on: () => () => undefined },
   onMachineEvent: () => () => undefined,
 }));
@@ -56,11 +57,9 @@ vi.mock('@renderer/features/extensions/register-extension-tabs', () => ({ regist
 // A row's 「给哪些 agent」 is the main renderer's editor, which reads the platform as it loads: not what these cells are about.
 vi.mock('@renderer/features/extensions/panel/app-given-section', () => ({ AppGivenSection: () => null }));
 vi.mock('@renderer/features/library/library-host', async () => {
-  const { InstalledExtensionsStore } = await import('@renderer/features/extensions/installed-extensions-store');
   const extensions = {
     key: 'local',
     api: h.api,
-    store: new InstalledExtensionsStore(h.api as never),
     onEvent: () => () => undefined,
     local: true,
     pickFolder: h.pickFolder,
@@ -89,12 +88,22 @@ const { SessionLocalizationProvider } = await import('@renderer/localization/loc
 const { translateSessionMessage } = await import('@renderer/localization/locale-store');
 const { toast } = await import('@renderer/lib/hooks/use-toast');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
+const { queryClient: replicas, followRendererSession } = await import('@/lib/replica');
+// The agents library is the account's (the market's Agents page reads it for the signed-in person).
+followRendererSession('SIGNED_IN', 'test-account');
+
+// What is installed, the market and an App's pages are replicas (kept for the run): each cell reads them anew, as a new
+// renderer process would.
+const MODELS = ['installedExtensions', 'marketUpdates', 'marketShelf', 'marketSearch', 'marketEntry', 'marketListing',
+  'marketVersionHistory', 'extensionRevokedPermissions', 'extensionAgentStatus', 'extensionSettings', 'appPlaces', 'extensionAgentTools',
+  'extensionAgentSkills', 'extensionDataBytes', 'managementAgents', 'agentInstallationStatus'];
 const { appState } = await import('@renderer/lib/stores/app-state');
 const { openAppsLocation } = await import('@renderer/features/apps/apps-location');
 type InstalledItem = import('@renderer/features/extensions/installed/installed-item').InstalledItem;
 
 // Where on the Apps page is app-wide (apps-location): every case starts on the Apps page's first tab, nothing open.
 beforeEach(() => {
+  for (const name of MODELS) replicas.removeQueries({ queryKey: [name] });
   appState.navigation.updateViewParams('apps', () => ({}));
   appState.history.prune(() => true);
 });

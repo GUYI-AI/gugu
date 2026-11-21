@@ -1,23 +1,24 @@
 import { observer } from 'mobx-react-lite';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import type { LibraryHost } from '@renderer/features/library/library-host';
+import { refreshTag } from '@/lib/replica';
+import { INSTALLED } from '../extensions-api';
+import { installedExtensions } from '../installed-extensions';
+import { marketEntry, marketVersionHistory } from '../market-replicas';
 import { compareExtensionVersions } from '@shared/extensions/manifest';
 import { marketCompatText, type MarketListItem } from '@shared/extensions/market';
 import { MarketDevicePicker, useMarketDevicePicker } from './market-detail-devices';
 import { useConfirmMarketInstall } from './market-detail-install';
 import { commitMarketInstall, prepareMarketInstall } from './market-extension-install-rpc';
 
-async function readApplicationOnDevice(api: LibraryHost['extensions']['api'], extensionId: string) {
-  const [inventory, catalog] = await Promise.all([api.list(), api.marketEntry({ extensionId })]);
-  if (!inventory.success || !inventory.data) throw new Error(inventory.error);
-  if (!catalog.success) throw new Error(catalog.error);
-  const installed = inventory.data.extensions.find((entry) => entry.id === extensionId);
-  const preinstalled = inventory.data.origins?.[extensionId] === 'preinstalled';
-  const offered = catalog.data ?? null;
+/** What a device has and is offered, through that host's installed list, market entry and version history. */
+async function readApplicationOnDevice(hostKey: string, extensionId: string) {
+  const [inventory, offered] = await Promise.all([installedExtensions.fetch(hostKey), marketEntry.fetch(hostKey, extensionId)]);
+  const installed = inventory.extensions.find((entry) => entry.id === extensionId);
+  const preinstalled = inventory.origins?.[extensionId] === 'preinstalled';
   const missedVersion = offered?.cloud.newerNeedsApp;
   const blockedByVersion = missedVersion && (!installed || compareExtensionVersions(missedVersion, installed.version) > 0);
-  const versions = blockedByVersion ? await api.marketHistory({ extensionId }).catch(() => null) : null;
-  const blockedRelease = versions?.data?.find((entry) => entry.version === missedVersion);
+  const versions = blockedByVersion ? await marketVersionHistory.fetch(hostKey, extensionId).catch(() => null) : null;
+  const blockedRelease = versions?.find((entry) => entry.version === missedVersion);
   return { installed, preinstalled, offered, missedVersion: blockedByVersion ? missedVersion : null, blockedRelease };
 }
 
@@ -27,7 +28,7 @@ export const MarketExtensionDevices = observer(function MarketExtensionDevices({
   const id = item.manifest.id;
   const picker = useMarketDevicePicker({
     itemKey: `application:${id}`,
-    read: ({ host }) => readApplicationOnDevice(host.extensions.api, id),
+    read: ({ host }) => readApplicationOnDevice(host.extensions.key, id),
     describe: ({ installed, preinstalled, offered, missedVersion, blockedRelease }) => {
       const compat = blockedRelease?.compat ?? offered?.cloud.compat;
       if (!preinstalled && (compat || blockedRelease?.platformRefusal || missedVersion)) {
@@ -57,10 +58,7 @@ export const MarketExtensionDevices = observer(function MarketExtensionDevices({
       if (!result.success) throw new Error(result.error);
       return true;
     },
-    refresh: async ({ host }) => {
-      await host.extensions.store.load();
-      await host.extensions.store.checkUpdates();
-    },
+    refresh: ({ host }) => refreshTag(INSTALLED, host.extensions.key),
   });
   return <MarketDevicePicker {...picker} size="lg" />;
 });

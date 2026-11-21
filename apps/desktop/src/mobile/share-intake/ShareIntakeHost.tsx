@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
+import { createSelectStore, useSelect } from '../../lib/selectStore'
 import { platform } from '../../platform'
 import type { IncomingShare } from '../../platform/types'
 import { useTranslation } from 'react-i18next'
@@ -10,16 +11,19 @@ import { ShareIntakeContent } from './ShareIntakeSheet'
  * 没登录时分享进来的那一份由宿主留着,这里一订阅就补发过来 —— 登录完直接到「发送到」页。
  * 上一份还没选会话时又来一份,以新的为准:用户最后一次点的分享才是他此刻要发的。
  */
+/** The share last sent here and not finished: this device's, owned by the host below; the newest wins. */
+const pending = createSelectStore<IncomingShare | (() => void) | null>(null)
+
 export function ShareIntakeHost({ active }: { active: boolean }) {
   const { t } = useTranslation('messaging')
-  const [share, setShare] = useState<IncomingShare | (() => void) | null>(null)
+  const share = useSelect(pending, (value) => value, Object.is)
   useEffect(() => {
     if (!active || !platform.subscribeIncomingShares) return
-    return platform.subscribeIncomingShares(setShare)
+    return platform.subscribeIncomingShares((incoming) => pending.set(incoming))
   }, [active])
-  const done = useCallback((afterClose?: () => void) => setShare(() => afterClose ?? null), [])
+  const done = useCallback((afterClose?: () => void) => pending.set(afterClose ?? null), [])
   const incoming = share && typeof share !== 'function' ? share : null
-  return <Sheet open={incoming !== null} onClose={done} onClosed={() => { if (typeof share === 'function') { share(); setShare(null) } }} fullScreenMobile testId="share-intake-sheet" ariaLabel={t('shareIntake.title')}>
+  return <Sheet open={incoming !== null} onClose={done} onClosed={() => { if (typeof share === 'function') { share(); pending.set(null) } }} fullScreenMobile testId="share-intake-sheet" ariaLabel={t('shareIntake.title')}>
     {incoming ? <ShareIntakeContent share={incoming} onDone={done} /> : null}
   </Sheet>
 }

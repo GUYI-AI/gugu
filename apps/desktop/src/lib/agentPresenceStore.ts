@@ -3,6 +3,7 @@ import { desktopIpc } from '../platform/desktopIpc'
 import { rendererLogger } from './log'
 import type { DeviceCommandHolding } from '@gugu/core/cloud/deviceCommands'
 import { readMemberRosterRevision, type AccountRevisionEvent, type AccountRevisionListener } from './accountRevisionCoordinator'
+import type { Readable } from './selectStore'
 // 渲染层**唯一**的那张 agent 状态表:键是 agentId,值是「关于这个 agent 我观测到什么」。
 // 会话列表、标题栏、头像、群成员、群汇总、会话里的运行条、composer 忙态 —— 全部读它,读法只有一种。
 // ❌ 这里没有「按会话」的任何一维:一个 agent 在不在干活是它自己的事实,不是某条会话的属性
@@ -284,6 +285,23 @@ export function neverObservedAgentPresence(agentUserId: string): AgentPresenceSt
     lastSnapshotAt: null,
     lastEventAt: null,
   }
+}
+
+const neverObserved = new Map<string, AgentPresenceState>()
+const readables = new Map<string, Readable<AgentPresenceState>>()
+
+/** One agent's presence as a `Readable` for `useSelect` (@@@client-state-model §6): the stored state, or one cached never-observed state per id (stable reference). */
+export function agentPresenceReadable(agentUserId: string): Readable<AgentPresenceState> {
+  let readable = readables.get(agentUserId)
+  if (!readable) {
+    readable = {
+      get: () => getAgentPresenceSnapshot(agentUserId) ?? neverObserved.get(agentUserId)
+        ?? neverObserved.set(agentUserId, neverObservedAgentPresence(agentUserId)).get(agentUserId)!,
+      subscribe: (listener) => (agentUserId ? subscribeAgentPresence(agentUserId, () => listener()) : () => undefined),
+    }
+    readables.set(agentUserId, readable)
+  }
+  return readable
 }
 
 // @@@3839 D — 让缓存在任何视图挂载**之前**就是暖的:会话列表一解析出它的 agent 成员就调这里,

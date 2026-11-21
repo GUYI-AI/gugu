@@ -5,8 +5,8 @@
 import { CloudComputerError } from '@gugu/core/cloud/cloudComputer';
 import { rendererLogger } from '@/lib/log';
 import { rpcOn } from '@renderer/lib/ipc';
-import { ISSUE_CONNECTION_STATUS_QUERY_KEY } from '@renderer/lib/hooks/useGithubAccounts';
-import { queryClient } from '@/lib/replica';
+import { CONNECTIONS } from '@/components/connections/connection-replicas';
+import { refreshTag } from '@/lib/replica';
 import { isUnknownMethod, MoveError, type MoveDirection, type MoveProgress, type MoveReport } from './assistant-move';
 import { MoveCopyError } from './assistant-move-copy';
 import { previewMove, runAssistantMove, type MoveEnv } from './assistant-move-wire';
@@ -137,8 +137,8 @@ export async function startMove(env: MoveEnv, direction: MoveDirection, names: M
     publish({ phase: { kind: 'failed', direction, reason: failureReason(error), resumable: !intact, intact,
       ...(typeof path === 'string' ? { conflictPath: path } : {}) } });
   } finally {
-    // 账号可能已经写进这台机器(搬回本机时接过之前就写了):资源库「连着哪些」的缓存不过期,要叫它重取。
-    void queryClient.invalidateQueries({ queryKey: ISSUE_CONNECTION_STATUS_QUERY_KEY });
+    // 账号可能已经写进这台机器(搬回本机时接过之前就写了):资源库「连着哪些」的读数要重读。
+    void refreshTag(CONNECTIONS);
   }
 }
 

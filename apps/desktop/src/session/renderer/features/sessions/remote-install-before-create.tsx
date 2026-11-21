@@ -2,6 +2,7 @@
 // 不装在这台电脑上);发送之后换成真实进度(阶段 · 已完成 / 总共 · 速度 · 剩余,与本机安装同一行)。
 // 新建框(new-session-page.tsx 的 NewSessionComposer)经 useRemoteInstallBeforeCreate 接这一截。
 import { useState, type ReactElement } from 'react';
+import { valueOf } from '@/lib/replica';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import type { DependencyInstallResult } from '@gugu/session-core/deps/runtime/types';
 import { getAgentInstallErrorPresentation } from '@renderer/features/settings/agents-page/agent-install';
@@ -73,7 +74,7 @@ export function useRemoteInstallBeforeCreate(
   providerId: string | null | undefined
 ): { beforeCreate: (() => Promise<void>) | undefined; note: ReactElement | null } {
   const { translate } = useSessionMessages();
-  const { data: agents } = useAgents();
+  const agents = valueOf(useAgents());
   const agent = agents?.find((candidate) => candidate.id === providerId) ?? null;
   const [remoteInstall, setRemoteInstall] = useState<RemoteInstall | null>(null);
   const beforeCreate =

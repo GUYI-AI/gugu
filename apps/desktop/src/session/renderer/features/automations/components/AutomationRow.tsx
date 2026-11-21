@@ -24,6 +24,7 @@ import { isSpentOneTimeAutomation, type Automation } from '@shared/core/automati
 import type { AutomationRunStatus } from '@shared/core/automations/automation-run';
 import { formatRunTriggerKindLabel } from '../automation-run-format';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
 
 const RUN_STATUS_ICON: Record<
   AutomationRunStatus,
@@ -51,14 +52,11 @@ export const AutomationRow = observer(function AutomationRow({
   onClick,
 }: AutomationRowProps) {
   const { translate } = useSessionMessages();
-  const latestRunQuery = useLatestAutomationRun(automation.id);
-  const scheduledRunQuery = useScheduledAutomationRun(automation.id);
-
-  const run = latestRunQuery.data ?? null;
-  const scheduledAt = scheduledRunQuery.data?.scheduledAt ?? null;
+  const latest = useLatestAutomationRun(automation.id);
+  const next = useScheduledAutomationRun(automation.id);
 
   // #7221 agent 给自己排的:每次都送回建它的那条会话,状态就看那条会话的。
-  const sessionId = run?.sessionId ?? automation.agentSessionId ?? null;
+  const sessionId = latest.state === 'value' ? (latest.value?.sessionId ?? automation.agentSessionId ?? null) : null;
   const projectId = automation.projectId ?? null;
   // 别的机器上的项目与本机的是同一张项目表、同一张任务表(#6264 一套工作台)。
   const sessionPageStore = sessionId && projectId ? getSessionPageStore(projectId, sessionId) : undefined;
@@ -151,37 +149,41 @@ export const AutomationRow = observer(function AutomationRow({
 
         {/* Row 2: latest run sentence left, next run / disabled right */}
         <div className="flex min-w-0 items-center justify-between gap-2">
-          {run ? (
-            (() => {
-              const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
-              const time = run.startedAt ?? run.finishedAt;
-              return (
-                <span className="flex items-center gap-1.5 text-sm text-foreground-muted">
-                  {spin ? (
-                    <LoadingIndicator size="inline" className={textClass} />
-                  ) : (
-                    <Icon className={cn('size-3.5 shrink-0', textClass)} />
-                  )}
-                  {translate('automations.lastRunOn')}
-                  {time && <AbsoluteTime value={time} className="text-foreground-muted" />} {' '}
-                  {formatRunTriggerKindLabel(translate, run.triggerKind)}
+          <div className="flex min-w-0 flex-col gap-1">
+            <ReadingSlot reading={latest} placeholder="w-48">
+              {(run) => run ? (() => {
+                const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
+                const time = run.startedAt ?? run.finishedAt;
+                return (
+                  <span className="flex items-center gap-1.5 text-sm text-foreground-muted">
+                    {spin ? (
+                      <LoadingIndicator size="inline" className={textClass} />
+                    ) : (
+                      <Icon className={cn('size-3.5 shrink-0', textClass)} />
+                    )}
+                    {translate('automations.lastRunOn')}
+                    {time && <AbsoluteTime value={time} className="text-foreground-muted" />} {' '}
+                    {formatRunTriggerKindLabel(translate, run.triggerKind)}
+                  </span>
+                );
+              })() : (
+                <span className="text-sm text-foreground-passive">
+                  {translate('automations.noRuns')}
                 </span>
-              );
-            })()
-          ) : (
-            <span className="text-sm text-foreground-passive">
-              {translate('automations.noRuns')}
-            </span>
-          )}
+              )}
+            </ReadingSlot>
+          </div>
 
           <div className="shrink-0 text-xs text-foreground-muted">
             {automation.enabled ? (
-              scheduledAt ? (
-                <span className="flex items-center gap-1">
-                  {translate('automations.nextRunScheduled')}
-                  <AbsoluteTime value={scheduledAt} />
-                </span>
-              ) : null
+              <ReadingSlot reading={next} placeholder="w-32">
+                {(run) => run?.scheduledAt ? (
+                  <span className="flex items-center gap-1">
+                    {translate('automations.nextRunScheduled')}
+                    <AbsoluteTime value={run.scheduledAt} />
+                  </span>
+                ) : null}
+              </ReadingSlot>
             ) : (
               <span className="text-foreground-passive">
                 {/* #7221 跑过的一次性不是被谁关掉了,是那一次已经过去了(成败看左边那一行的图标)。 */}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { replica, useReplica } from '../../../lib/replica'
+import { refreshFailure, replica, useReplica } from '../../../lib/replica'
 import { useTranslation } from 'react-i18next'
 
 import { SERVER_SSH_INSTALL_CHANNELS, type ServerSshInstallInfo } from '../../../lib/serverSshInstall'
@@ -7,9 +7,9 @@ import { canOpenNewSessionOnDevice, openNewSessionOnDevice } from '../../../lib/
 import { useDevicesStore } from '../../../store/devicesContext'
 import { cn } from '../../../lib/cn'
 import { Button } from '../../ui/Button'
-import type { MachineLimitRefusal } from '@gugu/core/cloud/machineLimit'
 import { CommandBlock } from './CommandBlock'
 import { MachineLimitNotice } from './MachineLimitNotice'
+import { recentMachineLimitRefusals } from './machineLimitReplicas'
 import { newlyAppearedDevices } from './addServerFormat'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { desktopIpc } from '../../../platform/desktopIpc'
@@ -24,9 +24,6 @@ import { desktopIpc } from '../../../platform/desktopIpc'
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
 const caption = 'text-[length:var(--font-caption)] leading-[1.5]'
 const faint = 'text-[var(--faint-fg)]'
-
-/** 就地等时多久问一次「刚才是不是因为机器上限没登上」。 */
-export const MACHINE_LIMIT_CHECK_INTERVAL_MS = 5_000
 
 /** What the one-line install command needs from this desktop (its address, the package to fetch). */
 const sshInstallInfo = replica({
@@ -52,9 +49,7 @@ export function OneLineInstall({
   onRemoveMachine?: () => void
 }) {
   const { t } = useTranslation('settings')
-  const { devices, recentMachineLimitRefusal } = useDevicesStore()
-  // #6264 那台机器在确认页点「允许」时、或领取登录结果时,库因为机器上限拒了它:这里就地停下说清楚,❌ 一直转圈等。
-  const [refusal, setRefusal] = useState<(MachineLimitRefusal & { hostname: string | null }) | null>(null)
+  const { devices } = useDevicesStore()
   const since = useRef<string | null>(null)
   if (since.current === null) since.current = new Date(Date.now() - MACHINE_LIMIT_CHECK_SLACK_MS).toISOString()
   const infoReading = useReplica(sshInstallInfo, desktopIpc() ? [] : null)
@@ -66,25 +61,12 @@ export function OneLineInstall({
 
 
   const appeared = newlyAppearedDevices(known.current, devices)[0] ?? null
-  const waiting = !appeared && !refusal
+  // #6264 那台机器在确认页点「允许」时、或领取登录结果时,库因为机器上限拒了它:这里就地停下说清楚,❌ 一直转圈等。
+  const check = useReplica(recentMachineLimitRefusals, appeared ? null : [since.current])
+  const refusal = check.state === 'value' ? check.value : null
+  // 问不到不打断添加流程:接着等、下一拍再问,只在等待那行下面说一句。
+  const checkFailed = refreshFailure(check) !== null
 
-  // @@@effect-flow - while waiting for the machine this line installs, ask every few seconds whether the account refused it.
-  useEffect(() => {
-    if (!waiting || !recentMachineLimitRefusal) return
-    let live = true
-    const check = () => {
-      void recentMachineLimitRefusal(since.current!).then(
-        (value) => { if (live && value) setRefusal(value) },
-        () => undefined, // 问不到就接着等,下一拍再问;❌ 为这一格打断添加流程
-      )
-    }
-    check()
-    const timer = setInterval(check, MACHINE_LIMIT_CHECK_INTERVAL_MS)
-    return () => {
-      live = false
-      clearInterval(timer)
-    }
-  }, [waiting, recentMachineLimitRefusal])
   const command = info ? (useWget ? info.installCommandWget : info.installCommand) : null
 
   // 命令一到就把焦点放到「复制」上 —— 这一块的第一件事就是复制它。只在焦点还停在这块本身(展开时放在那儿的)
@@ -121,13 +103,14 @@ export function OneLineInstall({
             <span className="text-[var(--fg)]">{t('devices.addServer.oneLine.appeared', { name: appeared.label })}</span>
           ) : refusal ? (
             <div className="text-[var(--fg)]" role="alert">
-              <MachineLimitNotice refusal={refusal} onUpgrade={onUpgrade} onRemoveMachine={onRemoveMachine} onAvailable={() => setRefusal(null)} />
+              <MachineLimitNotice refusal={refusal} onUpgrade={onUpgrade} onRemoveMachine={onRemoveMachine} onAvailable={() => { void recentMachineLimitRefusals.reset(since.current!) }} />
             </div>
           ) : (
             <>
               {/* 在等那台机器连上来 = live(connecting)。 */}
               <LoadingIndicator size="inline" className="text-live" />
               <span className={faint}>{t('devices.addServer.oneLine.waiting')}</span>
+              {checkFailed && <span className={cn(caption, faint)} data-testid="add-server-limit-check-failed">{t('devices.addServer.oneLine.limitCheckFailed')}</span>}
             </>
           )}
         </div>

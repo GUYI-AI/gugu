@@ -10,7 +10,8 @@ import { FileHostMark } from '@/components/appSlot/FileHostMark';
 import { openFileStorageSettings, useFileHost } from '@/lib/fileHost';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { Unknown } from '@/components/ui/Unknown';
 import { declaredMenuCommands, runExtensionCommand } from '@renderer/features/extensions/extension-commands';
 import { ExtensionTabBadge } from '@renderer/features/extensions/extension-tab-badge';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
@@ -99,30 +100,42 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
 });
 
 /** A chat file the person opened (not an App's own chat file): its tab is named and marked by the file, whichever App shows it. */
-const showsFile = (item: PanelItem) => !!item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName);
+const showsFile = (item: PanelItem, apps: InstalledApps | null) => !!item.itemId && !apps?.isChatFile(item.kind, item.fileName);
 
 /** A panel tab's name as its strip says it: what its page called itself, else the file's name, else the App's tab title. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   const folderName = useChatFolderName();
-  const file = showsFile(item) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
-  return extensionTabTitle(
-    extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
-    isFolderItem(item) ? folderName : item.kind && !file ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
-    file,
-  );
+  const installed = useInstalledApps(LOCAL_HOST);
+  const said = extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId));
+  if (!isFolderItem(item) && item.kind && installed.state === 'unknown') {
+    return { ...extensionTabTitle(said, said.title ?? ''), unknown: said.title === null };
+  }
+  const apps = installed.state === 'value' ? installed.value : null;
+  const file = showsFile(item, apps) ? { name: item.title, path: item.fileName ?? item.title } : undefined;
+  return {
+    ...extensionTabTitle(
+      said,
+      isFolderItem(item) ? folderName : item.kind && apps && !file ? (apps.tabTitle(item.kind) ?? item.title) : item.title,
+      file,
+    ),
+    unknown: false,
+  };
 }
 
-const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
+function PanelIcon({ item }: { item: PanelItem }) {
+  const installed = useInstalledApps(LOCAL_HOST);
   if (isFolderItem(item)) return <TabKindMark kind={WORKSPACE_APP_KIND} />;
-  const extensionId = item.kind && !showsFile(item) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
-  const app = extensionId ? installedExtensionsStore.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
+  const apps = installed.state === 'value' ? installed.value : null;
+  const extensionId = item.kind && (installed.state === 'unknown' || !showsFile(item, apps)) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
+  if (extensionId && installed.state === 'unknown') return <Unknown className="size-4 shrink-0" />;
+  const app = extensionId && apps ? apps.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
   return app ? <RailAppIcon app={app} className="size-4" /> : <AppFileMark kind={item.kind} fileName={item.fileName ?? item.title} context="chat" size={14} />;
-});
+}
 
 const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
   const item = stateOf<PanelItem>(tab);
   const chatId = chatIdOfView(ctx);
-  const { label, hint, tooltip } = usePanelPresentation(chatId, tab.tabId, item);
+  const { label, hint, tooltip, unknown } = usePanelPresentation(chatId, tab.tabId, item);
   const surface = extensionSurfaceStore.said(null, groupPageSlot(chatId, tab.tabId));
   const ownBlock = useContext(ChatTabHostContext)?.ownBlock;
   const { t } = useTranslation('messaging');
@@ -141,14 +154,16 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   if (fileHost) kindCommands.push({ id: `${tab.tabId}:file-storage`, label: t('fileStoredOn.settings'), group: 'file', run: openFileStorageSettings });
   return (
     <div className="contents" data-panel-tab={isFolderItem(item) ? 'folder' : (item.kind ?? 'preview')}>
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<PanelIcon item={item} />} markSlot={fileHost ? <FileHostMark host={fileHost} /> : null} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={label} unknownLabel={unknown ? <Unknown className="w-20" /> : undefined} hint={hint} tooltip={tooltip} hasError={surface.error !== null} preSlot={<PanelIcon item={item} />} markSlot={fileHost ? <FileHostMark host={fileHost} /> : null} statusSlot={<ExtensionTabBadge badge={surface.badge} />} kindCommands={kindCommands} />
     </div>
   );
 });
 
 const PanelTabDragPreview = observer(function PanelTabDragPreview({ tab }: { tab: ResolvedTab }) {
   const item = stateOf<PanelItem>(tab);
-  const label = installedExtensionsStore.isChatFile(item.kind, item.fileName) ? installedExtensionsStore.tabTitle(item.kind!) ?? item.title : item.title;
+  // A drag in progress: the tab it lifts was drawn from a known list (an App's tab), so its title is read as it is now.
+  const apps = peekInstalledAppsTracked();
+  const label = apps?.isChatFile(item.kind, item.fileName) ? apps.tabTitle(item.kind!) ?? item.title : item.title;
   return <GenericTabDragPreview preSlot={<PanelIcon item={item} />} label={label} />;
 });
 
@@ -185,7 +200,7 @@ export const chatPanelTabProvider = createTabProvider<typeof CHAT_PANEL_TAB_KIND
 
   resourceKey: panelItemKey,
   // An App's own page beside the chat is as wide as its manifest says (`sideWidth`); a file is the chat's peer: half each.
-  sideWidth: (item) => (item.kind && !item.itemId ? installedExtensionsStore.sideWidth(item.kind) : undefined),
+  sideWidth: (item) => (item.kind && !item.itemId ? peekInstalledAppsTracked()?.sideWidth(item.kind) : undefined),
   // The host's preview holds a message and a file version of this moment: gone with the window, as before.
   isPersistent: (item) => item.kind !== null,
   initialize: stateResource,

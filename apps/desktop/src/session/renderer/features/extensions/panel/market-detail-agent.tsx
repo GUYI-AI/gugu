@@ -1,3 +1,4 @@
+import { refreshFailure } from '@/lib/replica';
 import { vendorName } from '@/i18n/vendorName';
 import type { ReactNode } from 'react';
 import { AppIcon } from '@renderer/lib/components/app-icon';
@@ -32,21 +33,21 @@ function agentVersion(version: string | null | undefined) {
 
 export function MarketAgentDetail({ agentId, onCreate }: { agentId: string; onCreate: () => void }) {
   const { translate } = useSessionMessages();
-  const query = useManagementAgent(agentId);
+  const reading = useManagementAgent(agentId);
   const host = useLibraryHost();
-  const notice = deviceScopeNotice({ remote: host.remote, error: query.error, hasData: !!query.data, now: Date.now() }, translate);
+  const notice = deviceScopeNotice({ remote: host.remote, error: refreshFailure(reading), hasData: reading.state === 'value' && !!reading.value, now: Date.now() }, translate);
   const readOnly = host.remote?.online === false || !!notice?.readOnly;
-  const noticeLine = notice && <DeviceScopeNoticeLine notice={{ ...notice, inHeading: false }} onRetry={() => void query.refetch()} />;
-  if (!query.data) {
+  const noticeLine = notice && <DeviceScopeNoticeLine notice={{ ...notice, inHeading: false }} onRetry={reading.state === 'unknown' ? undefined : () => void reading.retry?.()} />;
+  if (reading.state !== 'value' || !reading.value) {
     return (
       <><DialogHeader>
         <DialogTitle role="status">{translate(
-          query.isPending ? 'extensions.loading' : query.isError ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable'
+          reading.state === 'unknown' ? 'extensions.loading' : reading.state === 'error' ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable'
         )}</DialogTitle>
       </DialogHeader>{noticeLine}</>
     );
   }
-  const agent = query.data;
+  const agent = reading.value;
   return (
     <fieldset disabled={readOnly} className="contents" data-read-only={readOnly || undefined}><InstallSection
       manageOldVersions

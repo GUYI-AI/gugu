@@ -3,7 +3,7 @@ import { chatFileRpc } from './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
-import { installedExtensionsStore, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps, installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { linkShell, pill, shownItem } from './chatTabsHarness'
 import { openerChoice } from '../../../../apps/desktop/src/session/shared/extensions/file-openers'
@@ -23,17 +23,21 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
     grantable: (manifest: unknown) => manifest,
     installAttachment: vi.fn(),
     installFromMarket: vi.fn(),
-    marketOffers: vi.fn(async () => here.market),
+    marketOffers: vi.fn(async () => here.market), onMarketChanged: () => () => {},
     groupFileOpener: vi.fn(),
     groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })),
     setOpenWithDefault: vi.fn(),
     setEnabled: vi.fn(),
   },
 }))
-const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>() }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => sharedHere.packages,
-  subscribeSharedPackages: () => () => {},
+const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>(), fail: false }))
+/** The packages shared in the chat, as the chat's attachments say them. */
+const sharedList = () => [...sharedHere.packages.values()] as { card: { source: { kind: string; url?: string }; messageId: string }; manifest: unknown }[]
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => { if (sharedHere.fail) throw new Error('offline'); return sharedList().map((pkg) => pkg.card) },
+  readPackageSummary: async (source: unknown) => ({ ok: true, manifest: sharedList().find((pkg) => JSON.stringify(pkg.card.source) === JSON.stringify(source))!.manifest }),
+  newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
 }))
@@ -49,7 +53,12 @@ const slides = (version: string) => ({
 })
 const file = { chatId: 'group-1', itemId: 'item-1', name: 'deck.pptx', typedName: 'deck.pptx', file: { document: false, contentType: 'application/json', version: 1, size: 10 } }
 const install = (manifests: unknown[], origins?: InstalledExtensionsList['origins']) =>
-  act(() => installedExtensionsStore.applyList({ extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
+  act(() => installedExtensions.set(['local'], { extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
+
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+// The chat's shared packages are an account replica: read for a signed-in account, as in the product.
+beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
+afterEach(() => followRendererSession('SIGNED_OUT', null))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
@@ -59,6 +68,7 @@ beforeEach(() => {
   HTMLElement.prototype.checkVisibility = () => false
   install([])
   sharedHere.packages = new Map()
+  sharedHere.fail = false
   here.market = { success: true, data: [] }
   for (const tab of panelTabsOf('group-1')) closeChatTab('group-1', tab.tabId)
   vi.mocked(appsHere!.marketOffers).mockClear()
@@ -67,7 +77,7 @@ beforeEach(() => {
   vi.mocked(appsHere!.groupFileOpener).mockReset()
   // Nobody here opens it — until Slides is installed.
   vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => {
-    const installed = installedExtensionsStore.manifests.some((manifest) => manifest.id === 'slides')
+    const installed = peekInstalledApps('local')!.manifests.some((manifest) => manifest.id === 'slides')
     const candidate = { extensionId: 'slides', app: { name: 'Slides' }, tabKind: 'slides.main', tabTitle: 'Slides', suffix: '.pptx', onlyTab: true }
     return { success: true, data: { ...file, choice: installed ? { kind: 'one', candidate } : { kind: 'none' } } } as never
   })
@@ -102,7 +112,7 @@ describe('a group JSON file already open in Workspace', () => {
     here.market = { success: true, data: [{ manifest, version: manifest.version }] }
     const typedName = 'x.turtle-soup.json'
     vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => ({
-      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, installedExtensionsStore.manifests, 'chat', () => null) },
+      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, peekInstalledApps('local')!.manifests, 'chat', () => null) },
     }))
     await openFile()
     await until('Workspace opened the JSON', () => shownItem('group-1')?.kind === 'workspace.main')
@@ -127,7 +137,7 @@ describe('a group JSON file already open in Workspace', () => {
     const manifest = soup(claim)
     here.market = { success: true, data: [{ manifest, version: manifest.version }] }
     vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => ({
-      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, installedExtensionsStore.manifests, 'chat', () => null) },
+      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, peekInstalledApps('local')!.manifests, 'chat', () => null) },
     }))
     vi.mocked(appsHere!.installFromMarket).mockImplementation(async () => {
       install([workspace, manifest])
@@ -148,5 +158,21 @@ describe('a group JSON file already open in Workspace', () => {
       expect(appsHere!.installFromMarket).toHaveBeenCalledWith({ ref: { extensionId: manifest.id, version: manifest.version }, chatId: file.chatId })
       expect(offer()).toBeNull()
     }
+  })
+})
+
+describe("this chat's shared packages cannot be read", () => {
+  it('the file opens as it would with nothing shared (❌ an empty page held back for good)', async () => {
+    const workspace = { ...slides('1.0.0'), id: 'workspace', contributes: { tabs: [{ name: 'main', title: 'Workspace', opensFiles: { chat: ['.json'] } }] } } as ExtensionManifest
+    install([workspace])
+    sharedHere.fail = true
+    const typedName = 'notes.json'
+    vi.mocked(appsHere!.groupFileOpener).mockImplementation(async () => ({
+      success: true, data: { ...file, name: typedName, typedName, choice: openerChoice(typedName, peekInstalledApps('local')!.manifests, 'chat', () => null) },
+    }))
+    await openFile()
+    await until('Workspace opened the JSON', () => shownItem('group-1')?.kind === 'workspace.main')
+    await until('the market answered', () => vi.mocked(appsHere!.marketOffers).mock.calls.length > 0)
+    await until('the page is drawn, not held back', () => harness.container.querySelector('[data-testid="group-app-slot-raw-folded"]') === null)
   })
 })

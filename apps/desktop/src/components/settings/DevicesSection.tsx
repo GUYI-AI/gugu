@@ -1,6 +1,6 @@
 import { notifyCopied } from '@/lib/copyFeedback'
 import { billingLinksAvailable } from '../../lib/appLinks'
-import type { Reading } from '../../lib/replica'
+import { refreshFailure, useReplica, type Reading, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -20,7 +20,8 @@ import {
 } from '../../lib/deviceRowModel'
 import { rendererLogger } from '../../lib/log'
 import { useSshSignInStates } from '../../hooks/useSshSignInStates'
-import { useSshLinkProblems, useSshMachineIds, useSshUpgrades } from '../../hooks/useSshLinkProblems'
+import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
+import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
 import { sshLinkFacts } from '../../lib/sshLinkOnline'
 import { requestSshServerUpgrade, signInSshMachine } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
@@ -54,6 +55,7 @@ import { useDeviceMachineSections } from '../../lib/deviceMachines'
 import { DeviceMachineArchive } from '../devices/DeviceMachineArchive'
 import { DeviceRenameField } from '../devices/DeviceRenameField'
 import { useDeviceRename } from '../../hooks/useDeviceRename'
+import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 
 // #1749 设备管理 → #6264 做成能上线的「设置 → 设备」:
 //  · 每行:名字、是台什么机器(本机 / 电脑 / 服务器)、系统与架构、咕咕版本 + 升级状态、在线或「上次在线」、
@@ -83,12 +85,13 @@ export function DevicesSection({
 } = {}) {
   const { t } = useTranslation('settings')
   const { toast } = useToast()
-  const { devices: deviceRows, phones, loading, error, refresh, rename, cloudComputer } = useDevicesStore()
+  const { devices: deviceRows, phones, loading, error, refresh, rename } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   // Disk bytes are on-demand state; the revision journal only announces warning transitions.
   useEffect(() => { void refresh() }, [refresh])
   const allDevices = useMemo(() => [...deviceRows, ...(phones ?? [])], [deviceRows, phones])
   // #7199 个人助理住的那台云端宿主不在这一页(owner 10-15:用户看不到它住在哪);开通、叫醒、关闭都在「助理」App 里。
-  const cloudDeviceId = cloudComputer?.snapshot?.deviceId ?? null
+  const cloudDeviceId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const machines = useMemo(() => deviceMachines(withoutAssistantHome(allDevices, cloudDeviceId)), [allDevices, cloudDeviceId])
   const devices = useMemo(() => machines.map(machine => machine.device), [machines])
   // A reinstall or a new data directory leaves the old row behind: the online row that may have replaced it (a hint only).
@@ -122,7 +125,10 @@ export function DevicesSection({
   // 远程 SSH 的机器:在线与否、要不要先登录,只看这台电脑到它的设备连接(与侧栏、顶上卡片同一个读数)。
   const linkProblems = useSshLinkProblems()
   const upgrades = useSshUpgrades()
-  const sshMachineIds = useSshMachineIds()
+  // SSH machines unreadable: said once above the list with a retry (❌ a placeholder forever).
+  watchSshMachineAddresses()
+  const sshMachines = useReplica(sshMachineAddresses, [])
+  const sshMachineIds = sshMachines.state === 'value' ? sshMachineIdsOf(sshMachines.value) : null
   const showTools = hasOtherMachines(devices)
   const visible = useMemo(
     () => (showTools ? filterDevices(devices, { query, filter, sshAddress: addressOf }) : devices),
@@ -170,7 +176,7 @@ export function DevicesSection({
       onUninstall={() => openUninstall(device)}
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
-      sshLink={sshMachineIds.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
+      sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
       onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
@@ -204,6 +210,13 @@ export function DevicesSection({
         <SettingsNote tone="danger">
           {t('devices.listFailed')}
           <Button variant="ghost" size="sm" onClick={() => void refresh()} style={{ marginLeft: 'var(--spacing-sm)' }}>{t('devices.retry')}</Button>
+        </SettingsNote>
+      )}
+
+      {refreshFailure(sshMachines) && (
+        <SettingsNote tone="danger">
+          {t('devices.sshListFailed')}
+          <Button variant="ghost" size="sm" onClick={retryOf(sshMachines)} className="ml-2">{t('devices.retry')}</Button>
         </SettingsNote>
       )}
 
@@ -358,7 +371,6 @@ function useNameWhenAppears(devices: readonly Device[], rename: (deviceId: strin
     return () => clearTimeout(timer)
   }, [pending])
 
-  // @@@effect-flow - renaming the machine just added once its row appears.
   useEffect(() => {
     if (!pending || targetLabel === null) return
     if (targetLabel === pending.name) { setPending(null); return }
@@ -449,7 +461,8 @@ function DeviceRow({
   /** 离线的 SSH 机器上这个账号还登着没有(问不到 = null / unknown,照旧只说离线)。 */
   signIn: Reading<SshSignInState> | null
   /** #6264 远程 SSH 那台此刻设备连接的问题(没有 = 连着);其它机器 null。 */
-  sshLink?: SshLinkFailure | null
+  /** Its SSH link from this desktop; undefined = not an SSH machine here; 'unknown' = the SSH machine list is not read yet. */
+  sshLink?: SshLinkFailure | null | 'unknown'
   /** 设备连接要先登录时,句中的「登录」:经 SSH 登录(问密码 / 口令)。 */
   onSshSignIn?: () => void
   /** 正在替它升级时的进度百分比(不知道总量 = null)。 */
@@ -470,7 +483,7 @@ function DeviceRow({
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
-  const link = sshLink === undefined ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
+  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
   const failedUpdate = device.is_online && model.update?.state === 'failed' ? model.update.version : null
   const [retriedFor, setRetriedFor] = useState<string | null>(null)
@@ -511,7 +524,8 @@ function DeviceRow({
   }, [restarting, toast, t, device.label, device.is_online])
   const signInState = signIn?.state === 'value' ? signIn.value : null
   // 离线的 SSH 机器还没问到登录态:状态那一格画占位,❌ 先写「N 天前在线」再改成「登录已失效」。
-  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && signIn?.state === 'unknown'
+  // Not known yet whether it is an SSH machine here (the list is not read): the same placeholder, ❌ "seen N days ago".
+  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && (signIn?.state === 'unknown' || sshLink === 'unknown')
   const signedOutText = sshLink === 'notSignedIn'
     ? t('devices.loginState.signedOut')
     : device.is_online || !signInState

@@ -1,7 +1,9 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { readCachedDevices } from '@/store/devicesCache';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host';
+import { useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { marketEntry } from '@renderer/features/extensions/market-replicas';
 import type { MarketSubject } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import type { AppsLocation } from './apps-location';
@@ -18,17 +20,24 @@ export function useAppDetailRequest({ page, deviceId, ready, host, hasSubject, o
   onSubject: (subject: MarketSubject) => void;
   rootRef: RefObject<HTMLDivElement | null>;
 }) {
+  // What is installed on that host, read when the request is taken (a later list does not reopen the page).
+  const installedReading = useInstalledApps(host.key);
+  const apps = installedReading.state === 'value' ? installedReading.value : null;
+  const appsRef = useRef(apps);
+  appsRef.current = apps;
+  const known = apps !== null;
   const extensionId = page?.extensionId;
   const settled = page?.page === 'manage' || (page?.page === 'market' && !!extensionId && hasSubject(extensionId));
   useEffect(() => {
-    if (!page || !ready || settled) return;
+    const installedApps = appsRef.current;
+    if (!page || !ready || settled || !installedApps) return;
     let cancelled = false;
     const open = async () => {
       if (deviceId) {
         const local = readCachedDevices().some((row) => row.device_id === deviceId && row.is_current_device);
         if (host.key !== (local ? 'local' : `remote:${deviceId}`)) throw new Error('The App link names another device; reopen the link or reconnect that device.');
       }
-      const installed = page.page ? undefined : host.store.manifests.find((row) => row.id === page.extensionId);
+      const installed = page.page ? undefined : installedApps.manifests.find((row) => row.id === page.extensionId);
       if (page.variant && !installed) throw new Error('The installed App is no longer available on this device.');
       if (installed) {
         onPage('manage');
@@ -36,17 +45,17 @@ export function useAppDetailRequest({ page, deviceId, ready, host, hasSubject, o
         rootRef.current?.scrollIntoView({ block: 'start' });
         return;
       }
-      const result = await host.api.marketEntry({ extensionId: page.extensionId });
+      const entry = await marketEntry.fetch(host.key, page.extensionId);
       if (cancelled) return;
-      if (!result.success || !result.data) throw new Error(result.error ?? 'This App is no longer in the market.');
-      onSubject({ manifest: result.data.manifest, cloud: result.data.cloud, installRef: result.data.ref });
+      if (!entry) throw new Error('This App is no longer in the market.');
+      onSubject({ manifest: entry.manifest, cloud: entry.cloud, installRef: entry.ref });
       if (!page.page) onPage('market');
     };
     void open().catch((error: unknown) => { if (!cancelled) toast({ title: messageForUser(error), variant: 'destructive' }); });
     return () => { cancelled = true; };
     // A new page (another App, or a link settled) is a new request; the callbacks are the card's, fresh each render.
-  }, [extensionId, page?.page, settled, ready, host, deviceId]);
-  const variants = extensionId ? host.store.variants[extensionId] : undefined;
+  }, [extensionId, page?.page, settled, ready, known, host, deviceId]);
+  const variants = extensionId && apps ? apps.variants[extensionId] : undefined;
   useEffect(() => {
     if (page?.variant && page.page === 'manage') {
       rootRef.current?.querySelector(`[data-testid="app-variant-${page.variant}"]`)?.scrollIntoView({ block: 'center' });

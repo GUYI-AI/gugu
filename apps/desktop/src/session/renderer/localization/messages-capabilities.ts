@@ -213,7 +213,7 @@ export const enUSCapabilityMessages = {
 
   // ── settings · GitHub accounts ─────────────────────────────────────────────
   'github.add': 'Add GitHub account',
-  'github.loading': 'Loading GitHub accounts...',
+  'github.loadFailed': 'Unable to load GitHub accounts',
   'github.none': 'No GitHub accounts are connected.',
   'github.connectHint': 'Connect a GitHub or GitHub Enterprise account.',
   'github.setDefaultFailed': 'Unable to update default account',
@@ -1202,7 +1202,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
 
   // ── 设置 · GitHub 账户 ──────────────────────────────────────────────────────
   'github.add': '添加 GitHub 账户',
-  'github.loading': '正在加载 GitHub 账户...',
+  'github.loadFailed': '无法加载 GitHub 账户',
   'github.none': '尚未连接 GitHub 账户。',
   'github.connectHint': '连接一个 GitHub 或 GitHub Enterprise 账户。',
   'github.setDefaultFailed': '无法更新默认账户',

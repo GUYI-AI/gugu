@@ -6,8 +6,6 @@
 // 档位名称不入库:后端只给 tier_key(free/plus/pro/max),界面用它查本地化文案。
 // 这样改文案不用跑迁移,加语言也不用动数据库。
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
-import { activeCreditV2, creditV2, creditV2Read } from './v2/runtime'
-import { CreditV2StateError } from './v2/active'
 import type { MembershipV2 } from './v2/readers'
 import { i18n } from '@/i18n'
 
@@ -41,15 +39,6 @@ export function toTier(value: unknown, field: string): MembershipTier {
     throw new Error(i18n.t('membership.invalidTier', { ns: 'settings' }), { cause: { field, value } })
   }
   return value as MembershipTier
-}
-
-/** 已登录用户的档位与订阅状态。空结果是未知，不能被消费方当成非会员。 */
-export async function getMembership(): Promise<Membership | null> {
-  return creditV2Read(async () => {
-    const { rows } = await activeCreditV2.rows(() => creditV2.membership())
-    if (!rows[0]) throw new CreditV2StateError('unknown')
-    return membershipProjection(rows[0])
-  })
 }
 
 export function membershipProjection(row: MembershipV2): Membership {

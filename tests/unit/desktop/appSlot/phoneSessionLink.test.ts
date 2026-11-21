@@ -16,9 +16,10 @@ vi.mock('../../../../apps/desktop/src/lib/guguLinks', async (original) => ({
 const device = { device_id: 'mac-1', label: 'Mac', hostname: 'mac', platform: 'darwin', status: 'online', last_seen_at: '2026-10-27T00:00:00.000Z',
   is_online: true, capabilities: { terminals: [], runtimes: [] } } as Device
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => [device] }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { manifests: [], isEnabled: () => true, manifestFor: () => undefined, icons: {} },
-}))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (original) => {
+  const installed = { manifests: [], isEnabled: () => true, manifestFor: () => undefined, icons: {} }
+  return { ...(await original<object>()), peekInstalledApps: () => installed, fetchInstalledApps: async () => installed }
+})
 const { openPhoneLink } = await import('../../../../apps/desktop/src/components/appSlot/phoneAppHost')
 const { APP_SHOW_SESSION_EVENT } = await import('../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol')
 const { retainDeviceSessions, updateDeviceSessions } = await import('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory')

@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { readOwnSettings, updateOwnSettingsKey } from './ownSettings'
+import { ownSettings, updateOwnSettingsKey, useOwnUserSetting } from './ownSettings'
+import type { Reading } from './replica'
 
 /**
  * 功能栏导览(规范 4.1 第 6 步):六个功能,按功能栏从上到下的顺序。每一步指着一个真实存在的入口;
@@ -45,10 +45,6 @@ export function parseProductTourState(config: Record<string, unknown>): ProductT
   throw new Error('Invalid product tour progress')
 }
 
-export async function readProductTourState(userId: string): Promise<ProductTourState | null> {
-  return parseProductTourState(await readOwnSettings(userId, 'user'))
-}
-
 export async function saveProductTourState(userId: string, state: ProductTourState): Promise<void> {
   await updateOwnSettingsKey(userId, 'user', KEY, () => ({ version: 2, ...state }))
 }
@@ -56,21 +52,15 @@ export async function saveProductTourState(userId: string, state: ProductTourSta
 /** 「帮助与导览」发来的请求(UI_EVENTS.reopenProductTour 的 detail)。 */
 export type ProductTourRequest = { mode: 'restart' } | { mode: 'resume'; step: TourStepId } | { mode: 'films' }
 
-export const productTourQueryKey = (userId: string) => ['product-tour', userId] as const
-
-/** 「帮助与导览」要知道能不能「从第 n 步继续」;导览自己存进度时同步这一份。 */
-export function useProductTourState(userId: string | null) {
-  return useQuery({
-    queryKey: productTourQueryKey(userId ?? ''),
-    queryFn: () => readProductTourState(userId!),
-    enabled: !!userId,
-    retry: false,
-  })
+/** 「帮助与导览」能不能「从第 n 步继续」:读 ownSettings 的 `user`;格式坏了是 error(❌ 当成没看过)。 */
+export function useProductTourState(userId: string | null): Reading<ProductTourState | null> {
+  return useOwnUserSetting(userId, parseProductTourState)
 }
 
-export function useRememberProductTourState(userId: string) {
-  const queryClient = useQueryClient()
-  return (state: ProductTourState) => queryClient.setQueryData(productTourQueryKey(userId), state)
+/** 导览自己往前走时,这一行先在本地跟上(写入在后面串行存;存好的那一行回来会盖上它)。 */
+export function rememberProductTourState(state: ProductTourState): void {
+  if (!ownSettings.key('user')) return
+  ownSettings.set(['user'], (config) => (config ? { ...config, [KEY]: { version: 2, ...state } } : config))
 }
 
 /** 从 state 起算「从第几步继续」;看完的、没看过的都没有可继续的。 */
