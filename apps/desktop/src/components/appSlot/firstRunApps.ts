@@ -8,6 +8,7 @@ import { firstRunArrivingChannel } from '../../session/shared/extensions/marketE
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { appsHere } from './appsHere'
 import { phoneApps } from './phoneApps'
+import { phoneMarketCatalog } from '../settings/phoneMarketPage'
 
 const log = rendererLogger('app-slot/first-run')
 
@@ -45,7 +46,7 @@ function phoneDeps(): FirstRunDeps {
     record: () => answered(phoneApps.firstRun.get()),
     save: async (record) => void (await answered(phoneApps.firstRun.set(record))),
     offers: async () =>
-      (await phoneApps.market.entries())
+      (await phoneMarketCatalog.fetch('phone')).entries
         .filter((entry) => entry.compat === null && !entry.deprecated)
         .map((entry) => ({ manifest: entry.manifest, version: entry.version, firstRun: entry.firstRun, source: entry.source })),
     // The phone's index points at an App only once its files are whole (phoneApps.ts `store`).

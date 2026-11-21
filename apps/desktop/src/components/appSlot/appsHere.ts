@@ -12,6 +12,7 @@ import type { ExtensionManifest } from '../../session/shared/extensions/manifest
 import { appChatFile, groupFileOpener, groupFilesOpenedBy, phoneRuns } from './phoneAppHost'
 import { grantableBy, type AttachmentInstallRefused, type AttachmentPackage } from '../../session/shared/extensions/attachment-install'
 import { PHONE_CAPABILITIES, phoneApps } from './phoneApps'
+import { phoneMarketCatalog } from '../settings/phoneMarketPage'
 import { setExtensionEnabled } from '../../session/renderer/features/extensions/set-extension-enabled'
 import type { HandedConsent } from '../../session/shared/extensions/install-consent-flow'
 
@@ -105,10 +106,11 @@ const phone: AppsHere = {
   grantable: (manifest) => grantableBy(manifest, PHONE_CAPABILITIES),
   installAttachment: (args) => phoneApps.installAttachment(args),
   installFromMarket: (args) => phoneApps.installFromMarket(args),
-  onMarketChanged: (listener) => phoneApps.market.onRefreshed((refreshed) => { if (refreshed.outcome === 'changed') listener() }),
+  // The catalog first (what the offers are read from), then the listener.
+  onMarketChanged: (listener) => phoneApps.market.onRefreshed((refreshed) => { if (refreshed.outcome === 'changed') void phoneMarketCatalog.refresh('phone').then(listener) }),
   marketOffers: async () => {
     try {
-      const entries = await phoneApps.market.entries()
+      const { entries } = await phoneMarketCatalog.fetch('phone')
       // Only what this phone can use at all (app-redesign §5), as its card's install would say.
       const offers = entries.filter((entry) => entry.compat === null && !entry.deprecated && phoneRuns(entry.manifest))
       return { success: true, data: offers.map((entry) => ({ manifest: entry.manifest, version: entry.version })) }

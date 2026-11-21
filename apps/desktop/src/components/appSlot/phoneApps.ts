@@ -1069,8 +1069,6 @@ export const phoneApps = {
   remembered: (key: string): string | null => rememberedAll()[key] ?? null,
   pageUrl,
   data,
-  /** Every App on this phone that is not shipped: the ones the person can uninstall. */
-  installedFromChats: (): ExtensionManifest[] => Object.values(index.installed).map((record) => record.manifest),
 }
 
 // The replicas of what is installed here and what the market says of it read through this store (installed-extensions.ts).
