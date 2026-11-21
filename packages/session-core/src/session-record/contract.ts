@@ -550,6 +550,8 @@ export interface SessionTimeline {
   syncQueuedPrompts(prompts: readonly Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[]): void;
   syncLiveReply(reply: SessionLiveReply | null): void;
   syncTerminals(terminals: readonly TerminalState[]): void;
+  /** The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`). */
+  syncActiveTurn(turn: TranscriptTurn | null): void;
 
   /** 一个 item 已由 provider 侧了结（超时、取消）时由宿主调用。终态，❌ 不能再答。 */
   cancelSettlement(itemId: string): void;

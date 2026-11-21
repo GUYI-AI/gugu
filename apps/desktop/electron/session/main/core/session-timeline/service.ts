@@ -444,6 +444,7 @@ function attachPendingRequests(entry: TimelineEntry): void {
     entry.timeline.syncQueuedPrompts(queuedPrompts.filter(isVisibleQueuedPrompt).map(prompt => ({ ...prompt, text: conversationQueueText(prompt.text) })));
     entry.timeline.syncLiveReply(liveReply ?? null);
     entry.timeline.syncTerminals(terminals);
+    entry.timeline.syncActiveTurn(activeTurn ?? null);
   })
     .then((watch) => {
       if (!watch) return;

@@ -1,3 +1,4 @@
+import { withRuntimeTurn } from './runtime-turn';
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
 import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
@@ -237,6 +238,8 @@ class RecordTimeline implements SessionTimeline {
   private queued: QueuedPromptText[] = [];
   private queuedDirty = false;
   private liveReply: SessionLiveReply | null = null;
+  /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
+  private runtimeTurn: TranscriptTurn | null = null;
   private liveReplyDirty = false;
   private terminals: readonly TerminalState[] = [];
   private terminalsDirty = false;
@@ -658,6 +661,12 @@ class RecordTimeline implements SessionTimeline {
     this.publish();
   }
 
+  syncActiveTurn(turn: TranscriptTurn | null): void {
+    if (this.disposed || this.runtimeTurn === turn) return;
+    this.runtimeTurn = turn;
+    this.publish();
+  }
+
   syncLiveReply(reply: SessionLiveReply | null): void {
     if (this.disposed) return;
     const a = this.liveReply;
@@ -943,7 +952,7 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const active = this.parser.activeTurn;
-    return this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    return withRuntimeTurn(this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]), this.runtimeTurn);
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {

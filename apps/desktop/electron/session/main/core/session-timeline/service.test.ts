@@ -377,6 +377,7 @@ function makeTimeline(onCatchUp: () => void = () => undefined) {
     },
     syncTerminals: () => {},
     syncLiveReply: () => undefined,
+    syncActiveTurn: () => undefined,
     syncQueuedPrompts: (prompts) => {
       queuedPrompts = prompts.map(({ id, text }) => ({ id, text }));
     },

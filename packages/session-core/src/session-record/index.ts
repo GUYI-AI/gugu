@@ -7,6 +7,7 @@
  */
 export * from './contract';
 export { readNativeInputTail, type NativeInputTail } from './native-input-evidence';
+export { identityKeys } from './runtime-turn';
 
 export {
   createSessionTimeline,

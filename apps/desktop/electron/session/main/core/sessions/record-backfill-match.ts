@@ -1,4 +1,5 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { identityKeys } from '@gugu/session-core/session-record';
 import { indexNativePrompts, originalNativePrompt, type NativePromptIndex } from '@gugu/session-core/acp/native-prompt';
 
 /**
@@ -18,25 +19,8 @@ export function recordIdentityFor(harness: string | null | undefined): RecordIde
   return null;
 }
 
-/**
- * 一轮里 agent 自己发的编号:provider 的消息 id、工具调用 id。条目 id 是 `${回合 id}:message:${消息 id}`,
- * 回合 id 在库里重编号过、在记录里另有一套(记录按自己的行 id 命名回合),只认第一个 `:message:` / `:thinking:` 之后那一截。
- * 归约器合成的(`auto:`)不是身份。
- */
-export function turnIdentityKeys(turn: TranscriptTurn): Set<string> {
-  const keys = new Set<string>();
-  const visit = (item: { kind?: string; id?: string; role?: string; _meta?: Record<string, unknown>; toolCallId?: string; children?: unknown[] }) => {
-    if (item.toolCallId) keys.add(`tool:${item.toolCallId}`);
-    if ((item.kind === 'message' || item.kind === 'thinking') && item.id) {
-      const native = item.role === 'user' ? item._meta?.guguNativeMessageId : undefined;
-      const own = typeof native === 'string' ? native : /^.*?:(?:message|thinking):(.+)$/.exec(item.id)?.[1];
-      if (own && !own.startsWith('auto:')) keys.add(`message:${own}`);
-    }
-    for (const child of item.children ?? []) visit(child as typeof item);
-  };
-  for (const item of turn.items) visit(item as Parameters<typeof visit>[0]);
-  return keys;
-}
+/** 一轮里 agent 自己发的编号(工具调用 id、消息 id),和运行时的轮认同一套(`identityKeys`)。 */
+export const turnIdentityKeys = identityKeys;
 
 const squeeze = (text: string) => text.replace(/\s+/g, ' ').trim();
 
