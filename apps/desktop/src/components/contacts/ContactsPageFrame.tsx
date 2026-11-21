@@ -12,7 +12,7 @@ import { ct } from './contactsPanelStyles'
 // (`useDrawerPortal`,见 contactsDrawer;新的请求那几种行各自持有自己的详情与动作)。同一时刻只开着最后打开的那一份。
 
 // data-pane-close + --pane-close-room: headers inside the drawer leave the close (below) its room (tokens.css, next to atWindowEdge).
-const drawerClass = 'absolute inset-y-0 right-0 z-20 flex w-[400px] max-w-full flex-col border-l border-[var(--border)] bg-[var(--bg-primary)] shadow-[var(--shadow-overlay-panel)] empty:hidden [--pane-close-room:var(--control-h-md)]'
+const drawerClass = 'absolute inset-y-0 right-0 z-20 flex w-[var(--contacts-drawer-w)] max-w-full flex-col border-l border-[var(--border)] bg-[var(--bg-primary)] shadow-[var(--shadow-overlay-panel)] empty:hidden [--pane-close-room:var(--control-h-md)]'
 // 点在正文的空白处才关抽屉:点到行、卡片或任何控件是在用它们(点另一行 = 抽屉直接换成那一份)。
 const IN_USE = '.gg-row, button, a, input, textarea, select, [role=button], [role=option], [contenteditable], [data-contact-id], [data-group-id]'
 
@@ -52,7 +52,8 @@ export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDra
     if (open && event.button === 0 && !(event.target as Element).closest(IN_USE)) close()
   }
   return (
-    <div className="relative flex h-full min-w-0 flex-1 overflow-hidden">
+    // --contacts-drawer-w: the drawer's one width; lists that end in row actions stop short of it (see NewFriendsPanel).
+    <div className="relative flex h-full min-w-0 flex-1 overflow-hidden [--contacts-drawer-w:400px]">
       <Pane paneRole="detail" data-testid={testId}>
         <PaneHeader divider atWindowEdge title={title} subtitle={subtitle} actions={actions} />
         <div className="flex-1 overflow-y-auto !px-6 !pb-6" onPointerDown={closeOnBlank}>

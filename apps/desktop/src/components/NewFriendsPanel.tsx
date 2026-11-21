@@ -320,7 +320,8 @@ export function NewFriendsPanel({ onOpenGroupChat, onBack }: { onOpenGroupChat?:
         {kinds.map((kind) => (
           <section key={kind.key} data-request-kind={kind.key}>
             <SectionLabel className="!mt-4">{kind.label} · {kind.count}</SectionLabel>
-            <div className="flex max-w-[720px] flex-col">{kind.body}</div>
+            {/* Rows end in their actions (Accept / Ignore): stop short of the drawer that floats over the right side, open or not, so nothing reflows. */}
+            <div className="flex max-w-[min(720px,calc(100%-var(--contacts-drawer-w,0px)))] flex-col">{kind.body}</div>
           </section>
         ))}
         {kinds.length === 0 && requestsStatus === 'ready' ? (
