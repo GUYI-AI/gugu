@@ -23,6 +23,15 @@ export const IMPORT_ERROR_CODES = [
   'project-permission-denied',
   'project-not-git',
   'project-open-failed',
+  // Settings > data import uses the same message protocol across its separate RPC path.
+  'codex-import-unavailable',
+  'codex-import-busy',
+  'codex-import-selection-required',
+  'codex-import-index-unreadable',
+  'codex-import-source-changed',
+  'codex-import-copy-changed',
+  'codex-import-task-failed',
+  'codex-import-source-unreadable',
 ] as const;
 
 export type ImportErrorCode = (typeof IMPORT_ERROR_CODES)[number];

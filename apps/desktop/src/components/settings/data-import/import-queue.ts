@@ -5,6 +5,7 @@ import { updateImportSettings } from './import-sync-preferences'
 import { notify } from '@/lib/notices'
 import { sessionCoordinator } from '@/lib/sessionCoordinator'
 import type { ImportPreparation, ImportOutcome, ImportedEntity, ImportedSession, ImportProvider } from './import-providers'
+import { importFailureDescription } from './import-failure-copy'
 
 export type ImportDevice = { deviceId: string | null; deviceName: string; count: number }
 export type ImportedEntry = ImportedSession & { deviceId: string | null; deviceName?: string }
@@ -97,6 +98,7 @@ async function runNext(): Promise<void> {
     publish(entry, { state: 'running' })
     if (!job.automatic) notify({ key, tier: 'info', title: t('settings.dataImport.started', { source: job.provider.label }) })
     const result: JobResult = { imported: [], entities: [], details: [], attempts: {}, existing: 0, failed: 0 }
+    let failureDescription: string | undefined
     let processed = 0
     let total = job.devices.reduce((sum, device) => sum + device.count, 0)
     for (const device of job.devices) {
@@ -118,7 +120,10 @@ async function runNext(): Promise<void> {
         Object.assign(result.attempts, read.attempts)
         result.existing += read.existing
         result.failed += read.failed
-      } catch {
+        failureDescription ??= read.details?.filter(item => item.status === 'failed')
+          .map(item => importFailureDescription(item.reason)).find(Boolean)
+      } catch (error) {
+        failureDescription ??= importFailureDescription(error)
         result.failed += deviceTotal - deviceDone
         deviceDone = deviceTotal
       }
@@ -142,6 +147,7 @@ async function runNext(): Promise<void> {
       notify({
         key,
         tier: failed > 0 ? 'warning' : 'success',
+        description: !cancelled && failed > 0 ? failureDescription : undefined,
         title: cancelled ? t('settings.dataImport.cancelledSummary', { count }) :
           failed > 0 ? t('settings.dataImport.partialSummary', { count, failed }) :
             count === 0 && result.existing > 0 ? t('settings.dataImport.alreadyImported', { count: result.existing }) :

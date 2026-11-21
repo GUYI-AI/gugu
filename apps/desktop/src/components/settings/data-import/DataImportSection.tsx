@@ -21,6 +21,7 @@ import { importJobs, type ImportedEntry } from './import-queue'
 import { importProviders, registerExtraImportProviders, type ImportProvider } from './import-providers'
 import { ImportSyncSettings } from './ImportSyncSettings'
 import './data-import.css'
+import { importFailureDescription } from './import-failure-copy'
 
 type HistoryGroup = { id: string; provider: ImportProvider; finishedAt: number; entries: readonly ImportedEntry[] }
 
@@ -162,7 +163,7 @@ export const DataImportSection = observer(function DataImportSection({
             {categoryHistory.items.map(group => <div className="gg-import-history-entry" key={`${group.providerId}:${group.finishedAt}`}>
               <details className="p-3">
                 <summary>{group.items[0] && t(categoryLabelKey(group.items[0].category))} {t('settings.dataImport.categoryResultSummary', { count: group.items.filter(item => item.status === 'imported').length, existing: group.items.filter(item => item.status === 'existing').length, failed: group.items.filter(item => item.status && !['imported', 'existing'].includes(item.status)).length })}</summary>
-                <ul>{group.items.map(item => <li key={item.id}>{item.title}<span className="gg-import-meta"> {t(outcomeLabelKey(item.status, item.reason))}</span></li>)}</ul>
+                <ul>{group.items.map(item => <li key={item.id}>{item.title}<span className="gg-import-meta"> {importFailureDescription(item.reason) ?? t(outcomeLabelKey(item.status, item.reason))}</span></li>)}</ul>
                 {group.items.some(item => item.category === 'connectors') && <p className="gg-import-meta">{t('settings.dataImport.configurationOnly')}</p>}
               </details>
             </div>)}

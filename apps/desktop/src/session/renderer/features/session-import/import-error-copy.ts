@@ -16,6 +16,14 @@ export const IMPORT_ERROR_COPY = {
   'project-not-git': 'sessionImport.error.projectNotGit',
   // 认不出的原因:界面只说通用一句,原始报错在主进程日志里。
   'project-open-failed': 'sessionImport.error.projectOpenFailed',
+  'codex-import-unavailable': 'sessionImport.error.codexUnavailable',
+  'codex-import-busy': 'sessionImport.error.codexBusy',
+  'codex-import-selection-required': 'sessionImport.error.codexSelectionRequired',
+  'codex-import-index-unreadable': 'sessionImport.error.codexIndexUnreadable',
+  'codex-import-source-changed': 'sessionImport.error.codexSourceChanged',
+  'codex-import-copy-changed': 'sessionImport.error.codexCopyChanged',
+  'codex-import-task-failed': 'sessionImport.error.codexTaskFailed',
+  'codex-import-source-unreadable': 'sessionImport.error.codexSourceUnreadable',
 } as const satisfies Record<ImportErrorCode, SessionMessageLookupKey>;
 
 /**
@@ -30,8 +38,13 @@ const ERROR_NAME_PREFIX = /^(?:[A-Za-z]*Error:\s*)+/;
  * 认不出的 message（别的错、老版本机器发来的整句）原样返回，由调用方照旧当「原始诊断」说。
  */
 export function localizeImportError(message: string, translate: Translate): string {
+  return tryLocalizeImportError(message, translate) ?? message;
+}
+
+/** Settings can use their generic failure label for unknown diagnostics instead of exposing raw paths. */
+export function tryLocalizeImportError(message: string, translate: Translate): string | null {
   const info = parseImportError(message.replace(ERROR_NAME_PREFIX, ''));
-  if (!info) return message;
+  if (!info) return null;
   return translate(IMPORT_ERROR_COPY[info.code], {
     name: info.name || translate('sessionImport.error.unnamedFile'),
   });
