@@ -20,7 +20,7 @@ vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () =
 const { useAgentAuthStatus, useExpiredAgentIds } = await import('./use-agent-auth-status');
 const { useAgentSettings } = await import('./use-agent-settings');
 
-const failed = (value: unknown) => ({ state: 'value', value, stale: false, error: new Error('runtime gone') });
+const failed = (value: unknown) => ({ state: 'value', value, stale: false, error: new Error('runtime gone'), retry: async () => {} });
 const signedIn = { claude: { auth: { status: { kind: 'authenticated' }, login: null } } };
 const expired = { claude: { auth: { status: { kind: 'unauthenticated', reason: 'expired' }, login: null } } };
 

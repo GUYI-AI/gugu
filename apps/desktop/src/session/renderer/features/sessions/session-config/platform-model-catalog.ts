@@ -248,7 +248,7 @@ export function usePlatformModelCatalog(
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
   const online = machine === null || machine !== hostMachine || host?.online !== false;
   const catalog = useDetailedPlatformCatalog(providerId !== null);
-  const harness = useReplica(harnessModelCatalog, providerId ? [providerId, surface, machine] : null, { read: online });
+  const harness = useReplica(harnessModelCatalog, providerId ? [machine, providerId, surface] : null, { read: online });
   const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
 
   // Offered or not is the machine's own gate (sessionpagePlatformGate), answered with its harness catalog. Not answered
@@ -261,7 +261,7 @@ export function usePlatformModelCatalog(
   );
   const refresh = () => {
     void platformModels.refresh();
-    if (providerId) void harnessModelCatalog.refresh(providerId, surface, machine);
+    if (providerId) void harnessModelCatalog.refresh(machine, providerId, surface);
     if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
   };
   // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).

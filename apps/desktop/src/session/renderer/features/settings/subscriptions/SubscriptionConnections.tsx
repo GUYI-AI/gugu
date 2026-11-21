@@ -166,7 +166,7 @@ export function SubscriptionConnections({
   const canAdd = accountMethod !== null || vendorKeyMethod
   const refresh = () => {
     refreshTag(SUBSCRIPTIONS, machine, agent.id)
-    void harnessModelCredential.refresh(agent.id)
+    void harnessModelCredential.refresh(undefined, agent.id)
   }
   const action = useMutation({
     mutationFn: async ({
