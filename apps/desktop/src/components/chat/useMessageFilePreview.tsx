@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { FilePreviewHost } from './filePreviewHost'
 import { rendererLogger } from '../../lib/log'
@@ -12,6 +11,7 @@ import { useBackLayer } from '../ui/sheetStack'
 import { openLinkTarget, OpenSuperseded } from '../../lib/guguLinks'
 import { MessageFilePreview, type PreviewFile } from './MessageFilePreview'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
+import { TrackCut } from '@renderer/features/tabs/pane-track-cut'
 import { openAttachmentImage } from '../../lib/attachmentBytes'
 
 export type { PreviewFile } from './MessageFilePreview'
@@ -80,15 +80,15 @@ export function useMessageFilePreview({ mobile, visible, closeRightSurfaces, toa
     return () => window.removeEventListener('keydown', back, true)
   }, [chatNavigation, isOpen, isTopLayer, closeByUser])
   useEffect(() => { if (mobile && preview && !visible) close() }, [mobile, preview, visible, close])
-  const body = preview && <MessageFilePreview key={preview.opening} readOnly={readOnly} fill={hosted} onBack={chatNavigation ? closeByUser : undefined} mobile={mobile} file={preview.file} message={preview.message} onForward={readOnly ? undefined : onForward} onClose={closeByUser} />
-  const panel = host && 'target' in host ? (host.target && preview ? createPortal(body, host.target) : null) : mobile ? (
-    preview && <Sheet fullScreenMobile onClose={closeByUser} ariaLabel={preview.file.fileName} testId="message-file-preview-sheet">{body}</Sheet>
+  const body = preview && <MessageFilePreview key={preview.opening} readOnly={readOnly} fill={hosted || !mobile} onBack={chatNavigation ? closeByUser : undefined} mobile={mobile} file={preview.file} message={preview.message} onForward={readOnly ? undefined : onForward} onClose={closeByUser} />
+  /** `content` with the preview beside it: on the desktop a cut whose preview comes and goes on its track (its width as the
+   * side panel's was: 38% of the window, 380–520 px). */
+  const beside = (content: ReactNode) => host && 'target' in host ? <>{content}{host.target && preview ? createPortal(body, host.target) : null}</> : mobile ? (
+    <>{content}{preview && <Sheet fullScreenMobile onClose={closeByUser} ariaLabel={preview.file.fileName} testId="message-file-preview-sheet">{body}</Sheet>}</>
   ) : (
-    <AnimatePresence>
-      {preview && <motion.div key="message-file-preview-panel" initial={{ x: 380, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: 'tween', duration: 0.2 }} style={{ flexShrink: 0, height: '100%', overflow: 'hidden' }}>
-        {body}
-      </motion.div>}
-    </AnimatePresence>
+    <TrackCut axis="x" animate exit onShares={() => {}} onEqualize={() => {}}
+      shares={(span) => { const side = Math.min(520, Math.max(380, 0.38 * window.innerWidth)); return preview ? [100 - (100 * side) / span, (100 * side) / span] : [100] }}
+      items={[{ id: 'content', min: 0, node: content }, ...(preview ? [{ id: 'file-preview', min: 0, fixed: true, node: body }] : [])]} />
   )
-  return { isOpen: !!preview, open, close, panel }
+  return { isOpen: !!preview, open, close, beside }
 }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useReducer, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { setDragShield } from '@renderer/lib/drag-shield';
 import { KEYBOARD_STEP_PX } from '@renderer/lib/layout/panel-resize-handle';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
@@ -17,13 +17,15 @@ export interface TrackCutChild {
 /**
  * @@@track-cut — a cut (the pane tree's, the screen's blocks, the changes sections) as a PanelTrack: every child but the
  * last is a slot holding its share of the measured span plus the one-pixel divider drawn over its far edge; the last takes
- * the rest. `animate`: a change of shares moves on the spring; a drag, a resize and another set of children jump.
+ * the rest. `animate`: a change of shares moves on the spring, and so does a last child coming (a side page opening) or,
+ * with `exit`, going (drawn until it is off); a drag, a resize and any other set of children jump.
  */
 export function TrackCut({
   axis,
   shares,
   items,
   animate,
+  exit = false,
   disabled = false,
   onShares,
   onEqualize,
@@ -35,6 +37,8 @@ export function TrackCut({
   shares: readonly number[] | ((span: number) => readonly number[]);
   items: readonly TrackCutChild[];
   animate: boolean;
+  /** A last child going away moves off too: its node still renders after it is gone from `items`. */
+  exit?: boolean;
   /** Dividers neither drag nor take keys (a page in full screen over the cut). */
   disabled?: boolean;
   /** The person moved a divider: the cut's new shares, and the span (px, less the dividers) they are of. */
@@ -45,13 +49,35 @@ export function TrackCut({
   /** Drawn over the cut (the chat workspace's collapse preview). */
   children?: ReactNode;
 }) {
-  const ids = items.map((item) => item.id);
+  const extent = useRef(0);
+  // A last child that went away while `animate`: drawn as the fill until the track lands.
+  const leaving = useRef<TrackCutChild | null>(null);
+  const previous = useRef(items);
+  // Set by the move that takes it off: a write before it (a slot attaching) is not that move landing.
+  const exiting = useRef(false);
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const was = previous.current.map((item) => item.id);
+  if (was.join(',') !== items.map((item) => item.id).join(',')) {
+    leaving.current = animate && exit && was.length === items.length + 1 && items.every((item, at) => item.id === was[at]) ? previous.current[was.length - 1] : null;
+  }
+  previous.current = items;
+  const drawnItems = leaving.current ? [...items, leaving.current] : items;
+  const ids = drawnItems.map((item) => item.id);
   const idsKey = ids.join(',');
-  // A new set of children is a new track: they are placed where they are, ❌ moved there.
-  const track = useMemo(() => new PanelTrack(ids.slice(0, -1).map((id) => ({ id, at: { size: 0 } })), axis), [idsKey, axis]);
+  const last = useRef<{ track: PanelTrack | null; ids: string[] }>({ track: null, ids: [] });
+  // Another set of children is another track. A last child added comes in from where the cut's end was drawn; the rest
+  // are placed where they are, ❌ moved there.
+  const { track, entering } = useMemo(() => {
+    const was = last.current;
+    const entering = animate && was.track !== null && ids.length === was.ids.length + 1 && was.ids.every((id, at) => id === ids[at]);
+    const drawnSlots = was.ids.slice(0, -1).reduce((sum, id) => sum + (was.track?.drawn(id) ?? 0), 0);
+    const at = (id: string) => (entering ? (id === was.ids.at(-1) ? extent.current - drawnSlots : was.track!.drawn(id)) : 0);
+    const next = new PanelTrack(ids.slice(0, -1).map((id) => ({ id, at: { size: at(id) } })), axis);
+    last.current = { track: next, ids };
+    return { track: next, entering };
+  }, [idsKey, axis]);
   const rootRef = useRef<HTMLDivElement>(null);
   const handles = useRef<(HTMLDivElement | null)[]>([]);
-  const extent = useRef(0);
   const dragging = useRef(false);
   // The person moved a divider: the shares that come of it are placed, ❌ moved on the spring.
   const moved = useRef(false);
@@ -68,9 +94,10 @@ export function TrackCut({
     const give = spare > 0 ? Math.min(1, short / spare) : 0;
     return px.map((value, at) => Math.max(items[at].min, value - Math.max(0, value - items[at].min) * give));
   };
+  // The last child before one leaving has no divider after it.
   const targets = () => {
     const px = sizes();
-    return Object.fromEntries(ids.slice(0, -1).map((id, at) => [id, { size: px[at] + 1 }]));
+    return Object.fromEntries(ids.slice(0, -1).map((id, at) => [id, { size: px[at] + (at < items.length - 1 ? 1 : 0) }]));
   };
   const userShares = (next: number[]) => {
     moved.current = true;
@@ -79,7 +106,12 @@ export function TrackCut({
   const size = axis === 'x' ? 'width' : 'height';
 
   // The dividers ride the edges as they are drawn.
-  useLayoutEffect(() => track.subscribe((drawn) => {
+  useLayoutEffect(() => track.subscribe((drawn, landed) => {
+    if (landed && exiting.current) {
+      exiting.current = false;
+      leaving.current = null;
+      redraw();
+    }
     let edge = 0;
     ids.slice(0, -1).forEach((id, at) => {
       edge += drawn.get(id) ?? 0;
@@ -110,8 +142,14 @@ export function TrackCut({
     placed.current = track;
     const byHand = moved.current || dragging.current;
     moved.current = false;
-    if (animate && !first && !byHand && extent.current > 0) track.to(targets());
+    const moves = animate && (!first || entering) && !byHand && extent.current > 0;
+    exiting.current = moves && leaving.current !== null;
+    if (moves) track.to(targets());
     else track.jump(targets());
+    if (!moves && leaving.current) {
+      leaving.current = null;
+      redraw();
+    }
   }, [sharesKey, track]);
 
   /** Shares with divider `at` moved to `edge` px from the cut's start, both of its neighbours kept at their minimum. */
@@ -155,18 +193,18 @@ export function TrackCut({
 
   return (
     <div ref={rootRef} className={cn('relative flex h-full w-full min-h-0 min-w-0 overflow-hidden', axis === 'y' && 'flex-col')} data-track-cut={axis}>
-      {items.map((item, at) => {
-        const fill = at === items.length - 1;
+      {drawnItems.map((item, at) => {
+        const fill = at === drawnItems.length - 1;
         return (
           <PanelSlot key={item.id} track={track} id={item.id} axis={axis} fill={fill}>
             {/* A slot's last pixel is the divider's. */}
-            <div style={{ [size]: fill ? '100%' : 'calc(100% - 1px)', [axis === 'x' ? 'height' : 'width']: '100%' }}>{item.node}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', [size]: fill ? '100%' : 'calc(100% - 1px)', [axis === 'x' ? 'height' : 'width']: '100%' }}>{item.node}</div>
           </PanelSlot>
         );
       })}
-      {items.slice(0, -1).map((item, at) => {
+      {drawnItems.slice(0, -1).map((item, at) => {
         const own = divider?.at === at ? divider : undefined;
-        const inert = disabled || item.fixed || items[at + 1].fixed;
+        const inert = disabled || !!leaving.current || item.fixed || drawnItems[at + 1].fixed;
         return (
           <div
             key={`divider-${item.id}`}

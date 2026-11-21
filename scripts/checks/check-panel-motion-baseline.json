@@ -41,9 +41,7 @@
   "motionImporters": {
     "apps/desktop/src/components/chat/MessageBubble.tsx": "a reaction chip's pop (scale), not a panel",
     "apps/desktop/src/components/chat/RightPanel.tsx": "phone page push; phone is out of scope (owner 11-21)",
-    "apps/desktop/src/components/chat/TopicSplitPane.tsx": "topic pane slide (D5): it sits after the chat column, which needs end slots on the track and the frozen ChatAreaPanel reshaped; follow-up",
     "apps/desktop/src/components/chat/groupSettingsUi.tsx": "settings sub-page swap inside its panel (x / opacity, I1), not a panel's size",
-    "apps/desktop/src/components/chat/useMessageFilePreview.tsx": "message file preview pane slide (D11): after the chat column like D5; follow-up",
     "apps/desktop/src/main.tsx": "MotionConfig reducedMotion=\"user\" for the window, no animation",
     "apps/desktop/src/mobile/phoneChatMotion.ts": "phone page push; phone is out of scope (owner 11-21)",
     "apps/desktop/src/pages/LoginPage.tsx": "login page motion, not a panel",

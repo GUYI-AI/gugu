@@ -3,7 +3,7 @@ import { act, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
-import { until } from '../../../../../../../tests/support/awaitCondition';
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -97,6 +97,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   await until('the split produces two measurable pages', () => width(chat()) > 0 && width(tool()) > 0 && width(tool()) < 800);
+  // The tool slides in on the track: the split width to restore is the one it lands on.
+  await untilStable('the split comes to rest', () => width(chat()));
   const chip = inside('[data-chat-workspace-header] [data-tab-label="工具页签"]')!;
   const hideButton = inside('button[aria-label="隐藏标签页"]')!;
   expect(chip.getBoundingClientRect().height).toBe(32);
@@ -268,6 +270,8 @@ it('resizes and previews each collapse before release, and restores the split on
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   const separator = () => inside('[data-chat-tool-divider]')!.getBoundingClientRect();
+  // The tool slides in on the track: grab the divider where it lands.
+  await untilStable('the split comes to rest', () => separator().left);
   const begin = async () => {
     const rect = separator();
     const x = rect.left + rect.width / 2;

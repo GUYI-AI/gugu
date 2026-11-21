@@ -100,7 +100,7 @@ function LegacyDmTranscript({ scope, chat, mobile }: { scope: LegacyDmScope; cha
     if (scroll.current) position.current = { top: scroll.current.scrollTop, height: scroll.current.scrollHeight };
     history.more?.();
   };
-  return <>
+  return preview.beside(
     <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto py-3" data-testid="legacy-dm-messages">
       {history.more && <Button variant="ghost" onClick={older}>{translate('legacyDm.older')}</Button>}
       {messages.map(message => <ReadOnlyMessageBubble key={message.id} message={message} mobile={mobile} fileCardsOnly
@@ -113,6 +113,5 @@ function LegacyDmTranscript({ scope, chat, mobile }: { scope: LegacyDmScope; cha
       {failed && <><PaneEmptyState caption={translate('legacyDm.failed')} hint={messageForUser(failed.error)} /><Button variant="ghost" onClick={retryOf(failed)}>{translate('common.retry')}</Button></>}
       {history.pages.length > 0 && !loading && !failed && !messages.length && <PaneEmptyState caption={translate('legacyDm.empty')} />}
     </div>
-    {preview.panel}
-  </>;
+  );
 }

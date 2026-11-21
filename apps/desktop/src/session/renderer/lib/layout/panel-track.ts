@@ -162,11 +162,11 @@ export class PanelTrack {
       slot.from = slot.geometry.drawn;
       slot.geometry = { drawn: slot.from, ...planSlot(slot.from, slot.geometry.content, slot.target) };
     });
-    // Frame 0 with the start's layout, in the click's task.
-    this.write(true);
-    // Ours before the spring starts: its first frame or its end may come before `animate` returns.
+    // Ours before frame 0 (not landed) and before the spring starts: its first frame or its end may come before `animate` returns.
     const move = { stop: () => {} };
     this.running = move;
+    // Frame 0 with the start's layout, in the click's task.
+    this.write(true);
     const controls = animate(0, 1, {
       ...PANEL_SPRING,
       onUpdate: (progress) => {

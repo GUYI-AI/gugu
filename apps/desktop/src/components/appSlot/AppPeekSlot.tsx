@@ -3,6 +3,7 @@ import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } fro
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
 import { useBackLayer } from '../ui/sheetStack'
 import { PeekCovered } from './peekCovered'
+import { TrackCut } from '../../session/renderer/features/tabs/pane-track-cut'
 
 // What is drawn in it, loaded when something is opened (it reaches the host's previews, frames and platform).
 const AppPeek = lazy(() => import('./AppPeek').then((m) => ({ default: m.AppPeek })))
@@ -40,25 +41,24 @@ export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, cha
   useBackLayer(close, target !== null)
   const beside = !narrow && width >= BESIDE_MIN_WIDTH
   const covered = target !== null && !beside
+  const peek = (over: boolean) => target && (
+    <div className={over ? 'absolute inset-0 flex flex-col bg-[var(--bg-primary)]' : 'flex min-h-0 flex-1 flex-col'} data-testid="app-peek" data-peek-kind={target.kind}>
+      <Suspense fallback={null}>
+        <AppPeek target={target} slotKey={`${sessionId ?? ''}:${tabId}`} {...(chatId ? { chatId } : {})} beside={beside} onClose={close} />
+      </Suspense>
+    </div>
+  )
   return (
     // Narrow (a phone), what is opened covers the panel's header too — the slot is not its containing block, the panel is:
     // one header on screen, the peek's, whose back returns to the page with its own.
     <div ref={boxRef} className={`${narrow ? '' : 'relative '}flex min-h-0 min-w-0 flex-1`} data-testid="app-peek-slot" data-peek={target ? (beside ? 'beside' : 'over') : undefined}>
-      {/* Same element whether or not something is open: the page in it must never be remounted. */}
-      <div className={`flex min-h-0 min-w-0 flex-1 flex-col${covered ? ' invisible' : ''}`}>
-        <PeekCovered.Provider value={covered}>{children}</PeekCovered.Provider>
-      </div>
-      {target ? (
-        <div
-          className={beside ? 'flex min-h-0 w-[max(420px,45%)] shrink-0 flex-col border-l border-[var(--border)]' : 'absolute inset-0 flex flex-col bg-[var(--bg-primary)]'}
-          data-testid="app-peek"
-          data-peek-kind={target.kind}
-        >
-          <Suspense fallback={null}>
-            <AppPeek target={target} slotKey={`${sessionId ?? ''}:${tabId}`} {...(chatId ? { chatId } : {})} beside={beside} onClose={close} />
-          </Suspense>
-        </div>
-      ) : null}
+      {/* Beside, what is opened comes and goes on the cut's track (max(420px, 45%) wide); the page keeps its element. */}
+      <TrackCut axis="x" animate exit={!target} onShares={() => {}} onEqualize={() => {}}
+        shares={(span) => target && beside ? [100 - (100 * Math.max(420, 0.45 * span)) / span, (100 * Math.max(420, 0.45 * span)) / span] : [100]}
+        items={[{ id: 'page', min: 0, node: <div data-peek-page className={`flex min-h-0 min-w-0 flex-1 flex-col${covered ? ' invisible' : ''}`}>
+          <PeekCovered.Provider value={covered}>{children}</PeekCovered.Provider>
+        </div> }, ...(target && beside ? [{ id: 'peek', min: 0, fixed: true, node: peek(false) }] : [])]} />
+      {covered && peek(true)}
     </div>
   )
 })

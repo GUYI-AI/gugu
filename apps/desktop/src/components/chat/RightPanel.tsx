@@ -8,7 +8,7 @@ import { useBackLayer } from '../ui/sheetStack'
 import { rightPanelMobilePageStyle } from './rightPanelMobilePage'
 
 // 聊天区右侧那一个槽位在手机上的外壳(成员列表 / 群设置 / 群公告 / 历史 / 工作区):整页从右边推进来。桌面上这些面板
-// 是会话页右栏(SidePanelSplit)或聊天上的一层,不走这里(ChatAreaPanel 的 coverChat)。
+// 是会话页并排的侧页(PanelTrack)或聊天上的一层(ChatAreaPanel 的 coverChat),不走这里。
 const mobileScrollPageStyle: CSSProperties = { ...rightPanelMobilePageStyle, overflow: undefined, overflowY: 'auto' }
 
 /**

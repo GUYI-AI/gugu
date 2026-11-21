@@ -60,7 +60,8 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
         <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}><OverFullscreenStrip.Provider value={lifted}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</OverFullscreenStrip.Provider></div>
       </div>}
       <div className="relative min-h-0 min-w-0 flex-1" data-pane-tree-narrow={narrow || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
-        <Tree node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} />
+        {/* The root is a cut even as one pane, so the side page coming and going moves on its track. */}
+        <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} />
         {layout.groups.map(({ paneId }) => {
           const shown = !narrow || paneId === visiblePaneId;
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
@@ -90,32 +91,33 @@ const Tree = observer(function Tree({ node, layout, narrow, visiblePaneId, ancho
 });
 
 const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorOf }: {
-  node: Extract<PaneLayoutNode, { type: 'split' }>; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; anchorOf: (paneId: string) => string;
+  node: PaneLayoutNode; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; anchorOf: (paneId: string) => string;
 }) {
-  const chatDivider = !narrow && layout.chatWorkspaceMode === 'split' && node === layout.layout && node.orientation === 'horizontal' && node.children.length === 2;
-  const divider = useChatWorkspaceDivider(layout, chatDivider ? node.id : undefined);
+  const split = node.type === 'split' ? node : { id: '', orientation: 'horizontal' as const, children: [node], sizes: [100] };
+  const chatDivider = !narrow && layout.chatWorkspaceMode === 'split' && node === layout.layout && split.orientation === 'horizontal' && split.children.length === 2;
+  const divider = useChatWorkspaceDivider(layout, chatDivider ? split.id : undefined);
   const tree = (child: PaneLayoutNode) => <Tree node={child} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} />;
   // Narrow: one pane at a time, each child laid over the whole cut (the others hidden, not unmounted).
   if (narrow) return <div className="relative h-full w-full">
-    {node.children.map((child) => {
+    {split.children.map((child) => {
       const shown = paneOrder(child).includes(visiblePaneId);
       return <div key={childId(child)} className="absolute inset-0 min-h-0 min-w-0" style={{ visibility: shown ? 'visible' : 'hidden', pointerEvents: shown ? undefined : 'none' }} inert={!shown} aria-hidden={!shown || undefined}>{tree(child)}</div>;
     })}
   </div>;
-  const horizontal = node.orientation === 'horizontal';
+  const horizontal = split.orientation === 'horizontal';
   return <TrackCut
     axis={horizontal ? 'x' : 'y'}
-    shares={node.sizes}
-    items={node.children.map((child) => ({ id: childId(child), min: horizontal ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX), node: tree(child) }))}
+    shares={split.sizes}
+    items={split.children.map((child) => ({ id: childId(child), min: horizontal ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX), node: tree(child) }))}
     // The outermost cut is the pair's: the side page coming to another width (a tab of another kind in front) moves.
     animate={node === layout.layout}
-    onShares={(sizes) => layout.setSplitSizes(node.id, sizes)}
-    onEqualize={() => layout.equalizeSplit(node.id)}
+    onShares={(sizes) => layout.setSplitSizes(split.id, sizes)}
+    onEqualize={() => layout.equalizeSplit(split.id)}
     divider={chatDivider ? { at: 0, ref: divider.handleRef, onPointerDown: divider.start, props: { 'data-chat-tool-divider': '' } } : undefined}
   >
     {chatDivider && divider.preview && <div
       className={`pointer-events-none absolute inset-y-0 border-foreground/25 bg-foreground/10 ${divider.preview === 'left' ? 'left-0 border-r' : 'right-0 border-l'}`}
-      style={{ zIndex: 'var(--z-pane-divider)', width: `${node.sizes[divider.preview === 'left' ? 0 : 1]}%` }}
+      style={{ zIndex: 'var(--z-pane-divider)', width: `${split.sizes[divider.preview === 'left' ? 0 : 1]}%` }}
       data-occludes-browser-page
       data-chat-tool-collapse-preview={divider.preview}
       data-chat-tool-collapse-ready={divider.ready || undefined}

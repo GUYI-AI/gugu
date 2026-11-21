@@ -7,6 +7,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
+import { TrackCut } from '@renderer/features/tabs/pane-track-cut';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
 import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-fullscreen';
@@ -86,6 +87,54 @@ it('a cut given other shares moves its divider over frames, and lays its panes o
   // lands on 30% of the cut (less its one divider pixel)
   const cut = divider.parentElement!.getBoundingClientRect();
   expect(Math.abs(edges.at(-1)! - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
+});
+
+it('the side page comes in on the track: it slides in from the end, and the page beside it is laid out once', async () => {
+  await page.viewport(1100, 800);
+  harness = createReactHarness();
+  harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
+  const provider = createTabProvider({ kind: 'page', resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
+  layout = new PaneLayoutStore(createTabRegistry([provider]), { viewId: 'tree-v3-enter' });
+  layout.open('page', { id: 'conversation' }, { from: null, intent: 'newTab' });
+  const file = layout.open('page', { id: 'file' }, { from: null, intent: 'newTab' })!;
+  layout.focusedPane.setDimensions(harness.container.clientWidth, harness.container.clientHeight);
+  const kept = layout.activePaneId;
+  await act(() => harness.render(<PaneTreeView layout={layout} renderPane={(id, _first, _last, part) => (part === 'bar' ? null : <iframe title={id} style={{ width: '100%', height: '100%' }} />)} />));
+  await act(() => { expect(layout.splitPane(kept, 'right', file)).toBe(true); });
+  const other = layout.groups.find(({ paneId }) => paneId !== kept)!.paneId;
+  const lefts: number[] = [];
+  const keptWidths = new Set<number>();
+  const start = performance.now();
+  while (performance.now() - start < 900) {
+    await new Promise(requestAnimationFrame);
+    const side = harness.container.querySelector(`iframe[title="${other}"]`);
+    if (side) lefts.push(Math.round(side.getBoundingClientRect().left));
+    keptWidths.add(Math.round(harness.container.querySelector(`iframe[title="${kept}"]`)!.getBoundingClientRect().width));
+  }
+  expect(new Set(lefts).size, JSON.stringify(lefts)).toBeGreaterThan(5);
+  expect(lefts[0], JSON.stringify(lefts)).toBeGreaterThan(800);
+  expect(Math.abs(lefts.at(-1)! - 500)).toBeLessThan(2);
+  expect(keptWidths.size, [...keptWidths].join(' ')).toBeLessThanOrEqual(2);
+});
+
+it('with exit, a last child that goes away is drawn until it is off, moving out over frames', async () => {
+  await page.viewport(1100, 800);
+  harness = createReactHarness();
+  harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
+  const cut = (side: boolean) => <TrackCut axis="x" animate exit onShares={() => {}} onEqualize={() => {}} shares={side ? [60, 40] : [100]}
+    items={[{ id: 'main', min: 0, node: <div /> }, ...(side ? [{ id: 'side', min: 0, fixed: true, node: <div data-testid="side" style={{ height: '100%' }} /> }] : [])]} />;
+  await act(() => harness.render(cut(true)));
+  await act(() => harness.render(cut(false)));
+  const lefts: number[] = [];
+  const start = performance.now();
+  while (performance.now() - start < 900) {
+    await new Promise(requestAnimationFrame);
+    const side = harness.container.querySelector('[data-testid="side"]');
+    lefts.push(side ? Math.round(side.getBoundingClientRect().left) : -1);
+  }
+  expect(lefts[0], JSON.stringify(lefts)).toBeLessThan(700);
+  expect(new Set(lefts.filter((left) => left >= 0)).size, JSON.stringify(lefts)).toBeGreaterThan(5);
+  expect(lefts.at(-1), JSON.stringify(lefts)).toBe(-1);
 });
 
 it('narrowing and widening only change visibility, preserving both panes, tabs and layout shares', async () => {
