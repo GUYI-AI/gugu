@@ -47,7 +47,6 @@ export function useMcpLibrary() {
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
   const provided = useReplica(mcpProvided, [host.key], { read: reachable });
   const { reading: agents, refetch: refetchAgents } = useManagementAgents();
-  // @@@reading-default(paired) - while the agent list is not known `isLoading` is true and the view draws no groups (nor offers "add", where `harnessNames` reads it)
   const installed = useMemo(
     () => (agents.state === 'value' ? agents.value : []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
     [agents]

@@ -72,7 +72,6 @@ export function useAgentAuthStatuses(
   const failures = probeFailures.key === subject ? probeFailures.messages : null;
   const probeRef = useRef<(() => Promise<void>) | null>(null);
 
-  // @@@effect-flow(command) - asks the worker to probe each program's sign-in (it runs the CLI's status; the answer lands in the live agent list read above); state holds only this probe's own failures, which settle that row as unknown with its reason
   useEffect(() => {
     const programList = programsKey.split('\u0000').map((key) => (key === '' ? undefined : key));
     probeRef.current = null;

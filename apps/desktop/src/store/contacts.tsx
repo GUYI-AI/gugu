@@ -80,7 +80,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const failureText = (error: Error | null | undefined) => (error ? error.message || String(error) : null)
   const requestsError = requestsReading.state === 'error' ? failureText(requestsReading.error) : requestsReading.state === 'value' ? failureText(requestsReading.error) : null
   const groupJoinRequestsError = joinRequestsReading.state === 'error' ? failureText(joinRequestsReading.error) : joinRequestsReading.state === 'value' ? failureText(joinRequestsReading.error) : null
-  // @@@reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
   const contacts = relationsReading.state === 'value' ? relationsReading.value : NO_RELATIONS,
     groups = groupsReading.state === 'value' ? groupsReading.value : NO_GROUPS,
     receivedRequests = requestsReading.state === 'value' ? requestsReading.value.received : NO_REQUESTS,
@@ -247,7 +246,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     // Decided after the write (a failed assistant read never blocks a profile edit), ❌ guessed from what may not be read yet.
     const personal = !!ownerId && await myAssistant.fetch().then((mine) => mine.agentId === agentId, (error: unknown) => {
       rendererLogger('contacts/profile').error({ error: String(error), agentId }, 'Profile saved; whether it is the assistant could not be read, so the assistant App is not told')
-      // @@@reading-default(moment) - a one-moment decision after the write: an assistant identity that cannot be read sends no App note (said in the log)
       return false
     })
     if (personal) await reportAssistantAppChange(deviceId ? { rpc: machineRpc(deviceId) } : null, agentId, {

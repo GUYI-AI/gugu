@@ -153,7 +153,6 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
   }, [verificationUri]);
 
   // Subscribe to auth events from main process
-  // @@@effect-flow(command) - GitHub device-code sign-in (a flow: the code, its expiry and the poll for approval)
   useEffect(() => {
     // Device code received - display to user
     const cleanupDeviceCode = events.onEvent(githubAuthDeviceCodeChannel, (data) => {
@@ -237,7 +236,6 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
   };
 
   // Keyboard shortcuts (Escape is handled by DialogContent's onEscapeKeyDown)
-  // @@@effect-flow(input) - keyboard shortcuts of the device-code dialog (copy the code, open the page); nothing is read
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'c') {

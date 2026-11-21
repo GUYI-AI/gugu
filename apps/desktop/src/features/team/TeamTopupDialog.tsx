@@ -51,8 +51,6 @@ export function TeamTopupDialog({ onClose, onSettled, openPayment = openTeamPaym
     ? [teamApiKey(api), teamId, intent.orderId, intent.quote.amountCny, intent.quote.credits] : null)
   const settledOrder = order.state === 'value' ? order.value : undefined
   const orderFailure = refreshFailure(order)
-  // @@@effect-flow(command) - settling this checkout consumes its original intent and refreshes the parent balance.
-  // Order data stays in the query; the asynchronous continuation only reports this interaction's refresh failure.
   useEffect(() => {
     const value = settledOrder
     if (!value || value.status === 'pending' || settled.current === value.id) return

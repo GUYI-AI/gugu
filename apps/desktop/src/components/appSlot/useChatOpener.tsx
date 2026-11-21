@@ -144,7 +144,6 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     [chatId, resourceChatId, openResolved],
   )
 
-  // @@@effect-flow(command) - takes the open-ask queued for this chat and opens what it names; a list of several files is that ask's chooser
   useEffect(() => {
     if (!chatId || !appsHere) return undefined
     let live = true

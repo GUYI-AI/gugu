@@ -90,7 +90,6 @@ function LegacyDmTranscript({ scope, chat, mobile }: { scope: LegacyDmScope; cha
   const failed = history.first.state === 'error' ? history.first : history.moreFailed;
   const scroll = useRef<HTMLDivElement>(null);
   const position = useRef<{ top: number; height: number } | null>(null);
-  // @@@effect-flow(dom) - keeps the reading position when older messages are prepended (DOM measure of the rows in hand)
   useLayoutEffect(() => {
     if (!scroll.current) return;
     scroll.current.scrollTop = position.current ? position.current.top + scroll.current.scrollHeight - position.current.height : scroll.current.scrollHeight;

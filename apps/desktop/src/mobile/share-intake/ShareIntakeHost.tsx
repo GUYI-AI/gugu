@@ -17,7 +17,6 @@ const pending = createSelectStore<IncomingShare | (() => void) | null>(null)
 export function ShareIntakeHost({ active }: { active: boolean }) {
   const { t } = useTranslation('messaging')
   const share = useSelect(pending, (value) => value, Object.is)
-  // @@@effect-flow(event) - receives share intents from the OS (one-shot events) into the pending share above
   useEffect(() => {
     if (!active || !platform.subscribeIncomingShares) return
     return platform.subscribeIncomingShares((incoming) => pending.set(incoming))

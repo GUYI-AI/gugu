@@ -1,0 +1,79 @@
+# Findings of scripts/checks/effect-fetch-state.mts that are not a read put into component state, one line each:
+# `<path under apps/desktop/src>: <kind>(<category>) - <reason>`. Per file and kind there are as many lines as findings.
+# The categories are EXEMPTIONS in effect-fetch-state.mts. Generated from the old markers by convert-markers.py; edit by hand.
+components/FeedbackModal.tsx: effect-flow(view-state) - restores the unsent draft into the editable form (③ draft: the form owns it afterwards)
+components/ImagePreviewProvider.tsx: effect-flow(lifecycle) - registers the image viewer host; each request opens a modal viewer, and state holds that open viewer's handle (the PhotoSwipe instance and the items it was opened with) until it closes; its offline explanation is asked afresh on purpose (lib/fileHost.ts)
+components/SharePosterDialog.tsx: effect-flow(render) - composites the poster canvas from the QR and avatars in hand (render of content in hand)
+components/appSlot/GroupTabContent.tsx: effect-flow(command) - asks main to update the App on screen from a newer package shared here; its outcome is whether to show the update bar
+components/appSlot/useChatOpener.tsx: effect-flow(command) - takes the open-ask queued for this chat and opens what it names; a list of several files is that ask's chooser
+components/assistant-ui/session-transcript-view.aui.tsx: effect-flow(code) - loads the chat UI module and builds this view's local transcript state; no server data (the next effect writes the transcript in)
+components/assistant/AssistantCloseHost.tsx: effect-flow(command) - the close preflight wakes / checks the home (a cloud computer until online), then lists its sessions once per opened dialog; the confirm closes exactly this plan
+components/assistant/AssistantOnboarding.tsx: effect-flow(command) - resumes a persisted half-done local assistant install (a setup step), not a read a surface shows
+components/assistant/AssistantServerSetup.tsx: effect-flow(command) - resumes the persisted server-setup operation once on entry (a setup step)
+components/assistant/useTaskChatRows.tsx: reading-default(paired) - a work whose read failed adds no exchanges; its failure is said by the collaboration-unavailable notice (`unavailable`)
+components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the docx bytes in hand into its DOM target
+components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the pptx bytes in hand into its DOM target
+components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the xlsx bytes in hand into its viewer
+components/chat/MessageFilePreview.tsx: effect-flow(lifecycle) - a streamed video holds its signed preview (renewed when the link expires, disposed when the preview closes) for the preview's life; state holds only its link, or why it could not be had
+components/chat/PdfPreview.tsx: effect-flow(render) - renders the pdf bytes in hand with pdf.js
+components/chat/messageActionModules.tsx: effect-flow(code) - loads a code chunk for a secondary surface, not data
+components/chat/useChatPinSettings.ts: reading-default(paired) - pins not read: no topic is drawn as pinned yet, and `ready` keeps the pin toggles off until they are
+components/chat/useConversationScrollMemory.ts: effect-flow(view-state) - restores the saved scroll anchor (loads its message window, measures rows); the message window engine is its own module
+components/imageAnnotate/AnnotateEditor.tsx: effect-flow(render) - opens the annotation editor: decodes the viewer item's original bytes into its canvas
+components/preview/HtmlPreviewFrame.tsx: effect-flow(lifecycle) - registers a preview URL for the editor buffer in hand and releases it on cleanup
+components/preview/HtmlPreviewFrame.tsx: effect-flow(command) - pushes the edited buffer to the registered preview (debounced)
+components/productTour/ProductTour.tsx: effect-flow(command) - records that the tour started (a write)
+components/productTour/ProductTour.tsx: effect-flow(dom) - prunes a step whose target is not on screen (DOM measured)
+components/productTour/ProductTour.tsx: effect-flow(input) - the highlighted target's click advances the tour (user input)
+components/productTour/ProductTour.tsx: effect-flow(input) - tour keyboard: Enter, arrows, Esc, Tab (user input)
+components/session-watch/PhoneTaskBrowser.tsx: effect-flow(lifecycle) - mounts the live browser projection stream into this element and closes it on hide (a stream mount)
+components/session-watch/PhoneTaskBrowser.tsx: effect-flow(command) - tells the remote page its viewport size (a command); the error is that command's outcome
+components/session-watch/use-phone-input-queue.ts: effect-flow(outbox) - releases a queued phone input to its session (an outbox send); the state is the send's error
+components/session-watch/useSessionRestart.ts: effect-flow(command) - one check when the session is found missing: whether its machine can start it fresh
+components/session-watch/useSessionRestart.ts: effect-flow(command) - waits for the restart command to settle: its lifecycle passes the clicked version
+components/settings/AddServerPanel.tsx: effect-flow(command) - a re-login starts the install run once when the panel opens
+components/settings/CustomModelsGroup.tsx: reading-default(moment) - the refresh button's click: agents not read yet = no subscription account to refresh
+components/settings/DevicesSection.tsx: effect-flow(command) - renaming the machine just added once its row appears.
+components/settings/ServerUninstallDialog.tsx: effect-flow(command) - following the uninstall run this dialog started (its progress events).
+components/settings/ServerUninstallDialog.tsx: effect-flow(command) - removing the machine once its uninstall finished.
+components/settings/channels/WechatConnectDialog.tsx: effect-flow(command) - starting the WeChat sign-in this dialog is for.
+components/settings/channels/WechatConnectDialog.tsx: effect-flow(command) - polling the sign-in in progress until it finishes.
+components/usage/useUsageData.ts: effect-flow(command) - uploading this device's usage on open; the page shows the readings above, this only says it is syncing.
+features/team/TeamAuthPane.tsx: effect-flow(command) - Anonymous invitation verification is request-scoped authentication; its capability token stays in memory, never shared cache or persistence.
+features/team/TeamTopupDialog.tsx: effect-flow(command) - settling this checkout consumes its original intent and refreshes the parent balance. Order data stays in the query; the asynchronous continuation only reports this interaction's refresh failure.
+hooks/useWakeCloudComputer.ts: effect-flow(command) - opening a page on a sleeping cloud computer wakes it once (a command); its state is read from the cloudComputer replica
+lib/assistantClose.ts: reading-default(route) - a one-moment routing decision outside rendering: not read yet = not known to be the assistant, the delete takes the general path (today's behaviour)
+lib/sshLinkChannel.ts: reading-default(route) - routing decision of this moment (not drawn): a list not read yet routes through the cloud, as before it is read; `sshMachinesReady` is awaited first where it matters
+mobile/agent-watch/CreateSessionPage.tsx: effect-flow(lifecycle) - acquire this editor's account-bound draft and settle its hydration/cleanup barrier.
+mobile/market/phoneMarketTargets.ts: reading-default(paired) - a device not read yet is not among the ones it is installed on; its row says so by `status` ('checking')
+session/renderer/app/aux-window-host.tsx: effect-flow(lifecycle) - activates the App surface in this window (a command: starts it; the handle lives as long as this window holds it)
+session/renderer/features/browser/browser-annotations.tsx: effect-flow(input) - a held Space arms native focus before exposing the page; the state is that interaction's flag, no stored data.
+session/renderer/features/browser/browser-pane.tsx: effect-flow(lifecycle) - registers this pane's browser session with main for its lifetime (a command, not a read)
+session/renderer/features/browser/task-page-tab-view.tsx: effect-flow(lifecycle) - opens a live projection watch of the remote task page while the tab is visible (its state is the watch's connection)
+session/renderer/features/extensions/extension-tab-pane.tsx: effect-flow(lifecycle) - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
+session/renderer/features/extensions/extension-view-layer.tsx: effect-flow(lifecycle) - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
+session/renderer/features/extensions/panel/agent-market-content.tsx: reading-default(paired) - no agent rows until the list is read; the skeleton and the empty sentence wait on `isPending` / `isError`
+session/renderer/features/extensions/panel/installed-agent-rows.tsx: reading-default(paired) - no rows until the agents are read; every reader shows its placeholder on `inventory.reading.state`
+session/renderer/features/extensions/peek-folder-file.tsx: effect-flow(command) - picks which App opens this file, asking the person in the chooser when several can
+session/renderer/features/extensions/peek-folder-file.tsx: effect-flow(lifecycle) - holds the project's workspace (acquire/release lease) while the file is shown
+session/renderer/features/mcp/components/use-mcp-library.ts: reading-default(paired) - while the agent list is not known `isLoading` is true and the view draws no groups (nor offers "add", where `harnessNames` reads it)
+session/renderer/features/sessions/view/session-timeline.tsx: effect-flow(dom) - measures which turn is at the reading line (DOM observation)
+session/renderer/features/settings/agents-page/AcpAuthenticateSignIn.tsx: effect-flow(command) - starts this panel's own login run and follows that run's status (pushed, ❌ polled); ends it on close
+session/renderer/features/settings/agents-page/AgentSignInModal.tsx: effect-flow(command) - starts this window's own login run and follows that run's status (pushed, ❌ polled)
+session/renderer/features/settings/components/IntegrationsCard.tsx: reading-default(moment) - a click on the button drawn for a connected GitHub, whose accounts are read by then
+session/renderer/features/settings/subscriptions/ConnectionModelPicker.tsx: effect-flow(command) - probing the key being typed (debounced); the key is never put in a cache.
+session/renderer/features/settings/subscriptions/SubscriptionConnections.tsx: effect-flow(command) - carries out a sign-in press once the readings it acts on have landed; state holds only whether the sheet opens
+session/renderer/lib/codemirror/diff-editor.tsx: effect-flow(render) - mounts the diff editor (lazy language load) for content already in hand
+session/renderer/lib/components/cliSpinner.tsx: effect-flow(dom) - observes whether the spinner is in the viewport (DOM observation)
+session/renderer/lib/components/github-device-flow-modal.tsx: effect-flow(command) - GitHub device-code sign-in (a flow: the code, its expiry and the poll for approval)
+session/renderer/lib/components/github-device-flow-modal.tsx: effect-flow(input) - keyboard shortcuts of the device-code dialog (copy the code, open the page); nothing is read
+session/renderer/lib/stores/use-agent-auth-status.ts: effect-flow(command) - asks the worker to probe each program's sign-in (it runs the CLI's status; the answer lands in the live agent list read above); state holds only this probe's own failures, which settle that row as unknown with its reason
+session/renderer/lib/ui/mermaid-diagram.tsx: effect-flow(render) - renders mermaid SVG for content already in hand
+store/chat.tsx: effect-flow(event) - registers this account's revision listeners (the log channel itself, kept per §3)
+store/contacts.tsx: reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
+store/contacts.tsx: reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
+store/contacts.tsx: reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
+store/contacts.tsx: reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
+store/contacts.tsx: reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
+store/contacts.tsx: reading-default(paired) - the context pairs each list with its status (#2118: `contactsStatus`, `requestsStatus`, the join requests' `groupJoinRequestsError`): an empty list while it loads is never drawn as "none"
+store/devicesCache.ts: reading-default(moment) - only callers outside rendering (a protocol check, a poll interval): a device not found is a device not known, read or not

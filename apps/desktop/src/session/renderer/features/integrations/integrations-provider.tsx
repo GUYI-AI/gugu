@@ -79,7 +79,6 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   const metadata = host.connectionMetadata ?? host.assistantPanel;
   const metadataExpected = host.connectionMetadataExpected ?? host.assistantPanelExpected;
   const ownerMode = !!host.connectionMetadataExpected;
-  // @@@effect-flow(lifecycle) - holds the connection models' change feed for the provider's life (what it shows may be any of them)
   useEffect(() => chatChannels.hold(), []);
   const remote = !!host.remote;
   const [mutatingIntegrationIds, setMutatingIntegrationIds] = useState<Set<string>>(
@@ -100,7 +99,6 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
 
   const listData: IntegrationMetadata[] | null = ownerMode ? ownerView?.items ?? builtinConnectionCatalog(locale)
     : listReading.state === 'value' ? listReading.value : null;
-  // @@@reading-default(paired) - the summaries hook is called on every render; while the list is not known its answer is not drawn (`integrations` is null)
   const summaries = useAssistantIntegrationSummaries(metadata, listData ?? EMPTY_INTEGRATION_SUMMARIES, locale);
   // Includes cached/generated metadata and the first render. A saved row or
   // an older host publication must not restore an unsupported setup entry.

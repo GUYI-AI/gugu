@@ -342,7 +342,6 @@ export function SubscriptionConnections({
     cli.openSignIn()
   }
   const signInAttempt = useRef<object | null>(null)
-  // @@@effect-flow(command) - carries out a sign-in press once the readings it acts on have landed; state holds only whether the sheet opens
   useEffect(() => {
     if (!signInRequested || signInAttempt.current === signInRequested) return
     if (connectionsError || nativeError) {

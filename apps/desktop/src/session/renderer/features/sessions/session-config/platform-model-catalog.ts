@@ -272,7 +272,6 @@ export function usePlatformModelCatalog(
     && models.some((model) => model.id === selection.value.agentDefault!.modelId && offeredInModelPicker(model))
     ? selection.value.agentDefault : null;
   return {
-    // @@@reading-default(paired) - while `known` is false the list means nothing: every surface drawing it gates on `known`
     models: known ? models : [],
     agentDefault,
     sessionSelection: selection.state === 'value' ? selection.value.sessionSelection : undefined,

@@ -74,7 +74,6 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
   const [view, setView] = useState<View>({ kind: 'list' })
   const [query, setQuery] = useState('')
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
-  // @@@effect-flow(event) - opens the form an Agent's save request asks for (its id only, once per request); what it proposed is the passwordSaveDraft reading
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     const open = () => {

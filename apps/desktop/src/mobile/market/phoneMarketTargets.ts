@@ -40,7 +40,6 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
     const query = device.is_online ? readings[next++]! as ReplicaReading<T> : null
     const reading = query?.state === 'value' ? plans.describe(query.value, target) : null
     const unavailable = !query ? 'offline' : query.state === 'error' ? 'unavailable' : query.state === 'unknown' ? 'checking' : null
-    // @@@reading-default(paired) - a device not read yet is not among the ones it is installed on; its row says so by `status` ('checking')
     const present = reading?.present ?? false
     return {
       id: device.device_id,

@@ -42,7 +42,6 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
   const fields = manifest.settings ?? [];
   const tabs = [...(text.examples.length > 0 ? ['overview' as const] : []), ...(fields.length > 0 ? ['settings' as const] : [])];
   const [tab, setTab] = useState<Tab>(tabs[0] ?? 'overview');
-  // @@@effect-flow(command) - opening this page tells main the App was opened (it un-quits it, controller.ts openSettings); its settings are read through the form's replica
   useEffect(() => {
     if (!active) return;
     void rpc.extensions.openSettings({ extensionId: manifest.id }).then((result) => {
