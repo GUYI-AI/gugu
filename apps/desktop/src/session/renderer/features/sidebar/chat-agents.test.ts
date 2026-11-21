@@ -11,6 +11,7 @@ import {
   subAgentsOf,
   type ChatAgentEntry,
 } from './chat-agents';
+import { orderAgentRows } from './agent-order';
 
 const running = presentAgentStatus({ reading: { status: 'working', detail: null } });
 const parked = presentAgentStatus({ reading: { status: 'working', detail: 'parked' } });
@@ -26,6 +27,8 @@ const entry = (id: string, fields: Partial<ChatAgentEntry> = {}): ChatAgentEntry
   ...fields,
 });
 const ids = (entries: readonly { id: string }[]) => entries.map((e) => e.id);
+// The section lists entries in the order it is given; the inner sidebar gives it agent-order's.
+const section = (entries: readonly ChatAgentEntry[], open: Parameters<typeof chatAgentSection>[1]) => chatAgentSection(orderAgentRows(entries), open);
 const rowIds = (list: ReturnType<typeof chatAgentSection>) => list.rows.map((row) => row.sessionId);
 const disclosure = { expanded: new Set<string>(), showAll: false };
 
@@ -116,7 +119,7 @@ describe('counts on the section header and the project row', () => {
 
 describe('the agents section', () => {
   it('one flat list, no group headers: needs you, then running, then the rest', () => {
-    const list = chatAgentSection([
+    const list = section([
       entry('quiet', { time: 3 }),
       entry('busy', { presentation: running, time: 1 }),
       entry('blocked', { presentation: waiting, time: 2 }),
@@ -126,15 +129,21 @@ describe('the agents section', () => {
     expect(list).toMatchObject({ total: 4, overflow: 0 });
   });
 
-  it('pinned first within its tier, then newest first', () => {
-    const list = chatAgentSection([
+  it('newest first within its tier; pinning does not move a row', () => {
+    const list = section([
       entry('old-pinned', { presentation: running, time: 1, isPinned: true }),
       entry('new', { presentation: running, time: 9 }),
       entry('mid', { presentation: running, time: 5 }),
       entry('idle-pinned', { time: 0, isPinned: true }),
       entry('idle-new', { time: 8 }),
     ], disclosure);
-    expect(rowIds(list)).toEqual(['old-pinned', 'new', 'mid', 'idle-pinned', 'idle-new']);
+    expect(rowIds(list)).toEqual(['new', 'mid', 'old-pinned', 'idle-new', 'idle-pinned']);
+  });
+
+  it('lists in the order it is given: roots and every level of forks', () => {
+    const given = [entry('b'), entry('a'), entry('b-2', { parentSessionId: 'b' }), entry('b-1', { parentSessionId: 'b' })];
+    const list = chatAgentSection(given, { ...disclosure, expanded: new Set(['b']) });
+    expect(rowIds(list)).toEqual(['b', 'b-2', 'b-1', 'a']);
   });
 
   it('forks hang under their parent, listed only while the parent is expanded, with the branch pill', () => {
@@ -143,13 +152,13 @@ describe('the agents section', () => {
       entry('fork', { parentSessionId: 'parent', presentation: running, projectId: 'p-elsewhere' }),
       entry('grandchild', { parentSessionId: 'fork', presentation: waiting }),
     ];
-    const collapsed = chatAgentSection(agents, disclosure);
+    const collapsed = section(agents, disclosure);
     expect(rowIds(collapsed)).toEqual(['parent']);
     expect(collapsed.rows[0]).toMatchObject({
       hasChildren: true,
       summary: { total: 2, active: [{ count: 1 }] },
     });
-    const open = chatAgentSection(agents, { ...disclosure, expanded: new Set(['parent', 'fork']) });
+    const open = section(agents, { ...disclosure, expanded: new Set(['parent', 'fork']) });
     expect(open.rows.map(({ sessionId, depth, parentProjectId }) => [sessionId, depth, parentProjectId])).toEqual([
       ['parent', 0, undefined],
       ['fork', 1, 'p-other'],
@@ -158,7 +167,7 @@ describe('the agents section', () => {
   });
 
   it('a fork whose parent is not in this chat stands as a root of its own', () => {
-    expect(rowIds(chatAgentSection([entry('fork', { parentSessionId: 'parent-elsewhere' })], disclosure))).toEqual(['fork']);
+    expect(rowIds(section([entry('fork', { parentSessionId: 'parent-elsewhere' })], disclosure))).toEqual(['fork']);
   });
 
   it(`shows ${CHAT_AGENT_LIMIT} families, then one 「Show more」 for whatever is left, running or not; opened, everything`, () => {
@@ -166,24 +175,24 @@ describe('the agents section', () => {
     const busy = Array.from({ length: 6 }, (_, index) => entry(`busy-${index}`, { presentation: running, time: 100 - index }));
     const quiet = Array.from({ length: 8 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
     const agents = [...quiet, ...busy, ...blocked];
-    const folded = chatAgentSection(agents, disclosure);
+    const folded = section(agents, disclosure);
     expect(rowIds(folded)).toEqual([...ids(blocked), ...ids(busy), ...ids(quiet.slice(0, CHAT_AGENT_LIMIT - 9))]);
     expect(folded).toMatchObject({ total: 17, overflow: 17 - CHAT_AGENT_LIMIT });
 
     // Opened: every family; the row stays (it now reads Collapse).
-    const opened = chatAgentSection(agents, { ...disclosure, showAll: true });
+    const opened = section(agents, { ...disclosure, showAll: true });
     expect(rowIds(opened)).toEqual([...ids(blocked), ...ids(busy), ...ids(quiet)]);
     expect(opened.overflow).toBe(17 - CHAT_AGENT_LIMIT);
 
     // Fewer running: the rest fills the room up to the cap.
-    const fewBusy = chatAgentSection([...quiet, ...busy.slice(0, 1)], disclosure);
+    const fewBusy = section([...quiet, ...busy.slice(0, 1)], disclosure);
     expect(rowIds(fewBusy)).toEqual(['busy-0', ...ids(quiet)]);
     expect(fewBusy.overflow).toBe(0);
   });
 
   it('needs you never folds away, even past the cap: then nothing else is shown until opened', () => {
     const blocked = Array.from({ length: CHAT_AGENT_LIMIT + 2 }, (_, index) => entry(`blocked-${index}`, { presentation: waiting, time: 100 - index }));
-    const list = chatAgentSection([entry('busy', { presentation: running }), ...blocked, entry('quiet')], disclosure);
+    const list = section([entry('busy', { presentation: running }), ...blocked, entry('quiet')], disclosure);
     expect(rowIds(list)).toEqual(ids(blocked));
     expect(list.overflow).toBe(2);
   });
@@ -194,7 +203,7 @@ describe('the agents section', () => {
       entry('parent', { time: 100 }),
       entry('fork', { parentSessionId: 'parent' }),
     ];
-    const list = chatAgentSection(agents, { ...disclosure, expanded: new Set(['parent']) });
+    const list = section(agents, { ...disclosure, expanded: new Set(['parent']) });
     expect(rowIds(list)).toEqual(['parent', 'fork', ...ids(agents.slice(0, CHAT_AGENT_LIMIT - 1))]);
     expect(list.overflow).toBe(1);
   });
@@ -210,41 +219,41 @@ describe('the agents section', () => {
   });
 
   it('no agents: no rows', () => {
-    expect(chatAgentSection([], disclosure)).toEqual({ rows: [], total: 0, overflow: 0 });
+    expect(section([], disclosure)).toEqual({ rows: [], total: 0, overflow: 0 });
   });
 
   describe('#2630 the open session never folds away', () => {
     const quiet = Array.from({ length: CHAT_AGENT_LIMIT + 3 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
 
     it('past the cap, its family shows after the others and the fold counts one fewer', () => {
-      const list = chatAgentSection(quiet, { ...disclosure, open: 'quiet-11' });
+      const list = section(quiet, { ...disclosure, open: 'quiet-11' });
       expect(rowIds(list)).toEqual([...ids(quiet.slice(0, CHAT_AGENT_LIMIT)), 'quiet-11']);
       expect(list.overflow).toBe(2);
       // Opened: every family in its own order, and the fold row still counts the same.
-      const opened = chatAgentSection(quiet, { ...disclosure, open: 'quiet-11', showAll: true });
+      const opened = section(quiet, { ...disclosure, open: 'quiet-11', showAll: true });
       expect(rowIds(opened)).toEqual(ids(quiet));
       expect(opened.overflow).toBe(2);
     });
 
     it('within the cap nothing changes', () => {
-      expect(chatAgentSection(quiet, { ...disclosure, open: 'quiet-2' })).toEqual(chatAgentSection(quiet, disclosure));
+      expect(section(quiet, { ...disclosure, open: 'quiet-2' })).toEqual(section(quiet, disclosure));
     });
 
     it('the only family past the cap being the open one leaves no fold row', () => {
-      const list = chatAgentSection(quiet.slice(0, CHAT_AGENT_LIMIT + 1), { ...disclosure, open: `quiet-${CHAT_AGENT_LIMIT}` });
+      const list = section(quiet.slice(0, CHAT_AGENT_LIMIT + 1), { ...disclosure, open: `quiet-${CHAT_AGENT_LIMIT}` });
       expect(rowIds(list)).toHaveLength(CHAT_AGENT_LIMIT + 1);
       expect(list.overflow).toBe(0);
     });
 
     it('an open fork keeps its whole family out of the fold, listed down to it once its parents are expanded', () => {
       const agents = [...quiet, entry('parent', { time: 0 }), entry('fork', { parentSessionId: 'parent' })];
-      const folded = chatAgentSection(agents, { ...disclosure, open: 'fork' });
+      const folded = section(agents, { ...disclosure, open: 'fork' });
       expect(rowIds(folded)).toEqual([...ids(quiet.slice(0, CHAT_AGENT_LIMIT)), 'parent']);
-      expect(rowIds(chatAgentSection(agents, { ...disclosure, open: 'fork', expanded: new Set(['parent']) })).slice(-2)).toEqual(['parent', 'fork']);
+      expect(rowIds(section(agents, { ...disclosure, open: 'fork', expanded: new Set(['parent']) })).slice(-2)).toEqual(['parent', 'fork']);
     });
 
     it('a session that is not in this chat changes nothing', () => {
-      expect(chatAgentSection(quiet, { ...disclosure, open: 'elsewhere' })).toEqual(chatAgentSection(quiet, disclosure));
+      expect(section(quiet, { ...disclosure, open: 'elsewhere' })).toEqual(section(quiet, disclosure));
     });
 
     it('the parents to expand: every level up that is in this chat, nearest first', () => {
@@ -289,11 +298,11 @@ describe("#2574 a standalone agent's sub-agents", () => {
 
   it('list like a group\'s 智能体: needs you, then running, then the rest; a grandchild stays folded under its parent', () => {
     const subAgents = subAgentsOf(families, 'solo');
-    const folded = chatAgentSection(subAgents, disclosure);
+    const folded = section(subAgents, disclosure);
     expect(rowIds(folded)).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
     expect(folded.rows.find((row) => row.sessionId === 'sub-quiet')).toMatchObject({ hasChildren: true });
     expect(chatAgentCounts(subAgents)).toEqual({ total: 4, running: 1 });
-    const open = chatAgentSection(subAgents, { ...disclosure, expanded: new Set(['sub-quiet']) });
+    const open = section(subAgents, { ...disclosure, expanded: new Set(['sub-quiet']) });
     expect(open.rows.map(({ sessionId, depth }) => [sessionId, depth])).toEqual([
       ['sub-asks', 0],
       ['sub-busy', 0],

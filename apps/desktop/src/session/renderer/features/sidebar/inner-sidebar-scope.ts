@@ -16,6 +16,7 @@ export function mySidebarAgents(): ChatAgentEntry[] {
     parentSessionId: item.parentSessionId,
     isPinned: item.isPinned,
     time: item.time,
+    createdAt: item.createdAt,
     presentation: item.presentation,
     unseen: item.unseen,
     hostOnline: item.hostOnline,

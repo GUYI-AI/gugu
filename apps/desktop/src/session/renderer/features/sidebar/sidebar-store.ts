@@ -97,8 +97,6 @@ export function mountedSessionPresentation(
 }
 
 export class SidebarStore implements Snapshottable<SidebarSnapshot> {
-  projectOrder: string[] = [];
-  sessionOrderByProject: Record<string, string[]> = {};
   expandedProjectIds = observable.set<string>();
   /** Persisted manual "Show more" state: project id or the Tasks section key. */
   idleExpandedProjectIds = observable.set<string>();
@@ -147,12 +145,11 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
   }
 
   /**
-   * 「项目」分区的次序:本机项目与别的机器上的项目混排(#6264,按 Zed)。手动拖过之后按 `projectOrder` 排;
-   * 还没进手动次序的新项目排最前(新建即可见)。
+   * 「项目」分区的次序:本机项目与别的机器上的项目混排(#6264,按 Zed),次序见 compareSidebarProjects。
    */
   get sidebarProjects(): SidebarProjectRef[] {
     // 一个账号项目一行(归档的不列)。项目表里没有对应项目的本地项目(#609 workspace 等)不成行,会话在「任务」里。
-    const all: SidebarProjectRef[] = this.accountProjects.projects
+    return this.accountProjects.projects
       .filter((account) => !account.archived)
       .map((account): SidebarProjectRef => {
         const id = this.accountProjects.representativeOf(account.chatId);
@@ -162,15 +159,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           : { kind: 'group', id: account.chatId, chatId: account.chatId, name: account.name, activeAt: account.activeAt };
       })
       .sort((a, b) => this.compareSidebarProjects(a, b));
-    if (this.projectOrder.length === 0) return all;
-    const rank = (ref: SidebarProjectRef, index: number): [number, number] => {
-      const manual = this.projectOrder.indexOf(ref.id);
-      return manual !== -1 ? [1, manual] : [0, index];
-    };
-    return all
-      .map((ref, index) => ({ ref, rank: rank(ref, index) }))
-      .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1])
-      .map(({ ref }) => ref);
   }
 
   /** 这一行代表的项目在各台机器上的本地项目(代表行在最前);不属于账号上任何项目 = 只有它自己。 */
@@ -476,8 +464,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       expandedSessionIds: [...this.expandedSessionIds],
       idleExpandedProjectIds: [...this.idleExpandedProjectIds],
       folds: [...sidebarFolds],
-      projectOrder: [...this.projectOrder],
-      sessionOrderByProject: { ...this.sessionOrderByProject },
       sessionSortBy: this.sessionSortBy,
     };
   }
@@ -494,12 +480,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     }
     if (snapshot.folds !== undefined) {
       sidebarFolds.replace(snapshot.folds as SidebarFold[]);
-    }
-    if (snapshot.projectOrder !== undefined) {
-      this.projectOrder = [...snapshot.projectOrder];
-    }
-    if (snapshot.sessionOrderByProject !== undefined) {
-      this.sessionOrderByProject = { ...snapshot.sessionOrderByProject };
     }
     if (snapshot.sessionSortBy !== undefined) {
       const v = parseSidebarSessionSortBy(snapshot.sessionSortBy);

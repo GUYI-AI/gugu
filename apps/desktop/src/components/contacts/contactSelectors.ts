@@ -1,4 +1,6 @@
+import { useMemo } from 'react'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
+import { orderAgentContacts, useAgentRank } from './contactsAgentTree'
 
 /** Friends and the human address book share the same people-only boundary. */
 export function peopleContacts(contacts: readonly ContactUser[]): ContactUser[] {
@@ -11,6 +13,12 @@ export function peopleContacts(contacts: readonly ContactUser[]): ContactUser[] 
  */
 export function myAgents(contacts: readonly ContactUser[], myId: string | null | undefined): ContactUser[] {
   return contacts.filter((contact) => contact.type === 'agent' && (!myId || !contact.owner_user_id || contact.owner_user_id === myId))
+}
+
+/** My agents in the one agent order (agent-order): the map, the agent library and search all read this list. */
+export function useMyAgentsInOrder(contacts: readonly ContactUser[], myId: string | null | undefined): ContactUser[] {
+  const rank = useAgentRank()
+  return useMemo(() => orderAgentContacts(myAgents(contacts, myId), rank), [contacts, myId, rank])
 }
 
 /** Agent library: registered contacts plus agents encountered in shared groups, once per ID. */

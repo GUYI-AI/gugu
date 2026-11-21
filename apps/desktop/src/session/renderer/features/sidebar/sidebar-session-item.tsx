@@ -11,7 +11,7 @@ import { useAssistantShell } from '@renderer/features/assistant/assistant-shell'
 import { observer } from 'mobx-react-lite';
 import { useCallback, useRef } from 'react';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
-import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
+import { moveSessionUnder, nestVerdict } from '@renderer/features/sessions/set-session-parent-flow';
 import { forkTask } from '@renderer/features/sessions/fork-task';
 import { copySessionId } from '@renderer/features/sessions/copy-session-id';
 import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu';
@@ -237,13 +237,9 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     canFork: agentForksOn(harness?.capabilities, row.runtime),
   }, new Set(Object.keys(menuRun) as SessionMenuAction[]));
 
-  // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的不给落点:
-  // 它自己、已经挂在这里的、以及这一行就在它下面的(挂上去成环)。
+  // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的在落点上说为什么(nestVerdict)。
   const nestHere = sessionDropTarget(
-    (dragged) =>
-      dragged.sessionId !== sessionId &&
-      sidebarStore.parentOf(dragged.sessionId) !== sessionId &&
-      !sidebarStore.isWithin(sessionId, dragged.sessionId),
+    (dragged) => nestVerdict(dragged, { sessionId, title: row.title }),
     (child) => moveSessionUnder(child, { projectId, sessionId, title: row.title }, sidebarStore.parentOf(child.sessionId))
   );
 

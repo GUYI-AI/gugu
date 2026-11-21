@@ -119,7 +119,10 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   },
 }));
 vi.mock('@renderer/lib/drop-highlight', async (original) => ({ ...(await original<object>()), showDropHighlight: (...args: unknown[]) => state.showDropHighlight(...args) }));
-vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: (...args: unknown[]) => state.moveSessionUnder(...args) }));
+vi.mock('@renderer/features/sessions/set-session-parent-flow', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@renderer/features/sessions/set-session-parent-flow')>()),
+  moveSessionUnder: (...args: unknown[]) => state.moveSessionUnder(...args),
+}));
 vi.mock('./sidebar-session-item', () => ({
   SidebarSessionItem: ({ sessionId, agentAvatar }: { sessionId: string; agentAvatar?: boolean }) => (
     <div data-session-row={sessionId} data-agent-avatar={agentAvatar === true || undefined} />
@@ -259,7 +262,8 @@ describe('inner sidebar', () => {
     await render();
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
-    expect(sessionRows()).toEqual(['shop-task', 'shop-idle', 'shop-chat-agent']);
+    // agent-order: running first; the two idle ones tie on time and creation, so their ids decide.
+    expect(sessionRows()).toEqual(['shop-task', 'shop-chat-agent', 'shop-idle']);
   });
 
   it('#3367 a sub-session dragged onto the Agents header goes back to the top level; a top-level one is not taken', async () => {

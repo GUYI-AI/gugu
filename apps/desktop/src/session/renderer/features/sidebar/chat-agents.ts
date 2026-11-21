@@ -1,7 +1,7 @@
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
 import type { ChatAgentCounts } from '@/lib/innerSidebarBridge';
 import { buildSessionTree, type SessionTreeNode } from '@renderer/features/sessions/session-tree';
-import { needsYouCount, SIDEBAR_STATE_GROUP_ORDER, sidebarStateGroup } from './session-groups';
+import { needsYouCount, sidebarStateGroup } from './session-groups';
 import { summarizeSessionBranches, type SessionBranchSummary } from './sidebar-session-branch';
 
 // #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群或项目里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
@@ -16,6 +16,8 @@ export type ChatAgentEntry = {
   isPinned: boolean;
   /** 最后交互时间,新的在前。 */
   time: number;
+  /** ISO;次序的兜底(agent-order)。 */
+  createdAt?: string;
   presentation?: AgentStatusPresentation | null;
   /** 没有 = 这条会话还没有咕咕身份,不在任何对话的成员名单里。 */
   agentUserId?: string;
@@ -157,16 +159,10 @@ export type ChatAgentDisclosure = {
   open?: string | null;
 };
 
-/** 需要你 → 在跑 → 其余:表里的三档(sidebarStateGroup 的次序,其余排最后)。 */
-const tierOf = (entry: ChatAgentEntry): number => {
-  const group = sidebarStateGroup(entry.presentation ?? null);
-  return group === null ? SIDEBAR_STATE_GROUP_ORDER.length : SIDEBAR_STATE_GROUP_ORDER.indexOf(group);
-};
-
 /**
- * 分区里的行:一张平的表,❌ 组头(#2548 ⑥,刘威:「直接通过状态图标来显示……别单独分栏」)。按根会话的状态排 ——
- * 需要你的在最上面,在跑的第二层,其余在最下面;同一档里置顶的在前、再按最后交互新的在前。是哪一档只看行尾那几个记号
- * (行组件自己画:橙点要你确认、红点出错、转动的字符在跑、时钟是定时的)。子会话挂在父会话下(展开着才列出)。
+ * 分区里的行:一张平的表,❌ 组头(#2548 ⑥,刘威:「直接通过状态图标来显示……别单独分栏」)。`entries` 已经按显示的次序
+ * 给(agent-order 排好,列表在指针下时由 useHeldOrder 按住),根与每一层子会话都沿用它,这里 ❌ 再排。是哪一档只看行尾
+ * 那几个记号(行组件自己画:橙点要你确认、红点出错、转动的字符在跑、时钟是定时的)。子会话挂在父会话下(展开着才列出)。
  * 露 CHAT_AGENT_LIMIT 个家族,多出来的收进一行;需要你的全露,打开着的会话所在的家族也露(排在露出来的最后,收起行少数一个)。
  * 置顶的 ❌ 搬走(这一列没有「置顶」分区)。
  */
@@ -174,9 +170,7 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
   const forest = buildSessionTree(entries);
   const summaries = summarizeSessionBranches(forest);
   const needsYou = (entry: ChatAgentEntry) => sidebarStateGroup(entry.presentation ?? null) === 'needs-you';
-  const roots = [...forest].sort(
-    (a, b) => tierOf(a.item) - tierOf(b.item) || Number(b.item.isPinned) - Number(a.item.isPinned) || b.item.time - a.item.time
-  );
+  const roots = forest;
   const limit = Math.max(CHAT_AGENT_LIMIT, roots.filter((root) => needsYou(root.item)).length);
   const rows: ChatAgentRow[] = [];
   const visit = (node: SessionTreeNode<ChatAgentEntry>, depth: number, parentProjectId?: string) => {

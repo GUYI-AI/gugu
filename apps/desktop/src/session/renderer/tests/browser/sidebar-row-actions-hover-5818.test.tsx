@@ -85,6 +85,9 @@ vi.mock('@renderer/lib/stores/app-state', async () => {
     agentNameOnHoverEnabled: true,
     // #7199 行上「助理发起」的标记问 store;这里的会话都不是个人助理派的。
     launchedByAssistant: () => false,
+    // 指针挪几个像素会起拖;落点问 nestVerdict 这条会话挂在哪(set-session-parent-flow)。
+    parentOf: () => null,
+    isWithin: () => false,
   } }
 })
 vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({

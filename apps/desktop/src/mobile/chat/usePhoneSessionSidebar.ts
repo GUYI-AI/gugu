@@ -7,6 +7,7 @@ import { useChatStore } from '@/store/chatContext'
 import { useTopicsOfChat } from '@/hooks/useTopics'
 import { directoryRows, useDirectoryDevices, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+import { orderAgentRows } from '@renderer/features/sidebar/agent-order'
 import { agentFamilies, type ChatAgentScope } from '@renderer/features/sidebar/chat-agents'
 import { followInnerSidebar, viewAnchor, type InnerSidebarRoomAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'
 import { columnAgents, standaloneAgentAnchor } from '@renderer/features/sidebar/inner-sidebar-column'
@@ -40,7 +41,8 @@ export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string
     : entry?.startsWith('session:') ? agentAnchor(entry.slice(8)) : null
   const anchor = followInnerSidebar(entryAnchor, { kind: 'session', sessionId },
     (room, id) => columnAgents(room, families, summaries, rows, scope).some(agent => agent.id === id), agentAnchor, () => false)
-  const listed = anchor ? columnAgents(anchor, families, summaries, rows, scope) : []
+  // 次序同桌面「智能体」(agent-order);手机的目录没有状态,同一档里按最近交互。
+  const listed = anchor ? orderAgentRows(columnAgents(anchor, families, summaries, rows, scope)) : []
   const source = anchor && anchor.kind !== 'agent' ? anchor.chatId : null
   const topics = useTopicsOfChat(source, subscribeAccountRevision)
   return { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId }

@@ -1,6 +1,6 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
-import { myAgents, peopleContacts } from './contacts/contactSelectors'
+import { peopleContacts, useMyAgentsInOrder } from './contacts/contactSelectors'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AgentSettingsModal } from './agentsettings/AgentSettingsModal'
 import { chatPublicId, displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from '../lib/contactsListSort'
@@ -779,7 +779,7 @@ export const ContactsPanel = memo(function ContactsPanel({
   const [selectedSidebarGroupId, setSelectedSidebarGroupId] = useState<string | null>(null)
 
   const humanContacts = useMemo(() => peopleContacts(contacts), [contacts])
-  const agentContacts = useMemo(() => myAgents(contacts, user?.id), [contacts, user?.id])
+  const agentContacts = useMyAgentsInOrder(contacts, user?.id)
   // 桌面左栏点中的分组(设备 / 个人 / 群组);null = 第一组。
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null)
   const sentRequestIds = useMemo(
@@ -867,9 +867,9 @@ export const ContactsPanel = memo(function ContactsPanel({
     () => new Map(groupChats.map((g) => [g.id, (chats.find((c) => c.id === g.id)?.notification_level ?? 'all') === 'none'])),
     [groupChats, chats]
   )
-  // #2598 置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次:分组页、导图、搜索读同一个次序。
+  // #2598 人与群的置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次;agent 已经排好(agentContacts)。
   const sections = useContactsSections(
-    useMemo(() => sortContactsPinnedFirst(agentContacts, (c) => contactPinned.get(c.id) ?? false), [agentContacts, contactPinned]),
+    agentContacts,
     useMemo(() => sortContactsPinnedFirst(humanContacts, (c) => contactPinned.get(c.id) ?? false), [humanContacts, contactPinned]),
     useMemo(() => sortGroupChatsPinnedFirst(groupChats, (g) => groupPinned.get(g.id) ?? false), [groupChats, groupPinned]),
     user?.id,

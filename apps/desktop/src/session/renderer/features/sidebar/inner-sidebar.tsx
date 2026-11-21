@@ -10,6 +10,7 @@ import { openApp } from '@/components/appSlot/useOpenApp';
 import { ChatHeaderMenu } from '@/components/chat/ChatHeaderMenu';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
+import { useHeldOrder, usePointerHold } from '@/lib/heldOrder';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
   innerSidebarTopicsSlotKey,
@@ -76,8 +77,9 @@ import {
   sidebarCountClass,
   sidebarGroupHeaderClass,
 } from './sidebar-primitives';
+import { orderAgentRows } from './agent-order';
 import { sessionDropTarget } from './session-drop-target';
-import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
+import { moveSessionUnder, nestVerdict } from '@renderer/features/sessions/set-session-parent-flow';
 import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
 
@@ -498,6 +500,8 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
  * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
  * 是哪一档只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
  */
+const entryId = (entry: ChatAgentEntry) => entry.id;
+
 const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarAnchor; agents: readonly ChatAgentEntry[] }) {
   const { translate } = useSessionMessages();
   const collapsed = sidebarFolds.has('inner:agents');
@@ -510,11 +514,14 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
   useEffect(() => {
     if (ancestorsKey) sidebarStore.expandSessions(ancestorsKey.split(','));
   }, [ancestorsKey]);
-  const list = chatAgentSection(agents, { expanded: sidebarStore.expandedSessionIds, showAll, open });
+  // 次序是 agent-order 那一个;指针在这一列上时按住不挪(同对话列表 useHeldOrder),离开或停够了一次排到位。
+  const pointer = usePointerHold();
+  const ordered = useHeldOrder(orderAgentRows(agents), entryId, pointer.held);
+  const list = chatAgentSection(ordered, { expanded: sidebarStore.expandedSessionIds, showAll, open });
   const total = chatAgentCounts(agents).total;
   // A sub-session of this list dragged onto the section header goes back to the top level (spec session-page「把会话拖成 child」).
   const unnestHere = sessionDropTarget(
-    (dragged) => sidebarStore.parentOf(dragged.sessionId) !== null && agents.some((agent) => agent.id === dragged.sessionId),
+    (dragged) => agents.some((agent) => agent.id === dragged.sessionId) && nestVerdict(dragged, null),
     (child) => moveSessionUnder(child, null, sidebarStore.parentOf(child.sessionId))
   );
   return (
@@ -535,7 +542,7 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
       {collapsed ? null : total === 0 ? (
         <div className={innerSectionEmptyClass}>{translate('sidebar.noAgents')}</div>
       ) : (
-        <SidebarMenu className="pb-1">
+        <SidebarMenu className="pb-1" onPointerMove={pointer.onPointerMove} onPointerLeave={pointer.onPointerLeave}>
           {list.rows.map((row) => (
             <SidebarSessionItem
               key={row.sessionId}

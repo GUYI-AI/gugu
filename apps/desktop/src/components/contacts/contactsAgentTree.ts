@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react'
-import { computed, reaction } from 'mobx'
+import { comparer, computed, reaction } from 'mobx'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
+import { orderAgentRows } from '@renderer/features/sidebar/agent-order'
+import type { ChatAgentEntry } from '@renderer/features/sidebar/chat-agents'
 import { sidebarFamilies } from '@renderer/features/sidebar/inner-sidebar-scope'
 
 // 通讯录里一个设备段的 agent 按「谁派生了谁」画成树。父子这条边 ❌ 另存一份:就是侧栏建树用的那条
@@ -29,6 +31,35 @@ const snapshot = () => parentAgents.get()
 
 export function useAgentParents(): ReadonlyMap<string, string> {
   return useSyncExternalStore(subscribe, snapshot)
+}
+
+// 通讯录里 agent 的次序 = 侧栏「智能体」同一个(agent-order):一个 agent 按它最近交互的那条会话排。
+// 次序真变了才换身份(comparer.structural):状态跳一下、次序没变,通讯录 ❌ 重画。
+const agentRank = computed(() => {
+  const latest = new Map<string, ChatAgentEntry>()
+  for (const entry of sidebarFamilies.get().entries) {
+    if (!entry.agentUserId) continue
+    const known = latest.get(entry.agentUserId)
+    if (!known || entry.time > known.time) latest.set(entry.agentUserId, entry)
+  }
+  return orderAgentRows([...latest.values()]).map((entry) => entry.agentUserId!)
+}, { keepAlive: true, equals: comparer.structural })
+
+const subscribeRank = (onChange: () => void) => reaction(() => agentRank.get(), onChange)
+const rankSnapshot = () => agentRank.get()
+
+/** 我的 agent 的次序(agent 身份,排好的)。 */
+export function useAgentRank(): readonly string[] {
+  return useSyncExternalStore(subscribeRank, rankSnapshot)
+}
+
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+/** 按 `rank` 排;侧栏里没有会话的(别人的 agent,或会话在看不到的机器上)排在后面,按建的先后、再按 id。 */
+export function orderAgentContacts(agents: readonly ContactUser[], rank: readonly string[]): ContactUser[] {
+  const at = new Map(rank.map((id, index) => [id, index]))
+  const place = (agent: ContactUser) => at.get(agent.id) ?? rank.length
+  return [...agents].sort((a, b) => place(a) - place(b) || byText(a.created_at ?? '', b.created_at ?? '') || byText(a.id, b.id))
 }
 
 /** 一段里的 agent 成树:父不在这一段里(在别的设备上)就自己当根。次序沿用传进来的(置顶在前)。 */

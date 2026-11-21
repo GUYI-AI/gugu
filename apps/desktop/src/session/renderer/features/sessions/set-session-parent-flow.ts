@@ -2,6 +2,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
 import { SESSION_PARENT_CYCLE } from '@shared/core/sessions/sessions';
@@ -19,6 +20,22 @@ type SessionRef = { projectId: string; sessionId: string; title: string };
  */
 function setSessionParent(child: { projectId: string; sessionId: string }, parentSessionId: string | null) {
   return rpcOn(machineRegistry.machineOf(child.projectId)).sessions.setSessionParent(child.sessionId, parentSessionId);
+}
+
+/**
+ * 把 child 拖到 target 上(null = 回到顶层)收不收,给落点用(session-drop-target 的 DropVerdict):收 = true;
+ * 拖到它自己上、本来就在顶层 = false(不收也不说);已经挂在这、挂上去会成环(看得见的这一截)= 一句原因,落点上就地写出来。
+ * 隔着侧栏看不见的已归档会话成环,只有主进程查得到 —— 松手后由 nestFailed 说。
+ */
+export function nestVerdict(child: { sessionId: string; title: string }, target: { sessionId: string; title: string } | null): boolean | string {
+  const parent = sidebarStore.parentOf(child.sessionId);
+  if (target === null) return parent !== null;
+  if (target.sessionId === child.sessionId) return false;
+  if (parent === target.sessionId) return translateSessionMessage('sidebar.nestRefusedAlready', { parent: target.title });
+  if (sidebarStore.isWithin(target.sessionId, child.sessionId)) {
+    return translateSessionMessage('sidebar.nestRefusedLoop', { parent: target.title, child: child.title });
+  }
+  return true;
 }
 
 /**

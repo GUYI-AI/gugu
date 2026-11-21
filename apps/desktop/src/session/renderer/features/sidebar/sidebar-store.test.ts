@@ -180,20 +180,6 @@ describe('SidebarStore project ordering', () => {
     expect(store.orderedProjects.map((project) => project.id)).toEqual(['new', 'old']);
   });
 
-  it('places projects missing from a saved manual order first', () => {
-    const store = sidebarOf(
-      projectManager([
-        { id: 'old', createdAt: '2026-01-01T00:00:00.000Z' },
-        { id: 'manual', createdAt: '2026-01-02T00:00:00.000Z' },
-        { id: 'new', createdAt: '2026-01-03T00:00:00.000Z' },
-      ])
-    );
-
-    store.restoreSnapshot({ projectOrder: ['manual', 'old'] });
-
-    expect(store.orderedProjects.map((project) => project.id)).toEqual(['new', 'manual', 'old']);
-  });
-
   it('hides the app-owned project that backs projectless tasks', () => {
     const store = sidebarOf(
       projectManager([
@@ -875,8 +861,6 @@ describe('SidebarStore keeps what the user folded folded', () => {
       'expandedSessionIds',
       'folds',
       'idleExpandedProjectIds',
-      'projectOrder',
-      'sessionOrderByProject',
       'sessionSortBy',
     ]);
   });

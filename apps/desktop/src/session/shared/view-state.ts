@@ -192,7 +192,5 @@ export type SidebarSnapshot = {
   idleExpandedProjectIds?: string[];
   /** What the user folded away (sidebar-folds). */
   folds?: string[];
-  projectOrder?: string[];
-  sessionOrderByProject?: Record<string, string[]>;
   sessionSortBy?: SidebarSessionSortBy;
 };
