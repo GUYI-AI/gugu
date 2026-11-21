@@ -98,7 +98,8 @@ it('offers one persistent first-install prompt and only remembers an explicit ac
   showFirstInstallImportNotice(homes)
   expect(calls.notice).toHaveBeenCalledTimes(1)
   const [notice] = calls.notice.mock.calls[0]!
-  expect(notice).toMatchObject({ ongoing: true, presentation: 'first-install-import' })
+  expect(notice).toMatchObject({ ongoing: true })
+  expect(notice).not.toHaveProperty('presentation')
   expect(localStorage.getItem(notice.key)).toBeNull()
   expect(calls.importHome).not.toHaveBeenCalled()
   const open = vi.fn()

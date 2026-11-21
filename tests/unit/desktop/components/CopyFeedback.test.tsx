@@ -15,9 +15,9 @@ beforeEach(() => { shell.mobile = true; harness = createReactHarness(); vi.mocke
 afterEach(() => { harness.cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('mobile copy confirmation', () => {
-  it('uses one compact 1.5 second notice for a menu, while desktop keeps its existing notice', () => {
+  it('uses one 1.5 second notice for a menu, while desktop keeps its existing notice', () => {
     notifyCopied('Copied')
-    expect(notify).toHaveBeenLastCalledWith({ title: 'Copied', tier: 'success', key: 'clipboard-copy', duration: 1500, presentation: 'compact' })
+    expect(notify).toHaveBeenLastCalledWith({ title: 'Copied', tier: 'success', key: 'clipboard-copy', duration: 1500 })
     shell.mobile = false
     notifyCopied('Copied')
     expect(notify).toHaveBeenLastCalledWith({ title: 'Copied', tier: 'success' })

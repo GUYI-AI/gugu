@@ -50,31 +50,26 @@ it.each(['light', 'dark'] as const)('paints the real notice lower outline and sa
   expect(composer.getBoundingClientRect().top - box.bottom).toBeCloseTo(8, 2)
 })
 
-it('uses the approved first-install card geometry without mount or removal motion', async () => {
+it('keeps a panel close button clickable under every persistent notice: the stack only grows from the bottom edge', async () => {
   await page.viewport(1000, 700)
   previousTheme = readThemePreference()
   harness = createReactHarness()
-  await harness.render(<NoticeHost />)
   const closed = vi.fn()
-  await act(async () => { notify({ key: 'first-install-card', title: '咕咕 支持一键数据导入啦',
-    description: '快速带入你的记忆、项目规则和工作习惯', ongoing: true,
-    presentation: 'first-install-import', action: { label: '导入', onClick() {} }, onDismiss: closed }) })
-  const card = () => document.querySelector<HTMLElement>('.gugu-notice-first-install-import')!
-  await until('first-install card is mounted', () => Boolean(card()?.querySelector('[data-close-button]')))
-  const box = card().getBoundingClientRect()
-  expect(box.top).toBe(60)
-  expect(innerWidth - box.right).toBe(20)
-  expect(box.width).toBe(360)
-  expect(getComputedStyle(card()).padding).toBe('20px')
-  expect(getComputedStyle(card()).borderRadius).toBe('12px')
-  expect(getComputedStyle(card()).transform).toBe('none')
-  expect(getComputedStyle(card()).transitionDuration).toBe('0s')
-  const action = card().querySelector<HTMLElement>('[data-button]')!
-  expect(action.getBoundingClientRect().height).toBe(32)
-  expect(getComputedStyle(action).borderRadius).toBe('6px')
-  expect(card().querySelector('[data-icon]')).toBeNull()
-  const original = card()
-  await clickElement(card().querySelector<HTMLButtonElement>('[data-close-button]')!)
-  await expect.poll(() => closed.mock.calls.length).toBe(1)
-  expect(original.isConnected ? getComputedStyle(original).display : 'none').toBe('none')
+  // A settings-sized panel: its close button sits in its own top edge, like every sheet and dialog.
+  await harness.render(<><NoticeHost />
+    <div role="dialog" style={{ position: 'fixed', inset: '32px 0', zIndex: 'var(--z-settings)', background: 'var(--bg-primary)' }}>
+      <button type="button" aria-label="Close settings" onClick={closed} style={{ position: 'absolute', top: 16, right: 16, width: 32, height: 32 }} />
+    </div>
+  </>)
+  await act(async () => {
+    notify({ key: 'first-install-card', title: '咕咕 支持一键数据导入啦', description: '快速带入你的记忆、项目规则和工作习惯', ongoing: true, action: { label: '导入', onClick() {} } })
+    notify({ key: 'card-edge', title: '群文件存储空间已满,暂时无法上传新文件。', tier: 'warning', ongoing: true, action: { label: '管理文件', onClick() {} } })
+  })
+  await until('both notices are mounted', () => document.querySelectorAll('[data-sonner-toast]').length === 2)
+  // One list, one corner: no notice opened a second position.
+  expect(document.querySelectorAll('[data-sonner-toaster]')).toHaveLength(1)
+  const close = document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.getBoundingClientRect()
+  expect(document.elementFromPoint(close.left + close.width / 2, close.top + close.height / 2)?.getAttribute('aria-label')).toBe('Close settings')
+  await clickElement(document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!)
+  expect(closed).toHaveBeenCalledOnce()
 })
