@@ -3,6 +3,8 @@ const state = vi.hoisted(() => ({ rows: new Map<string, string>(), returned: vi.
 vi.mock('@renderer/lib/stores/app-state', () => ({ sidebarStore: { rowProjectIdOf: (id: string) => state.rows.get(id) ?? id } }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ returnToScreen: state.returned }));
 import { runInAction } from 'mobx';
+import { followRendererSession } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { screenLayout } from '@renderer/app/screen-layout';
@@ -19,8 +21,10 @@ beforeEach(() => {
     { projectId: visible.projectId, chatId: 'shared-project-group' },
   ]);
   // Which group a project on screen belongs to is the account's answer.
+  // This computer is the replica `thisDeviceId`'s, for the account signed in.
+  followRendererSession('SIGNED_IN', 'tester');
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
-    accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.list = [{
       chatId: 'shared-project-group', name: 'shared', archived: false, activeAt: '2026-01-01T00:00:00.000Z',
       bindings: [first.projectId, visible.projectId].map((localProjectId) => ({ deviceId: 'this-computer', localProjectId })),

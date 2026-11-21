@@ -153,6 +153,7 @@ export function foldersInScope(
   const waiting = state.unanswered.some((projectId) => inScope(deviceOfMember(projectId)))
     || selected.some((deviceId) => deviceId !== 'local' && isDeviceResting(deviceId));
   const folders = found?.length === 0 && waiting ? null : found;
-  const chosen = folders?.find((folder) => folder.workspaceId === state.chosen?.workspaceId) ?? folders?.[0] ?? null;
+  // A placeholder paper is never where a task starts: with only placeholders in scope, nothing is chosen yet.
+  const chosen = folders?.find((folder) => folder.workspaceId === state.chosen?.workspaceId) ?? folders?.find((folder) => !folder.placeholder) ?? null;
   return { ...state, folders, chosen };
 }

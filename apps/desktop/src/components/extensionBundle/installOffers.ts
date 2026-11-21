@@ -13,15 +13,15 @@ export interface AppInstallOffer {
   from: { kind: 'shared'; card: PackageCard } | { kind: 'market'; extensionId: string; version: string }
 }
 
-/** File and widget offers share the group's own package first, and only versions newer than what is here. */
-export function availableInstallOffers(shared: ReadonlyMap<string, SharedPackage>, market: readonly MarketOffer[], installed: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>): AppInstallOffer[] {
+/** The group's own package first, only versions newer than here. `market` null = unreadable: only what is shared is offered. */
+export function availableInstallOffers(shared: readonly SharedPackage[], market: readonly MarketOffer[] | null, installed: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>): AppInstallOffer[] {
   const notHere = (manifest: ExtensionManifest) => {
     const mine = installed.find(candidate => candidate.id === manifest.id)
     return !mine || compareExtensionVersions(mine.version, manifest.version) < 0
   }
   return [
-    ...[...shared.values()].filter(pkg => notHere(pkg.manifest)).map(pkg => ({ manifest: pkg.manifest, from: { kind: 'shared' as const, card: pkg.card } })),
-    ...market.filter(entry => origins[entry.manifest.id] !== 'fork' && notHere(entry.manifest) && !shared.has(entry.manifest.id))
+    ...shared.filter(pkg => notHere(pkg.manifest)).map(pkg => ({ manifest: pkg.manifest, from: { kind: 'shared' as const, card: pkg.card } })),
+    ...(market ?? []).filter(entry => origins[entry.manifest.id] !== 'fork' && notHere(entry.manifest) && !shared.some(pkg => pkg.manifest.id === entry.manifest.id))
       .map(entry => ({ manifest: entry.manifest, from: { kind: 'market' as const, extensionId: entry.manifest.id, version: entry.version } })),
   ]
 }

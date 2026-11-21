@@ -1,16 +1,14 @@
 import { metadataSeparator } from '@/i18n/format'
 import { marketCompatText } from '@shared/extensions/market'
-import { comparer, reaction } from 'mobx'
 import { observer } from 'mobx-react-lite'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, Shield } from '@/lib/icons'
 import { formatAttachmentSize, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { extensionMonogram, localizedManifestText } from '@shared/extensions/catalog'
-import { cardOffer } from '@shared/extensions/app-card-state'
+import { cardOffer, newestPackageOf } from '@shared/extensions/app-card-state'
 import { compareExtensionVersions, opensInChats } from '@shared/extensions/manifest'
-import type { ExtensionOrigin } from '@shared/extensions/upgrade'
 import { describePermissions } from '@/session/renderer/features/extensions/extension-consent'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { useLocale } from '@/i18n'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { askInShell, installConsentPrompt } from '@/session/renderer/features/extensions/install-consent'
@@ -25,39 +23,21 @@ import { rendererLogger } from '../../lib/log'
 import { useTheme } from '../../store/theme'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { appsHere } from '../appSlot/appsHere'
+import { HERE_HOST } from '../appSlot/hereHost'
+import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { openApp } from '../appSlot/useOpenApp'
 import { Button } from '../ui/Button'
 import { Progress } from '../ui/Progress'
 import { ConsentLines } from './ConsentDetails'
 import { installedHereLine, refusedLine } from './installedHere'
-import { installPackageOf, newestShownPackage, packageKey, showPackage, shownPackagesVersion, subscribeShownPackages, summaryOf, watchReading, type PackageCard } from './sharedPackages'
-import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
+import { installPackageOf, packageKey, type PackageCard } from './sharedPackages'
+import { extensionPackageSummary, noteKeptCopy, packageProgress, showPackage, shownPackages } from './packageReplicas'
+import { useReplica } from '../../lib/replica'
+import { useSelect } from '../../lib/selectStore'
 import type { HandedConsent } from '@/session/shared/extensions/install-consent-flow'
 
 const log = rendererLogger('chat/extension-bundle')
-
-/**
- * The version of this App installed here, whichever way it came — a folder an agent installed, a
- * card in a chat, the market (摩擦单 F4) — and where it came from (E-05). Follows the installed list as it changes.
- */
-function useInstalled(id: string | undefined): { version: string; origin: ExtensionOrigin | undefined } | null {
-  const [installed, setInstalled] = useState<{ version: string; origin: ExtensionOrigin | undefined } | null>(null)
-  useEffect(() => {
-    if (!id) {
-      setInstalled(null)
-      return undefined
-    }
-    return reaction(
-      () => {
-        const version = installedExtensionsStore.manifests.find((manifest) => manifest.id === id)?.version
-        return version === undefined ? null : { version, origin: installedExtensionsStore.origins[id] }
-      },
-      setInstalled,
-      { fireImmediately: true, equals: comparer.structural },
-    )
-  }, [id])
-  return installed
-}
 
 /**
  * 「装到哪台」(主人 10-02):这台电脑连着的别的机器 —— 产品里选机器的那一个 MachinePicker(新建任务、资源库同一份清单与说法:
@@ -115,9 +95,8 @@ function PermissionsFold({ text, strong, muted }: { text: string; strong: string
  * size — the permissions row says it is reading, the button row shows how far the bytes have come.
  */
 function PackageReading({ card, muted }: { card: PackageCard; muted: string }) {
-  const [read, setRead] = useState<{ done: number; total: number } | null>(null)
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
-  useEffect(() => watchReading(card, (done, total) => setRead({ done, total })), [packageKey(card)])
+  const key = packageKey(card)
+  const read = useSelect(packageProgress, (progress) => progress[key] ?? null)
   const t = translateSessionMessage
   return (
     <>
@@ -143,16 +122,10 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
 }) {
   const { sizeBytes } = meta
   const key = packageKey(card)
-  const [summary, setSummary] = useState<ExtensionBundleSummary | null>(null)
-  useEffect(() => {
-    let live = true
-    setSummary(null)
-    void summaryOf(card, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null).then((next) => live && setSummary(next))
-    return () => {
-      live = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
-  }, [key])
+  // The message's record of the bytes, noted before the read is asked: a copy this device keeps is read from disk.
+  noteKeptCopy(key, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null)
+  const reading = useReplica(extensionPackageSummary, [card.source])
+  const summary = reading.state === 'value' ? reading.value : null
   // On screen, it counts among the packages an older card of the same App points to (摩擦单 F21).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
   useEffect(() => (summary?.ok ? showPackage({ manifest: summary.manifest, card }) : undefined), [summary, key])
@@ -282,16 +255,18 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   const manifest = summary?.ok ? summary.manifest : null
   const { resolvedLocale: locale } = useLocale()
   const name = manifest ? localizedManifestText(manifest, locale).name : null
-  // Already here — the same App at the same version — is installed, however it got here.
-  const here = useInstalled(manifest?.id)
-  const installedVersion = here?.version ?? null
+  // Already here — the same App at the same version — is installed, however it got here (摩擦单 F4, E-05).
+  const installedHere = useInstalledApps(HERE_HOST)
+  const hereManifest = manifest && installedHere.state === 'value' ? installedHere.value.manifestFor(manifest.id) : undefined
+  const here = hereManifest && installedHere.state === 'value' ? { version: hereManifest.version, origin: installedHere.value.origins[hereManifest.id] } : null
+  const installedVersion = here ? here.version : null
   // A newer package of the same App is on screen too: this card says so, and installs that one (摩擦单 F21).
-  useSyncExternalStore(subscribeShownPackages, shownPackagesVersion)
-  const newest = manifest ? newestShownPackage(manifest.id) : undefined
+  const newest = useSelect(shownPackages, (shown) => (manifest ? newestPackageOf(shown.values(), manifest.id) : undefined))
   const newer = manifest && newest && compareExtensionVersions(newest.manifest.version, manifest.version) > 0 ? newest : null
   // What the card offers follows what is installed here, always — installed, updated, uninstalled (摩擦单 F66): the one
   // answer the desktop and the phone share (`cardOffer`).
-  const offer = manifest
+  // Not known yet what is installed here: no offer, ❌ 「安装」 for an App that may be installed.
+  const offer = manifest && installedHere.state === 'value'
     ? cardOffer({ installedVersion, installedOrigin: here?.origin, cardVersion: manifest.version, ...(newer ? { newestVersion: newer.manifest.version } : {}) })
     : null
   const installed = offer?.action === 'open'
@@ -326,7 +301,8 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
           </span>
         </div>
       </div>
-      {!summary && <PackageReading card={card} muted={muted} />}
+      {reading.state === 'unknown' && <PackageReading card={card} muted={muted} />}
+      {reading.state === 'error' && <RefreshFailed reading={reading} />}
       {summary && !summary.ok && (
         <span data-testid="extension-bundle-card-problem" className="text-[var(--font-body)] text-[var(--text-error)]">
           {summary.compat ? marketCompatText(summary.compat, t) : t('extensions.bundleCardUnreadable')}
@@ -351,7 +327,11 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <InstallTarget selectedId={machineId} onSelect={setMachineId} />
                 <span className="flex-1" />
-                {offer?.action === 'elsewhere' && !machine ? (
+                {installedHere.state !== 'value' && !machine ? (
+                  installedHere.state === 'error'
+                    ? <RefreshFailed reading={installedHere} />
+                    : <Unknown className="h-7 w-20" />
+                ) : offer?.action === 'elsewhere' && !machine ? (
                   // E-05: what is here comes with gugu, so this card cannot update it — said, with the way to the App page
                   // where it is managed.
                   <>

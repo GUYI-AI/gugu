@@ -10,9 +10,13 @@ import { requirementGranted, type PhoneActionGroup, type PhoneOsState } from './
 import { HEALTH_TYPES } from './nativePhoneActions'
 import { connectPhoneActionGroupChoice, setPhoneActionGroup, usePhoneDeviceSettings } from './phoneDeviceSettings'
 import { openPhonePermissionSettings, requestPhoneRequirement } from './phonePermissionActions'
-import { readPhoneOsState, refreshPhoneDevice, usePhoneDevice } from './phoneDeviceRuntime'
+import { phoneOsState, refreshPhoneDevice } from './phoneDeviceRuntime'
+import { useReplica } from '@/lib/replica'
+import { rendererLogger } from '@/lib/log'
 import { PHONE_PERMISSION_ROWS, type PhonePermissionRow } from './phonePermissionRows'
 import { usePhonePermissionReporter } from './usePhonePermissionReporter'
+
+const log = rendererLogger('phone-permissions')
 
 function unsupported(group: PhoneActionGroup, os: PhoneOsState): boolean {
   return group === 'alarm' ? !os.special.alarm_app : group === 'health' ? !os.health.supported : ['sms', 'recordings', 'photos'].includes(group) && !os.data?.supported
@@ -24,20 +28,16 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
   const { t: tMain } = useTranslation('main')
   const settings = usePhoneDeviceSettings(ownerId)
   const report = usePhonePermissionReporter(ownerId)
-  const { os } = usePhoneDevice()
+  const osReading = useReplica(phoneOsState, [])
+  // Read on open and again back from the system settings; a failed read again ❌ shows the earlier answer as now.
+  const read: 'loading' | 'ready' | 'failed' = osReading.state === 'unknown' ? 'loading' : osReading.state === 'value' && !osReading.error ? 'ready' : 'failed'
+  const os = osReading.state === 'value' && !osReading.error ? osReading.value : null
   const systemRows = systemPermissionRows()
   const system = useSystemPermissionStates(systemRows.map(row => row.permission))
-  const [read, setRead] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const refresh = useCallback(async () => {
-    setRead('loading')
-    try { await refreshPhoneDevice(); setRead('ready') } catch { setRead('failed') }
-  }, [])
-  useEffect(() => {
-    void refresh()
-    return platform.subscribeAppForeground(() => void refresh(), () => setRead('failed'))
-  }, [refresh])
+  const refresh = useCallback(() => refreshPhoneDevice().catch((error: unknown) => log.warn({ error: String(error) }, 'phone re-read or re-registration failed')), [])
+  useEffect(() => platform.subscribeAppForeground(() => { void refresh() }, () => undefined), [refresh])
   const act = async (key: string, action: () => Promise<void>) => {
     if (busy) return
     setBusy(key); setError(null)
@@ -52,7 +52,7 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
     }
     if (!requirementGranted(requirement, os)) {
       await requestPhoneRequirement(requirement, os)
-      if (!requirementGranted(requirement, await readPhoneOsState())) return
+      if (!requirementGranted(requirement, await phoneOsState.reread())) return
     } else if (group === 'location' && !os.special.location_enabled) await openPhonePermissionSettings('location')
     else if (selected) {
       if (group === 'health' && (os.health.granted_types.length < HEALTH_TYPES.length || (os.health.background_supported && !os.health.background_granted))) await requestPhoneRequirement('health_connect', os)

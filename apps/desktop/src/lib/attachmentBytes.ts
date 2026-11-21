@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
-import { queryClient, replica } from './replica'
+import { replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, registerFullImage, type ImageViewerItem, type Size } from './imageViewer'
@@ -130,8 +130,7 @@ async function sessionThumb(source: AttachmentSource, metadata?: FileMetadata): 
   const args = [sourceKey, metadata?.status === 'ready' ? metadata.revision.sha256 : metadata?.status ?? null, source, metadata ?? null] as const
   const bytes = await model.fetch(...args)
   // Bytes still on their way from the sender (or refused) are read again next time, not remembered for the run.
-  const key = bytes.status === 'pending' || bytes.status === 'unsent' ? model.key(...args) : null
-  if (key) queryClient.removeQueries({ queryKey: key, exact: true })
+  if (bytes.status === 'pending' || bytes.status === 'unsent') await model.reset(...args)
   return bytes
 }
 

@@ -5,7 +5,7 @@ import { createNode, createReactHarness, deferred } from '../../../support/testH
 
 const read = vi.hoisted(() => vi.fn())
 const bus = vi.hoisted(() => ({ subscribed: null as null | (() => void), off: vi.fn() }))
-const log = vi.hoisted(() => ({ error: vi.fn() }))
+const log = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/storedAgentTurnFailures', () => ({ readStoredAgentTurnFailures: read }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => log }))
@@ -18,6 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
   unsubscribePrivateUserEventBus: bus.off,
 }))
 import { useStoredAgentTurnFailure } from '../../../../apps/desktop/src/hooks/useStoredAgentTurnFailure'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const empty = { failures: [], recovered: [] }
 const failure = { agentUserId: 'agent', commandId: 'cmd', revision: 'one', at: 1, reason: 'weeklyQuota' }
@@ -29,12 +30,15 @@ let ui: ReturnType<typeof createReactHarness>
 const current = () => ui.container.querySelector('[data-failure]')?.textContent
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const reconnect = () => act(async () => bus.subscribed?.())
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('owner')
+
   vi.useFakeTimers()
   ui = createReactHarness()
   read.mockReset().mockResolvedValue(empty)
   bus.off.mockClear()
   log.error.mockClear()
+  log.warn.mockClear()
   window.localStorage.clear()
 })
 afterEach(() => { ui.cleanup(); vi.useRealTimers() })
@@ -47,7 +51,8 @@ describe('automatic reply-status read recovery (#1896)', () => {
     await advance(63_000)
     expect(read).toHaveBeenCalledTimes(1)
     await act(async () => slow.reject(new Error('statement timeout')))
-    expect(log.error).toHaveBeenCalledWith({ scope: { chatId: 'chat', threadRootId: null }, error: 'Error: statement timeout' }, 'could not read agent reply outcome')
+    // Each failed read is logged once, by the replica (lib/replica readFromKey).
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ model: 'storedAgentTurnFailures', error: 'Error: statement timeout' }), 'storedAgentTurnFailures: read failed')
     await advance(999)
     expect(read).toHaveBeenCalledTimes(1)
     await advance(1)
@@ -64,7 +69,8 @@ describe('automatic reply-status read recovery (#1896)', () => {
       await advance(1)
       expect(read).toHaveBeenCalledTimes(index + 2)
     }
-    expect(log.error).toHaveBeenCalledTimes(delays.length + 1)
+    // The replica logs a failing entry once until it reads again (❌ one line per retry while offline).
+    expect(log.warn).toHaveBeenCalledTimes(1)
   })
 
   it('starts again at one second after a successful recovery', async () => {
@@ -100,15 +106,21 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(read).toHaveBeenCalledTimes(2)
   })
 
+  // The event came while the first attempt was on its way: that attempt is not restarted; once it
+  // lands (here, failed) the event's read runs once, and its success stands — no retry scheduled from the late failure.
   it('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
     const old = deferred<typeof empty>()
-    read.mockReturnValueOnce(old.promise)
+    read.mockReturnValueOnce(old.promise).mockResolvedValue({ failures: [failure], recovered: [] })
     await ui.render(createNode(Probe, {}))
     await reconnect()
+    expect(read).toHaveBeenCalledTimes(1)
     await act(async () => old.reject(new Error('old timeout')))
+    await vi.waitFor(() => expect(current()).toBe('cmd'))
     await advance(30_000)
     expect(read).toHaveBeenCalledTimes(2)
-    expect(log.error).not.toHaveBeenCalled()
+    expect(current()).toBe('cmd')
+    // The superseded read logged its own failure once; nothing retried it.
+    expect(log.warn).toHaveBeenCalledTimes(1)
   })
 
   it('cancels scheduled recovery on unmount', async () => {

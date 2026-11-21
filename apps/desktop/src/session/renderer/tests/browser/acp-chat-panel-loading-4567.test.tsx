@@ -78,9 +78,8 @@ vi.mock('@renderer/features/library/prompts/use-prompt-library', () => ({
 }));
 
 vi.mock('@renderer/lib/stores/use-agents', () => ({
-  AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'],
-  useAgents: () => ({ data: [] }),
-  useAgent: () => ({ data: undefined }),
+  useAgents: () => ({ state: 'value', value: [], stale: false, error: null }),
+  useAgent: () => ({ state: 'unknown' }),
   useAgentIcon: () => undefined,
 }));
 

@@ -2,8 +2,8 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 
 const f = vi.hoisted(() => ({ matchVersion: vi.fn() }))
-vi.mock('@/lib/cloudComputer', () => ({ rendererCloudComputerClient: () => f }))
-vi.mock('@/lib/cloudComputerStore', () => ({ getCloudComputerState: () => ({ snapshot: { deviceId: 'cloud' } }) }))
+vi.mock('@/lib/cloudComputerClient', () => ({ rendererCloudComputerClient: () => f }))
+vi.mock('@/lib/cloudComputer', () => ({ knownCloudDeviceId: () => 'cloud' }))
 vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: 'owner' } }), observeRendererSession: vi.fn() }))
 beforeEach(() => { vi.resetModules(); vi.clearAllMocks() })
 

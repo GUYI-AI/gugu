@@ -206,7 +206,6 @@ export const enUSProjectMessages = {
   'projects.pending.dismiss': 'Dismiss',
 
   // ── projects: directory browser ────────────────────────────────────────
-  'projects.remoteDir.loading': 'Loading directory',
   'projects.remoteDir.useThis': 'Use this directory',
   'projects.remoteDir.selectDirectory': 'Select a directory',
 
@@ -250,6 +249,8 @@ export const enUSProjectMessages = {
   'projects.create.pathConflict':
     'The selected path is already used by the {provider} project "{name}" ({id}). Remove or move that project before creating another one.',
   'projects.create.noDefaultDirectory': 'No default projects directory is configured. Set one in settings first.',
+  'projects.create.directoryUnread': 'Couldn’t read the default projects directory.',
+  'projects.create.retryRead': 'Retry',
   'projects.create.invalidName': 'A project name cannot contain path separators or reserved characters.',
 
   // ── projects: delete confirmation ──────────────────────────────────────
@@ -467,7 +468,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.pending.dismiss': '关闭',
 
   // ── projects: directory browser ────────────────────────────────────────
-  'projects.remoteDir.loading': '正在读取目录',
   'projects.remoteDir.useThis': '使用此目录',
   'projects.remoteDir.selectDirectory': '选择目录',
 
@@ -506,6 +506,8 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.create.pathConflict':
     '所选路径已被{provider}项目“{name}”（{id}）占用。请先删除或移动该项目，再创建新项目。',
   'projects.create.noDefaultDirectory': '未配置默认项目目录，请先到设置中配置',
+  'projects.create.directoryUnread': '没读到默认项目目录。',
+  'projects.create.retryRead': '重试',
   'projects.create.invalidName': '项目名称不能包含路径分隔符或系统保留字符',
 
   // ── projects: delete confirmation ──────────────────────────────────────

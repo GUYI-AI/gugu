@@ -1,7 +1,7 @@
 import type { SessionInput } from '@/lib/sessionInputOutbox'
 import { releaseQueuedSessionInput, state, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { rendererLogger } from '@/lib/log'
-import { subscribeCachedDevices } from '@/store/devicesCache'
+import { devicesModel } from '@/store/devicesCache'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
 import { directoryDevices, liveDeviceSessions, requestPhoneTaskDirectory, subscribeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { sessionLifeViewChannel, sessionTurnSettledChannel } from '@/session/shared/core/sessions/sessionEvents'
@@ -118,7 +118,7 @@ export function watchPhoneSessionSendQueues(accountId: string, options?: { phone
         signature = next; listener()
       })
       // Existing reachability events retry a failed lookup; no second polling loop is introduced.
-      const stopDevices = subscribeCachedDevices(() => { if (retryPending) { retryPending = false; listener() } })
+      const stopDevices = devicesModel.subscribe([], () => { if (retryPending) { retryPending = false; listener() } })
       const visible = () => { if (document.visibilityState === 'visible') listener() }
       window.addEventListener('online', listener)
       document.addEventListener('visibilitychange', visible)

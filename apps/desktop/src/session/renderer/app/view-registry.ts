@@ -50,6 +50,12 @@ export type ViewDefinition<TParams extends object = Record<never, never>> = {
    * 语义与丢弃时机见 navigation-store 的 `@@@transient-view-params`。
    */
   transientParams?: readonly (keyof TParams & string)[];
+  /**
+   * Params that say which place inside the view you are at (the Apps page's tab, open App, Installed segment). Two
+   * visits with different values are two steps of the back stack, and changing them in place (`setParams`) rewrites the
+   * step you are on, so going back returns to where you left it, not to where you came in.
+   */
+  placeParams?: readonly (keyof TParams & string)[];
   /** A place of its own on the far-left rail (App, an App from the dock): drawn without the task list beside it. */
   withoutSessionSidebar?: true;
   /**
@@ -79,7 +85,7 @@ export function setupNavigationGuards(): void {
   for (const [viewId, view] of Object.entries(views) as Array<
     [ViewId, ViewDefinition<Record<string, unknown>>]
   >) {
-    appState.navigation.registerView(viewId, { transientParams: view.transientParams });
+    appState.navigation.registerView(viewId, { transientParams: view.transientParams, placeParams: view.placeParams });
     if (view.canActivate) {
       appState.navigation.registerGuard(viewId, view.canActivate);
     }

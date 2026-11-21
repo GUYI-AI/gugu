@@ -7,7 +7,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import { ExtensionViewLayer } from '@renderer/features/extensions/extension-view-layer';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { installedExtensions } from '@renderer/features/extensions/installed-extensions';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
@@ -56,7 +56,7 @@ beforeEach(async () => {
     },
     eventOn: () => () => {},
   });
-  act(() => { installedExtensionsStore.manifests = [manifest]; });
+  act(() => { installedExtensions.set(['local'], { extensions: [manifest], invalid: [] } as never); });
 });
 
 afterEach(() => {
@@ -65,7 +65,7 @@ afterEach(() => {
   act(() => {
     for (const block of [...screenLayout.blocks.values(), ...screenLayout.parkedContents]) screenLayout.forgetContent(block);
     extensionViewStore.forgetOpened(kind);
-    installedExtensionsStore.manifests = [];
+    installedExtensions.set(['local'], { extensions: [], invalid: [] } as never);
   });
   vi.unstubAllGlobals();
 });

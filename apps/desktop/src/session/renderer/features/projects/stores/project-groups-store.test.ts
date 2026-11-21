@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // #7341 第二步:每台机器上的本地项目绑哪个项目群。连着的机器各自回答;没连着的照账号上记着的那份(#113)——
 // 那台机器离线,它上面的同一个项目照样并在原来那一行里(product spec:机器离线时文件夹照样列在项目里),❌ 拆成两行。
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observable, runInAction } from 'mobx';
 import type { ProjectGroupBinding } from '@shared/core/projects/project-groups';
 import { readProjectGroupChats, readProjectGroupMembers } from '@/lib/projectGroupChatsBridge';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { ProjectGroupsStore } from './project-groups-store';
 
 const mocks = vi.hoisted(() => ({
@@ -12,8 +13,12 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, () => void>(),
 }));
 
+vi.mock('@/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }));
 vi.mock('@renderer/lib/ipc', () => ({
-  events: { on: (channel: { name: string }, handler: () => void) => { mocks.handlers.set(channel.name, handler); return () => {}; } },
+  onMachineEvent: (machine: string | null, channel: { name: string }, handler: () => void) => {
+    mocks.handlers.set(`${machine ?? 'local'}:${channel.name}`, handler);
+    return () => {};
+  },
   rpcOn: (machine: string | null) => ({
     projects: {
       listProjectGroupBindings: () => (mocks.answers.get(machine ?? 'local') ?? (() => Promise.reject(new Error('offline'))))(),
@@ -27,8 +32,24 @@ const settle = async () => {
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
+/** Each case's stores, stopped after it: a store left running keeps following the replica and publishing to the bridge. */
+const started: ProjectGroupsStore[] = [];
+const newStore = () => {
+  const store = new ProjectGroupsStore();
+  started.push(store);
+  return store;
+};
+
 describe('ProjectGroupsStore', () => {
+  afterEach(() => {
+    for (const store of started.splice(0)) (store as unknown as { stop: (() => void) | null }).stop?.();
+  });
+
   beforeEach(() => {
+    // The bindings are the replica `projectGroupBindings`, read for the account signed in (signed in first: the replica's
+    // pointer to the last account is not what the last case checks this computer keeps).
+    queryClient.clear();
+    followRendererSession('SIGNED_IN', 'tester');
     localStorage.clear();
     mocks.answers.clear();
   });
@@ -36,7 +57,7 @@ describe('ProjectGroupsStore', () => {
   // #113 没连着的机器:绑定照账号上记着的那份(远程主机那边交进来),这台电脑从没连上过它也一样。
   it('a machine that is not connected takes its bindings from the account’s record', async () => {
     answer('local', [{ projectId: 'local-shop', chatId: 'chat-shop' }]);
-    const store = new ProjectGroupsStore();
+    const store = newStore();
     let rows = ['local-shop'];
     store.start(() => [], () => [], () => rows);
     await settle();
@@ -54,7 +75,7 @@ describe('ProjectGroupsStore', () => {
   it('a machine that answers replaces what the account recorded for it — unbound there means unbound here', async () => {
     answer('local', []);
     answer('d22', []);
-    const store = new ProjectGroupsStore();
+    const store = newStore();
     store.applyBindings('d22', [{ projectId: 'd22-shop', chatId: 'chat-shop' }]);
     store.start(() => ['d22'], () => [], () => ['d22-shop']);
     await settle();
@@ -63,7 +84,7 @@ describe('ProjectGroupsStore', () => {
 
   it('nothing is remembered on this computer between runs (the account holds it)', async () => {
     answer('local', [{ projectId: 'z-target', chatId: 'chat-shared' }]);
-    new ProjectGroupsStore().start(() => [], () => [], () => ['z-target']);
+    newStore().start(() => [], () => [], () => ['z-target']);
     await settle();
     expect(localStorage.length).toBe(0);
   });
@@ -82,7 +103,7 @@ describe('ProjectGroupsStore', () => {
       { projectId: 'local-main', sessionId: 's-anonymous', agentUserId: null },
       { projectId: 'unbound', sessionId: 's-unknown', agentUserId: 'unknown' },
     ]);
-    const store = new ProjectGroupsStore();
+    const store = newStore();
     store.applyBindings(null, bindings);
     store.applyBindings('remote-352', [{ projectId: 'remote-main', chatId: 'chat-main' }]);
     store.start(() => [], () => sessions, () => ['local-main', 'local-outside', 'remote-main']);

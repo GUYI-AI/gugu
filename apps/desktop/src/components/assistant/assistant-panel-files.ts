@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
+import { assistantPanel } from './assistant-panel-replica'
 import type { AssistantMachine } from '@/session/renderer/features/assistant/assistant-machine-core'
 import { requireAssistantPanelBridge, useAssistantPanelAccountId } from '@/lib/assistantPanelBridge'
-export { ASSISTANT_PANEL_CHANGED } from './assistant-panel-events'
 
 /** Both React roots use the shell-owned cloud operations; no native project is acquired. */
 export function useCloudAssistantFiles(assistantId: string | null, chatId: string | null, deviceId: string | null): AssistantMachine | undefined {
@@ -13,7 +13,7 @@ export function useCloudAssistantFiles(assistantId: string | null, chatId: strin
   },[assistantId,chatId,deviceId,ownerId])
   useEffect(() => {
     if (!machine?.panel || !ownerId) return
-    return requireAssistantPanelBridge().subscribeChanges(ownerId,() => machine.panel.invalidate())
+    return assistantPanel.hold(machine.panel.assistantId)
   },[machine,ownerId])
   return machine
 }

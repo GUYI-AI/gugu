@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // asks the one decision (lib/assistantEntry.ts) — but only once the installed Apps are read, so a good restore is not sent away.
 const mocks = vi.hoisted(() => ({ target: { kind: 'chat' } as { kind: 'app' | 'chat' | 'setup' | 'wait' }, loaded: true, opened: 0 }));
 vi.mock('@/lib/assistantEntry', () => ({ ASSISTANT_APP_ID: 'gugu-assistant', useAssistantEntryTarget: () => mocks.target, openAssistantEntry: () => { mocks.opened += 1; } }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { get isLoaded() { return mocks.loaded; } } }));
+vi.mock('@renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => (mocks.loaded ? { state: 'value', value: {}, stale: false, error: null } : { state: 'unknown' }) }));
 
 const { useAssistantPageNotHere } = await import('./assistant-page-not-here');
 

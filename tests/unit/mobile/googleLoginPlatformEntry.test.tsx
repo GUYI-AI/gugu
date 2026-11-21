@@ -25,6 +25,8 @@ it.each(['capacitor', 'electron'] as const)('uses the actual %s platform to deci
     return Response.json({ external: { google: true } })
   })
   vi.stubGlobal('fetch', request)
+  // The sign-in methods are a replica: its answers are published at once here, as in the app's act()-free frames.
+  ;(await import('@tanstack/react-query')).notifyManager.setScheduler((callback) => { callback() })
   const { googleLogin } = await import('../../../apps/desktop/src/lib/googleLogin')
   expect(googleLogin.available).toBe(enabled)
   // Authenticated account management does not enable the anonymous provider entry.

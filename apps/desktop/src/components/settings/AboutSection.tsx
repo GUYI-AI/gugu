@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { replica, useReplica, type Replica } from '../../lib/replica'
+import { appVersion } from '../../lib/appVersion'
 import { Unknown } from '../ui/Unknown'
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
 import { UI_EVENTS } from '../../lib/uiEvents'
@@ -13,11 +14,6 @@ import { rendererLogger } from '../../lib/log'
 
 const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-512.png')
 const updateLog = rendererLogger('about-update')
-
-// @@@app-version - build-time constant injected from root package.json by vite (see vite.config.mts).
-// Available on every target, so the version footer shows even on the web build where there is no
-// app.getVersion() IPC bridge.
-declare const __APP_VERSION__: string
 
 /** 主进程那个状态值的形状(main.ts UpdateCheckResult),推来的与问来的是同一个东西。 */
 type UpdateStatusDetail = { revision?: unknown; status?: unknown; messageKey?: unknown; message?: unknown; percent?: unknown }
@@ -60,8 +56,6 @@ const applyStatus = (detail: UpdateStatusDetail | null | undefined) => {
 }
 window.addEventListener(UI_EVENTS.updateStatus, (event) => applyStatus((event as CustomEvent<UpdateStatusDetail>).detail))
 
-/** The running app's version (this device): the same for the whole run, read once. */
-const appVersion = replica({ name: 'appVersion', scope: 'device', read: () => platform.getAppVersion(), fresh: Infinity })
 
 export function AboutSection() {
   const { t } = useTranslation('settings')
@@ -69,9 +63,8 @@ export function AboutSection() {
   const updateStatus = reading.state === 'value' ? reading.value : null
   const [queryFailed, setQueryFailed] = useState(false)
   const [checking, setChecking] = useState(false)
-  // The live app.getVersion() where the platform has it, else the build-time version (identical in practice).
-  const live = useReplica(appVersion, platform.capabilities.appVersion ? [] : null)
-  const version = live.state === 'value' ? live.value : __APP_VERSION__
+  const live = useReplica(appVersion, [])
+  const version = live.state === 'value' ? live.value : null
   const showAppCard = platform.capabilities.appVersion || platform.capabilities.appUpdates
   const updateReady = updateStatus?.status === 'downloaded'
   const updateMessage = updateStatusMessage(t, updateStatus) || ''
@@ -99,7 +92,7 @@ export function AboutSection() {
           {platform.capabilities.appVersion && (
             <SettingsRow
               title={t('about.currentVersion')}
-              control={<span className="gg-settings-row-value">{version}</span>}
+              control={<span className="gg-settings-row-value">{version ?? <Unknown className="w-12" />}</span>}
             />
           )}
           {/* @@@5813 更新说明在官网上那一页:装完新版第一次打开时会自己带他去一次,
@@ -158,7 +151,7 @@ export function AboutSection() {
         {/* #7333 品牌名走页内标题档(20/28);标语、版本、署名是要读的字 ⇒ 次级色(第三档是装饰色,过不了 AA)。 */}
         <div style={{ fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 600, color: 'var(--text-primary)' }}>{t('about.brand')}</div>
         <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 'var(--spacing-xs)' }}>{t('about.tagline')}</div>
-        {version && <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 2 }}>v{version}</div>}
+        {live.state !== 'error' && <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 2 }}>{version ? `v${version}` : <Unknown className="w-12" />}</div>}
         <div style={{ marginTop: 'var(--spacing-md)', fontSize: 'var(--font-caption)', color: 'var(--text-secondary)' }}>
           <Trans
             i18nKey="about.iconAttribution"

@@ -1,6 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { observer } from 'mobx-react-lite'
 import { AssistantSettingsPage, AssistantSetupPage } from '../assistant/AssistantSettingsPage'
 import { ConnectorsSection } from '../settings/ConnectorsSection'
 import { AssistantWorkTaskWindow } from '../assistant/AssistantWorkTaskWindow'
@@ -8,7 +7,7 @@ import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge,
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { useAuth } from '../../store/auth'
 import { events } from '@/session/renderer/lib/ipc'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
 import { reportHostLayers } from './appHostLayer'
 import { readsWork } from './appWorkLedger'
@@ -32,15 +31,17 @@ const noop = () => () => undefined
  * (`reportHostLayer`), which tells the App only that a host page is there (and with `chat:work` which row). Nothing of a
  * page reaches the App.
  */
-export const AppHostLayerHost = observer(function AppHostLayerHost({ visible }: {
+export function AppHostLayerHost({ visible }: {
   /** 会话页那一屏此刻摆在眼前(MainLayout 的 tab 在「任务」):离开就收起,与内置任务窗同一条判据。 */
   visible: boolean
 }) {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
-  const reading = installedExtensionsStore.manifests.filter((manifest) => readsWork(manifest) && installedExtensionsStore.isEnabled(manifest.id)).map((manifest) => manifest.id)
-  const readingKey = reading.join('\n')
-  const onKey = installedExtensionsStore.manifests.filter((manifest) => installedExtensionsStore.isEnabled(manifest.id)).map((manifest) => manifest.id).join('\n')
+  // What is installed here and on: not read yet = null, and no page is taken away for it (❌ every App counted as off).
+  const installed = useInstalledApps(LOCAL_HOST)
+  const apps = installed.state === 'value' ? installed.value : null
+  const readingKey = apps ? apps.manifests.filter((manifest) => readsWork(manifest) && apps.isEnabled(manifest.id)).map((manifest) => manifest.id).join('\n') : null
+  const onKey = apps ? apps.manifests.filter((manifest) => apps.isEnabled(manifest.id)).map((manifest) => manifest.id).join('\n') : null
   const bridge = readAppHostLayerBridge()
   const layers = useSyncExternalStore(bridge?.subscribe ?? noop, () => bridge?.getSnapshot() ?? NONE)
 
@@ -52,6 +53,7 @@ export const AppHostLayerHost = observer(function AppHostLayerHost({ visible }: 
     retainAppHostLayers((extensionId) => changed !== undefined && extensionId !== changed)
   }), [])
   useEffect(() => {
+    if (readingKey === null || onKey === null) return
     const still = new Set(readingKey ? readingKey.split('\n') : [])
     const on = new Set(onKey ? onKey.split('\n') : [])
     // A task: as the built-in task window, only while the session page is on screen and the App reads work. A page of the
@@ -62,7 +64,7 @@ export const AppHostLayerHost = observer(function AppHostLayerHost({ visible }: 
   useEffect(() => reportHostLayers(layers), [layers])
 
   return <AppHostLayerPortals ownerId={ownerId} layers={layers} />
-})
+}
 
 /** Each App's host page, drawn into the cell its panel leaves — for the account it was opened for. */
 function AppHostLayerPortals({ ownerId, layers }: { ownerId: string | null; layers: AppHostLayers }) {

@@ -43,6 +43,8 @@ const shell = vi.hoisted(() => ({
   marketReads: [] as string[],
   /** The cap each market read was asked with (GuguAppStore.marketRead's `maxBytes`; none: the shell's own). */
   marketCaps: [] as (number | undefined)[],
+  /** Each time the store asked the market replica to read again (`marketUpdates.refresh`), by host. */
+  marketAsked: [] as string[],
 }))
 
 vi.mock('@capacitor/core', () => ({
@@ -122,12 +124,12 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
     },
   },
 }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   resolveAttachment: async (source: { kind: string; itemId?: string }) => {
       const card = [...cards.values()].find((entry) => entry.row.file_item_id === source.itemId)
       return card ? verifiedFileHandle(shell.packages.get(card.url)!, {}, async signal => new Uint8Array(await (await fetch(card.url, { signal })).arrayBuffer())) : { status: 'gone', sha256: null }
   },
-}))
+})))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({
   rendererLogger: () => ({ error: () => undefined, warn: () => undefined, info: () => undefined, debug: () => undefined }),
 }))
@@ -137,8 +139,10 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (ids: string[]) =>
     ids.map((id) => ({ id, type: 'human', owner_user_id: null, display_name: id.startsWith('1111') ? 'Alice' : 'Mallory' })),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { applyList: (list: (typeof shell.lists)[number]) => shell.lists.push(list) },
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
+  PHONE_HOST: 'phone',
+  installedExtensions: { set: (_args: [string], list: (typeof shell.lists)[number]) => shell.lists.push(list) },
+  marketUpdates: { refresh: async (host: string) => { shell.marketAsked.push(host) } },
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/install-consent', () => ({
   installConsentPrompt: (request: (typeof shell.asked)[number]) => request,
@@ -209,6 +213,7 @@ beforeEach(() => {
   shell.market.clear()
   shell.marketReads = []
   shell.marketCaps = []
+  shell.marketAsked = []
   vi.stubGlobal('__APP_VERSION__', '0.2.60')
   const kept = new Map<string, string>()
   const storage = { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => kept.set(key, value) }
@@ -267,6 +272,18 @@ describe('U3 the phone App store: install, update, uninstall, re-tag', () => {
 
     await (await start()).ready()
     expect([...shell.versions.keys()]).toEqual(['vote@1.1.0'])
+  })
+
+  // owner 10-19: an App updated while the page is open — what the market offers for it is read again (❌ 「更新到」 the version it has).
+  it('a change of an installed version asks the market again; a change that keeps every version does not', async () => {
+    const apps = await start()
+    await apps.installAttachment({ messageId: await publish('vote', '1.0.0') })
+    shell.marketAsked = []
+    expect(await apps.setEnabled('vote', false)).toEqual({ success: true, data: null })
+    expect(shell.marketAsked).toEqual([])
+    await apps.installAttachment({ messageId: await publish('vote', '1.1.0') })
+    expect(lastList().extensions.find((entry) => entry.id === 'vote')?.version).toBe('1.1.0')
+    expect(shell.marketAsked).toEqual(['phone'])
   })
 
   it('asks about what an update newly asks for — declined, nothing changes', async () => {

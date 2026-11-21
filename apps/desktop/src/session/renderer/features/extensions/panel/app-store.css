@@ -1352,13 +1352,15 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   outline-offset: -4px;
 }
 
-/* Desktop marketplace */
+/* Desktop marketplace. The header sits in the window's top band, edge to edge (the Apps view): its end leaves the window
+   controls their room (`--titlebar-controls-width`, the same reserve as the tab strip's, titlebar-actions). */
 .mk-market-header {
   position: sticky;
   z-index: 2;
   top: 0;
   margin-bottom: 18px;
   padding-block: 12px;
+  padding-inline-end: var(--titlebar-controls-width, 0px);
   background: var(--background);
 }
 .mk-market-actions {
@@ -1557,14 +1559,21 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   grid-template-columns: 340px minmax(0, 1fr);
   gap: 32px;
   align-items: start;
+  /* The page's end space is its own: in the grid it would push the stuck list up at the bottom of the page. */
+  padding-bottom: 0;
+}
+.mk-browse[data-browsing] > .mk-browse-page {
+  padding-bottom: 56px;
 }
 .mk-browse[data-browsing] > .mk-browse-list {
-  /* 清单自己一栏:卡片按这一栏的宽度排成一列(上面的容器查询),和右边的页分开滚。 */
+  /* 清单自己一栏:卡片按这一栏的宽度排成一列(上面的容器查询),和右边的页分开滚。它钉在起点不动,高度正好到滚动区
+     底边(use-browse-list 量出起点和高度);滚到头也不带动外面那层,❌ 一边滚、另一边跟着走。 */
   container-type: inline-size;
   position: sticky;
-  top: 0;
-  max-height: 100dvh;
+  top: var(--mk-browse-top, 0);
+  height: var(--mk-browse-height, auto);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 4px 24px 0;
 }
 .mk-market-card[aria-current] {

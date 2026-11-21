@@ -8,10 +8,14 @@ import { readRendererPlatform } from '@/lib/window-chrome';
 import { AUX_WINDOW_NAME_PREFIX } from '@shared/aux-window';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
-import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
+import { extensionSurfaceStore } from '@renderer/features/extensions/extension-surface-store';
 import { ExtensionTabToolbar } from '@renderer/features/extensions/extension-tab-toolbar';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { peekInstalledAppsTracked } from '@renderer/features/extensions/installed-extensions';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
+import { useAppPageTab } from '@renderer/features/extensions/extension-tab-provider';
+import { Unknown } from '@/components/ui/Unknown';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { sessionView } from '@renderer/features/sessions/view';
@@ -134,7 +138,8 @@ function useWindowTitle(aux: AuxWindow): string {
   // 一个对话的一枚页签:标题是那个对话。
   if (aux.content.kind === 'chat-tab') return readChatSummary(aux.content.chatId)?.name ?? '';
   const { tabKind } = aux.content;
-  return installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind)?.title ?? '';
+  // ❌ the raw kind while not known.
+  return peekInstalledAppsTracked()?.allTabContributions.find((entry) => entry.kind === tabKind)?.title ?? '';
 }
 
 /** 窗里的会话页:和屏上一块里的那一页是同一个东西,只是这扇窗就是它的一块(它是唯一一块,焦点跟着这扇窗)。 */
@@ -230,8 +235,7 @@ export const auxLeadingReserve = (): number => (readRendererPlatform() === 'mac'
 
 /** 窗里的 App:顶上一条页签条(只有它一枚,右端「放回咕咕」),下面是它的页。 */
 const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowId: string; tabKind: string }) {
-  const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
-  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, `window:${windowId}`), installedExtensionsStore.tabTitle(tabKind) ?? tabKind);
+  const { contribution, label, tooltip, unknown, failed, retry } = useAppPageTab(extensionSurfaceStore.said(null, `window:${windowId}`), tabKind);
   const focused = auxWindows.focusedWindowId === windowId;
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-aux-window={windowId}>
@@ -250,6 +254,7 @@ const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowI
             isFocusedPane={focused}
             label={label}
             title={tooltip}
+            labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
             preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={label}
             onClose={() => windowClosed(windowId)}
@@ -261,7 +266,8 @@ const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowI
           <ExtensionTabToolbar tabKind={tabKind} sessionId={null} tabId={`window:${windowId}`} />
           <AuxExtensionSurface windowId={windowId} tabKind={tabKind} extensionId={contribution.extensionId} />
         </>
-      ) : null}
+      ) : failed ? <ReadFailedLine className="p-3" message={messageForUser(failed)} onRetry={retry} />
+        : contribution === null ? <Unknown className="block h-auto w-full min-h-0 flex-1 rounded-none" /> : null}
     </div>
   );
 });

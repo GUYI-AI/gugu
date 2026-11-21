@@ -192,6 +192,7 @@ export default {
       "hostOffline": "{{machine}} 离线，无法读取近期活动",
       "hostSilent": "{{machine}} 无响应，无法读取近期活动",
       "promptElsewhere": "来自其他来源的消息",
+      "promptFailed": "无法读取这条消息",
       "recordNotFound": "此设备无法读取该任务的记录",
       "toolCount": "{{state}} ×{{count}}",
       "unavailable": "暂时无法获取近期活动"
@@ -332,6 +333,7 @@ export default {
       "original": "沿用原有配置",
       "retryApply": "重试切换",
       "retryCatalog": "重新读取",
+      "retired": "{{model}}(已下线)",
       "deviceCatalogUnavailable": "暂时无法读取运行设备的订阅模型。",
       "deviceSubscriptionMissing": "运行设备尚未登录该模型账号。",
       "billed": "由咕咕提供，按积分计费，受平台额度窗口限制。",

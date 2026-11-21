@@ -1,10 +1,17 @@
-import { useQuery } from '@tanstack/react-query';
-import { queryClient, useReplica } from '@/lib/replica';
+import { replica, useReplica } from '@/lib/replica';
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { appSettingsModel, LOCAL_SETTINGS_HOST_KEY } from '@renderer/features/settings/app-settings-client';
 import type { ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import { rpcOn } from '@renderer/lib/ipc';
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+
+/** What the host offers for a harness, model and leg (its permission options among them); read again on every open. */
+const permissionMenu = replica({
+  name: 'permissionMenu',
+  scope: 'account',
+  read: (_owner, machine: string | null, provider: string, leg: 'acp' | 'tui', model: string | null, _preference: unknown) =>
+    rpcOn(machine).sessionTimeline.sessionCreateModels({ harness: provider, sessionView: leg === 'acp' ? 'general' : 'code', ...(model ? { model } : {}) }),
+});
 
 /** The same model/connection read and option source for every session lifecycle. */
 export function usePermissionMenu(input: {
@@ -16,15 +23,8 @@ export function usePermissionMenu(input: {
   const preference = useReplica(appSettingsModel, customModelRefFromOption(model)
     ? ['autoReviewModel', machine ?? LOCAL_SETTINGS_HOST_KEY] : null);
   const preferenceRevision = preference.state === 'value' ? preference.value.value : null;
-  const query = useQuery({
-    queryKey: ['agents', 'permissionMenu', machine, provider, leg, model, connectionKnown, preferenceRevision],
-    queryFn: () => rpcOn(machine).sessionTimeline.sessionCreateModels({
-      harness: provider!, sessionView: leg === 'acp' ? 'general' : 'code', ...(model ? { model } : {}),
-    }),
-    enabled: connectionKnown && !!provider,
-    staleTime: 15_000, refetchOnMount: 'always', refetchOnWindowFocus: false, retry: false,
-  }, queryClient);
-  const result = query.data;
-  const group = connectionKnown && result?.ok ? result.value.permissionOptions : undefined;
+  const reading = useReplica(permissionMenu, connectionKnown && provider ? [machine, provider, leg, model, preferenceRevision] : null);
+  const result = reading.state === 'value' ? reading.value : undefined;
+  const group = result?.ok ? result.value.permissionOptions : undefined;
   return group ?? buildSessionPermissionOptions({ modeMap, leg, structuralFullAccess: provider === 'grok' });
 }

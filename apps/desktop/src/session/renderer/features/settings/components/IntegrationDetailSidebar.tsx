@@ -1,16 +1,19 @@
 import { Pencil, Plus, Sparkles, Trash2, X } from '@/lib/icons'
-import { useQueries } from '@tanstack/react-query';
+import { refreshFailure, useReplicas } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import { configuredConnections } from '@/components/connections/connection-replicas';
 import { observer } from 'mobx-react-lite';
 import { useEffect, type ReactNode } from 'react';
 import { issueFeatureLabels } from '@renderer/features/integrations/integration-display';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
-import { ISSUE_CONNECTION_STATUS_QUERY_KEY } from '@renderer/features/integrations/integrations-provider';
 import {
   useIntegrationAccounts,
   type IntegrationAccountSummary,
 } from '@renderer/features/integrations/use-integration-accounts';
 import {
   LOCAL_LIBRARY_HOST,
+  keepLibraryHost,
   machineLibraryHost,
   useLibraryHost,
   type LibraryHost,
@@ -22,6 +25,10 @@ import { MicroLabel } from '@renderer/lib/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { GitHubAccountSummary } from '@shared/github';
+import { Unknown } from '@/components/ui/Unknown';
+import { messageForUser } from '@/lib/userFacingError';
+import type { Reading } from '@/lib/replica';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { GitHubAccountRows } from './GitHubAccountsSection';
 import type { IntegrationItem } from './IntegrationsCard';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
@@ -37,7 +44,7 @@ export function IntegrationDetailSidebar({
   onClose,
 }: {
   integration: IntegrationItem;
-  githubAccounts: GitHubAccountSummary[];
+  githubAccounts: Reading<GitHubAccountSummary[]>;
   onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
@@ -88,18 +95,18 @@ export function IntegrationDetailSidebar({
             <div className="mt-3">
               {integration.id === 'github' ? (
                 <div className="space-y-2">
-                  {githubAccounts.length > 0 && (
-                    <GitHubAccountRows accounts={githubAccounts} readOnly={integration.readOnly} />
-                  )}
-                  <AddAccountCard
-                    integration={integration}
-                    label={translate('github.add')}
-                    detail={
-                      githubAccounts.length === 0
-                        ? translate('github.none')
-                        : translate('github.connectHint')
-                    }
-                  />
+                  <ReadingSlot reading={githubAccounts} placeholder="h-[60px] w-full rounded-lg" failed={() => translate('github.loadFailed')}>
+                    {(accounts) => (
+                      <>
+                        {accounts.length > 0 && <GitHubAccountRows accounts={accounts} readOnly={integration.readOnly} />}
+                        <AddAccountCard
+                          integration={integration}
+                          label={translate('github.add')}
+                          detail={accounts.length === 0 ? translate('github.none') : translate('github.connectHint')}
+                        />
+                      </>
+                    )}
+                  </ReadingSlot>
                 </div>
               ) : !integration.isConfigured ? (
                 <AddAccountCard integration={integration} />
@@ -212,8 +219,8 @@ function StatusDot({ tone }: { tone: StatusDotTone }) {
 /** 一个账号的那一家(状态 / 连接时间 / 账号三行);连接时间读得到才列。 */
 function SingleAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
-  const { accounts } = useIntegrationAccounts(integration.id, integration.isConfigured);
-  const account = accounts[0];
+  const { accounts, retry } = useIntegrationAccounts(integration.id, integration.isConfigured);
+  const account = accounts.state === 'value' && accounts.value.supported ? accounts.value.accounts[0] : undefined;
   // 凭据还存着、检查却不通过(令牌被撤 / 过期):说检查的原话(悬停),给「重新连接」(同一个连接弹窗)。
   const failed = integration.connectionError;
   return (
@@ -240,12 +247,15 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
         <InfoRow label={translate('integrations.accountRowLabel')}>
           <span className="truncate">
             {integration.displayName ??
-              account?.displayName ??
-              translate('integrations.accountFallbackName', { name: integration.name })}
+              (accounts.state === 'unknown' && integration.isConfigured ? <Unknown className="w-24" />
+                : accounts.state === 'error' ? <ReadFailedLine message={messageForUser(accounts.error)} onRetry={retry} />
+                : account?.displayName ?? translate('integrations.accountFallbackName', { name: integration.name }))}
           </span>
         </InfoRow>
       </div>
       {failed && <p className="px-1 text-xs text-foreground-muted">{failed}</p>}
+      {/* The account read before, its re-read failed: said with a retry (❌ its name shown as current). */}
+      {accounts.state === 'value' ? <RefreshFailed reading={accounts} /> : null}
       {!integration.readOnly && (
         <div className="flex justify-end gap-2">
           {integration.onEditAccount && account && (
@@ -275,36 +285,35 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
 /** 一家连了几个账号(邮箱):逐个列、逐个查、逐个断,底下「添加另一个账号」(多账号那一组)。 */
 function MultiAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
-  const { supported, accounts, checks, isChecking, isLoading, error, retry } = useIntegrationAccounts(
-    integration.id,
-    integration.isConfigured
-  );
-  if (isLoading) return <LoadingIndicator size="inline" className="text-foreground-muted" />;
-  // 读不到账号:说出来、给重试。❌ 落回单账号的样子 —— 那里的「断开连接」会一次删掉所有邮箱。
-  if (error) {
-    return (
-      <div className="flex items-center justify-between gap-3 rounded-lg bg-background-2 p-3">
-        <p className="min-w-0 text-xs text-foreground-warning" role="alert">
-          {/* @@@raw detail — 读账号失败的原话。 */}
-          {error instanceof Error ? error.message : String(error)}
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={retry}>
-          {translate('integrations.cliRetry')}
-        </Button>
-      </div>
-    );
-  }
+  const { accounts, checks, reachable, retry } = useIntegrationAccounts(integration.id, integration.isConfigured);
+  if (accounts.state === 'unknown') return reachable ? <LoadingIndicator size="inline" className="text-foreground-muted" /> : null;
+  // 读不到账号(或重读、逐个查没成):说出来、给重试。❌ 落回单账号的样子 —— 那里的「断开连接」会一次删掉所有邮箱。
+  const failure = accounts.error ?? (checks.state === 'unknown' ? null : checks.error);
+  const failed = failure ? (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-background-2 p-3">
+      <p className="min-w-0 text-xs text-foreground-warning" role="alert">
+        {/* @@@raw detail — 读账号失败的原话。 */}
+        {failure.message}
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={retry}>
+        {translate('integrations.cliRetry')}
+      </Button>
+    </div>
+  ) : null;
+  if (accounts.state === 'error') return failed;
   // 那台机器比多账号老(只有这一种才回落):照旧按一个账号画。
-  if (!supported) return <SingleAccountConnection integration={integration} />;
+  if (!accounts.value.supported) return <SingleAccountConnection integration={integration} />;
+  const checked = checks.state === 'value' ? new Map(checks.value.map((one) => [one.accountId, one])) : null;
   return (
     <div className="space-y-2">
-      {accounts.map((account) => (
+      {failed}
+      {accounts.value.accounts.map((account) => (
         <AccountRow
           key={account.accountId}
           integration={integration}
           account={account}
-          check={checks.get(account.accountId)}
-          checking={isChecking}
+          check={checked?.get(account.accountId)}
+          checking={checks.state === 'unknown' && reachable}
         />
       ))}
       {!integration.readOnly && (
@@ -409,29 +418,24 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
       return { key: host.key, label: device.label, online: device.isOnline, host };
     }),
   ];
-  const configured = useQueries({
-    queries: machines.map((machine) => ({
-      // 与 IntegrationsProvider 的「存没存凭据」同一个键:同一台机器只问一次。
-      queryKey: [...ISSUE_CONNECTION_STATUS_QUERY_KEY, machine.host.key, 'configured'],
-      queryFn: () => machine.host.integrations.checkConfiguredConnections(),
-      enabled: machine.online && machine.key !== current.key,
-      staleTime: Infinity,
-      retry: false,
-    })),
-  });
+  // 与 IntegrationsProvider 的「存没存凭据」同一个 replica(`configuredConnections`):同一台机器只问一次。离线的不问。
+  const asked = machines.filter((machine) => machine.online && machine.key !== current.key);
+  const readings = useReplicas(configuredConnections, asked.map((machine) => [keepLibraryHost(machine.host).key] as [string]));
+  const configured = new Map(asked.map((machine, index) => [machine.key, readings[index]!]));
 
   return (
     <section>
       <MicroLabel>{translate('integrations.devicesLabel', { name: integration.name })}</MicroLabel>
       <div className="mt-3 divide-y divide-border rounded-lg bg-background-2">
-        {machines.map((machine, index) => {
+        {machines.map((machine) => {
           // 问不到 / 还在问 ≠ 没连(读数的仪器坏了不是阴性读数):各说各的,❌ 一律画成红点「未连接」。
-          const query = machine.key === current.key ? null : configured[index];
-          const known = query === null ? integration.isConfigurationKnown : query?.isSuccess === true;
-          const isConfigured = query === null ? integration.isConfigured : query?.data?.[integration.id] === true;
+          const query = machine.key === current.key ? null : configured.get(machine.key);
+          const known = query === null ? integration.isConfigurationKnown : query?.state === 'value';
+          const isConfigured = query === null ? integration.isConfigured : query?.state === 'value' && query.value[integration.id] === true;
+          const failure = query ? refreshFailure(query) : null;
           const state = !machine.online
             ? translate('integrations.deviceOffline')
-            : query?.isError
+            : query?.state === 'error'
               ? translate('integrations.deviceUnknown')
               : !known
                 ? translate('integrations.checkingAccount')
@@ -441,9 +445,11 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
           return (
             <InfoRow key={machine.key} label={machine.label}>
               {machine.online && known && <StatusDot tone={deviceStatusTone(isConfigured)} />}
-              <span className="text-foreground-muted" title={query?.isError ? String(query.error) : undefined}>
+              <span className="text-foreground-muted" title={failure ? String(failure) : undefined}>
                 {state}
               </span>
+              {/* Read before on that machine, its re-read failed: said beside what was read (❌ shown as current). */}
+              {query?.state === 'value' ? <RefreshFailed reading={query} /> : null}
             </InfoRow>
           );
         })}

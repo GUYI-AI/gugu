@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { Unknown } from '@/components/ui/Unknown';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
@@ -186,14 +187,16 @@ function RuntimeUpgradeNotice({
   onPanelClosed: () => void;
 }) {
   const { translate } = useSessionMessages();
-  const { data: agents } = useAgents();
+  const agents = useAgents();
   const [panelOpen, setPanelOpen] = useState(false);
-  const harnessName = agents?.find((agent) => agent.id === requirement.providerId)?.name ?? requirement.providerId;
+  const harnessName = agents.state === 'value'
+    ? agents.value.find((agent) => agent.id === requirement.providerId)?.name ?? requirement.providerId
+    : agents.state === 'error' ? requirement.providerId : null;
 
   return (
     <div className="flex max-w-[64ch] flex-col items-center gap-2 text-center text-sm" data-testid="session-runtime-upgrade">
       <p data-testid="session-start-failure-detail">
-        {translate('taskError.runtimeUpgradeRequired', {
+        {harnessName === null ? <Unknown className="w-64" /> : translate('taskError.runtimeUpgradeRequired', {
           harnessName,
           supportedFloor: requirement.supportedFloor,
           installedVersion: requirement.installedVersion,
@@ -211,7 +214,7 @@ function RuntimeUpgradeNotice({
         onClick={() => setPanelOpen(true)}
         data-testid="session-runtime-upgrade-open-installer"
       >
-        {translate('taskError.runtimeUpgradeOpenInstaller', { harnessName })}
+        {harnessName === null ? <Unknown className="w-24" /> : translate('taskError.runtimeUpgradeOpenInstaller', { harnessName })}
       </Button>
       <p className="text-[length:var(--font-caption)] opacity-60">{translate('taskError.runtimeUpgradeSelfHint')}</p>
       <AgentDetailModal

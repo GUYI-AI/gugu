@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ManagedAgentVersions } from '@shared/core/agents/managed-versions';
 import { SettingsRow } from '@/components/settings/SettingsPrimitives';
-import { replicaAccount, useReplica } from '@/lib/replica';
+import { replicaAccount, useReplica, retryOf } from '@/lib/replica';
 import { messageForUser } from '@/lib/userFacingError';
 import { rendererLogger } from '@/lib/log';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -23,11 +23,11 @@ export function ManagedVersionsRow({ agentId, name, disabled }: { agentId: strin
   if (reading.state === 'unknown') return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions" description={<span aria-busy="true">…</span>} />;
   if (reading.state === 'error') return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions"
     description={translate('agentsPage.oldVersionsReadFailed')}
-    control={<Button size="sm" variant="outline" disabled={disabled || host.remote?.online === false} onClick={() => void managedVersions.refresh(deviceId, agentId)}>{translate('common.retry')}</Button>} />;
-  return <KnownManagedVersionsRow agentId={agentId} name={name} disabled={disabled} data={reading.value} readFailed={!!reading.error} />;
+    control={<Button size="sm" variant="outline" disabled={disabled || host.remote?.online === false} onClick={retryOf(reading)}>{translate('common.retry')}</Button>} />;
+  return <KnownManagedVersionsRow agentId={agentId} name={name} disabled={disabled} data={reading.value} readFailed={!!reading.error} retry={retryOf(reading)} />;
 }
 
-function KnownManagedVersionsRow({ agentId, name, disabled, data, readFailed }: { agentId: string; name: string; disabled: boolean; data: ManagedAgentVersions; readFailed: boolean }) {
+function KnownManagedVersionsRow({ agentId, name, disabled, data, readFailed, retry }: { agentId: string; name: string; disabled: boolean; data: ManagedAgentVersions; readFailed: boolean; retry: (() => void) | undefined }) {
   const host = useLibraryHost();
   const deviceId = host.remote?.deviceId ?? null;
   const { translate } = useSessionMessages();
@@ -67,7 +67,7 @@ function KnownManagedVersionsRow({ agentId, name, disabled, data, readFailed }: 
   const unavailable = disabled || busy;
   return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions"
     description={readFailed ? translate('agentsPage.oldVersionsReadFailed') : !old.length ? translate('agentsPage.oldVersionsNoOld') : !open ? old.map(displayVersion).join('、') : undefined}
-    control={readFailed ? <Button size="sm" variant="outline" disabled={unavailable} onClick={() => void managedVersions.refresh(deviceId, agentId)}>{translate('common.retry')}</Button>
+    control={readFailed ? <Button size="sm" variant="outline" disabled={unavailable} onClick={retry}>{translate('common.retry')}</Button>
       : !open && old.length ? <Button size="sm" variant="outline" disabled={unavailable} onClick={() => { setSelected([]); setOpen(true); void managedVersions.refresh(deviceId, agentId); }}>{translate('agentsPage.oldVersionsClean')}</Button> : undefined}>
     {open && old.length > 0 && <div className="space-y-3">
       <div className="max-h-48 space-y-2 overflow-y-auto">{[data.currentVersion, ...old].map(version => <label key={version} className="flex items-center gap-2 text-sm">

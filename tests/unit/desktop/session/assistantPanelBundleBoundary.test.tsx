@@ -47,12 +47,15 @@ it('runs cloud reads and subscriptions in the shell across two module graphs and
   const paneBridge = await import('@/lib/assistantPanelBridge')
   await paneBridge.requireAssistantPanelBridge().queueNotice({ operationId: 'b0a1d3e5-0a9c-40d0-a590-bd83a795b389',resource: 'devices',operation: 'edited',id: 'device' },'assistant','owner')
   expect(world.rpc).toHaveBeenCalledWith('assistant_panel_notice',expect.objectContaining({ p_assistant: 'assistant' }))
-  const changed = vi.fn(); window.addEventListener(pane.ASSISTANT_PANEL_CHANGED,changed)
-  const callback = world.subscribe.mock.calls.at(-1)?.[2]
+  // A change heard on the bus reads the panel again (replica `assistantPanel`), ❌ a window event.
+  const snapshotReads = () => world.rpc.mock.calls.filter(([name]) => name !== 'assistant_panel_resource' && name !== 'assistant_panel_commit' && name !== 'assistant_panel_notice').length
+  const before = snapshotReads()
+  // The shell's watch (its replica owns the account; the session page shares that module in the app).
+  const callback = world.subscribe.mock.calls.find(([, event]) => event === 'assistant_panel_changed')?.[2]
   expect(callback).toBeTypeOf('function')
-  callback?.()
-  window.removeEventListener(pane.ASSISTANT_PANEL_CHANGED,changed)
-  expect(changed).toHaveBeenCalledOnce()
+  await act(async () => { callback?.(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  // This fixture's collections carry no ready marker (still being prepared): the read waits for the burst to settle (1 s).
+  await vi.waitFor(() => expect(snapshotReads()).toBeGreaterThan(before),{ timeout: 3000 })
   expect(JSON.stringify(paneMachine)).not.toContain('private-owner')
   const old = paneMachine!.panel!
   await act(async () => { shellSession.publishRendererSession('SIGNED_OUT',null) })

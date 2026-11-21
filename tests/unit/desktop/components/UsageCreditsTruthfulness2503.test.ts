@@ -17,6 +17,7 @@ import { createNode, createReactHarness, renderWithAppProviders, typeInto } from
 // Keep the shared store and components real; replace only the v2 network batch boundary.
 vi.mock('../../../../apps/desktop/src/lib/billing/v2/runtime', () => ({ readCreditV2Account: vi.fn() }))
 import { readCreditV2Account } from '../../../../apps/desktop/src/lib/billing/v2/runtime'
+import { onPlanChange } from '../../../../apps/desktop/src/lib/billing/useSpendingPower'
 import { creditDecimal } from '@gugu/core/billing/creditAmount'
 import type { QuotaWindows } from '@gugu/core/billing'
 vi.mock('../../../../apps/desktop/src/lib/usage/cloud', async (importOriginal) => ({
@@ -346,11 +347,82 @@ describe('#2503 用量与订阅积分的诚实性', () => {
       const badge = () => document.querySelector('.subscription-plan-badge')?.textContent
       expect(badge()).toBe('Free')
       vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ expiresAt: new Date(Date.now() + 30 * 24 * hour) }) }))
-      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      // A return: the person left for the web page (the window hidden) and came back.
+      const shown = vi.spyOn(document, 'visibilityState', 'get')
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockRestore()
       await flush()
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
       expect(badge()).toBe('Pro')
     } finally { harness.cleanup() }
+  })
+
+  it('a return that finds another plan says the plan changed (the model catalog follows it, #7056); the same plan does not', async () => {
+    vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ planId: 'default', tier: 'free', expiresAt: null }) }))
+    const harness = await renderMembership()
+    const changed = vi.fn()
+    const stop = onPlanChange(changed)
+    const shown = vi.spyOn(document, 'visibilityState', 'get')
+    const comeBack = async () => {
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    }
+    try {
+      await comeBack()
+      expect(changed).not.toHaveBeenCalled()
+      vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ expiresAt: new Date(Date.now() + 30 * 24 * hour) }) }))
+      await comeBack()
+      expect(changed).toHaveBeenCalledTimes(1)
+    } finally { shown.mockRestore(); stop(); harness.cleanup() }
+  })
+
+  it('with only the model catalog following the plan (no surface shows the credits), a return that finds another plan says so (#7056)', async () => {
+    vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ planId: 'default', tier: 'free', expiresAt: null }) }))
+    const changed = vi.fn()
+    const stop = onPlanChange(changed)
+    const shown = vi.spyOn(document, 'visibilityState', 'get')
+    const comeBack = async () => {
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    }
+    try {
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ expiresAt: new Date(Date.now() + 30 * 24 * hour) }) }))
+      await comeBack()
+      expect(changed).toHaveBeenCalledTimes(1)
+    } finally { shown.mockRestore(); stop() }
+  })
+
+  it('a return with the credits shown and the plan followed twice (the account catalog and a session\'s selection) reads them once', async () => {
+    vi.mocked(readCreditV2Account).mockResolvedValue(account({ member: membership({ planId: 'default', tier: 'free', expiresAt: null }) }))
+    const harness = await renderMembership()
+    const stops = [onPlanChange(vi.fn()), onPlanChange(vi.fn())]
+    const stop = () => stops.forEach((each) => each())
+    const shown = vi.spyOn(document, 'visibilityState', 'get')
+    try {
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      vi.mocked(readCreditV2Account).mockClear()
+      shown.mockReturnValue('hidden')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      shown.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })) })
+      await flush()
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+      expect(readCreditV2Account).toHaveBeenCalledTimes(1)
+    } finally { shown.mockRestore(); stop(); harness.cleanup() }
   })
 
   it('会员行读取失败不能冒充免费档', async () => {

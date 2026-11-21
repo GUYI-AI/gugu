@@ -2,7 +2,8 @@
 // 发送都是本机那一套,只是数据问那台机器(LibraryHost + rpc 按实体所在机器路由)。
 // 项目与机器解耦:这里不再按路径找 / 建项目。选了项目时,那台机器上它绑的本地项目由项目块的文件夹选择定好了(projectId);
 // 没选项目 = 那台机器的任务工作区(#609)。
-import { useEffect, useState } from 'react';
+import { replica, useReplica } from '@/lib/replica';
+import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import { cloudWakeFailureText, TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
 import { machineNotice, useMachineNotice } from '@renderer/features/remote-hosts/machine-notice';
 import { remoteErrorCode } from '@renderer/features/remote-hosts/remote-failure-copy';
@@ -54,10 +55,19 @@ export type MachineCreateTarget = {
   projectId?: string;
 };
 
-/** 那台机器上要建进去的本地项目:给了就是它;没给 = 那台机器的任务工作区(#609,会话列在「任务」里)。 */
-export function resolveMachineProject(target: MachineCreateTarget): Promise<string> {
-  return target.projectId ? Promise.resolve(target.projectId) : remoteHostsStore.ensureTaskWorkspace(target.deviceId);
-}
+/** That machine's task workspace (#609), ensured again on reconnect or a new composer (it may have come back without it). */
+const machineTaskWorkspace = replica({
+  name: 'machineTaskWorkspace',
+  scope: 'account',
+  networkMode: 'always',
+  read: async (_owner, deviceId: string): Promise<string> => {
+    const id = await remoteHostsStore.ensureTaskWorkspace(deviceId);
+    if (!id) throw new ImplicitSessionHomeProjectError('unavailable');
+    return id;
+  },
+  fresh: Infinity,
+  watch: { group: (deviceId) => deviceId, start: (_owner, deviceId) => onMachineReconnected(deviceId, () => { void machineTaskWorkspace.refresh(deviceId); }) },
+});
 
 export type MachineCreateContext = {
   /** 那台机器上的项目 id(解析中 / 失败时为 undefined)。 */
@@ -82,25 +92,9 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
   const connected = connection === 'connected';
   // #7199 选了一台睡着的云电脑做目标 ❌ 当场叫醒:新建框里开始输入才叫(useWakeCloudOnInput,看一眼不该扣积分);
   // 醒了线自己连上、项目照常解析、发送键自己亮;草稿一直留着。
-  const [resolved, setResolved] = useState<{ key: string; id: string | null; failure: unknown } | null>(null);
-  const key = target ? `${target.deviceId}|${target.projectId ?? ''}` : null;
-  useEffect(() => {
-    if (!target || !key || !connected) return;
-    let cancelled = false;
-    void resolveMachineProject(target).then(
-      (id) => {
-        if (cancelled) return;
-        setResolved({ key, id: id ?? null, failure: id ? null : new ImplicitSessionHomeProjectError('unavailable') });
-      },
-      (failure: unknown) => {
-        if (!cancelled) setResolved({ key, id: null, failure });
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-    // 按「哪台机器、哪个本地项目、连没连上」重解。
-  }, [key, connected]);
+  // Held while the machine is away (❌ "not known" every time the line drops); a failed read again is no project.
+  const workspace = useReplica(machineTaskWorkspace, target && !target.projectId ? [target.deviceId] : null, { read: connected });
+  const failure = workspace.state === 'error' || workspace.state === 'value' ? workspace.error : null;
   const label = device?.label ?? target?.deviceId ?? '';
   // 选着的机器掉线了:右下角那条提示说(重连第几次 → 离线 / 失败,或 → 已连上),输入框照旧可写、写好的内容留着(不重挂)。
   useMachineNotice(
@@ -122,14 +116,12 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
     translate
   );
   if (!target) return null;
-  const current = resolved && resolved.key === key ? resolved : null;
-  const projectError = current?.failure ? describeMachineProjectFailure(current.failure, label, translate) : null;
   return {
-    projectId: current?.id ?? undefined,
+    projectId: target.projectId ?? (workspace.state === 'value' && !failure ? workspace.value : undefined),
     // 它一回来发送键自己亮。
-    blockReason: projectError,
+    blockReason: failure ? describeMachineProjectFailure(failure, label, translate) : null,
     blocked: !connected,
-    isContextPending: connected && !current?.id && !projectError,
+    isContextPending: connected && !target.projectId && workspace.state === 'unknown',
     host: machineLibraryHost({
       deviceId: target.deviceId,
       deviceLabel: label,

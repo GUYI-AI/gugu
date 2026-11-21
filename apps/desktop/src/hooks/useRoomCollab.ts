@@ -5,7 +5,7 @@ import { chatService, GroupCollabEmptyError } from '../lib/chat'
 import { reconcileGroupCollabSnapshot } from '../lib/groupCollabSnapshot'
 import { openedImRepository, openImRepositoryNow, persistableGroupRoster, readGroupRoster, replaceGroupRoster } from '../lib/imRepository'
 import { rendererLogger } from '../lib/log'
-import { queryClient, replica, useReplica } from '../lib/replica'
+import { replica, useReplica } from '../lib/replica'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { withTimeout } from '../lib/withTimeout'
 import { useAuth } from '../store/auth'
@@ -61,11 +61,10 @@ export const groupRoster = replica({
 if (typeof window !== 'undefined') {
   window.addEventListener(UI_EVENTS.identityInvalidated, (event) => {
     const id = (event as CustomEvent<{ id: string | null }>).detail.id
-    for (const query of queryClient.getQueryCache().findAll({ queryKey: [groupRoster.name] })) {
-      const roster = query.state.data as GroupCollabSnapshot | undefined
-      if (id === null || [...(roster?.humans ?? []), ...(roster?.agents ?? [])].some((member) => member.id === id)) {
-        void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true })
-      }
+    for (const { args, reading } of groupRoster.entries()) {
+      // A roster not read yet will be read anyway; one drawn is read again if the identity is among its members.
+      const among = reading.state === 'value' && [...reading.value.humans, ...reading.value.agents].some((member) => member.id === id)
+      if (id === null || among) void groupRoster.refresh(...args)
     }
   })
 }

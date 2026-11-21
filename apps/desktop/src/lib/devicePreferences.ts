@@ -1,6 +1,4 @@
 import { useSyncExternalStore } from 'react'
-import { hashKey } from '@tanstack/react-query'
-import { queryClient } from './replica'
 import { rendererLogger } from './log'
 import {
   appSettingsModel,
@@ -46,7 +44,6 @@ function appSettingsStore(firstFrame: FirstFrameGlobal): Store {
     log.error({}, 'main handed over no device preferences; reading them now')
     void appSettingsModel.prefetch(...args)
   }
-  const hash = hashKey(appSettingsModel.key(...args)!)
   return {
     read: () => {
       const reading = appSettingsModel.peek(...args)
@@ -60,9 +57,7 @@ function appSettingsStore(firstFrame: FirstFrameGlobal): Store {
         void appSettingsModel.refresh(...args)
       })
     },
-    subscribe: (listener) => queryClient.getQueryCache().subscribe((event) => {
-      if (event.query.queryHash === hash) listener()
-    }),
+    subscribe: (listener) => appSettingsModel.subscribe(args, listener),
   }
 }
 

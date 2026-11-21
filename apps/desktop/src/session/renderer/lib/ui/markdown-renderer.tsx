@@ -1,6 +1,8 @@
-import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
+import { refreshFailure, useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
+import { workspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
 import { Markdown, type MarkdownDensity } from '@/components/markdown/Markdown';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import { ExpandableImage } from './expandable-image';
@@ -18,41 +20,34 @@ interface MarkdownRendererProps {
   onOpenLink?: (href: string) => boolean | void;
   /** Files only: a leading `---` block is frontmatter. Free text (PR comments) must keep reading it as a rule. */
   frontmatter?: boolean;
-  /** Resolves a non-web image source (e.g. workspace-relative) to a `data:` URI, or null for "not found". */
-  resolveImage?: (src: string) => Promise<string | null>;
+  /** Where a non-web image source (e.g. workspace-relative) lives in a workspace; the path null = outside it ("not found"). */
+  workspaceImages?: WorkspaceImages;
 }
+
+export type WorkspaceImages = { projectId: string; workspaceId: string; pathOf: (src: string) => string | null };
 
 const ResolvedImage: React.FC<{
   src: string;
   alt: string;
-  resolveImage: (src: string) => Promise<string | null>;
-}> = ({ src, alt, resolveImage }) => {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const [error, setError] = useState('');
+  images: WorkspaceImages;
+}> = ({ src, alt, images }) => {
+  const path = images.pathOf(src);
+  const reading = useReplica(workspaceImage, path ? [images.projectId, images.workspaceId, path] : null);
+  const failed = refreshFailure(reading);
 
-  useEffect(() => {
-    let cancelled = false;
-    resolveImage(src)
-      .then((result) => {
-        if (cancelled) return;
-        if (result) setDataUrl(result);
-        else setError(`Image not found: ${src}`);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) { rendererLogger('markdown/image').error({ error: cause }, 'image resolution failed'); setError(messageForUser(cause)); }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [src, resolveImage]);
-
-  if (error) {
-    return <span className="text-foreground-muted inline-block text-xs">[{error}]</span>;
+  if (reading.state === 'error') {
+    return <span className="text-foreground-muted inline-block text-xs">[{messageForUser(reading.error)}]</span>;
   }
-  if (!dataUrl) {
-    return <span className="text-foreground-muted inline-block text-xs">Loading image...</span>;
-  }
-  return <ExpandableImage src={dataUrl} alt={alt} className="max-w-full rounded-sm" />;
+  if (path && reading.state === 'unknown') return <Unknown className="h-24 w-40" />;
+  const dataUrl = reading.state === 'value' ? reading.value?.dataUrl : null;
+  if (!dataUrl) return <span className="text-foreground-muted inline-block text-xs">[Image not found: {src}]</span>;
+  return (
+    <>
+      <ExpandableImage src={dataUrl} alt={alt} className="max-w-full rounded-sm" />
+      {/* Read before, its re-read failed: the image read before stays, the failure beside it (❌ shown as current). */}
+      {failed ? <span role="alert" data-refresh-failed="" className="text-foreground-muted inline-block text-xs">[{messageForUser(failed)}]</span> : null}
+    </>
+  );
 };
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
@@ -60,7 +55,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   density = 'compact',
   className,
   frontmatter = false,
-  resolveImage,
+  workspaceImages,
   onOpenLink,
 }) => {
   const compact = density === 'compact';
@@ -75,8 +70,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   );
   const renderImage = useCallback(
     ({ src, alt }: { src?: string; alt: string }) => {
-      if (src && resolveImage && !/^https?:\/\//i.test(src)) {
-        return <ResolvedImage src={src} alt={alt} resolveImage={resolveImage} />;
+      if (src && workspaceImages && !/^https?:\/\//i.test(src)) {
+        return <ResolvedImage src={src} alt={alt} images={workspaceImages} />;
       }
       // Compact bodies sit in cards (PR comments, extension notes): a tall image must not push the card open.
       return (
@@ -87,7 +82,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         />
       );
     },
-    [resolveImage, compact]
+    [workspaceImages, compact]
   );
 
   return (

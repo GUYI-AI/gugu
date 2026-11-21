@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { readChatPinSettings, setChatPinPreference, watchChatPinSettings, type ChatPinSettings } from '@/lib/chatPinSettings'
@@ -8,35 +7,25 @@ import { queryClient, replica, useReplica } from '@/lib/replica'
 import { useAuth } from '@/store/auth'
 import { useToast } from '../toastContext'
 
-/** The topics this account pinned in a chat (its own settings row per chat); a change elsewhere arrives by the watch. */
+/**
+ * The topics this account pinned in a chat (its own settings row per chat, read here and nowhere else: ❌ a second copy of
+ * the row in ownSettings); a change elsewhere arrives by the watch.
+ */
 export const chatPins = replica({
   name: 'chatPins',
   scope: 'account',
   read: (owner: string, chatId: string): Promise<ChatPinSettings> => readChatPinSettings(owner, chatId),
   // Pushed: a value stays current until the watch says otherwise (the watch reads once more when it starts).
   fresh: Infinity,
+  // Back in the app after having left: read again (❌ on every focus of the main window: switching Gugu windows).
+  refreshOnFocus: true,
+  // The first frame of a group revisited after a restart. Its own model, so its own entry limit: groups opened cold ❌ push
+  // the account's own rows (ownSettings) out of the snapshot.
+  persist: { maxBytes: 1024, maxEntries: 4 },
+  watch: { group: (chatId) => chatId, start: (owner, chatId) => watchChatPinSettings(owner, chatId, () => { void chatPins.refresh(chatId) }) },
 })
 
 const NO_PINS: readonly string[] = []
-// Subscription ownership only; the pins live in the replica.
-const watches = new Map<string, { users: number; stop: () => void }>()
-
-function watch(userId: string, chatId: string) {
-  const id = JSON.stringify([userId, chatId])
-  let entry = watches.get(id)
-  if (!entry) {
-    const stop = watchChatPinSettings(userId, chatId, () => { void chatPins.refresh(chatId) })
-    // The kept pins paint the first frame; changes made while nobody watched are read again now.
-    if (chatPins.peek(chatId).state === 'value') void chatPins.refresh(chatId)
-    entry = { users: 0, stop }
-    watches.set(id, entry)
-  }
-  const active = entry
-  active.users++
-  return () => {
-    if (--active.users === 0) { active.stop(); watches.delete(id) }
-  }
-}
 
 export function useChatPinSettings(chatId: string | null, enabled = true) {
   const { user } = useAuth()
@@ -44,10 +33,6 @@ export function useChatPinSettings(chatId: string | null, enabled = true) {
   const { t } = useTranslation('messaging')
   const userId = user?.id
   const reading = useReplica(chatPins, userId && chatId && enabled ? [chatId] : null)
-  useEffect(() => {
-    if (!userId || !chatId || !enabled) return
-    return watch(userId, chatId)
-  }, [userId, chatId, enabled])
   const mutation = useMutation({
     networkMode: 'always', scope: { id: `chat-settings:${userId}:${chatId}` },
     mutationFn: async (input: { userId: string | undefined; chatId: string | null; id: string; pinned: boolean }) => {
@@ -59,9 +44,9 @@ export function useChatPinSettings(chatId: string | null, enabled = true) {
     },
     onError: (error) => { rendererLogger('chat/pins').error({ error }, 'Saving chat pins failed'); toast(t('topic.pins.saveFailed'), 'error', messageForUser(error)) },
   }, queryClient)
+  const topicIds = reading.state === 'value' ? reading.value.topicIds : NO_PINS
   return {
-    // @@@reading-default - pins not read: no topic is drawn as pinned yet, and `ready` keeps the pin toggles off until they are
-    topicIds: reading.state === 'value' ? reading.value.topicIds : NO_PINS,
+    topicIds,
     ready: reading.state === 'value', error: reading.state === 'error', saving: mutation.isPending,
     retry: () => { if (chatId) void chatPins.refresh(chatId) },
     set: (id: string, pinned: boolean) => mutation.mutate({ userId, chatId, id, pinned }),

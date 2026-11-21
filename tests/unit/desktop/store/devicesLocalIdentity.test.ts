@@ -9,6 +9,9 @@ import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesConte
 import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { LocalDeviceUnidentifiedError } from '../../../../apps/desktop/src/lib/localDeviceIdentity'
 import { createNode, createReactHarness } from '../../../support/testHarness'
+// The devices read loads its module on first use: loaded here, so its answer lands inside the render's act whatever
+// the machine's load (a first import outlasting act made React warn, which this cell reads as a failure).
+await import('../../../../apps/desktop/src/store/devicesRead')
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'account-a')
 
@@ -20,6 +23,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'account-a' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
+// The assistant marker's resubscription watch (myAssistant, signal tier) rides the account's private bus: no socket in a unit test.
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }) }))
 vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [], listMyAccountProjects: async () => [] }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: () => () => undefined }),

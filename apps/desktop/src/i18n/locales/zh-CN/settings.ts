@@ -490,7 +490,6 @@ export default {
       "provisionFailed": "开通失败：",
       "provisionFailedShort": "开通失败",
       "wakeFailed": "无法连接：",
-      "stateFailed": "无法读取你的咕咕的状态：",
       "or": "，或",
       "cancelProvision": "取消开通",
       "steps": {
@@ -597,6 +596,7 @@ export default {
         "next": "然后打开输出的链接，点击「允许」。短码 15 分钟内有效。",
         "wgetToggle": "没有 curl？用 wget",
         "curlToggle": "改用 curl",
+        "limitCheckFailed": "暂时查不到机器上限，稍后再查。",
         "waiting": "等待机器上线…",
         "appeared": "{{name}} 已添加"
       },
@@ -817,6 +817,7 @@ export default {
     },
     "lastSeen": "上次在线 {{time}}",
     "listFailed": "无法加载设备，请检查网络。",
+    "sshListFailed": "无法读取此电脑通过 SSH 连接的机器。",
     "loading": "正在加载设备…",
     "loginState": {
       "reconnecting": "重连中",
@@ -1304,6 +1305,8 @@ export default {
     "agentCount_other": "{{count}} 个智能体",
     "noMatches": "没有匹配的密码",
     "empty": "暂无已保存的密码",
+    "retry": "重试",
+    "requestHandled": "此保存请求已处理或已过期。",
     "addTitle": "添加密码",
     "requestSave": "{{agent}} 请你保存这条密码。已填入其提供的内容，核对或补全后点击「添加」。",
     "requestEdit": "{{agent}} 请你修改这条密码。已填入其提供的内容，核对或补全后点击「保存」。",

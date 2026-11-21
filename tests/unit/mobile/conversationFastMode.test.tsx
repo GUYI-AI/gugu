@@ -3,6 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
 import { createReactHarness } from '../../support/testHarness'
+import { freshReplicaAccount } from '../../support/replicaAccount'
 import { useConversationOptions, type ConversationTarget } from '@/components/chat/useConversationOptions'
 
 const bridge = vi.hoisted(() => ({ read: vi.fn(), set: vi.fn(), client: vi.fn() }))
@@ -24,7 +25,7 @@ function Probe({ currentTarget = target }: { currentTarget?: ConversationTarget 
   return <div>{String(current.props.fastMode)}</div>
 }
 
-beforeEach(() => { vi.clearAllMocks(); bridge.read.mockResolvedValue(options()); harness = createReactHarness() })
+beforeEach(async () => { await freshReplicaAccount('phone-fast-owner'); vi.clearAllMocks(); bridge.read.mockResolvedValue(options()); harness = createReactHarness() })
 afterEach(() => harness.cleanup())
 
 describe('phone watch Fast wiring', () => {

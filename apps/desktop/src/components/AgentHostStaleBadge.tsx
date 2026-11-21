@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
 import { AlertTriangle } from '@/lib/icons'
-import { getAgentPresenceSnapshot, subscribeAgentPresence } from '../lib/agentPresenceStore'
-import { fetchMinCriticalCapability } from '../lib/runtimeCapabilityPolicy'
+import { agentPresenceReadable } from '../lib/agentPresenceStore'
+import { useReplica } from '../lib/replica'
+import { runtimeCapabilityPolicy } from '../lib/runtimeCapabilityPolicy'
+import { useSelect } from '../lib/selectStore'
 import { useTranslation } from 'react-i18next'
 
 // @@@ host-stale-badge (#647) — see git history for full context.
@@ -19,34 +20,11 @@ export function AgentHostStaleBadge({
   const { t } = useTranslation('messaging')
   const label = t('agent.hostStale.label')
   const hint = t('agent.hostStale.hint')
-  const [minCritical, setMinCritical] = useState<number | null>(null)
-  const [capability, setCapability] = useState<number | null>(
-    () => getAgentPresenceSnapshot(agentUserId)?.payload?.hostRuntimeCapability ?? null,
-  )
+  const policy = useReplica(runtimeCapabilityPolicy, [])
+  const capability = useSelect(agentPresenceReadable(agentUserId), (state) => (state.payload ? state.payload.hostRuntimeCapability : null))
 
-  useEffect(() => {
-    let active = true
-    void fetchMinCriticalCapability().then((value) => {
-      if (active) setMinCritical(value)
-    })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!agentUserId) {
-      setCapability(null)
-      return
-    }
-    const snapshot = getAgentPresenceSnapshot(agentUserId)
-    setCapability(snapshot?.payload ? snapshot.payload.hostRuntimeCapability : null)
-    return subscribeAgentPresence(agentUserId, (state) => {
-      setCapability(state.payload ? state.payload.hostRuntimeCapability : null)
-    })
-  }, [agentUserId])
-
-  if (minCritical === null || capability === null || capability >= minCritical) return null
+  // Unknown or unreadable policy, or no capability reported: nothing to flag (an unread policy is logged where it is read).
+  if (policy.state !== 'value' || capability === null || capability >= policy.value) return null
 
   return (
     <span

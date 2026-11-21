@@ -12,9 +12,10 @@ const h = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  WORKSPACE_APP_ID: 'workspace',
-  installedExtensionsStore: { get enabledTabContributions() { return h.tabs; }, get allTabContributions() { return h.tabs; } },
+vi.mock('@renderer/features/extensions/installed-extensions', () => ({
+  WORKSPACE_APP_ID: 'workspace', LOCAL_HOST: 'local',
+  useInstalledApps: () => ({ state: 'value', value: { enabledTabContributions: h.tabs }, stale: false, error: null }),
+  peekInstalledAppsTracked: () => ({ allTabContributions: h.tabs }),
 }));
 vi.mock('@renderer/features/tabs/pane-context', () => ({ usePaneContext: () => ({ paneId: 'pane' }) }));
 vi.mock('@renderer/features/sessions/session-view-context', () => ({
@@ -23,7 +24,7 @@ vi.mock('@renderer/features/sessions/session-view-context', () => ({
 }));
 vi.mock('@renderer/features/sessions/start-side-session', () => ({ canStartSideSession: () => true, startSideSession: vi.fn() }));
 vi.mock('@renderer/features/settings/use-terminal-enabled', () => ({ useTerminalEnabled: () => ({ state: 'value', value: true }), terminalShown: () => true }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ state: 'value', value: [], stale: false, error: null }) }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 

@@ -1,4 +1,3 @@
-import { codeQuote } from './code-quote.js'
 import { markdownLiteral } from './markdown-literal.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
@@ -3343,10 +3342,10 @@ function refOf(current, { lines }) {
   return { file: current.entry, at: placeOf(current.file.text, first, last), label: fmt(first === last ? state.t.line : state.t.lines, { first, last }) }
 }
 
-// Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs), the words picked
-// quoted above them as a reader sees them (a block cited whole has none) — the person says what to do with them, @s whom
-// they like and sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was,
-// each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
+// Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs) — its link names
+// the lines, so the words picked are not quoted beside it; the person says what to do with them, @s whom they like and
+// sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was, each range quoted with
+// the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
 async function cite(current = state.current, picks = state.picks, whole = false) {
   const cited = citeOf(current, picks, whole)
   if (!cited) return
@@ -3365,15 +3364,13 @@ function dropSelection() {
   showSelection([], null)
 }
 
-// What a cite carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
-// fenced so indentation and marks stay) and a pill per place.
+// What a cite carries: a pill per place.
 function citeOf(current, picks, whole = false) {
   if (!current || (!whole && !picks.length)) return null
   if (whole) return { text: '', refs: [{ file: current.entry }] }
-  const quote = (text) => (current.file.type === 'text' ? `> ${plainWords(text)}` : codeQuote(text))
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
-  if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }
+  if (current.file.type === 'text' || current.file.type === 'source') return { text: '', refs: picks.map((pick) => refOf(current, pick)) }
   return { text: picks.map(quoted).join('\n\n'), refs: [{ file: current.entry }] }
 }
 

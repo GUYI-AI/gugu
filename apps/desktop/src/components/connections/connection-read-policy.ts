@@ -1,9 +1,2 @@
-import { rendererLogger } from '@/lib/log'
-
+/** How long a connection read waits before it is asked again after `failures` failures (backoff, at most 30 s). */
 export const connectionReadDelay = (failures: number) => Math.min(30_000,1000 * 2 ** Math.min(failures,5))
-/** Read failures never select a different source or replace a successful cache. */
-export function retryConnectionRead(failures: number,error: unknown) {
-  rendererLogger('connections').warn({ failures,code: (error as { code?: string } | null)?.code },'Connection read will retry')
-  return true
-}
-export const connectionReadOptions = { retry: retryConnectionRead,retryDelay: connectionReadDelay }
