@@ -602,8 +602,8 @@ export default {
       "myAgents": "My agents",
       "otherAgents": "Others' agents",
       "listen": {
-        "activeHint": "Proactive: also receives group messages that do not mention it.",
-        "passiveHint": "Passive: receives only messages that mention or reply to it."
+        "activeHint": "Proactive: also gets messages people send without addressing anyone.",
+        "passiveHint": "Passive: only @mentions, replies, @Everyone and whispers to it."
       },
       "title": "Group members",
       "titleTopic": "Topic members"

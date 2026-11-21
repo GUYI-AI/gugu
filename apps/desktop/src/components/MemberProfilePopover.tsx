@@ -1,6 +1,6 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { MemberProfileCard, type MemberProfileChatTarget, type MemberProfileEditControls, type MemberProfileListenRoom } from './MemberProfileCard'
+import { MemberProfileCard, type MemberProfileChatTarget, type MemberProfileEditControls } from './MemberProfileCard'
 import type { ActiveMemberProfile, MemberProfileHandle } from './memberProfileModels'
 import { useContactsStore } from '../store/contactsContext'
 import { useAuth } from '../store/auth'
@@ -69,7 +69,6 @@ export function MemberProfilePopover({
   onOpenChat,
   onWhisper,
   searchChatId,
-  listenRoom,
   editControls,
   testId = AUTOMATION_TEST_IDS.groupMemberProfileMenu,
 }: {
@@ -80,7 +79,6 @@ export function MemberProfilePopover({
   onWhisper?: (target: MemberProfileChatTarget) => void
   /** The conversation this card was opened in: 「查找 TA 的消息」searches it for this member. */
   searchChatId?: string
-  listenRoom?: MemberProfileListenRoom
   editControls?: MemberProfileEditControls
   testId?: AutomationTestId
 }) {
@@ -106,7 +104,7 @@ export function MemberProfilePopover({
   const mobile = useMobileShell()
   const ariaLabel = t('profile.profileDialog', { name: shownName })
   const findMessages = searchChatId ? () => { _onClose(); searchInChat(searchChatId, { userId: profile.member.id, name: displayName }) } : undefined
-  const card = <MemberProfileCard member={enrichedMember} onOpenChat={onOpenChat} onWhisper={onWhisper} onFindMessages={findMessages} listenRoom={listenRoom} editControls={editControls} aliasControls={aliasControls} fill={mobile} />
+  const card = <MemberProfileCard member={enrichedMember} onOpenChat={onOpenChat} onWhisper={onWhisper} onFindMessages={findMessages} editControls={editControls} aliasControls={aliasControls} fill={mobile} />
   const memberData = { 'data-profile-member-id': profile.member.id, 'data-profile-member-type': profile.member.type, 'data-profile-member-role': profile.member.role }
 
   // 手机是共用的底部面板(#6836):贴着锚点的 284 宽卡片在整行宽的成员页上左右都放不下,会整张落在屏外。
