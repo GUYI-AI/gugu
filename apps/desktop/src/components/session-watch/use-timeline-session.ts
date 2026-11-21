@@ -25,7 +25,7 @@ import {
 } from './agent-watch-store'
 import { settlePendingSends, userMessageIds, type PendingSend } from './pending-sends'
 import { loadRetryDelay, LOAD_RETRY_DELAYS_MS } from './record-wait'
-import { forgetSessionStream, hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type TimelineLink } from './timeline-cache'
+import { forgetSessionStream, hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type StreamWrite, type TimelineLink } from './timeline-cache'
 import { useSelect } from '@/lib/selectStore'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
@@ -148,7 +148,11 @@ export function useTimelineSession(
    */
   firstPrompt?: FirstPrompt,
 ): AgentWatchSession {
-  // 首帧就是上次那一份(会话流 store / 内存),❌ 先画一帧空线程:owner 10-12「进运行中的任务页,一进去就颤两下」。
+  /*
+   * 会话流 store / 内存里有上次看到的那一份就拿它当**初值**:第一帧就是完整的时间线。❌ 先画一帧空线程、再在 follow 里换上 ——
+   * 那一帧(真机几百 ms)里写的是「Nothing in this task yet」,随后整段历史从透明淡入、再跳到底:
+   * owner 10-12「进运行中的任务页,一进去就颤两下」。follow 里那次读照旧,换会话时靠它。
+   */
   const streamKey = useMemo(() => (deviceId && sessionId ? { deviceId, sessionId } : null), [deviceId, sessionId])
   const followed = useSelect(sessionStreams, (map) => (streamKey ? map[sessionStreamKey(streamKey)] : undefined), Object.is)
   const initial = useMemo(() => initialSessionStream(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
@@ -362,11 +366,12 @@ type SessionFollow = {
   params: FollowParams
   followers: number
   stop: () => void
-  // cursor:补缺口发生在事件回调/定时器里,要读当下那一份。
+  // cursor 放在 follow 上:补缺口发生在事件回调/定时器里,要读当下那一份。
   cursor: RecordCursor | null
   // 快照落地前不收增量:此时手里还没有可续的那一份,收了只会得到一段悬空的尾巴。
   ready: boolean
-  // 已和那台机器对过一次账:乐观发送靠「发送那一刻已有哪些行」认回显,没对账时这份清单不全。
+  // 手里这份**已经和那台机器对过一次账**(整份快照落地,或本地底稿补完差量;记录还没写出来也算 —— 那时确实是空的)。
+  // 乐观发送靠「发送那一刻已有哪些行」认回显,底稿还没对账时这份清单不全:之后补进来的整段都会被当成新行。
   synced: boolean
   olderResets: Set<() => void>
   resetOlder: () => void
@@ -374,18 +379,9 @@ type SessionFollow = {
 // One follow per session stream (the entry it writes): ❌ per client object or `enabled`.
 const follows = new Map<string, SessionFollow>()
 
-/** Writes a session's stream state: the fields one step changes, together (one notify), or the timeline by a change. */
 function streamWriters(streamKey: { deviceId: string; sessionId: string } | null, boundedWindow: boolean | undefined) {
-  const write = (change: (current: SessionStreamState) => Partial<SessionStreamState>) => {
-    if (streamKey) updateSessionStream(streamKey, (current) => {
-      const next = change(current)
-      return (Object.keys(next) as (keyof SessionStreamState)[]).every((name) => Object.is(next[name], current[name])) ? current : { ...current, ...next }
-    }, boundedWindow)
-  }
-  return {
-    write: (fields: Partial<SessionStreamState>) => write(() => fields),
-    setTimeline: (change: (current: AgentWatchTimeline) => AgentWatchTimeline) => write((current) => ({ timeline: change(current.timeline) })),
-  }
+  const write = (fields: StreamWrite<SessionStreamState>) => { if (streamKey) updateSessionStream(streamKey, fields, boundedWindow) }
+  return { write, setTimeline: (change: (current: AgentWatchTimeline) => AgentWatchTimeline) => write((current) => ({ timeline: change(current.timeline) })) }
 }
 
 /** Follow a session's host stream from one more page; returns the detach. `onOlderReset` hears a reset / resolution. */
@@ -457,7 +453,11 @@ function runSessionFollow(follow: SessionFollow): () => void {
   follow.cursor = null
   write({ error: null, link: 'connecting' })
 
-  // 先画上次看到的那一份(本地底稿),再去对账(owner 2026-09-08);底稿只活到第一次对账为止。
+  /*
+   * 先把**上次看到的那一份**画出来(本地底稿),再去对账。
+   * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
+   * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
+   */
   const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
   if (cached) {
     follow.cursor = cached.cursor
@@ -465,7 +465,12 @@ function runSessionFollow(follow: SessionFollow): () => void {
   }
   write(cached ? { timeline: cached, phase: 'ready' } : { phase: 'loading' })
 
-  // 补缺口失败不清空已有的那一份(屏幕上那段仍是真的);按退避自动补,耗尽才报原文,补上了只收回自己报的那条。
+  /*
+   * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的读失败按既有退避自动补几次，
+   * 耗尽才交统一出口，期间不把重试按钮留给用户；窗口重开、回前台也能重新驱动。
+   * 失败耗尽后仍如实报原文，补上了就收回这一条 —— 别的路报的错(比如订阅没订上)不归这里管。
+   * 补上一次就算和那台机器对过账了(follow.synced)。
+   */
   let catchUpReported = false
   let catchUpRunning = false
   const catchUp = () => {
@@ -487,7 +492,15 @@ function runSessionFollow(follow: SessionFollow): () => void {
       }).finally(() => { catchUpRunning = false })
   }
 
-  // 冷启动后第一次进:先等本地库那份(装上了就只订阅 + 补差量,owner:不要每次都重新请求),但最多等 HYDRATE_BUDGET_MS。
+  /*
+   * 内存里没有 ⇒ 这是**冷启动后第一次**进这条会话，去本地库里捞上次那份。
+   *
+   * 下面的 `loadSnapshot` 会先等这一步：装上了就只订阅 + 补差量，一次整份快照都不用拉。
+   * ❌ 不能不等就先拉快照 —— 那样"存了一份在本地"就只省下第一帧的空白，
+   * 该请求的照样请求了一遍，而 owner 要的正是**不要每次都重新去请求**。
+   * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
+   * 所以给它一个上限，超时就当没有存档，照旧整份拉。
+   */
   const hydrated: Promise<void> = cached || client.boundedWindow
     ? Promise.resolve()
     : Promise.race([
@@ -536,7 +549,9 @@ function runSessionFollow(follow: SessionFollow): () => void {
     try {
       await hydrated
       if (cancelled) return
-      // 手里有那份 ⇒ 只订阅 + 补差量;世代对不上时订阅的第一推就是新快照,由 reducer 认出来。
+      // 先给本地那份一个装上的机会,再决定要不要整份拉(重试时它早已完成,await 是白拿的)。
+      // 手里已经有本地那份 ⇒ 只订阅 + 补差量,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
+      // 世代对不上时机器会在订阅的第一推里直接回一份新快照,由 reducer 认出来。
       if (follow.ready && follow.cursor) {
         await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor)
         if (cancelled) return
@@ -561,7 +576,11 @@ function runSessionFollow(follow: SessionFollow): () => void {
       if (cancelled) return
       const code = rpcErrorCode(err)
       attempt += 1
-      // 会自己好的失败自己再试,期间停在加载态(owner 2026-09-08);判据在 record-wait.ts。
+      /*
+       * ⚠️ 会自己好的失败**自己再试一次**,期间界面停在普通加载态 ——
+       * owner 2026-09-08:「不应该是先报一个红色的报错、等我刷新之后才显示出来」。
+       * 判据在 record-wait.ts(纯函数),三类各有一条会红的用例。
+       */
       const delay = client.boundedWindow && code === 'source_locating' ? 2_000
         : follow.ready ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
         : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })

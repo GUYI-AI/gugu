@@ -4,7 +4,7 @@ import { remoteFailureKind, type NativeSessionRecord } from '@gugu/session-core/
 import { machineRpc, onLinkChange } from './sessionpage-rpc'
 import { messageForUser } from '@/lib/userFacingError'
 import { useStructurallyShared } from '@/hooks/useStructurallyShared'
-import { hydrateCachedNativeRecord, initialNativeRecordStream, nativeRecordStreams, readCachedNativeRecord, sessionStreamKey, updateNativeRecordStream, writeCachedNativeRecord, type NativeRecordStreamState } from './timeline-cache'
+import { hydrateCachedNativeRecord, initialNativeRecordStream, nativeRecordStreams, readCachedNativeRecord, sessionStreamKey, updateNativeRecordStream, writeCachedNativeRecord, type NativeRecordStreamState, type StreamWrite } from './timeline-cache'
 import { useSelect } from '@/lib/selectStore'
 import { recoverTimelineRead } from './timeline-read-recovery'
 import { checkNativeRevisions, fillNativeRecordTurns, heldTurnOf, keepsRevisions, mergeNativeRecordPage, projectNativeRecord, replaceNativeRecordTurns } from './native-record-state'
@@ -21,15 +21,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
   const followed = useSelect(nativeRecordStreams, (map) => map[sessionStreamKey(streamKey)], Object.is)
   const initial = useMemo(() => initialNativeRecordStream(streamKey, enabled), [streamKey, enabled])
   const { record, error, errorCode, unreachable, confirmed } = followed ?? initial
-  const { setRecord, setError, setErrorCode, setUnreachable, setConfirmed } = useMemo(() => {
-    const field = <K extends keyof NativeRecordStreamState>(name: K) =>
-      (value: NativeRecordStreamState[K] | ((current: NativeRecordStreamState[K]) => NativeRecordStreamState[K])) =>
-        updateNativeRecordStream(streamKey, (current) => {
-          const next = typeof value === 'function' ? (value as (old: NativeRecordStreamState[K]) => NativeRecordStreamState[K])(current[name]) : value
-          return next === current[name] ? current : { ...current, [name]: next }
-        }, enabled)
-    return { setRecord: field('record'), setError: field('error'), setErrorCode: field('errorCode'), setUnreachable: field('unreachable'), setConfirmed: field('confirmed') }
-  }, [streamKey, enabled])
+  const write = useCallback((fields: StreamWrite<NativeRecordStreamState>) => updateNativeRecordStream(streamKey, fields, enabled), [streamKey, enabled])
   const epoch = useRef(0)
   const recoveryAbort = useRef(new AbortController())
   const key = `${deviceId}/${sessionId}`
@@ -51,24 +43,24 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     const connectionEpoch = epoch
     const generation = ++connectionEpoch.current
     recoveryAbort.current.abort(); recoveryAbort.current = new AbortController()
-    connected.current = online; setConfirmed(null)
+    connected.current = online; write({ confirmed: null })
     // Reconcile the latest page first, even when the cache or host's first unread is far behind.
     requests.current = Promise.resolve()
     // The same conversation coming back online is not a new opening: what the reader has loaded stays in hand (the
     // cache keeps at most 4MB of it), and the newest page is merged into it.
     const resumed = enabled && shownKey.current === key && !!value.current
     shownKey.current = enabled ? key : null
-    if (resumed) { if (tailRequested.current !== true) tailRequested.current = 'resume'; setError(null); setErrorCode(null) }
+    if (resumed) { if (tailRequested.current !== true) tailRequested.current = 'resume'; write({ error: null, errorCode: null }) }
     else tailRequested.current = true
     checkAll.current = true
     const cached = resumed ? value.current : enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null
-    if (!resumed) { value.current = cached; setRecord(cached); setError(null); setErrorCode(null) }
+    if (!resumed) { value.current = cached; write({ record: cached, error: null, errorCode: null }) }
     hydration.current = enabled && !cached ? hydrateCachedNativeRecord({ deviceId, sessionId }).then((stored) => {
       if (!stored || epoch.current !== generation || value.current) return
-      value.current = stored; setRecord(stored)
+      value.current = stored; write({ record: stored })
     }) : Promise.resolve()
     return () => { connectionEpoch.current++; recoveryAbort.current.abort() }
-  }, [deviceId, sessionId, key, enabled, online, setConfirmed, setError, setErrorCode, setRecord])
+  }, [deviceId, sessionId, key, enabled, online, write])
   const read = useCallback((mode: 'poll' | 'older' | 'newer' | 'tail' = 'poll') => {
     const ownEpoch = epoch.current
     const signal = recoveryAbort.current.signal
@@ -84,7 +76,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
         const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, ...input, lean: 'folded' })
         if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code })
         return result.value
-      }, signal, () => { if (epoch.current === ownEpoch) setConfirmed(null) })
+      }, signal, () => { if (epoch.current === ownEpoch) write({ confirmed: null }) })
       const stillWanted = () => epoch.current === ownEpoch && current.current.deviceId === requested.deviceId && current.current.sessionId === requested.sessionId && current.current.enabled
       // @@@keep-what-was-read — the turns this phone holds (stored on it, drawn before anything is asked) are not read
       // again. Opening, polling and returning to the bottom ask only for the turns after the newest held one, with the
@@ -135,26 +127,26 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
       }
       const next = isDeepEqual(value.current, merged) ? value.current! : merged
       if (next !== value.current) writeCachedNativeRecord({ deviceId, sessionId }, next)
-      value.current = next; setRecord(next)
-      if (mode !== 'older') setConfirmed(previous => previous?.key === key && previous.epoch === ownEpoch ? previous : { key, epoch: ownEpoch })
-      setError(null); setErrorCode(null); setUnreachable(false)
+      value.current = next
+      write(({ confirmed: previous }) => ({ record: next, error: null, errorCode: null, unreachable: false,
+        confirmed: mode === 'older' || (previous?.key === key && previous.epoch === ownEpoch) ? previous : { key, epoch: ownEpoch } }))
     })
     requests.current = nextRequest
     return nextRequest.catch(error => {
       if (epoch.current !== ownEpoch) return
-      setConfirmed(null); throw error
+      write({ confirmed: null }); throw error
     })
-  }, [deviceId, sessionId, local, key, setConfirmed, setError, setErrorCode, setRecord, setUnreachable])
+  }, [deviceId, sessionId, local, key, write])
   useEffect(() => {
     if (!enabled || !online || local) return
     return onLinkChange(deviceId, open => {
       recoveryAbort.current.abort(); recoveryAbort.current = new AbortController()
-      epoch.current++; connected.current = open; requests.current = Promise.resolve(); setConfirmed(null)
+      epoch.current++; connected.current = open; requests.current = Promise.resolve(); write({ confirmed: null })
       if (tailRequested.current !== true) tailRequested.current = 'resume'
       checkAll.current = true
-      if (open) { const ownEpoch = epoch.current; void read('tail').catch(error => { if (epoch.current === ownEpoch) setError(messageForUser(error)) }) }
+      if (open) { const ownEpoch = epoch.current; void read('tail').catch(error => { if (epoch.current === ownEpoch) write({ error: messageForUser(error) }) }) }
     })
-  }, [deviceId, enabled, online, local, read, setConfirmed, setError])
+  }, [deviceId, enabled, online, local, read, write])
   useEffect(() => {
     if (!enabled || !online) return
     let active = true
@@ -162,16 +154,15 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     const poll = async () => {
       try { if (document.visibilityState !== 'hidden') await read() } catch (error) {
         if (!active) return
-        setError(messageForUser(error))
         const code = (error as { code?: unknown } | null)?.code
-        setErrorCode(typeof code === 'string' ? code : null)
-        setUnreachable(remoteFailureKind(typeof code === 'string' ? code : null) === 'machine-unreachable')
+        const errorCode = typeof code === 'string' ? code : null
+        write({ error: messageForUser(error), errorCode, unreachable: remoteFailureKind(errorCode) === 'machine-unreachable' })
       }
       if (active) timer = setTimeout(() => { void poll() }, 1000)
     }
     void poll()
     return () => { active = false; clearTimeout(timer) }
-  }, [enabled, online, read, setError, setErrorCode, setUnreachable])
+  }, [enabled, online, read, write])
   const heldWanted = useRef(new Set<number>())
   const heldReading = useRef(new Set<number>())
   const heldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -196,12 +187,12 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
           const next = fillNativeRecordTurns(value.current, results.flatMap(result => result?.ok ? [result.value] : []))
           if (!next || next === value.current) return
           writeCachedNativeRecord({ deviceId, sessionId }, next)
-          value.current = next; setRecord(next)
+          value.current = next; write({ record: next })
         })
         .finally(() => { for (const seq of wanted) heldReading.current.delete(seq) })
     }, 30)
-  }, [deviceId, sessionId, local, setRecord])
-  const report = (error: unknown) => setError(messageForUser(error))
+  }, [deviceId, sessionId, local, write])
+  const report = (error: unknown) => write({ error: messageForUser(error) })
   // Wire pages and notification projection recreate unchanged turns; the transcript syncs by identity.
   const shown = useStructurallyShared(useMemo(() => projectNativeRecord(record), [record]))
   return { record: shown, error, errorCode, unreachable, ready: enabled && online && confirmed?.key === key && confirmed.epoch === epoch.current,

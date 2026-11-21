@@ -5,7 +5,7 @@ import { emptyAgentWatchTimeline } from './agent-watch-store'
 import { getAgentWatchStore, type AgentWatchLocalStore, type LocalRow } from '@/session/shared/remote-sessions/local-store'
 import { isDeepEqual } from '@gugu/session-shared'
 import { mergeNativeRecordPage } from './native-record-state'
-import { createSelectStore, patch, type Readable } from '@/lib/selectStore'
+import { createSelectStore, patch, type Readable, type SelectStore } from '@/lib/selectStore'
 import { onAccountChange } from '@/lib/replica'
 
 /**
@@ -438,6 +438,12 @@ onAccountChange(() => forgetInMemoryTimelines())
 
 // ── a session's live stream state (the stream engine's own state, @@@client-state-model §1) ──────────────────────────
 
+/**
+ * 和那台机器的链路。
+ *  · connecting —— 正在(重新)快照 + 订阅;
+ *  · ok —— 订阅上了,窗口通着;
+ *  · lost —— 读不出来 / 补缺口失败 / 窗口断了。
+ */
 export type TimelineLink = 'connecting' | 'ok' | 'lost'
 export type AgentWatchPhase = 'loading' | 'ready' | 'error'
 
@@ -464,9 +470,16 @@ export function initialSessionStream(key: TimelineCacheKey | null, boundedWindow
   return { timeline, phase: timeline.cursor ? 'ready' : 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
 }
 
-export function updateSessionStream(key: TimelineCacheKey, change: (current: SessionStreamState) => SessionStreamState, boundedWindow = false): void {
-  const id = sessionStreamKey(key)
-  patch(streams, id, change(streams.get()[id] ?? initialSessionStream(key, boundedWindow)))
+/** The fields one step of a stream changes, written together (one notify); fields that did not change write nothing. */
+export type StreamWrite<S> = Partial<S> | ((current: S) => Partial<S>)
+function writeStream<S extends object>(store: SelectStore<Readonly<Record<string, S>>>, id: string, initial: () => S, fields: StreamWrite<S>): void {
+  const current = store.get()[id] ?? initial()
+  const next = typeof fields === 'function' ? fields(current) : fields
+  if ((Object.keys(next) as (keyof S)[]).some((name) => !Object.is(next[name], current[name]))) patch(store, id, { ...current, ...next })
+}
+
+export function updateSessionStream(key: TimelineCacheKey, fields: StreamWrite<SessionStreamState>, boundedWindow = false): void {
+  writeStream(streams, sessionStreamKey(key), () => initialSessionStream(key, boundedWindow), fields)
 }
 
 export function forgetSessionStream(key: TimelineCacheKey): void {
@@ -491,9 +504,8 @@ export function initialNativeRecordStream(key: TimelineCacheKey, enabled: boolea
   return { record: enabled ? readCachedNativeRecord(key) : null, error: null, errorCode: null, unreachable: false, confirmed: null }
 }
 
-export function updateNativeRecordStream(key: TimelineCacheKey, change: (current: NativeRecordStreamState) => NativeRecordStreamState, enabled = true): void {
-  const id = sessionStreamKey(key)
-  patch(nativeStreams, id, change(nativeStreams.get()[id] ?? initialNativeRecordStream(key, enabled)))
+export function updateNativeRecordStream(key: TimelineCacheKey, fields: StreamWrite<NativeRecordStreamState>, enabled = true): void {
+  writeStream(nativeStreams, sessionStreamKey(key), () => initialNativeRecordStream(key, enabled), fields)
 }
 
 type SessionpageTimelineFacts = {
