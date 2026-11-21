@@ -493,9 +493,10 @@ it('publishes a native file in its chat lane with no request deadline; what was 
   expect(box.get('native-slow')?.state).toBe('sending')
   publication.resolve({ ...persistedMessage(native.id), content_type: 'attachment' })
   await vi.advanceTimersByTimeAsync(10)
-  expect(f.messages().find(row => row.id === native.id)?.seq).toBe(42)
+  // The acknowledgement settles the row after its message-store write lands.
+  await vi.waitFor(() => expect(f.messages().find(row => row.id === native.id)?.seq).toBe(42))
   expect(send).toHaveBeenCalledOnce()
-  expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([]) // the read position a send advances is its own write
+  await vi.waitFor(() => expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([])) // the read position a send advances is its own write
   f.wiring.dispose()
 })
 
@@ -532,7 +533,7 @@ it('sends a failed row again when the backend recovers, not while it kept answer
   noteBackendAnswer(true)
   await vi.advanceTimersByTimeAsync(10)
   expect(send).toHaveBeenCalledTimes(5)
-  expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([]) // the read position a send advances is its own write
+  await vi.waitFor(() => expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([])) // the read position a send advances is its own write
   f.wiring.dispose()
 })
 
@@ -610,7 +611,7 @@ it('a native publication that keeps failing is shown failed and resent from its 
   f.wiring.retrySend(native.id)
   await vi.advanceTimersByTimeAsync(10)
   expect(publish).toHaveBeenCalledTimes(5)
-  expect(f.messages().find(m => m.id === native.id)?.seq).toBe(42)
+  await vi.waitFor(() => expect(f.messages().find(m => m.id === native.id)?.seq).toBe(42))
   f.wiring.dispose()
 })
 
