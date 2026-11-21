@@ -42,7 +42,7 @@ describe('recoverable committed structural projection publication', () => {
   async function finish(c: ReturnType<typeof context>) {
     for (let i = 0; i < 300; i++) {
       const budget = createWindowBudget(), result = await advance(c, budget);
-      expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536); expect(budget.counters.sourceBytes).toBe(0);
+      expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536); expect(budget.counters.sourceBytes).toBeLessThanOrEqual(512 * 1024);
       if (result.kind === 'complete') return result; expect(result.kind).toBe('progress');
     }
     throw new Error('Projection did not complete');

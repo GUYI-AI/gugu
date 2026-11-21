@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,7 +22,7 @@ let fixture: Awaited<ReturnType<typeof openFixture>>;
 let publicationHost: ReturnType<typeof startNativeConversationPublicationHost> | undefined;
 const context = { sessionId: 's', projectId: 'p', workspaceId: 'w' };
 const input = { request_id: '11111111-1111-4111-8111-111111111111', agent_user_id: 'agent', text: 'The result needs your review' };
-const records = () => (fixture.sqlite.prepare('SELECT data FROM session_turns ORDER BY seq').all() as { data: string }[]).map(row => JSON.parse(row.data) as TranscriptTurn);
+const records = () => (fixture.sqlite.prepare('SELECT id, data FROM session_turns ORDER BY seq').all() as { id: string; data: string }[]).map(row => readSessionTurn(fixture.sqlite, row));
 beforeEach(async () => {
   mocks.sourceTurn = 'runtime-turn';
   mocks.root = await mkdtemp(join(tmpdir(), 'gugu-owner-notification-'));

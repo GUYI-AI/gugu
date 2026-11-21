@@ -9,11 +9,12 @@ import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { resolveWorkspace } from '../projects/utils';
 import { createAttachmentUploads } from '../files/attachment-uploads';
 import { ATTACHMENT_UPLOAD_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
-import type { TranscriptMessage, TranscriptTurn } from '@gugu/session-core/acp/client';
+import type { TranscriptMessage } from '@gugu/session-core/acp/client';
 import { noteNativeConversationReplies } from './session-conversation-read';
 import { renumberStoredTurn, withStoredTurns } from './session-turn-store';
 import { readCurrentTurnIdentity } from './session-activity-source';
 import { setOwnerNotificationHead } from './owner-notification-state';
+import { prepareSessionTurn, readSessionTurn } from './session-turn-storage';
 import { nativePublicationContext } from './native-publication-host';
 import { recordNativePublicationTurn } from './native-publication-turn';
 export { ownerNotificationHead } from './owner-notification-state';
@@ -64,7 +65,7 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
     await beforeCommit();
     const existing = db.select().from(sessionTurns).where(and(eq(sessionTurns.sessionId, context.sessionId), eq(sessionTurns.turnId, sourceId))).get();
     if (existing) {
-      const previous = (JSON.parse(existing.data) as TranscriptTurn).items[0];
+      const previous = readSessionTurn(db.connection, existing, { messagesOnly: true }).items[0];
       if (previous?.kind !== 'message' || previous.ownerNotification?.requestHash !== requestHash) throw new Error('Owner notification request_id was already committed with different content');
       return { status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, seq: existing.seq, ...(previous.ownerNotification.files?.[0] ? { file_name: previous.ownerNotification.files[0].name } : {}) };
     }
@@ -84,7 +85,9 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
       const turn = recordNativePublicationTurn({ sessionId: context.sessionId, rowId: `${context.sessionId}:${next}`, source: 'live', context: publication, turn: renumberStoredTurn({ id: sourceId, seq: next, initiator: 'agent', trigger: { kind: 'agent' }, startedAt: at, endedAt: at,
         outcome: { kind: 'done' }, items: [{ kind: 'message', id: `${sourceId}:message:${input.request_id}`, seq: 0, role: 'assistant',
           text: input.text || files![0]!.name, at, ownerNotification: { requestId: input.request_id, requestHash, ...(sourceTurnId ? { sourceTurnId } : {}), ...(files ? { files } : {}) } }] }, context.sessionId, next) }, tx);
-      tx.insert(sessionTurns).values({ id: `${context.sessionId}:${next}`, sessionId: context.sessionId, seq: next, turnId: sourceId, data: JSON.stringify(turn) }).run();
+      const normalized = prepareSessionTurn(db.connection, { id: `${context.sessionId}:${next}`, data: '', revision: 0 }, turn, true);
+      tx.insert(sessionTurns).values({ id: `${context.sessionId}:${next}`, sessionId: context.sessionId, seq: next, turnId: sourceId, data: normalized.marker }).run();
+      normalized.commit();
       setOwnerNotificationHead(context.sessionId, next, tx);
       publish = noteNativeConversationReplies(context.sessionId, turn, turn, tx);
       return next;
@@ -97,6 +100,6 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
 
 /** Notification snapshots are authorized by their actual durable session message, not by arbitrary paths. */
 export function ownerNotificationFile(sessionId: string, path: string): boolean {
-  return db.select({ data: sessionTurns.data }).from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all().some(row =>
-    (JSON.parse(row.data) as TranscriptTurn).items.some(item => item.kind === 'message' && item.ownerNotification?.files?.some(file => file.path === path)));
+  return db.select({ id: sessionTurns.id }).from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all().some(row =>
+    readSessionTurn(db.connection, row, { messagesOnly: true }).items.some(item => item.kind === 'message' && item.ownerNotification?.files?.some(file => file.path === path)));
 }

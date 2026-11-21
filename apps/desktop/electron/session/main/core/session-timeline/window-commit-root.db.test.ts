@@ -45,7 +45,7 @@ describe('canonical root fields from actual writer source', () => {
       const original = JSON.stringify(cursor), budget = createWindowBudget();
       const result = await advance(directory, receipt, index, cursor, budget);
       expect(JSON.stringify(cursor)).toBe(original);
-      expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536); expect(budget.counters.sourceBytes).toBe(0);
+      expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536); expect(budget.counters.sourceBytes).toBeLessThanOrEqual(512 * 1024);
       if (result.kind === 'complete') return result;
       if (result.kind !== 'progress') throw new Error(`Unexpected root result ${result.kind}`);
       expect(JSON.stringify(result.state).length).toBeLessThan(4096);

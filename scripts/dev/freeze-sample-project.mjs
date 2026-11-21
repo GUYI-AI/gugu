@@ -18,13 +18,14 @@
 //   en-US  group 952352ea-10ab-4213-84c1-dad7af0585a1  session 97ba576a-9ccc-4aac-8f22-247245f60d45  (2026-10-28, Codex, gpt-6-luna)
 // The exact ids and file hashes of each run are written into the header of the file it generates.
 //
-// Usage:
-//   node scripts/dev/freeze-sample-project.mjs --locale zh-CN --session <id> --local-db <user-data>/gugu4.db \
+// Usage (tsx: the stored turns decode through the app's own codec):
+//   pnpm exec tsx scripts/dev/freeze-sample-project.mjs --locale zh-CN --session <id> --local-db <user-data>/gugu4.db \
 //     --snapshot <copy of the project folder> [--turns 1] [--log <dev log, to record the model>]
+//   Copy gugu4.db together with gugu4.db.turn-payloads beside it: stored tool output and pictures live there.
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { createClient } from '@supabase/supabase-js'
@@ -55,6 +56,14 @@ function fail(message) {
   process.exit(1)
 }
 
+// A stored turn row keeps only a marker in session_turns.data (#3225); its content is read through the app's codec,
+// on the system-Node better-sqlite3 that `pnpm session:db:setup` installs (the repo-root copy is built for Electron).
+const { readSessionTurn } = await import('../../apps/desktop/electron/session/main/core/sessions/session-turn-storage.ts')
+  .catch((error) => fail(`cannot load the stored-turn codec; run this script with pnpm exec tsx (${error.message})`))
+const nodeSqlite = join(repo, 'apps/desktop/session-tooling/node-deps/node_modules/better-sqlite3')
+let Database
+try { Database = createRequire(import.meta.url)(nodeSqlite) } catch (error) { fail(`cannot load ${nodeSqlite}; run pnpm session:db:setup (${error.message})`) }
+
 const env = parseEnvFile(readFileSync(join(repo, '.envs/shared-test.env'), 'utf8'))
 const url = env.GUGU_SUPABASE_URL
 const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY
@@ -70,7 +79,7 @@ async function rows(query, what) {
 }
 
 // The session's group and its task card, as the run instance recorded them; its turns: the process is kept only there.
-const local = new DatabaseSync(args['local-db'], { readOnly: true })
+const local = new Database(args['local-db'], { readonly: true, fileMustExist: true })
 const session = local.prepare('SELECT config FROM sessions WHERE id = ?').get(args.session)
 if (!session) fail(`session ${args.session} is not in ${args['local-db']}`)
 const { taskChatId: chatId, initialMessageId } = JSON.parse(session.config)
@@ -85,9 +94,9 @@ const [owner] = await rows(db('identity').from('users').select('id, display_name
 if (!owner?.display_name) fail('the owner has no display name')
 
 const turns = local
-  .prepare('SELECT data FROM session_turns WHERE session_id = ? ORDER BY seq LIMIT ?')
+  .prepare('SELECT id, data FROM session_turns WHERE session_id = ? ORDER BY seq LIMIT ?')
   .all(args.session, turnCount)
-  .map((row) => JSON.parse(row.data))
+  .map((row) => readSessionTurn(local, row))
 local.close()
 if (turns.length < turnCount) fail(`session ${args.session} has ${turns.length} finished turn(s) in ${args['local-db']}`)
 const endedAt = Math.max(...turns.map((turn) => turn.endedAt))

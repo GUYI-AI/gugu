@@ -11,6 +11,7 @@ export function createWindowCommitReader(directory: string, binding: Parameters<
   // Pick bounded fields instead of retaining a caller's mutable receipt/object.
   const b = { scope: binding.scope, sourceLineage: binding.sourceLineage, decoderVersion: binding.decoderVersion };
   const source: WindowCommitSourceManifest = { version: manifest.version, bytes: manifest.bytes, chunks: manifest.chunks,
+    ...(manifest.version === 2 ? { storedBytes: manifest.storedBytes } : {}),
     stride: manifest.stride, sha256: manifest.sha256, physical: { dev: manifest.physical.dev, ino: manifest.physical.ino,
       mtimeNs: manifest.physical.mtimeNs, ctimeNs: manifest.physical.ctimeNs } };
   const cache = new Map<number, Uint8Array>(), controller = new AbortController();

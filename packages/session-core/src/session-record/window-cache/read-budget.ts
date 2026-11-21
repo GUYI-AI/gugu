@@ -41,6 +41,17 @@ export function createWindowBudget(limits: Readonly<WindowLimits> = WINDOW_LIMIT
         return actual;
       } finally { reserved[kind] -= requested; }
     },
+    readSync(kind, requested, operation) {
+      admit(kind, requested, reserved[kind]);
+      reserved[kind] += requested;
+      try {
+        const actual = operation();
+        validAmount(actual);
+        if (actual > requested) throw new RangeError('Read exceeded its admitted allocation');
+        used[kind] += actual;
+        return actual;
+      } finally { reserved[kind] -= requested; }
+    },
     charge(kind, amount) { admit(kind, amount); used[kind] += amount; },
   };
 }

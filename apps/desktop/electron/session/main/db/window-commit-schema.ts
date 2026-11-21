@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
-/** Small write-ahead receipts only. Canonical bodies remain in session_turns. */
+/** Small write-ahead receipts only. Canonical history belongs to the versioned session turn store. */
 export function windowCommitTables(columns: { sessionId: AnySQLiteColumn; rowId: AnySQLiteColumn }) {
   const sessionWindowCommitReceipts = sqliteTable('session_window_commit_receipts', {
     sourceId: text('source_id').primaryKey().notNull(),

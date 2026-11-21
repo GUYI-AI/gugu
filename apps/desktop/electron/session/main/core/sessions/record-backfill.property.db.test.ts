@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 /**
  * resume-tail equivalence, by random records (EQUIVALENCE.md): a store filled step by step — stamp, cursor, streamed
  * turns, pictures left in the record — equals, row for row, the store the whole-record fill of before builds on the
@@ -462,10 +463,10 @@ afterAll(() => { fresh.close(); before.close(); });
 /** A row, comparable across the two stores: its session prefix dropped, each picture as its type, length and bytes. */
 async function comparable(fixture: Fixture, sessionId: string): Promise<unknown[]> {
   state.db = fixture.db;
-  const rows = fixture.sqlite.prepare('SELECT seq, turn_id, data FROM session_turns WHERE session_id = ? ORDER BY seq').all(sessionId) as Array<{ seq: number; turn_id: string; data: string }>;
+  const rows = fixture.sqlite.prepare('SELECT id, seq, turn_id, data FROM session_turns WHERE session_id = ? ORDER BY seq').all(sessionId) as Array<{ id: string; seq: number; turn_id: string; data: string }>;
   const out: unknown[] = [];
   for (const row of rows) {
-    const turn = JSON.parse(row.data.split(`${sessionId}:`).join('S:')) as TranscriptTurn;
+    const turn = JSON.parse(JSON.stringify(readSessionTurn(fixture.sqlite, row)).split(`${sessionId}:`).join('S:')) as TranscriptTurn;
     const pictures: unknown[] = [];
     const visit = async (items: TranscriptTurn['items']) => {
       for (const item of items) {

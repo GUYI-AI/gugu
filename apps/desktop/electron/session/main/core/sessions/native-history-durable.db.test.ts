@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 import { openFixture } from '@tooling/utils/db';
 import { expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -47,8 +48,8 @@ it.each(['insert', 'revision'] as const)('validates real canonical %s writes on 
         async verify() {
           const reopened = new Database(fixture.sqlite.name);
           try {
-            const last = reopened.prepare('SELECT data FROM session_turns WHERE turn_id=?').get(scenario === 'revision' ? 'runtime:stable' : 'runtime:7') as { data: string };
-            expect(JSON.parse(last.data).items[0].text).toBe(`7:${'x'.repeat(1024)}`);
+            const last = reopened.prepare('SELECT id,data FROM session_turns WHERE turn_id=?').get(scenario === 'revision' ? 'runtime:stable' : 'runtime:7') as { id: string; data: string };
+            expect((readSessionTurn(reopened, last).items[0] as { text: string }).text).toBe(`7:${'x'.repeat(1024)}`);
             return { canonicalRows: (reopened.prepare('SELECT count(*) n FROM session_turns').get() as { n: number }).n };
           }
           finally { reopened.close(); }

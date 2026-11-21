@@ -1,7 +1,10 @@
 import { isNotNull, sql } from 'drizzle-orm';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
+  blob,
   index,
+  check,
+  foreignKey,
   integer,
   primaryKey,
   sqliteTable,
@@ -640,7 +643,65 @@ export const sessionTurns = sqliteTable(
 );
 
 export type SessionTurnRow = typeof sessionTurns.$inferSelect;
+/** Versioned normalized bodies; legacy data remains unchanged until an explicitly requested migration. */
+export const sessionTurnHeads = sqliteTable('session_turn_heads', {
+  rowId: text('row_id').primaryKey().notNull().references(() => sessionTurns.id, { onDelete: 'cascade' }),
+  base: text('base', { enum: ['legacy', 'empty'] }).notNull(),
+  revision: integer('revision').notNull().default(0),
+  referenceId: text('reference_id'),
+  outcomeKind: text('outcome_kind'),
+  startedAt: integer('started_at'),
+  notifiedSource: text('notified_source'),
+  textBytes: integer('text_bytes').notNull().default(0),
+}, table => ({ base: check('session_turn_heads_base', sql`${table.base} IN ('legacy','empty')`) }));
+export const sessionTurnNodes = sqliteTable('session_turn_nodes', {
+  rowId: text('row_id').notNull().references(() => sessionTurns.id, { onDelete: 'cascade' }),
+  nodeKey: text('node_key').notNull(), parentKey: text('parent_key').notNull(), collection: text('collection').notNull(),
+  kind: text('kind').notNull(), ordinal: integer('ordinal').notNull(), children: integer('children').notNull(), removed: integer('removed').notNull(),
+  resetFields: integer('reset_fields').notNull().default(0),
+}, table => ({ key: primaryKey({ columns: [table.rowId, table.nodeKey] }),
+  collection: check('session_turn_nodes_collection', sql`${table.collection} IN ('root','items','children','terminals')`) }));
+export const sessionTurnFields = sqliteTable('session_turn_fields', {
+  rowId: text('row_id').notNull().references(() => sessionTurns.id, { onDelete: 'cascade' }),
+  nodeKey: text('node_key').notNull(), field: text('field').notNull(), value: text('value'),
+}, table => ({ key: primaryKey({ columns: [table.rowId, table.nodeKey, table.field] }),
+  node: foreignKey({ columns: [table.rowId, table.nodeKey], foreignColumns: [sessionTurnNodes.rowId, sessionTurnNodes.nodeKey] }).onDelete('cascade'),
+  bytes: check('session_turn_fields_bytes', sql`${table.value} IS NULL OR length(CAST(${table.value} AS BLOB)) <= 8192`) }));
 export const { sessionWindowCommitReceipts, sessionWindowCommitPositions } = windowCommitTables({ sessionId: sessions.id, rowId: sessionTurns.id });
+export const sessionTurnPayloadObjects = sqliteTable('session_turn_payload_objects', {
+  hash: text('hash').primaryKey().notNull(), bytes: integer('bytes').notNull(), kind: integer('kind').notNull(),
+  refs: integer('refs').notNull().default(0),
+}, table => ({ unowned: index('idx_session_turn_payload_unowned').on(table.refs, table.hash),
+  kind: check('session_turn_payload_kind', sql`${table.kind} IN (0,2,3)`),
+  storage: check('session_turn_payload_storage', sql`${table.bytes}>=1`),
+  refs: check('session_turn_payload_refs', sql`${table.refs} >= 0`) }));
+// Reference counters stay in narrow rows; adding an owner must not rewrite immutable body pages.
+export const sessionTurnPayloadInline = sqliteTable('session_turn_payload_inline', {
+  hash: text('hash').primaryKey().notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
+  data: blob('data', { mode: 'buffer' }).notNull(),
+}, table => ({ bytes: check('session_turn_payload_inline_bytes', sql`length(${table.data}) BETWEEN 1 AND 65536`) }));
+export const sessionTurnPayloadChunks = sqliteTable('session_turn_payload_chunks', {
+  hash: text('hash').notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
+  ordinal: integer('ordinal').notNull(), digest: text('digest').notNull(),
+}, table => ({ key: primaryKey({ columns: [table.hash, table.ordinal] }),
+  ordinal: check('session_turn_payload_chunk_ordinal', sql`${table.ordinal} >= 0`),
+  digest: check('session_turn_payload_chunk_digest', sql`length(${table.digest})=64`) }));
+export const sessionTurnPayloadEdges = sqliteTable('session_turn_payload_edges', {
+  parentHash: text('parent_hash').notNull().references(() => sessionTurnPayloadObjects.hash, { onDelete: 'cascade' }),
+  childHash: text('child_hash').notNull().references(() => sessionTurnPayloadObjects.hash),
+}, table => ({ key: primaryKey({ columns: [table.parentHash, table.childHash] }),
+  child: index('idx_session_turn_payload_edge_child').on(table.childHash) }));
+export const sessionTurnPayloadFields = sqliteTable('session_turn_payload_fields', {
+  rowId: text('row_id').notNull(), nodeKey: text('node_key').notNull(), field: text('field').notNull(),
+  hash: text('hash').notNull().references(() => sessionTurnPayloadObjects.hash),
+}, table => ({ key: primaryKey({ columns: [table.rowId, table.nodeKey, table.field, table.hash] }),
+  hash: index('idx_session_turn_payload_field_hash').on(table.hash),
+  field: foreignKey({ columns: [table.rowId, table.nodeKey, table.field],
+    foreignColumns: [sessionTurnFields.rowId, sessionTurnFields.nodeKey, sessionTurnFields.field] }).onDelete('cascade') }));
+export const sessionTurnPayloadSources = sqliteTable('session_turn_payload_sources', {
+  sourceId: text('source_id').primaryKey().notNull().references(() => sessionWindowCommitReceipts.sourceId, { onDelete: 'cascade' }),
+  hash: text('hash').notNull().references(() => sessionTurnPayloadObjects.hash),
+}, table => ({ hash: index('idx_session_turn_payload_source_hash').on(table.hash) }));
 export const { sessionWindowPackGroups,sessionWindowPackSources,sessionWindowPackFrames,sessionWindowPackPositions,sessionWindowPackDependencies }
   = windowPackTables({ sessionId: sessions.id, sourceId: sessionWindowCommitReceipts.sourceId });
 

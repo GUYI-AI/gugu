@@ -57,7 +57,7 @@ describe('durable exact canonical body slot pages', () => {
   async function complete(slot: Awaited<ReturnType<typeof captured>>['slot']) {
     for (let i = 0; i < 100; i++) {
       const budget = createWindowBudget(), result = await advance(slot, budget);
-      expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536); expect(budget.counters.sourceBytes).toBe(0);
+      expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536); expect(budget.counters.sourceBytes).toBeLessThanOrEqual(512 * 1024);
       if (result.kind === 'complete') return; expect(result.kind).toBe('progress');
     }
     throw new Error('Body did not finish');

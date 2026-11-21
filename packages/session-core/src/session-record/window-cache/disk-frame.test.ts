@@ -1,8 +1,8 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
-import { readWindowFrame, writeWindowFrame } from './disk-frame';
+import { expect, it, vi } from 'vitest';
+import { readWindowFrame, writeWindowFrame, syncWindowDirectory, type FrameWriteFs } from './disk-frame';
 import { encodeWindowFrame, windowFrameName, type WindowFrameKey } from './frame';
 import { createWindowBudget, WINDOW_LIMITS, WindowBudgetExceeded } from './read-budget';
 
@@ -41,4 +41,22 @@ it('distinguishes absent, corrupt and budget exhaustion without allocating an ov
     await writeFile(join(directory, windowFrameName(key)), corrupt.subarray(0, 12));
     expect(await readWindowFrame(directory, key, createWindowBudget())).toEqual({ kind: 'miss', reason: 'format' });
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it('uses a writable Windows directory handle and still propagates flush failures while closing it', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const file = { sync: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+  const fs = { open: vi.fn(async (_path: string, mode: string) => {
+    if (mode !== 'r+') throw Object.assign(new Error('Directory handle cannot be flushed'), { code: 'EPERM' });
+    return file;
+  }) } as unknown as FrameWriteFs;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    await syncWindowDirectory('/synthetic-directory', fs);
+    expect(file.sync).toHaveBeenCalledTimes(1);
+    const failure = Object.assign(new Error('Disk flush failed'), { code: 'EIO' });
+    file.sync.mockRejectedValueOnce(failure);
+    await expect(syncWindowDirectory('/synthetic-directory', fs)).rejects.toBe(failure);
+    expect(file.close).toHaveBeenCalledTimes(2);
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
 });

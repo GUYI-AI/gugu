@@ -2,10 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import type { WindowLiveCursor } from './window-commit-journal';
-import { writeWindowCommitSource } from './window-commit-source';
+import { writeSharedWindowCommitSource, writeWindowCommitSource } from './window-commit-source';
+import type { PreparedSessionTurn } from '../sessions/session-turn-storage';
 import { createWindowCommitReceipts, type WindowCommitReceipt, type WindowReceiptDatabase } from './window-commit-receipt';
 import { beginWindowCommitIntent, recoverWindowCommitIntent, windowCommitIntentBinding } from './window-commit-intent';
 import { writeWindowCommitSourceCatalog } from './window-commit-source-catalog';
+import { ownTurnSourcePayload } from '../sessions/session-turn-payload-owners';
+import type Database from 'better-sqlite3';
+import type { TurnPayloadRef } from '../sessions/session-turn-payloads';
+
+const preparedRoots = new WeakMap<WindowCommitReceipt, TurnPayloadRef>();
 
 export type WindowCommitCapture = {
   directory: string; scope: string; cursor: WindowLiveCursor;
@@ -17,7 +23,8 @@ export type WindowCommitCapture = {
 
 /** Runs inside the existing per-session writer chain, reusing its one serialized canonical value. */
 export async function prepareWindowCommitWrite(connection: WindowReceiptDatabase, input: {
-  sessionId: string; referenceId?: string; rowId: string; storedSeq: number; insert: boolean; serialized: string;
+  sessionId: string; referenceId?: string; rowId: string; storedSeq: number; insert: boolean; serialized?: string;
+  normalized?: PreparedSessionTurn;
   capture?: WindowCommitCapture;
 }): Promise<WindowCommitReceipt | undefined> {
   const capture = input.capture;
@@ -30,16 +37,24 @@ export async function prepareWindowCommitWrite(connection: WindowReceiptDatabase
   const binding = windowCommitIntentBinding(capture.scope, sourceId);
   await beginWindowCommitIntent(scope, { version: 1, sourceId, sessionId: input.sessionId,
     rowId: input.rowId, referenceId: input.referenceId, storedSeq: input.storedSeq });
-  const source = await writeWindowCommitSource(capture.directory, binding, input.serialized, undefined, true, sourceId);
+  const shared = input.normalized
+    ? await writeSharedWindowCommitSource(capture.directory, binding, input.normalized.source(), sourceId)
+    : undefined;
+  const source = shared?.manifest ?? await writeWindowCommitSource(capture.directory, binding, input.serialized!, undefined, true, sourceId);
   const prior = previous?.firstCommitCursor;
   const first = input.insert ? current : prior?.workerEpoch === current.workerEpoch && prior.storeEpoch === current.storeEpoch ? prior : null;
   const receipt: WindowCommitReceipt = { version: 1, sourceId, sessionId: input.sessionId, referenceId: input.referenceId,
     rowId: input.rowId, storedSeq: input.storedSeq, firstCommitCursor: first, latestRevisionCursor: current, binding, source };
+  if (shared) preparedRoots.set(receipt, shared.root.ref);
   await writeWindowCommitSourceCatalog(capture.directory, receipt);
   capture.phase?.('source_durable', receipt);
   return receipt;
 }
 
 export function commitWindowReceipt(connection: WindowReceiptDatabase, receipt: WindowCommitReceipt | undefined): void {
-  if (receipt) createWindowCommitReceipts(connection).put(receipt);
+  if (receipt) {
+    createWindowCommitReceipts(connection).put(receipt);
+    const root = preparedRoots.get(receipt);
+    if (root) ownTurnSourcePayload(connection as Database.Database, receipt.sourceId, root);
+  }
 }

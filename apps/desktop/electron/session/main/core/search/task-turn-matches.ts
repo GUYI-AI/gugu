@@ -2,6 +2,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { activityPreviewSources, type ActivityPreviewSource } from '@gugu/session-chat-ui/activity-preview';
 import { excerpt, type TaskTurnHit } from '@shared/core/search';
 import { textCondition } from './text-condition';
+import { readSessionTurn } from '../sessions/session-turn-storage';
 import { nativeMessageTime } from '@gugu/session-core/session-record/conversation-history-clear';
 
 /** A hit before its task is named: a task's name is the main process's to give (task-name.ts). */
@@ -38,9 +39,9 @@ export function matchTaskTurns(connection: BetterSqlite3.Database, query: string
       }[];
     if (!rows.length) return [];
     const turns = new Map<number, { at: string; activity: Map<string, ActivityPreviewSource | null>; messageTimes: Map<string, bigint | undefined> }>();
-    for (const turn of connection.prepare('SELECT rowid AS turn_row, created_at, data FROM session_turns WHERE rowid IN (SELECT value FROM json_each(?))')
-      .all(JSON.stringify([...new Set(rows.map((row) => row.turn_row))])) as { turn_row: number; created_at: string; data: string }[]) {
-      const record = JSON.parse(turn.data) as import('@gugu/session-core/acp').TranscriptTurn;
+    for (const turn of connection.prepare('SELECT id, rowid AS turn_row, created_at, data FROM session_turns WHERE rowid IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify([...new Set(rows.map((row) => row.turn_row))])) as { id: string; turn_row: number; created_at: string; data: string }[]) {
+      const record = readSessionTurn(connection, turn);
       const messageTimes = new Map(record.items.flatMap(item => item.kind === 'message'
         ? [[item.id, nativeMessageTime(record, item)] as const] : []));
       turns.set(turn.turn_row, { at: turn.created_at, activity: activityPreviewSources(record), messageTimes });

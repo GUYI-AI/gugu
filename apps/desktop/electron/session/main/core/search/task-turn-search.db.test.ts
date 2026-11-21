@@ -1,3 +1,4 @@
+import { readSessionTurn } from '../sessions/session-turn-storage';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
@@ -128,7 +129,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     expect(found('secret')).toEqual([]);
     const [hit] = await searchService.searchTaskTurns('crash');
     expect(hit).toMatchObject({ sessionId: 's1', projectId: 'p1', title: 'Task one', role: 'user', archived: false });
-    const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
+    const stored = readSessionTurn(fixture().sqlite, fixture().sqlite.prepare('SELECT id,data FROM session_turns').get() as { id: string; data: string });
     expect(hit!.itemId).toBe(stored.items[0]!.id);
   });
 
@@ -146,7 +147,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     it('a live turn persisted through the store, on its runtime ids and on what was stored', async () => {
       const live = sourced('s1:turn:12', 's1:turn:12:message:0', 'renumbered on the way to disk');
       await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: live });
-      const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
+      const stored = readSessionTurn(fixture().sqlite, fixture().sqlite.prepare('SELECT id,data FROM session_turns').get() as { id: string; data: string });
       expect(stored.items[0]!.id).toBe('s1:turn:s0:message:0');
       expect(matches('renumbered')[0]!.itemId).toBe('source:real-turn:message:0');
       expect(reveal('renumbered', live)).toBe('s1:turn:12:message:0');

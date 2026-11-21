@@ -102,4 +102,20 @@ describe('bounded source windows', () => {
       await expect(readBytePage(input.api, { budget: createWindowBudget() })).rejects.toThrow('Invalid read length');
     }
   });
+
+  it('shares sync-read admission with pending async reads and counts actual bytes before the next allocation', async () => {
+    const budget = createWindowBudget({ ...WINDOW_LIMITS, indexBytes: 8 });
+    let release!: (bytes: number) => void;
+    const first = budget.read('indexBytes', 8, () => new Promise(resolve => { release = resolve; }));
+    let called = false;
+    expect(() => budget.readSync('indexBytes', 1, () => { called = true; return 1; })).toThrow(WindowBudgetExceeded);
+    expect(called).toBe(false);
+    release(3); await first;
+    expect(budget.readSync('indexBytes', 5, () => 2)).toBe(2);
+    expect(budget.counters.indexBytes).toBe(5);
+    await budget.read('indexBytes', 3, async () => 3);
+    expect(() => budget.readSync('indexBytes', 1, () => { called = true; return 1; })).toThrow(WindowBudgetExceeded);
+    expect(called).toBe(false);
+    expect(budget.counters.indexBytes).toBe(8);
+  });
 });

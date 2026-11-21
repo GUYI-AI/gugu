@@ -7,9 +7,12 @@ import type { WindowBudget } from './types';
 export type FrameWriteFs = Pick<typeof import('node:fs/promises'), 'open' | 'link' | 'rename' | 'rm'>;
 const nativeWriteFs: FrameWriteFs = { open, link, rename, rm };
 
+/** Windows FlushFileBuffers needs a writable handle, including directory handles. */
+export const directorySyncOpenMode = (): 'r' | 'r+' => process.platform === 'win32' ? 'r+' : 'r';
+
 /** Errors from durability calls are observable; rename alone is never called durable. */
 export async function syncWindowDirectory(directory: string, fs: FrameWriteFs = nativeWriteFs): Promise<void> {
-  const file = await fs.open(directory, 'r');
+  const file = await fs.open(directory, directorySyncOpenMode());
   try { await file.sync(); } finally { await file.close(); }
 }
 

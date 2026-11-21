@@ -5,6 +5,9 @@ import { join } from 'node:path';
 import { decodeWindowFrame, encodeWindowFrame, windowFrameName, type WindowFrameKey } from '@gugu/session-core/session-record/window-cache/frame';
 import { readWindowFrame, syncWindowDirectory, writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
+import type { TurnPayloadFiles } from '../sessions/session-turn-payloads';
+import { createTurnJsonSource, readTurnJsonRange, type TurnJsonRef } from '../sessions/session-turn-source';
+import type { StoredTurnValue } from '../sessions/session-turn-codec';
 
 const CHUNK = 16 * 1024;
 type Binding = Pick<WindowFrameKey, 'scope' | 'sourceLineage' | 'decoderVersion'>;
@@ -13,7 +16,9 @@ export const windowCommitSourceBinding = (scope: string, sourceId: string) => ({
 });
 type Physical = { dev: string; ino: string; mtimeNs: string; ctimeNs: string };
 export type WindowCommitSourceManifest = {
-  version: 1; bytes: number; chunks: number; stride: number; sha256: string; physical: Physical;
+  version: 1 | 2; bytes: number; chunks: number; stride: number; sha256: string; physical: Physical;
+  /** v2 owns only a bounded immutable root descriptor; its exact JSON byte stream shares canonical payloads. */
+  storedBytes?: number;
 };
 const key = (binding: Binding, ordinal: number): WindowFrameKey => ({ ...binding, kind: 'segment', cursor: `raw:${String(ordinal).padStart(16, '0')}` });
 const rootKey = (binding: Binding): WindowFrameKey => ({ ...binding, kind: 'head', cursor: 'raw:head' });
@@ -24,7 +29,8 @@ const physical = (value: { dev: bigint; ino: bigint; mtimeNs: bigint; ctimeNs: b
   dev: String(value.dev), ino: String(value.ino), mtimeNs: String(value.mtimeNs), ctimeNs: String(value.ctimeNs),
 });
 function bound(value: WindowCommitSourceManifest, binding: Binding): void {
-  if (!value || value.version !== 1 || !Number.isSafeInteger(value.bytes) || value.bytes < 1
+  if (!value || ![1, 2].includes(value.version) || !Number.isSafeInteger(value.bytes) || value.bytes < 1
+    || (value.version === 2 && (!Number.isSafeInteger(value.storedBytes) || value.storedBytes! < 1 || value.storedBytes! > 3500))
     || value.chunks !== Math.ceil(value.bytes / CHUNK) || value.stride !== stride(binding) || !Number.isSafeInteger(fileBytes(value))
     || typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)
     || !value.physical || !['dev', 'ino', 'mtimeNs', 'ctimeNs'].every(name =>
@@ -32,7 +38,8 @@ function bound(value: WindowCommitSourceManifest, binding: Binding): void {
     throw new Error('Invalid immutable commit source manifest');
 }
 const same = (a: Physical, b: Physical) => a.dev === b.dev && a.ino === b.ino && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
-const fileBytes = (source: WindowCommitSourceManifest) => source.bytes + source.chunks * (source.stride - CHUNK);
+const fileBytes = (source: WindowCommitSourceManifest) => source.version === 2 ? source.storedBytes!
+  : source.bytes + source.chunks * (source.stride - CHUNK);
 
 /** Metadata-only publication check against the receipt's physical identity. */
 export async function assertWindowCommitSource(directory: string, binding: Binding, source: WindowCommitSourceManifest): Promise<void> {
@@ -110,6 +117,26 @@ export async function writeWindowCommitSource(directory: string, binding: Bindin
   } finally { await rm(temporary, { force: true }); }
 }
 
+type SharedSource = { version: 2; directory: string; root: TurnJsonRef; scope: string; lineage: string };
+export async function writeSharedWindowCommitSource(directory: string, binding: Binding,
+  normalized: { files: TurnPayloadFiles; value: StoredTurnValue }, temporaryId = randomUUID()): Promise<{ manifest: WindowCommitSourceManifest; root: TurnJsonRef }> {
+  const root = createTurnJsonSource(normalized.files, normalized.value);
+  await normalized.files.durableAsync();
+  const value: SharedSource = { version: 2, directory: normalized.files.directory, root, scope: binding.scope, lineage: binding.sourceLineage };
+  const bytes = Buffer.from(JSON.stringify(value));
+  if (bytes.length > 3500) throw new Error('Shared source descriptor exceeds its bound');
+  const path = sourcePath(directory, binding), temporary = `${path}.${temporaryId}.tmp`;
+  try {
+    const file = await open(temporary, 'wx', 0o600);
+    try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
+    // Unlinking the temporary hard link changes ctime. Bind the final inode only after that change.
+    await link(temporary, path); await rm(temporary); await syncWindowDirectory(directory);
+    const current = await stat(path, { bigint: true });
+    return { root, manifest: { version: 2, bytes: root.bytes, chunks: Math.ceil(root.bytes / CHUNK), stride: stride(binding), storedBytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'), physical: physical(current) } };
+  } finally { await rm(temporary, { force: true }); }
+}
+
 /** This is only a cache metadata read; an atomic canonical receipt must still
  * prove that the source belongs to a committed row before anything is ACKable. */
 export async function readWindowCommitSourceManifest(directory: string, binding: Binding, budget: WindowBudget) {
@@ -128,6 +155,38 @@ export async function readWindowCommitSourceChunk(directory: string, binding: Bi
   bound(source, binding);
   if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal >= source.chunks) throw new RangeError('Invalid commit chunk ordinal');
   signal?.throwIfAborted();
+  if (source.version === 2) {
+    await assertWindowCommitSource(directory, binding, source);
+    const file = await open(sourcePath(directory, binding), 'r');
+    let bytes: Buffer = Buffer.alloc(0), used = 0, failed = false, failure: unknown;
+    try {
+      const current = await file.stat({ bigint: true });
+      if (current.size !== BigInt(source.storedBytes!) || !same(physical(current), source.physical)) throw new Error('Shared source changed before read');
+      await budget.read('indexBytes', source.storedBytes!, async () => {
+        bytes = Buffer.alloc(source.storedBytes!);
+        try {
+          while (used < bytes.length) {
+            signal?.throwIfAborted();
+            const result = await file.read(bytes, used, bytes.length - used, used);
+            if (!result.bytesRead) throw new Error('Shared source changed while reading');
+            used += result.bytesRead;
+          }
+        } catch (error) { failed = true; failure = error; }
+        return used;
+      });
+      if (failed) throw failure;
+      const after = await file.stat({ bigint: true });
+      if (after.size !== current.size || !same(physical(after), source.physical)) throw new Error('Shared source changed while reading');
+    } finally { await file.close(); }
+    if (createHash('sha256').update(bytes).digest('hex') !== source.sha256) throw new Error('Shared source descriptor changed');
+    const value = JSON.parse(bytes.toString('utf8')) as SharedSource;
+    if (value.version !== 2 || value.scope !== binding.scope || value.lineage !== binding.sourceLineage || value.root?.bytes !== source.bytes
+      || typeof value.directory !== 'string' || !value.directory.endsWith('.turn-payloads')) throw new Error('Shared source binding mismatch');
+    const start = ordinal * CHUNK;
+    const result = readTurnJsonRange(value.directory, value.root, start, Math.min(source.bytes, start + CHUNK), budget);
+    await assertWindowCommitSource(directory, binding, source); signal?.throwIfAborted();
+    return result;
+  }
   const path = sourcePath(directory, binding), position = ordinal * source.stride;
   const length = Math.min(source.stride, fileBytes(source) - position), file = await open(path, 'r');
   try {

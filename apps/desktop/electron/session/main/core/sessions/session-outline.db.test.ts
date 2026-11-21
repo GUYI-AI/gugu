@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -42,8 +43,8 @@ const delivery = (fromType: 'human' | 'agent', content: string) => renderDeliver
 
 /** The stored turns as a window that had loaded them would hold them. */
 const stored = (fixture: Fixture, sessionId: string) => (fixture.sqlite
-  .prepare('SELECT seq, data FROM session_turns WHERE session_id = ? ORDER BY seq').all(sessionId) as { seq: number; data: string }[])
-  .map(row => ({ ...(JSON.parse(row.data) as TranscriptTurn), seq: row.seq }));
+  .prepare('SELECT id, seq, data FROM session_turns WHERE session_id = ? ORDER BY seq').all(sessionId) as { id: string; seq: number; data: string }[])
+  .map(row => ({ ...(readSessionTurn(fixture.sqlite, row)), seq: row.seq }));
 const rowsOf = (turns: readonly TranscriptTurn[]): OutlineMessageRow[] => turns.flatMap(one => one.items.flatMap(item => item.kind === 'message'
   ? [{ seq: one.seq, turnId: one.id, referenceId: one.referenceId ?? null, initiator: one.initiator, itemId: item.id, role: item.role, text: item.text }] : []));
 

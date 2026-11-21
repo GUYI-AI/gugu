@@ -1,10 +1,11 @@
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createHash } from 'node:crypto';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { agentQuotaReason } from '@gugu/core/shared/agentQuotaReason';
 import { db } from '@main/db/client';
 import { kv, sessions, sessionTurns } from '@main/db/schema';
 import type { AgentEvent } from '@shared/core/agents/agentEvents';
+import { readSessionTurn } from '../sessions/session-turn-storage';
 
 const keyFor = (sessionId: string) => `session-error-notice:${sessionId}`;
 type ErrorNotice = { current: string | null; acknowledged: string[] };
@@ -48,13 +49,15 @@ export function acknowledgeErrorNotice(sessionId: string): void {
   }
   // Upgrading an existing failed session must not require one extra failed retry to learn its cause.
   // Read only the latest stored outcome's fields, never the potentially large turn body.
-  const tail = db.select({ kind: sql<string | null>`json_extract(${sessionTurns.data}, '$.outcome.kind')`,
-    message: sql<string | null>`coalesce(json_extract(${sessionTurns.data}, '$.outcome.detail'), json_extract(${sessionTurns.data}, '$.outcome.said'))` })
+  const stored = db.select({ id: sessionTurns.id })
     .from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)).orderBy(desc(sessionTurns.seq)).limit(1).get();
-  if (tail?.kind !== 'error' || !tail.message) return;
+  const outcome = stored ? readSessionTurn(db.connection, stored, { headerOnly: true }).outcome : undefined;
+  if (outcome?.kind !== 'error') return;
+  const message = outcome.detail ?? outcome.said;
+  if (!message) return;
   const row = db.select({ provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get();
   const model = runtimeModelId(row?.config?.type === 'acp' ? row.config.model ?? row.config.contextUsage?.modelId : row?.config?.model);
-  const key = fingerprint(tail.message, row?.provider ?? undefined, model);
+  const key = fingerprint(message, row?.provider ?? undefined, model);
   if (key) write(sessionId, { current: key, acknowledged: [key] });
 }
 

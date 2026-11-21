@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
@@ -135,8 +136,8 @@ it('wires live transcript commits to the journal but leaves replay and old-row r
   const live = { ...record(), id: 'runtime:turn:1', referenceId: 'new-live-turn', seq: 1 };
   await persistCommittedTurn({ sessionId: 's', source: 'live', turn: live });
   expect(pendingNativePublications()).toHaveLength(2);
-  const stored = fixture.sqlite.prepare('SELECT data FROM session_turns WHERE turn_id=?').get(live.id) as { data: string };
-  expect(JSON.parse(stored.data).items[1]._meta.guguPublicationId).toBe(pendingNativePublications()[1]!.id);
+  const stored = fixture.sqlite.prepare('SELECT id,data FROM session_turns WHERE turn_id=?').get(live.id) as { id: string; data: string };
+  expect(readSessionTurn(fixture.sqlite, stored).items[1]).toMatchObject({ _meta: { guguPublicationId: pendingNativePublications()[1]!.id } });
   await persistCommittedTurn({ sessionId: 's', source: 'revision', turn: { ...live, endedAt: live.endedAt! + 20 } });
   expect(pendingNativePublications()).toHaveLength(2);
 });

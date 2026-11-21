@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, open, readdir, rm, writeFile, type FileHandle } from 'node:fs/promises';
+import { appendFile, mkdtemp, open, readdir, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeWindowFrame, windowFrameName } from '@gugu/session-core/session-record/window-cache/frame';
 import { writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
-import { readWindowCommitSourceChunk as read, readWindowCommitSourceManifest as manifest, writeWindowCommitSource as write } from './window-commit-source';
+import { readWindowCommitSourceChunk as read, readWindowCommitSourceManifest as manifest, writeWindowCommitSource as write,
+  writeSharedWindowCommitSource, windowCommitSourcePath } from './window-commit-source';
+import { TurnPayloadFiles } from '../sessions/session-turn-payloads';
+import { encodeTurnValue } from '../sessions/session-turn-codec';
 
 const CHUNK = 16384, owned: string[] = [];
 const binding = { scope: 'a'.repeat(64), sourceLineage: 'b'.repeat(64), decoderVersion: 1 };
@@ -27,6 +30,17 @@ async function prototype(path: string) {
 }
 
 describe('immutable write-ahead commit source', () => {
+  it('binds a shared source after removing its temporary hard link and can read it immediately', async () => {
+    const path = await directory(), files = new TurnPayloadFiles(join(path, 'test.db.turn-payloads'));
+    const value = { items: [{ kind: 'message', text: 'whole cold turn' }] };
+    const { manifest: source } = await writeSharedWindowCommitSource(path, binding, { files, value: encodeTurnValue(value, files) });
+    const current = await stat(windowCommitSourcePath(path, binding), { bigint: true });
+    expect(current.nlink).toBe(1n);
+    expect(source.physical.ctimeNs).toBe(String(current.ctimeNs));
+    expect(Buffer.from(await read(path, binding, source, 0, createWindowBudget())).toString()).toBe(JSON.stringify(value));
+    expect((await readdir(path)).some(name => name.endsWith('.tmp'))).toBe(false);
+  });
+
   it('durably encodes bounded frames without breaking CJK, emoji or escapes and can reopen without an in-memory offset table', async () => {
     const f = await fixture(), loaded = await manifest(f.path, binding, createWindowBudget());
     expect(loaded).toEqual({ kind: 'hit', source: f.source });
@@ -123,5 +137,19 @@ describe('immutable write-ahead commit source', () => {
     const budget = createWindowBudget();
     await expect(read(f.path, binding, f.source, f.source.chunks, budget)).rejects.toThrow('ordinal');
     expect(budget.counters.indexBytes).toBe(0);
+  });
+
+  it('keeps shared-source descriptor reads within admission if the file grows after its size check', async () => {
+    const path = await directory(), files = new TurnPayloadFiles(join(path, 'history.db.turn-payloads'));
+    const { manifest: source } = await writeSharedWindowCommitSource(path, binding, { files, value: encodeTurnValue({ text: 'canonical body'.repeat(2000) }, files) });
+    const budget = createWindowBudget(), admitted = budget.read.bind(budget);
+    let grew = false;
+    budget.read = async (kind, requested, operation) => {
+      if (!grew) { grew = true; await appendFile(windowCommitSourcePath(path, binding), Buffer.alloc(8192)); }
+      return admitted(kind, requested, operation);
+    };
+    await expect(read(path, binding, source, 0, budget)).rejects.toThrow('changed while reading');
+    expect(budget.counters.indexBytes).toBe(source.storedBytes);
+    expect(budget.counters.sourceBytes).toBe(0);
   });
 });

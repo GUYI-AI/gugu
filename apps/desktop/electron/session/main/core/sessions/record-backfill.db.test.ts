@@ -1,3 +1,4 @@
+import { readSessionTurn } from './session-turn-storage';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
@@ -43,7 +44,7 @@ import { nativeConversationActivity } from './session-conversation-activity';
 
 type Fixture = Awaited<ReturnType<typeof openFixture>>;
 let fixture: Fixture;
-const rows = () => fixture.sqlite.prepare('SELECT seq,data FROM session_turns ORDER BY seq').all() as { seq: number; data: string }[];
+const rows = () => (fixture.sqlite.prepare('SELECT id,seq,data FROM session_turns ORDER BY seq').all() as { id: string; seq: number; data: string }[]).map(row => ({ ...row, data: JSON.stringify(readSessionTurn(fixture.sqlite, row)) }));
 const texts = () => rows().map(row => (JSON.parse(row.data) as TranscriptTurn).items.flatMap(item => item.kind === 'message' ? [item.text] : []).join(' / '));
 const outcomes = () => rows().map(row => (JSON.parse(row.data) as TranscriptTurn).outcome?.kind);
 
