@@ -60,6 +60,8 @@ describe('message ids written as a prefix', () => {
     const d = deps([{ id: FULL, content: 'file', created_at: 't1' }])
     await callTool(context, 'message_download_file', { source_message_id: 'msg:abcdef12' }, d).catch(() => null)
     expect(d.gets[0]).toBe('messages?id=gte.abcdef12-0000-0000-0000-000000000000&id=lte.abcdef12-ffff-ffff-ffff-ffffffffffff&select=id,content,created_at&order=created_at.desc&limit=11')
-    expect(d.gets[1]).toContain(`messages?id=eq.${FULL}`)
+    // The full id goes on to the download, which asks as the agent — never the owner's row of it.
+    expect(d.rpcs.filter(([name]) => name === 'can_read_message').at(-1)?.[1]).toMatchObject({ p_message_id: FULL })
+    expect(d.gets).toHaveLength(1)
   })
 })
