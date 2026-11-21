@@ -18,7 +18,7 @@ const MAX_STALE = 40
 export function useNativeSessionRecord(deviceId: string, sessionId: string, enabled: boolean, online: boolean, local = false) {
   // What this phone read last time is drawn first, and is all there is while that machine is away.
   const streamKey = useMemo(() => ({ deviceId, sessionId }), [deviceId, sessionId])
-  const followed = useSelect(nativeRecordStreams, (map) => map.get(sessionStreamKey(streamKey)), Object.is)
+  const followed = useSelect(nativeRecordStreams, (map) => map[sessionStreamKey(streamKey)], Object.is)
   const initial = useMemo(() => initialNativeRecordStream(streamKey, enabled), [streamKey, enabled])
   const { record, error, errorCode, unreachable, confirmed } = followed ?? initial
   const { setRecord, setError, setErrorCode, setUnreachable, setConfirmed } = useMemo(() => {

@@ -110,7 +110,6 @@ export type AgentWatchSession = {
 const HYDRATE_BUDGET_MS = 400
 
 const NO_SENDS: readonly PendingSend[] = []
-const NO_STREAM: SessionStreamState = { timeline: emptyAgentWatchTimeline(), phase: 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
 const timelineLog = rendererLogger('agent-watch/timeline')
 
 function newLocalId(): string {
@@ -151,8 +150,8 @@ export function useTimelineSession(
 ): AgentWatchSession {
   // 首帧就是上次那一份(会话流 store / 内存),❌ 先画一帧空线程:owner 10-12「进运行中的任务页,一进去就颤两下」。
   const streamKey = useMemo(() => (deviceId && sessionId ? { deviceId, sessionId } : null), [deviceId, sessionId])
-  const followed = useSelect(sessionStreams, (map) => (streamKey ? map.get(sessionStreamKey(streamKey)) : undefined), Object.is)
-  const initial = useMemo(() => (streamKey ? initialSessionStream(streamKey, client.boundedWindow) : NO_STREAM), [streamKey, client.boundedWindow])
+  const followed = useSelect(sessionStreams, (map) => (streamKey ? map[sessionStreamKey(streamKey)] : undefined), Object.is)
+  const initial = useMemo(() => initialSessionStream(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
   const { timeline, phase, error, link, errorCode, waitingForRecord } = followed ?? initial
   const { setTimeline } = useMemo(() => streamWriters(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
   // 动作失败与读失败分开存:两者的标题、位置、能做的补救都不是一回事 ——
@@ -375,17 +374,17 @@ type SessionFollow = {
 // One follow per session stream (the entry it writes): ❌ per client object or `enabled`.
 const follows = new Map<string, SessionFollow>()
 
+/** Writes a session's stream state: the fields one step changes, together (one notify), or the timeline by a change. */
 function streamWriters(streamKey: { deviceId: string; sessionId: string } | null, boundedWindow: boolean | undefined) {
-  const write = (change: (current: SessionStreamState) => SessionStreamState) => { if (streamKey) updateSessionStream(streamKey, change, boundedWindow) }
-  const field = <K extends keyof SessionStreamState>(name: K) =>
-    (value: SessionStreamState[K] | ((current: SessionStreamState[K]) => SessionStreamState[K])) =>
-      write((current) => {
-        const next = typeof value === 'function' ? (value as (old: SessionStreamState[K]) => SessionStreamState[K])(current[name]) : value
-        return next === current[name] ? current : { ...current, [name]: next }
-      })
+  const write = (change: (current: SessionStreamState) => Partial<SessionStreamState>) => {
+    if (streamKey) updateSessionStream(streamKey, (current) => {
+      const next = change(current)
+      return (Object.keys(next) as (keyof SessionStreamState)[]).every((name) => Object.is(next[name], current[name])) ? current : { ...current, ...next }
+    }, boundedWindow)
+  }
   return {
-    setTimeline: field('timeline'), setPhase: field('phase'), setError: field('error'), setLink: field('link'),
-    setErrorCode: field('errorCode'), setWaitingForRecord: field('waitingForRecord'),
+    write: (fields: Partial<SessionStreamState>) => write(() => fields),
+    setTimeline: (change: (current: AgentWatchTimeline) => AgentWatchTimeline) => write((current) => ({ timeline: change(current.timeline) })),
   }
 }
 
@@ -428,7 +427,7 @@ function restartSessionFollow(params: FollowParams): void {
 
 function runSessionFollow(follow: SessionFollow): () => void {
   const { client, deviceId, sessionId, enabled } = follow.params
-  const { setTimeline, setPhase, setError, setLink, setErrorCode, setWaitingForRecord } = streamWriters({ deviceId, sessionId }, client.boundedWindow)
+  const { write, setTimeline } = streamWriters({ deviceId, sessionId }, client.boundedWindow)
   const applyResult = (result: TimelineAfterResult) => {
     // Invalidate before applying resolutions: no older promise can resurrect a ticket.
     if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) follow.resetOlder()
@@ -444,12 +443,9 @@ function runSessionFollow(follow: SessionFollow): () => void {
   if (!enabled) {
     // Its machine is away: what this phone saw last time is still true, so it is still shown — ❌ a blank page.
     let cancelled = false
-    setError(null)
-    setErrorCode(null)
-    setLink('lost')
     const cached = client.boundedWindow ? null : readCachedTimeline({ deviceId, sessionId })
-    setTimeline(cached ?? emptyAgentWatchTimeline())
-    if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
+    write({ error: null, errorCode: null, link: 'lost', timeline: cached ?? emptyAgentWatchTimeline() })
+    if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) write({ timeline: stored }) })
     return () => { cancelled = true }
   }
   let cancelled = false
@@ -459,19 +455,15 @@ function runSessionFollow(follow: SessionFollow): () => void {
   follow.ready = false
   follow.synced = false
   follow.cursor = null
-  setError(null)
-  setLink('connecting')
+  write({ error: null, link: 'connecting' })
 
   // 先画上次看到的那一份(本地底稿),再去对账(owner 2026-09-08);底稿只活到第一次对账为止。
   const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
   if (cached) {
-    setTimeline(cached)
     follow.cursor = cached.cursor
     follow.ready = true
-    setPhase('ready')
-  } else {
-    setPhase('loading')
   }
+  write(cached ? { timeline: cached, phase: 'ready' } : { phase: 'loading' })
 
   // 补缺口失败不清空已有的那一份(屏幕上那段仍是真的);按退避自动补,耗尽才报原文,补上了只收回自己报的那条。
   let catchUpReported = false
@@ -483,22 +475,15 @@ function runSessionFollow(follow: SessionFollow): () => void {
     void recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
       .then((result) => {
         if (cancelled) return
-        setLink('ok')
-        if (catchUpReported) {
-          catchUpReported = false
-          setError(null)
-          setErrorCode(null)
-        }
+        write(catchUpReported ? { link: 'ok', error: null, errorCode: null } : { link: 'ok' })
+        catchUpReported = false
         applyResult(result)
         follow.synced = true
       })
       .catch((err) => {
         if (cancelled) return
-        setLink('lost')
-        const code = rpcErrorCode(err)
         catchUpReported = true
-        setError(messageForUser(err))
-        setErrorCode(code)
+        write({ link: 'lost', error: messageForUser(err), errorCode: rpcErrorCode(err) })
       }).finally(() => { catchUpRunning = false })
   }
 
@@ -510,10 +495,9 @@ function runSessionFollow(follow: SessionFollow): () => void {
         new Promise<null>((resolve) => setTimeout(() => resolve(null), HYDRATE_BUDGET_MS)),
       ]).then((stored) => {
         if (cancelled || follow.ready || !stored) return
-        setTimeline(stored)
         follow.cursor = stored.cursor
         follow.ready = true
-        setPhase('ready')
+        write({ timeline: stored, phase: 'ready' })
       })
 
   // 先挂监听再发 subscribe:反过来的话,宿主在应答与挂监听之间推的那一批没人收。
@@ -528,14 +512,14 @@ function runSessionFollow(follow: SessionFollow): () => void {
       reload()
       return
     }
-    setLink('lost')
+    write({ link: 'lost' })
     catchUp()
   })
   // 窗口断了:标断开;又通了:那台机器已经拆了这条订阅(订阅跟着窗口生灭),整个重来 —— 手里有游标就只重订 + 补差量。
   const stopLink = client.onLinkChange(deviceId, (open) => {
     if (cancelled) return
     if (open) reload()
-    else setLink('lost')
+    else write({ link: 'lost' })
   })
 
   const onVisible = () => {
@@ -546,7 +530,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
   const startedAt = Date.now()
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let attempt = 0
-  setWaitingForRecord(false)
+  write({ waitingForRecord: false })
 
   const loadSnapshot = async (): Promise<void> => {
     try {
@@ -556,29 +540,23 @@ function runSessionFollow(follow: SessionFollow): () => void {
       if (follow.ready && follow.cursor) {
         await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor)
         if (cancelled) return
-        setWaitingForRecord(false)
-        setError(null)
-        setErrorCode(null)
-        setLink('ok')
+        write({ waitingForRecord: false, error: null, errorCode: null, link: 'ok' })
         attempt = 0
         catchUp()
         return
       }
       const snapshot = await client.fetchSnapshot(deviceId, sessionId)
       if (cancelled) return
-      setWaitingForRecord(false)
-      setError(null)
       follow.resetOlder()
-      setTimeline((current) => applySnapshot(current, snapshot))
       follow.cursor = snapshot.cursor
       follow.ready = true
       follow.synced = true
-      setPhase('ready')
+      setTimeline((current) => applySnapshot(current, snapshot))
+      write({ waitingForRecord: false, error: null, phase: 'ready' })
       await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor)
       if (cancelled) return
       attempt = 0
-      setErrorCode(null)
-      setLink('ok')
+      write({ errorCode: null, link: 'ok' })
     } catch (err) {
       if (cancelled) return
       const code = rpcErrorCode(err)
@@ -589,18 +567,14 @@ function runSessionFollow(follow: SessionFollow): () => void {
         : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
       if (delay !== null) {
         // That machine did not answer: still tried again, but the page can say so meanwhile (link), ❌ a silent spinner.
-        if (code === 'timeout') setLink('lost')
+        if (code === 'timeout') write({ link: 'lost' })
         // 记录还没写出来:留在 loading,过一会儿再读;❌ 不报红。
-        setWaitingForRecord(code === 'record_not_found')
+        write({ waitingForRecord: code === 'record_not_found' })
         if (code === 'record_not_found') follow.synced = true
         retryTimer = setTimeout(() => { void loadSnapshot() }, delay)
         return
       }
-      setWaitingForRecord(false)
-      setError(messageForUser(err))
-      setErrorCode(code)
-      setLink('lost')
-      setPhase(follow.ready ? 'ready' : 'error')
+      write({ waitingForRecord: false, error: messageForUser(err), errorCode: code, link: 'lost', phase: follow.ready ? 'ready' : 'error' })
     }
   }
   void loadSnapshot()
@@ -615,7 +589,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
     stopEvents()
     stopErrors?.()
     // 走之前把手里这份存下来:下次进来第一帧就有东西。
-    const current = sessionStreams.get().get(sessionStreamKey(cacheKey))?.timeline ?? emptyAgentWatchTimeline()
+    const current = sessionStreams.get()[sessionStreamKey(cacheKey)]?.timeline ?? emptyAgentWatchTimeline()
     if (!client.boundedWindow && current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
     // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
     void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
