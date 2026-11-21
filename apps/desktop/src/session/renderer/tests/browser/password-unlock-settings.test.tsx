@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import type { PasswordBetaUi, PasswordSnapshot, PasswordSyncView } from '@gugu/core/shared/passwordBetaProtocol';
 import { PasswordSection } from '@/components/settings/PasswordSection';
 import { PasswordDeviceHost } from '@/components/password/PasswordDeviceHost';
+import { NoticeHost } from '@/components/NoticeHost';
 import { Pane, PaneHeader } from '@/components/ui/Pane';
 import { followRendererSession, queryClient } from '@/lib/replica';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -48,13 +49,15 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
 });
 async function mount(corner = false) {
-  await harness.render(<Frame>{corner && <PasswordDeviceHost />}</Frame>);
+  await harness.render(<><NoticeHost /><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull());
   return harness.container.querySelector<HTMLElement>('[data-testid="password-unlock-settings"]')!;
 }
 async function push(next: PasswordSnapshot) {
   await act(async () => { current = next; for (const listener of listeners) listener(); });
 }
+// The join card is a notice in the one NoticeHost: its sonner item (title + content + close), not the one leaving.
+const joinCard = () => [...document.querySelectorAll('[data-sonner-toast]')].find(toast => toast.getAttribute('data-removed') !== 'true' && toast.querySelector('[data-testid="password-join-card"]')) ?? null;
 const button = (scope: ParentNode, name: string) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.trim() === name)!;
 async function capture(name: string) {
   if (import.meta.env.VITE_OWNER_CAPTURE_PHASE) await page.screenshot({ element: document.body,
@@ -78,9 +81,9 @@ it.each(['light', 'dark'])('uses the full-page entry and grouped code while reta
   expect(box.top - heading.bottom).toBeGreaterThanOrEqual(115);
   expect(box.top - heading.bottom).toBeLessThanOrEqual(140);
   await capture(`joining-${theme}`);
-  const corner = document.querySelector('[data-testid="password-join-card"]')!;
-  await page.elementLocator(corner.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!).click();
-  expect(document.querySelector('[data-testid="password-join-card"]')).toBeNull();
+  await vi.waitFor(() => expect(joinCard()).not.toBeNull());
+  await page.elementLocator(joinCard()!.querySelector<HTMLButtonElement>('[data-close-button]')!).click();
+  await vi.waitFor(() => expect(joinCard()).toBeNull());
   expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull();
 });
 
@@ -114,7 +117,8 @@ it('asks again after refusal and updates both the settings entry and corner from
   await page.elementLocator(button(entry, 'Request again')).click();
   expect(invoke).toHaveBeenCalledWith({ type: 'sync-ask-again' });
   await vi.waitFor(() => expect(entry.querySelector('[data-testid="password-unlock-code"]')?.textContent).toBe('123 456'));
-  expect(document.querySelector('[data-testid="password-join-card"]')?.textContent).not.toContain('declined');
+  await vi.waitFor(() => expect(joinCard()?.textContent).toContain('another device'));
+  expect(joinCard()?.textContent).not.toContain('declined');
 });
 
 it('restores the list automatically when another device approves', async () => {
@@ -122,7 +126,7 @@ it('restores the list automatically when another device approves', async () => {
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-settings"]')).not.toBeNull());
   expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).toBeNull();
   expect(harness.container.textContent).toContain('Example login');
-  expect(document.querySelector('[data-testid="password-join-card"]')).toBeNull();
+  await vi.waitFor(() => expect(joinCard()).toBeNull());
   expect(button(harness.container, 'Add')).not.toBeUndefined();
   await capture('approved');
 });
