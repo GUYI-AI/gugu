@@ -710,8 +710,19 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const hash = hashKey(k)
       const mine = (rereads.get(hash) ?? 0) + 1
       rereads.set(hash, mine)
-      const value = await readFromKey({ queryKey: k } as QueryFunctionContext) as V
-      if (rereads.get(hash) === mine && k[1] === ownerOf(definition.scope)) {
+      const latest = () => rereads.get(hash) === mine && k[1] === ownerOf(definition.scope)
+      let value: V
+      try {
+        value = await readFromKey({ queryKey: k } as QueryFunctionContext) as V
+      } catch (error) {
+        // The failure is the reading's (a surface shown later says it), ❌ the earlier answer left standing as now.
+        if (latest()) {
+          const query = queryClient.getQueryCache().build(queryClient, { queryKey: k })
+          query.setState({ ...query.state, status: 'error', error: error as Error, errorUpdatedAt: Date.now() })
+        }
+        throw error
+      }
+      if (latest()) {
         const shown = queryClient.getQueryData(k) as V | undefined
         putValue(k, shown !== undefined && definition.merge ? definition.merge(shown, value) : value)
       }
