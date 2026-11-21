@@ -3,7 +3,7 @@ import os from 'node:os';
 import lockfile from 'proper-lockfile';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation } from './mise-installer';
+import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation, warmBundledMise } from './mise-installer';
 import { managedMiseBinDir } from './managed-agent-home';
 import * as progressMeter from './install-progress-meter';
 import * as selectionModule from './install-source-race';
@@ -558,5 +558,19 @@ describe('application-owned mise lifecycle', () => {
     expect(env.MISE_SYSTEM_CONFIG_DIR).toBe(path.join(home, 'system'));
     // The pinned engine never checks the network for a newer mise of its own.
     expect(env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
+  });
+});
+
+describe('warmBundledMise', () => {
+  it('launches the bundled mise once with the pinned environment and never throws', async () => {
+    mocks.run.mockClear();
+    mocks.run.mockResolvedValueOnce('2026.9.12');
+    await warmBundledMise();
+    const [command, args, options] = mocks.run.mock.calls[0]!;
+    expect([command, args]).toEqual([bundledMisePath(), ['--version']]);
+    expect(options.env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    mocks.run.mockRejectedValueOnce(new Error('spawn failed'));
+    await expect(warmBundledMise()).resolves.toBeUndefined();
   });
 });
