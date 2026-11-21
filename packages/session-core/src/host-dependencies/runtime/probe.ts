@@ -13,23 +13,16 @@ import type { DependencyStatus, ProbeResult } from './types';
 export const VERSION_RE = /(\d+\.\d+(?:\.\d+)*)/;
 
 /**
- * `--version` 打出的哪一行是这一家自己的(`HostDependencyDescriptor.versionLine`):恰好一行匹配才算;没声明、
- * 没有一行匹配、或不止一行匹配(包装器自己也打一行同样的标识)都是 null。读版本一律经 `versionTextOf`。
- */
-export function versionLineOf(output: string, versionLine: RegExp | undefined): string | null {
-  if (!versionLine) return null;
-  const lines = output.split('\n').map((line) => line.trim()).filter((line) => versionLine.test(line));
-  return lines.length === 1 ? lines[0] : null;
-}
-
-/**
  * 读版本的那段文字 —— 启动闸、资源库、能不能跑、会话诊断、Claude 桥配对都只经这一处。
- * 声明了自己那一行的家只认那一行:认不出就是 null(没读到版本),❌ 退回第一行或整段里的第一个数字 ——
+ * 声明了自己那一行(`HostDependencyDescriptor.versionLine`)的家只认那一行:恰好一行匹配才算;没有一行匹配、
+ * 或不止一行匹配(包装器自己也打一行同样的标识)就是 null(没读到版本),❌ 退回第一行或整段里的第一个数字 ——
  * 包装器自己的版本号(reclaude 打的 `v1.7.4`)曾被这样读成 claude 的版本,启动闸判「太旧」。
  * 没声明的家整段照旧。
  */
 export function versionTextOf(output: string, versionLine: RegExp | undefined): string | null {
-  return versionLine ? versionLineOf(output, versionLine) : output;
+  if (!versionLine) return output;
+  const lines = output.split('\n').map((line) => line.trim()).filter((line) => versionLine.test(line));
+  return lines.length === 1 ? lines[0] : null;
 }
 
 /**

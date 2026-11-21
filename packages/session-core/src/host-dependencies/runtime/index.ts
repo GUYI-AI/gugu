@@ -66,7 +66,6 @@ export {
   resolveCommandPath,
   resolveRealpath,
   runVersionProbe,
-  versionLineOf,
   versionProbeArgs,
   versionTextOf,
   withProbeSwitches,

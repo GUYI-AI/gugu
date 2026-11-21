@@ -8,7 +8,7 @@ import { pluginRegistry } from '../registry';
 /**
  * 一个包装器(wcc)先打自己的 banner,再 exec 真的 CLI:输出里两个版本号,第一行也不是它的。原来启动闸读成
  * banner 里的 1.2.74(低于 claude 的地板,判「太旧」),资源库把 banner 整行当成版本。现在每一家声明
- * `hostDependency.versionLine`(它自己那一行长什么样),三处读版本都经 `versionLineOf` 认那一行。
+ * `hostDependency.versionLine`(它自己那一行长什么样),读版本的各处都经 `versionTextOf` 只认那一行。
  * 下面每一家的输出是 2026-10-28 Linux 2 上 npm 装真包跑 `--version` 的原样(hermes 用 mac1 10-07 的原样)。
  */
 const BANNER = 'wcc: independent env -> /tmp/wcc-env\n启动中：网络通过座位转发 1.2.74\n';
