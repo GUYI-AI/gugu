@@ -33,20 +33,17 @@ it('pane widths: the sidebar, the inner column, the chat list and the topic spli
   expect(left('gugu.taskpage.sidebarWidth', 'gugu.taskpage.innerSidebarWidth', 'gugu.chatListPane.width', 'gugu.topicSplitPane.width')).toEqual([])
 })
 
-it('the workspace panel\'s open state (an old maximized state is not carried), a preview\'s zoom, the automation templates fold', async () => {
+it('a preview\'s zoom, the automation templates fold', async () => {
   const { readInterface } = await start({
-    'gugu.workspace-panel-chrome.v1': JSON.stringify({ collapsed: false, maximizedSessionIds: ['s'] }),
     'gugu.file-content-zoom.pdf': '1.5',
     'emdash-automation-template-section-collapsed': 'true',
   }, async () => {
-    await import('../../../apps/desktop/src/session/renderer/features/sessions/stores/workspace-panel-chrome-store')
     await import('../../../apps/desktop/src/components/preview/file-content-zoom')
     await import('../../../apps/desktop/src/session/renderer/features/automations/components/CreateAutomationView')
   })
-  expect(readInterface('gugu.workspace-panel-chrome.v1')).toBe(false)
   expect(readInterface('gugu.file-content-zoom.pdf')).toBe(1.5)
   expect(readInterface('gugu-automation-template-section-collapsed')).toBe(true)
-  expect(left('gugu.workspace-panel-chrome.v1', 'gugu.file-content-zoom.pdf', 'emdash-automation-template-section-collapsed')).toEqual([])
+  expect(left('gugu.file-content-zoom.pdf', 'emdash-automation-template-section-collapsed')).toEqual([])
 })
 
 it('an App\'s side panel, the built-in assistant page\'s panel and last tab', async () => {

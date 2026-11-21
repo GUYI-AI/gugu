@@ -1,0 +1,79 @@
+{
+  "_doc": "check-panel-motion.mjs: what is not on PanelTrack yet, each with its reason. Only shrinks.",
+  "layoutTransitions": {
+    "apps/desktop/src/components/assistant-ui/elements/surfaces.tsx": {
+      "count": 2,
+      "reason": "in-panel disclosure height and the tool-row width reveal (I2); PR 4"
+    },
+    "apps/desktop/src/components/markdown/PlatformCopyButton.tsx": {
+      "count": 1,
+      "reason": "transition-all on a hover colour; PR 4 narrows it to colors"
+    },
+    "apps/desktop/src/components/ui/Collapse.tsx": {
+      "count": 1,
+      "reason": "in-panel disclosure (grid-template-rows); vertical disclosures are out of scope (owner 11-21)"
+    },
+    "apps/desktop/src/session/app-runtime/ui/ui.css": {
+      "count": 1,
+      "reason": "App UI kit progress bar width (I4); PR 4 makes it scaleX"
+    },
+    "apps/desktop/src/session/renderer/features/assistant/voice-notes/voice-notes.css": {
+      "count": 1,
+      "reason": "voice level meter height (I5); PR 4 makes it scaleY"
+    },
+    "apps/desktop/src/session/renderer/features/automations/components/CreateAutomationView.tsx": {
+      "count": 1,
+      "reason": "in-panel disclosure height; vertical disclosures are out of scope (owner 11-21)"
+    },
+    "apps/desktop/src/session/renderer/features/library/themes/themes-library-page.tsx": {
+      "count": 1,
+      "reason": "transition-all on a card's hover layer; PR 4 narrows it to colors"
+    },
+    "apps/desktop/src/session/renderer/features/sessions/session-config/session-view-control.tsx": {
+      "count": 1,
+      "reason": "label swap max-width (I3); PR 4 shares one label-swap component"
+    },
+    "apps/desktop/src/session/renderer/features/settings/agents-page/InstallProgressRow.tsx": {
+      "count": 2,
+      "reason": "install progress bar width (I4); PR 4 makes it scaleX"
+    },
+    "apps/desktop/src/session/renderer/features/settings/components/IntegrationGridCard.tsx": {
+      "count": 1,
+      "reason": "transition-all on a card's hover layer; PR 4 narrows it to colors"
+    },
+    "apps/desktop/src/session/renderer/features/sidebar/inner-sidebar-parts.tsx": {
+      "count": 1,
+      "reason": "head-row button reveal width (I3); PR 4 shares one label-swap component"
+    },
+    "apps/desktop/src/session/renderer/lib/ui/assistant-ui/surfaces.tsx": {
+      "count": 2,
+      "reason": "in-panel disclosure height and the tool-row width reveal (I2); PR 4"
+    },
+    "apps/desktop/src/session/renderer/lib/ui/badge.tsx": {
+      "count": 1,
+      "reason": "transition-all on a badge's colours; PR 4 narrows it to colors"
+    },
+    "apps/desktop/src/session/renderer/lib/ui/switch.tsx": {
+      "count": 1,
+      "reason": "transition-all on a switch's colours; PR 4 narrows it to colors"
+    },
+    "apps/desktop/src/styles/tokens.css": {
+      "count": 1,
+      "reason": "progress bar width (I4); PR 4 makes it scaleX"
+    }
+  },
+  "motionImporters": {
+    "apps/desktop/src/components/chat/MessageBubble.tsx": "a reaction chip's pop (scale), not a panel",
+    "apps/desktop/src/components/chat/RightPanel.tsx": "desktop side panel slide (D6); PR 4 moves it onto the track",
+    "apps/desktop/src/components/chat/TopicSplitPane.tsx": "topic pane slide (D5); PR 4 moves it onto the track",
+    "apps/desktop/src/components/chat/groupSettingsUi.tsx": "settings sub-page swap inside its panel (x / opacity, I1), not a panel's size",
+    "apps/desktop/src/components/chat/useMessageFilePreview.tsx": "message file preview side panel (D11): slides in with x while its place jumps open; PR 4 moves it onto the track",
+    "apps/desktop/src/mobile/phoneChatMotion.ts": "phone page push; phone is out of scope (owner 11-21)",
+    "apps/desktop/src/pages/LoginPage.tsx": "login page motion, not a panel",
+    "apps/desktop/src/session/renderer/lib/drop-highlight.tsx": "drop-target highlight following its target, an overlay out of the flow, not a panel",
+    "apps/desktop/src/session/renderer/lib/layout/layout-provider.tsx": "motion values the track publishes (edges, progress), no animation",
+    "apps/desktop/src/session/renderer/lib/layout/panel-resize-handle.tsx": "motion values for the handles' offsets, no animation",
+    "apps/desktop/src/session/renderer/lib/layout/panel-track.ts": "the track itself",
+    "apps/desktop/src/session/renderer/lib/ui/animated-height.tsx": "in-panel disclosure height; vertical disclosures are out of scope (owner 11-21)"
+  }
+}

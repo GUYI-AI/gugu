@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { act } from 'react';
@@ -33,23 +32,19 @@ vi.mock('@renderer/lib/components/titlebar/shell-titlebar', async (original) => 
 
 const LIST_KEY = 'gugu.taskpage.sidebarWidth';
 
-/** The column as InnerSidebarFrame draws it: its width from the layout, reported while it is drawn. */
-function InnerColumn() {
-  const width = useInnerSidebarFrame();
+/** The column as InnerSidebarFrame draws it: filling the slot the layout sizes, reported while it is mounted. */
+function InnerColumn({ folded }: { folded: boolean }) {
+  useInnerSidebarFrame(folded);
   return (
-    <motion.div
-      data-region="inner-sidebar"
-      className="relative isolate flex h-full shrink-0 flex-col bg-background-tertiary"
-      style={{ width }}
-    >
+    <div data-region="inner-sidebar" className="relative isolate flex h-full w-full flex-col bg-background-tertiary">
       <span>群里的智能体与话题</span>
-    </motion.div>
+    </div>
   );
 }
 
-/** Folding the column unmounts it, as InnerSidebar does. */
+/** Folding the column keeps it mounted and reports it folded, as InnerSidebar does. */
 const columnShown = observable.box(true);
-const FoldableColumn = observer(() => (columnShown.get() ? <InnerColumn /> : null));
+const FoldableColumn = observer(() => <InnerColumn folded={!columnShown.get()} />);
 
 let harness: ReturnType<typeof createReactHarness>;
 beforeEach(async () => {
@@ -107,6 +102,9 @@ const centreX = (element: HTMLElement) => {
   return box.left + box.width / 2;
 };
 
+/** The track writes the slots at once; a handle rides on a motion value, written in framer's frame step before the same paint. */
+const nextPaint = () => new Promise(requestAnimationFrame);
+
 /** A mouse drag on the handle, one move at a time (pointer 1 is the mouse, so pointer capture takes it). */
 function pointer(type: 'pointerdown' | 'pointermove' | 'pointerup', target: HTMLElement, clientX: number) {
   target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX, clientY: 200 }));
@@ -152,6 +150,7 @@ it('dragging resizes the column live; the width is stored on release under its o
   pointer('pointermove', handle, start + 60);
   await expect.poll(() => width(ui.column()!)).toBe(300);
   expect(ui.surface().getBoundingClientRect().left, 'the content gives way at once').toBeCloseTo(ui.column()!.getBoundingClientRect().right);
+  await nextPaint();
   expect(centreX(handle), 'the handle moves with the edge').toBeCloseTo(ui.column()!.getBoundingClientRect().right);
   expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing is stored mid-drag').toBeUndefined();
   pointer('pointerup', handle, start + 60);
@@ -213,6 +212,7 @@ it('a narrower window or a wider list makes the column give way; the stored widt
   // 1000 wide, list 240: the card is 760, 40% of it is 304.
   await page.viewport(1000, 700);
   await expect.poll(() => width(ui.column()!)).toBe(304);
+  await nextPaint();
   expect(centreX(ui.innerHandle()!)).toBeCloseTo(ui.column()!.getBoundingClientRect().right);
 
   // The list dragged to its own cap (40% of 1000): the card is 600, 40% of it is 240.
@@ -272,7 +272,7 @@ it('the drag guard sits over the tab strip behind the content, so pressing there
   expect(band.left, 'the strip reaches under the handle\'s right half').toBeLessThan(box.right);
   expect(band.left).toBeGreaterThanOrEqual(box.left);
   // The handle stays before the column in document order: the card's two halves are adjacent siblings (desktop-shell.css).
-  expect(ui.column()!.nextElementSibling).toBe(ui.surface());
+  expect(ui.column()!.closest('[data-panel-slot]')!.nextElementSibling).toBe(ui.surface());
 });
 
 it('folding the column takes its handle and guard away; unfolding brings them back at the same width', async () => {
