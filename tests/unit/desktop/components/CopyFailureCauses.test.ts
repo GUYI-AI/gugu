@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExtPanel } from '../../../../apps/desktop/src/components/agentsettings/AgentSharePane'
 import { GroupInviteActions } from '../../../../apps/desktop/src/components/chat/GroupInviteShare'
-import { GroupInviteQrShare } from '../../../../apps/desktop/src/components/contacts/GroupInvite'
+import { GroupInviteRow } from '../../../../apps/desktop/src/components/contacts/GroupInvite'
 import { MessageLoadFailure } from '../../../../apps/desktop/src/components/chat/MessageLoadFailure'
 import { platform } from '../../../../apps/desktop/src/platform'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
@@ -43,7 +43,7 @@ describe('copy actions preserve the refusal', () => {
   })
   it('shows the cause when copying the group link from its contacts page', async () => {
     const toast = vi.fn()
-    await renderWithAppProviders(harness, createNode(GroupInviteQrShare, { group: { id: 'group', public_id: 123, kind: 'group', name: 'Group', avatar_url: null, member_count: 1, is_muted: false } }), { toast })
+    await renderWithAppProviders(harness, createNode(GroupInviteRow, { group: { id: 'group', public_id: 123, kind: 'group', name: 'Group', avatar_url: null, member_count: 1, is_muted: false } }), { toast })
     await waitForCondition(() => harness.container.querySelector('[data-testid="group-invite-copy-link"]') !== null, 'invite link was never ready')
     await clickElement(harness.container.querySelector('[data-testid="group-invite-copy-link"]')!)
     expect(toast).toHaveBeenCalledWith('复制失败', 'error', reason)

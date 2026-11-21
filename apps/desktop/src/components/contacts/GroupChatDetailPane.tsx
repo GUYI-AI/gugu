@@ -21,7 +21,7 @@ import { Pane, PaneHeader } from '../ui/Pane'
 import { Unknown } from '../ui/Unknown'
 import { PaneBackButton } from './ContactDetail'
 import { ContactGroupAvatar } from './ContactSearch'
-import { GroupInviteQrShare } from './GroupInvite'
+import { GroupInviteRow } from './GroupInvite'
 import { useGroupProject } from './groupRowFacts'
 import { ct, detailCaptionClass, detailPlaceholderClass, detailSectionClass, detailTitleClass } from './contactsPanelStyles'
 
@@ -94,7 +94,7 @@ function GroupDetail({ group, mobile, onBack, onOpenGroupChat }: { group: Contac
               value={chatPublicId(group) ? <CopyValue value={chatPublicId(group)!} message={ct('groupDetail.copiedNumber')} /> : ct('common.unassigned')}
             />
             {bound ? <FieldRow label={ct('groupDetail.folder')} value={[folderMachine, bound.project.rootPath].filter(Boolean).join(' · ')} /> : null}
-            <GroupInviteQrShare group={group} />
+            <GroupInviteRow group={group} />
           </FieldList>
         </section>
 
