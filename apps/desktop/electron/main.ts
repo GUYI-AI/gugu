@@ -6436,6 +6436,13 @@ app.whenReady().then(async () => {
       .then(() => { adoptCloudTaskNames = adoptTaskNames; return adoptTaskNames() })
       .catch((error: unknown) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting task names failed'))
     refreshPlatformCredentials()
+    // The resource monitor switch is also the agents' grant to read it (ResourceMonitorSettingsPage): a monitor that was
+    // already on, from before that or from another start, gets the perf group connected here.
+    void emdashBoot.then(async () => {
+      if (!(await appSettingsService.get('resourceMonitor')).enabled || !deviceActionsRuntime().ungrantedGroup('perf.snapshot')) return
+      const result = await deviceActionsRuntime().connect('perf')
+      if (!result.ok) createLogger('device-actions').warn({ code: result.code, message: result.message }, 'could not connect perf for the running resource monitor')
+    }).catch((error: unknown) => createLogger('device-actions').warn({ error: String(error) }, 'could not connect perf for the running resource monitor'))
     // session-life signs in once the backend that owns it is up; later account changes come through the auth IPC.
     void emdashBoot.then(async () => {
       sessionLifeBooted = true
