@@ -1,16 +1,5 @@
 import { replica } from '@/lib/replica'
-import { iosCalendarPermissions, type IOSCalendarPermissionClient, type IOSCalendarSnapshot } from './iosCalendarPermissions'
-
-let client: IOSCalendarPermissionClient = iosCalendarPermissions
-
-/** Test seam: the native client behind the replica and the commands (undefined = the real one). */
-export function setIOSCalendarClientForTesting(next?: IOSCalendarPermissionClient): void {
-  client = next ?? iosCalendarPermissions
-}
-
-export function iosCalendarClient(): IOSCalendarPermissionClient {
-  return client
-}
+import { iosCalendarPermissions, type IOSCalendarSnapshot } from './iosCalendarPermissions'
 
 /**
  * This phone's calendar for the account (native owner binding). Signal tier: the panel drops the shown value and reads again
@@ -19,6 +8,5 @@ export function iosCalendarClient(): IOSCalendarPermissionClient {
 export const iosCalendarConnection = replica({
   name: 'iosCalendarConnection',
   scope: 'account',
-  read: (owner: string): Promise<IOSCalendarSnapshot> => client.read(owner),
-  fresh: 0,
+  read: (owner: string): Promise<IOSCalendarSnapshot> => iosCalendarPermissions.read(owner),
 })

@@ -12,9 +12,15 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
     native.foreground = listener; native.failed = failed; return native.unsubscribe
   },
 } }))
+// The native client behind the replica and the panel's commands: each case puts its own transport here.
+const native2 = vi.hoisted(() => ({ client: null as null | import('../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions').IOSCalendarPermissionClient }))
+vi.mock('../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions', async (original) => ({ ...await original<object>(), iosCalendarPermissions: {
+  read: (owner: string) => native2.client!.read(owner),
+  connect: (binding: never) => native2.client!.connect(binding),
+  disconnect: (binding: never) => native2.client!.disconnect(binding),
+} }))
 
 import { IOSCalendarPermissionsPanel } from '../../../../apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPanel'
-import { setIOSCalendarClientForTesting } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarConnection'
 import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
 import { freshReplicaAccount } from '../../../support/replicaAccount'
 import { IOSCalendarPermissionError } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions'
@@ -34,14 +40,14 @@ beforeEach(async () => {
   await freshReplicaAccount('owner-a')
   vi.clearAllMocks(); native.foreground = null; native.failed = null; native.active = null; native.activeInitially = false; harness = createReactHarness()
 })
-afterEach(() => { harness.cleanup(); vi.useRealTimers(); setIOSCalendarClientForTesting() })
+afterEach(() => { harness.cleanup(); vi.useRealTimers(); native2.client = null })
 
 const permissionText = () => harness.container.querySelector('[role="status"]')?.textContent
 const reload = () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="重新读取日历权限"]')!
 const action = () => Array.from(harness.container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '连接日历' || button.textContent === '断开日历')!
-/** The native client behind the replica (the module seam); the page's owner is the signed-in account. */
+/** The native client behind the replica (the mocked module); the page's owner is the signed-in account. */
 const render = async (transport: IOSCalendarPermissionClient, ownerId = 'owner-a') => {
-  setIOSCalendarClientForTesting(transport)
+  native2.client = transport
   followRendererSession('SIGNED_IN', ownerId)
   await harness.render(createNode(IOSCalendarPermissionsPanel, { ownerId }))
 }
@@ -339,8 +345,7 @@ describe('iOS calendar permission panel', () => {
     const fresh = await import('../../../../apps/desktop/src/lib/replica')
     fresh.followRendererSession('SIGNED_IN', 'owner-a')
     const panel = await import('../../../../apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPanel')
-    const seam = await import('../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarConnection')
-    seam.setIOSCalendarClientForTesting(client(vi.fn(() => new Promise<IOSCalendarSnapshot>(() => {}))))
+    native2.client = client(vi.fn(() => new Promise<IOSCalendarSnapshot>(() => {})))
     await harness.render(createNode(panel.IOSCalendarPermissionsPanel, { ownerId: 'owner-a' }))
     expect(permissionText()).not.toBe('已连接')
     expect(action()).toBeUndefined()
