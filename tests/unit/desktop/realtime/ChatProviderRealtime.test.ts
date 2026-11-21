@@ -978,11 +978,12 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     expect(readMock).toHaveBeenLastCalledWith('chat-1', 3)
   })
 
-  it('#5649 a thread reply still takes the gap-heal path', async () => {
+  it('#5649 a thread reply is its thread\'s arrival, not a main-timeline gap', async () => {
     // A main-stream arrival lands from the message store (the revision log delivers a chat's visible messages in seq
-    // order, so it cannot skip one); a thread reply is not in the main window, so its line repairs with the thread.
+    // order, so it cannot skip one). A thread reply takes a chat seq too, but the main timeline with no thread open
+    // reads nothing for it, and the next main message after it is no hole either.
     const before = message({ id: 'before', seq: 1, content: 'before' })
-    serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Fresh chat', next_message_seq: 4 })]))
+    serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Fresh chat', next_message_seq: 5 })]))
     chatServiceMock.getMessages.mockResolvedValueOnce([before]).mockResolvedValue([])
     const harness = await renderActiveChat()
     await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'two', tombstone: false, message: {
@@ -993,7 +994,12 @@ describe('#947 persistent message-window cache (cold start + freshness gating)',
     await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'reply', tombstone: false, message: {
       id: 'reply', chat_id: 'chat-1', sender_user_id: 'user-2', seq: 3, content: 'reply', content_type: 'text', created_at: '2026-09-15T00:00:03Z', thread_root_id: 'two',
     } })
-    expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(2)
+    await emitRevision('message_created', { chat_id: 'chat-1', entity_id: 'four', tombstone: false, message: {
+      id: 'four', chat_id: 'chat-1', sender_user_id: 'user-2', seq: 4, content: 'four', content_type: 'text', created_at: '2026-09-15T00:00:04Z',
+    } })
+    expectTextContains(harness, 'before', 'two', 'four')
+    expect(latestStore?.messages.map((m) => m.id)).not.toContain('reply')
+    expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(1)
   })
 
   it('#5649 one member\'s read event never drops the other members from the receipt denominator', async () => {

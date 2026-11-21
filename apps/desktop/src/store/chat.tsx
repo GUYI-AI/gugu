@@ -542,7 +542,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     const stop = subscribeChatLineRevisions(subscribeAccountRevision, {
       userId: userId!, chatId: () => cancelled ? null : chatId,
       readCommittedMessage: id => (messageWindow(userId!, chatId) ?? cache.rows(chatId)).find(message => message.id === id),
-      noteCommittedMessages,
+      noteCommittedMessages, threadRootId: () => cache.view(chatId).activeThreadRootId, ownsThread: rootId => !!unreadNavigationRef.current?.ownsThread(chatId, rootId),
       maxSeqOf, getMessageSnapshotEpoch, applyMessagesSnapshot, healMessageGap, revalidateWindowOverlays,
       setMessagesAndCache, setThreadMessages: (update) => setThreadMessagesFor(chatId, update),
       ...memberReadPorts(chatId),

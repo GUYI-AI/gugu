@@ -53,6 +53,7 @@ describe('archived-agent delivery revisions', () => {
     const line: ChatLine = {
       userId: 'viewer', chatId: () => 'chat-1', maxSeqOf: () => 2, getMessageSnapshotEpoch: () => 0,
       readCommittedMessage: id => cache.rows('chat-1').find(row => row.id === id),
+      threadRootId: () => null, ownsThread: () => false,
       noteCommittedMessages: vi.fn(),
       applyMessagesSnapshot: vi.fn(), healMessageGap: vi.fn(), revalidateWindowOverlays: revalidate,
       setMessagesAndCache: (update) => cache.update('chat-1', update),

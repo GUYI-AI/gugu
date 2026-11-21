@@ -14,6 +14,9 @@ import { chatService } from './chat'
 import { UI_EVENTS } from './uiEvents'
 import { rendererLogger } from './log'
 import { invalidateReactions, persistMessagePatches } from './chatMessageRevalidation'
+import { readMessagePage } from './messageIngest'
+import { markLatestThreadRead } from './chatUnreadLocator'
+import { upsertMessageById } from '@gugu/core/shared/ui/messageListModels'
 import {
   readDeliveryRevision,
   readMemberReadRevision,
@@ -45,6 +48,10 @@ export type ChatLine = RealtimeMessageMutators & MemberReadSeqsStore & {
   chatId: () => string | null
   maxSeqOf: (chatId: string) => number
   readCommittedMessage: (messageId: string) => MessageItem | undefined
+  /** The thread this line shows (null = its main timeline); only that thread's replies reach the line. */
+  threadRootId: () => string | null
+  /** An unread navigation owns this thread's read position. */
+  ownsThread: (rootId: string) => boolean
   noteCommittedMessages: (chatId: string, messages: readonly MessageItem[]) => void
   getMessageSnapshotEpoch: (chatId: string) => number
   /** readSeqs 为 null = 载荷里没有水位信息,别动成员已读表(空表会被当成「没有其他成员」把圆环全抹掉)。 */
@@ -181,20 +188,42 @@ function applyDeliveryRevisions(line: ChatLine): AccountRevisionListener {
 }
 
 // Account ingestion already committed complete rows and published the shared
-// cache. A line only requests the existing repair for missing rows, threads or
+// cache. A line only requests the existing repair for missing rows or
 // unverified coverage; it does not decode and persist the same arrival again.
+// A thread reply is its thread's arrival, not a hole in the main timeline: the
+// line shows it only when that thread is open, from the store, with no read.
 function applyMessageCreatedRevisions(line: ChatLine): AccountRevisionListener {
   return async (operations) => {
     const chatId = line.chatId()
     if (!chatId) return
     const arrivals = operations.map((operation) => readMessageCreatedRevision(operation.payload)).filter((arrival) => arrival.chatId === chatId)
     if (arrivals.length === 0) return
+    const main: MessageItem[] = []
+    const replies: string[] = []
     for (const arrival of arrivals) {
+      const root = arrival.message?.thread_root_id
+      if (typeof root === 'string' && root) {
+        if (root === line.threadRootId()) replies.push(arrival.messageId)
+        continue
+      }
       const item = line.readCommittedMessage(arrival.messageId)
       if (!item || item.thread_root_id || item.is_thread_root) return line.healMessageGap(chatId, true)
+      main.push(item)
     }
-    line.noteCommittedMessages(chatId, arrivals.map(arrival => line.readCommittedMessage(arrival.messageId)!))
+    if (replies.length && !(await showThreadReplies(line, chatId, replies))) return line.healMessageGap(chatId, true)
     // The account transaction already persisted these rows. The shared cache
     // subscription publishes them; no second decode or window write is needed.
+    if (main.length) line.noteCommittedMessages(chatId, main)
   }
+}
+
+/** False when the store does not hold every reply (nothing committed them): the caller repairs with a read. */
+async function showThreadReplies(line: ChatLine, chatId: string, ids: string[]): Promise<boolean> {
+  const rootId = line.threadRootId()
+  const { rows } = await readMessagePage(line.userId, { ids, limit: ids.length })
+  if (rows.length < ids.length) return false
+  if (!rootId || line.chatId() !== chatId || line.threadRootId() !== rootId) return true
+  line.setThreadMessages((prev) => rows.reduce(upsertMessageById, prev))
+  if (!line.ownsThread(rootId)) markLatestThreadRead(chatId, rootId, rows)
+  return true
 }
