@@ -24,7 +24,7 @@ export const phoneMarketCatalog = replica({
   scope: 'device',
   read: async (_owner: string, platform: AppPlatform): Promise<{ entries: CloudMarketEntry[] }> => {
     const entries = await (platform === 'phone' ? phoneApps.market.entries() : phoneApps.market.entries(false, platform))
-    keepShelf(shelfKey(platform), entries, null, null)
+    keepShelf(shelfKey(platform), entries, null)
     return { entries }
   },
   local: (_owner: string, platform: AppPlatform) => {

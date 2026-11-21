@@ -83,7 +83,7 @@ export const marketShelf = replica({
   scope: 'device',
   read: async (_owner: string, hostKey: string): Promise<MarketShelfFull> => {
     const full = await readDesktopShelf(hostKey);
-    if (!full.errorKind) keepShelf(hostKey, full.items, null, { invalid: full.invalid, total: full.total, page: full.page } satisfies KeptExtra);
+    if (!full.errorKind) keepShelf(hostKey, full.items, { invalid: full.invalid, total: full.total, page: full.page } satisfies KeptExtra);
     return full;
   },
   local: (_owner: string, hostKey: string): MarketShelfFull | undefined => {
