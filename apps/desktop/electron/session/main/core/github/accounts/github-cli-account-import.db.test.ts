@@ -122,7 +122,7 @@ describe('GitHubCliAccountImportService', () => {
         login: 'monalisa',
         avatarUrl: '',
       },
-    });
+    }, fixture.vault);
     await expect(
       fixture.registry.resolveSecret(GITHUB_PROVIDER_ID, 'github.com:42')
     ).resolves.toBe('gho_monalisa');
@@ -166,7 +166,7 @@ describe('GitHubCliAccountImportService', () => {
         login: 'monalisa',
         avatarUrl: '',
       },
-    });
+    }, fixture.vault);
 
     const service = makeService(
       JSON.stringify({
@@ -220,7 +220,7 @@ describe('GitHubCliAccountImportService', () => {
         login: 'hubot',
         avatarUrl: '',
       },
-    });
+    }, fixture.vault);
 
     const service = makeService(
       JSON.stringify({
@@ -334,7 +334,7 @@ describe('GitHubCliAccountImportService', () => {
         login: 'monalisa',
         avatarUrl: '',
       },
-    });
+    }, fixture.vault);
     await fixture.registry.removeAccount(GITHUB_PROVIDER_ID, account.id);
     const service = makeService(
       JSON.stringify({

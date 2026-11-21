@@ -1,6 +1,5 @@
 import type { AttachmentUploadIpc } from './attachmentUploadHost'
 import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { contextBridge, ipcRenderer } from 'electron'
 import * as ElectronNS from 'electron'
 import { installProcessMetricsResponder } from './process-metrics-responder'
@@ -264,7 +263,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
 })
 
 // Dedicated trusted settings channel: no generic action logger or Agent RPC.
-if (PASSWORD_BETA_ENABLED) contextBridge.exposeInMainWorld('passwordVaultBeta', {
+contextBridge.exposeInMainWorld('passwordVaultBeta', {
   invoke: (command: PasswordUiCommand) => ipcRenderer.invoke('gugu:password-beta-ui', command),
   subscribe: (listener: () => void) => {
     const changed = () => listener()

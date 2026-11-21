@@ -5,7 +5,6 @@ import type { PasswordItem, PasswordSaveDraft, PasswordSnapshot, PasswordUiComma
 import { requestPasswordFill } from '../../../../packages/core/src/shared/passwordBetaProtocol'
 import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
-vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }))
 
 const item = (id: string, name: string): PasswordItem => ({
   reference: { id, version: 1, epoch: 'e' }, name, origin: `https://${id}.example`, maskedAccount: '', accountSecret: false,

@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { createPortal } from 'react-dom'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordSyncRequest } from '@gugu/core/shared/passwordBetaProtocol'
 import { usePasswordVault, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { X } from '@/lib/icons'
@@ -33,7 +32,6 @@ export function PasswordDeviceHost() {
     if (deviceId) setAside(previous => new Set([...previous].filter(id => id !== deviceId)))
     else setCardClosed(false)
   }, []))
-  if (!PASSWORD_BETA_ENABLED) return null
   const sync = snapshot?.sync
   const request = promptedRequests(sync).find(entry => !aside.has(entry.deviceId))
   const joining = sync?.state === 'joining' || sync?.state === 'blocked' || sync?.state === 'refused' ? sync : undefined
