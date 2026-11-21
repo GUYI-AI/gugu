@@ -53,14 +53,12 @@ describe('the one 「文件存储与读取」: other files are one choice', () =
     await vi.waitFor(() => expect($('settings-file-retention')).not.toBeNull())
   })
 
-  it('one control keeps images and temporary files: it writes both stored keys, and says when they differ', async () => {
-    f.stored = { ...DEFAULT_FILE_STORAGE, image_retention: '1d', temporary_retention: '30d' }
+  it('one control keeps temporary files', async () => {
+    f.stored = { ...DEFAULT_FILE_STORAGE, temporary_retention: '30d' }
     await harness.render(createElement(FileStorageSection, { onBack: vi.fn() }))
-    await vi.waitFor(() => expect($('settings-kept-retention')?.value).toBe('1d'))
-    expect(harness.container.textContent).toContain('fileStorage.keptDiffer')
-    await choose('settings-kept-retention', '30d')
-    expect(f.write).toHaveBeenLastCalledWith({ image_retention: '30d', temporary_retention: '30d' })
-    await vi.waitFor(() => expect(harness.container.textContent).not.toContain('fileStorage.keptDiffer'))
+    await vi.waitFor(() => expect($('settings-kept-retention')?.value).toBe('30d'))
+    await choose('settings-kept-retention', '1d')
+    expect(f.write).toHaveBeenLastCalledWith({ temporary_retention: '1d' })
   })
 
   it('shows only the ordinary rules to someone with no machine bound to a project', async () => {
@@ -88,7 +86,7 @@ describe('the one 「文件存储与读取」: other files are one choice', () =
     await pick('settings-file-retention', '7d', '1d')
     expect(f.write).toHaveBeenLastCalledWith({ retention: '1d' })
     await pick('settings-kept-retention', '7d', '30d')
-    expect(f.write).toHaveBeenLastCalledWith({ image_retention: '30d', temporary_retention: '30d' })
+    expect(f.write).toHaveBeenLastCalledWith({ temporary_retention: '30d' })
     await pick('settings-file-mode', 'machine', 'cloud')
     expect(f.write).toHaveBeenLastCalledWith({ proactive_upload: true })
     await vi.waitFor(() => expect($('settings-file-retention')).toBeNull())

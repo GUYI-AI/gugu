@@ -15,10 +15,10 @@ import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives'
 import '../usage/usage.css'
 
-const CLASSES: readonly FileStorageClass[] = ['temporary', 'image', 'kept']
+const CLASSES: readonly FileStorageClass[] = ['temporary', 'kept']
 // The usage page's theme-following chart colors (its .gg-usage container below lends them).
-const SWATCH: Record<FileStorageClass, string> = { temporary: 'bg-[var(--warn)]', image: 'bg-[var(--usage-accent-1)]', kept: 'bg-[var(--faint-fg)]' }
-const FILL: Record<FileStorageClass, string> = { temporary: 'fill-[var(--warn)]', image: 'fill-[var(--usage-accent-1)]', kept: 'fill-[var(--faint-fg)]' }
+const SWATCH: Record<FileStorageClass, string> = { temporary: 'bg-[var(--warn)]', kept: 'bg-[var(--faint-fg)]' }
+const FILL: Record<FileStorageClass, string> = { temporary: 'fill-[var(--warn)]', kept: 'fill-[var(--faint-fg)]' }
 const DAY = 86_400_000
 type Expiring = FileStorageOverview['expiring'][number]
 type SortKey = 'name' | 'group' | 'size' | 'expires'
@@ -78,8 +78,8 @@ export function FileStorageDashboard() {
   const classLabel = (name: FileStorageClass) => t(`fileStorage.dashboard.classes.${name}`)
   const groupName = (chatId: string) => overview.groups.find((group) => group.chat_id === chatId)?.name ?? chatId.slice(0, 8)
   const days = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / DAY))
-  const cleanable = (['temporary', 'image'] as const).filter((name) => overview.classes[name].count > 0)
-  const chosen = picked.filter((name) => cleanable.includes(name as 'temporary' | 'image'))
+  const cleanable = (['temporary'] as const).filter((name) => overview.classes[name].count > 0)
+  const chosen = picked.filter((name) => cleanable.includes(name as 'temporary'))
   const chosenBytes = chosen.reduce((sum, name) => sum + Number(overview.classes[name].bytes), 0)
   const clean = () => {
     setBusy(true)
@@ -201,7 +201,7 @@ export function FileStorageDashboard() {
                 <tr key={`${file.item_id ?? file.chat_id}-${file.expires_at}-${index}`} data-testid="file-storage-file"
                   className="hover:bg-[var(--hover)] [&>td]:truncate [&>td]:border-b [&>td]:border-[var(--border-color)] [&>td]:px-2 [&>td]:py-[7px]">
                   <td data-field="name"><span className="flex min-w-0 items-center gap-2 text-[var(--fg)]">
-                    <FileMark name={file.file_name ?? ''} mime={file.class === 'image' ? 'image/*' : undefined} size={16} className="shrink-0 text-[var(--muted-fg)]" />
+                    <FileMark name={file.file_name ?? ''} size={16} className="shrink-0 text-[var(--muted-fg)]" />
                     <span className="truncate">{file.file_name ?? classLabel(file.class)}</span>
                   </span></td>
                   <td data-field="group" className="text-[var(--muted-fg)]">{groupName(file.chat_id)}</td>
