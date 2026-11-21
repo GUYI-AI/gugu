@@ -1,12 +1,11 @@
 import { useMemo, type Ref } from 'react';
-import { useReplica } from '@/lib/replica';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { localizedManifestText, MARKET_CATEGORIES, marketCategoryOf, type MarketCategory } from '@shared/extensions/catalog';
 import { marketHome } from '@shared/extensions/market-home';
 import type { MarketListItem } from '@shared/extensions/market';
 import type { ResourceContext } from '@shared/resource-actions';
 import type { AppsSort } from '@renderer/features/apps/apps-location';
-import { marketInstallRanking, type MarketShelfFull } from '../market-replicas';
+import type { MarketShelfFull } from '../market-replicas';
 import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured, type MarketCategoryChoice } from './desktop-market-cards';
 import { MarketExtensionIcon } from './market-extension-icon';
 import { ShelfMoreSkeleton } from './extension-skeletons';
@@ -16,9 +15,11 @@ type ExtensionMarketFilter = 'all' | MarketCategory;
 export type DesktopMarketShelf = Omit<MarketShelfFull, 'fetchedAt'> & { status: 'ready'; query: string; loadingMore: boolean };
 
 export function DesktopExtensionMarket({
-  shelf, query, category, onCategoryChange, sort = 'recommended', onSortChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
+  shelf, scores, query, category, onCategoryChange, sort = 'recommended', onSortChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
 }: {
   shelf: DesktopMarketShelf;
+  /** Installs per App, which orders the home (featured, recommended, popular); null = unreadable: the catalog's order. */
+  scores: ReadonlyMap<string, number> | null;
   query: string;
   category: ExtensionMarketFilter;
   onCategoryChange: (category: ExtensionMarketFilter) => void;
@@ -34,9 +35,6 @@ export function DesktopExtensionMarket({
   selectedId?: string;
 }) {
   const { translate, locale } = useSessionMessages();
-  // Unreadable or not read yet: the catalog's own order (the ranking only reorders; ❌ held back for it).
-  const ranking = useReplica(marketInstallRanking, query ? null : []);
-  const scores = ranking.state === 'value' ? ranking.value : null;
   const home = useMemo(() => {
     if (shelf.query || shelf.hasMore || shelf.items.some(({ cloud }) => !cloud.firstPublishedAt)) return null;
     const byId = new Map(shelf.items.map((item) => [item.manifest.id, item]));

@@ -43,7 +43,7 @@ import { askInShell, installConsentPrompt, type InstallConsentAsk } from '@rende
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallGrant, type InstallAlsoOnMachine } from '@shared/extensions/host-actions';
 import { findRemoteHostsBridge } from '@shared/remote-hosts';
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere';
-import { extensionAgentStatus, extensionDataBytes, marketChanged, marketEntry, marketSearch, marketShelf } from '@renderer/features/extensions/market-replicas';
+import { extensionAgentStatus, extensionDataBytes, marketChanged, marketEntry, marketInstallRanking, marketSearch, marketShelf } from '@renderer/features/extensions/market-replicas';
 import { revokedPermissions } from './NotificationSettingsCard';
 import { AgentMarketContent, type AgentMarketFilter } from '@renderer/features/extensions/panel/agent-market-content';
 import { AddConnectorButton, ConnectorMarketPage } from '@renderer/features/extensions/panel/connector-market-page';
@@ -199,6 +199,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const [paging, setPaging] = useState({ query: '', pages: 1 });
   const pages = paging.query === debouncedQuery ? paging.pages : 1;
   const shelfReading = useReplica(marketShelf, machineOffline || inventoryOnly ? null : [host.key]);
+  // The market's home (featured, its order, popular) is drawn from the shelf and the install ranking together: read with
+  // the shelf, and the home waits for it (an unreadable ranking = the catalog's order). ❌ The home drawn without it and
+  // re-sorted when it lands: the first open of Apps showed one page, then another.
+  const rankingReading = useReplica(marketInstallRanking, machineOffline || inventoryOnly ? null : []);
   const searchArgs: [string, string, number] | null = machineOffline || inventoryOnly || debouncedQuery === '' ? null : [host.key, debouncedQuery, pages];
   const searchReading = useReplica(marketSearch, searchArgs);
   const searchBefore = useReplica(marketSearch, searchArgs && pages > 1 ? [host.key, debouncedQuery, pages - 1] : null, { read: false });
@@ -207,14 +211,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const shownFailure = debouncedQuery === '' ? refreshFailure(shelfReading) : refreshFailure(searchReading);
   const shelf: ShelfState = useMemo((): ShelfState => {
     if (debouncedQuery === '') {
-      if (fullShelf) return { ...fullShelf, status: 'ready', query: '', hasMore: false, loadingMore: false };
+      if (fullShelf && rankingReading.state !== 'unknown') return { ...fullShelf, status: 'ready', query: '', hasMore: false, loadingMore: false };
       return shelfReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
     }
     const read = searchReading.state === 'value' ? { found: searchReading.value, loadingMore: false }
       : searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: searchReading.state === 'unknown' } : null;
     if (!read) return searchReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
     return { ...read.found, status: 'ready', query: debouncedQuery, loadingMore: read.loadingMore };
-  }, [debouncedQuery, fullShelf, shelfReading.state, searchReading, searchBefore]);
+  }, [debouncedQuery, fullShelf, shelfReading.state, rankingReading.state, searchReading, searchBefore]);
   const retryShelf = () => {
     if (debouncedQuery === '') void marketShelf.refresh(host.key);
     else void marketSearch.refresh(host.key, debouncedQuery, pages);
@@ -1282,6 +1286,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 ) : (
                   <DesktopExtensionMarket
                     shelf={extensionShelf}
+                    scores={rankingReading.state === 'value' ? rankingReading.value : null}
                     query={extensionShelf.query}
                     category={chip}
                     onCategoryChange={setChip}
