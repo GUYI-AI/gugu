@@ -1,9 +1,6 @@
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 import type { RecordEntry, RecordImageRef, SessionRecordResume, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
-import { readSlices, type SessionRecordSourceOptions } from './shared';
-
-/** Child entries per delivery while handing over the initial reads. */
-const CHILD_BATCH = 64;
+import { deliverInSlices, readSlices, type SessionRecordSourceOptions } from './shared';
 
 /** Follow native child records through the same lifecycle and stream projection as Codex. */
 export function withSubagentSources(
@@ -112,12 +109,10 @@ export function withSubagentSources(
         const pause = readSlices();
         const sent = new Map(order.map((id) => [id, 0]));
         for (const id of order) {
-          const entries = waiting.get(id)!;
-          for (let from = 0; from < entries.length && !stopped; from = sent.get(id)!) {
-            sent.set(id, Math.min(entries.length, from + CHILD_BATCH));
-            sink?.onEntries(entries.slice(from, sent.get(id)));
-            await pause();
-          }
+          await deliverInSlices(waiting.get(id)!, (slice) => {
+            sent.set(id, sent.get(id)! + slice.length);
+            sink?.onEntries(slice);
+          }, () => stopped, pause);
         }
         held = null;
         for (const id of order) { const rest = waiting.get(id)!.slice(sent.get(id)); if (rest.length && !stopped) sink?.onEntries(rest); }

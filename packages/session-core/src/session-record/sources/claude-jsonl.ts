@@ -23,6 +23,7 @@ import {
   SessionRecordForkDivergedError,
   asRecord,
   boundaryEntry,
+  deliverInSlices,
   emitJsonLines,
   parseJson,
   parseTimestamp,
@@ -84,7 +85,6 @@ export function createClaudeJsonlSource(
 type ClaudeFillState = Pick<ClaudeResumeData, 'lastUuid' | 'launches' | 'childRoots'>;
 
 /** Entries per delivery while releasing the initial read, so one delivery stays short. */
-const RELEASE_BATCH = 64;
 
 class ClaudeJsonlSource implements SessionRecordSource {
   private readonly warn: RecordSourceWarn;
@@ -359,10 +359,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const pause = readSlices();
     for (const batch of held) {
       const kept = abandoned.size ? batch.filter(entry => !abandoned.has(this.lineOf.get(entry) ?? '')) : batch;
-      for (let from = 0; from < kept.length && !this.stopped; from += RELEASE_BATCH) {
-        events.onEntries(kept.slice(from, from + RELEASE_BATCH));
-        await pause();
-      }
+      await deliverInSlices(kept, (slice) => events.onEntries(slice), () => this.stopped, pause);
     }
   }
 

@@ -66,6 +66,22 @@ export function readSlices(): () => Promise<void> {
   };
 }
 
+/** Entries one delivery hands over: small enough that a slice of them reduces well within `READ_SLICE_MS`. */
+const SLICE_ENTRIES = 64;
+
+/**
+ * Hand a source's held entries to the timeline in slices, yielding through `pause` (see `readSlices`). `entries` may grow
+ * while this waits (live lines queued behind the history): its length is read on every slice. Several runs that share
+ * one read pass the same `pause`.
+ */
+export async function deliverInSlices(entries: readonly RecordEntry[], deliver: (slice: RecordEntry[]) => void,
+  stopped: () => boolean, pause: () => Promise<void> = readSlices()): Promise<void> {
+  for (let from = 0; from < entries.length && !stopped(); from += SLICE_ENTRIES) {
+    deliver(entries.slice(from, from + SLICE_ENTRIES));
+    await pause();
+  }
+}
+
 export function pollInterval(options: SessionRecordSourceOptions | undefined): number {
   const value = options?.pollIntervalMs;
   return typeof value === 'number' && value > 0 ? value : DEFAULT_POLL_INTERVAL_MS;
