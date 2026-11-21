@@ -59,10 +59,10 @@ async function openMenu(mobile: boolean, kind: 'group' | 'dm' = 'group') {
 
 describe('应用 打开本机的 App', () => {
   for (const kind of ['group', 'dm'] as const) for (const mobile of [false, true]) {
-    it(`${kind} ${mobile ? '手机' : '桌面'}:只列开着、有自己页面的 App;点一下 = openApp(它, 本对话)`, async () => {
+    it(`${kind} ${mobile ? '手机' : '桌面'}:列开着、在对话里能打开的 App(自己的页面,或打开对话的文件);点一下 = openApp(它, 本对话)`, async () => {
       const rows = await openMenu(mobile, kind)
-      // 停用的(读论文)与只为文件打开的(你画我猜)不列。
-      expect(rows.map((row) => row.querySelector('span.truncate')?.textContent)).toEqual(['海龟汤'])
+      // 停用的(读论文)不列;只为文件打开的(你画我猜)照列,点了再说它在这里打开什么(owner 11-21)。
+      expect(rows.map((row) => row.querySelector('span.truncate')?.textContent)).toEqual(['海龟汤', '你画我猜'])
       const asked = vi.fn()
       const listen = (event: Event) => asked((event as CustomEvent).detail)
       window.addEventListener(UI_EVENTS.openApp, listen)
@@ -76,7 +76,7 @@ describe('应用 打开本机的 App', () => {
   }
 
   it('没有可打开的 App:应用 列表为空', async () => {
-    installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['turtle-soup', 'paper-reader'] }))
+    installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['turtle-soup', 'paper-reader', 'draw-guess'] }))
     expect(await openMenu(false)).toEqual([])
   })
 })
