@@ -23,11 +23,13 @@ import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 import { extensionsApiOf, INSTALLED, LOCAL_HOST, PHONE_HOST, phoneStore, unwrap } from './extensions-api';
 
 // @@@installed-extensions — what a host (`local`, `remote:<deviceId>` #6264, `phone`) has installed (@@@client-state-model).
+// The main process (or the phone's App store, L9) owns the truth; this mirrors it so menus draw without an await.
 
 export { LOCAL_HOST, PHONE_HOST } from './extensions-api';
 export { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 
 export interface ExtensionTabContributionEntry {
+  /** Tab kind under which this contribution registers: `<extensionId>.<tabName>`. */
   kind: ExtensionTabKind;
   extensionId: string;
   extensionName: string;
@@ -37,13 +39,21 @@ export interface ExtensionTabContributionEntry {
   sideWidth?: number;
   /** A data URL re-encoded in main, so the privileged renderer never fetches anything an extension shipped. */
   iconDataUrl: string | null;
+  /** False while the extension is switched off: listed, not offered. */
   enabled: boolean;
+  /** Shipped with gugu (origin `preinstalled`): drawn only from the host's own entries, never a session tab. */
   preinstalled: boolean;
-  /** Opened FOR a file, so never a tab of its own in a session (摩擦单 F95, F3). */
+  /**
+   * The tab opens files (it claims some, in a task or a group): it is opened FOR a file, and a page of it with no file
+   * has nothing to show — so it is never a tab of its own in a session (摩擦单 F95: 「Open a .todo-kanban.json file」 and
+   * an uncaught error, in a tab nobody asked for; F3 for the group-only ones, whose session tab made a page at install).
+   */
   forFiles: boolean;
+  /** It stands alone as a page (`isOwnPage`): not a file opener, not the App's card in a message. */
   ownPage: boolean;
-  /** Out of the menus, though a file or an agent can still open it. */
+  /** The person took this page out of the menus (`hiddenTabs`): nothing offers it, though a file or an agent can still open it. */
   hidden: boolean;
+  /** One page in each task (`perSession`): each task keeps its own, so it is never moved from one task to another. */
   perSession: boolean;
 }
 
@@ -74,18 +84,34 @@ export const installedExtensions = replica({
 
 export class InstalledApps {
   readonly manifests: ExtensionManifest[];
+  /** Optional per-App metadata, read with the inventory; unreadable entries have no variant picker. */
   readonly variants: NonNullable<InstalledExtensionsList['variants']>;
+  /** Bundles present but unreadable — surfaced rather than silently skipped. */
   readonly invalid: { dirName: string; reason: string }[];
+  /** Tab kind → host-rendered icon, and `fileIconKey` → a declared file icon (`fileIcons`). Absent means the generic mark. */
   readonly icons: Record<string, string>;
+  /** App id → its own icon, host-rendered at the rail's size. Absent means the rail draws its first letter. */
   readonly appIcons: Record<string, string>;
+  /** The Apps pinned to the far-left rail, in order (this machine's dock). */
   readonly dock: string[];
+  /** The pages the person took out of the menus, by App (this machine's). */
   readonly hiddenTabs: Record<string, string[]>;
+  /** Ids the user has switched off — installed, listed, but not offered (#5265). */
   readonly disabled: string[];
+  /** Market Apps not updated by themselves (owner 10-19): switched off, or an older version picked. Main's, mirrored. */
   readonly autoUpdateOff: string[];
+  /** Ids quit from the rail and not opened since (#7050): on, but their background is not running. Main's, mirrored. */
   readonly quit: string[];
+  /**
+   * Where each installed App came from (E-05): `preinstalled` for the ones gugu ships and installs itself
+   * (preinstalled-apps.ts); none for one installed before origins were kept.
+   */
   readonly origins: Record<string, ExtensionOrigin>;
+  /** Extensions that give agents tools: listed up front in new sessions (`full`) or looked up on demand. */
   readonly disclosure: Record<string, ExtensionDisclosureLevel>;
+  /** 「始终用它」: `<context>:<suffix>` → tab kind (or the built-in editor), kept in main. */
   readonly openWithDefaults: Record<string, string>;
+  /** Who published each App installed from a chat (摩擦单 F66): `{ [extensionId]: { id, name } }`. */
   readonly publishers: Record<string, { id: string; name?: string }>;
   readonly unreadable: string | null;
   private tabs: ExtensionTabContributionEntry[] | null = null;
@@ -112,11 +138,13 @@ export class InstalledApps {
     return this.manifests.find((manifest) => manifest.id === extensionId);
   }
 
+  /** An installed App's name as the person reads it: in the interface language, as its manifest's `localized` says it there. */
   appName(extensionId: string): string | undefined {
     const manifest = this.manifestFor(extensionId);
     return manifest && localizedManifestText(manifest, this.locale).name;
   }
 
+  /** Shipped with gugu (origin `preinstalled`): updated with gugu, never uninstalled or switched off here. */
   isPreinstalled(extensionId: string): boolean {
     return this.origins[extensionId] === 'preinstalled';
   }
@@ -176,6 +204,7 @@ export class InstalledApps {
     });
   }
 
+  /** Every declared tab, preinstalled Apps' included — what a lookup by kind reads. */
   get allTabContributions(): ExtensionTabContributionEntry[] {
     this.tabs ??= this.manifests.flatMap((manifest) => {
       const name = localizedManifestText(manifest, this.locale).name;
@@ -198,14 +227,24 @@ export class InstalledApps {
     return this.tabs;
   }
 
+  /**
+   * The tabs a task session can have of their own — one list for every way a task opens one (its「+」, its empty pane, the
+   * phone's task page): the tabs that open no file, of the Apps that are on. A switched-off App is left out, not greyed:
+   * the menus list what can be opened (owner 10-20); switching it on is the 「App」 page's.
+   */
   get enabledTabContributions(): ExtensionTabContributionEntry[] {
     return this.allTabContributions.filter((entry) => entry.enabled && entry.ownPage && !entry.hidden);
   }
 
+  /** Every enabled App's resident page, preinstalled ones included: what the resident layer keeps alive. */
   get residentTabContributions(): ExtensionTabContributionEntry[] {
     return this.allTabContributions.filter((entry) => entry.enabled);
   }
 
+  /**
+   * An App's page of its own — its first tab that opens no file and is not one per task — or null: what the rail opens, if
+   * it can be pinned. A page per task is in many places at once, so it has no one place for the rail to go to.
+   */
   mainTabOf(extensionId: string): ExtensionTabContributionEntry | null {
     const pages = this.allTabContributions.filter((entry) => entry.extensionId === extensionId && !entry.forFiles && !entry.perSession);
     // A card is the main page only of an App with nothing else (Data Lens): hiding an App's page never makes its card the page.
@@ -213,10 +252,12 @@ export class InstalledApps {
     return (own.length > 0 ? own : pages).find((entry) => !entry.hidden) ?? null;
   }
 
+  /** What the rail shows: the pinned Apps that are installed, on, and have a page of their own, in the person's order. */
   get dockedApps(): RailApp[] {
     return this.dock.flatMap((extensionId) => this.railApp(extensionId) ?? []);
   }
 
+  /** Every App the rail can open, pinned or not, in the order they were installed: what a right click on 「App」 lists. */
   get openableApps(): RailApp[] {
     return this.manifests.flatMap((manifest) => this.railApp(manifest.id) ?? []);
   }
@@ -338,7 +379,14 @@ export const marketUpdates = replica({
   fresh: Infinity,
 });
 
-/** The 「App」 badge: enabled Apps with an update, yanked or deprecated ones, each once; pinned ones count (owner 10-19). */
+/**
+ * The number on the 「App」 badge: the Apps with an update, withdrawn or deprecated, each counted once though it may be all
+ * three. Pinned ones (kept on an older version) count (owner 10-19, as VS Code's `outdated` compares versions only —
+ * https://github.com/microsoft/vscode/blob/af18ca5130bd7164867b2784b3aba68b4de38116/src/vs/workbench/contrib/extensions/browser/extensionsWorkbenchService.ts#L338-L360 );
+ * a switched-off App's update does not (the badge counts enabled ones; it sits in the 「已停用」 group), its withdrawal
+ * or deprecation does —
+ * https://github.com/microsoft/vscode/blob/af18ca5130bd7164867b2784b3aba68b4de38116/src/vs/workbench/contrib/extensions/browser/extensionsViewlet.ts#L1040-L1071 .
+ */
 export function updateCountOf(summary: MarketUpdatesSummary, apps: InstalledApps): number {
   return new Set<string>([
     ...Object.keys(summary.updates).filter((id) => apps.isEnabled(id)),
