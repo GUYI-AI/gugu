@@ -372,6 +372,13 @@
       "when": 1794609516964,
       "tag": "0053_personal_conversation_history",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1794700000000,
+      "tag": "0054_drop_session_window",
+      "breakpoints": true
     }
   ]
 }

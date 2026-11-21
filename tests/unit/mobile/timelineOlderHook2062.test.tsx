@@ -81,20 +81,6 @@ it('lands an older page that an After overtook, without moving the newer waterma
   expect(shown.timeline.hasOlder).toBe(false)
 })
 
-it('still rejects an older page when the After that overtook it resolved a pending ticket', async () => {
-  const fields = { resolvedPendingTickets: ['ticket'] }
-  const late = Promise.withResolvers<TimelineOlderResult>()
-  const client = fakeClient(late.promise)
-  await render(client)
-  let request!: Promise<void>
-  act(() => { request = shown.loadOlder() })
-  await act(async () => { push({ ok: true, batch: { from: 2, cursor: { epoch: 'e', seq: 3 },
-    turns: [], removedTurnIds: [], settlements: [], ...fields } as unknown as Extract<TimelineAfterResult, { ok: true }>['batch'] }) })
-  await act(async () => { late.resolve({ epoch: 'e', turns: [turn('obsolete')], hasOlder: false }); await request })
-  expect(shown.timeline.cursor?.seq).toBe(3)
-  expect(shown.timeline.turns.map(value => value.id)).not.toContain('obsolete')
-})
-
 it('still rejects an older page when the turn it was asked before is gone', async () => {
   const late = Promise.withResolvers<TimelineOlderResult>()
   const client = fakeClient(late.promise)

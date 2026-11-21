@@ -211,7 +211,7 @@ it('the same desktop task page elsewhere keeps its view switcher and its model a
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
   harness.container.style.cssText = 'height:860px;width:900px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local cleanedRecord onBack={() => undefined} />, { contacts: {} });
+  await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local onBack={() => undefined} />, { contacts: {} });
   await until('the session page composer', () => !!harness!.container.querySelector('[data-testid="composer-model-trigger"]'));
   const host = harness.container;
   expect(host.querySelector('[data-testid="agent-watch-timeline-page"]')!.hasAttribute('data-panel-layer')).toBe(false);

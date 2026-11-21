@@ -8,7 +8,7 @@ import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BU
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import { keepHistoryReverted, markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
 import { nativePromptDigest } from '@gugu/session-core/acp/native-prompt';
-import { db, sqlite } from '@main/db/client';
+import { db } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
 import { activitySignal } from '../activity/signals';
@@ -21,11 +21,6 @@ import { persistWithTurnSettlement } from './turn-settlement';
 import { noteSwitchedModelReply } from './switched-model-memory';
 import { events } from '@main/lib/events';
 import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
-import { commitWindowReceipt, prepareWindowCommitWrite, type WindowCommitCapture } from '../session-timeline/window-commit-write';
-import type { WindowCommitReceipt } from '../session-timeline/window-commit-receipt';
-import { deliverWindowCommit } from '../session-timeline/window-commit-delivery';
-import { recoverWindowCommitIntent } from '../session-timeline/window-commit-intent';
-import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 
 /**
  * 会话历史的落盘（#5381）。
@@ -63,23 +58,13 @@ export type CommittedTurnSource = 'live' | 'replay' | 'revision' | 'backfill';
  * `backfill`(更早那一轮被后台命令的终态补了内容,#6582)落盘与 `revision` 同一条路:按 turn id 找行、整轮替换。
  */
 const persistenceTails = new Map<string, Promise<void>>();
-type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: TranscriptTurn; windowCapture?: WindowCommitCapture };
+type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: TranscriptTurn };
 
 export function persistCommittedTurn(input: PersistInput): Promise<void> {
-  if (input.windowCapture) input = { ...input, windowCapture: { ...input.windowCapture, cursor: { ...input.windowCapture.cursor } } };
   const previous = persistenceTails.get(input.sessionId) ?? Promise.resolve();
   const write = async () => {
-    let captured: WindowCommitReceipt | undefined, phaseError: unknown, phaseFailed = false;
-    if (input.windowCapture) input.windowCapture.intentBudget = createWindowBudget();
-    try {
-      await persistWithTurnSettlement(input, async () => { captured = await persistCommittedTurnNow(input, error => { phaseError = error; phaseFailed = true; }); },
-        receipt => events.emit(sessionTurnSettledChannel, receipt));
-    } finally {
-      if (input.windowCapture) await recoverWindowCommitIntent(sqlite, { ...input.windowCapture, sessionId: input.sessionId }, input.windowCapture.intentBudget!);
-    }
-    if (phaseFailed) throw phaseError;
+    await persistWithTurnSettlement(input, () => persistCommittedTurnNow(input), receipt => events.emit(sessionTurnSettledChannel, receipt));
     if (input.source === 'live') noteSwitchedModelReply(input.sessionId, input.turn.outcome);
-    return captured;
   };
   const completed = beginCanonicalQueueTask(input.sessionId);
   const next = previous.then(write, write).finally(completed);
@@ -88,15 +73,10 @@ export function persistCommittedTurn(input: PersistInput): Promise<void> {
   void tail.then(() => {
     if (persistenceTails.get(input.sessionId) === tail) persistenceTails.delete(input.sessionId);
   });
-  return deliverWindowCommit(next, input.windowCapture?.committed);
+  return next;
 }
 
-async function persistCommittedTurnNow(input: PersistInput, observationFailed: (error: unknown) => void): Promise<WindowCommitReceipt | undefined> {
-  const observeCommit = (receipt: WindowCommitReceipt | undefined) => {
-    if (!receipt) return;
-    try { input.windowCapture?.phase?.('canonical_committed', receipt); }
-    catch (error) { observationFailed(error); }
-  };
+async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
   const context = input.source === 'live' ? await nativePublicationContext(input.sessionId) : null;
   if (input.source === 'revision' || input.source === 'backfill') {
     const [row] = await db
@@ -115,17 +95,13 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     const turn = keepHistoryReverted(previous, { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId });
     const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
     const revised = prepared.turn, serialized = JSON.stringify(revised);
-    const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
-      rowId: row.id, storedSeq: row.seq, insert: false, serialized, capture: input.windowCapture }) : undefined;
     const publish = db.transaction(tx => {
       prepared.commit(tx);
       tx.update(sessionTurns).set({ data: serialized }).where(eq(sessionTurns.id, row.id)).run();
-      if (captured) commitWindowReceipt(sqlite, captured);
       return noteNativeConversationReplies(input.sessionId, revised, input.turn, tx);
     });
-    observeCommit(captured);
     publish?.();
-    return captured;
+    return;
   }
   if (input.source === 'replay') {
     const stored = await storedTurnCount(input.sessionId);
@@ -139,8 +115,6 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   const prepared = input.source === 'live' ? prepareNativePublicationTurn({ ...input, turn: rawTurn, rowId: `${input.sessionId}:${next}`, source: 'live', context }, db) : undefined;
   const turn = prepared?.turn ?? rawTurn;
   const serialized = JSON.stringify(turn);
-  const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
-    rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, serialized, capture: input.windowCapture }) : undefined;
   const inserted = db.transaction(tx => {
     const result = tx.insert(sessionTurns)
     .values({
@@ -154,10 +128,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     })
     .onConflictDoNothing()
     .returning({ seq: sessionTurns.seq }).all();
-    if (result.length) {
-      prepared?.commit(tx);
-      if (captured) commitWindowReceipt(sqlite, captured);
-    }
+    if (result.length) prepared?.commit(tx);
     const publish = !result.length ? undefined : input.source === 'live'
       ? noteNativeConversationReplies(input.sessionId, turn, input.turn, tx)
       : noteNativeConversationHistory(input.sessionId, turn, tx);
@@ -165,7 +136,6 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
       ? queueNativeConversationInbox(input.sessionId, tx) : false;
     return { rows: result, publish, inbox };
   });
-  if (inserted.rows.length) observeCommit(captured);
   inserted.publish?.();
   if (inserted.inbox) publishNativeConversationInbox();
   if (input.source === 'replay' && inserted.rows.length) didFillReplay(input.sessionId, input.turn.seq);
@@ -176,7 +146,6 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     activitySignal({ event_id: `session.turn_recorded:${randomUUID()}`, kind: 'session.turn_recorded',
       session_id: input.sessionId, turn_seq: next, occurred_at: input.turn.endedAt ?? null });
   }
-  return inserted.rows.length ? captured : undefined;
 }
 
 /**

@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import type { ChatCommands, ChatContext, ChatLayout, ChatState } from '@gugu/session-chat-ui'
-import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { loadChatUi } from '@renderer/lib/chat/chat-transcript'
 import { useSessionChatLayout } from '@renderer/lib/chat/use-session-chat-layout'
@@ -36,7 +35,6 @@ function SessionTranscriptContent({
   turns,
   layout,
   commands,
-  sourceWindow,
   composerContent,
   shown,
   onVisibleItems,
@@ -56,7 +54,6 @@ function SessionTranscriptContent({
   uri: string
   turns: readonly TranscriptTurn[]
   layout?: ChatLayout
-  sourceWindow?: TimelineWindowFields
   commands?: ChatCommands
   composerContent?: ReactNode
   /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): loading draws its skeleton there. */
@@ -84,8 +81,6 @@ function SessionTranscriptContent({
   const shownLayout = useMemo(() => mobileShell ? { ...baseLayout, hideToolPictures: true } : baseLayout, [baseLayout, mobileShell])
   const [model, setModel] = useState<Model | null>(null)
   const written = useRef<readonly TranscriptTurn[]>([])
-  const viewCommands = useMemo(() => ({ ...commands, sourceWindow }), [commands, sourceWindow])
-
   useEffect(() => {
     let live = true
     let created: Model | null = null
@@ -138,7 +133,7 @@ function SessionTranscriptContent({
       context={model.context}
       state={model.state}
       pinUserMessages={!mobileShell}
-      commands={viewCommands}
+      commands={commands}
       composerContent={composerContent}
       shown={shown}
       onVisibleItems={onVisibleItems}

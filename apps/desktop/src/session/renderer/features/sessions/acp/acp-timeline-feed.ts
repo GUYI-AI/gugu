@@ -84,8 +84,7 @@ export class AcpTimelineFeed {
     const generation = this.generation;
     const first = this.state.turns[0];
     if (!this.state.hasOlder || !first) return [];
-    const cursor = this.state.olderCursor;
-    const page = await value(this.host.sessionOlder({ conversationId: this.sessionId, ...(cursor ? { cursor } : { beforeTurnId: first.id }), limit: OLDER_PAGE, trim: this.trim }));
+    const page = await value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId: first.id, limit: OLDER_PAGE, trim: this.trim }));
     if (generation !== this.generation) return [];
     const held = new Set(this.state.turns.map((turn) => turn.id));
     this.apply(prependOlder(this.state, page));

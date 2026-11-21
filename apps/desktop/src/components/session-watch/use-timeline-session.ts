@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { olderTimelineTarget, sameOlderTarget } from './timeline-older-window'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { recoverTimelineRead } from './timeline-read-recovery'
@@ -11,7 +10,6 @@ import type {
   TimelineAfterResult,
   TimelineOlderResult,
   TimelineSnapshot,
-  WindowCursor,
 } from '@gugu/session-core/session-record/contract'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import {
@@ -30,11 +28,9 @@ import { useSelect } from '@/lib/selectStore'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
 export type SessionpageTimelineClient = {
-  /** Desktop bounded source windows never hydrate the legacy aggregate history cache. */
-  boundedWindow?: true
   fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot>
   fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
-  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, cursor?: WindowCursor): Promise<TimelineOlderResult>
+  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult>
   /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
   fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
   subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown>
@@ -155,9 +151,9 @@ export function useTimelineSession(
    */
   const streamKey = useMemo(() => (deviceId && sessionId ? { deviceId, sessionId } : null), [deviceId, sessionId])
   const followed = useSelect(sessionStreams, (map) => (streamKey ? map[sessionStreamKey(streamKey)] : undefined), Object.is)
-  const initial = useMemo(() => initialSessionStream(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
+  const initial = useMemo(() => initialSessionStream(streamKey), [streamKey])
   const { timeline, phase, error, link, errorCode, waitingForRecord } = followed ?? initial
-  const { setTimeline } = useMemo(() => streamWriters(streamKey, client.boundedWindow), [streamKey, client.boundedWindow])
+  const { setTimeline } = useMemo(() => streamWriters(streamKey), [streamKey])
   // 动作失败与读失败分开存:两者的标题、位置、能做的补救都不是一回事 ——
   // 发送失败时时间线好端端在那儿,套上「打不开时间线 + 重新读取」是在骗人。
   const [actionError, setActionError] = useState<string | null>(null)
@@ -199,7 +195,7 @@ export function useTimelineSession(
    * 页面走掉时的最后一次存在上面那个 cleanup 里(不依赖这个定时器还没烧完)。
    */
   useEffect(() => {
-    if (client.boundedWindow || !deviceId || !sessionId) return
+    if (!deviceId || !sessionId) return
     if (!timeline.cursor || timeline.turns.length === 0) return
     const timer = setTimeout(() => {
       writeCachedTimeline({ deviceId, sessionId }, timeline)
@@ -214,24 +210,20 @@ export function useTimelineSession(
   const loadOlder = useCallback(async () => {
     if (!deviceId || !sessionId || !enabled) return
     const pinned = timelineRef.current
-    const target = olderTimelineTarget(pinned)
-    if (!target) return
+    const oldest = pinned.turns[0]
+    if (!pinned.hasOlder || !oldest) return
     const generation = olderGeneration.current
     const identity = olderIdentityRef.current
     if (olderRequest.current?.identity === identity && olderRequest.current.generation === generation) return olderRequest.current.promise
     const reading = (async () => {
       try {
-        const older = target.cursor
-          ? await client.fetchOlder(deviceId, sessionId, '', undefined, target.cursor)
-          : await client.fetchOlder(deviceId, sessionId, target.beforeTurnId)
+        const older = await client.fetchOlder(deviceId, sessionId, oldest.id)
         if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
         setTimeline(current => {
           if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
-          // A reset, or an After that moved the window's older end, owns the newer window facts (resolutions already
-          // advanced the generation). An After that only moved the tail does not: every delta of a streaming reply is
-          // one, and held to the same `seq` no older page could land while an agent was working.
-          if (current.cursor?.epoch !== pinned.cursor?.epoch || !sameOlderTarget(olderTimelineTarget(current), target)
-            || current.sourceLineage !== pinned.sourceLineage || current.snapshotRevision !== pinned.snapshotRevision) return current
+          // A reset, or an After that dropped the oldest turn, owns the page. An After that only moved the tail does not:
+          // every delta of a streaming reply is one, and held to the same `seq` no older page could land while an agent was working.
+          if (current.cursor?.epoch !== pinned.cursor?.epoch || current.turns[0]?.id !== oldest.id) return current
           return prependOlder(current, older)
         })
       } catch (err) {
@@ -379,8 +371,8 @@ type SessionFollow = {
 // One follow per session stream (the entry it writes): ❌ per client object or `enabled`.
 const follows = new Map<string, SessionFollow>()
 
-function streamWriters(streamKey: { deviceId: string; sessionId: string } | null, boundedWindow: boolean | undefined) {
-  const write = (fields: StreamWrite<SessionStreamState>) => { if (streamKey) updateSessionStream(streamKey, fields, boundedWindow) }
+function streamWriters(streamKey: { deviceId: string; sessionId: string } | null) {
+  const write = (fields: StreamWrite<SessionStreamState>) => { if (streamKey) updateSessionStream(streamKey, fields) }
   return { write, setTimeline: (change: (current: AgentWatchTimeline) => AgentWatchTimeline) => write((current) => ({ timeline: change(current.timeline) })) }
 }
 
@@ -423,10 +415,9 @@ function restartSessionFollow(params: FollowParams): void {
 
 function runSessionFollow(follow: SessionFollow): () => void {
   const { client, deviceId, sessionId, enabled } = follow.params
-  const { write, setTimeline } = streamWriters({ deviceId, sessionId }, client.boundedWindow)
+  const { write, setTimeline } = streamWriters({ deviceId, sessionId })
   const applyResult = (result: TimelineAfterResult) => {
-    // Invalidate before applying resolutions: no older promise can resurrect a ticket.
-    if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) follow.resetOlder()
+    if (!result.ok) follow.resetOlder()
     setTimeline((current) => {
       const next = applyTimelineResult(current, result)
       follow.cursor = next.cursor
@@ -439,9 +430,9 @@ function runSessionFollow(follow: SessionFollow): () => void {
   if (!enabled) {
     // Its machine is away: what this phone saw last time is still true, so it is still shown — ❌ a blank page.
     let cancelled = false
-    const cached = client.boundedWindow ? null : readCachedTimeline({ deviceId, sessionId })
+    const cached = readCachedTimeline({ deviceId, sessionId })
     write({ error: null, errorCode: null, link: 'lost', timeline: cached ?? emptyAgentWatchTimeline() })
-    if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) write({ timeline: stored }) })
+    if (!cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) write({ timeline: stored }) })
     return () => { cancelled = true }
   }
   let cancelled = false
@@ -458,7 +449,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
    * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
    */
-  const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
+  const cached = readCachedTimeline(cacheKey)
   if (cached) {
     follow.cursor = cached.cursor
     follow.ready = true
@@ -501,7 +492,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
    * 所以给它一个上限，超时就当没有存档，照旧整份拉。
    */
-  const hydrated: Promise<void> = cached || client.boundedWindow
+  const hydrated: Promise<void> = cached
     ? Promise.resolve()
     : Promise.race([
         hydrateCachedTimeline(cacheKey),
@@ -520,11 +511,6 @@ function runSessionFollow(follow: SessionFollow): () => void {
   })
   const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (failure) => {
     if (cancelled) return
-    // A bounded window ends when its stopped session starts again: open it afresh, which asks the host where to follow it.
-    if (client.boundedWindow && rpcErrorCode(failure) === 'scope_changed') {
-      reload()
-      return
-    }
     write({ link: 'lost' })
     catchUp()
   })
@@ -581,8 +567,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
        * owner 2026-09-08:「不应该是先报一个红色的报错、等我刷新之后才显示出来」。
        * 判据在 record-wait.ts(纯函数),三类各有一条会红的用例。
        */
-      const delay = client.boundedWindow && code === 'source_locating' ? 2_000
-        : follow.ready ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
+      const delay = follow.ready ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
         : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
       if (delay !== null) {
         // That machine did not answer: still tried again, but the page can say so meanwhile (link), ❌ a silent spinner.
@@ -609,7 +594,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
     stopErrors?.()
     // 走之前把手里这份存下来:下次进来第一帧就有东西。
     const current = sessionStreams.get()[sessionStreamKey(cacheKey)]?.timeline ?? emptyAgentWatchTimeline()
-    if (!client.boundedWindow && current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
+    if (current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
     // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
     void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
   }

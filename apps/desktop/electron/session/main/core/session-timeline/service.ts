@@ -4,15 +4,9 @@ import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { prepareWindowLivePosition } from './window-live-position';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { createNativeRecordReader } from './native-record';
-import { createWindowOpenings, type WindowOpeningInput, type WindowOpeningLease, type WindowOpeningProof, type WindowOpeningSelection } from './window-opening';
-import { reserveWindowCommitHost } from './window-commit-production';
-import { closeWindowProjectionOwner } from './window-projection-production';
-import type { WindowProjectionOwner } from './window-projection-host';
-import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage, WindowLivePositionRequest, WindowLivePositionResult } from '@gugu/session-wire/session-window-live';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -42,7 +36,6 @@ import {
   type Settlement,
   type SessionpageProjectSummary,
   type SessionpageSessionEvent,
-  type SessionpageSessionWindowStatusEvent,
   type SessionpageSessionRespondRequest,
   type SessionpageSessionRespondResult,
   type SessionpageSessionCancelResult,
@@ -60,9 +53,7 @@ import {
   type SessionpageOpenedFileReadRequest,
   type SessionpageOpenedFileChunk,
   type SessionpageSessionToolImageRequest,
-  type SessionpageSessionBodyReadRequest,
   type SessionpageSessionOlderRequest,
-  type WindowBodyResult,
   type TimelineAfterResult,
   type TimelineOlderResult,
   type TimelineSnapshot,
@@ -270,8 +261,6 @@ let resetGeneration = 0;
 type ActiveSubscription = {
   conversationId: string;
   stop: () => void;
-  live?: WindowOpeningLease;
-  projection?: WindowProjectionOwner;
 };
 
 const subscriptions = new Map<string, ActiveSubscription>();
@@ -866,159 +855,6 @@ export function after(input: {
     if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
     return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
   });
-}
-
-type SourceWindowReader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
-let sourceWindowOpening: Promise<SourceWindowReader> | null = null;
-
-/** Desktop reopening has its own bounded source path, including its subscription. A failed opening is not kept: the next read opens again. */
-function sourceWindowReader(): Promise<SourceWindowReader> {
-  return sourceWindowOpening ??= (async () => {
-    const [{ join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
-      import('node:path'), import('node:crypto'),
-      import('@gugu/session-core/session-record/window-cache/read-budget'), import('./desktop-source-reader'),
-      import('@gugu/session-core/session-record/window-cache/formats'),
-    ]);
-    const cacheDirectory = join(app.getPath('userData'), 'session-window-cache');
-    const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-    return createDesktopSourceWindowReader({
-      request: async (conversationId, limit, signal) => {
-        const row = readSessionRow(conversationId);
-        if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
-        const located = locateRow(row);
-        if (!located.supported || !supportsSourceWindow(located.locator.harness))
-          throw Object.assign(new Error(located.supported ? 'This native format has no window reader' : located.reason), { code: 'unsupported_format' });
-        const historyFloor = await nativeConversationHistoryFloor(conversationId);
-        const conversationScope = hash([cacheDirectory, conversationId, historyFloor]);
-        return { conversationId, historyFloor, locator: located.locator, cacheDirectory, conversationScope,
-          scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId, historyFloor]),
-          branchLineage: hash([located.locator.harness, located.locator.providerSessionId]),
-          cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) ?? undefined
-            : readSessionRows(false, eq(sessions.id, conversationId)).find(value => value.session.id === conversationId)?.project.path,
-          limit, signal, budget: createWindowBudget() };
-      },
-      reportError: error => log.warn('sessionWindow: bounded source subscription failed', { error: String(error) }),
-      observed: process.env.GUGU_WINDOW_IO_TRACE === '1'
-        ? (conversationId, io, phase) => log.info('sessionWindow: read', { conversationId, phase, ...io }) : undefined,
-      backgroundRead: process.env.GUGU_WINDOW_IO_TRACE === '1'
-        ? (jobId, io) => log.info('sessionWindow: read', { jobId, phase: 'reverse', ...io }) : undefined,
-    });
-  })().catch((error: unknown) => {
-    sourceWindowOpening = null;
-    throw error;
-  });
-}
-async function withSourceWindow<T>(read: (reader: SourceWindowReader) => Promise<T>): Promise<SessionTimelineResult<T>> {
-  try { return { ok: true, value: await read(await sourceWindowReader()) }; }
-  catch (error) {
-    const code = (error as { code?: string }).code ?? 'record_unreadable';
-    // The caller only shows this failure; the host keeps a line of it too.
-    log.warn('sessionWindow: read failed', { code, error: String(error) });
-    return fail(code, (error as Error).message ?? String(error));
-  }
-}
-export const windowSnapshot = (input: { conversationId: string; limit?: number }) => withSourceWindow(reader => reader.snapshot(input));
-export const windowAfter = (input: { conversationId: string; cursor: RecordCursor }) => withSourceWindow(reader => reader.after(input));
-export const windowOlder = (input: SessionpageSessionOlderRequest) => withSourceWindow(reader => reader.older(input));
-export const body = (input: SessionpageSessionBodyReadRequest): Promise<SessionTimelineResult<WindowBodyResult>> => withSourceWindow(reader => reader.body(input));
-
-const windowOpenings = createWindowOpenings({
-  reserve: (input, failed) => reserveWindowCommitHost(input.subscriptionId, input.conversationId, failed),
-  capture: async conversationId => {
-    if (await nativeConversationHistoryFloor(conversationId)) return null;
-    const row = readSessionRow(conversationId);
-    if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
-    const { supportsSourceWindow } = await import('@gugu/session-core/session-record/window-cache/formats');
-    if (row.runtime !== 'acp' || !supportsSourceWindow(row.provider)) return null;
-    const { sessionLife } = await import('../sessions/session-life');
-    return sessionLife().stoppedReadFence(conversationId);
-  },
-  register: (id, owner) => {
-    unsubscribe(id); subscriptions.set(id, owner);
-    return () => { if (subscriptions.get(id) === owner) subscriptions.delete(id); };
-  },
-});
-export async function windowPrepare(input: WindowOpeningInput, failed?: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<WindowOpeningSelection>> {
-  try { return { ok: true, value: await windowOpenings.prepare(input, error => failed?.({ ...input, state: 'failed',
-    error: { code: error.code, message: error.message } })) }; }
-  catch (error) { return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message); }
-}
-function windowLiveLease(input: WindowOpeningInput): WindowOpeningLease {
-  const owner = subscriptions.get(input.subscriptionId);
-  if (!owner?.live || owner.conversationId !== input.conversationId)
-    throw Object.assign(new Error('This window has no commit lease'), { code: 'invalid_subscription' });
-  return owner.live;
-}
-export function windowProjectionOwner(input: WindowOpeningInput): WindowProjectionOwner {
-  const owner = subscriptions.get(input.subscriptionId);
-  if (!owner?.projection || owner.conversationId !== input.conversationId)
-    throw Object.assign(new Error('This window has no projection owner'), { code: 'invalid_subscription' });
-  owner.projection.assertCurrent(); return owner.projection;
-}
-export async function windowLiveRead(input: WindowLiveReadRequest): Promise<SessionTimelineResult<WindowCommitPage>> {
-  try {
-    const lease = windowLiveLease(input), value = await lease.read(input.after);
-    if (windowLiveLease(input) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
-    return { ok: true, value };
-  } catch (error) { return fail((error as { code?: string }).code ?? 'live_read_failed', (error as Error).message); }
-}
-export async function windowLiveAck(input: WindowLiveAckRequest): Promise<SessionTimelineResult<void>> {
-  try { windowLiveLease(input).ack(input.through); return { ok: true, value: undefined }; }
-  catch (error) { return fail((error as { code?: string }).code ?? 'live_ack_failed', (error as Error).message); }
-}
-
-export async function windowLivePosition(input: WindowLivePositionRequest): Promise<SessionTimelineResult<WindowLivePositionResult>> {
-  try {
-    const lease = windowLiveLease(input), finish = await prepareWindowLivePosition(lease, input);
-    if (windowLiveLease(input) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
-    return { ok: true, value: finish() };
-  } catch (error) { return fail((error as { code?: string }).code ?? 'live_position_failed', (error as Error).message); }
-}
-
-export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
-  emit: (event: SessionpageSessionEvent) => void,
-  failed: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
-  const subscriptionId = input.subscriptionId?.trim();
-  if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId is required');
-  let opening: WindowOpeningProof | undefined;
-  let stopped = false, readFailed = false, projectionReady = false, teardown: (() => void) | undefined;
-  const abort = new AbortController();
-  const mine: ActiveSubscription = { conversationId: input.conversationId,
-    stop: () => { stopped = true; abort.abort(); closeWindowProjectionOwner(mine); teardown?.(); opening?.live.close(); } };
-  mine.projection = { identity: mine, sessionId: input.conversationId, signal: abort.signal, assertCurrent() {
-    if (stopped || !projectionReady || subscriptions.get(subscriptionId) !== mine)
-      throw Object.assign(new Error('Projection subscription is not active'), { code: 'unsubscribed' });
-  } };
-  const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
-  const onFailure = (status: SessionpageSessionWindowStatusEvent) => {
-    if (stopped) return;
-    readFailed = true; mine.stop(); forget(); failed(status);
-    log.warn('sessionWindow: subscription stopped', { subscriptionId, error: status.error });
-  };
-  try { opening = windowOpenings.take(input, error => onFailure({ conversationId: input.conversationId, subscriptionId,
-    state: 'failed', error: { code: error.code, message: error.message } })); opening(); mine.live = opening.live; }
-  catch (error) {
-    mine.stop();
-    if (subscriptions.get(subscriptionId)?.conversationId === input.conversationId) unsubscribe(subscriptionId);
-    return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message);
-  }
-  unsubscribe(subscriptionId);
-  subscriptions.set(subscriptionId, mine);
-  const result = await withSourceWindow(async reader => {
-    teardown = await reader.subscribe(input, event => {
-      if (stopped) return;
-      emit(event);
-      const fields = event.result.ok ? event.result.batch : event.result.snapshot;
-      if (!fields.pendingLongRecords?.length) { opening!.live.authorize(); projectionReady = true; }
-    }, onFailure, abort.signal, opening);
-    if (stopped) {
-      teardown();
-      if (!readFailed) throw Object.assign(new Error('Subscription was released before opening'), { code: 'unsubscribed' });
-    }
-    return { subscriptionId };
-  });
-  if (!result.ok) { mine.stop(); forget(); }
-  return result;
 }
 
 /**
@@ -1844,9 +1680,6 @@ function settlementOf(timeline: SessionTimeline, itemId: string): Settlement | n
 
 /** 测试与收尾用：拆掉所有订阅与缓存实例。 */
 export function resetSessionTimelineService(): void {
-  const sourceWindow = sourceWindowOpening;
-  sourceWindowOpening = null;
-  if (sourceWindow) void sourceWindow.then(reader => reader.dispose()).catch(error => log.warn('sessionWindow: dispose failed', { error: String(error) }));
   resetAsks();
   // 存档跟着一起作废:重置意味着「这一层记的东西可能都不作数了」,
   // 留着一份自称还对得上的存档,下次开会话就会拿它去续一段不存在的历史。

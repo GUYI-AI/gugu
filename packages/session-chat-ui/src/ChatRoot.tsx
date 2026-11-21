@@ -1,5 +1,4 @@
 /** @jsxImportSource solid-js */
-import { projectSourceFragments, sourceWindowSettled } from './state/source-fragments';
 import { appendActivityUnits, preserveActivityIds, trailingActivity } from './state/agent-activity';
 import { activityLanes, joinedActivityLanes } from './state/activity-lanes';
 import { latestViewerInput, resetActivityOnInput } from './state/activity-boundary';
@@ -587,8 +586,6 @@ export function ChatRoot(props: ChatRootProps) {
     indexById: ReadonlyMap<string, number>;
     dayKey: string | undefined;
     reseed: boolean;
-    /** Bounded source window the units were projected from; a lineage change drops resident anchors. */
-    sourceWindow: ChatCommands['sourceWindow'];
   };
 
   // ── Committed tier: pure derivation ─────────────────────────────────────────
@@ -608,7 +605,6 @@ export function ChatRoot(props: ChatRootProps) {
     const next = projectedCommitted();
     const ctx = { ...segmentCtx(false), settled: true };
     const folds = committedFolds();
-    const sourceWindow = commands().sourceWindow;
     // A model swap (view.setModel) starts from an empty incremental cache.
     const prev = previous && previous.state === s ? previous : undefined;
     const prevSource = prev?.source ?? [];
@@ -616,7 +612,6 @@ export function ChatRoot(props: ChatRootProps) {
 
     if (
       prev &&
-      sourceWindowSettled(sourceWindow, prev.sourceWindow, itemId => prev.indexById.has(itemId)) &&
       folds === prev.folds &&
       next.length > prevSource.length &&
       (prevSource.length === 0 || next[prevSource.length - 1] === prevSource[prevSource.length - 1]) &&
@@ -642,16 +637,12 @@ export function ChatRoot(props: ChatRootProps) {
       }
       return {
         state: s, source: next, folds, units: appendActivityUnits(prevUnits, newUnits), indexById,
-        dayKey: trailingDayKey(tail, prev.dayKey, ctx.latestTurnId), reseed: false, sourceWindow,
+        dayKey: trailingDayKey(tail, prev.dayKey, ctx.latestTurnId), reseed: false,
       };
     }
 
     // Full rebuild (seed, model swap, prepend, non-append structural change, or an append that joins the previous fold run).
-    const units = projectSourceFragments(
-      preserveActivityIds(prevUnits, flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY)),
-      sourceWindow,
-      prev?.sourceWindow?.sourceLineage === sourceWindow?.sourceLineage ? prevUnits : [],
-    );
+    const units = preserveActivityIds(prevUnits, flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY));
     const indexById = new Map<string, number>();
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
@@ -664,7 +655,6 @@ export function ChatRoot(props: ChatRootProps) {
       dayKey: trailingDayKey(next, undefined, ctx.latestTurnId),
       // Folding, prepending and tail replacement can all move units between numeric slots.
       reseed: prevUnits.some((unit, index) => units[index]?.id !== unit.id),
-      sourceWindow,
     };
   });
   const committedUnits = () => committedBuild()!.units;

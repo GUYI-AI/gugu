@@ -465,8 +465,8 @@ export const sessionStreams: Readable<Readonly<Record<string, SessionStreamState
 
 export const sessionStreamKey = (key: TimelineCacheKey) => `${key.deviceId}\u0000${key.sessionId}`
 
-export function initialSessionStream(key: TimelineCacheKey | null, boundedWindow = false): SessionStreamState {
-  const timeline = (boundedWindow || !key ? null : readCachedTimeline(key)) ?? emptyAgentWatchTimeline()
+export function initialSessionStream(key: TimelineCacheKey | null): SessionStreamState {
+  const timeline = (key ? readCachedTimeline(key) : null) ?? emptyAgentWatchTimeline()
   return { timeline, phase: timeline.cursor ? 'ready' : 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
 }
 
@@ -478,8 +478,8 @@ function writeStream<S extends object>(store: SelectStore<Readonly<Record<string
   if ((Object.keys(next) as (keyof S)[]).some((name) => !Object.is(next[name], current[name]))) patch(store, id, { ...current, ...next })
 }
 
-export function updateSessionStream(key: TimelineCacheKey, fields: StreamWrite<SessionStreamState>, boundedWindow = false): void {
-  writeStream(streams, sessionStreamKey(key), () => initialSessionStream(key, boundedWindow), fields)
+export function updateSessionStream(key: TimelineCacheKey, fields: StreamWrite<SessionStreamState>): void {
+  writeStream(streams, sessionStreamKey(key), () => initialSessionStream(key), fields)
 }
 
 export function forgetSessionStream(key: TimelineCacheKey): void {

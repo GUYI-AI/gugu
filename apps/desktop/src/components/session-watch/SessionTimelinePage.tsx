@@ -8,7 +8,6 @@ import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
@@ -80,7 +79,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   initialAppKind,
   innerSidebarEntry,
   local = false,
-  cleanedRecord = false,
   appPanel = false,
   onBack,
 }: {
@@ -93,8 +91,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   innerSidebarEntry?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
-  /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
-  cleanedRecord?: boolean
   /**
    * owner 11-12 Over an App's panel (AssistantTaskChatWindow): the panel's top row and the assistant chat's composer. The
    * view switcher is not offered there — the panel is the task's conversation, nothing else.
@@ -133,17 +129,13 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const apps = useSessionApps()
   const browserApp = { kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
-  const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
-    deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
-    sourceFormat: session.harness, native, online, local, cleanedRecord,
-  })
+  const { nativeHistory, nativeRecord } = useSessionHistorySource({ deviceId: device.device_id, sessionId: session.conversationId, native, online, local })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
     reload, loadOlder, loadToolImage, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
-    useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local, boundedHistory)
+    useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local)
 
-  const windowReady = boundedWindowReady(timeline)
   const conversation = nativeHistory ? { ...timeline,
     turns: [...(nativeRecord.record?.turns ?? []), ...(nativeRecord.record?.activeTurn ? [nativeRecord.record.activeTurn] : [])],
     hasOlder: nativeRecord.record ? nativeRecord.record.nextCursor !== null : false,
@@ -172,7 +164,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // 会话列表、乃至刚切走时都叫得住人。这里再发一份的话,正开着这条会话时同一件事会响两次。
   const attention = deriveAttention(conversation)
   const foregroundWorking = attention === 'running' || attention === 'waiting' || recovery.pendingPrompt !== null
-  const queueReady = answering && phase === 'ready' && link === 'ok' && (!native || (!boundedHistory && Boolean(nativeRecord.ready && nativeRecord.record && !nativeRecord.record.hasNewer && !nativeRecord.record.activeTurn)))
+  const queueReady = answering && phase === 'ready' && link === 'ok' && (!native || (Boolean(nativeRecord.ready && nativeRecord.record && !nativeRecord.record.hasNewer && !nativeRecord.record.activeTurn)))
   const queuedInput = foregroundWorking || queuedInputs.length > 0
   const beforeSend = () => {
     if (mobile && native && queuedInput && session.nativeInputIdentity !== true) {
@@ -351,7 +343,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}
           onAtBottom={nativeHistory ? nativeRecord.loadNewer : undefined}
-          historyReady={boundedHistory ? windowReady : !nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
+          historyReady={!nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
           onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
           onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
           onLoadToolImage={loadToolImage}

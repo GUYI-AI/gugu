@@ -5,9 +5,6 @@ export type {
   SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftResult, SessionAdmitCreatedAttachmentsRequest,
   RegisteredCreationAttachments, ResolvedCreationAttachment,
 } from './creation-attachment-protocol';
-import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
-export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
-export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
 import type { TerminalState } from '../acp/models/terminals';
 import type { PermissionSubject } from '../acp/models/permissions';
 /**
@@ -396,7 +393,7 @@ export const TIMELINE_SUBAGENT_TEXT = 8192;
 export const TIMELINE_SUBAGENT_STEPS = 200;
 
 /** 整份快照：从最新往回取 `limit` 轮。 */
-export type TimelineSnapshot = TimelineWindowFields & {
+export type TimelineSnapshot = {
   cursor: RecordCursor;
   turns: TranscriptTurn[];
   settlements: Settlement[];
@@ -440,7 +437,7 @@ export type TurnPatch = Omit<TranscriptTurn, 'items'> & {
  * 增量。以**条目**为单位替换（见 `TurnPatch`）：每一批带的是变过的条目，不是整轮。
  * `removedTurnIds` 给分叉/回滚用。
  */
-export type TimelineBatch = TimelineWindowFields & {
+export type TimelineBatch = {
   /**
    * 这一批是从哪个序号接上的（= 收批人应有的当前 seq）。
    *
@@ -476,7 +473,7 @@ export type TimelineAfterResult =
  * 带 `epoch`：翻页途中宿主换过代（记录被分叉、整份重读）时，这一批与手里那份不是同一条
  * 时间线，拼进去就是「少了中间的那一份」。❌ 不静默丢弃，也 ❌ 不静默合并 —— 交给客户端判。
  */
-export type TimelineOlderResult = TimelineWindowFields & {
+export type TimelineOlderResult = {
   epoch: string;
   turns: TranscriptTurn[];
   /** 这一批之前还有没有更早的。 */
@@ -1238,11 +1235,7 @@ export type SessionpageSessionsListResult = {
  */
 export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
 export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; limit?: number; trim?: boolean } &
-  ({ beforeTurnId: string; cursor?: WindowCursor } | { beforeTurnId?: never; cursor: WindowCursor });
-/** Offsets and lengths are decoded UTF-8 bytes, never raw JSON or JavaScript character offsets. */
-export type SessionpageSessionBodyReadRequest = { conversationId: string; bodyRef: WindowBodyRef; offset: number; maxBytes: number };
-export type SessionpageSessionBodyReadResult = WindowBodyResult;
+export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean };
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
  * (不经云,与时间线同一条线)。只读这条会话**真的打开过**的文件 —— 机器拿它自己的记录核对。
@@ -1342,16 +1335,6 @@ export type SessionpageSessionRespondResult = {
 export type SessionpageSessionEvent = {
   subscriptionId: string;
   result: TimelineAfterResult;
-};
-
-/** Terminal desktop-window read failure; emitted separately from timeline/reset pushes. */
-export type SessionpageSessionWindowStatusEvent = {
-  conversationId: string;
-  /** Fresh per subscription generation; clients also reject stale local generation callbacks. */
-  subscriptionId: string;
-  state: 'failed';
-  /** Same error fields as the window setup RPC; this status does not request recovery. */
-  error: { code: string; message: string };
 };
 
 /**
