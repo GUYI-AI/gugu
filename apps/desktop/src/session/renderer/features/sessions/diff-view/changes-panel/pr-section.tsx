@@ -10,6 +10,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { EmptyState } from '@renderer/lib/ui/empty-state';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { Unknown } from '@/components/ui/Unknown';
+import { retryOf } from '@/lib/replica';
 import { SplitButton, type SplitButtonAction } from '@renderer/lib/ui/split-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { pullRequestErrorMessage } from '@shared/core/pull-requests/pull-requests';
@@ -60,7 +61,7 @@ export const PullRequestsSection = observer(function PullRequestsSection({
         }
       : undefined;
   const branchCommits = useCommits(projectId, workspaceId, branchCommitRange);
-  const branchHead = branchCommitRange ? branchCommits.pages[0] : undefined;
+  const branchHead = branchCommitRange ? branchCommits.first : undefined;
   const showCreatePrModal = useShowModal('createPrModal');
   const { toast } = useToast();
   const prSyncStore = getPrSyncStore(projectId);
@@ -191,7 +192,7 @@ export const PullRequestsSection = observer(function PullRequestsSection({
           <ReadFailedLine
             className="border-t border-border px-3 py-2"
             message={translate('pr.commitsFailed')}
-            onRetry={() => branchCommits.retry(0)}
+            onRetry={retryOf(branchHead)}
           />
         ) : showBranchCommits && branchCommitRange ? (
           <BranchCommitsEntry range={branchCommitRange} />

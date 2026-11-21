@@ -5,7 +5,8 @@ import { copyExternalLink } from '@renderer/lib/open-external-link';
 import { Copy, Globe, RefreshCw, Unplug, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { refreshFailure, useReplica } from '@/lib/replica';
+import { refreshFailure, retryOf, useReplica } from '@/lib/replica';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { Unknown } from '@/components/ui/Unknown';
 import type { TabContentProps } from '@renderer/features/tabs/core/tab-provider';
 import { rpc } from '@renderer/lib/ipc';
@@ -148,8 +149,8 @@ const RemotePortsView = observer(function RemotePortsView({ ctx, onOpen }: { ctx
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {header}
       {draftError && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-destructive">{draftError}</div>}
-      {forwardsFailure && <ReadFailed error={forwardsFailure} onRetry={refresh} />}
-      {listeningFailure && <ReadFailed error={listeningFailure} onRetry={refresh} />}
+      {forwardsFailure && <ReadFailedLine className="shrink-0 px-3 pt-2" message={messageForUser(forwardsFailure)} onRetry={retryOf(forwards)} />}
+      {listeningFailure && <ReadFailedLine className="shrink-0 px-3 pt-2" message={messageForUser(listeningFailure)} onRetry={retryOf(listening)} />}
       {listening.state === 'value' && !listening.value.supported && <div className="shrink-0 px-3 pt-2 text-xs text-foreground-passive">{translate('remotePorts.notLinux', { device })}</div>}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows === null ? (
@@ -187,16 +188,6 @@ function PortRowsUnknown() {
       {[0, 1, 2].map((index) => (
         <div key={index} className="flex h-8 items-center px-2"><Unknown className="h-3.5 w-full" /></div>
       ))}
-    </div>
-  );
-}
-
-function ReadFailed({ error, onRetry }: { error: Error; onRetry: () => void }) {
-  const { translate } = useSessionMessages();
-  return (
-    <div className="flex shrink-0 items-center gap-2 px-3 pt-2 text-xs text-foreground-destructive">
-      <span className="min-w-0 truncate">{messageForUser(error)}</span>
-      <Button size="xs" variant="ghost" onClick={onRetry}>{translate('remotePorts.refresh')}</Button>
     </div>
   );
 }

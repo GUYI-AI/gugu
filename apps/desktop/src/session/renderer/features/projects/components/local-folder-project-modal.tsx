@@ -4,9 +4,9 @@
 // ❌ 别接到旧的 AddProjectModal(Pick/New/Clone 页签 + 名称输入):那套已删。
 import { useState } from 'react';
 import { messageForUser } from '@/lib/userFacingError';
-import { refreshFailure, useReplica, retryOf } from '@/lib/replica';
+import { refreshFailure, useReplica } from '@/lib/replica';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
 import { homeDirectory, projectPathInspection } from '@renderer/lib/machine-paths';
-import { Button } from '@renderer/lib/ui/button';
 import { DirectoryTree } from '@renderer/features/projects/components/add-project-modal/directory-browser/directory-tree';
 import { normalizePath } from '@renderer/features/projects/components/add-project-modal/directory-browser/paths';
 import { createProjectFromLocalFolder } from '@renderer/features/projects/components/create-project-from-local-folder';
@@ -14,7 +14,6 @@ import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { ConfirmButton } from '@renderer/lib/ui/confirm-button';
 import { DialogContentArea, DialogFooter, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { ModalLayout } from '@renderer/lib/ui/modal-layout';
-import { Spinner } from '@renderer/lib/ui/spinner';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import { basenameFromAnyPath } from '@shared/path-name';
@@ -71,28 +70,9 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
       <DialogContentArea data-autofocus tabIndex={-1} className="gap-2">
         <p className="text-sm text-foreground-muted">{translate('projects.create.pickFolderMessage')}</p>
         <div className="h-[320px] overflow-y-auto rounded-md border border-border p-1">
-          {home.state === 'unknown' && (
-            <div role="status" className="flex h-full items-center justify-center">
-              <span className="sr-only">{translate('projects.remoteDir.loading')}</span>
-              <Spinner className="text-foreground-muted" />
-            </div>
-          )}
-          {home.state === 'error' && (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-foreground-destructive">
-              {messageForUser(home.error)}
-              <Button size="xs" variant="outline" onClick={retryOf(home)}>
-                {translate('common.retry')}
-              </Button>
-            </div>
-          )}
-          {home.state === 'value' && (
-            <DirectoryTree
-              key={normalizePath(home.value)}
-              rootPath={normalizePath(home.value)}
-              value={path}
-              onChange={setPath}
-            />
-          )}
+          <ReadingSlot reading={home} placeholder="h-full w-full">
+            {(homePath) => <DirectoryTree key={normalizePath(homePath)} rootPath={normalizePath(homePath)} value={path} onChange={setPath} />}
+          </ReadingSlot>
         </div>
         {inspection.state === 'value' && inspection.value.isDirectory && !inspection.value.isGitRepo && (
           <p className="text-xs text-foreground-muted">{translate('projects.dirTree.notAGitRepo')}</p>
