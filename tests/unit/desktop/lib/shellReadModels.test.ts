@@ -37,26 +37,27 @@ async function signedIn() {
 }
 
 describe('legacy DM archive', () => {
-  it('reads the archive once: no refresh source, and appended pages stay', async () => {
+  it('reads each page once: no refresh source, and a page read stays', async () => {
     await signedIn()
     const { legacyDmList } = await import('../../../../apps/desktop/src/components/legacy-dm-history/legacyDmReplicas')
-    mocks.list.mockResolvedValue({ rows: [{ id: 'a', publicId: 1, name: 'A', updatedAt: '2026-01-01T00:00:00Z', agent: null }], after: 'a' })
-    await legacyDmList.fetch(null, '')
-    legacyDmList.at(null, '').set((current) => current && { ...current, rows: [...current.rows, { id: 'b', publicId: 2, name: 'B', updatedAt: '2026-01-02T00:00:00Z', agent: null }], after: null })
+    mocks.list.mockResolvedValueOnce({ rows: [{ id: 'a', publicId: 1, name: 'A', updatedAt: '2026-01-01T00:00:00Z', agent: null }], after: 'a' })
+      .mockResolvedValueOnce({ rows: [{ id: 'b', publicId: 2, name: 'B', updatedAt: '2026-01-02T00:00:00Z', agent: null }], after: null })
+    await legacyDmList.fetch(null, '', null)
+    await legacyDmList.fetch(null, '', 'a')
     // Another open, a prefetch and the window coming back: none reads the frozen archive again.
-    await legacyDmList.fetch(null, '')
-    await legacyDmList.prefetch(null, '')
+    await legacyDmList.fetch(null, '', null)
+    await legacyDmList.prefetch(null, '', 'a')
     window.dispatchEvent(new Event('focus'))
     await Promise.resolve()
-    expect(mocks.list).toHaveBeenCalledTimes(1)
-    expect(legacyDmList.peek(null, '')).toMatchObject({ state: 'value', value: { rows: [{ id: 'a' }, { id: 'b' }], after: null } })
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(legacyDmList.peek(null, '', 'a')).toMatchObject({ state: 'value', value: { rows: [{ id: 'b' }], after: null } })
   })
 
   it('a session with no verifiable identity has no history: a value, not unknown', async () => {
     await signedIn()
     const { legacyDmList } = await import('../../../../apps/desktop/src/components/legacy-dm-history/legacyDmReplicas')
     mocks.scope.mockResolvedValue(null)
-    await expect(legacyDmList.fetch('session-1', '')).resolves.toEqual({ scope: null, rows: [], after: null })
+    await expect(legacyDmList.fetch('session-1', '', null)).resolves.toEqual({ scope: null, rows: [], after: null })
     expect(mocks.list).not.toHaveBeenCalled()
   })
 })
