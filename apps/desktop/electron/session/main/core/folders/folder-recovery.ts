@@ -9,7 +9,6 @@ import { workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { getDirectoryStatus } from '@main/core/utils/directory-status';
 import { computeWorkspaceKey } from '@main/core/workspaces/workspace-key';
-import { folderRuntimes } from '@main/core/workspaces/folder-runtime/folder-runtimes';
 import { foldersChangedChannel } from '@shared/core/folders/folders';
 import type { ProjectRecoveryError as FolderRecoveryError, UnavailableProject as UnavailableFolder } from '@shared/projects';
 import { folderAtPath, getFolder, listFolders, type Folder } from './folders';
@@ -52,6 +51,8 @@ export async function inspectFolderRecovery(folderId: string, folderPath: string
 export async function restoreFolder(folderId: string, folderPath: string): Promise<Result<Folder, FolderRecoveryError>> {
   const inspected = await inspectFolderRecovery(folderId, folderPath);
   if (!inspected.success) return inspected;
+  // Loaded on use: the runtime registry pulls in Git and account services the folder listing never needs.
+  const { folderRuntimes } = await import('@main/core/workspaces/folder-runtime/folder-runtimes');
   const closed = await folderRuntimes.close(folderId);
   if (!closed.success) return err({ type: 'close-failed', message: closed.error.message });
   const { path: target, isGitRepo } = inspected.data;

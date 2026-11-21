@@ -644,9 +644,9 @@ describe('会话历史(按目录分节)核心合同', () => {
   });
 
   it.each([
-    ['zh-CN', '导入失败：无法把文件夹 webapp 作为项目打开：咕咕没有读取它的权限'],
-    ['en-US', 'Import failed: The folder webapp could not be opened as a project: Gugu does not have permission to read it'],
-  ] as const)('导入时文件夹读不了(%s):界面说「文件夹 X 无法作为项目打开：<本地化原因>」,❌ 完整路径或原始报错(#3447)', async (locale, sentence) => {
+    ['zh-CN', '导入失败：无法打开文件夹 webapp：咕咕没有读取它的权限'],
+    ['en-US', 'Import failed: The folder webapp could not be opened: Gugu does not have permission to read it'],
+  ] as const)('导入时文件夹读不了(%s):界面说「无法打开文件夹 X：<本地化原因>」,❌ 完整路径或原始报错(#3447)', async (locale, sentence) => {
     setLocalePreference(locale);
     // 主进程抛 `<码>:<文件夹名>`,本机 IPC 再套外壳(完整目录与原始 EACCES 只进它的日志)。
     mocks.importLocalSession.mockRejectedValue(

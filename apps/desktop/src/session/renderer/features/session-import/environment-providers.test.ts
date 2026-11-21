@@ -76,11 +76,11 @@ function transcript(): ImportProvider {
 it('uses the existing native task importer locally and preserves remote transcript imports', async () => {
   const previous = transcript(); const provider = withCodexTaskImport(previous);
   calls.scanTasks.mockResolvedValue({ status: 'ready', rows: [{ id: 'native', revision: 'r1', title: 'Resume me' }], blocked: [] });
-  calls.tasks.mockResolvedValue({ items: [{ id: 'native', status: 'imported', projectId: 'p', sessionId: 's' }] });
+  calls.tasks.mockResolvedValue({ items: [{ id: 'native', status: 'imported', sessionId: 's' }] });
   expect(await provider.scan(null)).toEqual({ count: 1, pending: false });
   const result = await provider.capture!().importAll(null, progress(), new AbortController().signal);
   expect(calls.tasks).toHaveBeenCalledWith([{ id: 'native', revision: 'r1' }]);
-  expect(result.imported).toEqual([{ title: 'Resume me', projectId: 'p', sessionId: 's' }]);
+  expect(result.imported).toEqual([{ title: 'Resume me', sessionId: 's' }]);
   await provider.scan('remote'); await provider.importAll('remote', progress(), new AbortController().signal);
   expect(previous.scan).toHaveBeenCalledWith('remote'); expect(previous.importAll).toHaveBeenCalledOnce();
 });

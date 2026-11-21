@@ -301,13 +301,21 @@ export class RemoteHostsStore {
 
   /**
    * 别的机器的项目清单这一端还没齐:还没接上设备名册(开机恢复上次视图的那一刻,会话页还没起来),或名下有一台机器
-   * 既没连上读过、账号上也还没有它的那份(#113)。是 ⇒ 不在项目表里的项目还不知道在不在(见 folders/folder-presence.ts)。
+   * 既没连上读过、账号上的群文件夹也还没读到(#113)。是 ⇒ 不在项目表里的项目还不知道在不在(见 folders/folder-presence.ts)。
    */
   awaitsMachineLists(): boolean {
     if (!this.started) return true;
     // #3433 名册还没接上 / 接上了设备列表还没读 / 正在一台台登记:空的名册(或登记到一半的)不等于「名下没有别的机器」。
     if (this.reconciling || !this.bridge || this.bridge.devicesRead?.() === false) return true;
-    return [...this.hosts.values()].some((state) => !state.synced && !state.device.projects);
+    return [...this.hosts.values()].some((state) => !state.synced) && groupFoldersStore.status !== 'ready';
+  }
+
+  /** 名下哪台别的机器的会话清单里有开在这个文件夹里的会话(那台的任务目录不记在账号上,只能这样认);没有 = null。 */
+  machineWithSessionsIn(folderId: string): string | null {
+    for (const deviceId of this.hosts.keys()) {
+      if (this.sessionsOf(deviceId).sessions.some((session) => session.projectId === folderId)) return deviceId;
+    }
+    return null;
   }
 
   /** 那台机器自己的项目清单这一端读到过了(连上读的,不是账号上记着的那份)。 */

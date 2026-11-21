@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   awaiting: false,
   roster: new Set<string>(),
   read: new Set<string>(),
+  sessionsIn: new Map<string, string>(),
 }));
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
@@ -15,6 +16,10 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
     awaitsMachineLists: () => mocks.awaiting,
     device: (id: string) => (mocks.roster.has(id) ? { id } : null),
     hasReadList: (id: string) => mocks.read.has(id),
+    machineWithSessionsIn: (folderId: string) => {
+      const machine = mocks.sessionsIn.get(folderId);
+      return machine && mocks.roster.has(machine) ? machine : null;
+    },
   },
 }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionManagerStore: () => undefined }));
@@ -31,6 +36,7 @@ describe('folder presence: "not in the table yet" is not "deleted"', () => {
     mocks.awaiting = false;
     mocks.roster.clear();
     mocks.read.clear();
+    mocks.sessionsIn.clear();
   });
 
   it('tells present, unknown and deleted apart', () => {
@@ -50,27 +56,30 @@ describe('folder presence: "not in the table yet" is not "deleted"', () => {
     expect(sessionViewCanActivate({ projectId: 'gone', sessionId: 's' })).toEqual({ ok: false, redirect: 'home' });
   });
 
-  // #3425 Every machine has the hidden task workspace and no account record lists it (#609), so its absence from the table
-  // says nothing until that machine's own list has been read. Restoring a view on it must not read as "deleted".
-  describe('the hidden task workspace of another machine', () => {
-    const home = '00000000-0000-4000-8000-000000000001';
+  // #3425 A machine's task home is in no group, so no account record lists it (#609): its absence from the table says
+  // nothing until that machine's own list has been read. Restoring a view on it must not read as "deleted".
+  describe('the task home of another machine', () => {
+    const home = 'task-home-of-dev-other';
 
-    it('is unknown while the machine is in the roster and its own list is not read, deleted once it is read without it', () => {
+    it('is unknown while a machine in the roster has sessions there and its own list is not read, deleted once it is read without it', () => {
       mocks.roster.add('dev-other');
-      expect(folderPresence(`${home}~dev-other`)).toBe('unknown');
+      mocks.sessionsIn.set(home, 'dev-other');
+      expect(folderPresence(home)).toBe('unknown');
       mocks.read.add('dev-other');
-      expect(folderPresence(`${home}~dev-other`)).toBe('deleted');
+      expect(folderPresence(home)).toBe('deleted');
     });
 
-    it('is deleted when the machine is no longer in the roster, and an ordinary folder of that machine stays judged by the table', () => {
-      expect(folderPresence(`${home}~dev-gone`)).toBe('deleted');
+    it('is deleted when the machine is no longer in the roster, and a folder no machine has sessions in stays judged by the table', () => {
+      mocks.sessionsIn.set(home, 'dev-gone');
+      expect(folderPresence(home)).toBe('deleted');
       mocks.roster.add('dev-other');
       expect(folderPresence('ordinary-folder-of-dev-other')).toBe('deleted');
     });
 
     it('the session guard lets it through while unknown', () => {
       mocks.roster.add('dev-other');
-      expect(sessionViewCanActivate({ projectId: `${home}~dev-other`, sessionId: 's' })).toEqual({ ok: true });
+      mocks.sessionsIn.set(home, 'dev-other');
+      expect(sessionViewCanActivate({ projectId: home, sessionId: 's' })).toEqual({ ok: true });
     });
   });
 });

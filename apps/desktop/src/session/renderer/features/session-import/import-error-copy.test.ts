@@ -50,9 +50,9 @@ describe('import error copy', () => {
   });
 
   it.each([
-    ['project-not-found', 'The folder work could not be opened as a project: it no longer exists, was moved, or is not a folder', '无法把文件夹 work 作为项目打开：它已不存在、被移走了，或不是文件夹'],
-    ['project-permission-denied', 'The folder work could not be opened as a project: Gugu does not have permission to read it', '无法把文件夹 work 作为项目打开：咕咕没有读取它的权限'],
-    ['project-not-git', 'The folder work could not be opened as a project: it is not a Git repository', '无法把文件夹 work 作为项目打开：它不是 Git 仓库'],
+    ['project-not-found', 'The folder work could not be opened: it no longer exists, was moved, or is not a folder', '无法打开文件夹 work：它已不存在、被移走了，或不是文件夹'],
+    ['project-permission-denied', 'The folder work could not be opened: Gugu does not have permission to read it', '无法打开文件夹 work：咕咕没有读取它的权限'],
+    ['project-not-git', 'The folder work could not be opened: it is not a Git repository', '无法打开文件夹 work：它不是 Git 仓库'],
   ] as const)('%s: the folder name plus a localized reason, in both languages', (code, en, zh) => {
     expect(localizeImportError(`${code}:work`, speak(enUSSessionWorkflowMessages))).toBe(en);
     expect(localizeImportError(`${code}:work`, speak(zhCNSessionWorkflowMessages))).toBe(zh);
@@ -60,9 +60,9 @@ describe('import error copy', () => {
 
   it('an unrecognised project failure says one generic localized sentence (the raw error is in the log, not here)', () => {
     expect(localizeImportError('project-open-failed:work', speak(enUSSessionWorkflowMessages))).toBe(
-      'The folder work could not be opened as a project. See the Gugu log for details.'
+      'The folder work could not be opened. See the Gugu log for details.'
     );
-    expect(localizeImportError('project-open-failed:work', speak(zhCNSessionWorkflowMessages))).toBe('无法把文件夹 work 作为项目打开，详情见咕咕日志。');
+    expect(localizeImportError('project-open-failed:work', speak(zhCNSessionWorkflowMessages))).toBe('无法打开文件夹 work，详情见咕咕日志。');
   });
 
   it('falls back to a generic file name when the code carries none', () => {
