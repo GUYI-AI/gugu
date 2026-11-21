@@ -2380,11 +2380,8 @@ app.on('browser-window-focus', sendAppActive)
 app.on('browser-window-focus', () => { if (hostLocaleStore) applyHostLocale() })
 app.on('browser-window-blur', sendAppActive)
 // @@@app-presence — in Gugu or not, for the reads on a return (electron/app-presence.ts).
-const appPresence = followAppPresence({
-  platform: process.platform,
-  on: (event, listener) => { app.on(event as 'did-become-active', listener) },
-  focused: () => BrowserWindow.getFocusedWindow() !== null,
-  send: (present) => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present) },
+const appPresence = followAppPresence((present) => {
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present)
 })
 ipcMain.handle('app:is-present', () => appPresence.present())
 // @@@win-titlebar-row — Windows 标题栏「编辑 / 视图」菜单的命令(清单与理由见 window-menu-commands.ts)。

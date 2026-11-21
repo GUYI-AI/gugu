@@ -1,25 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const electron = vi.hoisted(() => ({ listeners: new Map<string, (() => void)[]>(), focused: false }))
+vi.mock('electron', () => ({
+  app: { on: (event: string, listener: () => void) => { electron.listeners.set(event, [...(electron.listeners.get(event) ?? []), listener]) } },
+  BrowserWindow: { getFocusedWindow: () => (electron.focused ? {} : null) },
+}))
 import { followAppPresence } from '../../../../apps/desktop/electron/app-presence'
+
+const realPlatform = process.platform
 
 /**
  * @@@app-presence: in Gugu or not, for the reads made on a return. It starts from the real state (a Gugu window focused
  * now): an app started in the background (at login, after an update) must take its first return as a return.
  */
 function host(platform: NodeJS.Platform, focusedAtStart: boolean) {
-  const listeners = new Map<string, (() => void)[]>()
-  let focused = focusedAtStart
+  Object.defineProperty(process, 'platform', { value: platform })
+  electron.listeners.clear()
+  electron.focused = focusedAtStart
   const sent: boolean[] = []
-  const presence = followAppPresence({
-    platform,
-    on: (event, listener) => { listeners.set(event, [...(listeners.get(event) ?? []), listener]) },
-    focused: () => focused,
-    send: (present) => { sent.push(present) },
-  })
-  const emit = (event: string) => (listeners.get(event) ?? []).forEach((listener) => listener())
-  return { presence, sent, emit, focus: (next: boolean) => { focused = next } }
+  const presence = followAppPresence((present) => { sent.push(present) })
+  const emit = (event: string) => (electron.listeners.get(event) ?? []).forEach((listener) => listener())
+  return { presence, sent, emit, focus: (next: boolean) => { electron.focused = next } }
 }
 
-afterEach(() => { vi.useRealTimers() })
+afterEach(() => {
+  vi.useRealTimers()
+  Object.defineProperty(process, 'platform', { value: realPlatform })
+})
 
 describe('app presence', () => {
   it('started in the background (macOS): not present, and the first return is a change', () => {
