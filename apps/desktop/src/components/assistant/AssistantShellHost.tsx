@@ -23,7 +23,7 @@ import { readSetupStep, subscribeSetupStep, writeSetupStep } from '../../lib/ass
 import { pendingLocalAssistant, resumeLocalAssistant, setupStillStarting } from '../../lib/assistantSetup'
 import { keepFinishingLocalAssistant } from '../../lib/assistantSetupFinish'
 import { requestAssistantClose } from '../../lib/assistantClose'
-import { useSpendingPower } from '../../lib/billing/useSpendingPower'
+import { isMember, useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
 import { rendererLogger } from '../../lib/log'
 import { installShellSlots } from '../../lib/shellSlots'
@@ -181,7 +181,7 @@ export function AssistantShellHost() {
   const assistantState = assistantIdentityState(contact !== null, mine.reading, contactsStatus)
   // 会员档:最左栏入口在「还没有咕咕」时按它写提示;没读到、读不到 = null(不当成非会员)。
   const spending = useSpendingPower(user)
-  const member = teamAccount ? null : spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
+  const member = teamAccount ? null : isMember(spending)
   // 本机正在给它安家:那一次的恢复记录在(建好或失败才清);云上正在开 = 管家说 provisioning。
   const [localPreparing, setLocalPreparing] = useState(false)
   useEffect(() => {

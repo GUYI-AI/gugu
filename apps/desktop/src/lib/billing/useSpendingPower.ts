@@ -12,7 +12,7 @@ import {
   subscribePrivateUserEventBus,
   unsubscribePrivateUserEventBus,
 } from '../realtimeChannel'
-import { onReturn, replica, useReplica } from '../replica'
+import { onReturn, refreshFailure, replica, useReplica } from '../replica'
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
 import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
@@ -125,12 +125,10 @@ export function onPlanChange(listener: () => void): () => void {
     } else if (seen === null) planLog.info({ plan }, 'the account plan is known (followed from here)')
     seen = plan
   })
-  // Marked stale, then read. A surface showing the credits reads them on the same return: that read on its way is joined,
-  // ❌ restarted (a second request in the same millisecond).
+  // A surface showing the credits reads them on the same return: that read on its way is joined, ❌ restarted (a second
+  // request in the same millisecond).
   const readNow = () => {
-    if (creditAccount.isFetching()) return
-    void creditAccount.refresh()
-    void creditAccount.fetch().catch(() => undefined)
+    if (!creditAccount.isFetching()) void creditAccount.reread().catch(() => undefined)
   }
   if (seen === null) readNow()
   const stopReturns = onReturn(readNow)
@@ -140,6 +138,16 @@ export function onPlanChange(listener: () => void): () => void {
 /** 手动催一次(充值回来、用户点刷新)。 */
 export function refreshSpendingPower(): Promise<void> {
   return officialServicesEnabled() ? creditAccount.refresh() : Promise.resolve()
+}
+
+/** Whether the account is a member (a paid tier); null = not known (not read yet, or its plan unreadable): ❌ taken as free. */
+export function isMember(spending: SpendingSnapshot): boolean | null {
+  return spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
+}
+
+/** Why the plan cannot be said: the read failed, or the plan's did while the balance's did not (a value without membership). */
+export function membershipFailure(spending: SpendingSnapshot): string | null {
+  return spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
 }
 
 export function useSpendingPower(user: { id: string } | null): SpendingSnapshot {
@@ -153,7 +161,7 @@ export function useSpendingPower(user: { id: string } | null): SpendingSnapshot 
   return useMemo((): SpendingSnapshot => {
     if (reading.state === 'unknown') return { ...UNKNOWN_SNAPSHOT, activityRevision: revision }
     // 一次读失败就整份不要了、说清为什么:❌ 留着上一次的余额(#2503,没读到的数不冒充现在的数)。
-    const failure = reading.state === 'error' ? reading.error : reading.error
+    const failure = refreshFailure(reading)
     if (failure) {
       return { ...UNKNOWN_SNAPSHOT, state: 'error', balanceError: message(failure), windowsError: message(failure), activityRevision: revision }
     }
