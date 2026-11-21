@@ -36,11 +36,6 @@ export function cachedDevicesAccount(): string | null {
   return replicaAccount().id
 }
 
-/** The machines changed (a read, a heartbeat flip folded in, an account switch). */
-export function subscribeCachedDevices(listener: () => void): () => void {
-  return devicesModel.subscribe([], () => listener())
-}
-
 /** Rows kept from before for the account signed in now (as the snapshot's copy: shown at once, read again by the next reader). */
 export function writeCachedDevices(rows: readonly Device[]): void {
   devicesModel.set([], [...rows])
