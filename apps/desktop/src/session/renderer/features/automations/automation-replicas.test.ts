@@ -34,23 +34,23 @@ beforeEach(() => {
 describe('automation readings', () => {
   it('a machine\'s schedules are read again on its events while shown, and when shown again', async () => {
     io.schedules.mockResolvedValue([]);
-    const off = show(sessionSchedules, 'local');
+    const off = show(sessionSchedules, null);
     await vi.waitFor(() => expect(io.schedules).toHaveBeenCalledTimes(1));
     emit(automationChangedChannel, { automationId: 'a-1' });
     await vi.waitFor(() => expect(io.schedules).toHaveBeenCalledTimes(2));
     off();
     expect(io.listeners.get(automationChangedChannel.name)?.size ?? 0).toBe(0);
-    const again = show(sessionSchedules, 'local');
+    const again = show(sessionSchedules, null);
     await vi.waitFor(() => expect(io.schedules).toHaveBeenCalledTimes(3));
     again();
   });
 
   it('a run event puts the run it carries as the latest one (❌ read again)', async () => {
     io.latest.mockResolvedValue(null);
-    const off = show(automationLatestRun, 'local', 'a-1');
+    const off = show(automationLatestRun, null, 'a-1');
     await vi.waitFor(() => expect(io.latest).toHaveBeenCalledTimes(1));
     emit(automationRunChangedChannel, { automationId: 'a-1', run: { id: 'run-2' } });
-    expect(automationLatestRun.peek('local', 'a-1')).toMatchObject({ state: 'value', value: { id: 'run-2' } });
+    expect(automationLatestRun.peek(null, 'a-1')).toMatchObject({ state: 'value', value: { id: 'run-2' } });
     expect(io.latest).toHaveBeenCalledTimes(1);
     off();
   });
