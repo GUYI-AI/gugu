@@ -104,9 +104,13 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 /* A file's details: over the list (narrow), beside it (wide). */
 .details { position: fixed; z-index: 15; inset: auto 0 0 0; max-height: 80vh; overflow: auto; display: flex; flex-direction: column; gap: var(--em-spacing-sm); padding: var(--em-spacing-lg); border-radius: var(--em-radius-card, 12px) var(--em-radius-card, 12px) 0 0; box-shadow: var(--em-shadow-dialog); }
 .details-head { display: flex; align-items: center; gap: var(--em-spacing-sm); }
-.details-title { flex: 1; min-width: 0; margin: 0; font-size: var(--em-font-title); line-height: var(--em-lh-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.details-close { border: 0; background: none; }
+/* The list's language: the name at body size, controls at the bar's height, the picture whole on the muted fill. */
+.details-title { flex: 1; min-width: 0; margin: 0; font-size: var(--em-font-body); line-height: var(--em-lh-body); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.details-close { display: inline-flex; align-items: center; justify-content: center; width: var(--em-control-h-sm); height: var(--em-control-h-sm); min-height: 0; padding: 0; border: 0; background: none; }
+.details-close gugu-icon { width: 16px; height: 16px; }
 .details .details-picture { width: 100%; height: 160px; border-radius: var(--em-radius-control); }
+.details .details-picture.has-thumb { background-size: contain; background-repeat: no-repeat; background-color: var(--em-background-3); }
+.details-actions button { min-height: var(--em-control-h-sm); padding-block: 0; padding-inline: 12px; }
 img.details-picture { object-fit: contain; }
 .details .details-picture.details-badge { width: 56px; height: 56px; }
 .details-actions { display: flex; flex-wrap: wrap; gap: var(--em-spacing-xs); }

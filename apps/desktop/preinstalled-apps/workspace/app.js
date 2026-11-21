@@ -4457,7 +4457,7 @@ function showDetails(entry) {
   const actions = document.createElement('div')
   actions.className = 'details-actions'
   const act = (text, run) => Object.assign(document.createElement('button'), { type: 'button', textContent: text, onclick: run })
-  actions.append(act(t.open, () => openFile(entry)), act(t.download, () => downloadEntry(entry)))
+  actions.append(Object.assign(act(t.open, () => openFile(entry)), { className: 'primary' }), act(t.download, () => downloadEntry(entry)))
   if (entry.sourceMessageIds?.length) actions.append(act(t.showInChat, () => showSource(entry.sourceMessageIds[entry.sourceMessageIds.length - 1])))
   const facts = document.createElement('dl')
   facts.className = 'details-facts'
