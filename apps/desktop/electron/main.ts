@@ -10,6 +10,9 @@ import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
+import { closureV2Auth } from './account-closure/v2-auth'
+import { registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
+import type { createDesktopClosureV2Service } from './account-closure/v2-service'
 import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
@@ -2751,6 +2754,7 @@ const externalImport = SERVER_MODE ? null : registerExternalImportIpc({
 })
 
 function onHumanAuthSessionChanged(): void {
+  resumeAccountClosureV2()
   void questionCardSync.wake()
   externalImport?.ownerChanged()
   resumeDeclaredUploads()
@@ -2846,6 +2850,49 @@ function desktopClosureHost() {
   })
 }
 if (!SERVER_MODE) registerDesktopClosureIpc(ipcMain, () => mainWindow, desktopClosureHost)
+let desktopClosureV2Service: ReturnType<typeof createDesktopClosureV2Service> | undefined
+async function desktopClosureV2Host(): Promise<ReturnType<typeof createDesktopClosureV2Service>> {
+  await desktopClosureReady.promise
+  const bridge = loadEmdashBridge()
+  if (!bridge) throw new ClosureFailure('closure_storage_unavailable')
+  return desktopClosureV2Service ??= bridge.createDesktopAccountClosureV2Host({
+    profileBinding: JSON.stringify([app.getPath('userData'), resolveGuguHome(process.env)]),
+    local: desktopClosureHost(),
+    auth: async () => closureV2Auth(pushedHumanAuth),
+    deviceId: async () => { const id = await localDeviceId(); if (!id) throw new ClosureFailure('closure_not_prepared'); return id },
+    async resumeOwner(ownerId) {
+      if (!sessionLifeBooted) throw new ClosureFailure('closure_not_prepared')
+      await bootedSessionLife().signIn(ownerId, async () => desktopClosureHost().underAuth(async () => {
+        if (humanAuthUserId() !== ownerId || await desktopClosureHost().isPaused(ownerId)) throw new ClosureFailure('wrong_local_owner')
+        // Invalidate Auth permits which drained before this newly explicit start.
+        // Later permits must queue their own lifecycle drain behind this start.
+        humanAuthRevision += 1
+      }))
+      deviceRuntimeHost?.notifyAuthChanged()
+    },
+    baseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(),
+  })
+}
+if (!SERVER_MODE) registerDesktopClosureV2Ipc(ipcMain, () => mainWindow, desktopClosureV2Host)
+if (!SERVER_MODE) registerDesktopClosureAgentResumeIpc(ipcMain, () => mainWindow, desktopClosureV2Host)
+let closureV2RecoveryRunning = false
+function resumeAccountClosureV2(): void {
+  // No new operation, policy admission, resend or confirm on startup/Auth loss.
+  // A signed-in B discovers only B. Unknown native identity waits for its push.
+  if (SERVER_MODE || !desktopClosureBootReady || pushedHumanAuth === undefined || closureV2RecoveryRunning) return
+  closureV2RecoveryRunning = true
+  void (async () => {
+    const host = await desktopClosureV2Host(), pending = await host.discover()
+    if (pending && pending.phase !== 'local-complete') {
+      await host.recover(pending.handle)
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('account-closure:v2-changed')
+    }
+  })().catch(() => {
+    // Protected original intent remains available to explicit recovery. Do not
+    // log request bodies, tokens, underlying transport errors or result JSON.
+    createLogger('account-closure').warn('Original account closure recovery remains pending')
+  }).finally(() => { closureV2RecoveryRunning = false })
+}
 /** Booted ⇒ the bridge is loaded; a missing bridge here is a broken boot, said loudly. */
 function bootedSessionLife() {
   const bridge = loadEmdashBridge()
@@ -6429,7 +6476,7 @@ app.whenReady().then(async () => {
       scheduleDiscovery: (work) => startupDiscovery.schedule(work),
     })
     sessionHostBoot = emdashBoot
-    void emdashBoot.then(() => { desktopClosureBootReady = true; desktopClosureReady.resolve(); deviceRuntimeHost?.notifyAuthChanged() }, error => desktopClosureReady.reject(error))
+    void emdashBoot.then(() => { desktopClosureBootReady = true; desktopClosureReady.resolve(); deviceRuntimeHost?.notifyAuthChanged(); resumeAccountClosureV2() }, error => desktopClosureReady.reject(error))
     platformCredentialsBoot = emdashBoot.catch(() => undefined)
     // Task names are projected during boot; adopting names (cloud, then the one-time legacy ones) follows it.
     void emdashBoot
