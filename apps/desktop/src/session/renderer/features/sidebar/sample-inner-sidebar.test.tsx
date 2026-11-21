@@ -29,8 +29,10 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
     translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key),
   }),
 }));
+// What the column reports to its slot in the workspace (folded: the slot closes to 0, the column stays mounted).
+const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  useInnerSidebarFrame: () => 260,
+  useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
   useWorkspaceLayoutContext: () => ({ isLeftOpen: true }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
@@ -143,7 +145,6 @@ describe('the inner column for the sample project', () => {
   it('draws the sample: head row with its cover, name and 「示例」 (no pen), then 智能体 with exactly the content agent, then an empty 话题', async () => {
     await render();
     expect(column()!.dataset.innerSidebarKind).toBe('sample');
-    expect(column()!.style.width).toBe('260px');
     expect(innerSidebarChat.get(), 'the sample is no chat: the list keeps lighting the sample row by itself').toBeNull();
 
     const headRow = host.querySelector<HTMLElement>('[data-inner-head="sample-project"]')!;
@@ -232,11 +233,12 @@ describe('the inner column for the sample project', () => {
     const fold = host.querySelector<HTMLElement>('[data-inner-head="sample-project"] [data-inner-head-fold]')!;
     expect([...fold.parentElement!.children].at(-1)).toBe(fold);
     await act(async () => fold.click());
-    expect(column()).toBeNull();
+    expect(innerFrame.folded).toBe(true);
     expect(innerSidebarFoldedAway.get()).toBe(true);
     expect(innerSidebarShownFor.get()).toBeNull();
     const expand = host.querySelector<HTMLElement>('[data-shell-restore-lane] button[aria-label="sidebar.expandInner"]')!;
     await act(async () => expand.click());
+    expect(innerFrame.folded).toBe(false);
     expect(column()!.dataset.innerSidebarKind).toBe('sample');
     expect(host.querySelector('[data-shell-restore-lane]')).toBeNull();
   });

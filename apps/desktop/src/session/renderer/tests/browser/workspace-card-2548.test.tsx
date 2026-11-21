@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
-import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
+import { useInnerSidebarFrame, WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
@@ -30,6 +30,12 @@ afterEach(() => {
   delete document.documentElement.dataset.windowMaterial;
 });
 
+/** The inner column as InnerSidebarFrame draws it: filling the slot the layout sizes (today's width, 240). */
+function InnerColumn() {
+  useInnerSidebarFrame();
+  return <div data-region="inner-sidebar" className="relative flex h-full w-full flex-col bg-background-tertiary" />;
+}
+
 async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
   document.documentElement.dataset.theme = theme;
   // The desktop main window lays the list on the rail's workspace frame (#7610) in both themes; the card must survive
@@ -44,7 +50,7 @@ async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
           <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
             <WorkspaceLayout
               leftSidebar={<div>one list</div>}
-              innerSidebar={inner ? <div data-region="inner-sidebar" className="relative flex h-full shrink-0 flex-col bg-background-tertiary" style={{ width: 240 }} /> : null}
+              innerSidebar={inner ? <InnerColumn /> : null}
               mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<div>reading surface</div>} />}
             />
           </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
@@ -96,7 +102,7 @@ for (const theme of ['light', 'dark'] as const) {
   it(`${theme}: the list and the inner column lie on the one inset workspace frame, ❌ a veil of their own`, async () => {
     const { column } = await renderDesktop(theme, true);
     const frame = harness.container.querySelector<HTMLElement>('[data-desktop-shell] > .gg-sidebar-rail + div')!;
-    const list = harness.container.querySelector<HTMLElement>('[data-workspace-left-panel] > :not([data-peek])')!;
+    const list = harness.container.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
     const frameStyle = getComputedStyle(frame);
     expect(frameStyle.marginTop).toBe('5px');
     expect(frameStyle.getPropertyValue('--shell-bg').trim()).not.toBe('transparent');
