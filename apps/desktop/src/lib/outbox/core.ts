@@ -196,8 +196,10 @@ export function createOutbox(deps: {
     if (!current(gen)) return account
     const restarted: OutboxItem[] = []
     for (const row of rows) {
-      // A write that died in flight is sent again: the id makes the replay harmless.
-      const item = row.state === 'sending' ? { ...row, state: 'queued' as const } : row
+      // A write that died in flight is sent again: the id makes the replay harmless. A start is itself a sign the target
+      // may be back, so an unreachable failure from the last run goes again too (still shown failed until confirmed).
+      const item = row.state === 'sending' ? { ...row, state: 'queued' as const }
+        : row.state === 'failed' && row.failure?.reason === 'unreachable' && row.retryAt !== 0 ? { ...row, retryAt: 0 } : row
       if (item !== row) restarted.push(item)
       lastOrder = Math.max(lastOrder, item.order)
       items.set(item.id, { ...item, rev: item.rev ?? 0 })

@@ -153,6 +153,37 @@ describe('outbox core', () => {
     expect(box.get('lost')).toBeUndefined()
   })
 
+  it('sends an unreachable failure again on the next start, never a refused one', async () => {
+    const storage = memoryStorage()
+    const first = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+    const note = kind('note', { timeoutMs: null })
+    first.register(note.definition)
+    await first.loaded()
+    await first.enqueue('note', { text: 'x', lane: 'a' }, { id: 'lost' })
+    await first.enqueue('note', { text: 'y', lane: 'b' }, { id: 'refused' })
+    await flush()
+    note.calls.find((call) => call.item.id === 'refused')!.reject(new OutboxRejected('no'))
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await flush()
+      note.calls.filter((row) => row.item.id === 'lost').at(-1)!.reject(new Error('offline'))
+      await vi.advanceTimersByTimeAsync(16_000)
+    }
+    expect(storage.rows.get('u1/lost')).toMatchObject({ state: 'failed', failure: { reason: 'unreachable' } })
+    first.dispose()
+
+    const second = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+    const again = kind('note', { timeoutMs: null })
+    second.register(again.definition)
+    await second.loaded()
+    await flush()
+    expect(again.calls.map((call) => call.item.id)).toEqual(['lost'])
+    expect(second.get('lost')?.state).toBe('failed') // shown failed until confirmed
+    again.calls[0]!.resolve()
+    await flush()
+    expect(second.get('lost')).toBeUndefined()
+    expect(second.get('refused')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
+  })
+
   it('merges at enqueue and confirms the newest payload, not the one in flight', async () => {
     const box = createOutbox({ storage: memoryStorage(), account: account('u1'), online: () => () => {} })
     const read = kind('read', { merge: (previous, next) => Number(previous.text) > Number(next.text) ? previous : next })
