@@ -4,6 +4,7 @@ import { act } from 'react'
 import { i18n } from '@/i18n/runtime'
 import '@/i18n/registerMainCatalog'
 import { NoticeHost } from '@/components/NoticeHost'
+import { readThemePreference, writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { dismissNotice } from '@/lib/notices'
 import { enqueueImport, importJobs } from '@/components/settings/data-import/import-queue'
 import { withCodexTaskImport } from '@/components/settings/data-import/environment-import-providers'
@@ -23,10 +24,13 @@ const base: ImportProvider = { id: 'codex', label: 'ChatGPT', iconId: 'codex', s
 const row = { id: 'one', title: 'Example task', revision: 'r1' }
 let harness: ReturnType<typeof createReactHarness>
 let language: string
+let theme: ReturnType<typeof readThemePreference>
 let noticeKey: string | undefined
 beforeEach(async () => {
   vi.clearAllMocks()
   language = i18n.language
+  theme = readThemePreference()
+  writeThemePreference('light')
   api.scanCodexTasks.mockResolvedValue({ status: 'ready', rows: [row], blocked: [] })
   api.codexTaskImportProgress.mockResolvedValue(null)
   harness = createReactHarness()
@@ -37,6 +41,7 @@ afterEach(async () => {
   if (noticeKey) dismissNotice(noticeKey)
   noticeKey = undefined
   harness.cleanup()
+  writeThemePreference(theme)
   await i18n.changeLanguage(language)
 })
 
@@ -59,6 +64,9 @@ it.each([
   expect(text).not.toContain('codex-import-')
   expect(text).not.toContain('Error invoking')
   expect(text).not.toContain('/private/')
+  await document.fonts.ready
+  await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+    .map(animation => animation.finished.catch(() => {})))
   await page.screenshot({ path: `../../../../../../../test-results/codex-import-error-${locale}.png` })
 })
 
