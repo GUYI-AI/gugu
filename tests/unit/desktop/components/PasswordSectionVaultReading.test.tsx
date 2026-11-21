@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PasswordItem, PasswordSaveDraft, PasswordSnapshot, PasswordUiCommand, PasswordUiReply } from '../../../../packages/core/src/shared/passwordBetaProtocol'
 import { requestPasswordFill } from '../../../../packages/core/src/shared/passwordBetaProtocol'
 import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
+vi.mock('@/lib/notices', async (original) => (await import('../../../support/inlineLiveNotice')).withInlineLiveNotice(await original<object>()))
 
 
 const item = (id: string, name: string): PasswordItem => ({
