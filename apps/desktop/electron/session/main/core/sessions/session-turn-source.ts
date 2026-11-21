@@ -4,12 +4,20 @@ import type { StoredTurnValue } from './session-turn-codec';
 
 /** A virtual JSON byte stream. Bodies are the canonical payload objects, never copied into a window source. */
 export type TurnJsonRef = { ref: TurnPayloadRef; bytes: number };
-type Leaf = { kind: 'literal'; ref: TurnPayloadRef }
+type Leaf = { kind: 'literal'; ref: TurnPayloadRef } | { kind: 'inline'; text: string }
   | { kind: 'text'; ref: TurnPayloadRef; start: number; end: number; escape: number }
   | { kind: 'image'; ref: TurnPayloadRef; start: number; end: number };
 type Piece = Leaf | { kind: 'concat'; parts: TurnJsonRef[] }
   | { kind: 'page'; parts: Array<{ piece: Leaf; bytes: number }> };
-type Fragment = string | Exclude<Leaf, { kind: 'literal' }>;
+type Fragment = string | Exclude<Leaf, { kind: 'literal' | 'inline' }>;
+type Part = { piece: Leaf; bytes: number };
+/**
+ * A literal run up to this stored descriptor size rides in its page instead of becoming its own object: the keys and
+ * punctuation between two bodies usually fit. A longer run stays an object. Two runs side by side cannot both be short
+ * (the first ended because the second would have overflowed 2 KiB), so a page still covers many output bytes for every
+ * index byte it costs.
+ */
+const INLINE_RUN_BYTES = 512;
 const escape = (text: string, layers: number) => {
   for (let at = 0; at < layers; at++) text = JSON.stringify(text).slice(1, -1);
   return text;
@@ -84,7 +92,8 @@ function escapedText(input: Uint8Array, layers: number, range?: { start: number;
 export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnValue): TurnJsonRef {
   const node = (piece: Piece, bytes: number): TurnJsonRef => ({ ref: files.putText(JSON.stringify(piece),
     piece.kind === 'concat' ? piece.parts.map(part => part.ref)
-      : piece.kind === 'page' ? piece.parts.map(part => part.piece.ref) : [piece.ref]), bytes });
+      : piece.kind === 'page' ? piece.parts.flatMap(part => part.piece.kind === 'inline' ? [] : [part.piece.ref])
+        : piece.kind === 'inline' ? [] : [piece.ref]), bytes });
   function* render(input: StoredTurnValue, indent = 0, depth = 0, layers = 0): Generator<Fragment> {
     const literal = (text: string) => escape(text, layers);
     switch (input.t) {
@@ -121,20 +130,25 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
     }
   }
   const parts: TurnJsonRef[] = [];
-  let page: Array<{ piece: Leaf; bytes: number }> = [], pageBytes = 40;
+  let page: Part[] = [], pageBytes = 40;
   const flushPage = () => {
     if (page.length) parts.push(node({ kind: 'page', parts: page }, page.reduce((sum, part) => sum + part.bytes, 0)));
     page = []; pageBytes = 40;
   };
-  const add = (piece: Leaf, bytes: number) => {
-    const part = { piece, bytes }, size = Buffer.byteLength(JSON.stringify(JSON.stringify(part))) + 1;
+  // The page is stored as a JSON text payload, so a descriptor costs its serialization quoted once more, plus a comma.
+  const stored = (part: Part) => Buffer.byteLength(JSON.stringify(JSON.stringify(part))) + 1;
+  const add = (part: Part, size = stored(part)) => {
     // Pages only contain bounded descriptors. Bodies keep their separate source-I/O accounting.
     if (page.length === 32 || pageBytes + size > 8192) flushPage();
     page.push(part); pageBytes += size;
   };
   let text = '', textBytes = 0;
   const flush = () => {
-    if (text) { add({ kind: 'literal', ref: files.putBytes(Buffer.from(text)) }, textBytes); text = ''; textBytes = 0; }
+    if (!text) return;
+    const inline: Part = { piece: { kind: 'inline', text }, bytes: textBytes }, size = stored(inline);
+    if (size <= INLINE_RUN_BYTES) add(inline, size);
+    else add({ piece: { kind: 'literal', ref: files.putBytes(Buffer.from(text)) }, bytes: textBytes });
+    text = ''; textBytes = 0;
   };
   for (const fragment of render(value)) {
     if (typeof fragment === 'string') {
@@ -153,7 +167,7 @@ export function createTurnJsonSource(files: TurnPayloadFiles, value: StoredTurnV
       const bytes = fragment.kind === 'image' ? 4 * Math.ceil((fragment.end - fragment.start) / 3)
         : !fragment.escape ? fragment.end - fragment.start
           : escapedText(files.readEncodedTextRange(fragment.ref, fragment.start, fragment.end), fragment.escape).bytes;
-      add(fragment, bytes);
+      add({ piece: fragment, bytes });
     }
   }
   flush();
@@ -197,7 +211,7 @@ export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: n
     }
     if (piece.kind === 'page') {
       if (!Array.isArray(piece.parts) || piece.parts.length < 1 || piece.parts.length > 32
-        || piece.parts.some(part => !part.piece || !['literal', 'text', 'image'].includes(part.piece.kind)
+        || piece.parts.some(part => !part.piece || !['literal', 'inline', 'text', 'image'].includes(part.piece.kind)
           || !Number.isSafeInteger(part.bytes) || part.bytes < 0)
         || piece.parts.reduce((sum, part) => sum + part.bytes, 0) !== ref.bytes) throw new Error('Invalid canonical JSON page');
       let at = 0;
@@ -216,8 +230,14 @@ export function readTurnJsonRange(directory: string, root: TurnJsonRef, start: n
     if (piece.kind === 'literal') {
       if (piece.ref.bytes !== length) throw new Error('Canonical JSON literal length mismatch');
       return withBody(() => files.readBytesRange(piece.ref, from, to));
-    }
-    else if (piece.kind === 'text') {
+    } else if (piece.kind === 'inline') {
+      if (typeof piece.text !== 'string') throw new Error('Invalid canonical inline literal');
+      // Read with its page as index I/O, and admitted again as source bytes: the source ceiling still bounds the
+      // content a request returns, as it did when every run was an object of its own.
+      const text = piece.text, decoded: { bytes?: Buffer } = {};
+      budget.readSync('sourceBytes', length, () => (decoded.bytes = Buffer.from(text)).length);
+      bytes = decoded.bytes!;
+    } else if (piece.kind === 'text') {
       if (!Number.isSafeInteger(piece.start) || !Number.isSafeInteger(piece.end) || piece.start < 1
         || piece.end < piece.start || piece.end - piece.start > 12 * 1024 || piece.end >= piece.ref.bytes) throw new Error('Invalid canonical text range');
       const result = withBody(() => escapedText(files.readEncodedTextRange(piece.ref, piece.start, piece.end), piece.escape, { start: from, end: to }));

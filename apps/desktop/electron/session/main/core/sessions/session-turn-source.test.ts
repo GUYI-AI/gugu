@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createWindowBudget, WINDOW_LIMITS } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { encodeTurnValue } from './session-turn-codec';
-import { TurnPayloadFiles, unbindTurnPayloadDirectory } from './session-turn-payloads';
-import { createTurnJsonSource, jsonSpecialBytes, readTurnJsonRange } from './session-turn-source';
+import { TurnPayloadFiles, unbindTurnPayloadDirectory, type TurnPayloadRef } from './session-turn-payloads';
+import { createTurnJsonSource, jsonSpecialBytes, readTurnJsonRange, type TurnJsonRef } from './session-turn-source';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'turn-source-')); });
@@ -127,3 +127,83 @@ it.each([1, 2, 3])('projects nested raw JSON with dense escapes byte for byte (s
     unbindTurnPayloadDirectory(root); rmSync(root, { recursive: true, force: true }); root = mkdtempSync(join(tmpdir(), 'turn-source-'));
   }
 });
+
+it('keeps the short runs between bodies inside their pages and a long run as its own object', () => {
+  const items = Array.from({ length: 40 }, (_, at) => ({ kind: 'execute-tool-call', id: `tool:${at}`, title: at === 7 ? '"'.repeat(300) : 'echo',
+    outputText: `output ${at} "quoted"\n`.repeat(100), rawOutput: JSON.stringify({ aggregatedOutput: `output ${at} "quoted"\n`.repeat(100), exitCode: 0 }, null, 2) }));
+  const value = { id: 'turn', items }, files = new TurnPayloadFiles(root), encoded = encodeTurnValue(value, files), before = new Set(files.staged.keys());
+  const source = createTurnJsonSource(files, encoded);
+  const added = [...files.staged].filter(([hash]) => !before.has(hash)).map(([, object]) => object);
+  const literals = added.filter(object => object.kind === 0);
+  const pages = added.filter(object => object.kind === 2).map(object => JSON.parse(JSON.parse(object.data.subarray(1).toString()) as string) as
+    { kind: string; parts?: Array<{ piece: { kind: string; text?: string } }> }).filter(piece => piece.kind === 'page');
+  const inline = pages.flatMap(page => page.parts!.filter(part => part.piece.kind === 'inline'));
+  // Two runs per item ride in pages; only the run carrying the quoted title, which escapes to several times its size, is an object.
+  expect(inline.length).toBe(2 * items.length);
+  expect(literals).toHaveLength(1);
+  expect(literals.every(object => object.bytes > 400)).toBe(true);
+  expect(added.filter(object => object.kind === 2).every(page => page.bytes <= 8193)).toBe(true);
+  // An inline run is read with its page and still charged as the source bytes it returns.
+  const short = new TurnPayloadFiles(root), small = createTurnJsonSource(short, encodeTurnValue({ id: 'turn', items: [{ kind: 'x', n: 1 }] }, short));
+  const charged = createWindowBudget();
+  expect(Buffer.from(readTurnJsonRange(root, small, 0, small.bytes, charged)).toString()).toBe('{"id":"turn","items":[{"kind":"x","n":1}]}');
+  expect(charged.counters.sourceBytes).toBe(small.bytes);
+  expect(charged.counters.indexBytes).toBeGreaterThan(small.bytes);
+  const parts: Buffer[] = [];
+  for (let at = 0; at < source.bytes; at += 16384) {
+    const budget = createWindowBudget();
+    parts.push(Buffer.from(readTurnJsonRange(root, source, at, Math.min(source.bytes, at + 16384), budget)));
+    expect(budget.counters.indexBytes).toBeLessThanOrEqual(32 * 1024);
+  }
+  expect(Buffer.concat(parts).equals(Buffer.from(JSON.stringify(value)))).toBe(true);
+});
+
+it.each([['a list', ['a']], ['a number', 1], ['a shorter text', '']])('refuses an inline run whose text is %s', (_, text) => {
+  const files = new TurnPayloadFiles(root), page = { kind: 'page', parts: [{ piece: { kind: 'inline', text }, bytes: 1 }] };
+  const ref = files.putText(JSON.stringify(page));
+  expect(() => readTurnJsonRange(root, { ref, bytes: 1 }, 0, 1, createWindowBudget())).toThrow(/Invalid canonical inline literal|length mismatch/);
+});
+
+type StoredPiece = { kind: string; parts: Array<{ piece: { kind: string; text?: string; ref?: TurnPayloadRef }; bytes: number }> & TurnJsonRef[] };
+/** The layout the earlier builder wrote: every literal run an object of its own. Rewrites all pages, or only some. */
+function legacySource(files: TurnPayloadFiles, root: TurnJsonRef, convert: (page: number) => boolean) {
+  let pages = 0;
+  const kinds = new Set<string>();
+  const rewrite = (ref: TurnJsonRef): TurnJsonRef => {
+    const piece = JSON.parse(files.readText(ref.ref)) as StoredPiece;
+    if (piece.kind === 'concat') {
+      const parts = piece.parts.map(rewrite);
+      return { ref: files.putText(JSON.stringify({ kind: 'concat', parts }), parts.map(part => part.ref)), bytes: ref.bytes };
+    }
+    const old = convert(pages++), parts = piece.parts.map(part => old && part.piece.kind === 'inline'
+      ? { piece: { kind: 'literal', ref: files.putBytes(Buffer.from(part.piece.text!)) }, bytes: part.bytes } : part);
+    parts.forEach(part => kinds.add(part.piece.kind));
+    return old ? { ref: files.putText(JSON.stringify({ kind: 'page', parts }), parts.flatMap(part => part.piece.ref ? [part.piece.ref] : [])), bytes: ref.bytes } : ref;
+  };
+  return { root: rewrite(root), pages: () => pages, kinds };
+}
+
+it.each([['only literal runs', () => true], ['old and new pages mixed', (page: number) => page % 2 === 0]] as const)(
+  'reads a source written with %s byte for byte', (name, convert) => {
+    const image = Buffer.alloc(30000, 7).toString('base64');
+    const items = Array.from({ length: 60 }, (_, at) => ({ kind: 'execute-tool-call', id: `tool:${at}`, title: at % 9 ? 'echo' : '"'.repeat(300),
+      outputText: `out ${at} "q" \\ 中文🙂\n`.repeat(80), rawOutput: JSON.stringify({ aggregatedOutput: `out ${at} "q" \\ 中文🙂\n`.repeat(80), exitCode: at }, null, 2),
+      ...(at === 5 ? { images: [{ mimeType: 'image/png', data: image }] } : {}) }));
+    const value = { id: 'turn', items, nested: JSON.stringify({ rawOutput: JSON.stringify({ text: 'x"\\'.repeat(400) }) }) };
+    const files = new TurnPayloadFiles(root), current = createTurnJsonSource(files, encodeTurnValue(value, files));
+    const legacy = legacySource(files, current, convert), expected = Buffer.from(JSON.stringify(value));
+    expect(legacy.pages()).toBeGreaterThan(3);
+    expect(legacy.kinds.has('literal')).toBe(true);
+    expect(legacy.kinds.has('inline')).toBe(name !== 'only literal runs');
+    expect(legacy.root.ref.hash).not.toBe(current.ref.hash);
+    for (const source of [legacy.root, current]) {
+      const next = random(source === current ? 1 : 2), parts: Buffer[] = [];
+      for (let at = 0; at < source.bytes;) {
+        const end = Math.min(source.bytes, at + 1 + Math.floor(next() * 16384)), budget = createWindowBudget();
+        parts.push(Buffer.from(readTurnJsonRange(root, source, at, end, budget)));
+        expect(budget.counters.indexBytes).toBeLessThanOrEqual(WINDOW_LIMITS.indexBytes);
+        at = end;
+      }
+      expect(Buffer.concat(parts).equals(expected)).toBe(true);
+    }
+  });
