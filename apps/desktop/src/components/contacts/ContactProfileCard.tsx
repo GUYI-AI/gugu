@@ -20,6 +20,7 @@ import { MessageCircle, Pencil, Settings, Share, Trash, UserPlus } from '@/lib/i
 import { useContactsStore } from '../../store/contactsContext'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import type { AgentRequestState } from './agentContactRequest'
+import { nameClampClass } from './contactsPanelStyles'
 export type { AgentRequestState } from './agentContactRequest'
 
 
@@ -32,7 +33,7 @@ const styles = {
     'gg-c-cpane-av flex h-[var(--avatar-xl)] w-[var(--avatar-xl)] shrink-0 items-center justify-center overflow-hidden',
   avatarRound: 'rounded-full',
   name:
-    'gg-c-cpane-name mt-5 flex items-center gap-2 text-xl font-semibold text-[var(--fg)]',
+    'gg-c-cpane-name mt-5 flex max-w-full items-center gap-2 text-center text-xl font-semibold text-[var(--fg)]',
   statusBase:
     'gg-c-cpane-status mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   statusStandby: 'standby',
@@ -256,7 +257,7 @@ export function PersonContactProfileCard({
       <div className={avatarClass()}>
         <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={96} />
       </div>
-      <div className={styles.name}>{displayName(contact)}</div>
+      <div className={styles.name}><span className={nameClampClass} title={displayName(contact)}>{displayName(contact)}</span></div>
       {hasAlias ? (
         <div className={styles.guguNumber} data-testid={AUTOMATION_TEST_IDS.contactsDetailOriginalName}>
           <span className={styles.guguNumberLabel}>{t('profile.originalName')}</span>
