@@ -8,9 +8,10 @@ const hosts = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('@renderer/features/library/library-host', () => ({
   keepLibraryHost: (host: { key: string }) => { hosts.set(host.key, host); return host; },
   libraryHostOf: (key: string) => { const host = hosts.get(key); if (!host) throw new Error(`No library host is kept for ${key}`); return host; },
+  peekLibraryHost: (key: string) => hosts.get(key),
   useLibraryHost: vi.fn(),
 }));
-vi.mock('@gugu/core/cloud/assistantPanelRead', () => ({ isAssistantPanelReadRetryable: () => true }));
+vi.mock('@gugu/core/cloud/assistantPanelRead', () => ({ retryAssistantPanelRead: (count: number) => count < 2 }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: vi.fn() }));
 vi.mock('@/components/assistant/assistant-app-client', () => ({ reportAssistantAppChange: vi.fn() }));
 vi.mock('@/store/devicesCache', () => ({ cachedDevicesAccount: vi.fn() }));
