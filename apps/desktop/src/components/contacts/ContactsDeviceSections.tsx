@@ -1,5 +1,5 @@
 import { ListRow } from '../ui/ListRow'
-import { Cloud, Monitor, Server, User, Users } from '@/lib/icons'
+import { Monitor, Server, User, Users } from '@/lib/icons'
 import { sectionCount, type ContactsSection } from './contactsSections'
 import { sidebarCountClass } from '../../session/renderer/features/sidebar/sidebar-primitives'
 import { rowKeyActivate } from './contactsPanelStyles'
@@ -9,7 +9,7 @@ import { rowKeyActivate } from './contactsPanelStyles'
 
 const iconOf = (section: ContactsSection) =>
   section.kind === 'people' ? User : section.kind === 'groups' ? Users
-    : section.scope === 'cloud' ? Cloud : section.scope === 'local' ? Monitor : Server
+    : section.scope === 'local' ? Monitor : Server
 
 export function ContactsSectionNav({ sections, selectedKey, onSelect }: {
   sections: ContactsSection[]

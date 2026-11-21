@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
-import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
+import { publishInnerSidebarPresent } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
 // This device's Apps are the desktop's (the header's 「打开 App」 lists the ones installed here).
 vi.mock('../../../../../apps/desktop/src/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
@@ -120,8 +120,8 @@ describe('final group toolbar v4', () => {
     expect(menuItem('文件')).toBeDefined()
   })
 
-  it('#2548 with the desktop inner column on this chat: only topics leave the bar (the column lists them); the members button stays', async () => {
-    publishInnerSidebarChat('chat')
+  it('#2548 in a window with the desktop inner column: only topics leave the bar on every block (a click moves the column onto it); the members button stays', async () => {
+    publishInnerSidebarPresent(true)
     try {
       await header('group', { menu: true })
       expect(button('话题')).toBeUndefined()
@@ -129,7 +129,7 @@ describe('final group toolbar v4', () => {
       expect(button('应用')).toBeDefined()
       expect(button('更多操作')).toBeDefined()
     } finally {
-      publishInnerSidebarChat(null)
+      publishInnerSidebarPresent(false)
     }
   })
 

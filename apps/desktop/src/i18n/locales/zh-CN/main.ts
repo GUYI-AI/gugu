@@ -582,7 +582,6 @@ export default {
       "cancel": "取消 Google 登录",
       "waiting": "请在浏览器中完成 Google 登录",
       "exchanging": "正在完成登录…",
-      "cancelled": "已取消 Google 登录",
       "staleCallback": "已忽略旧的登录回调，请完成当前 Google 登录",
       "timeout": "Google 登录已超时，请重试",
       "invalidCallback": "登录回调无效，请重新发起 Google 登录",
