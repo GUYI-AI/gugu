@@ -11,7 +11,7 @@ import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
 import { setupNavigationGuards } from '@renderer/app/view-registry';
-import { prefetchAllAppSettings } from '@renderer/features/settings/app-settings-client';
+import { prefetchAllAppSettings, wireNewSessionMemoryRefresh } from '@renderer/features/settings/app-settings-client';
 // @@@task-fusion (#2802) — session-ui 的 CSS 栈按它自己文档的契约显式引一次。
 // 从前这里是一行 `@gugu/session-ui/style.css`,那是 tsdown/vite lib 把下面这些打成的
 // 产物;并入本体后包按源码消费,VE 桶(layers/tokens/surfaces/reset/sprinkles/
@@ -40,7 +40,7 @@ import 'katex/dist/katex.min.css';
 // shadow root, so toasts render as a bare <ol>. Import it here so it lands in the build CSS
 // that the gugu host injects INTO the shadow root (the head copy is a harmless duplicate).
 import 'sonner/dist/styles.css';
-import { registerInstalledExtensionTabs } from '@renderer/features/extensions/register-extension-tabs';
+import { wireInstalledExtensionTabs } from '@renderer/features/extensions/register-extension-tabs';
 import { wireRemoteExtensionResync } from '@renderer/features/extensions/wire-remote-extension-resync';
 import { wireMarketRefresh } from '@renderer/features/extensions/wire-market-refresh';
 import { wireProgramNotifications } from '@renderer/features/extensions/wire-program-notifications';
@@ -50,14 +50,12 @@ import { wireExtensionHostActions } from '@renderer/features/extensions/wire-ext
 import { setupAppCommandProvider } from '@renderer/lib/commands/app-commands';
 import { setupExtensionCommandProvider } from '@renderer/features/extensions/extension-command-provider';
 import { setupViewCommandProvider } from '@renderer/lib/commands/view-command-provider';
-import { wireCommitHistoryInvalidation } from '@renderer/lib/commit-history-invalidation';
 import { wireExternalLinkRequests } from '@renderer/lib/external-link-requests';
 import { wireSessionsOnScreenReport } from '@renderer/app/sessions-on-screen';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { wireModelRegistryInvalidation } from '@renderer/lib/text-model/invalidation-bridges';
 import { modelRegistry } from '@renderer/lib/text-model/model-registry';
-import { wirePrCacheInvalidation } from '@renderer/lib/pr-cache-invalidation';
-import { wireAgentCapabilityInvalidation } from '@renderer/lib/stores/use-agents';
+import { wireAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { log } from '@renderer/utils/logger';
 import type { NavigationSnapshot, SidebarSnapshot } from '@shared/view-state';
@@ -218,9 +216,8 @@ async function bootstrap() {
   }
 
   wireModelRegistryInvalidation(modelRegistry);
-  wirePrCacheInvalidation();
-  wireAgentCapabilityInvalidation();
-  wireCommitHistoryInvalidation();
+  wireAgentReadings();
+  wireNewSessionMemoryRefresh();
   wireExternalLinkRequests();
   // 屏上的会话报给主进程:闲置回收不停人正看着的会话(spec idle-reclaim「不在屏上」)。
   wireSessionsOnScreenReport();
@@ -237,12 +234,11 @@ async function bootstrap() {
 
   // Extensions register their tab providers off the critical path (#2374): a tab whose provider
   // has not arrived yet is held as a placeholder and promoted in place once it registers, so the
-  // session page never waits on an inventory read to become usable.
-  void registerInstalledExtensionTabs().catch((error: unknown) => {
-    log.warn('Extension tab registration failed:', error);
-  });
+  // session page never waits on an inventory read to become usable. The providers follow the
+  // installedExtensions('local') replica from here on; this reads it once (the snapshot kept only the dock).
+  wireInstalledExtensionTabs();
   // 有新版 / 被撤回 / 已弃用的提示在启动时查一次(#5410 spec:❌ 轮询、❌ 横幅),之后跟着市场目录变 ——
-  // 同样脱离关键路径,失败只进日志(installedExtensionsStore.checkUpdates 自己兜底)。
+  // 同样脱离关键路径;读失败落在 marketUpdates('local') 的读数上(角标不画),不吞成「没有更新」。
   wireMarketRefresh();
   wireProgramNotifications();
   wireRemoteExtensionResync();

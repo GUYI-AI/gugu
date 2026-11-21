@@ -41,6 +41,11 @@ export {
 } from './local/agent/transcriptInventory'
 export type { TranscriptInventoryOptions } from './local/agent/transcriptInventory'
 export {
+  TRANSCRIPT_ACCESS_CODES,
+  TranscriptAccessError,
+  type TranscriptAccessCode
+} from './local/agent/transcriptAccessError'
+export {
   TRANSCRIPT_SOURCE_SPECS,
   allTranscriptSourceSpecs,
   requireTranscriptSourceSpec
@@ -132,6 +137,7 @@ export {
   matchAgentByProviderSessionId,
   removeAgents,
   archiveAgents,
+  restoreArchivedAgents,
   updateAgent,
   writeAgentName,
   type LocalAgentUpdate,

@@ -139,6 +139,11 @@ const isReleaseProof = (value: unknown) => !!value && typeof value === 'object'
  */
 const BINDING_AUTHORS_FILENAME = '.conversation-binding-authors.json';
 type BindingAuthor = 'person' | { host: string | null };
+/**
+ * API 61 (app-credentials.ts): the saved credential the person picked for an App on a website, App id → site → password
+ * vault credential id. On this device only; forgotten on uninstall and when another publisher's App takes the id.
+ */
+const CREDENTIAL_CHOICES_FILENAME = '.credential-choices.json';
 
 /** Who published an App installed from a chat or a folder (`PUBLISHERS_FILENAME`). */
 export interface ExtensionPublisher {
@@ -215,6 +220,7 @@ export class ExtensionsService {
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
   private readonly bindingAuthorsFile: JsonFile<Record<string, BindingAuthor>>;
+  private readonly credentialChoicesFile: JsonFile<Record<string, Record<string, string>>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
   private readonly surfaceAuthorities = new Map<string, { scope: string; value: string }>();
   /** #1927 (42): who holds a binding's authority past one call (resource subscriptions), told when it may have changed. */
@@ -226,6 +232,8 @@ export class ExtensionsService {
     this.bindingAuthorsFile = jsonFile(rootDir, BINDING_AUTHORS_FILENAME, '{}', mapOf<BindingAuthor>(BINDING_AUTHORS_FILENAME, 'binding authors',
       (value) => value === 'person' || (!!value && typeof value === 'object' && Object.keys(value).length === 1
         && (typeof (value as { host?: unknown }).host === 'string' || (value as { host?: unknown }).host === null))), 0o600);
+    this.credentialChoicesFile = jsonFile(rootDir, CREDENTIAL_CHOICES_FILENAME, '{}', mapOf<Record<string, string>>(CREDENTIAL_CHOICES_FILENAME, 'credential choices',
+      (value) => !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((id) => typeof id === 'string')), 0o600);
     this.variantsFile = jsonFile(rootDir, '.variants.json', '{}', (value) => Object.assign(Object.create(null) as Record<string, AppVariants>, z.record(z.string(), appVariantsSchema).parse(value)));
     this.grantsFile = jsonFile(rootDir, '.granted-permissions.json', '{}', (value) => z.record(z.string(), z.object({ capabilities: z.array(z.string()), network: z.array(z.string()) })).parse(value) as Record<string, NonNullable<ExtensionManifest['permissions']>>);
     this.settingsFile = jsonFile(rootDir, SETTINGS_FILENAME, '{}', (value) => {
@@ -389,6 +397,29 @@ export class ExtensionsService {
     const kept = Object.keys(authors).filter((key) => !key.endsWith(suffix));
     if (kept.length === Object.keys(authors).length) return;
     this.bindingAuthorsFile.write(Object.fromEntries(kept.map((key) => [key, authors[key]!])));
+  }
+
+  /** The vault credential the person picked for this App on `site` (API 61), or null when they picked none. */
+  credentialChoice(extensionId: string, site: string): string | null {
+    const choices = this.credentialChoicesFile.read()[extensionId];
+    return choices && Object.hasOwn(choices, site) ? choices[site]! : null;
+  }
+
+  setCredentialChoice(extensionId: string, site: string, credentialId: string | null): void {
+    const stored = this.credentialChoicesFile.read();
+    const choices = { ...stored[extensionId] };
+    if (credentialId === null) delete choices[site];
+    else choices[site] = credentialId;
+    if (Object.keys(choices).length) stored[extensionId] = choices;
+    else delete stored[extensionId];
+    this.credentialChoicesFile.write(stored);
+  }
+
+  private forgetCredentialChoices(extensionId: string): void {
+    const stored = this.credentialChoicesFile.read();
+    if (!Object.hasOwn(stored, extensionId)) return;
+    delete stored[extensionId];
+    this.credentialChoicesFile.write(stored);
   }
 
   settings(extensionId: string): AppSettings {
@@ -588,6 +619,7 @@ export class ExtensionsService {
       delete grants[appKey(previousIdentity)];
       this.setGivenHere(previousIdentity, null);
       this.forgetBindingAuthors(manifest.id);
+      this.forgetCredentialChoices(manifest.id);
     }
     if (identity) grants[appKey(identity)] = approved;
     if (identity || previousIdentity) this.grantsFile.write(grants);
@@ -989,6 +1021,7 @@ export class ExtensionsService {
     this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
     this.forgetBindingAuthors(extensionId);
+    this.forgetCredentialChoices(extensionId);
     this.bindingAuthorityChanged(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();

@@ -1,6 +1,9 @@
 import { reportHandledError } from '@/lib/errorSummaryReporting';
+import { rendererLogger } from '@/lib/log';
 import { replica } from '@/lib/replica';
-import { rpc, rpcOn } from '@renderer/lib/ipc';
+import { writeOver } from '@/lib/replicaWrite';
+import { events, rpc, rpcOn } from '@renderer/lib/ipc';
+import { newSessionMemoryChangedChannel } from '@shared/core/sessions/sessionEvents';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 
 export type SettingsMeta<K extends AppSettingsKey> = {
@@ -8,6 +11,8 @@ export type SettingsMeta<K extends AppSettingsKey> = {
   defaults: AppSettings[K];
   overrides: Partial<AppSettings[K]>;
 };
+
+const settingsLog = rendererLogger('settings');
 
 /** This device's host is `local`; another machine's settings (#6264, machine-scoped rows) are keyed by its device id. */
 export const LOCAL_SETTINGS_HOST_KEY = 'local';
@@ -22,20 +27,43 @@ export const appSettingsModel = replica({
   scope: 'device',
   read: async (_device, key: AppSettingsKey, host: string) => {
     try {
-      return await (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.getWithMeta(key) as SettingsMeta<AppSettingsKey>;
+      return await settingsRpcOn(host).getWithMeta(key) as SettingsMeta<AppSettingsKey>;
     } catch (error) {
       if (host === LOCAL_SETTINGS_HOST_KEY) reportHandledError(error, 'settings.read');
       throw error;
     }
   },
   fresh: 5 * 60_000,
+  // The browser page's settings recover a transient failure before saying it; every other key fails loud at once.
+  retry: (failures: number, _error: Error, key: AppSettingsKey) => key === 'browser' && failures < 3,
   persist: { maxBytes: 1024, maxEntries: 30 },
 });
 
-/** Startup: the whole local set in one read, before the first frame of either entry. */
-export async function prefetchAllAppSettings(): Promise<void> {
-  const all = await rpc.appSettings.getAll() as { [K in AppSettingsKey]: SettingsMeta<K> };
-  for (const key of Object.keys(all) as AppSettingsKey[]) appSettingsModel.set([key, LOCAL_SETTINGS_HOST_KEY], all[key]);
+type SettingsRpc = Pick<ReturnType<typeof rpcOn>, 'appSettings'>;
+let remoteSettingsRoute: (host: string) => SettingsRpc = (host) => rpcOn(host);
+
+/** The phone has no machine client (`rpcOn`): it routes through its session-page channel. */
+export function routeRemoteSettings(route: (host: string) => SettingsRpc): void {
+  remoteSettingsRoute = route;
+}
+
+/** The one route to a host's settings: reads, writes and resets all go through it (❌ a write on another pipe than its read). */
+export function settingsRpcOn(host: string): SettingsRpc['appSettings'] {
+  return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : remoteSettingsRoute(host)).appSettings;
+}
+
+let startupRead: Promise<void> | null = null;
+
+/** Once per document; a failed read is tried again by the next caller. */
+export function prefetchAllAppSettings(): Promise<void> {
+  startupRead ??= (async () => {
+    const all = await rpc.appSettings.getAll() as { [K in AppSettingsKey]: SettingsMeta<K> };
+    for (const key of Object.keys(all) as AppSettingsKey[]) appSettingsModel.set([key, LOCAL_SETTINGS_HOST_KEY], all[key]);
+  })().catch((error: unknown) => {
+    startupRead = null;
+    throw error;
+  });
+  return startupRead;
 }
 
 export function mergeAppSettingsValue<K extends AppSettingsKey>(
@@ -68,13 +96,32 @@ export async function fetchAppSettingValue<K extends AppSettingsKey>(key: K): Pr
 }
 
 export function setAppSettingsValueInCache<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): void {
-  appSettingsModel.set([key, host], (old) => old && { ...old, value } as SettingsMeta<AppSettingsKey>);
+  appSettingsModel.set([key, host], (old: SettingsMeta<AppSettingsKey> | undefined) => old && { ...old, value } as SettingsMeta<AppSettingsKey>);
 }
 
 export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
-  return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.update(key, value as never) as Promise<void>;
+  return settingsRpcOn(host).update(key, value as never) as Promise<void>;
 }
 
+/** The one write of a settings key; read again when it settles. */
+export async function writeAppSetting<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
+  try {
+    await writeOver(appSettingsModel, [key, host], (old) => old && { ...old, value } as SettingsMeta<AppSettingsKey>,
+      () => updateAppSettingsRequest(key, value, host));
+  } catch (error) {
+    settingsLog.error({ key, error: String(error) }, `settings ${key}: main refused the write; the stored value is shown again`);
+    throw error;
+  } finally {
+    invalidateAppSettingsKey(key, host);
+  }
+}
+
+/** Even with no surface showing it: logic outside React decides on these values. */
 export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K, host = LOCAL_SETTINGS_HOST_KEY): void {
-  void appSettingsModel.refresh(key, host);
+  void appSettingsModel.reread(key, host).catch(() => undefined);
+}
+
+/** Main writes the new-session memory itself after a switched model's first reply (#3293): the box reads it fresh. */
+export function wireNewSessionMemoryRefresh(): void {
+  events.on(newSessionMemoryChangedChannel, () => invalidateAppSettingsKey('newSessionMemory'));
 }

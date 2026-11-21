@@ -9,7 +9,7 @@ import {
   WAKE_PICKUP_MS,
   type AgentReplyPending,
 } from '@/lib/agentReplyPending'
-import { refreshCloudComputer, wakeCloudComputer } from '@/lib/cloudComputerStore'
+import { cloudComputer, wakeCloudComputer } from '@/lib/cloudComputer'
 import { useChatStore } from '@/store/chatContext'
 import { useAgentCloudState } from './useAgentsOnCloudComputer'
 
@@ -21,7 +21,7 @@ let lastAsk = 0
 function askCloudComputer(): void {
   if (Date.now() - lastAsk < WAKE_ASK_MS - 500) return
   lastAsk = Date.now()
-  void refreshCloudComputer().catch(() => undefined)
+  void cloudComputer.refresh()
 }
 
 /**
@@ -36,7 +36,7 @@ export function useAgentReplyPending(chatId: string | null, agentUserId: string 
   const now = useDeadlineClock(agentReplyPendingDeadline(cloud, awaitingSince), 50)
   // 刚发出时它住的宿主收回着:管家几秒内会叫醒它,这一段勤着问,好让打字气泡接上「在跑」(❌ 等 30 秒一次的轮询)。
   // 同时由这里叫一次(与管家见待领命令那一叫合并):被拒(积分用完 / 会员到期)当场知道,界面照实说不在线 + 原因
-  // (cloudComputerStore.wakeRefused),❌ 打字气泡说着「在处理」、消息却没人收。
+  // (lib/cloudComputer `wakeRefusals`),❌ 打字气泡说着「在处理」、消息却没人收。
   const asleep = cloud?.presence === 'asleep'
   useEffect(() => {
     if (!asleep || awaitingSince === null) return

@@ -5,12 +5,14 @@ import { act, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
+import { until } from '../../../../../../../tests/support/awaitCondition';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { chatLayoutOf, closeChatTab, panelTabsOf } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { installSessionTabViews } from '@renderer/features/sessions/session-tab-views';
 import { BrowserWorkspaceStartContent } from '@renderer/features/browser/browser-workspace-start-page';
 import { recentToolPanel, type RecentTool } from '@renderer/features/browser/workspace-recent-tools';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { appState } from '@renderer/lib/stores/app-state';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
@@ -58,6 +60,8 @@ it('keeps the annotation entry visible on an ordinary group browser and register
     await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeVisible();
     // Without an Electron page behind this browser fixture, the visible action waits disabled.
     await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeDisabled();
+    // Registration runs in the pane's effect after the session exists; the disabled action can paint before it fires.
+    await until('browser tab registered with its conversation', () => registerBrowser.mock.calls.length, (calls) => calls > 0);
     expect(registerBrowser).toHaveBeenCalledWith(expect.objectContaining({ conversation: { kind: 'chat', chatId } }));
     const toolbar = page.getByRole('button', { name: '批注', exact: true }).element();
     const address = page.getByPlaceholder('搜索或输入网址').element();
@@ -117,7 +121,9 @@ it('shows the context tools, opens recent resources, and removes them only from 
   await userEvent.click(apps.getByRole('button', { name: '浏览器', exact: true }));
   expect(openApp).toHaveBeenCalledOnce();
   await userEvent.click(apps.getByRole('button', { name: '添加应用', exact: true }));
-  expect(navigate).toHaveBeenCalledWith('apps');
+  // Add App goes to the Apps tab of the Apps page, wherever that page was left.
+  expect(appState.navigation.currentViewId).toBe('apps');
+  expect(appState.navigation.viewParamsStore.apps?.location).toEqual({ tab: 'market' });
   expect(openFolder).toHaveBeenCalledOnce();
   expect(focusUrl).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '行程.md', exact: true }));

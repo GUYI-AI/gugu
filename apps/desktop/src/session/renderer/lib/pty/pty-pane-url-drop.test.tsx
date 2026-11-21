@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PasteFromClipboardHandler } from './use-pty';
 import { PtyPane, type RemoteTerminalFiles } from './pty-pane';
 
-const io = vi.hoisted(() => ({ focus: vi.fn(), sendInput: vi.fn() }));
+const io = vi.hoisted(() => ({ focus: vi.fn(), sendInput: vi.fn(), pasteText: vi.fn() }));
 let clipboardPaste: PasteFromClipboardHandler | undefined;
 vi.mock('./use-pty', () => ({ usePty: (options: { onPasteFromClipboard?: PasteFromClipboardHandler }) => {
   clipboardPaste = options.onPasteFromClipboard;
@@ -42,7 +42,8 @@ describe('terminal resource URL drop', () => {
     expect(io.sendInput).toHaveBeenCalledExactlyOnceWith(link);
     io.sendInput.mockClear();
     await act(async () => { clipboardPaste?.(io); });
-    await vi.waitFor(() => expect(io.sendInput).toHaveBeenCalledExactlyOnceWith(link));
+    await vi.waitFor(() => expect(io.pasteText).toHaveBeenCalledExactlyOnceWith(link));
+    expect(io.sendInput).not.toHaveBeenCalled();
   });
 
   it('keeps an operating-system file on the upload path when it also has a URI', async () => {

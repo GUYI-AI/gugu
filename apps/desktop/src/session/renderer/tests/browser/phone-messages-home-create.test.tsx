@@ -19,7 +19,6 @@ vi.mock('@/platform', () => import('../../../../../../../tests/support/capacitor
 vi.mock('@/lib/chat', () => import('../../../../../../../tests/support/contactsChatServiceTestDouble'))
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../../../../../tests/support/agentDisplayStatusTestDouble'))
 vi.mock('@/components/needsYou/useNeedsYouTasks', async original => ({ ...await original<object>(), useNeedsYouTasks: () => ({ tasks: [], count: 0, attention: null, error: null }) }))
-vi.mock('@/lib/passwordBetaNotifications', async original => ({ ...await original<object>(), usePasswordNotifications: () => [], usePasswordSnapshot: () => null }))
 
 let harness: ReturnType<typeof createReactHarness> | undefined
 const capabilities = platform.capabilities as typeof platform.capabilities & { barcodeScan?: boolean }

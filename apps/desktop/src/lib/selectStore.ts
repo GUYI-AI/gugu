@@ -1,4 +1,5 @@
 import { useRef, useSyncExternalStore } from 'react'
+import { onAccountChange } from './replica'
 
 /**
  * @@@select-store - one value that many components read a slice of. A reader names its slice (`select`) and when two
@@ -14,17 +15,48 @@ export type SelectStore<T> = {
   publish: (value: T) => void
   /** Layout phase: tell readers that did not render in this pass. */
   notify: () => void
+  /** Outside render (an event, an answer): publish and tell at once. */
+  set: (value: T) => void
 }
 
-export function createSelectStore<T>(initial: T): SelectStore<T> {
+/**
+ * `scope: 'account'`: the value belongs to the signed-in person — back to `initial` when another person signs in or the
+ * account signs out, as the replica judges it (`onAccountChange`). ❌ A store following the session by hand.
+ */
+export function createSelectStore<T>(initial: T, options: { scope?: 'account' } = {}): SelectStore<T> {
   let value = initial
   const listeners = new Set<() => void>()
-  return {
+  const store: SelectStore<T> = {
     get: () => value,
     subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     publish: (next) => { value = next },
     notify: () => { for (const listener of [...listeners]) listener() },
+    set: (next) => { value = next; store.notify() },
   }
+  if (options.scope === 'account') onAccountChange(() => { if (value !== initial) { value = initial; store.notify() } })
+  return store
+}
+
+/** One key of a record or Map store, set or (`undefined`) removed, and its readers told: ❌ the spread / rest by hand at each caller. */
+export function patch<T extends Record<string, unknown>>(store: SelectStore<T>, key: string, next: T[string] | undefined): void
+export function patch<K, V>(store: SelectStore<ReadonlyMap<K, V>>, key: K, next: V | undefined): void
+export function patch<T>(store: SelectStore<T>, key: unknown, next: unknown): void {
+  const now: unknown = store.get()
+  if (now instanceof Map) {
+    if (next === undefined ? !now.has(key) : Object.is(now.get(key), next)) return
+    const copy = new Map(now)
+    if (next === undefined) copy.delete(key)
+    else copy.set(key, next)
+    store.set(copy as T)
+    return
+  }
+  const record = now as Record<string, unknown>
+  const name = key as string
+  if (next === undefined ? !(name in record) : Object.is(record[name], next)) return
+  if (next === undefined) {
+    const { [name]: _removed, ...rest } = record
+    store.set(rest as T)
+  } else store.set({ ...record, [name]: next } as T)
 }
 
 /** Same own keys, each `Object.is`; anything else `Object.is`. */

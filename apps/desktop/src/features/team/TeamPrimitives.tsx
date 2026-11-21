@@ -8,13 +8,19 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Check, X } from '@/lib/icons'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { teamErrorCopy } from './copy'
+import { retryOf, type Reading } from '@/lib/replica'
 
-export function TeamAsyncState({ pending, error, retry }: { pending?: boolean; error?: unknown; retry: () => void }) {
+/**
+ * A team reading not read yet (a spinner) or unreadable (why in team words, with the reading's own retry); a value is the
+ * caller's to draw. Team pages draw this centered in the page, ❌ the one-line ReadingSlot failure of a settings row.
+ */
+export function TeamReadingState({ reading }: { reading: Reading<unknown> }) {
   const { t } = useTranslation('team')
-  return <div className="gg-team-state" role={error ? 'alert' : 'status'}>
-    {pending ? <LoadingIndicator size="inline" ariaLabel={t('loading')} /> : <>
-      <PaneEmptyState caption={teamErrorCopy(error, t)} />
-      <Button onClick={retry}>{t('retry')}</Button>
+  const retry = retryOf(reading)
+  return <div className="gg-team-state" role={reading.state === 'error' ? 'alert' : 'status'}>
+    {reading.state === 'unknown' ? <LoadingIndicator size="inline" ariaLabel={t('loading')} /> : <>
+      <PaneEmptyState caption={teamErrorCopy(reading.state === 'error' ? reading.error : undefined, t)} />
+      {retry ? <Button onClick={retry}>{t('retry')}</Button> : null}
     </>}
   </div>
 }

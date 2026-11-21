@@ -74,6 +74,12 @@ export async function sessionPlatformModel(
   return record ? record.platformModel : undefined;
 }
 
+/** Selected-page model decisions, in one KV query; a missing key stays distinct from explicit harness/null. */
+export async function sessionPlatformModels(sessionIds: readonly string[]): Promise<Map<string, SessionPlatformModel | undefined>> {
+  const records = await platformModelKV.getMany(sessionIds);
+  return new Map(sessionIds.map(id => [id, records.get(id)?.platformModel]));
+}
+
 /** 会话没了就把记录一起收掉(会话 id 不复用,留着只是垃圾)。 */
 export async function forgetSessionPlatformModel(sessionId: string): Promise<void> {
   await platformModelKV.del(sessionId);

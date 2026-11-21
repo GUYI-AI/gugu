@@ -1,6 +1,5 @@
-import { reaction } from 'mobx'
-import { useEffect, useState } from 'react'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { useMemo } from 'react'
+import { PHONE_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { ASSISTANT_APP_ID, assistantLayerEntry, type AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
 import type { AppAssistantStatus } from '@/session/shared/extensions/assistant-binding'
 import { ASSISTANT_NAME_MAX, isFailureClass, NAME_MAX, isAssistantFace } from '@/session/shared/extensions/assistant-binding'
@@ -13,25 +12,16 @@ export const PHONE_ASSISTANT_LAYER_TAB = 'assistant-layer'
 
 /**
  * The assistant's place on this phone (assistant-entry.ts): the product's assistant App's main page, or the built-in pages.
- * Read from the App store as it is now, again on every change of it; built-in until the store has been read.
+ * Follows the phone's `installedExtensions` replica. While the Apps here are not read yet the entry is `built-in` with that
+ * reason: the layer then draws its 「准备中」 gate (AppPreparing), a placeholder, never a built-in page with content.
  */
 export function usePhoneAssistantEntry(): AssistantLayerEntry {
-  const [entry, setEntry] = useState<AssistantLayerEntry>(() => entryNow())
-  useEffect(() => reaction(
-    () => JSON.stringify(entryNow()),
-    (next) => setEntry(JSON.parse(next) as AssistantLayerEntry),
-    { fireImmediately: true },
-  ), [])
-  return entry
+  const installed = useInstalledApps(PHONE_HOST)
+  const key = installed.state === 'value' ? JSON.stringify(assistantLayerEntry(phoneInstalledApp(ASSISTANT_APP_ID), 'phone')) : null
+  return useMemo(() => (key ? JSON.parse(key) as AssistantLayerEntry : NOT_READ), [key])
 }
 
-function entryNow(): AssistantLayerEntry {
-  if (!installedExtensionsStore.isLoaded) return { entry: 'built-in', reason: 'the Apps on this phone are not read yet' }
-  // Read for the reaction: what it depends on (manifests, switches, origins) is all in the store.
-  void installedExtensionsStore.manifests.length
-  void installedExtensionsStore.disabled.length
-  return assistantLayerEntry(phoneInstalledApp(ASSISTANT_APP_ID), 'phone')
-}
+const NOT_READ: AssistantLayerEntry = Object.freeze({ entry: 'built-in', reason: 'the Apps on this phone are not read yet' })
 
 /** 云上的家「在」= 它此刻答得上话(睡着的会自己醒),as the desktop says it (lib/assistantAppHost.ts). */
 const CLOUD_ANSWERS = new Set(['awake', 'asleep', 'waking'])

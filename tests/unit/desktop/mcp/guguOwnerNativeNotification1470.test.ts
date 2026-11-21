@@ -11,10 +11,10 @@ const host = () => vi.fn(async (input: Record<string, unknown>) => ({ status: 's
   ...(input.file ? { file_name: (input.file as { name: string }).name } : {}) }))
 function setup() {
   const runHostAction = host()
-  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction }
+  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction, ownerReadsSession: true as const }
   const deps = {
     restGet: vi.fn(async (path: string) => path.startsWith('chats?') ? [{ id: dm, public_id: 218799 }] : []),
-    restRpc: vi.fn(async (name: string) => name === 'chat_facts' ? [{ kind: 'dm', rules: null }] : name === 'list_member_ids' ? [{ user_id: owner }, { user_id: agent }] : null),
+    restRpc: vi.fn(async (name: string) => name === 'chat_facts' ? [{ kind: 'dm', rules: null }] : name === 'list_member_ids' ? [{ user_id: owner }, { user_id: agent }] : name === 'open_dm' ? dm : null),
     restInsert: vi.fn(),
     attachmentsEndpoint: vi.fn(() => { throw new Error('must not upload into the legacy DM') }),
   }
@@ -56,5 +56,14 @@ describe('owner sends commit into the bound native session', () => {
     await expect(callTool(context, 'message_send', { chat_id: `user:${stranger}`, text: 'notify' }, deps)).rejects.toThrow('only for your owner')
     expect(runHostAction).not.toHaveBeenCalled()
     expect(deps.restRpc).not.toHaveBeenCalledWith('open_dm', expect.anything())
+  })
+})
+
+describe('a session whose page the owner does not read (a terminal session)', () => {
+  it.each([`user:${owner}`, dm])('sends %s as the ordinary DM message, never as an owner notification', async chatId => {
+    const { context, deps, runHostAction } = setup()
+    await callTool({ ...context, ownerReadsSession: undefined }, 'message_send', { chat_id: chatId, text: 'Review the result' }, deps)
+    expect(runHostAction).not.toHaveBeenCalled()
+    expect(deps.restInsert).toHaveBeenCalledWith('messages', expect.objectContaining({ chat_id: dm, content: 'Review the result' }))
   })
 })

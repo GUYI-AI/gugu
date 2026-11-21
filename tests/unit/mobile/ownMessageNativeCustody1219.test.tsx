@@ -9,7 +9,7 @@ import { projectPhonePendingInputs } from '../../../apps/desktop/src/components/
 import { activeTurnWithInputs } from '@session-chat/state/pending-prompt'
 import { splitActiveTurn } from '../../../apps/desktop/src/components/assistant-ui/transcript-sync'
 import { sessionInputBaseline } from '../../../apps/desktop/src/lib/pendingSessionInput'
-import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInputOutbox'
+import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInput'
 
 const scope = vi.hoisted(() => ({ stored: vi.fn(), rpc: vi.fn() }))
 vi.mock('../../../apps/desktop/electron/session/main/core/sessions/session-conversation-read', () => ({ nativeConversationUnread: () => [] }))
@@ -43,6 +43,8 @@ it.each([false, true])('retains own input while a preceding commit crosses a nat
     return { turns, nextCursor: old.seq, originTurnIds: turns.map(turn => origins.get(turn.id) ?? `origin:${turn.seq}`) }
   })
   const reader = createNativeRecordReader({ readSession: () => ({ runtime: 'acp' }), activeTurn: () => active,
+    activePreview: async () => null,
+    withArchive: async (_id, fn) => ({ ok: true, value: await fn(null) }),
     withTimeline: async (_id, fn) => ({ ok: true, value: await fn({} as never) }) })
   scope.rpc.mockImplementation(async request => { reads.push(request); return reader.snapshot(request) })
   const harness = createReactHarness(); cleanups.push(() => harness.cleanup())

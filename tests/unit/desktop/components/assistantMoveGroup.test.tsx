@@ -7,25 +7,35 @@ import { createNode, createReactHarness } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 const mocks = vi.hoisted(() => ({
-  tier: 'plus' as 'free' | 'plus',
+  tier: 'plus' as 'free' | 'plus' | null,
   pending: null as unknown,
   nativePending: null as unknown,
   recoveryError: null as Error | null,
+  recoveryReads: 0,
   previewMove: vi.fn(),
   openInstalledConnectors: vi.fn(),
   runAssistantMove: vi.fn(),
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
 
-vi.mock('../../../../apps/desktop/src/lib/billing/membership', () => ({
-  getMembership: async () => ({ tier: mocks.tier }),
+vi.mock('../../../../apps/desktop/src/lib/billing/useSpendingPower', async (original) => ({
+  ...await original<object>(),
+  refreshSpendingPower: () => undefined,
+  // tier null: the plan's read failed while the balance's did not (a value without membership, its failure said).
+  useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: mocks.tier ? { tier: mocks.tier } : null, balanceError: mocks.tier ? null : 'plan read failed' } : { state: 'unknown', membership: null }),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire', () => ({
-  pendingMove: () => mocks.pending,
-  recoverPendingMove: async () => {
-    if (mocks.recoveryError) throw mocks.recoveryError
-    return mocks.nativePending ?? mocks.pending
-  },
+vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire', async () => ({
+  // The real replica's shape: the local journal copy first, main's journal as the read.
+  moveRecovery: (await import('../../../../apps/desktop/src/lib/replica')).replica({
+    name: 'moveRecovery',
+    scope: 'account',
+    read: async () => {
+      mocks.recoveryReads += 1
+      if (mocks.recoveryError) throw mocks.recoveryError
+      return mocks.nativePending ?? mocks.pending
+    },
+    local: () => mocks.pending ?? undefined,
+  }),
   previewMove: (...args: unknown[]) => mocks.previewMove(...args),
   runAssistantMove: (...args: unknown[]) => mocks.runAssistantMove(...args),
 }))
@@ -44,17 +54,21 @@ import { AssistantMoveGroup } from '../../../../apps/desktop/src/components/assi
 import { AssistantMoveDialog } from '../../../../apps/desktop/src/components/assistant/AssistantMoveDialog'
 import { resetMoveForTests, startMove } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-controller'
 import { MoveError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move'
-import { queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { integrationStatuses } from '../../../../apps/desktop/src/components/connections/connection-replicas'
 import { MoveCopyError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-copy'
 import type { AssistantHomePlace } from '../../../../apps/desktop/src/lib/assistantHome'
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', 'owner-1')
   harness = createReactHarness()
   mocks.tier = 'plus'
   mocks.pending = null
   mocks.nativePending = null
   mocks.recoveryError = null
+  mocks.recoveryReads = 0
   mocks.previewMove.mockReset()
   mocks.runAssistantMove.mockReset()
   mocks.openInstalledConnectors.mockClear()
@@ -65,19 +79,22 @@ afterEach(() => harness.cleanup())
 const computer: AssistantHomePlace = { kind: 'computer', deviceId: 'dev-mac', thisDevice: true, label: 'MacBook', online: true, known: true }
 const cloud: AssistantHomePlace = { kind: 'cloud', deviceId: 'dev-cloud' }
 
+/** The steward's door as read: open, and the last read did not fail. */
+const CLOUD_OPEN = { state: 'value', value: { available: true, snapshot: {} }, stale: false, error: null }
 const groupProps = (home: AssistantHomePlace, over: Record<string, unknown> = {}) => ({
   ownerUserId: 'owner-1',
   assistantId: 'agent-1',
   assistantName: '小满',
   home,
   localDeviceId: 'dev-mac',
-  cloudAvailable: true,
+  cloud: CLOUD_OPEN,
   ...over,
 })
 // 弹窗挂在壳上(不在搬家那一组里):测试里把两者并排画,与生产一致。
 const render = async (home: AssistantHomePlace, over: Record<string, unknown> = {}) => {
   await harness.render(createElement(Fragment, null, createNode(AssistantMoveGroup, groupProps(home, over)), createElement(AssistantMoveDialog)))
-  // getMembership 是异步读:等一拍
+  // 搬家恢复记录是异步读:等它落定
+  await act(async () => {})
   await act(async () => {})
 }
 const q = (id: string) => harness.container.querySelector(`[data-testid="${id}"]`)
@@ -88,9 +105,29 @@ describe('搬家入口', () => {
     mocks.recoveryError = new Error('Recovery unavailable')
     await render(computer)
     expect(q('assistant-move-current-home')?.textContent).toContain('这台电脑')
-    expect(q('assistant-move-current-home')?.textContent).toContain('当前住处')
-    expect(body()).toContain('暂时读不到搬家恢复记录，请重试。')
+    expect(q('assistant-move-current-home')?.textContent).toContain('当前运行设备')
+    expect(body()).toContain('无法读取迁移恢复记录，请重试。')
     expect((q('assistant-move-to-cloud') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('a recovery read before whose read again fails keeps the resume row, says the failure and keeps new moves off', async () => {
+    mocks.nativePending = { assistantId: 'agent-1', direction: 'to-cloud', source: { kind: 'computer', deviceId: 'dev-mac' } }
+    await render(computer)
+    expect(q('assistant-move-resume')).not.toBeNull()
+    expect(body()).not.toContain('无法读取迁移恢复记录，请重试。')
+    mocks.recoveryError = new Error('Recovery unavailable')
+    const { moveRecovery } = await import('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire')
+    await act(async () => { await moveRecovery.refresh('agent-1').catch(() => undefined) })
+    await act(async () => {})
+    expect(q('assistant-move-resume')).not.toBeNull()
+    expect(body()).toContain('无法读取迁移恢复记录，请重试。')
+  })
+
+  it('DE-3: the plan unreadable (the balance read) says so with a retry, and moving to the cloud waits (❌ disabled without a word)', async () => {
+    mocks.tier = null
+    await render(computer)
+    expect(body()).toContain('plan read failed')
+    expect((q('assistant-move-to-cloud') as HTMLButtonElement | null)?.disabled ?? true).toBe(true)
   })
 
   it('recovers the resume entry from native storage after localStorage is lost', async () => {
@@ -111,7 +148,7 @@ describe('搬家入口', () => {
     expect(document.body.querySelector('[data-phase="done"]')).toBeNull()
     expect(body()).not.toContain('不影响使用')
     expect(body()).toContain(step === 'files' ? '/new/note.md' : '可能暂时无法回复')
-    expect(document.body.querySelector('[data-testid="assistant-move-retry"]')?.textContent).toContain('接着搬')
+    expect(document.body.querySelector('[data-testid="assistant-move-retry"]')?.textContent).toContain('继续迁移')
   })
   it('住这台电脑 + 会员:「搬到云上」可点;没有「会员到期」那一行', async () => {
     await render(computer)
@@ -121,6 +158,18 @@ describe('搬家入口', () => {
     expect(q('assistant-move-to-computer')).toBeNull()
   })
 
+  it('住这台电脑 + 管家那扇门还没读到:说明处占位、按钮等着,❌ 先说「云不可用」', async () => {
+    await render(computer, { cloud: { state: 'unknown' } })
+    expect(q('assistant-move-to-cloud-row')?.textContent).not.toContain('暂时不可用')
+    expect((q('assistant-move-to-cloud') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('住这台电脑 + 管家读不到:说云这会儿用不了,给重试(❌ 一个点不动的按钮)', async () => {
+    await render(computer, { cloud: { state: 'error', error: new Error('steward down') } })
+    expect(q('assistant-move-cloud-retry')).not.toBeNull()
+    expect(q('assistant-move-to-cloud')).toBeNull()
+  })
+
   it('住这台电脑 + 非会员:不给搬,指向会员', async () => {
     mocks.tier = 'free'
     await render(computer)
@@ -128,7 +177,7 @@ describe('搬家入口', () => {
     expect(q('assistant-move-member')).not.toBeNull()
   })
 
-  it('住云上 + 会员已到期:写「在休息」+ 续费,同时给「搬回这台电脑」', async () => {
+  it('住云上 + 会员已到期:写「在休息」+ 续费,同时给「迁移回这台电脑」', async () => {
     mocks.tier = 'free'
     await render(cloud)
     expect(q('assistant-move-expired')?.textContent).toContain('会员已到期')
@@ -136,7 +185,7 @@ describe('搬家入口', () => {
     expect(q('assistant-move-to-computer')).not.toBeNull()
   })
 
-  it('住云上 + 会员在期:只有「搬回这台电脑」', async () => {
+  it('住云上 + 会员在期:只有「迁移回这台电脑」', async () => {
     await render(cloud)
     expect(q('assistant-move-expired')).toBeNull()
     expect(q('assistant-move-to-computer')).not.toBeNull()
@@ -161,7 +210,7 @@ describe('搬家入口', () => {
       schedules: { restored: 0, skipped: [], unsupported: [], unreadable: false },
       warnings: [],
     })
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
+    const invalidate = vi.spyOn(integrationStatuses, 'refresh').mockResolvedValue()
     await render(computer)
     await act(async () => {
       await startMove({ ownerUserId: 'owner-1', assistantId: 'agent-1', assistantName: '小满', localDeviceId: 'dev-mac', home: computer }, 'to-cloud', new Map(), 'zh-CN')
@@ -170,12 +219,13 @@ describe('搬家入口', () => {
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect-list"]')?.textContent ?? ''
     expect(done).toContain('Notion')
     expect(done).not.toContain('notion')
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['issues:connection-status'] })
+    // The connections read again (the accounts may now be on this machine).
+    expect(invalidate).toHaveBeenCalled()
   })
 })
 
 describe('点了先列清带走什么,确认才搬', () => {
-  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接去已安装的连接器', async () => {
+  it('确认框列带过去的账号与要重新连的,不含密钥;结果页列存不进新家的(名字、配置、没有钥匙串的原因),能直接打开已安装的连接器', async () => {
     mocks.previewMove.mockResolvedValue({
       bytes: 2048,
       files: 3,
@@ -221,10 +271,10 @@ describe('点了先列清带走什么,确认才搬', () => {
     })
     await act(async () => {})
     expect(mocks.runAssistantMove).toHaveBeenCalledWith(expect.objectContaining({ assistantId: 'agent-1' }), 'to-cloud', expect.any(Function))
-    expect(document.body.querySelector('[data-testid="assistant-move-report"]')?.textContent).toContain('1 个账号已带过去')
+    expect(document.body.querySelector('[data-testid="assistant-move-report"]')?.textContent).toContain('1 个账号已迁移')
     expect(document.body.querySelector('[data-testid="assistant-move-no-keyring"]')?.textContent).toContain('没有可用的系统钥匙串')
     // 同名、凭据不同的那一份可能已经失效(OAuth 刷新 token 被另一头轮换):也要看得到、能去重连。
-    expect(document.body.querySelector('[data-testid="assistant-move-exists"]')?.textContent).toContain('没有覆盖')
+    expect(document.body.querySelector('[data-testid="assistant-move-exists"]')?.textContent).toContain('未覆盖')
     expect(document.body.querySelector('[data-testid="assistant-move-done-reconnect-list"]')?.textContent).toContain('github')
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
     expect(done).toContain('Notion (a@x.cn)')
@@ -251,9 +301,11 @@ describe('点了先列清带走什么,确认才搬', () => {
   it('搬着时「它住哪」翻面、搬家那一组换了位置重挂:弹窗与进度不丢(状态在模块里,不在组件里)', async () => {
     mocks.previewMove.mockResolvedValue({ bytes: 0, files: 0, skippedFiles: [], accounts: { moving: [], reconnect: [], unsupported: false } })
     let finish: (value: unknown) => void = () => undefined
+    let tick: (progress: unknown) => void = () => undefined
     mocks.runAssistantMove.mockImplementation(
       (_env: unknown, _direction: unknown, onProgress: (p: unknown) => void) =>
         new Promise((resolve) => {
+          tick = onProgress
           onProgress({ step: 'adopt' })
           finish = resolve
         })
@@ -268,6 +320,11 @@ describe('点了先列清带走什么,确认才搬', () => {
     })
     await act(async () => {})
     expect(document.body.querySelector('[data-phase="moving"]')).not.toBeNull()
+    // E-3: the journal is not read while the move runs (it writes it), however many progress ticks come.
+    const readsBefore = mocks.recoveryReads
+    await act(async () => { tick({ step: 'adopt' }); tick({ step: 'adopt' }); tick({ step: 'adopt' }) })
+    await act(async () => {})
+    expect(mocks.recoveryReads).toBe(readsBefore)
 
     // 翻面:这一组被换成云上的家(不同位置,等于卸载重挂)
     await harness.render(

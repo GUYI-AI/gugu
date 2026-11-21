@@ -4,6 +4,15 @@ import type { AgentStatus } from '@gugu/core/shared/agentStatus';
 /** A start the ACP runtime refused: the failure cause carries its AcpRuntimeError as JSON `data`. */
 export const ACP_START_FAILED = 'AcpStartFailed';
 
+/** Only a person's resend negotiates confirmation; older callers keep the fail-closed behavior. */
+export interface NativeInputRetryOptions {
+  allowConfirmation?: true;
+  confirmation?: string;
+}
+export type NativeInputRetryResult = { kind: 'done' } | {
+  kind: 'confirmation-required'; confirmation: string; reason: string; detail?: string;
+};
+
 /** A projection of the host owner, never persisted or used as a runtime authority. */
 export interface LifeView {
   readonly sessionId: string;

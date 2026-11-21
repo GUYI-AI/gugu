@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { commitStartupContent, retainStartupMotion, startStartupMotion, deferStartupMotion, discardStartupMotion, subscribeStartupContentReady, hasStartupMotion } from '../../../../apps/desktop/src/lib/startup-motion'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { claimStartupBrand, commitStartupContent, retainStartupMotion, startStartupMotion, deferStartupMotion, discardStartupMotion, subscribeStartupContentReady, hasStartupMotion } from '../../../../apps/desktop/src/lib/startup-motion'
 import { LOCALE_CHANGED_EVENT } from '../../../../apps/desktop/src/i18n/locale'
 import { STORED_PREFERENCES } from '../../../../apps/desktop/shared/device-preferences'
 
@@ -33,6 +33,29 @@ describe('HTML to React startup animation ownership', () => {
     } finally {
       if (previous === null) localStorage.removeItem(LOCALE_STORAGE_KEY)
       else localStorage.setItem(LOCALE_STORAGE_KEY, previous)
+    }
+  })
+
+  it('a login brand claimed before the frame has loaded still gets its colour when the frame loads', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    try {
+      const frame = startStartupMotion()!.frame
+      const brand = document.createElement('div')
+      brand.style.color = 'rgb(240, 241, 242)'
+      brand.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 640 }) as DOMRect
+      document.body.append(brand)
+      const posted = vi.spyOn(frame.contentWindow!, 'postMessage')
+      claimStartupBrand(brand)
+      // A new profile lands straight on the login page: content commits while the srcdoc is still loading, so what
+      // was posted until now never reached a listener. The frame's load is where it has to arrive.
+      commitStartupContent()
+      await Promise.resolve()
+      posted.mockClear()
+      frame.dispatchEvent(new Event('load'))
+      expect(posted).toHaveBeenCalledWith(expect.objectContaining({ foregroundRgb: '240,241,242' }), '*')
+      brand.remove()
+    } finally {
+      vi.unstubAllGlobals()
     }
   })
 

@@ -38,7 +38,7 @@ import { PhoneConfirmDialog } from './PhoneConfirmDialog'
 import { usePhoneAssistantAppStuck } from '@/components/appSlot/phoneAssistantAppEnsure'
 import { phoneInstalledApp } from '@/components/appSlot/phoneBindingPorts'
 import { personsOwnAssistantApp } from '../../../electron/assistant-app-ensure'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { PHONE_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
 import { PhoneAssistantWorkLedger } from './PhoneAssistantWorkLedger'
@@ -152,7 +152,9 @@ function MobileAssistantAppContent({
   const ensureStuck = usePhoneAssistantAppStuck()
   // An App with its id that is the person's own (from a chat, switched off): gugu does not put over it — stuck. gugu's own
   // market copy the phone does not trust is not: the ensure step puts the signed release over it (preparing meanwhile).
-  const held = !app && installedExtensionsStore.isLoaded ? phoneInstalledApp(ASSISTANT_APP_ID) : null
+  const installed = useInstalledApps(PHONE_HOST)
+  // Not read yet: nothing held (the gate says 准备中 meanwhile, not stuck).
+  const held = !app && installed.state === 'value' ? phoneInstalledApp(ASSISTANT_APP_ID) : null
   const appHeldElsewise = held !== null && personsOwnAssistantApp(held) !== null
   const opened = useOpenedAssistantTaskChat()
   useEffect(() => {

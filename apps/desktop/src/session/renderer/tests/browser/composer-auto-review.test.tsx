@@ -47,7 +47,7 @@ it('shows names in the menu, details to its right, and a shield in selected Auto
   expect(menu.textContent).not.toContain('需要授权')
   expect(menu.textContent).not.toContain('编辑说明')
   await page.getByRole('option', { name: '自动模式', exact: true }).hover()
-  await until('review detail', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent?.includes('扣咕咕积分') === true)
+  await until('review detail', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent?.includes('消耗咕咕积分') === true)
   const detail = document.querySelector<HTMLElement>('[data-slot="permission-mode-detail"]')!
   expect(detail.textContent).toContain('需要授权时交给 AI 审查')
   expect(detail.getBoundingClientRect().left).toBeGreaterThanOrEqual(menu.getBoundingClientRect().right)
@@ -58,10 +58,10 @@ it('shows names in the menu, details to its right, and a shield in selected Auto
 })
 
 it.each([
-  ['claude', 'subscription', '用你的 Claude 订阅额度审'],
-  ['codex', 'subscription', '用你的 ChatGPT 订阅额度审'],
-  ['claude', 'api-key', '用你的 API Key 审'],
-  ['claude', 'platform', '用 Claude Haiku 5.5 审，扣咕咕积分'],
+  ['claude', 'subscription', '使用你的 Claude 订阅额度'],
+  ['codex', 'subscription', '使用你的 ChatGPT 订阅额度'],
+  ['claude', 'api-key', '使用你的 API Key'],
+  ['claude', 'platform', '由 Claude Haiku 5.5 审查，消耗咕咕积分'],
 ] as const)('labels the actual %s %s payer', (provider, source, label) => {
   expect(withAutoReviewHint({ auto: { name: '自动模式' } }, provider, source, { 'ai-review': { id: 'auto' } })?.auto?.detail).toBe(label)
 })
@@ -76,7 +76,7 @@ it('keeps an unavailable Auto row visible, explains it on hover and never emits 
   const row = page.getByRole('option', { name: '自动模式', exact: true });
   await expect.element(row).toHaveAttribute('aria-disabled', 'true');
   await row.hover();
-  await until('unavailable reason shown', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent === '这条连接没有能用来审查的模型');
+  await until('unavailable reason shown', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent === '此连接没有可用于审查的模型');
   row.element().dispatchEvent(new MouseEvent('click', { bubbles: true }));
   expect(changed).not.toHaveBeenCalled();
 });

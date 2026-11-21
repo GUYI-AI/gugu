@@ -38,7 +38,7 @@ export function buildThreadBootstrapBody(
   const usable = rows.filter((r) => oneLine(r.content).length > 0)
   if (usable.length === 0) return null
   const maxChars = opts.maxChars ?? 4000
-  const label = (id: string) => (id === opts.selfAgentUserId ? '你(本 agent)' : opts.labelFor?.(id) ?? id)
+  const label = (id: string) => (id === opts.selfAgentUserId ? 'you (this agent)' : opts.labelFor?.(id) ?? id)
   const lines = usable.map((r) => {
     const t = hhmm(r.createdAt)
     return `${t ? `[${t}] ` : ''}${label(r.senderUserId)}: ${oneLine(r.content)}`
@@ -48,11 +48,11 @@ export function buildThreadBootstrapBody(
   while (kept.length > 1 && kept.join('\n').length > maxChars) kept = kept.slice(1)
   const body = kept.join('\n')
   return (
-    `本话题(thread)在你加入前的历史消息（供你了解前情；不要重复回应这些历史消息，只回应下面的新消息）：\n` +
+    `Messages in this thread from before you joined (background only; do not answer them again, answer only the new message below):\n` +
     `${body}\n` +
     // @@@1887 — 话题 session 与主线隔离,agent 常误以为「看不到的历史=不存在」。指点它用已有的
     // gugu_message history/search 按需检索（history 不带 thread_root_id 即主线）,不注入主线快照。
-    `（本话题只是会话的一个分支。若被问到本话题之外的既往交流,用 message_history——` +
-    `不带 thread_root_id 即主线历史——或 message_search 查询,不要凭话题内可见内容断言「没聊过」。）\n`
+    `(This thread is one branch of the chat. Asked about earlier exchanges outside it, look them up with message_history — ` +
+    `without thread_root_id it reads the main timeline — or message_search; never conclude from this thread alone that something was never discussed.)\n`
   )
 }

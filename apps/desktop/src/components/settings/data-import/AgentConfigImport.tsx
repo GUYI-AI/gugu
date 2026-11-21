@@ -1,0 +1,85 @@
+import { useId, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/Button'
+import { Sheet } from '@/components/ui/Sheet'
+import { useReplica } from '@/lib/replica'
+import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
+import { agentHome, readAgentHomeDiff } from '@renderer/features/settings/subscriptions/ensure-agent-home'
+import { ReimportDialog } from '@renderer/features/settings/subscriptions/ReimportDialog'
+import { AgentHomeSkippedFiles } from './AgentHomeSkippedFiles'
+import { SettingsGroup, SettingsRow } from '../SettingsPrimitives'
+import type { AgentHomeDiff, AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
+
+export function AgentConfigImport({ providerId }: { providerId: string }) {
+  const { t } = useTranslation('main')
+  const titleId = useId()
+  const reading = useReplica(agentHome, [null, providerId])
+  const preparing = reading.state === 'value' && Boolean(reading.value?.migrationPreparation)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [picked, setPicked] = useState<Set<string>>()
+  const [issues, setIssues] = useState<AgentHomeScan['issues']>([])
+  const [diff, setDiff] = useState<AgentHomeDiff | null>(null)
+  if (reading.state === 'error') return <p role="status" className="gg-import-meta">{t('agentHome.migrationReadFailed')}</p>
+  if (reading.state !== 'value' || !reading.value?.sourceReadable || preparing) return null
+  const home = reading.value
+  const groups = home.groups.filter(({ count }) => count > 0)
+  if (home.needsImport && groups.length === 0) return null
+  const groupIds = groups.filter(({ id }) => picked ? picked.has(id) : id !== 'hooks').map(({ id }) => id)
+
+  async function apply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (home.needsImport && groupIds.length === 0) return
+    setBusy(true)
+    setFailed(false)
+    try {
+      if (!home.needsImport) {
+        setDiff(await readAgentHomeDiff(home.providerId, null))
+        return
+      }
+      const client = await getAgentConfigRuntimeClient()
+      const result = await client.importAgentHome({ providerId: home.providerId, groups: groupIds })
+      if (!result.success) throw new Error('Could not import local configuration')
+      setIssues(result.data.issues)
+      await agentHome.refresh(null, providerId)
+    } catch {
+      setFailed(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function finishReimport() {
+    setDiff(null)
+    void agentHome.refresh(null, providerId).catch(() => setFailed(true))
+  }
+
+  return <SettingsGroup title={t('agentHome.local')} data-testid={`${providerId}-config-import`}>
+    <form onSubmit={(event) => void apply(event)}>
+      <SettingsRow title={home.name}
+        description={<>
+          {home.needsImport && <fieldset className="mt-1 flex flex-wrap gap-x-4 gap-y-1" disabled={busy} aria-label={t('agentHome.local')}>
+            {groups.map(({ id }) => <label className="flex items-center gap-2" key={id}>
+              <input type="checkbox" value={id} checked={groupIds.includes(id)} onChange={(event) => {
+                const next = new Set<string>(groupIds)
+                if (event.target.checked) next.add(id)
+                else next.delete(id)
+                setPicked(next)
+              }} />
+              {t(`agentHome.groups.${id}`)}
+            </label>)}
+          </fieldset>}
+          {failed && <span role="alert" className="text-[var(--danger-fg)]">{t('agentHome.configurationImportFailed')}</span>}
+          <AgentHomeSkippedFiles issues={issues} />
+        </>}
+        control={<Button type="submit" variant="secondary" size="sm" disabled={busy || (home.needsImport && groupIds.length === 0)}>
+          {t(home.needsImport ? 'settings.dataImport.action' : 'agentHome.reimport')}
+        </Button>} />
+    </form>
+    {diff && <Sheet onClose={() => setDiff(null)} titleId={titleId} desktopWidth="min(672px, 100%)"
+      desktopMaxHeight="calc(100dvh - 32px)" dimNested zIndex="var(--z-settings-modal)">
+      <ReimportDialog providerId={home.providerId} machine={null} diff={diff} titleId={titleId}
+        onClose={() => setDiff(null)} onSuccess={finishReimport} />
+    </Sheet>}
+  </SettingsGroup>
+}

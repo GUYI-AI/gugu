@@ -10,6 +10,9 @@ import { createNode, createReactHarness, displayIdentity, message, renderWithApp
 import type { ChatContextValue } from '../../../../apps/desktop/src/store/chatContext'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
+import { devicesModel } from '../../../../apps/desktop/src/store/devicesCache'
+import type { Device } from '@gugu/core/shared/types/chat'
 
 const cardOpen = vi.hoisted(() => ({ open: vi.fn(), snapshot: vi.fn(async () => ({ device_id: 'device-1' })) }))
 vi.mock('../../../../apps/desktop/src/components/chat/openTaskCardSession', () => ({ openTaskCardSession: cardOpen.open }))
@@ -34,7 +37,9 @@ vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => ({
 }))
 
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('user-1')
+
   harness = createReactHarness(); lookedUp = 'codex'; agentStatus = undefined
   installIdentityDirectoryBridge()
   publishIdentityDirectory({}, () => {})
@@ -68,7 +73,7 @@ describe('task cards follow the current agent identity', () => {
   it.each(['zh-CN', 'en-US'] as const)('shows a bounded naming placeholder for a newly created identity (%s)', async (locale) => {
     setLocalePreference(locale)
     await renderTask()
-    const placeholder = locale === 'zh-CN' ? '正在起名…' : 'Naming the agent…'
+    const placeholder = locale === 'zh-CN' ? '正在生成名称…' : 'Generating name…'
     expect(content().textContent).toContain(placeholder)
     expect(content().textContent).not.toContain('Codex 1')
     await act(async () => { await vi.advanceTimersByTimeAsync(59_999) })
@@ -86,7 +91,7 @@ describe('task cards follow the current agent identity', () => {
     }) }, () => {}))
     expect(content()).toBe(card)
     expect(content().textContent).toContain('研究助手')
-    expect(content().textContent).not.toContain('正在起名…')
+    expect(content().textContent).not.toContain('正在生成名称…')
     await act(async () => publishIdentityDirectory({ [CARD.agentUserId]: displayIdentity(CARD.agentUserId, {
       type: 'agent', display_name: '改过的名字', owner_user_id: 'user-1',
     }) }, () => {}))
@@ -97,10 +102,10 @@ describe('task cards follow the current agent identity', () => {
 
   it('uses identity age independently of the card message age', async () => {
     await renderTask(CARD, '2026-11-02T07:00:00.000Z')
-    expect(content().textContent).toContain('正在起名…')
+    expect(content().textContent).toContain('正在生成名称…')
     await renderTask(CARD, at, false, '2026-11-02T07:59:00.000Z')
     expect(content().textContent).toContain('Codex 1')
-    expect(content().textContent).not.toContain('正在起名…')
+    expect(content().textContent).not.toContain('正在生成名称…')
   })
 
   it('keeps explicit names and missing identities raw, and recognizes legacy engine defaults', async () => {
@@ -108,15 +113,15 @@ describe('task cards follow the current agent identity', () => {
     expect(content().textContent).toContain('Named at spawn')
     await renderTask(CARD, at, false, null)
     expect(content().textContent).toContain('Codex 1')
-    expect(content().textContent).not.toContain('正在起名…')
+    expect(content().textContent).not.toContain('正在生成名称…')
     const { agentType: _legacy, ...legacy } = CARD
     await renderTask(legacy)
-    expect(content().textContent).toContain('正在起名…')
+    expect(content().textContent).toContain('正在生成名称…')
   })
 
   it('shows the placeholder on the first frame when identity creation is slightly ahead of the client clock', async () => {
     await renderTask(CARD, at, false, '2026-11-02T08:00:00.150Z')
-    expect(content().textContent).toContain('正在起名…')
+    expect(content().textContent).toContain('正在生成名称…')
     expect(content().textContent).not.toContain('Codex 1')
   })
 
@@ -127,7 +132,7 @@ describe('task cards follow the current agent identity', () => {
       msg: message({ is_mine: false, sender_user_id: CARD.agentUserId, content: 'Hello' }), memberProfile, isGroup: true,
       onReaction: vi.fn(), onQuote: vi.fn(), onForward: vi.fn(), onDelete: vi.fn(),
     }))
-    expect(harness.container.querySelector('.msg-sender-name')?.textContent).toBe('正在起名…')
+    expect(harness.container.querySelector('.msg-sender-name')?.textContent).toBe('正在生成名称…')
     expect(memberProfile.displayName).toBe('Codex 1')
   })
 })
@@ -171,7 +176,7 @@ describe('task card in a chat (gugu-dev#181)', () => {
     await renderWithAppProviders(harness, card('card-run'))
     const row = () => harness.container.querySelector('[data-testid="composer-card"]')!.lastElementChild!
     expect(row().textContent, 'a braille spinner frame').toMatch(/[\u2800-\u28ff]/)
-    expect(row().querySelector('[data-animate="false"]'), 'it turns').toBeNull()
+    expect(row().querySelector('.cli-spinner'), 'it turns').not.toBeNull()
     harness.cleanup(); harness = createReactHarness()
     agentStatus = 'idle'
     await renderWithAppProviders(harness, card('card-done'))
@@ -197,7 +202,7 @@ describe('task card in a chat (gugu-dev#181)', () => {
   })
 })
 
-// 审批群里我派的卡:等群主同意时写「等群主同意它进群」。同意 / 拒绝时库给发起人发 friend_requests_changed,
+// 审批群里我派的卡:等群主同意时写「等待群主同意其入群」。同意 / 拒绝时库给发起人发 friend_requests_changed,
 // 卡跟着变,不用刷新页面;agent 已经坐进群里(成员表随 chat_members_changed 更新)就不读请求、不等。
 describe('a task card waiting for the group owner (gugu-dev#181)', () => {
   type Subscribe = ChatContextValue['subscribeAccountRevision']
@@ -216,15 +221,15 @@ describe('a task card waiting for the group owner (gugu-dev#181)', () => {
 
   it('turns when the owner lets it in, without a reload', async () => {
     await renderWithAppProviders(harness, groupCard(), { chat })
-    expect(cardText()).toContain('等群主同意它进群')
+    expect(cardText()).toContain('等待群主同意其入群')
     await requestChanged('accepted')
-    expect(cardText()).not.toContain('等群主同意它进群')
+    expect(cardText()).not.toContain('等待群主同意其入群')
   })
 
   it('turns when the owner turns it down, without a reload', async () => {
     await renderWithAppProviders(harness, groupCard(), { chat })
     await requestChanged('rejected')
-    expect(cardText()).toContain('群主没有同意它进群')
+    expect(cardText()).toContain('群主未同意其入群')
   })
 
   // The continuity scan saw list_my_agent_join_requests nine times on one group open: every card read it itself.
@@ -242,7 +247,7 @@ describe('a task card waiting for the group owner (gugu-dev#181)', () => {
   it('an agent already seated in the group: no request read, no waiting', async () => {
     await renderWithAppProviders(harness, groupCard({ 'agent-1': { displayName: 'Codex 1' } }), { chat })
     expect(joins.reads).toBe(0)
-    expect(cardText()).not.toContain('等群主同意它进群')
+    expect(cardText()).not.toContain('等待群主同意其入群')
   })
 })
 
@@ -258,8 +263,9 @@ describe('task card resource access', () => {
     expect(remote.tagName).toBe('BUTTON')
     await act(async () => { remote.click() })
     expect(cardOpen.open).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: CARD.sessionId }), false)
+    // Which computer this is comes from the account's device list (its current-device row).
+    await act(async () => { devicesModel.set([], [{ device_id: 'device-1', is_current_device: true } as Device]) })
     await renderCard(true)
-    await vi.waitFor(() => expect(cardOpen.snapshot).toHaveBeenCalled())
     await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="composer-card"]')!.click() })
     expect(cardOpen.open).toHaveBeenLastCalledWith(CARD, true)
   })
@@ -326,13 +332,11 @@ describe('task card resource access', () => {
     expect(onOpenTopic).toHaveBeenCalledWith('card-1')
   })
 
-  it('does not retain a failed device lookup for the next card mount', async () => {
-    cardOpen.snapshot.mockRejectedValueOnce(new Error('snapshot unavailable'))
+  it('says no place while the device list is unknown, then the local card opens in its layout', async () => {
     await renderCard(true)
     expect(harness.container.querySelector('[data-testid="composer-card"]')?.tagName).toBe('BUTTON')
-    harness.cleanup(); harness = createReactHarness()
-    await renderCard(true)
-    expect(cardOpen.snapshot).toHaveBeenCalledTimes(2)
+    expect(harness.container.textContent).not.toContain(CARD.machineLabel)
+    await act(async () => { devicesModel.set([], [{ device_id: 'device-1', is_current_device: true } as Device]) })
     await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="composer-card"]')!.click() })
     expect(cardOpen.open).toHaveBeenLastCalledWith(CARD, true)
   })

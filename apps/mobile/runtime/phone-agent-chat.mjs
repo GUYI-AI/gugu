@@ -6,7 +6,7 @@ import { matchIdPrefix, uuidPrefixRange } from '../../../packages/core/src/share
 const row = (value) => Array.isArray(value) ? value[0] : value
 const result = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], details: value })
 const bare = (value, kind) => typeof value === 'string' ? value.replace(new RegExp(`^${kind}:`), '') : value
-const limited = (value, fallback = 20) => { if (value === undefined) return fallback; if (!Number.isInteger(value) || value < 1 || value > 100) throw new Error('limit 必须在 1–100'); return value }
+const limited = (value, fallback = 20) => { if (value === undefined) return fallback; if (!Number.isInteger(value) || value < 1 || value > 100) throw new Error('limit must be between 1 and 100'); return value }
 const listProperties = { name: { type: 'string' }, rows: { type: 'string' } }
 
 export function encodePhoneChatRows(value, messageRows = false) {
@@ -25,11 +25,11 @@ export function encodePhoneChatRows(value, messageRows = false) {
 export function createPhoneChatAccess({ agent, cloud, store, env }) {
   const chats = async () => {
     const data = await cloud.rpc('chat', 'list_my_chats_as', { p_as_user_id: agent.agentUserId })
-    if (!Array.isArray(data)) throw new Error('Agent 聊天列表未返回列表')
+    if (!Array.isArray(data)) throw new Error('The Agent chat list did not return a list')
     return data
   }
   const chatId = async (address) => {
-    if (typeof address !== 'string' || !address.trim()) throw new Error('chat_id 是必填的，请从 message_conversations 或本轮信封获取')
+    if (typeof address !== 'string' || !address.trim()) throw new Error("chat_id is required; take it from message_conversations or this turn's envelope")
     if (/^\d+$/.test(address)) {
       const { data, error } = await cloud.chat.from('chats').select('id').eq('public_id', Number(address)).single()
       if (error) throw new Error(error.message)
@@ -38,11 +38,11 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
     return uuid(address, 'chat_id')
   }
   const userId = async (address) => {
-    if (typeof address !== 'string') throw new Error('收件人必须使用 typed 地址')
+    if (typeof address !== 'string') throw new Error('Recipients must use a typed address')
     if (address.startsWith('user:') || address.startsWith('aid:')) return uuid(address.slice(address.indexOf(':') + 1), 'recipient')
     if (address.startsWith('session:')) {
       const target = Object.values(store.state.agents).find((item) => item.sessionId === bare(address, 'session'))
-      if (!target) throw new Error('该会话不在这台手机上，请用 session_message 联系它')
+      if (!target) throw new Error('That session is not on this phone; contact it with session_message')
       return target.agentUserId
     }
     if (/^gugu:\d+$/.test(address)) {
@@ -50,24 +50,19 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
       if (error) throw new Error(error.message)
       return uuid(data.id, 'recipient')
     }
-    throw new Error('收件人必须使用 user:、aid:、gugu: 或 session: 地址')
+    throw new Error('Recipients must use a user:, aid:, gugu: or session: address')
   }
   const members = async (id) => {
     const data = await cloud.rpc('chat', 'list_member_ids', { p_chat_id: id, p_as_user_id: agent.agentUserId })
-    if (!Array.isArray(data)) throw new Error('聊天成员列表未返回列表')
+    if (!Array.isArray(data)) throw new Error('The chat member list did not return a list')
     return data
   }
   // A msg id written as its first 8+ characters (idPrefix.ts, the desktop's matcher): matched in this chat, among what this
   // agent may read; only the full id goes on.
   const messageId = async (value, id, label) => {
     const written = bare(value, 'msg')
-    const range = typeof written === 'string' ? uuidPrefixRange(written) : null
-    if (!range) return uuid(written, label)
-    const { data, error } = await cloud.chat.from('messages').select('id,content,created_at').eq('chat_id', id)
-      .gte('id', range.lo).lte('id', range.hi).order('created_at', { ascending: false }).limit(11)
-    if (error) throw new Error(error.message)
-    const readable = await Promise.all(data.map((message) => cloud.rpc('chat', 'can_read_message', { p_message_id: message.id, p_user_id: agent.agentUserId })))
-    const rows = data.filter((_message, index) => readable[index] === true)
+    if (typeof written !== 'string' || !uuidPrefixRange(written)) return uuid(written, label)
+    const rows = await cloud.rpc('chat', 'messages_by_id_as', { p_as: agent.agentUserId, p_id: written, p_chat_id: id }) ?? []
     return matchIdPrefix({
       kind: 'msg', id: written, rows, keyOf: (message) => message.id, noun: 'messages',
       describe: (message) => `${JSON.stringify(String(message.content ?? '').slice(0, 40))}, ${message.created_at}`,
@@ -79,11 +74,11 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
   const ledger = groupRulesLedgerFor(env)
   const beforeWrite = async (id, recipients = null) => {
     const membersHere = await members(id)
-    if (!membersHere.some((member) => member.user_id === agent.agentUserId)) throw new Error('你不是这条聊天的成员；请用 message_conversations 确认可用聊天')
+    if (!membersHere.some((member) => member.user_id === agent.agentUserId)) throw new Error('You are not a member of this chat; check available chats with message_conversations')
     const missing = (recipients ?? []).filter((uid) => !membersHere.some((member) => member.user_id === uid))
-    if (missing.length) throw new Error(`收件人不在这条聊天中：${missing.map((uid) => `user:${uid}`).join('、')}。请调用 message_members 查有效成员。`)
+    if (missing.length) throw new Error(`Recipients not in this chat: ${missing.map((uid) => `user:${uid}`).join(', ')}. Call message_members for valid members.`)
     const current = await rules(id)
-    if (current.trim() && (await ledger.read(agent.agentUserId, id))?.version !== groupRulesVersion(current)) throw new Error('发送前必须先调用 message_rules 阅读当前群规')
+    if (current.trim() && (await ledger.read(agent.agentUserId, id))?.version !== groupRulesVersion(current)) throw new Error('Call message_rules to read the current group rules before sending')
   }
   return { chats, chatId, userId, messageId, members, facts, rules, ledger, beforeWrite }
 }
@@ -103,22 +98,22 @@ export function phoneChatReadTools({ agent, cloud, store, env }) {
   const history = async (args, search = false) => {
     const id = await access.chatId(args.chat_id)
     const query = { p_chat_id: id, p_as_user_id: agent.agentUserId, p_before_seq: args.before_seq ?? null, p_limit: limited(args.limit) }
-    if (args.before_seq !== undefined && !Number.isSafeInteger(args.before_seq)) throw new Error('before_seq 必须是消息返回的 seq 整数')
+    if (args.before_seq !== undefined && !Number.isSafeInteger(args.before_seq)) throw new Error('before_seq must be an integer seq returned with messages')
     const data = search
       ? await cloud.rpc('chat', 'message_search_as', { ...query, p_query: String(args.query ?? '') })
       : await cloud.rpc('chat', 'message_history_as', { ...query, p_thread_root_id: args.thread_root_id ? await access.messageId(args.thread_root_id, id, 'thread_root_id') : null })
-    if (!Array.isArray(data)) throw new Error('消息历史未返回列表')
+    if (!Array.isArray(data)) throw new Error('Message history did not return a list')
     return result(encodePhoneChatRows(data, true))
   }
   return [
-    { name: 'message_conversations', label: '查看自己的聊天', description: '列出你作为这位 Agent 真正加入的私聊、群或话题，最近消息优先。返回 chat_id/public_id；用它们进入历史或发送，不要猜编号。', parameters: { type: 'object', properties: { ...listProperties, kind: { type: 'string', enum: ['dm', 'group', 'topic', 'ai'] }, pinned: { type: 'boolean' } } }, execute: async (_callId, args) => {
+    { name: 'message_conversations', label: 'View your chats', description: 'Lists the DMs, groups and topics you have actually joined as this Agent, most recent message first. Returns chat_id/public_id; use them for history or sending, never guess numbers.', parameters: { type: 'object', properties: { ...listProperties, kind: { type: 'string', enum: ['dm', 'group', 'topic', 'ai'] }, pinned: { type: 'boolean' } } }, execute: async (_callId, args) => {
       const [rows, pins] = await Promise.all([access.chats(), cloud.chat.from('active_members').select('chat_id').eq('user_id', store.state.ownerId).eq('is_pinned', true)])
       if (pins.error) throw new Error(pins.error.message)
       const pinned = new Set((pins.data ?? []).map((item) => item.chat_id))
       const shown = rows.map((item) => ({ id: item.chat_id, chat_id: item.chat_id, public_id: item.public_id, kind: item.kind, status: item.status, name: item.name, pinned: pinned.has(item.chat_id), last_message_at: item.last_message_at, last_message_preview: item.last_message_preview }))
       return result(windowResult({ namesOf: (item) => [item.name], keep: (item, filter) => (!filter.kind || item.kind === filter.kind) && (filter.pinned === undefined || item.pinned === filter.pinned) }, shown, args))
     } },
-    { name: 'message_members', label: '查看聊天成员', description: '按你这位 Agent 的可见域列聊天成员，返回可复用的 user: 地址、名字和咕咕号；按名字找人后再发送。', parameters: { type: 'object', required: ['chat_id'], properties: { chat_id: { type: 'string' }, ...listProperties, type: { type: 'string', enum: ['human', 'agent'] }, status: { type: 'string' } } }, execute: async (_callId, args) => {
+    { name: 'message_members', label: 'View chat members', description: 'Lists chat members within your visibility as this Agent, returning reusable user: addresses, names and gugu numbers; find people by name, then send.', parameters: { type: 'object', required: ['chat_id'], properties: { chat_id: { type: 'string' }, ...listProperties, type: { type: 'string', enum: ['human', 'agent'] }, status: { type: 'string' } } }, execute: async (_callId, args) => {
       const members = await access.members(await access.chatId(args.chat_id))
       const identities = await identityRows(members.map((item) => item.user_id))
       const agentIds = members.filter((item) => identities.get(item.user_id)?.type === 'agent' && !store.state.agents[item.user_id]).map((item) => item.user_id)
@@ -141,7 +136,7 @@ export function phoneChatReadTools({ agent, cloud, store, env }) {
       if (unavailable.length) directory.status_unavailable = unavailable.join('; ')
       return result(encodePhoneChatRows(directory))
     } },
-    { name: 'message_history', label: '读取消息历史', description: '按你自己的 Agent 身份读取一条聊天的主线或指定线程。使用返回的 seq 和 before_seq 翻页；隐藏历史和悄悄话由服务端按你的身份检查。', parameters: { type: 'object', required: ['chat_id'], properties: { chat_id: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 }, before_seq: { type: 'integer' }, thread_root_id: { type: 'string' } } }, execute: (_callId, args) => history(args) },
-    { name: 'message_search', label: '搜索消息', description: '搜索这条聊天中你真正可读的消息，返回消息来源和 seq；按 before_seq 翻页。', parameters: { type: 'object', required: ['chat_id', 'query'], properties: { chat_id: { type: 'string' }, query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 }, before_seq: { type: 'integer' } } }, execute: (_callId, args) => history(args, true) },
+    { name: 'message_history', label: 'Read message history', description: "Reads a chat's main timeline or a given thread as your own Agent identity. Page with the returned seq and before_seq; hidden history and whispers are checked by the server against your identity.", parameters: { type: 'object', required: ['chat_id'], properties: { chat_id: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 }, before_seq: { type: 'integer' }, thread_root_id: { type: 'string' } } }, execute: (_callId, args) => history(args) },
+    { name: 'message_search', label: 'Search messages', description: 'Searches the messages in this chat you can actually read, returning their sources and seq; page with before_seq.', parameters: { type: 'object', required: ['chat_id', 'query'], properties: { chat_id: { type: 'string' }, query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 }, before_seq: { type: 'integer' } } }, execute: (_callId, args) => history(args, true) },
   ]
 }

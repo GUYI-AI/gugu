@@ -41,6 +41,7 @@ import {
 import { composeAgentSpawnEnv, runContextLaunchArgs } from '@gugu/session-core/agents/agent-run-context'
 import { CODEX_PLATFORM_PROVIDER_ID } from '@gugu/session-plugins/agents'
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context'
+import { sessionBrowserEnv } from '@main/core/pty/server-browser-env'
 import { closeRuntimeForkOwnership } from '@main/core/sessions/runtime-fork-ownership'
 import { codexForkHandoffItems } from '../runtime/codex-fork-handoff.mjs'
 import {
@@ -353,7 +354,8 @@ async function provisionAndOverrideOnce(
       threadConfig: capabilities.threadConfig,
       threadStart: capabilities.threadStart,
       skillRoots: capabilities.skillRoots,
-      env: composeAgentSpawnEnv(runContext, { providerEnv: definedEnv(capabilities.spawnEnv) }),
+      // #6264 引擎跑这条会话的工具:咕咕 server 上它打开的网页推给正看着这条会话的桌面(server-browser-env.ts)。
+      env: composeAgentSpawnEnv(runContext, { providerEnv: definedEnv(capabilities.spawnEnv), hostInjections: [sessionBrowserEnv(info.sessionId)] }),
       developerInstructions: capabilities.developerInstructions,
     }
     // @@@6112 fork:新会话是**新 agent**,它的 developerInstructions(身份)官方只认 start/fork 时给,
@@ -402,6 +404,7 @@ async function provisionAndOverrideOnce(
       try {
         adopted = {
           threadId: await awaitStartupPhase(session.adopt(info.cwd, survivor, {
+            env: engineOptions.env,
             threadId: resumeThreadId ?? null,
             extraArgs: engineOptions.extraArgs,
             threadStart: engineOptions.threadStart,

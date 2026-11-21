@@ -1,17 +1,16 @@
 import type { Device } from '@gugu/core/shared/types/chat'
 import { useId, useState } from 'react'
-import { observer } from 'mobx-react-lite'
 import { followLink } from '../../lib/guguLinks'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps, installedExtensions, PHONE_HOST, setAutoUpdate, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host'
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere'
 import { setExtensionEnabled } from '@renderer/features/extensions/set-extension-enabled'
-import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
+import { marketDeviceHost } from '@/mobile/market/marketDeviceHost'
 import { AppManagePage } from '@/session/renderer/features/extensions/panel/app-manage-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { InstalledRowNotice } from '@/session/renderer/features/extensions/panel/installed-extension-row'
@@ -30,7 +29,7 @@ const log = rendererLogger('settings/phone-app-manage')
  * An App's settings page on the phone: the desktop's page, with what this phone can manage. It has no agents and no App
  * background, and permissions are not taken back one by one here, so those hand it no action.
  */
-export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onViewInMarket, remote }: {
+export function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onViewInMarket, remote }: {
   extensionId: string
   updateVersion?: string
   gone: boolean
@@ -44,9 +43,12 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
-  const store = remote?.host.store ?? installedExtensionsStore
-  const installed = store.manifests.find((manifest) => manifest.id === extensionId)
-  if (!installed) return null
+  const hostKey = remote?.host.key ?? PHONE_HOST
+  const reading = useInstalledApps(hostKey)
+  // Opened from a row of the list, so it is read; were it not (yet), nothing to manage is drawn until it is.
+  const store = reading.state === 'value' ? reading.value : null
+  const installed = store?.manifests.find((manifest) => manifest.id === extensionId)
+  if (!store || !installed) return null
   const name = localizedManifestText(installed, locale).name
   const enabled = store.isEnabled(extensionId)
   const origin = remote ? store.origins[extensionId] : phoneApps.originOf(extensionId) ?? undefined
@@ -84,7 +86,7 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
   })
   const changeAutoUpdate = (on: boolean) => run(translate('extensions.switchFailed'), async () => {
     if (!remote) return phoneApps.setAutoUpdate(extensionId, on)
-    await store.setAutoUpdate(extensionId, on)
+    await setAutoUpdate(hostKey, extensionId, on)
     return { success: true }
   })
   const uninstall = () => run(translate('extensions.uninstallFailed'), async () => {
@@ -93,17 +95,17 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
       devices: () => remote.devices.map(device => ({ id: device.device_id, isOnline: device.is_online })),
       installed: async deviceId => {
         if (!deviceId) {
-          await phoneApps.ready()
-          if (phoneApps.unreadable()) throw new Error('Unreadable phone App inventory')
-          return installedExtensionsStore.manifests.map(app => app.id)
+          const phone = await fetchInstalledApps(PHONE_HOST)
+          if (phone.unreadable) throw new Error('Unreadable phone App inventory')
+          return phone.manifests.map(app => app.id)
         }
-        const result = await machineRpc(deviceId).extensions.list()
-        if (!result.success || !result.data) throw new Error(result.error ?? 'Unreadable App inventory')
-        return result.data.extensions.map(app => app.id)
+        // That computer's installed list, read again now (its host routes the phone's pipe to it).
+        const device = remote.devices.find(one => one.device_id === deviceId)!
+        return (await installedExtensions.reread(marketDeviceHost(device).extensions.key)).extensions.map(app => app.id)
       },
     })
     const result = await remote.host.api.uninstall({ extensionId, lastAnywhere })
-    if (result.success) await store.load()
+    if (result.success) await installedExtensions.refresh(hostKey)
     return result
   })
 
@@ -121,6 +123,7 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
             locale={locale}
             translate={translate}
             api={remote?.host.api ?? phoneProductApi}
+            hostKey={hostKey}
             machine={remote?.device.label || remote?.device.hostname}
             readOnly={busy || remote?.device.is_online === false}
             backLabel={translate('extensions.tabInstalled')}
@@ -158,4 +161,4 @@ export const PhoneAppManage = observer(function PhoneAppManage({ extensionId, up
       ) : null}
     </Sheet>
   )
-})
+}

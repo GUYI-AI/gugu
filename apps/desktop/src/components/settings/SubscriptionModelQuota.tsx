@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
 import { Meter as MeterPrimitive } from '@base-ui/react/meter'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { refreshFailure } from '@/lib/replica'
 import { useSubscriptionUsage } from '@renderer/features/settings/subscriptions/subscription-queries'
 import { formatPercent, windowLabel } from '@renderer/features/settings/subscriptions/subscription-view'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
@@ -24,11 +25,11 @@ function Meter({ window, compact = false }: { window: SubscriptionUsageWindow; c
 
 /** This observes the exact reading used by connection menus and the rail usage popup. */
 export function SubscriptionModelQuota({ machine, provider, connectionId, account, enabled, plan, inlineOnly = false, children }: {
-  machine: string | null; provider: SubscriptionUsageProvider; connectionId: string; account: string; enabled: boolean; plan?: string; inlineOnly?: boolean; children?: ReactNode;
+  machine: string | null; provider: SubscriptionUsageProvider; connectionId: string; account?: string; enabled: boolean; plan?: string; inlineOnly?: boolean; children?: ReactNode;
 }) {
   const { translate, locale } = useSessionMessages()
-  const query = useSubscriptionUsage(machine, provider, connectionId, enabled)
-  const reading = query.data
+  const usage = useSubscriptionUsage(machine, provider, connectionId, enabled)
+  const reading = usage.state === 'value' ? usage.value : undefined
   const windows = reading?.kind === 'windows' ? [subscriptionWindow(reading.windows, 300), subscriptionWindow(reading.windows, 10_080)]
     .filter((window): window is SubscriptionUsageWindow => window !== undefined) : []
   if (!windows.length && !children) return null
@@ -50,7 +51,7 @@ export function SubscriptionModelQuota({ machine, provider, connectionId, accoun
           <Meter window={window} />
           {window.resetsAt !== undefined && Number.isFinite(window.resetsAt) && <div className="gg-model-quota-reset">{translate('subscriptions.resets', { time: date(window.resetsAt) })}</div>}
         </div>)}
-        {(query.error || reading?.kind === 'windows' && reading.refreshError) && <div className="gg-model-quota-error">{translate('subscriptions.payer.unknown')}</div>}
+        {(refreshFailure(usage) || reading?.kind === 'windows' && reading.refreshError) && <div className="gg-model-quota-error">{translate('subscriptions.payer.unknown')}</div>}
       </Tooltip.Popup>
     </Tooltip.Positioner></Tooltip.Portal>
   </Tooltip.Root>

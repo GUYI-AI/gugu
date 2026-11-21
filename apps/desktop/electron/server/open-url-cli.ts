@@ -1,11 +1,12 @@
 /**
- * `gugu-server open-url [--] <网址或文件>`(#6264):这台机器上的程序要「打开网页」时,
- * `$BROWSER` / xdg-open 的助手脚本调它(脚本见 ../session/main/core/pty/server-browser-env.ts)。
+ * `gugu-server open-url [--] <网址或文件>`(#6264):会话里的程序要「打开网页」时,
+ * `$BROWSER` 指向的助手脚本调它(脚本见 ../session/main/core/pty/server-browser-env.ts)。
  *
- * 照 VS Code 远端的 `$BROWSER`(server.cli.ts 的 openExternal):把网址经本机套接字交给这个账号的进程,
- * 它转到正看着这台机器的咕咕桌面上打开(remote-open-external.ts)。
+ * 照 VS Code 远端的 `$BROWSER`(server.cli.ts 的 openExternal):把网址和环境里的会话(`GUGU_TASK_ID`)经本机套接字
+ * 交给这个账号的进程,它推到正看着这条会话的咕咕桌面上打开(remote-open-external.ts)。
  *  · 开了:安静退出 0(程序照常往下走,比如 `gh auth login --web` 等浏览器那头回来)。
- *  · 攒着了(此刻没有桌面看着):退出 0,在标准错误里说一句、并把网址打出来 —— 人可以自己复制。
+ *  · 攒着了(给的是文件、此刻没有桌面看着):退出 0,在标准错误里说一句、并把它打出来 —— 人可以自己复制。
+ *    网页不攒:没人看着这条会话就是下面「开不了」那一格。
  *  · 开不了:退出 1,同样打出网址;大多数程序见 $BROWSER 失败会自己打印网址让人手动开。
  *
  * 输出给程序与人看:一句话、中英各一,❌ 堆原因码。
@@ -63,15 +64,15 @@ export async function runOpenUrl(
   const account = (deps.account ?? readServerAccount)()
   const accountError = accountRequestError(account, parsed.account)
   if (accountError || !account) {
-    fallback('咕咕:没能转到你的电脑上打开,请手动打开这个地址 / Gugu could not open this on your computer; open it yourself:')
+    fallback('咕咕:无法转到你的电脑上打开,请手动打开此地址 / Gugu could not open this on your computer. Open it manually:')
     return ATTACH_EXIT.notSignedIn
   }
   const outcome = await (deps.call ?? callAccountProcess)(account, {
     type: OPEN_EXTERNAL_CALL,
-    payload: { target: parsed.target, cwd: (deps.cwd ?? process.cwd)(), ptyId: env.GUGU_PTY_ID ?? '' },
+    payload: { target: parsed.target, cwd: (deps.cwd ?? process.cwd)(), sessionId: env.GUGU_TASK_ID ?? '' },
   })
   if ('code' in outcome) {
-    fallback('咕咕:没能转到你的电脑上打开,请手动打开这个地址 / Gugu could not open this on your computer; open it yourself:')
+    fallback('咕咕:无法转到你的电脑上打开,请手动打开此地址 / Gugu could not open this on your computer. Open it manually:')
     return 1
   }
   let reply: { result?: { outcome?: string }; error?: { code?: string; message?: string } } = {}
@@ -82,11 +83,11 @@ export async function runOpenUrl(
   }
   if (reply.result?.outcome === 'opened') return 0
   if (reply.result?.outcome === 'queued') {
-    fallback('咕咕:此刻没有人在看这台机器,下次在咕咕里打开这条会话时会自动打开 / Nobody is viewing this machine in Gugu right now; it will open next time:')
+    fallback('咕咕:当前没有人在咕咕中查看这台机器,下次在咕咕中打开该会话时会自动打开 / Nobody is viewing this machine in Gugu. It will open the next time this session is opened in Gugu:')
     return 0
   }
   fallback(
-    `咕咕:没能在你的电脑上打开 / Gugu could not open this on your computer${reply.error?.message ? ` (${reply.error.message})` : ''}:`,
+    `咕咕:无法在你的电脑上打开 / Gugu could not open this on your computer${reply.error?.message ? ` (${reply.error.message})` : ''}:`,
   )
   return 1
 }

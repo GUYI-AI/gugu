@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('../agents/agent-payload-builder', () => ({ toAgentInstallationStatus: vi.fn() }));
 vi.mock('./registry', () => ({ getDependencyDescriptor: vi.fn() }));
+vi.mock('../agents/plugin-registry', () => ({ getPlugin: vi.fn() }));
 
 import { AgentUpdateService } from './agent-update-service';
+import { LatestVersionService } from './latest-version-service';
 
 const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
 
@@ -37,6 +39,17 @@ function enrich(desc: unknown, version: string, latest: string) {
 }
 
 describe('AgentUpdateService 的「有新版本」判据', () => {
+  it('settings metadata query only displays facts, with no install ranking or archive fetch', async () => {
+    const version = vi.spyOn(LatestVersionService.prototype, 'fetchLatestVersion').mockResolvedValue('1.2.3');
+    const platformBuild = vi.spyOn(LatestVersionService.prototype, 'probePlatformBuild').mockResolvedValue('ok');
+    try {
+      const service = new AgentUpdateService();
+      expect(await service.fetchInstallSourceVersions('codex', [{ method: 'mise', command: 'install', registry: 'official', registryPackage: '@openai/codex' }])).toEqual({ official: { version: '1.2.3', outdated: false } });
+      expect('installSourceOrder' in service).toBe(false);
+      expect('installSourceRanking' in service).toBe(false);
+      expect(version).toHaveBeenCalledOnce();
+    } finally { version.mockRestore(); platformBuild.mockRestore(); }
+  });
   it('自己装的那份落后了、咕咕装得了这一家 → 照实报新版本(点「更新」= 咕咕装一份最新的切过去)', () => {
     const inst = enrich(descriptor(['mise']), '0.84.2', '0.87.0');
     expect(inst.updateAvailable).toBe(true);

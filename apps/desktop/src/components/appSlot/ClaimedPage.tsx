@@ -1,10 +1,11 @@
-import { observer } from 'mobx-react-lite'
 import { useContext, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
+import { LISTED_HOST } from './hereHost'
 import { extensionViewStore } from '../../session/renderer/features/extensions/extension-view-store'
 import { PeekCovered } from './peekCovered'
 import type { PreparedChatFile } from '../../session/shared/extensions/app-runtime-protocol'
+
 
 /** What in an ancestor can hide the slot without moving or resizing it (`RETAINED_SURFACE_HIDDEN_STYLE`). */
 const HIDING_ATTRIBUTES = ['style', 'class', 'hidden', 'inert']
@@ -17,7 +18,7 @@ const HIDING_ATTRIBUTES = ['style', 'class', 'hidden', 'inert']
  * watches its own box and every ancestor's hiding attributes, and claims while it is visible,
  * releases while it is not — the same for the App's own page and a page opened for a file.
  */
-export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOpening, viewState, navigation }: { slotId: string; chatId: string; resourceChat?: string; kind: string; itemId?: string; viewState?: Record<string, unknown>; navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean }; takeOpening?: () => PreparedChatFile | undefined }) {
+export function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOpening, viewState, navigation }: { slotId: string; chatId: string; resourceChat?: string; kind: string; itemId?: string; viewState?: Record<string, unknown>; navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean }; takeOpening?: () => PreparedChatFile | undefined }) {
   const { t } = useTranslation('messaging')
   const boxRef = useRef<HTMLDivElement | null>(null)
   // A covered slot keeps its claim for the way back.
@@ -30,7 +31,8 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
   navigationRef.current = navigation
   // The resident layer draws a page only for an App it keeps (installed, switched on, listed in this window:
   // `residentTabContributions`): with none, the slot says so instead of staying blank (L4 09-29).
-  const noPage = installedExtensionsStore.isLoaded && !installedExtensionsStore.residentTabContributions.some((entry) => entry.kind === kind)
+  const installed = useInstalledApps(LISTED_HOST)
+  const noPage = installed.state === 'value' && !installed.value.residentTabContributions.some((entry) => entry.kind === kind)
   useLayoutEffect(() => {
     const element = boxRef.current
     if (!element) return
@@ -74,4 +76,4 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
       ) : null}
     </div>
   )
-})
+}

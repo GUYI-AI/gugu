@@ -64,7 +64,7 @@ it.each([360, 800])('renders the real interrupted turn once as ordinary body tex
   await until('the interrupted turn and real composer have mounted', () => !!harness.container.querySelector('[data-credit-exhausted]') && !!harness.container.querySelector('[data-slot="composer"]'))
   expect(harness.container.querySelectorAll('[data-credit-exhausted]')).toHaveLength(1)
   const exhausted = harness.container.querySelector<HTMLElement>('[data-credit-exhausted]')!
-  expect(exhausted.textContent?.replace(/\n/g, '')).toBe('积分用完了，充值后继续')
+  expect(exhausted.textContent?.replace(/\n/g, '')).toBe('积分已用完，充值后继续')
   expect(exhausted.textContent?.match(/充值/g)).toHaveLength(1)
   expect(exhausted.querySelectorAll('a')).toHaveLength(1)
   expect(exhausted.querySelector('a')?.textContent?.trim()).toBe('充值')
@@ -75,8 +75,8 @@ it.each([360, 800])('renders the real interrupted turn once as ordinary body tex
 })
 
 it.each([
-  { reason: 'team_member_monthly_cap_reached', text: '你本月的团队积分用完了，只影响你，其他人照常用。找管理员调高上限。' },
-  { reason: 'team_credits_exhausted', text: '团队积分用完了，所有成员暂时无法使用 AI。找管理员充值。' },
+  { reason: 'team_member_monthly_cap_reached', text: '你本月的团队积分额度已用完，仅暂停你的 AI 使用，其他成员不受影响。请联系管理员调高上限。' },
+  { reason: 'team_credits_exhausted', text: '团队积分已用完，所有成员暂时无法使用 AI。请联系管理员充值。' },
 ])('keeps the typed team refusal $reason in the real conversation without a personal wallet link', async ({ reason, text }) => {
   await page.viewport(1440, 960)
   await i18n.changeLanguage('zh-CN')

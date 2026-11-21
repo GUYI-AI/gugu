@@ -103,13 +103,16 @@ describe('widget_send', () => {
 
 describe('widget_get', () => {
   const origin = { widget_id: 'stable-widget', origin_message_id: 'origin', is_retracted: false }
-  const message = { id: 'origin', chat_id: 'chat', content_type: 'widget', sender_user_id: 'author', retracted_at: null, deleted_for_user_ids: [],
+  const message = { id: 'origin', chat_id: 'chat', content_type: 'widget', sender_user_id: 'author', retracted_at: null, deleted_for_me: false,
     content: JSON.stringify({ v: 2, wid: 'stable-widget', text: 'Lunch', app: 'vote', view: 'poll', height: 160, data: { question: 'Noodles?' } }) }
   const deps = (found: { origin?: typeof origin | null; readable?: boolean } = {}) => ({
-    restGet: vi.fn(async () => [message]),
+    restGet: vi.fn(async () => { throw new Error('no owner-token read') }),
     restRpc: vi.fn(async (name: string, body: Record<string, unknown>) => {
       if (name === 'widget_origin') return found.origin === null ? [] : [found.origin ?? origin]
-      if (name === 'can_read_message') { expect(body).toEqual({ p_message_id: 'origin', p_user_id: 'agent' }); return found.readable ?? true }
+      if (name === 'messages_by_id_as') {
+        expect(body).toEqual({ p_as: 'agent', p_id: 'origin', p_chat_id: null })
+        return found.readable === false ? [] : [message]
+      }
       throw new Error(`unexpected ${name}`)
     }),
   })

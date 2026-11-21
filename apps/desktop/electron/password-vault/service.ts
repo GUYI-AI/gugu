@@ -322,6 +322,17 @@ export class LocalPasswordVault {
       } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
     })
   }
+  /** The host's own use of a credential it saved for itself (a connector's token, an App's request sent by main): its password,
+   * or null when the person deleted it. Read like any stored secret of the app: no person step and no per-use audit. */
+  hostSecret(context: object, credentialId: string): Promise<string | null> {
+    this.person(context)
+    return this.run(async () => {
+      await this.gates(); await this.open(undefined, true)
+      const { key, document } = this.unlocked(), payload = this.#file.payload(document, key)
+      try { return payload.credentials.find(item => item.id === credentialId)?.password ?? null }
+      finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
+    })
+  }
   /** 「本机送」(server-delivery.ts), for the trusted coordinator only, after a grant or the person's approval: this
    * credential's account and password, sealed by `seal` to the requesting server; the plaintext never leaves here. */
   releaseToServer(reference: CredentialReference, seal: (plain: Buffer) => Promise<string>,

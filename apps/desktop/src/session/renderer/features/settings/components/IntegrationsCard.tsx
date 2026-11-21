@@ -9,6 +9,9 @@ import { ConnectorMarketCatalog } from '@renderer/features/extensions/panel/conn
 import { connectorState } from '@renderer/features/assistant/assistant-connector-status';
 import { useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
 import { PageLoading } from '@renderer/lib/components/page-layout';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { messageForUser } from '@/lib/userFacingError';
 import type { IntegrationAccountSummary } from '@renderer/features/integrations/use-integration-accounts';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -16,11 +19,14 @@ import { useLibraryHost } from '@renderer/features/library/library-host';
 import { DeviceScopeNoticeLine } from '@renderer/features/remote-hosts/device-scope-picker';
 import { deviceScopeNotice } from '@renderer/features/remote-hosts/device-scope-notice';
 import { sortGitHubAccountsByDefault } from '@renderer/features/projects/components/github-account-select-model';
+import type { Reading } from '@/lib/replica';
+import type { GitHubAccountSummary } from '@shared/github';
 import { useGitHubAccounts } from '@renderer/lib/hooks/useGithubAccounts';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Sheet, SheetContent } from '@renderer/lib/ui/sheet';
 import { TooltipProvider } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { configuredConnections as configuredOnHost } from '@/components/connections/connection-replicas';
 import type { AgentIconAsset } from '@shared/core/agents/agent-payload';
 import type { ConnectionStatus } from '@shared/issue-providers';
 import { IntegrationDetailSidebar } from './IntegrationDetailSidebar';
@@ -64,8 +70,6 @@ export type IntegrationItem = {
 const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean; initialConnectorId?: string; marketQuery?: string }> = ({ inSettings = false, inlineDetail = false, initialConnectorId, marketQuery }) => {
   const {
     connectionStatus,
-    checkedConnections,
-    hasConfiguredConnections,
     configuredConnections,
     isCheckingConfiguredConnections,
     disconnectIntegration,
@@ -79,10 +83,13 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
   // #6264 资源库看的是别的机器:连 / 断的是那台机器上的集成;弹窗带上它(弹窗挂在应用根上,自己拿不到)。
   const host = useLibraryHost();
   const modalHost = host.remote ? host : undefined;
-  const { data: githubAccounts = [] } = useGitHubAccounts();
+  const githubAccountsReading = useGitHubAccounts();
   const sortedGithubAccounts = useMemo(
-    () => sortGitHubAccountsByDefault(githubAccounts),
-    [githubAccounts]
+    (): Reading<GitHubAccountSummary[]> =>
+      githubAccountsReading.state === 'value'
+        ? { ...githubAccountsReading, value: sortGitHubAccountsByDefault(githubAccountsReading.value) }
+        : githubAccountsReading,
+    [githubAccountsReading]
   );
   const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection(inSettings, initialConnectorId);
   const showIntegrationSetup = useShowModal('integrationSetupModal');
@@ -161,16 +168,13 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
 
   // 注册表里的每一家都列出来(#7210):飞书、腾讯文档这类只给 agent 用的服务不是 issue 系统,
   // ❌ 再按「是不是 issue 系统」筛 —— 那样它们连卡片都没有。
-  const integrations: IntegrationItem[] = integrationMetadata.map((integration) => {
+  const integrations: IntegrationItem[] = (integrationMetadata ?? []).map((integration) => {
     const provider = integration.id;
-    const status: ConnectionStatus = connectionStatus[provider] ?? {
-      connected: false,
-      capabilities: integration.capabilities,
-    };
-    const isConfigured = configuredConnections[provider] ?? false;
+    // A saved connection not checked yet has no status: its error line waits for the check (❌ "not connected").
+    const status: ConnectionStatus | undefined = connectionStatus?.[provider];
+    const isConfigured = configuredConnections?.[provider] === true;
     const hasForm = integration.auth.methods.some((method) => method.kind === 'form');
-    const isConfigurationKnown =
-      provider in configuredConnections || !isCheckingConfiguredConnections;
+    const isConfigurationKnown = configuredConnections !== null && (provider in configuredConnections || !isCheckingConfiguredConnections);
 
     if (provider === 'github') {
       return {
@@ -183,10 +187,11 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
         isConfigurationKnown,
         isMutating: false,
         readOnly: !!notice?.readOnly,
-        connectionError: isConfigured ? integrationErrorText(translate, integration.name, status) : undefined,
-        connectionErrorDetail: isConfigured ? status.error : undefined,
-        displayName: sortedGithubAccounts[0]?.login ?? status.displayName,
-        displayDetail: status.displayDetail,
+        connectionError: isConfigured && status ? integrationErrorText(translate, integration.name, status) : undefined,
+        connectionErrorDetail: isConfigured ? status?.error : undefined,
+        // The default account's login once the accounts are read; until then the connection status's own name.
+        displayName: (sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value[0]?.login : undefined) ?? status?.displayName,
+        displayDetail: status?.displayDetail,
         onConnect: () => showConnectGitHub({ host: modalHost }),
         abilities: integration.abilities ?? [],
         playbooks: integration.playbooks ?? [],
@@ -206,10 +211,10 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
       isConfigurationKnown,
       isMutating: isIntegrationMutating(provider),
       readOnly: !!notice?.readOnly,
-      connectionError: isConfigured ? integrationErrorText(translate, integration.name, status) : undefined,
-      connectionErrorDetail: isConfigured ? status.error : undefined,
-      displayName: status.displayName,
-      displayDetail: status.displayDetail,
+      connectionError: isConfigured && status ? integrationErrorText(translate, integration.name, status) : undefined,
+      connectionErrorDetail: isConfigured ? status?.error : undefined,
+      displayName: status?.displayName,
+      displayDetail: status?.displayDetail,
       abilities: integration.abilities ?? [],
       playbooks: integration.playbooks ?? [],
       multiAccount: integration.multiAccount ?? false,
@@ -260,7 +265,7 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
     : null;
 
   const market = marketQuery !== undefined;
-  const selectedMetadata = selectedIntegration && integrationMetadata.find(({ id }) => id === selectedIntegration.id);
+  const selectedMetadata = selectedIntegration && integrationMetadata?.find(({ id }) => id === selectedIntegration.id);
   const marketDetail = market && selectedIntegration && (
     <MarketConnectorDetail
       key={selectedIntegration.id}
@@ -268,17 +273,17 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
       name={selectedIntegration.name}
       description={selectedIntegration.description}
       icon={<IntegrationIcon provider={selectedIntegration.id} icon={selectedIntegration.icon} size={68} />}
-      connected={connectionStatus[selectedIntegration.id]?.connected === true}
+      connected={connectionStatus?.[selectedIntegration.id]?.connected === true}
       readOnly={selectedIntegration.readOnly || selectedIntegration.isMutating}
       status={selectedIntegration.connectionError}
       abilities={selectedIntegration.abilities}
       playbooks={selectedIntegration.playbooks}
       local={{ host, deviceId: host.remote?.deviceId ?? null }}
       readDevice={keptByPlatform(selectedMetadata || undefined) ? undefined : async ({ host: target }) =>
-        (await target.integrations.checkConfiguredConnections())[selectedIntegration.id] === true}
+        (await configuredOnHost.fetch(target.key))[selectedIntegration.id] === true}
       onConnected={reloadConnections}
       onDisconnect={selectedIntegration.id === 'github' ? async () => {
-        for (const { accountId } of sortedGithubAccounts) {
+        for (const { accountId } of sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value : []) {
           const result = await host.github.removeAccount(accountId);
           if (!result.success) throw new Error(result.error);
         }
@@ -301,8 +306,10 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
 
   // 别的机器此刻给不出清单(离线且没读过 / server 太旧 / 问不通):只说那一句,❌ 画一排「可连接」冒充它上面什么都没连。
   if (notice && !hasList) return <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />;
-  // 清单还在读:画加载态(读到了才知道哪些连着)。
-  if (!hasList && !listError) return <PageLoading />;
+  // 清单还在读:画加载态(读到了才知道哪些连着);读不到:说出来、给重试(❌ 一个空的「可用」冒充什么都没有)。
+  if (!integrationMetadata) {
+    return listError ? <ReadFailedLine message={messageForUser(listError)} onRetry={reloadList} /> : <PageLoading />;
+  }
 
   const detail = selectedIntegration && <IntegrationDetailSidebar
     integration={selectedIntegration} githubAccounts={sortedGithubAccounts} onClose={closeSheet}
@@ -311,7 +318,8 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
 
   return (
     <TooltipProvider delay={150}>
-      {notice && <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />}
+      {notice ? <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />
+        : <RefreshFailed error={listError instanceof Error ? listError : null} onRetry={reloadList} />}
       {marketQuery !== undefined ? (
         listError && !hasList ? (
           <div className="mk-status" role="alert">
@@ -323,10 +331,10 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
               ...item,
               catalog: integrationMetadata.find(({ id }) => id === item.id)?.catalog,
               saved: item.isConfigured,
-              state: connectorState(hasConfiguredConnections ? item.isConfigured : undefined, checkedConnections[item.id]),
+              state: connectorState(configuredConnections !== null ? item.isConfigured : undefined, connectionStatus?.[item.id]),
             }))}
             query={marketQuery}
-            isConnectionKnown={() => hasConfiguredConnections}
+            isConnectionKnown={() => configuredConnections !== null}
             icon={(app, size) => <IntegrationIcon provider={app.id} icon={app.icon} size={size} />}
             open={setSelectedProvider}
           />

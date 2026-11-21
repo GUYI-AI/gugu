@@ -58,7 +58,7 @@ describe('a manifest declares one word per family', () => {
     ]) {
       const parsed = safeParseExtensionManifest(manifest(pair));
       expect(parsed.ok, pair.join(' + ')).toBe(false);
-      if (!parsed.ok) expect(parsed.issues.join('\n')).toContain('同一个能力的两档');
+      if (!parsed.ok) expect(parsed.issues.join('\n')).toContain('two levels of the same capability');
     }
   });
 

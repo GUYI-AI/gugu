@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { useEffect, useRef } from 'react'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
@@ -21,7 +22,7 @@ export async function readLocalPhoneSessions(deviceId: string): Promise<Sessionp
   if (thisPhoneDeviceId(ownerId) !== deviceId) return null
   const host = await nativeAgent.hostState({ ownerId })
   if (!host.sessions.length) return null
-  if (host.ownerId !== ownerId || host.deviceId !== deviceId) throw new Error('手机会话与当前账号或设备不一致')
+  if (host.ownerId !== ownerId || host.deviceId !== deviceId) throw new Error(mobileWorkspaceText('phoneDevice.sessionMismatch'))
   reportNativePersonalPublication(ownerId, host.accountRevision)
   const previous = liveDeviceSessions()[deviceId]
   const sessions = host.sessions.map((agent): SessionpageSessionSummary => {
@@ -111,7 +112,7 @@ export function usePhoneAgentDirectory(devices: readonly Device[], options?: { r
       const sync = startPhoneAgentDirectorySync(device.device_id, device.is_online && isAgentHostDevice(device), fetchPhoneSessions, readLocalPhoneSessions)
       if (!ownerId || !device.is_online || !isAgentHostDevice(device)) return [sync]
       const unregister = registerDeviceSessionsRetry(ownerId, device.device_id, async () => {
-        if (retryScope.current.ownerId !== ownerId || !retryScope.current.active.includes(device.device_id)) throw new Error('账号或手机宿主状态已改变，请重新打开项目列表。')
+        if (retryScope.current.ownerId !== ownerId || !retryScope.current.active.includes(device.device_id)) throw new Error(mobileWorkspaceText('directory.hostChanged'))
         await sync.refresh()
         if (retryScope.current.ownerId !== ownerId || !retryScope.current.active.includes(device.device_id)) return
         const error = liveDeviceSessions()[device.device_id]?.error

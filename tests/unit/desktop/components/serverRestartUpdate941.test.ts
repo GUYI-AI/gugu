@@ -195,7 +195,7 @@ describe('confirmed server update feedback', () => {
     expect(node('restarting')).not.toBeNull()
     await render(server({ ...failed, lastOutcome: { kind, request: at } }))
     expect(node('restarting')).toBeNull()
-    expect(node('match-failed')!.textContent).toContain('更新没成功')
+    expect(node('match-failed')!.textContent).toContain('更新失败')
     expect(toast).not.toHaveBeenCalled()
   })
 

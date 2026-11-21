@@ -1,6 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
@@ -42,8 +42,6 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
   const [query, setQuery] = useState('')
   const [showProvided, setShowProvided] = useState(false)
 
-  const load = () => { void platformModels.refresh() }
-
   const toggle = (model: PlatformCatalogModel, shown: boolean) => {
     setSaveFailed('')
     // 先拨过去再存:开关的手感不该等一趟网络。存失败就说一句,并以服务端为准重读一遍 ——
@@ -76,9 +74,9 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
         {showProvided && <>
         <SearchField value={query} onChange={event => setQuery(event.target.value)} placeholder={t('model.search')}
           clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />
-        {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={load}>{t('model.retry')}</Button>} />
+        {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={retryOf(catalog)}>{t('model.retry')}</Button>} />
           : groups === null ? <Unknown className="h-64 w-full" /> : <>
-            {catalog.state === 'value' ? <RefreshFailed error={catalog.error} onRetry={load} /> : null}
+            {catalog.state === 'value' ? <RefreshFailed reading={catalog} /> : null}
             {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
             <div className="gg-model-rows" data-testid="settings-model-usable">
               {groups.usable.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName}

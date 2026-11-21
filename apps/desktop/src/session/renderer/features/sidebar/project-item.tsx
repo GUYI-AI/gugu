@@ -18,6 +18,9 @@ import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { formatCalendarDay } from '@/i18n/format';
+import { useUnavailableProjects } from '@/lib/projectRecovery';
+import { ProjectRecoverySubtitle } from '@/components/projects/ProjectRecoverySubtitle';
+import type { UnavailableProject } from '@shared/projects';
 
 /**
  * #2548 a project in the one list is its project group's conversation row. `projectId` is a row of the account project
@@ -55,10 +58,11 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
 
   // gugu-dev#181 项目就是群(账号上的项目 = 它的项目群):项目群从哪个话题叫到了你,壳发过来的那一份。
   const groupChatId = ref?.chatId;
+  const unavailable = useUnavailableProjects()?.find(row => row.id === projectId || row.chatId === groupChatId);
   const chatSignals = useSidebarChatSignals();
   const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
 
-  if (ref?.kind === 'group') return <OneListGroupProjectRow projectId={projectId} chatId={ref.chatId} name={ref.name} activeAt={ref.activeAt} />;
+  if (ref?.kind === 'group') return <OneListGroupProjectRow projectId={projectId} chatId={ref.chatId} name={ref.name} activeAt={ref.activeAt} unavailable={unavailable} />;
   if (!project) return null;
   const deviceIds = [...new Set(sidebarStore.projectMembersOf(projectId).map((id) => machineRegistry.machineOf(id) ?? null))];
   const machineDown = deviceIds.every((id) => id !== null && remoteHostsStore.connectionState(id) !== 'connected');
@@ -99,10 +103,12 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
         faceId={groupChatId ?? rowId}
         time={ref?.activeAt ? formatCalendarDay(ref.activeAt) : undefined}
         preview=""
+        subtitle={unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : undefined}
         selected={isProjectActive}
         onOpen={openProject}
         aria-label={translate('sidebar.openProject', { project: projectLabel })}
         data-project-row={projectId}
+        data-unavailable-project={unavailable?.id}
         data-offline={machineDown || undefined}
       />
     </ProjectRowContextMenu>
@@ -114,7 +120,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
  * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
  * Its face is its group's.
  */
-const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt }: { projectId: string; chatId: string; name: string; activeAt: string | null }) {
+const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt, unavailable }: { projectId: string; chatId: string; name: string; activeAt: string | null; unavailable?: UnavailableProject }) {
   const { translate } = useSessionMessages();
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const open = (beside: boolean) => {
@@ -127,10 +133,12 @@ const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projec
       faceId={chatId}
       time={activeAt === null ? undefined : formatCalendarDay(activeAt)}
       preview=""
+      subtitle={unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : undefined}
       selected={focused?.kind === 'chat' && focused.chatId === chatId}
       onOpen={open}
       aria-label={translate('sidebar.openProject', { project: name })}
       data-project-row={projectId}
+      data-unavailable-project={unavailable?.id}
       data-project-chat={chatId}
     />
   );

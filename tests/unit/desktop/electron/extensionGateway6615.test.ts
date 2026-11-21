@@ -516,11 +516,11 @@ describe('who called, and the files a call hands its program (F16)', () => {
 
   // 群文件夹 App(#7155 重建,148 10-14):对一个文件的工具只带 item_id,chat_id 只在 list / create 上。agent 多传一个 chat_id
   // (ver3 里 Claude 给原生 workspace_download 多传,被 schema 拒 2/8)—— 网关不拒、原样交给程序,文件照样按 agent 本人核。
-  // 用的是这个 App 真的 read 的 schema;原生和 catalog 两条路都走一遍。
-  it('an argument the tool does not declare (a chat_id on the folder\'s read) is passed on as given, never refused; the file is still checked', async () => {
+  // 用的是这个 App 真的 edit 的 schema;原生和 catalog 两条路都走一遍。
+  it('an argument the tool does not declare (a chat_id on the folder\'s edit) is passed on as given, never refused; the file is still checked', async () => {
     const folderTools = new URL('../../../../apps/desktop/preinstalled-apps/workspace/tools.js', import.meta.url).href
-    const { read } = (await import(/* @vite-ignore */ folderTools)) as Record<string, { inputSchema: Tool['inputSchema'] }>
-    toolList = [{ name: 'read', inputSchema: read!.inputSchema }]
+    const { edit } = (await import(/* @vite-ignore */ folderTools)) as Record<string, { inputSchema: Tool['inputSchema'] }>
+    toolList = [{ name: 'edit', inputSchema: edit!.inputSchema }]
     visibleTo.set(AGENT, new Map([[ITEM, CHAT]]))
     const viaCatalog = await (await catalog().tools('s1', 'conv-a', AGENT))[0]!.run({ item_id: ITEM, chat_id: 211178 }, extra)
     expect(viaCatalog).toMatchObject({ content: [{ type: 'text', text: 'saved' }] })
@@ -529,7 +529,7 @@ describe('who called, and the files a call hands its program (F16)', () => {
     const gateway = await buildExtensionGateway(host, { grantKey: 'surface:conv-a', ownerUserId: 'owner-1', subjectId: AGENT, agentId: 'conv-a' }, [notes], (message) => {
       throw new Error(message)
     })
-    const native = await (await connect(gateway.servers[0]!)).callTool({ name: 'read', arguments: { item_id: ITEM, chat_id: CHAT } })
+    const native = await (await connect(gateway.servers[0]!)).callTool({ name: 'edit', arguments: { item_id: ITEM, chat_id: CHAT } })
     expect(native.isError).not.toBe(true)
     expect(handedPerCall).toEqual([[{ itemId: ITEM, chatId: CHAT, agentUserId: AGENT }], [{ itemId: ITEM, chatId: CHAT, agentUserId: AGENT }]])
     expect(calls.map((call) => call.arguments)).toEqual([{ item_id: ITEM, chat_id: 211178 }, { item_id: ITEM, chat_id: CHAT }])

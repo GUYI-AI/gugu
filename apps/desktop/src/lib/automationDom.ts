@@ -30,7 +30,7 @@ export const AUTOMATION_TEST_IDS = {
   chatHeaderMoreButton: 'chat-header-more-button',
   chatHeaderAppsButton: 'chat-header-apps-button',
   groupTopicsPopup: 'group-topics-popup',
-  groupAppsPicker: 'group-apps-picker',
+  chatAppsPicker: 'chat-apps-picker',
   // #4602 会话页会话启动(hydrate)失败在当前 DM 的显形:根因原文 + 真重试(同一 conversation 再 hydrate)。
   agentSessionpageStartupFailure: 'agent-sessionpage-startup-failure',
   agentSessionpageStartupFailureRetry: 'agent-sessionpage-startup-failure-retry',

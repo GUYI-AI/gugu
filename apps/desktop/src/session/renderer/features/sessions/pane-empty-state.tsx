@@ -1,10 +1,12 @@
 import { ArrowRight, Cable, Globe, Plus, SquareTerminal } from '@/lib/icons'
+import { valueOf } from '@/lib/replica';
 import { GitFork, GitPullRequest } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
-import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { messageForUser } from '@/lib/userFacingError';
+import { Unknown } from '@/components/ui/Unknown';
 import { Button } from '@renderer/lib/ui/button';
 import {
   useSessionViewContext,
@@ -24,6 +26,7 @@ import { directToolsUnavailableText } from '@renderer/features/remote-hosts/work
 
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
+import { openAppsLocation } from '@renderer/features/apps/apps-location';
 
 /**
  * @@@sessionpage layout — workspace-pane empty state. The actions and
@@ -50,7 +53,8 @@ export function useSessionWorkspaceActions(
   const { paneId } = usePaneContext();
   // spec session-resume 临时会话:分不出来时这一项**渲染成 disabled 并说明原因**,
   // ❌ 不是点了没反应 —— 远程项目没有本地 ACP runtime，未声明 fork 的 provider 也不能冒充。
-  const { data: agents } = useAgents();
+  // Unknown (undefined) is not evidence the provider cannot fork: startSideSession checks again (canStartSideSession).
+  const agents = valueOf(useAgents());
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = terminalShown(useTerminalEnabled());
 
@@ -94,15 +98,18 @@ export function useSessionWorkspaceActions(
   // extend the list instead of joining the union. Both surfaces read the same store, so what the menu offers and what the
   // empty state offers cannot drift (#2374). 与「+」菜单同一套语义(behavior tab-extensions):只列启用的,点一个 =
   // 把它放到这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。
-  const extensionActions: WorkspacePanelAction[] = installedExtensionsStore.enabledTabContributions.map(
-    (contribution) => ({
+  const installed = useInstalledApps(LOCAL_HOST);
+  const extensionActions: WorkspacePanelAction[] = installed.state === 'error'
+    ? [{ id: 'extensions-failed', label: `${messageForUser(installed.error)} · ${translate('extensions.retry')}`, icon: null, section: 'extensions', onClick: () => void installed.retry?.() }]
+    : installed.state !== 'value'
+    ? [{ id: 'extensions-unknown', label: '', icon: null, section: 'extensions', unknown: true, disabled: true, onClick: () => undefined }]
+    : installed.value.enabledTabContributions.map((contribution) => ({
       id: contribution.kind,
       label: contribution.title,
-      icon: <ExtensionMark iconDataUrl={contribution.iconDataUrl} />,
+      icon: <TabKindMark kind={contribution.kind} />,
       section: 'extensions',
       onClick: () => onOpenApp(contribution.kind),
-    })
-  );
+    }));
 
   return [
     ...getSessionWorkspaceActionOrder(projectId, terminalEnabled).map((actionId) =>
@@ -197,6 +204,7 @@ export interface WorkspacePanelAction {
   trailing?: ReactNode;
   disabled?: boolean;
   title?: string;
+  unknown?: true;
   onClick: () => void;
 }
 
@@ -212,7 +220,6 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
   entries: WorkspacePanelAction[];
 }) {
   const { translate } = useSessionMessages();
-  const { navigate } = useNavigate();
 
   const builtins = entries.filter((entry) => entry.section !== 'extensions');
   const extensions = entries.filter((entry) => entry.section === 'extensions');
@@ -223,9 +230,10 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
     (index) => enabledEntries[index]?.onClick()
   );
 
-  const openExtensionsSettings = () => navigate('apps');
+  const openExtensionsSettings = () => openAppsLocation({ tab: 'market' });
 
   const renderAction = (entry: WorkspacePanelAction, className?: string) => {
+    if (entry.unknown) return <div className={cn(ACTION_BOX, className)}><Unknown className="w-28" /></div>;
     const enabledIndex = enabledEntries.indexOf(entry);
     return (
       <PaneEmptyStateAction
@@ -262,7 +270,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
           <span>{translate('extensions.appsSection')}</span>
           {/* One door, not two: with nothing enabled the sentence below is the way
               in, so the「+」only appears once there is a list to add to (owner). */}
-          {extensions.length > 0 && (
+          {extensions.some((entry) => !entry.unknown) && (
             <Button
               size="icon-sm"
               variant="ghost"
@@ -298,6 +306,8 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
 });
 
 /** 空态清单的一行(别的机器上的会话的工作区空态也用这一行,#6264)。 */
+const ACTION_BOX = 'flex min-h-10 w-full items-center px-2.5 py-2';
+
 export function PaneEmptyStateAction({
   icon,
   label,
@@ -327,7 +337,7 @@ export function PaneEmptyStateAction({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       className={cn(
-        'flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-foreground-muted transition-colors',
+        ACTION_BOX, 'justify-between gap-2 rounded-md text-foreground-muted transition-colors',
         disabled ? 'opacity-50' : 'hover:bg-row-hover hover:text-foreground',
         isSelected && `bg-background-1 text-foreground hover:bg-background-1 ${STATE_LAYERS}`,
         className

@@ -296,7 +296,7 @@ describe('DevicesSection interaction', () => {
     expect(row('new').querySelector('[data-testid="settings-device-replaced"]'), 'the online one is not the one said of').toBeNull()
     const hint = row('old').querySelector<HTMLButtonElement>('[data-testid="settings-device-replaced-hint"]')!
     expect(hint.textContent).toBe('可能已被「GF server」顶替')
-    expect(hint.title).toContain('两台机器也可能本来就同名')
+    expect(hint.title).toContain('两台机器也可能同名')
     await act(async () => { hint.click() })
     expect(row('old').querySelector('[data-testid="settings-device-replaced-why"]')!.textContent).toBe(hint.title)
     await act(async () => { row('old').querySelector<HTMLElement>('[data-testid="settings-device-replaced-remove"]')!.click() })
@@ -380,7 +380,7 @@ describe('DevicesSection interaction', () => {
     }
   })
 
-  it('#6264 远程隧道的机器换成匹配版本没成:状态行「更新没成功 · 重试」,点了经设备 RPC 请它再试,先说「正在更新」', async () => {
+  it('#6264 远程隧道的机器换成匹配版本没成:状态行「更新失败 · 重试」,点了经设备 RPC 请它再试,先说「正在更新」', async () => {
     const value = store({
       devices: [
         device({
@@ -394,7 +394,7 @@ describe('DevicesSection interaction', () => {
     })
     await flush()
     const row = container.querySelector<HTMLElement>('[data-testid="settings-device-match-failed"]')!
-    expect(row.textContent).toContain('更新没成功')
+    expect(row.textContent).toContain('更新失败')
     // 不再挂一颗「更新中 / 有新版本」的标签。
     expect(container.querySelector('[data-testid="settings-device-update"]')).toBeNull()
     await act(async () => {
@@ -482,7 +482,7 @@ describe('DevicesSection interaction', () => {
     await act(async () => {
       root.render(createElement(DevicesContext.Provider, { value: only }, createElement(DevicesSection)))
     })
-    expect(container.querySelector('[data-testid="settings-devices-empty"]')?.textContent).toContain('目前只有这台电脑')
+    expect(container.querySelector('[data-testid="settings-devices-empty"]')?.textContent).toContain('让智能体在上面运行')
     expect(container.querySelector('[data-testid="settings-devices-search"]')).toBeNull()
 
     const many = store({

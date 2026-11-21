@@ -60,6 +60,8 @@ export const agentRunContextSchema = z.object({
    * 同名变量 —— 分家的前提就是咕咕这份赢。叠放顺序见 `composeAgentSpawnEnv`。
    */
   configRootEnv: z.record(z.string(), z.string()),
+  /** Explicit login authority can differ from the conversation/history root. Applied only to login. */
+  loginConfigRootEnv: z.record(z.string(), z.string()).optional(),
   /**
    * descriptor 钉死的 env:关自更新(`selfUpdate`,#6186)与关厂商数据(`vendorDataOff`)。
    *
@@ -117,6 +119,7 @@ export function agentRunContextKey(ctx: AgentRunContext): string {
     ctx.cliVersion ?? '',
     envKey(ctx.env),
     envKey(ctx.configRootEnv),
+    envKey(ctx.loginConfigRootEnv ?? {}),
     envKey(ctx.credentialEnv ?? {}),
     envKey(ctx.pinnedEnv),
     ctx.extraArgs.join(KEY_ITEM_SEP),

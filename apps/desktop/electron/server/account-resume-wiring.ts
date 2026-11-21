@@ -1,10 +1,11 @@
 import { listAgents } from '@gugu/core'
 import { createLogger } from '../lib/logger'
 import { createHostResumeHandler } from './host-resume'
-export { watchHostResumeGap, installNativeSleepActivity } from './host-resume'
+export { installNativeSleepActivity } from './host-resume'
 
 export function createAccountResumeHandler(deps: {
   kickInbox: (agentUserId: string, trigger: string) => void
+  agentsWithInbox: (agentUserIds: string[]) => Promise<string[]>
   reconnect: () => Promise<void>
   reconcile: () => Promise<void>
   notifyCommands: () => void
@@ -13,8 +14,8 @@ export function createAccountResumeHandler(deps: {
   return createHostResumeHandler({
     ...deps,
     pullUnread: async () => {
-      const roster = await listAgents()
-      for (const agent of roster) if (agent.gugu_user_id) deps.kickInbox(agent.gugu_user_id, 'host-resume')
+      const roster = (await listAgents()).flatMap(agent => agent.gugu_user_id ? [agent.gugu_user_id] : [])
+      for (const agentUserId of await deps.agentsWithInbox(roster)) deps.kickInbox(agentUserId, 'host-resume')
     },
     observed: source => log.info({ source, pid: process.pid }, 'retained account resumed'),
     failed: (operation, err) => log.error({ operation, err }, 'resume reconciliation failed'),

@@ -92,3 +92,19 @@ it('back on the chat page returns to what it was entered over, one press each, a
   store.openChat('chats', null)
   expect(store.popChat()).toBeNull()
 })
+
+it('inspects a return destination without consuming it, skipping conversations that disappeared', () => {
+  let listed = ['group', 'dm', 'other']
+  let active = 'group'
+  const store = createShellTabStore('chats', { activeId: () => active, listed: id => listed.includes(id), subscribe: () => () => {} })
+  store.openChat('chats', null)
+  expect(store.peekChat(), 'the first conversation is entered from the root').toBeNull()
+  store.openChat('chats', 'group'); active = 'dm'
+  store.openChat('chats', 'dm'); active = 'other'
+  expect(store.peekChat()).toEqual({ chatId: 'dm' })
+  expect(store.peekChat()).toEqual({ chatId: 'dm' })
+  listed = ['group', 'other']
+  expect(store.peekChat()).toEqual({ chatId: 'group' })
+  expect(store.popChat()).toEqual({ chatId: 'group' })
+  expect(store.peekChat()).toBeNull()
+})

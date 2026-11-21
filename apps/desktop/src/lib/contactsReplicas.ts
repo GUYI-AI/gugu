@@ -67,6 +67,18 @@ export const groupJoinRequests = replica({
   },
 })
 
+/** The people a search in 「添加联系人」 found; held only while shown (`keep: 0`): ❌ the last search's hits on the next opening. */
+export const userSearch = replica({
+  name: 'userSearch',
+  scope: 'account',
+  keep: 0,
+  read: async (owner: string, query: string): Promise<ContactUser[]> => {
+    const found = await contactsService.searchUsers(query, owner)
+    await (await openedImRepository(owner)).putIdentities(found)
+    return found
+  },
+})
+
 /**
  * Read again for an event that must be consumed: rejects when the read fails, so the account revision coordinator keeps
  * the event and retries it (a plain `refresh` resolves either way).

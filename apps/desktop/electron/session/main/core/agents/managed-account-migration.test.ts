@@ -48,7 +48,7 @@ it('moves the latest Gugu Codex token through its vault while restoring the term
   await put(managed.nativeRoot, 'auth.json', codexAuth('gugu-a', 'a-rotated-again'));
   expect(await fileHash(old.nativeRoot, 'auth.json')).toBe(terminalBefore);
 });
-it('copies the verified Codex vault account when the terminal is already restored', async () => {
+it('requires a fresh Codex OAuth sign-in even when the verified terminal account is already restored', async () => {
   const dir = await root(), old = codexPaths(dir), ids = ['native', 'gugu-a'];
   const terminal = codexAuth('terminal-b', 'b-current');
   const account = codexAuth('gugu-a', 'a-current');
@@ -61,8 +61,9 @@ it('copies the verified Codex vault account when the terminal is already restore
 
   await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', 'unverified-identity')).resolves.toBe(false);
   await expect(readFile(join(managed.nativeRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
-  await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', restored.moved!.identity)).resolves.toBe('oauth');
-  expect(codexAuthIdentity(JSON.parse(await readFile(join(managed.nativeRoot, 'auth.json'), 'utf8')))).toBe(restored.moved!.identity);
+  await expect(copyCodexUpgradeSignIn(previous, managed, 'gugu-a', restored.moved!.identity)).resolves.toBe(false);
+  await expect(readFile(join(managed.nativeRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await readFile(join(previous.nativeRoot, 'auth.json'), 'utf8')).toBe(account);
   expect(await readFile(join(old.nativeRoot, 'auth.json'), 'utf8')).toBe(terminal);
 });
 

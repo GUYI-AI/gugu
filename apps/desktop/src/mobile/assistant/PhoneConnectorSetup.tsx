@@ -6,6 +6,7 @@ import type { IntegrationCredentials } from '@gugu/session-plugins/integrations'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
+import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 import { Check, Copy, ExternalLink, Eye, EyeOff } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
@@ -113,13 +114,15 @@ export function PhoneConnectorSetupPage({
       {browserFailed ? <p role="alert" className="ta-phone-error">{t('connectors.setup.openFailed')}<br />{browserFailed}</p> : null}
       <CloudGate integrations={integrations}>
         {() =>
-          detail.error ? <ReadFailed title={t('connectors.loadFailed')} error={detail.error} onRetry={detail.reload} /> : detail.loading ? <ReadingNow /> : !view || !rpc ? (
+          detail.error && !detail.data ? <ReadFailed title={t('connectors.loadFailed')} error={detail.error} onRetry={detail.reload} /> : detail.loading ? <ReadingNow /> : !view || !rpc ? (
             <AssistantEmpty title={t('connectors.goneTitle')}>{t('connectors.gone')}</AssistantEmpty>
           ) : done ? (
             <SetupDone item={view.item} displayName={done.displayName} finish={() => go(`connector:${view.item.id}`)} />
-          ) : (
+          ) : (<>
+            {/* Read before, read again failed: the setup stays, said with a retry (❌ shown as current). */}
+            {detail.error ? <RefreshFailed error={detail.error} onRetry={detail.reload} /> : null}
             <SetupBody item={view.item} rpc={rpc} deviceId={homeDeviceId ?? ''} assistantName={name} onConnected={connected} />
-          )
+          </>)
         }
       </CloudGate>
     </div>
@@ -572,7 +575,7 @@ function CliSetup({
       ) : state.phase === 'starting' ? (
         <>
           <Waiting>{t('connectors.setup.cliPreparing', { name: item.name })}</Waiting>
-          <CliInstallProgress read={readProgress} />
+          <CliInstallProgress source={`phone:${deviceId}:${item.id}`} read={readProgress} />
           <Button variant="ghost" className="ta-pill-btn" onClick={() => handle.current?.cancel()} data-testid="assistant-connector-cancel">
             {t('common.cancel')}
           </Button>

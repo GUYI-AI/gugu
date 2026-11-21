@@ -19,7 +19,7 @@ test('only supported platform models are offered; explicit member models are dec
   assert.equal(await access.resolve(), 'free')
   assert.equal(await access.resolve('platform:member'), 'member')
   await assert.rejects(access.resolve('member'), /platform:/)
-  await assert.rejects(access.resolve('platform:wrong-wire'), /不支持/)
+  await assert.rejects(access.resolve('platform:wrong-wire'), /do not support/)
 })
 
 test('issued token is scoped to the real agent/session and every finished turn checkpoints then revokes it', async () => {

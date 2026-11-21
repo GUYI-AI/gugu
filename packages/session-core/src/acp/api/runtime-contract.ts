@@ -1,6 +1,7 @@
 import { defineContract, eventStream, liveModel, liveState, procedure } from '@gugu/session-wire';
 import { z } from 'zod';
 import { previewActivitySourceSchema } from '../../session-record/preview-activity';
+import { messagePreviewProjectionSchema } from '../../session-record/message-preview';
 import { agentRunContextSchema } from '../../agents/agent-run-context';
 import { acpStartInputSchema } from './commands';
 import { terminalStateSchema } from '../models/terminals';
@@ -137,6 +138,11 @@ const detachedPromptWaitInputSchema = z.object({ requestId: z.string() });
 export const acpRuntimeApiContract = defineContract({
   ...acpApiContract,
   ...acpSessionLifecycleProcedures,
+  activeMessagePreview: procedure({
+    input: z.object({ sessionId: z.string().min(1), historyFloor: z.string().nullable() }),
+    output: z.object({ turnId: z.string(), projection: messagePreviewProjectionSchema }).nullable(),
+  }),
+  messagePreviewChanged: eventStream({ key: z.void(), event: z.object({ sessionId: z.string() }) }),
   // Private worker state; the public session contract retains its old set of states.
   // Declared clients are routed here by the host's subscription handshake.
   session: liveModel({

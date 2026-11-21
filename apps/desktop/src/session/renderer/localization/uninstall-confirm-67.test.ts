@@ -12,18 +12,18 @@ import { enUSMessages, zhCNMessages } from './messages';
 describe('the uninstall sheet says what goes and what stays (F67)', () => {
   it('English: removed from this device with what it keeps here; group files and others\' copies stay', () => {
     const text = enUSMessages['extensions.uninstallConfirmDescription'];
-    expect(text).toContain('{name} will be removed from this device, with what it keeps here (its settings and saved data)');
-    expect(text).toContain('Files it opened in chats stay as they are');
-    expect(text).toContain("anyone else's copy");
+    expect(text).toContain('{name} and its settings and saved data on this device will be removed');
+    expect(text).toContain('Files it opened in chats are not changed');
+    expect(text).toContain("other people's copies");
     expect(text, 'no longer the sentence that read as "the group\'s data too"').not.toContain('anything it stored');
     expect(text, 'true on a phone too').not.toContain('computer');
   });
 
   it('中文:同样两半 —— 这台设备上它存的会删,对话里的文件和别人装的不动', () => {
     const text = zhCNMessages['extensions.uninstallConfirmDescription'];
-    expect(text).toContain('将从这台设备上移除 {name}，连同它在这里存的东西（设置和保存的数据）');
-    expect(text).toContain('它打开过的对话里的文件原样保留');
-    expect(text).toContain('别人装的也不受影响');
+    expect(text).toContain('将从此设备移除 {name} 及其在此设备上的设置和保存的数据');
+    expect(text).toContain('它在对话中打开过的文件保持不变');
+    expect(text).toContain('其他人安装的副本也不受影响');
     expect(text, '手机上也属实').not.toContain('电脑');
   });
 });

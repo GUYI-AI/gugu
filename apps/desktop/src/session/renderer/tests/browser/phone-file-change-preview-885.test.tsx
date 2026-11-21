@@ -26,11 +26,11 @@ vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   fetchBackgroundTasks: vi.fn(async () => []), readOpenedFileChunk: m.ledger,
 }));
 vi.mock('@/components/appSlot/phoneProgramCall', async original => ({ ...(await original<object>()), callOnComputer: m.call }));
-vi.mock('@renderer/features/extensions/installed-extensions-store', async original => {
-  const real = await original<typeof import('@renderer/features/extensions/installed-extensions-store')>();
-  return { ...real, installedExtensionsStore: new Proxy(real.installedExtensionsStore, { get: (target, key, receiver) => key === 'manifestFor'
-    ? (id: string) => (id === 'workspace' ? { id: 'workspace', name: 'Files', version: '0.2.75' } : undefined)
-    : Reflect.get(target, key, receiver) }) };
+vi.mock('@renderer/features/extensions/installed-extensions', async original => {
+  const real = await original<typeof import('@renderer/features/extensions/installed-extensions')>();
+  // The phone has the Files App installed (its working-copy reads go through it).
+  const phone = { manifestFor: (id: string) => (id === 'workspace' ? { id: 'workspace', name: 'Files', version: '0.2.75' } : undefined) };
+  return { ...real, fetchInstalledApps: async (host?: string) => (host === 'phone' ? phone : real.fetchInstalledApps(host)) };
 });
 let harness: ReturnType<typeof createReactHarness>;
 const initialLocale = getLocaleSnapshot().preference;
@@ -80,7 +80,7 @@ it.each(scenarios.flatMap(scenario => (['zh-CN', 'en-US'] as const).flatMap(loca
       expect(document.body.textContent).not.toContain(contents);
     }
     // Never the opened-file ledger, and never "this session has not opened it".
-    expect(document.body.textContent).not.toContain(locale === 'zh-CN' ? '这条会话还没打开过这个文件。' : "This session hasn't opened this file yet.");
+    expect(document.body.textContent).not.toContain(locale === 'zh-CN' ? '此会话尚未打开该文件。' : 'This session has not opened this file yet.');
     expect(m.ledger).not.toHaveBeenCalled();
     expect(m.call).toHaveBeenLastCalledWith(expect.objectContaining({ extensionId: 'workspace' }), expect.objectContaining({ id: sessionId, deviceId: 'host-device' }),
       'filesRead', expect.objectContaining({ ref: { workspace: `session:${sessionId}`, name: path }, offset: 0 }));

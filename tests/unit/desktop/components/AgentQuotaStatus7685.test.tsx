@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // #7685 额度/模型类失败 = agent 的安静的状态位，❌ 输入框上方的失败条。
+import postcss from 'postcss'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
@@ -46,5 +47,21 @@ describe('额度失败是状态位，不是失败条', () => {
     expect(ui.container.querySelector('[data-testid="agent-turn-failure"]')).not.toBeNull()
     expect(ui.container.querySelector('[data-testid="agent-quota-status"]')).toBeNull()
     expect(toast).not.toHaveBeenCalled()
+  })
+  it('#907 a long name shrinks with ellipsis so the state text and dismiss button stay in a narrow row', async () => {
+    await ui.render(createNode(AgentTurnFailureSlot, { ...props, profiles: { 'agent-1': { displayName: '一个名字长到会把状态词和关闭按钮挤出窄视口的智能体' } } }))
+    const css = ui.container.querySelector('.aqs-bar style')?.textContent ?? ''
+    const declared = (selector: string, prop: string) => {
+      const values: string[] = []
+      postcss.parse(css).walkRules((rule) => {
+        if (rule.selector === selector) rule.walkDecls(prop, (decl) => { values.push(decl.value) })
+      })
+      return values
+    }
+    expect(declared('.aqs-tok', 'min-width'), 'the token must shrink inside the bar before its name can').toContain('0')
+    expect(declared('.aqs-nm', 'min-width')).toContain('0')
+    expect(declared('.aqs-nm', 'overflow')).toContain('hidden')
+    expect(declared('.aqs-nm', 'text-overflow')).toContain('ellipsis')
+    expect(declared('.aqs-state', 'flex-shrink'), 'the state word keeps its full text').toContain('0')
   })
 })

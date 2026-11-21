@@ -8,8 +8,11 @@ const { parseSampleProject, readSampleProjectShown, enrollSampleProject, subscri
 
 beforeEach(() => {
   vi.resetAllMocks()
+  // As core's versioned write: it answers the row it saved.
   io.update.mockImplementation(async (client, userId, scope, edit) => {
-    await io.write(client, userId, scope, edit(await io.read()))
+    const config = edit(await io.read())
+    await io.write(client, userId, scope, config)
+    return { scope, config }
   })
 })
 

@@ -10,6 +10,7 @@ import { StartupMotionBoundary } from '../../../../components/StartupMotionBound
 import { i18n } from '@/i18n'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
+import { queryClient } from '@/lib/replica'
 
 vi.mock('@/lib/auth', () => ({ authService: {} }))
 vi.mock('@/lib/sessionCoordinator', () => ({ sessionCoordinator: {} }))
@@ -71,6 +72,8 @@ beforeAll(async () => { await i18n.changeLanguage('zh-CN') })
 afterEach(async () => {
   root?.unmount(); root = undefined
   rootHost?.remove(); rootHost = undefined
+  // Each case starts on a device that has never read the sign-in methods (no answer in memory or kept across restarts).
+  queryClient.clear(); localStorage.clear()
   discardStartupMotion(); style?.remove(); style = undefined
   document.documentElement.removeAttribute('data-theme')
   vi.unstubAllGlobals(); await media(false)

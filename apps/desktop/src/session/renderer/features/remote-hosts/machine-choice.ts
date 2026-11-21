@@ -37,9 +37,9 @@ export interface MachineChoice {
   hint?: string | null;
 }
 
-/** 这一行此刻接不接活:本机、在线的,或没醒着的云电脑(选了先叫醒)。 */
-export function machineAcceptsWork(machine: Pick<MachineChoice, 'isLocal' | 'isOnline' | 'cloudComputer'>): boolean {
-  return machine.isLocal || machine.isOnline || machine.cloudComputer !== undefined;
+/** 这一行此刻接不接活:本机、在线的,没醒着的云电脑(选了先叫醒),或要先登录的远程 SSH 机器(选了先登录)。 */
+export function machineAcceptsWork(machine: Pick<MachineChoice, 'isLocal' | 'isOnline' | 'cloudComputer' | 'needsSignIn'>): boolean {
+  return machine.isLocal || machine.isOnline || machine.cloudComputer !== undefined || machine.needsSignIn === true;
 }
 
 /**
@@ -47,7 +47,7 @@ export function machineAcceptsWork(machine: Pick<MachineChoice, 'isLocal' | 'isO
  * yet (picked, it is woken). The install sheet's ticks and the App card's Install read this one answer.
  */
 export function machineTakesInstall(machine: Pick<MachineChoice, 'isLocal' | 'isOnline' | 'cloudComputer'>): boolean {
-  return machineAcceptsWork(machine) && machine.cloudComputer === undefined;
+  return (machine.isLocal || machine.isOnline) && machine.cloudComputer === undefined;
 }
 
 /** 「本机」那一行。系统取这台电脑自己的。 */

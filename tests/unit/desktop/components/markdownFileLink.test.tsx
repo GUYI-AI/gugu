@@ -8,8 +8,7 @@ import { classifyFileLink, type GuguLinkTarget } from '@gugu/core/shared/ui/gugu
 import { openLinkWith } from '../../../../apps/desktop/src/session/shared/extensions/open-link'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
-import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
-import { runInAction } from 'mobx'
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /**
@@ -26,7 +25,9 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({ get
 } }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', async (original) => ({ ...await original<object>(), fileMetadata: host.metadata }))
 vi.mock('../../../../apps/desktop/src/lib/notices', async (original) => ({ ...await original<object>(), notify: notice }))
-vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'web' } }))
+vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'web', capabilities: {} } }))
+// This device's Apps are the desktop's (the links below are read by the Apps installed here).
+vi.mock('../../../../apps/desktop/src/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: vi.fn() } }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneAppHost', () => ({
   openPhoneLink: (target: GuguLinkTarget) => openLinkWith({
@@ -179,11 +180,9 @@ describe('Markdown local file links in chat', () => {
       ])
       // Installed here: the list's name, the whole one on hover; the words that are no file name and a web link stay.
       await act(async () => {
-        runInAction(() => {
-          installedExtensionsStore.manifests = [drawGuess]
-          installedExtensionsStore.disabled = []
-        })
-        await Promise.resolve()
+        installedExtensions.set(['local'], { extensions: [drawGuess], invalid: [], disabled: [] } as never)
+        // The replica tells its readers on its notify tick (a task after the write).
+        await new Promise((resolve) => setTimeout(resolve, 0))
       })
       expect(shown()).toEqual([
         ['guess', 'guess.draw-guess.json', link],
@@ -192,17 +191,13 @@ describe('Markdown local file links in chat', () => {
       ])
       // Switched off here: it reads as written again.
       await act(async () => {
-        runInAction(() => {
-          installedExtensionsStore.disabled = ['draw-guess']
-        })
-        await Promise.resolve()
+        installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['draw-guess'] }))
+        // The replica tells its readers on its notify tick (a task after the write).
+        await new Promise((resolve) => setTimeout(resolve, 0))
       })
       expect(shown()[0]).toEqual(['guess.draw-guess.json', null, link])
     } finally {
-      runInAction(() => {
-        installedExtensionsStore.manifests = []
-        installedExtensionsStore.disabled = []
-      })
+      installedExtensions.set(['local'], { extensions: [], invalid: [], disabled: [] } as never)
     }
   })
 
@@ -230,7 +225,7 @@ describe('Markdown local file links in chat', () => {
     expect(followLink(`gugu-file://${itemId}`)).toBe(true)
     await vi.waitFor(() => expect(notice).toHaveBeenCalledOnce())
     const title = notice.mock.calls[0]![0].title
-    expect(title).toBe('暂时打不开这个文件，请稍后重试')
+    expect(title).toBe('无法打开该文件，请稍后重试')
     expect(title).toBe(i18n.t('assistant:links.fileOpenFailed'))
     expect(title).not.toBe(i18n.t('assistant:links.fileMissing'))
     expect(title).not.toBe(i18n.t('assistant:links.unavailable'))

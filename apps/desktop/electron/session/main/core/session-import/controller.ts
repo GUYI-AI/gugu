@@ -1,3 +1,5 @@
+import type { EnvironmentImportCategory, EnvironmentImportRequest } from '@shared/core/session-import/environment-import';
+import { scanEnvironmentImport, importEnvironmentCategory, cancelEnvironmentImport } from '../environment-import/controller-service';
 import type { ImportCodexTaskParams } from '@shared/core/session-import/codex-tasks';
 import { scanCodexTaskImport, importCodexTasks, cancelCodexTaskImport, codexTaskImportProgress } from './codex-tasks';
 import type {
@@ -8,8 +10,12 @@ import type {
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { hasLocalSessionSource, getLocalSessionSource } from './host-source';
 import { importLocalSession } from './import-local-session';
+import { logTranscriptFailure } from './transcript-failure-log';
 
 export const sessionImportController = createRPCController({
+  scanEnvironmentImport: (category: Exclude<EnvironmentImportCategory, 'tasks'>) => scanEnvironmentImport(category),
+  importEnvironmentCategory: (request: EnvironmentImportRequest) => importEnvironmentCategory(request),
+  cancelEnvironmentImport: async (id: string) => { cancelEnvironmentImport(id); },
   scanCodexTasks: () => scanCodexTaskImport(),
   importCodexTasks: (params: ImportCodexTaskParams[]) => importCodexTasks(params),
   cancelCodexTaskImport: async () => { cancelCodexTaskImport(); },
@@ -18,6 +24,7 @@ export const sessionImportController = createRPCController({
   isAvailable: () => Promise.resolve(hasLocalSessionSource()),
   listLocalSessions: (params: ListLocalSessionsParams) => getLocalSessionSource().list(params),
   previewLocalSession: (params: PreviewLocalSessionParams) =>
-    getLocalSessionSource().preview(params),
-  importLocalSession: (params: ImportLocalSessionParams) => importLocalSession(params),
+    logTranscriptFailure('preview', params.filePath, () => getLocalSessionSource().preview(params)),
+  importLocalSession: (params: ImportLocalSessionParams) =>
+    logTranscriptFailure('import', params.filePath, () => importLocalSession(params)),
 });

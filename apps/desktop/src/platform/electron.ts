@@ -112,6 +112,11 @@ export const electronPlatform: AppPlatform = {
     if (!api?.subscribeAppActive) throw unavailable('App active subscription')
     return api.subscribeAppActive(listener)
   },
+  subscribeAppPresence(listener) {
+    const api = electronApi()
+    if (!api?.subscribeAppPresence) throw unavailable('App presence subscription')
+    return api.subscribeAppPresence(listener)
+  },
   subscribeLocalDeviceIdentified(listener) {
     const api = electronApi()
     if (!api?.subscribeLocalDeviceIdentified) throw unavailable('Local device identity subscription')

@@ -39,6 +39,8 @@ beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.clearAllMocks()
   vi.stubGlobal('fetch', async () => Response.json({ external: { google: true } }))
+  // The sign-in methods are a replica: its answers are published at once here, as in the app's act()-free frames.
+  ;(await import('@tanstack/react-query')).notifyManager.setScheduler((callback) => { callback() })
   await i18n.changeLanguage('zh-CN')
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
   await act(async () => root.render(createElement(LoginPage)))
@@ -68,7 +70,7 @@ describe('email OTP code form', () => {
     const request = deferred(); m.request.mockReturnValueOnce(request.promise)
     await send(); await input('input[autocomplete="one-time-code"]', '123456')
     await act(async () => { request.resolve({ success: false, error }) })
-    expect(host.querySelector('[role="status"]')?.textContent?.trim()).toBe('验证码没发出去（one@example.test）')
+    expect(host.querySelector('[role="status"]')?.textContent?.trim()).toBe('验证码发送失败（one@example.test）')
     expect(host.querySelector('[role="alert"]')?.textContent).toBe(error)
     expect((host.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement).value).toBe('123456')
     await input('input[autocomplete="one-time-code"]', '654321')

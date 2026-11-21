@@ -256,6 +256,11 @@ export interface ComposerModelMenuProps {
   triggerTitle?: string;
   modelItems: ComposerModelItem[];
   selectedModel?: string;
+  /**
+   * The model options, or what decides which one is selected, are not read yet: the trigger holds the name's place
+   * (@@@unknown-slot), ❌ the literal "Model", ❌ `selectedModel` (a guess until then).
+   */
+  modelUnknown?: boolean;
   onModelChange?: (modelId: string) => void;
   /**
    * 宿主要把模型面板打开(例如「这个模型要会员」那一行上的「换模型」,#7056)。每变一次开一次;0 / 缺省 = 不开。
@@ -284,12 +289,19 @@ export interface ComposerModelMenuProps {
   phoneActions?: boolean;
 }
 
+/** The model name's place while the options are unknown: one line tall, a short name wide (@@@unknown-slot). */
+const UNKNOWN_MODEL_NAME = {
+  display: 'inline-block', width: '5em', height: '1lh', verticalAlign: 'top',
+  borderRadius: 'var(--radius-control)', background: 'var(--muted)',
+} as const;
+
 export function ComposerModelMenu({
   panel,
   disabled = false,
   triggerTitle,
   modelItems,
   selectedModel,
+  modelUnknown = false,
   onModelChange,
   openRequest,
   settingNotice,
@@ -361,7 +373,9 @@ export function ComposerModelMenu({
       : null;
   const showUpgradeDetail = detailCard.activeKey === UPGRADE_DETAIL_KEY && !!modelUpgrade;
 
-  const selectedModelItem = selectedModel
+  // While what decides the model is unknown, the selected id is only a guess (the harness default before the remembered
+  // choice is read): the trigger holds the name's place, ❌ draws the guess and then switches (@@@unknown-slot).
+  const selectedModelItem = selectedModel && !modelUnknown
     ? (modelItems.find((m) => m.id === selectedModel) ?? null)
     : null;
   const selectedEffortItem = effortItems.find(item => item.id === selectedEffort);
@@ -477,6 +491,8 @@ export function ComposerModelMenu({
                   selectedModelItem.shortName ?? selectedModelItem.name,
                   modelItems.map((m) => m.shortName ?? m.name)
                 )
+              : modelUnknown
+              ? <span aria-busy="true" data-unknown="" className="gg-unknown" style={UNKNOWN_MODEL_NAME} />
               : translate('composer.model')}
           </span>
           {!settingNotice && selectedModelItem?.tag && (
@@ -487,7 +503,7 @@ export function ComposerModelMenu({
           {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;
               没 armed 时退回该模型自己的默认档,再压一档不透明度 —— 那是目录里的出厂
               默认,用户写在 ~/.codex/config.toml 里的值会盖过它,我们读不到。 */}
-          {effectiveEffortItem ? (
+          {effectiveEffortItem && !modelUnknown ? (
             <span
               data-slot="composer-effort"
               className={styles.modelTriggerEffort}

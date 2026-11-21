@@ -13,6 +13,7 @@ import { spawnOwnedChild } from '@gugu/session-core/exec';
 import { parse as parseTOML } from 'smol-toml';
 import { requestSubscriptionJson } from '../../helpers/subscription-http';
 import { readCodexCredentials } from './credentials';
+import { CODEX_NATIVE_AUTH_ENDPOINT, nativeCodexSessionArgs, requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
 import {
   chatgptPlanName,
   chatgptPlanTypeOf,
@@ -92,14 +93,15 @@ export async function readCodexUsage(
   if (plan.payer === 'custom-endpoint') return usageUnavailable('custom-endpoint');
   if (plan.payer !== 'subscription') return usageUnavailable('not-reported');
   try {
-    let credentials = await readCodexCredentials(ctx);
+    const native = Boolean(ctx.env[CODEX_NATIVE_AUTH_ENDPOINT]);
+    let credentials = native ? (await requestNativeCodexAccess(ctx.env, { useToken: true }))?.credentials ?? null : await readCodexCredentials(ctx);
     let tokens = objectAt(credentials, 'tokens');
     const accessToken = tokens?.access_token;
     if (typeof accessToken !== 'string' || !accessToken) throw new Error('Codex 登录凭据中没有可读取的访问令牌。');
     // Refresh through Codex, the authority for this profile, rather than rotating its token independently.
     const payload = jwtPayload(accessToken);
     // `exp` is the issuer's clock; `serverNow()` is this runtime's best reading of real time (`@@@server-clock`).
-    if (typeof payload?.exp === 'number' && payload.exp * 1000 <= serverNow()) {
+    if (!native && typeof payload?.exp === 'number' && payload.exp * 1000 <= serverNow()) {
       await askAppServer(ctx, 'account/read', { refreshToken: true });
       credentials = await readCodexCredentials(ctx);
       tokens = objectAt(credentials, 'tokens');
@@ -158,17 +160,37 @@ export async function prepareCodexHistory(ctx: Pick<AgentAuthContext, 'cli' | 'e
 }
 
 async function askAppServer(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, options: CodexPrepareOptions = {}): Promise<unknown> {
-  return retryCodexPreparation(() => askAppServerAttempt(ctx, method, params, options.signal, options.verifyThreads), options);
+  return withCodexAppServer(ctx, (server) => method === null ? Promise.resolve(server.initialized) : server.request(method, params), options);
 }
 
-async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, method: string | null, params: unknown, signal?: AbortSignal, verifyThreads: CodexPrepareOptions['verifyThreads'] = []): Promise<unknown> {
+export type CodexAppServer = { initialized: unknown; request: (method: string, params: unknown) => Promise<unknown> };
+export type CodexAppServerOptions = CodexPrepareOptions & {
+  args?: readonly string[];
+  requestTimeoutMs?: number;
+  onAuthRevoked?: () => void;
+  onAuthRefreshFailure?: () => void;
+  /** Native OAuth coordinator retains its lease until the exact CLI has stopped. */
+  processObserver?: { beforeSpawn(): Promise<void>; spawned(pid: number): Promise<void>; closed(): Promise<void> };
+};
+
+export function withCodexAppServer<T>(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, run: (server: CodexAppServer) => Promise<T>, options: CodexAppServerOptions = {}): Promise<T> {
+  return retryCodexPreparation(() => withCodexAppServerAttempt(ctx, run, options), options);
+}
+
+async function withCodexAppServerAttempt<T>(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, run: (server: CodexAppServer) => Promise<T>, options: CodexAppServerOptions): Promise<T> {
+  const { signal } = options;
   signal?.throwIfAborted();
+  await options.processObserver?.beforeSpawn();
   const binary = ctx.env.GUGU_CODEX_BIN?.trim() || ctx.cli;
   let failure: Error | null = null;
-  const owned = spawnOwnedChild(binary, ['app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
+  const owned = spawnOwnedChild(binary, [...options.args ?? [], ...nativeCodexSessionArgs(ctx.env), 'app-server'], { env: ctx.env, stdio: ['pipe', 'pipe', 'pipe'], onError: error => { failure = error; } });
   const child = owned.child;
   let stderrTail = '';
-  child.stderr?.on('data', (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192); });
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderrTail = (stderrTail + chunk.toString('utf8')).slice(-8192);
+    if (/refresh token.*(?:revoked|reused)|refresh_token_(?:revoked|reused)/i.test(stderrTail)) options.onAuthRevoked?.();
+    if (/failed to refresh token/i.test(stderrTail)) options.onAuthRefreshFailure?.();
+  });
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   const lines = createJsonlReader({ input: child.stdout! });
   lines.on('line', line => {
@@ -191,36 +213,45 @@ async function askAppServerAttempt(ctx: Pick<AgentAuthContext, 'cli' | 'env'>, m
   });
   exited.catch(() => {});
   let abort!: () => void;
+  let initializeTimer: ReturnType<typeof setTimeout> | undefined;
   const aborted = new Promise<never>((_, reject) => {
     abort = () => reject(signal?.reason ?? new Error('Codex preparation cancelled'));
     signal?.addEventListener('abort', abort, { once: true });
   });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = (ms: number) => new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), ms);
-  });
   try {
-    const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted]);
-    clearTimeout(timer);
+    if (options.processObserver) await options.processObserver.spawned(child.pid ?? 0);
+    const initializeTimeout = new Promise<never>((_, reject) => { initializeTimer = setTimeout(() => reject(new Error('Codex app-server initialize timed out')), options.requestTimeoutMs ?? APP_SERVER_TIMEOUT_MS); });
+    const initialized = await Promise.race([request('initialize', { clientInfo: { name: 'gugu', title: 'Gugu', version: '0' }, capabilities: null }), exited, aborted, initializeTimeout]);
+    clearTimeout(initializeTimer);
     child.stdin!.write(JSON.stringify({ method: 'initialized' }) + '\n');
-    if (method === null) {
-      for (const expected of verifyThreads) {
-        const response = await Promise.race([request('thread/read', { threadId: expected.id, includeTurns: false }), exited, aborted]);
-        const thread = objectAt(response, 'thread');
-        // Native lookup can fall back to rollout files after a completed backfill. Never accept a path back into the user's source home.
-        const path = typeof thread?.path === 'string' ? resolve(thread.path).replace(/\.zst$/, '') : null;
-        if (thread?.id !== expected.id || path !== resolve(expected.path).replace(/\.zst$/, '')) {
-          throw new Error('Codex returned a different imported session or rollout path');
-        }
+    const server: CodexAppServer = { initialized, request: async (method, params) => {
+      signal?.throwIfAborted();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Codex app-server request timed out')), options.requestTimeoutMs ?? APP_SERVER_TIMEOUT_MS); });
+      try { return await Promise.race([request(method, params), exited, aborted, timeout]); }
+      finally { clearTimeout(timer); }
+    } };
+    for (const expected of options.verifyThreads ?? []) {
+      const response = await server.request('thread/read', { threadId: expected.id, includeTurns: false });
+      const thread = objectAt(response, 'thread');
+      // Native lookup can fall back to source rollouts after backfill; require the managed path.
+      const path = typeof thread?.path === 'string' ? resolve(thread.path).replace(/\.zst$/, '') : null;
+      if (thread?.id !== expected.id || path !== resolve(expected.path).replace(/\.zst$/, '')) {
+        throw new Error('Codex returned a different imported session or rollout path');
       }
-      return initialized;
     }
-    return await Promise.race([request(method, params), exited, aborted, deadline(APP_SERVER_TIMEOUT_MS)]);
+    return await run(server);
   } catch (error) {
     if (error instanceof Error) Object.assign(error, { stderrTail });
     throw error;
   } finally {
-    clearTimeout(timer); signal?.removeEventListener('abort', abort); lines.close();
-    await owned.stop({ graceMs: 2_000 }).catch(() => undefined);
+    signal?.removeEventListener('abort', abort); lines.close();
+    clearTimeout(initializeTimer);
+    if (options.processObserver) {
+      await owned.stop({ graceMs: 2_000 });
+      await options.processObserver.closed();
+    } else {
+      await owned.stop({ graceMs: 2_000 }).catch(() => undefined);
+    }
   }
 }

@@ -5,7 +5,7 @@ import { clickElement, createNode, createReactHarness, waitForCondition } from '
 
 const io = vi.hoisted(() => ({ save: vi.fn(async (_userId: string, _state: unknown): Promise<void> => undefined) }))
 vi.mock('../../../../apps/desktop/src/lib/productTour', async (original) => ({
-  ...await original<Record<string, unknown>>(), saveProductTourState: io.save, useRememberProductTourState: () => () => undefined,
+  ...await original<Record<string, unknown>>(), saveProductTourState: io.save,
 }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 // The primitive owns floating geometry; this suite measures the workflow, not jsdom's zero-sized layout.
@@ -182,7 +182,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     const h = await mount('tasks')
     try {
       expect(h.button('next')).not.toBeNull()
-      expect(h.card().textContent).toContain('或点「下一步」继续')
+      expect(h.card().textContent).toContain('或点击「下一步」继续')
       expect(h.button('skip')).not.toBeNull()
       expect(h.button('previous')).not.toBeNull()
       if (action === 'next') await clickElement(h.button('next')!)
@@ -197,7 +197,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     try {
       expect(ring()).toEqual({ x: 72, y: 52 })
       expect(h.card().querySelector('h2')!.textContent).toBe('创建智能体')
-      expect(h.card().textContent).toContain('写一句需求，就多一个智能体；它会出现在左边的列表里。')
+      expect(h.card().textContent).toContain('输入一句需求以创建智能体，新智能体显示在左侧列表中。')
       await clickElement(createAgent)
       expect(h.card().dataset.testid).toBe('product-tour-step-tasks')
       await clickElement(h.button('next')!)
@@ -219,7 +219,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     try {
       expect(ring()).toEqual({ x: 60, y: 92 })
       expect(h.card().querySelector('h2')!.textContent).toBe('对话')
-      expect(h.card().textContent).toContain('智能体、群、项目和人都在这一列，按最近动静排；有事找你的会挂红数字。')
+      expect(h.card().textContent).toContain('智能体、群、项目和联系人显示在同一列表中，按最近活动排序；需要你处理的项显示红色数字。')
     } finally { h.cleanup() }
   })
   it.each([false, true])('skips an unavailable 创建智能体 without trapping or revisiting the step (lost during tour=%s)', async (during) => {
@@ -244,7 +244,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     try {
       await act(async () => { sample.remove() })
       await settleTargets()
-      await waitForCondition(() => h.card()?.textContent?.includes('写一句需求，就多一个智能体') === true, '创建智能体 fallback shown')
+      await waitForCondition(() => h.card()?.textContent?.includes('输入一句需求以创建智能体') === true, '创建智能体 fallback shown')
       await clickElement(h.button('next')!)
       expect(h.card().dataset.testid).toBe('product-tour-step-chats')
     } finally { h.cleanup() }

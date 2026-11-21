@@ -11,7 +11,7 @@ import { comparer, computed, makeAutoObservable, observable, reaction, runInActi
 import { deviceMachines } from '@gugu/core/shared/deviceMachines';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import type { SessionHostClient } from '@shared/lib/ipc/session-host-client';
-import { onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
+import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import type { EventDefinition } from '@shared/lib/ipc/events';
 import {
   projectCreatedChannel,
@@ -76,7 +76,7 @@ import { platform } from '@/platform';
 import { agentStatusText } from '@/lib/agentStatusText';
 import { diffAlerts, statusMapOf, type AgentWatchStatusMap } from '@/lib/agent-wait/agent-watch-alerts';
 import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner';
-import type { SettingsMeta } from '@renderer/features/settings/app-settings-client';
+import { fetchAppSettingValue } from '@renderer/features/settings/app-settings-client';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 
 const REMOTE_PREFIX = 'remote:';
@@ -170,11 +170,15 @@ export class RemoteHostsStore {
   private readonly waitReadings = new Map<string, AgentWatchStatusMap>();
   private stopDevices: (() => void) | null = null;
   private started = false;
+  /** #3433 reconcile 正在把名册里的机器一台台登记进来:这一轮没走完,项目表里没有的别机项目还不能判「已删」。 */
+  private reconciling = false;
+  /** #3433 这一座桥的设备列表读过一次、并已重判过恢复的视图。 */
+  private rosterRead = false;
 
   constructor() {
     makeAutoObservable<
       RemoteHostsStore,
-      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'waitReadings' | 'stopDevices' | 'started' | 'listSyncs' | 'directorySessions' | 'digestSessions'
+      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'waitReadings' | 'stopDevices' | 'started' | 'reconciling' | 'rosterRead' | 'listSyncs' | 'directorySessions' | 'digestSessions'
     >(this, {
       bridge: observable.ref,
       directory: observable.ref,
@@ -187,6 +191,8 @@ export class RemoteHostsStore {
       waitReadings: false,
       stopDevices: false,
       started: false,
+      reconciling: false,
+      rosterRead: false,
     });
   }
 
@@ -327,7 +333,14 @@ export class RemoteHostsStore {
    */
   awaitsMachineLists(): boolean {
     if (!this.started) return true;
+    // #3433 名册还没接上 / 接上了设备列表还没读 / 正在一台台登记:空的名册(或登记到一半的)不等于「名下没有别的机器」。
+    if (this.reconciling || !this.bridge || this.bridge.devicesRead?.() === false) return true;
     return [...this.hosts.values()].some((state) => !state.synced && !state.device.projects);
+  }
+
+  /** 那台机器自己的项目清单这一端读到过了(连上读的,不是账号上记着的那份)。 */
+  hasReadList(deviceId: string): boolean {
+    return this.hosts.get(deviceId)?.synced === true;
   }
 
   /** 这个项目在哪台别的机器上;本机项目 = null。 */
@@ -362,7 +375,9 @@ export class RemoteHostsStore {
 
   /** 没有对过账的目录时读的那份:机器心跳摘要里的会话,换名后的;设备读数换了时派生一次。 */
   private get digestSessions(): ReadonlyMap<string, MachineSessions> {
-    return new Map([...this.hosts].map(([deviceId, { device }]) => [deviceId, machineSessions(deviceId, sessionListFromDigest(device.sessionDigest, device.isOnline).sessions)]));
+    // A machine without a digest (a row restored from the last run) has no entry: not known, ❌ no sessions.
+    return new Map([...this.hosts].flatMap(([deviceId, { device }]) => device.sessionDigest === null ? []
+      : [[deviceId, machineSessions(deviceId, sessionListFromDigest(device.sessionDigest, device.isOnline).sessions)] as const]));
   }
 
   private listedOn(deviceId: string): { listed: MachineSessions | undefined; live: boolean } {
@@ -504,7 +519,7 @@ export class RemoteHostsStore {
     return requested;
   }
 
-  /** 远程 SSH 的机器要先登录:经窗口顶上那张卡片问一次。老宿主没有 = false。 */
+  /** 远程 SSH 的机器要先登录(选择器里选它、新建框提示条上的「登录」):提问浮在窗口顶上那张卡片里。老宿主没有 = false。 */
   signIn(deviceId: string): Promise<boolean> {
     return this.bridge?.signInSsh?.(deviceId) ?? Promise.resolve(false);
   }
@@ -604,6 +619,7 @@ export class RemoteHostsStore {
     runInAction(() => {
       this.bridge = bridge;
     });
+    this.rosterRead = false;
     if (!bridge) {
       setAssistantProjectHosts([]);
       for (const deviceId of [...this.hosts.keys()]) this.forget(deviceId);
@@ -630,9 +646,13 @@ export class RemoteHostsStore {
     const devices = bridge.listDevices();
     setAssistantProjectHosts(devices);
     const seen = new Set<string>();
+    // #3433 登记到一半时(第一台并进项目表就会重判守卫,后面的机器还没登记)别判「已删」;这一轮走完再重判一次。
+    let changed = !this.rosterRead && bridge.devicesRead?.() !== false;
+    this.reconciling = true;
     for (const device of devices) {
       seen.add(device.id);
       const current = this.hosts.get(device.id);
+      if (!current) changed = true;
       const cameBack = current !== undefined && !remoteHostReachable(current.device) && remoteHostReachable(device);
       runInAction(() => {
         if (current) current.device = device;
@@ -651,6 +671,11 @@ export class RemoteHostsStore {
       }
     }
     for (const deviceId of [...this.hosts.keys()]) if (!seen.has(deviceId)) this.forget(deviceId);
+    this.reconciling = false;
+    if (changed) {
+      if (bridge.devicesRead?.() !== false) this.rosterRead = true;
+      appState.navigation.revalidate();
+    }
   }
 
   private watch(deviceId: string): void {
@@ -742,8 +767,7 @@ export class RemoteHostsStore {
     const alerts = diffAlerts(this.waitReadings.get(deviceId) ?? {}, sessions, () => false);
     this.waitReadings.set(deviceId, statusMapOf(sessions));
     if (alerts.length === 0) return;
-    void rpc.appSettings.getWithMeta('notifications').then((meta) => {
-      const { enabled, sound } = (meta as SettingsMeta<'notifications'>).value;
+    void fetchAppSettingValue('notifications').then(({ enabled, sound }) => {
       if (!enabled) return;
       for (const alert of alerts) {
         const title = i18n.t('agentWatch.notify.status', { ns: 'main', name: alert.title, status: agentStatusText(alert.label) });
@@ -867,6 +891,7 @@ export function machineConnectionState(
     sshLink: state.device.sshLink ?? null,
     cloudComputer: state.device.cloudComputer ?? null,
     wake: state.device.cloudComputer ? wake : null,
+    linkUnknown: state.device.linkUnknown === true,
   });
 }
 

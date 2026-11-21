@@ -19,9 +19,9 @@ const chats: ChatItem[] = [
   status: 'active', created_at: '2026-01-01T00:00:00.000Z', last_message_at: null, last_message_preview: null, unread_count: 0,
   pinned_message_id: null, last_read_seq: 0, next_message_seq: 1, ...overrides,
 }) as ChatItem)
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
-  useChatStore: () => ({ chats, identitiesById: { 'u-alpha': { display_name: 'Alpha', avatar: null, type: 'human' } } }),
-}))
+// The chat on screen and its messages: what the @ order reads (who spoke there lately).
+const store = { chats, identitiesById: { 'u-alpha': { display_name: 'Alpha', avatar: null, type: 'human' } }, activeChatId: null as string | null, messages: [] as unknown[] }
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => store }))
 // The person's own agents (contacts they own), wherever they run.
 const agent = (id: string, display_name: string) => ({ id, display_name, avatar: null, type: 'agent', owner_user_id: 'me', created_at: '2026-11-02T08:00:00.000Z' })
 vi.mock('../../../../apps/desktop/src/components/settings/channels/channelAgents', () => ({
@@ -36,6 +36,18 @@ const computers = [
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({
   useDevicesStore: () => ({ devices: computers, phones: [{ ...computers[0], device_id: 'phone', capabilities: { host_kind: 'phone', host_runtime_capability: 1, terminals: [], runtimes: ['pi'] } }], loading: false, error: null }),
 }))
+// The composer's editor (NoteEditor, a TipTap PromptEditor) stands in as a textarea with the same handle: the sheet
+// starts it with the App's words (setText) and reads what the person left (onChange); its @ list is the chat's own.
+vi.mock('../../../../apps/desktop/src/components/chat/NoteEditor', async () => {
+  const { createElement, useImperativeHandle, useState } = await import('react')
+  return { NoteEditor: ({ editorRef, onChange, inputTestId }: { editorRef: never; onChange: (text: string) => void; inputTestId: string }) => {
+    const [value, setValue] = useState('')
+    const write = (next: string) => { setValue(next); onChange(next) }
+    useImperativeHandle(editorRef, () => ({ setText: write, getText: () => value, isEmpty: () => false }) as never)
+    return createElement('textarea', { 'data-testid': inputTestId, value, onChange: (event: { target: { value: string } }) => write(event.target.value) })
+  } }
+})
+vi.mock('../../../../apps/desktop/src/components/chat/useGroupMentionProvider', () => ({ useGroupMentionProvider: () => ({}) }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: null }) }))
 
 const { DispatchSheet } = await import('../../../../apps/desktop/src/components/chat/DispatchSheet')
@@ -74,7 +86,7 @@ describe('DispatchSheet', () => {
     await type(document.body.querySelector('input') as HTMLInputElement, 'codex')
     const row = document.body.querySelector('[data-pick-row="agent:user:a-other"]')!
     expect(row.textContent).toContain('Codex 5')
-    expect(row.textContent).not.toContain('正在起名…')
+    expect(row.textContent).not.toContain('正在生成名称…')
     await click(row)
     await click(document.body.querySelector('[data-testid="dispatch-sheet-action"]'))
     await expect(picked).resolves.toEqual({ to: { agent: 'user:a-other' }, visible: false, text: 'cite' })
@@ -86,7 +98,7 @@ describe('DispatchSheet', () => {
     expect(chips.textContent).toContain('删除 fork')
     expect(chips.textContent).not.toContain('合并上游')
     await click([...chips.querySelectorAll('button')].find(button => button.textContent === '删除 fork'))
-    expect(document.querySelector<HTMLTextAreaElement>('[data-testid="dispatch-text"]')!.value).toContain('keep this URL\n先征求我的确认')
+    expect(document.querySelector<HTMLTextAreaElement>('[data-testid="dispatch-text-input"]')!.value).toContain('keep this URL\n先征求我的确认')
     expect(chips.compareDocumentPosition(document.querySelector('[data-testid="dispatch-pill"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(answered).toBe(false)
     expect(ticked()).toEqual([])
@@ -156,7 +168,7 @@ describe('DispatchSheet', () => {
     })
     expect([...document.body.querySelectorAll('[data-pick-section]')].map((s) => s.getAttribute('data-pick-section'))).toEqual(['chat-agents', 'chat-people', 'agents', 'new'])
     expect(rowIds()).toEqual(['member:user:a', 'member:user:p', 'agent:user:a-other', 'agent:user:a-sibling', 'agent:user:a-here', 'new:agent'])
-    const text = document.body.querySelector('[data-testid="dispatch-text"]') as HTMLTextAreaElement
+    const text = document.body.querySelector('[data-testid="dispatch-text-input"]') as HTMLTextAreaElement
     expect(text.value).toBe('Host this round')
     expect([...document.body.querySelectorAll('[data-testid="dispatch-pill"]')].map((p) => p.textContent)).toEqual(['@round.soup.json'])
     // Nothing picked: nothing to send.
@@ -165,10 +177,29 @@ describe('DispatchSheet', () => {
     await click(document.body.querySelector('[data-pick-row="agent:user:a-here"]'))
     expect(document.body.querySelector('[data-testid="dispatch-visible"]')).toBeNull()
     await click(document.body.querySelector('[data-pick-row="member:user:a"]'))
+    // Picked: the rows give the composer their room; typing a name brings them back.
+    const listbox = document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    expect(listbox.hidden).toBe(true)
+    await type(document.body.querySelector('input') as HTMLInputElement, 'k')
+    expect(listbox.hidden).toBe(false)
+    await type(document.body.querySelector('input') as HTMLInputElement, '')
     await click(document.body.querySelector('[data-testid="dispatch-visible"]'))
     await type(text, 'Host this round, hard mode')
     await click(button('发送'))
     await expect(picked).resolves.toEqual({ to: { chat: 'c-group', member: 'user:a' }, visible: true, text: 'Host this round, hard mode' })
+  })
+
+  it('the chat\'s members come in the chat\'s @ order: who spoke there lately first, and a search matches as @ does', async () => {
+    store.activeChatId = 'c-group'
+    store.messages = [{ id: 'm1', chat_id: 'c-group', seq: 1, sender_user_id: 'user:lin', to_user_ids: [], content_type: 'text', created_at: new Date().toISOString() }]
+    await act(async () => {
+      void ask({ draft: false, offers: ['agent-in-chat'], chat: { id: 'c-group', name: 'Reading group', members: [{ id: 'user:kip', name: 'Kip', kind: 'agent' }, { id: 'user:lin', name: 'Lin', kind: 'agent' }] } })
+    })
+    expect(rowIds()).toEqual(['member:user:lin', 'member:user:kip'])
+    await type(document.body.querySelector('input') as HTMLInputElement, 'ki')
+    expect(rowIds()).toEqual(['member:user:kip'])
+    store.activeChatId = null
+    store.messages = []
   })
 
   it('a pick: the App\'s words, what it is about read only, the person\'s own agents; the pick is the agent', async () => {

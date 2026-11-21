@@ -7,12 +7,11 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { formatClock, type VoiceNoteMeta } from '@gugu/core/shared/voiceNotes';
 import { ChevronRight, Pause, Play, RefreshCw, Square, X } from '@/lib/icons'
-import { useQueryClient } from '@tanstack/react-query';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { useToast, toast as notify } from '@renderer/lib/hooks/use-toast';
 import { VOICE_NOTE_MICROPHONE_CHANNEL } from '@shared/core/voice-notes';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
-import { assistantQueryKey } from '../assistant-data';
+import { assistantPanel } from '@/components/assistant/assistant-panel-replica';
 import type { AssistantMachine } from '../assistant-machine';
 import { retryVoiceNote, setVoiceNotesContext, startVoiceNote, voiceJobs, type VoiceJobView } from './voice-note-jobs';
 import { failureText, useVoiceJobs } from './voice-notes-data';
@@ -67,7 +66,6 @@ export type VoiceNotesHostInput = {
  * #1927 (47) 一个 App 经 `gugu.voiceNote` 要录时由 app-voice-notes-context.tsx 照壳里的数据做。
  */
 export function useVoiceNotesContext(input: VoiceNotesHostInput) {
-  const client = useQueryClient();
   const { home, assistantId, ownerName, machine } = input;
   const deviceId = home?.deviceId ?? null;
   const homeKey = home ? JSON.stringify(home) : null;
@@ -87,10 +85,11 @@ export function useVoiceNotesContext(input: VoiceNotesHostInput) {
         await machine?.panel?.assertCurrent();
         return execution;
       },
-      invalidate: () => void client.invalidateQueries({ queryKey: assistantQueryKey(deviceId, 'voice') }),
+      // A note recorded, transcribed or summarized changes the assistant's panel files: its snapshot is read again.
+      invalidate: () => void assistantPanel.refresh(assistantId),
     });
     // homeKey 代表 home 的内容(对象每次渲染是新的)。
-  }, [homeKey, deviceId, assistantId, ownerName, machine, client]);
+  }, [homeKey, deviceId, assistantId, ownerName, machine]);
 }
 
 /** 录音条该跟着的那一条:最近开始的、没被关掉的;「好了」的只挂一会儿。 */

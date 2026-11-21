@@ -12,13 +12,13 @@ import {
 } from './chat-mention-provider';
 import { log } from '@renderer/utils/logger';
 
-type MentionCandidate = LocalSessionMention & { number: string; sessionId?: string; session_archived_at?: string | null };
+type MentionCandidate = LocalSessionMention & { number: string; sessionId?: string };
 
 type MentionTool = Pick<LocalAgentCreationTool, 'icon'>;
 
 export type LocalSessionMentionOptions = {
   excludeSessionId?: string;
-  creationToolsByEngine?: ReadonlyMap<string, MentionTool>;
+  creationToolsByEngine?: ReadonlyMap<string, MentionTool> | null;
 };
 
 function candidatesFromRows(
@@ -26,8 +26,9 @@ function candidatesFromRows(
   options: LocalSessionMentionOptions,
 ): MentionCandidate[] {
   return rows.flatMap((peer) => {
-    if (peer.sessionId === options.excludeSessionId) return [];
     const users = peer.identity.users;
+    // An archived task is no one to mention: its candidate never enters the list (the group roster drops it at the source).
+    if (peer.sessionId === options.excludeSessionId || users.session_archived_at != null) return [];
     const engine = peer.engine;
     const iconUrl = engine ? options.creationToolsByEngine?.get(engine)?.icon?.trim() || '' : '';
     return [{
@@ -35,7 +36,6 @@ function candidatesFromRows(
       sessionId: peer.sessionId,
       // The task's one name, as its host projects it (the same name its sidebar row shows).
       name: peer.title,
-      ...(users.session_archived_at != null ? { session_archived_at: users.session_archived_at } : {}),
       number: users.gugu_number == null ? '' : String(users.gugu_number),
       engine: engine || undefined,
       iconUrl: iconUrl || undefined,
@@ -52,7 +52,6 @@ function mentionItemsFromLocalSessionCandidates(
     candidate,
     name: candidate.name,
     type: 'agent' as const,
-    session_archived_at: candidate.session_archived_at,
     guguNumber: candidate.number ? Number(candidate.number) : null,
   }));
   return filterMentionCandidates(searchable, query)

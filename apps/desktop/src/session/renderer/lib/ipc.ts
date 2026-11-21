@@ -34,7 +34,7 @@ const electronAPI: SessionHostBridge = {
 
 class MachineUnreachableError extends Error {
   constructor(deviceId: string) {
-    super(`[machine] ${deviceId} 的任务页宿主连不上(桥没装)`);
+    super(`[machine] cannot reach the task page host of ${deviceId} (no bridge installed)`);
     this.name = 'MachineUnreachableError';
   }
 }
@@ -107,9 +107,17 @@ const localRpc = createRPCClient<RpcRouter>((channel, ...args) => electronAPI.in
  * 机器级的调用(那台机器的设置、资源库、模型目录……):调用点指明机器。null / 'local' = 本机 —— 真的是本机:
  * 参数里出现别的机器上的 id 也不改道(挂父会话:child 在本机、父会话在别的机器上,这一步只能在 child 这台做)。
  */
+/** Machines this app reaches by another pipe than its own machine clients (the phone shell's): set once, every reader follows. */
+const routed = new Map<string, typeof rpc>();
+
+/** Reach `machine` through `client` from now on (a transport boundary: readers keep calling `rpcOn`). */
+export function routeMachine(machine: string, client: typeof rpc): void {
+  routed.set(machine, client);
+}
+
 export function rpcOn(machine: string | null | undefined): typeof rpc {
   if (!machine || machine === 'local') return localRpc;
-  return createRPCClient<RpcRouter>((channel, ...args) => invokeOn(machine, channel, args));
+  return routed.get(machine) ?? createRPCClient<RpcRouter>((channel, ...args) => invokeOn(machine, channel, args));
 }
 
 function channelOf(eventName: string, topic?: string): string {

@@ -33,7 +33,7 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/phoneVoiceRuntime', () => ({
   phoneVoiceJobs: { discard: mocks.discard, retry: mocks.retry, dismiss: mocks.dismiss },
 }))
 vi.mock('../../../apps/desktop/src/mobile/phone-device/phonePermissionsNavigation', () => ({ openPhonePermissions: mocks.openSettings }))
-vi.mock('../../../apps/desktop/src/lib/cloudComputerStore', () => ({ wakeCloudComputer: mocks.wake }))
+vi.mock('../../../apps/desktop/src/lib/cloudComputer', async (original) => ({ ...await original<object>(), wakeCloudComputer: mocks.wake }))
 
 const job = (extra: Partial<VoiceJobView> = {}): VoiceJobView => ({ id: 'note-1', phase: 'recording', failure: null, dismissed: false, createdAt: '2026-10-16T09:00:00.000Z', held: null, ...extra })
 const voice = (extra: Partial<{ micDenied: boolean }> = {}) => ({ start: vi.fn(), disabled: false, micDenied: false, clearMicDenied: vi.fn(), ...extra })
@@ -110,7 +110,7 @@ describe('录音尚未上传:保留手机备份，不依赖执行设备', () => 
   it.each(['asleep','waking','unreachable'] as const)('设备 %s 时不叫宿主，也没有连接或重连按钮', async held => {
     mocks.jobs = [job({ phase: 'uploading',held })]
     await render()
-    expect(q('phone-voice-bar-held')?.textContent).toContain('录音先存在手机上')
+    expect(q('phone-voice-bar-held')?.textContent).toContain('录音已暂存在手机上')
     expect(q('phone-voice-bar-held')?.textContent).not.toMatch(/连接|叫醒|休息/)
     expect(mocks.wake).not.toHaveBeenCalled()
     await render()

@@ -25,7 +25,10 @@ export function DraggableTab({
         setDropRef(el);
       }}
       {...attributes}
-      {...listeners}
+      // @@@portal-press - React bubbles presses from this tab's portalled right-click menu (and its backdrop) through here;
+      // only a press on the tab itself starts a drag. Otherwise the left click that closes the menu arms a drag whose
+      // pointerup lands in whatever is under the vanished backdrop (an App's page), and the tab floats with the pointer.
+      onPointerDown={(event) => { if (event.currentTarget.contains(event.target as Node)) listeners?.onPointerDown?.(event); }}
       data-tab-pair={pairRole}
       data-tab-dragging={isDragging || undefined}
       style={{ opacity: isDragging ? 0 : undefined }}

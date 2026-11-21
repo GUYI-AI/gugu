@@ -3,6 +3,7 @@ import type { GuardResult, ViewId, WrapParams } from '@renderer/app/view-registr
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import type { NavigationSnapshot } from '@shared/view-state';
 import { appState } from './app-state';
+import type { HistoryEntry } from './navigation-history-store';
 import type { Snapshottable } from './snapshottable';
 
 type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
@@ -20,16 +21,28 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   private readonly _guards = new Map<ViewId, (params: unknown) => GuardResult>();
   private readonly _registeredViewIds = new Set<ViewId>();
   private readonly _transientParamKeys = new Map<ViewId, readonly string[]>();
+  private readonly _placeParamKeys = new Map<ViewId, readonly string[]>();
 
   constructor() {
     makeAutoObservable(this);
   }
 
-  registerView(viewId: ViewId, options?: { transientParams?: readonly string[] }): void {
+  registerView(viewId: ViewId, options?: { transientParams?: readonly string[]; placeParams?: readonly string[] }): void {
     this._registeredViewIds.add(viewId);
     if (options?.transientParams?.length) {
       this._transientParamKeys.set(viewId, options.transientParams);
     }
+    if (options?.placeParams?.length) {
+      this._placeParamKeys.set(viewId, options.placeParams);
+    }
+  }
+
+  /** Which place inside the view these params are at (view-registry `placeParams`); undefined for views without places. */
+  private _placeOf(viewId: ViewId, params: unknown): string | undefined {
+    const keys = this._placeParamKeys.get(viewId);
+    if (!keys) return undefined;
+    const record = (params ?? {}) as Record<string, unknown>;
+    return JSON.stringify(keys.map((key) => record[key] ?? null));
   }
 
   isRegisteredViewId(value: unknown): value is ViewId {
@@ -83,18 +96,18 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   }
 
   navigate<T extends ViewId>(viewId: T, params?: WrapParams<T>): void {
+    appState.history.start(this._historyEntry(this.currentViewId, this.viewParamsStore[this.currentViewId] ?? {}));
     if (viewId !== 'session') {
-      // 后退回到的是**位置**,不是当时那次意图:历史条目会被原样重放
-      // (`applyHistoryEntry` → `_applyNavigation(viewId, entry.params)`),意图录进去就等于
-      // 给它开了一条绕过「离开即作废」的后门 —— 用户明明把抽屉关掉了,按一下后退它又回来。
-      const recorded = params ?? this.viewParamsStore[viewId] ?? ({} as WrapParams<T>);
-      appState.history.push({
-        kind: 'view',
-        viewId,
-        params: this._withoutTransientKeys(viewId, recorded),
-      });
+      appState.history.push(this._historyEntry(viewId, params ?? this.viewParamsStore[viewId] ?? ({} as WrapParams<T>)));
     }
     this._applyNavigation(viewId, params);
+  }
+
+  // 后退回到的是**位置**,不是当时那次意图:历史条目会被原样重放
+  // (`applyHistoryEntry` → `_applyNavigation(viewId, entry.params)`),意图录进去就等于
+  // 给它开了一条绕过「离开即作废」的后门 —— 用户明明把抽屉关掉了,按一下后退它又回来。
+  private _historyEntry<T extends ViewId>(viewId: T, params: WrapParams<T>): HistoryEntry {
+    return { kind: 'view', viewId, params: this._withoutTransientKeys(viewId, params), place: this._placeOf(viewId, params) };
   }
 
   /**
@@ -137,6 +150,9 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     const current = (this.viewParamsStore[viewId] ?? {}) as WrapParams<TId>;
     const next = typeof update === 'function' ? update(current) : { ...current, ...update };
     this.viewParamsStore = { ...this.viewParamsStore, [viewId]: next };
+    if (viewId === this.currentViewId && this._placeParamKeys.has(viewId)) {
+      appState.history.replaceCurrent(this._historyEntry(viewId, next));
+    }
   }
 
   get snapshot(): NavigationSnapshot {

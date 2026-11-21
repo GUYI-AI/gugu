@@ -54,7 +54,6 @@ const topicServiceMock = vi.hoisted(() => ({
     source_chat_id: 'chat-1', source_message_id: 'msg-1', creator_user_id: 'me',
   })),
   listTopicsOfChat: vi.fn(async () => []),
-  getSourceState: vi.fn(async () => ({ kind: 'gone' as const })),
   getAgentFloodAdjustment: vi.fn(async () => null),
   undoAgentFloodAdjustment: vi.fn(async () => 0),
 }))
@@ -408,7 +407,7 @@ describe('消息读失败', () => {
     const failure = harness.container.querySelector('[data-testid="chat-load-failed"]')
     expect(failure).not.toBeNull()
     expect(failure?.getAttribute('data-inline')).toBeNull()
-    expect(failure?.textContent).toContain('聊天记录没读出来')
+    expect(failure?.textContent).toContain('无法加载聊天记录')
     expect(failure?.textContent, '原文默认不摆给人看').not.toContain('sent_by_agent')
     await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="chat-load-details-toggle"]')!)
     expect(harness.container.querySelector('[data-testid="chat-load-details"]')?.textContent).toContain('sent_by_agent')

@@ -24,7 +24,7 @@ import {
 import { ASSISTANT_HOME_CHANNELS, type AssistantEngine } from './assistantHomeIpc'
 import { assistantSetupRules } from './assistantSetupRules'
 import { prepareLocalAssistantSetup } from './assistantSetupPreparation'
-import { provisionCloudComputer } from './cloudComputerStore'
+import { provisionCloudComputer } from './cloudComputer'
 import { contactsService } from './contacts'
 import { getCurrentAuthUserId } from './supabase'
 import { cancelTeamProvision } from './teamProvisionSaga'

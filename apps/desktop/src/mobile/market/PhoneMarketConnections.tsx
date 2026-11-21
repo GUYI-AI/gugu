@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { UNKNOWN } from '@/lib/replica'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -77,7 +78,7 @@ function ReadOnlyConnectorCatalog() {
   const { t, i18n } = useTranslation('main')
   const { t: assistant } = useTranslation('assistant')
   const { t: settings } = useTranslation('settings')
-  const apps = assistantConnectedApps(builtinConnectionCatalog(i18n.language), null,
+  const apps = assistantConnectedApps(builtinConnectionCatalog(i18n.language), UNKNOWN,
     id => settings(`channels.${id}`), assistant('connectors.wechatDescription'))
   return <div className="phone-market">
     <SettingsNote role="status">{t('phoneMarket.assistantRequired')}</SettingsNote>

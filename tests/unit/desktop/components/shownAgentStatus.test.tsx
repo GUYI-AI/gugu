@@ -12,7 +12,7 @@ import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../
 import type { DisplayIdentity } from '../../../../apps/desktop/src/lib/displayIdentity'
 import { publishDirectoryDevices } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => ({ refreshCloudComputer: vi.fn(async () => null) }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn(async () => null) }))
 
 const { useAgentsOnCloudComputer, useShownAgentStatus } = await import('../../../../apps/desktop/src/components/chat/useAgentsOnCloudComputer')
 
@@ -96,11 +96,9 @@ describe('#7199 宿主闲时收回着 ≠ 不在线(只管画)', () => {
     expect(seen.at(-1)?.size).toBe(0)
   })
 
-  it('一组读数:按 id 取的那份里收回着的缺席;群汇总只把收回着的那位拿出去,读数原样', async () => {
+  it('一组读数:按 id 取的那份里收回着的缺席', async () => {
     await render('asleep')
     const statuses = { assistant: 'offline', 'laptop-agent': 'offline' } as const
     expect(shown.statuses(statuses)).toEqual({ 'laptop-agent': 'offline' })
-    expect(shown.members(['assistant', 'laptop-agent'], statuses)).toEqual(['laptop-agent'])
-    expect(shown.members([{ id: 'assistant' }], statuses)).toEqual([])
   })
 })

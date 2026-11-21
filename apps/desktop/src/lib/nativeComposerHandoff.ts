@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n/runtime'
 /** One in-window handoff, shared across the shell and session renderer module graphs. */
 export type NativeComposerDraft = { text: string; files?: File[]; append?: boolean }
 type Receiver = (draft: NativeComposerDraft) => void | Promise<void>
@@ -16,7 +17,7 @@ export async function handoffNativeComposer(sessionId: string, draft: NativeComp
   const receive = receivers().get(sessionId) ?? await new Promise<Receiver>((resolve, reject) => {
     const clear = () => { clearTimeout(timer); window.removeEventListener(READY, ready) }
     const ready = () => { const receive = receivers().get(sessionId); if (receive) { clear(); resolve(receive) } }
-    const timer = setTimeout(() => { clear(); reject(new Error('会话输入框尚未就绪，草稿已保留')) }, 10_000)
+    const timer = setTimeout(() => { clear(); reject(new Error(i18n.t('composer.sessionInput.composerNotReady', { ns: 'messaging' }))) }, 10_000)
     window.addEventListener(READY, ready)
     ready()
   })

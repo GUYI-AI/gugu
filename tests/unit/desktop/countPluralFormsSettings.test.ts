@@ -32,12 +32,12 @@ const ROWS: Row[] = [
   {
     ns: 'settings', key: 'credits.spending.available', p: (n) => ({ ...credits(n), window: 'W' }),
     en: ['you can spend up to 0 credits within W', 'you can spend up to 1 credit within W', 'you can spend up to 2 credits within W'],
-    zh: (n) => `W内最多能花 ${n} 积分`,
+    zh: (n) => `W内最多可用 ${n} 积分`,
   },
   {
     ns: 'settings', key: 'credits.spending.sentence', p: (n) => ({ ...credits(n), rate: 'R' }),
-    en: ['You can spend 0 credits; R', 'You can spend 1 credit; R', 'You can spend 2 credits; R'],
-    zh: (n) => `你还能花 ${n} 积分；R`,
+    en: ['0 credits available; R', '1 credit available; R', '2 credits available; R'],
+    zh: (n) => `剩余可用 ${n} 积分；R`,
   },
   {
     ns: 'settings', key: 'feedback.attachLog.attached',
@@ -72,7 +72,7 @@ const ROWS: Row[] = [
   {
     ns: 'settings', key: 'membership.payFor', p: () => ({ price: '30' }),
     en: ['Pay ¥30 (0 months)', 'Pay ¥30 (1 month)', 'Pay ¥30 (2 months)'],
-    zh: (n) => `去支付 ¥30（${n} 个月）`,
+    zh: (n) => `支付 ¥30（${n} 个月）`,
   },
   {
     ns: 'settings', key: 'referral.amountCredits', p: credits,
@@ -82,11 +82,11 @@ const ROWS: Row[] = [
   {
     ns: 'settings', key: 'usage.quip', p: (n) => ({ tokens: '1.2M', book: 'B', times: String(n) }),
     en: [
-      'You used 1.2M tokens in this period — roughly B, 0 times over.',
-      'You used 1.2M tokens in this period — roughly B, 1 time over.',
-      'You used 1.2M tokens in this period — roughly B, 2 times over.',
+      'You used 1.2M tokens in this period, roughly equivalent to reading B 0 times.',
+      'You used 1.2M tokens in this period, roughly equivalent to reading B 1 time.',
+      'You used 1.2M tokens in this period, roughly equivalent to reading B 2 times.',
     ],
-    zh: (n) => `这段时间你用掉了 1.2M token —— 大约是把B读了 ${n} 遍。`,
+    zh: (n) => `此时段共使用 1.2M token，约相当于阅读B ${n} 遍。`,
   },
   {
     ns: 'settings', key: 'usage.streaks', p: () => ({ current: 3, longest: 5 }),
@@ -100,7 +100,7 @@ const ROWS: Row[] = [
       'Another 1 token has no known source (tasks from before sources were recorded)',
       'Another 2 tokens have no known source (tasks from before sources were recorded)',
     ],
-    zh: (n) => `另有 ${n} token 分不清来源（记录来源之前的会话）`,
+    zh: (n) => `另有 ${n} token 来源未知（开始记录来源之前的会话）`,
   },
   {
     ns: 'settings', key: 'usage.units.tokens', p: (n) => ({ value: String(n) }),
@@ -115,9 +115,9 @@ const ROWS: Row[] = [
     en: ['0 files, 3 MB in all.', '1 file, 3 MB in all.', '2 files, 3 MB in all.'],
     zh: (n) => `共 ${n} 个文件，3 MB。`,
   },
-  { ns: 'assistant', key: 'move.doneAccounts', en: ['0 accounts moved (the old home keeps its copy).', '1 account moved (the old home keeps its copy).', '2 accounts moved (the old home keeps its copy).'], zh: (n) => `${n} 个账号已带过去（旧家那份保留）。` },
-  { ns: 'assistant', key: 'move.doneSchedules', en: ['0 schedules set again.', '1 schedule set again.', '2 schedules set again.'], zh: (n) => `${n} 个定时任务已重排。` },
-  { ns: 'assistant', key: 'move.doneFiles', en: ['0 files copied.', '1 file copied.', '2 files copied.'], zh: (n) => `${n} 个文件已拷过去。` },
+  { ns: 'assistant', key: 'move.doneAccounts', en: ['0 accounts migrated (the original environment keeps a copy).', '1 account migrated (the original environment keeps a copy).', '2 accounts migrated (the original environment keeps a copy).'], zh: (n) => `${n} 个账号已迁移（原运行环境保留副本）。` },
+  { ns: 'assistant', key: 'move.doneSchedules', en: ['0 scheduled tasks rescheduled.', '1 scheduled task rescheduled.', '2 scheduled tasks rescheduled.'], zh: (n) => `${n} 个定时任务已重新安排。` },
+  { ns: 'assistant', key: 'move.doneFiles', en: ['0 files copied.', '1 file copied.', '2 files copied.'], zh: (n) => `${n} 个文件已复制。` },
   { ns: 'assistant', key: 'chat.thoughtCount', en: ['0 thinking steps', '1 thinking step', '2 thinking steps'], zh: (n) => `思考 ${n} 次` },
   { ns: 'assistant', key: 'chat.toolCount', en: ['0 tool calls', '1 tool call', '2 tool calls'], zh: (n) => `调用 ${n} 次工具` },
   { ns: 'assistant', key: 'memory.items', en: ['0 items', '1 item', '2 items'], zh: (n) => `${n} 项` },
@@ -125,7 +125,7 @@ const ROWS: Row[] = [
   {
     ns: 'assistant', key: 'closeDialog.deleteStarted',
     en: ['Also delete the sessions it started (0)', 'Also delete the session it started (1)', 'Also delete the sessions it started (2)'],
-    zh: (n) => `一起删掉它开过的会话（${n} 个）`,
+    zh: (n) => `同时删除它发起的会话（${n} 个）`,
   },
 ]
 
@@ -146,7 +146,7 @@ describe('积分按写出来的数取单复数', () => {
     expect(formatCredits(0.999, 'en-US')).toBe('1')
     expect(t('lowBalance.remaining', { credits: formatCredits(0.999, 'en-US'), count: creditCount(0.999) })).toBe('1 credit left')
     expect(t('lowBalance.remaining', { credits: formatCredits(0.004, 'en-US'), count: creditCount(0.004) })).toBe('<0.01 credits left')
-    expect(t('credits.spending.sentence', { credits: formatCredits(0.999, 'en-US'), count: creditCount(0.999), rate: 'R' })).toBe('You can spend 1 credit; R')
+    expect(t('credits.spending.sentence', { credits: formatCredits(0.999, 'en-US'), count: creditCount(0.999), rate: 'R' })).toBe('1 credit available; R')
     expect(t('lowBalance.title', { credits: formatCredits(1.5, 'en-US'), count: creditCount(1.5) })).toBe('Low balance (1.5 credits left)')
     expect(t('lowBalance.title', { credits: formatCredits(0.004, 'en-US'), count: creditCount(0.004) })).toBe('Low balance (<0.01 credits left)')
   })

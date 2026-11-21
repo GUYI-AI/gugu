@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { observer } from 'mobx-react-lite'
 import { assistantPanelTaskChat, useAssistantWorkTasks } from '../assistant/assistant-panel-tasks'
 import { readAssistantShellBridge } from '../../lib/assistantShellBridge'
 import { readIdentityDirectoryBridge } from '../../lib/identityDirectoryBridge'
 import { installAppHostLayerBridge, setAppWorkRows } from '../../lib/appHostLayerBridge'
 import { useAuth } from '../../store/auth'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import type { PushedWorkLedger, PushedWorkRow } from '@/session/shared/extensions/work-binding'
 import { ledgerStateOf, NO_LEDGER, pushedRowsOf, pushLedger, readsWork } from './appWorkLedger'
 
@@ -21,21 +20,24 @@ const noop = () => () => undefined
  * assistant; each new reading goes to main, which answers Apps (app-work-binding.ts), and is kept for the host page that
  * draws a task an App opened (AppHostLayerHost). Otherwise main is told there is none.
  */
-export const AppWorkLedgerHost = observer(function AppWorkLedgerHost() {
+export function AppWorkLedgerHost() {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
   const shell = readAssistantShellBridge()
   const snapshot = useSyncExternalStore(shell?.subscribe ?? noop, () => shell?.getSnapshot() ?? null)
   const assistantId = ownerId && snapshot?.ownerId === ownerId && snapshot.assistant ? snapshot.assistant.id : null
-  const reading = installedExtensionsStore.manifests.some((manifest) => readsWork(manifest) && installedExtensionsStore.isEnabled(manifest.id))
+  const installed = useInstalledApps(LOCAL_HOST)
   // What the window knows of the assistant beyond its id: its setup finishing changes it (where it lives, its step, its chat,
   // its rules arriving). The cloud has no list for it until then; each change reads the list again (owner 11-12: the list
   // read during setup stayed 「没读到」 after it).
   const readiness = snapshot ? JSON.stringify([snapshot.assistantState, snapshot.preparing, snapshot.rulesPending ?? false, snapshot.setup, snapshot.home, snapshot.chatId]) : ''
+  // What is installed not read yet: main is told nothing (❌ "none" before it is known).
+  if (installed.state !== 'value') return null
+  const reading = installed.value.manifests.some((manifest) => readsWork(manifest) && installed.value.isEnabled(manifest.id))
   return ownerId && assistantId && reading
     ? <WorkLedgerReader key={`${ownerId}\n${assistantId}`} ownerId={ownerId} assistantId={assistantId} readiness={readiness} />
     : <NoLedger />
-})
+}
 
 function NoLedger() {
   useEffect(() => {

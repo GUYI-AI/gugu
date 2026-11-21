@@ -59,7 +59,6 @@ export function useConnectionModelList(
 ): ModelList {
   const sourceKey = source ? JSON.stringify(source) : ''
   const [list, setList] = useState<ModelList>({ kind: 'waiting' })
-  // @@@effect-flow - probing the key being typed (debounced); the key is never put in a cache.
   useEffect(() => {
     if (!sourceKey) {
       setList({ kind: 'waiting' })

@@ -35,6 +35,8 @@ export interface FileRevision {
   legacy_object?: { bucket_id: 'chat-media'; object_name: string; message_id: string }
   width?: number | null
   height?: number | null
+  /** An image's small copy, uploaded by its sender and kept in the cloud for as long as the version is. */
+  preview?: { sha256: string; size_bytes: number; content_type: string }
   /** The device that keeps this version: the one that sent it. */
   host_device_id?: string
   host_project_id?: string
@@ -63,6 +65,14 @@ export class FileReadRevokedError extends Error {
 }
 /** How long an agent's read waits for bytes their sender is still uploading before saying so. */
 export const ATTACHMENT_PENDING_WAIT_MS = 8_000
+const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])
+/** A relay request ended with a reason (read-contract §2.8): the holder's own words, or the server's code for a refusal. */
+export function relayRefusedError(reason: string) {
+  return RELAY_QUOTA_FULL.has(reason)
+    ? Object.assign(new Error(`The computer that keeps this file could not send it: its account's storage is full (quota_full). Free storage on that account, then read the file again.`), { code: 'quota_full' })
+    : Object.assign(new Error(`The computer that keeps this file could not send it (upload_failed: ${reason}). Ask the sender to send it again.`), { code: 'upload_failed' })
+}
+
 /** A declared attachment whose sender is still uploading its bytes, past the reader's wait: said with the file's name. */
 export class AttachmentUploadPendingError extends Error {
   readonly code = 'upload_pending'
@@ -139,8 +149,8 @@ export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
   if (row.status === 'missing' && row.code === 'object_not_found') return { status: 'missing', sha256: row.sha256 ?? null }
   if (row.status === 'gone' || row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null }
   if (row.status !== 'ready') throw new Error('Invalid file metadata')
-  const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer } = row
-  const revision = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer }
+  const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, preview, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer } = row
+  const revision = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, preview, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer }
   if (source === 'managed-object' && sha256 === null && row.bucket_id === 'chat-media' && typeof row.object_name === 'string' && row.object_name &&
     ref && 'message_id' in ref && row.message_id === ref.message_id) {
     Object.assign(revision, { legacy_object: Object.freeze({ bucket_id: 'chat-media', object_name: row.object_name, message_id: row.message_id }) })

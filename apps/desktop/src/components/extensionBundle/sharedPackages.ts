@@ -30,50 +30,25 @@ export function installPackageOf(card: PackageCard): AttachmentPackage {
   return { messageId: card.messageId }
 }
 
-/** One read per package for the life of the window: a message re-rendering must not download it again. */
-const summaries = new Map<string, Promise<ExtensionBundleSummary>>()
-/** The cards waiting on a package's read: how far its bytes have come (`attachmentBytes`' progress). */
-const readers = new Map<string, Set<(done: number, total: number) => void>>()
-
-/** Follow how far this package's read has come, while it runs; the returned function stops. */
-export function watchReading(card: PackageCard, listener: (done: number, total: number) => void): () => void {
-  const key = packageKey(card)
-  let set = readers.get(key)
-  if (!set) readers.set(key, (set = new Set()))
-  set.add(listener)
-  return () => {
-    set.delete(listener)
-    if (!set.size) readers.delete(key)
-  }
+/**
+ * What a package holds, read from its bytes. A copy this device keeps (`sha256`) is read from disk: no signing, no download.
+ * `ok: false` (not a package this build reads) is an answer; bytes not there throw `PackageUnavailableError`; neither is kept.
+ */
+export async function readPackageSummary(source: AttachmentSource, sha256: string | null, progress: (done: number, total: number) => void): Promise<ExtensionBundleSummary> {
+  const kept = await cachedAttachmentCopy(sha256).catch(() => null)
+  const bytes = kept ? null : await attachmentBytes(source, 'full', undefined, undefined, progress)
+  if (bytes && bytes.status !== 'ready') throw new PackageUnavailableError(bytes.status)
+  const summary = await summarizeExtensionBundle(new Uint8Array(await (kept ?? bytes!.blob).arrayBuffer()), __APP_VERSION__)
+  if (!summary.ok) log.warn({ package: source, problem: summary.problem }, 'extension package in chat could not be read')
+  return summary
 }
 
-/**
- * `sha256`: the message's own record of the bytes. A copy this device already keeps (sent from here, or read before —
- * `attachmentBytes` keeps every full read) is read from disk, as a thumbnail is: no signing, no download. The install
- * still reads the package again, authorized.
- */
-export function summaryOf(card: PackageCard, sha256?: string | null): Promise<ExtensionBundleSummary> {
-  const key = packageKey(card)
-  let pending = summaries.get(key)
-  if (!pending) {
-    pending = (async (): Promise<ExtensionBundleSummary> => {
-      const kept = await cachedAttachmentCopy(sha256 ?? null).catch(() => null)
-      const bytes = kept ? null : await attachmentBytes(card.source, 'full', undefined, undefined, (done, total) => readers.get(key)?.forEach((listener) => listener(done, total)))
-      if (bytes && bytes.status !== 'ready') throw new Error('the package was deleted from the group folder')
-      return summarizeExtensionBundle(new Uint8Array(await (kept ?? bytes!.blob).arrayBuffer()), __APP_VERSION__)
-    })()
-      .catch((error: unknown) => {
-        // A failed download says nothing about the package: the next time it is asked for, it is read again.
-        summaries.delete(key)
-        return { ok: false as const, problem: error instanceof Error ? error.message : String(error) }
-      })
-      .then((summary) => {
-        if (!summary.ok) log.warn({ package: key, problem: summary.problem }, 'extension package in chat could not be read')
-        return summary
-      })
-    summaries.set(key, pending)
+/** A package's bytes are not there (deleted from the group folder, expired, missing): no App to offer from it. */
+export class PackageUnavailableError extends Error {
+  constructor(status: string) {
+    super(`the package is not in the group folder (${status})`)
+    this.name = 'PackageUnavailableError'
   }
-  return pending
 }
 
 /** A package somebody sent in a chat: the App it holds, and its card. */
@@ -82,89 +57,14 @@ export interface SharedPackage {
   card: PackageCard
 }
 
-/**
- * The newest package of each App shared in this chat's messages (摩擦单 F15 / F21): App id → the highest
- * version sent there. Read from the chat's own attachments — no table of its own.
- */
-export async function newestSharedPackages(chatId: string, userId: string): Promise<Map<string, SharedPackage>> {
-  const cards: PackageCard[] = (await chatService.getChatFiles(chatId, userId)).flatMap((file) =>
+/** The `.guguext` cards among this chat's attachments, newest first. */
+export async function chatPackageCards(chatId: string, userId: string): Promise<PackageCard[]> {
+  return (await chatService.getChatFiles(chatId, userId)).flatMap((file) =>
     /\.guguext$/i.test(file.fileName) && file.source.kind !== 'gone' ? [{ source: file.source, messageId: file.messageId }] : [],
   )
-  const read = await Promise.all(cards.map(async (card) => ({ card, summary: await summaryOf(card) })))
-  const packages: SharedPackage[] = read.flatMap(({ card, summary }) => (summary.ok ? [{ manifest: summary.manifest, card }] : []))
-  const newest = new Map<string, SharedPackage>()
-  for (const id of new Set(packages.map((pkg) => pkg.manifest.id))) newest.set(id, newestPackageOf(packages, id)!)
-  return newest
 }
 
-// ─── one read per chat, shared (摩擦单 F15: the offer in the group's panel; the via-App badge on a whisper) ───
-
-const perChat = new Map<string, { userId: string; read: Promise<Map<string, SharedPackage>> }>()
-const chatListeners = new Set<(chatId: string) => void>()
-
-/**
- * The newest package of each App shared in this chat (`newestSharedPackages`), read once and shared by everyone who
- * asks — until a package is sent in this chat (`packageArrived`); then it is read again and `subscribeSharedPackages`
- * says so.
- */
-export function sharedPackagesOf(chatId: string, userId: string): Promise<ReadonlyMap<string, SharedPackage>> {
-  let entry = perChat.get(chatId)
-  if (!entry || entry.userId !== userId) {
-    const read = newestSharedPackages(chatId, userId)
-    const made = { userId, read }
-    entry = made
-    perChat.set(chatId, made)
-    // A failed read is not kept: the next ask reads again.
-    void read.catch(() => perChat.get(chatId) === made && perChat.delete(chatId))
-  }
-  return entry.read
-}
-
-/** A chat's list of shared packages was read again (a new card): ask `sharedPackagesOf` for it once more. */
-export function subscribeSharedPackages(listener: (chatId: string) => void): () => void {
-  chatListeners.add(listener)
-  return () => chatListeners.delete(listener)
-}
-
-/**
- * A package was sent in `chatId` (摩擦单 F66: the account revision bus says so, whether or not anything of that chat is on
- * screen): its list is behind — read again when next asked.
- */
-export function packageArrived(chatId: string): void {
-  if (!perChat.delete(chatId)) return
-  for (const listener of chatListeners) listener(chatId)
-}
-
-// ─── the cards on screen (F21: an older card says a newer one is here) ─────────
-
-const shown = new Map<string, SharedPackage>()
-const listeners = new Set<() => void>()
-let version = 0
-
-/** A card showing this package; the returned function takes it back. */
-export function showPackage(pkg: SharedPackage): () => void {
-  const key = packageKey(pkg.card)
-  shown.set(key, pkg)
-  version += 1
-  for (const listener of listeners) listener()
-  return () => {
-    if (shown.get(key) !== pkg) return
-    shown.delete(key)
-    version += 1
-    for (const listener of listeners) listener()
-  }
-}
-
-export function subscribeShownPackages(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-export function shownPackagesVersion(): number {
-  return version
-}
-
-/** The newest package of this App among the cards on screen. */
-export function newestShownPackage(id: string): SharedPackage | undefined {
-  return newestPackageOf(shown.values(), id)
+/** The newest package of each App among these (摩擦单 F15 / F21): one per App id, the highest version. */
+export function newestSharedPackages(packages: readonly SharedPackage[]): SharedPackage[] {
+  return [...new Set(packages.map((pkg) => pkg.manifest.id))].map((id) => newestPackageOf(packages, id)!)
 }

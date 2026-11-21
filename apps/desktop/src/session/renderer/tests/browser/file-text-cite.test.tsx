@@ -4,8 +4,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { until } from '../../../../../../../tests/support/awaitCondition'
-import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
-import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
+import { ChatStoreProvider } from '@/store/chatContext'
+import { FileSelectionLayer } from '@renderer/features/sessions/annotations/file-selection-overlay'
+import { chatStore } from '../../../../../../../tests/support/testHarness'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
@@ -18,14 +19,15 @@ afterEach(async () => {
   document.getSelection()?.removeAllRanges()
 })
 
-it.each([390, 1000])('keeps native source selection and its one Cite action usable at %spx', async width => {
+it.each([390, 1000])('keeps native source selection and the one menu (a phone\'s: Copy · Cite) usable at %spx', async width => {
   await page.viewport(width, 700)
   const cite = vi.fn()
   host = document.createElement('div')
   Object.assign(host.style, { width: '100%', maxWidth: '480px', fontSize: '14px', paddingTop: '100px' })
   document.body.append(host)
   root = createRoot(host)
-  root.render(<FileTextContent kind="text" content={'first\nsecond\nthird'} onCite={cite} />)
+  const file = { name: 'notes.txt', target: '/home/me/notes.txt' }
+  root.render(<FileTextContent kind="text" content={'first\nsecond\nthird'} selectable={{ conversation: { kind: 'chat', chatId: 'g-1' }, file, cite, sends: false }} />)
   await until('the file has rendered its source lines', () => host.querySelectorAll('.gg-file-source-row').length === 3)
   const rows = [...host.querySelectorAll<HTMLElement>('.gg-file-source-row')]
   const lineHeight = parseFloat(getComputedStyle(host.querySelector('.gg-file-source')!).lineHeight)
@@ -36,29 +38,29 @@ it.each([390, 1000])('keeps native source selection and its one Cite action usab
   document.getSelection()?.removeAllRanges()
   document.getSelection()?.addRange(range)
   document.dispatchEvent(new Event('selectionchange'))
-  await until('the selected range offers Cite', () => !!document.querySelector('.gg-file-cite-popup button'))
-  expect(document.querySelectorAll('.gg-file-cite-popup button')).toHaveLength(1)
-  const box = document.querySelector('.gg-file-cite-popup')!.getBoundingClientRect()
+  await until('the selected range offers the menu', () => !!document.querySelector('.gugu-selection-menu button'))
+  expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'cite'])
+  const box = document.querySelector('.gugu-selection-menu')!.getBoundingClientRect()
   expect(box.left).toBeGreaterThanOrEqual(0)
   expect(box.right).toBeLessThanOrEqual(width)
-  await page.elementLocator(document.querySelector('.gg-file-cite-popup button')!).click()
+  await page.elementLocator(document.querySelector('.gugu-selection-menu [data-file-selection-action="cite"]')!).click()
   await until('the selection reaches the cite callback', () => cite.mock.calls.length === 1)
-  expect(cite).toHaveBeenCalledWith({ text: 'second', at: { lines: '2' }, code: true })
-  await until('the action closes once cited', () => !document.querySelector('.gg-file-cite-popup'))
+  expect(cite.mock.calls[0]![0]).toMatchObject({ refs: [], quote: expect.stringMatching(/second[\s\S]*\/home\/me\/notes\.txt$/) })
+  await until('the action closes once cited', () => !document.querySelector('.gugu-selection-menu'))
 })
 
-it('stores exact source selections and changes a file comment by deleting and selecting again', async () => {
+it('sends a source selection with the person\'s line into the conversation, the file named where it is', async () => {
   await page.viewport(960, 700)
-  const sessionId = crypto.randomUUID(), path = 'docs/pricing.txt'
-  const draft = sessionAnnotations.forSession(sessionId)
+  const chatId = crypto.randomUUID(), path = '/home/task/docs/pricing.txt'
+  const sendMessageToChat = vi.fn(async () => 'message-1')
   host = document.createElement('div')
   host.className = 'gugu-skin'
   Object.assign(host.style, { width: '480px', paddingTop: '130px' })
   document.body.append(host)
   root = createRoot(host)
   await act(async () => {
-    root.render(<><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
-      onCite={vi.fn()} annotation={{ sessionId, path }} /><AnnotationTray conversation={{ kind: 'session', sessionId }} onSend={() => {}} enabled /></>)
+    root.render(<ChatStoreProvider value={chatStore({ sendMessageToChat })}><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
+      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, cite: vi.fn(), sends: true }} /><FileSelectionLayer /></ChatStoreProvider>)
   })
   const range = document.createRange()
   const selected = host.querySelector('[data-file-line="3"]')!.firstChild!
@@ -66,28 +68,14 @@ it('stores exact source selections and changes a file comment by deleting and se
   range.setEnd(selected, 8)
   document.getSelection()?.addRange(range)
   document.dispatchEvent(new Event('selectionchange'))
-  await until('the file offers annotation alongside cite', () => document.querySelectorAll('.gg-file-cite-popup button').length === 2)
-  await act(async () => { await userEvent.click(document.querySelectorAll('.gg-file-cite-popup button')[1]!) })
-  const editor = () => host.querySelector<HTMLFormElement>('[data-annotation-editor]')
-  await until('the shared annotation field is mounted', () => !!editor())
+  await until('the file offers Copy · Cite · Send', () => document.querySelectorAll('.gugu-selection-menu button').length === 3)
+  expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'cite', 'send'])
+  await act(async () => { await userEvent.click(document.querySelector('.gugu-selection-menu [data-file-selection-action="send"]')!) })
+  const editor = () => document.querySelector<HTMLFormElement>('[data-annotation-editor]')
+  await until('the line is open at the selection', () => !!editor())
   await act(async () => { await userEvent.keyboard('Clarify the pricing{Enter}') })
-  expect(draft.items).toMatchObject([{ kind: 'file', path, startLine: 3, endLine: 3, text: 'selected', annotation: 'Clarify the pricing', number: 1 }])
-
-  expect(editor()).toBeNull()
-  expect(host.querySelector('[data-annotation-marker]')).toBeNull()
-  await act(async () => { await userEvent.click(host.querySelector('[data-composer-annotations] button')!) })
-  const remove = () => document.querySelector('button[aria-label="Delete annotation"],button[aria-label="删除批注"]')
-  await until('the saved file comment can be deleted', () => !!remove())
-  expect(document.querySelector('button[aria-label="Edit annotation"],button[aria-label="修改批注"]')).toBeNull()
-  await act(async () => { await userEvent.click(remove()!) })
-  expect(draft.items).toHaveLength(0)
-  await until('the empty attachment closes', () => !host.querySelector('[data-composer-annotations]'))
-  document.getSelection()?.removeAllRanges()
-  document.getSelection()?.addRange(range)
-  document.dispatchEvent(new Event('selectionchange'))
-  await until('the source can be selected again', () => document.querySelectorAll('.gg-file-cite-popup button').length === 2)
-  await act(async () => { await userEvent.click(document.querySelectorAll('.gg-file-cite-popup button')[1]!) })
-  await until('the new comment input is mounted', () => !!editor())
-  await act(async () => { await userEvent.keyboard('Use monthly totals{Enter}') })
-  expect(draft.items).toMatchObject([{ kind: 'file', path, startLine: 3, endLine: 3, text: 'selected', number: 2, annotation: 'Use monthly totals' }])
+  await until('sent into the chat', () => sendMessageToChat.mock.calls.length === 1)
+  // The cite as Cite makes it (a code file's lines whole, fenced; in a chat a computer's file by its path), then the line.
+  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> ```\n> selected words\n> ```\n\npricing\.txt \([^)]+\): \/home\/task\/docs\/pricing\.txt\n\nClarify the pricing$/))
+  await until('the line goes once sent', () => !editor())
 })

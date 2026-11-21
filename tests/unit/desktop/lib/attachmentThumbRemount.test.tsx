@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 聊天里的缩略图重新挂载(切会话回来、120 行窗口换回来)不再先等一次 file-resolve:同一个不可变来源在本次运行里只解析一次。
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
@@ -21,8 +21,8 @@ import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/s
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
 const revision = { sha256: 'a'.repeat(64), size_bytes: 3, content_type: 'image/png', source: 'managed-object', width: 4, height: 3 }
-function Thumb({ source }: { source: AttachmentSource }) {
-  const view = useAttachmentObjectUrl(source, 'thumb')
+function Thumb({ source, messageId }: { source: AttachmentSource; messageId?: string }) {
+  const view = useAttachmentObjectUrl(source, 'thumb', true, undefined, messageId)
   return createElement('span', { 'data-status': view.status })
 }
 const status = (harness: ReturnType<typeof createReactHarness>) => harness.container.querySelector('span')?.getAttribute('data-status')
@@ -58,5 +58,26 @@ describe('inline image thumbnails across remounts', () => {
     await harness.render(createElement(Thumb, { source: { kind: 'message', messageId: 'm-1' } })); await settle()
     await harness.render(createElement(Thumb, { source: { kind: 'item', itemId: 'i-1', version: 2 } })); await settle()
     expect(f.resolve).toHaveBeenCalledTimes(2)
+  })
+
+  it('takes down an unrelated image while the reused quote thumbnail loads its next source', async () => {
+    await harness.render(createElement(Thumb, { source: { kind: 'message', messageId: 'm-1' } })); await settle()
+    let finish!: (value: unknown) => void
+    f.resolve.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await harness.render(createElement(Thumb, { source: { kind: 'message', messageId: 'm-2' } }))
+    expect(status(harness)).toBe('loading')
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce()
+    await act(async () => finish({ status: 'ready', purpose: 'preview', revision, dispose: async () => {}, content: async () => new Blob(['next']) }))
+    await settle()
+  })
+
+  it('keeps pixels while the same sending message changes to its committed file source', async () => {
+    await harness.render(createElement(Thumb, { source: { kind: 'url', url: 'blob:sending' }, messageId: 'mine' })); await settle()
+    let finish!: (value: unknown) => void
+    f.resolve.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await harness.render(createElement(Thumb, { source: { kind: 'item', itemId: 'committed', version: 1 }, messageId: 'mine' }))
+    expect(status(harness)).toBe('ready')
+    await act(async () => finish({ status: 'ready', purpose: 'preview', revision, dispose: async () => {}, content: async () => new Blob(['next']) }))
+    await settle()
   })
 })

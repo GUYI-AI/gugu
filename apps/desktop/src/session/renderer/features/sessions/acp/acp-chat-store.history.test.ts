@@ -123,6 +123,63 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+describe('MCP detail reads after a lean page (#3327)', () => {
+  it.each(['newest', 'older'] as const)('keeps the %s page lean until its MCP row comes on screen, then fills only that turn', async place => {
+    const { store, internals } = makeStore();
+    const itemId = 'stored:turn:4:tool:mcp';
+    const held: TranscriptTurn = { ...turn('stored:turn:4', 4), items: [{ kind: 'mcp-tool-call', id: itemId, seq: 0,
+      toolCallId: 'mcp', title: 'lookup', server: 'fixture', tool: 'lookup', status: 'done', inputSummary: 'needle', held: true }] };
+    const full: TranscriptTurn = { ...held, items: [{ kind: 'mcp-tool-call', id: itemId, seq: 0, toolCallId: 'mcp',
+      title: 'lookup', server: 'fixture', tool: 'lookup', status: 'done', rawInput: '{"query":"needle"}', outputText: 'complete result' }] };
+    internals.session = null;
+    if (place === 'newest') { internals._storedHistoryTurns = [held]; internals._storedOrigins = ['native']; }
+    else { internals._olderSource = 'stored'; internals._olderHistoryTurns = [held]; }
+    store.chatState.transcript.history.seed([held]);
+    const bridge = window.electronAPI;
+    if (!bridge) throw new Error('test desktop bridge missing');
+    let resolveRead!: (page: StoredPage) => void;
+    const pending = new Promise<StoredPage>(resolve => { resolveRead = resolve; });
+    const read = vi.fn((_params: unknown) => pending);
+    // The first store also schedules integrations.list for the shared icon registry. Count only history reads,
+    // and keep that unrelated bridge response in its own shape.
+    vi.spyOn(bridge, 'invoke').mockImplementation((channel, ...args) =>
+      channel === 'sessions.getStoredHistory' ? read(args[0]) : Promise.resolve([]));
+    try {
+      expect(read).not.toHaveBeenCalled();
+      store.fillHeldTurn(itemId);
+      store.fillHeldTurn(itemId);
+      await vi.waitFor(() => expect(read).toHaveBeenCalledWith({
+        sessionId: store.sessionId, before: 5, limit: 1, lean: false,
+      }));
+      store.fillHeldTurn(itemId); // Repeated visibility while the same turn is still in flight.
+      expect(read).toHaveBeenCalledTimes(1);
+      resolveRead({ turns: [full], originTurnIds: ['native'], nextCursor: null });
+      await vi.waitFor(() => expect(store.chatState.transcript.state.committedTurns[0]!.items[0]).toMatchObject({
+        rawInput: '{"query":"needle"}', outputText: 'complete result',
+      }));
+      store.fillHeldTurn(itemId); // A filled row no longer needs a read.
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(internals.session).toBeNull();
+    } finally { store.dispose(); }
+  });
+
+  it('keeps the existing lean read for a folded non-MCP step', async () => {
+    const { store, internals } = makeStore();
+    const held: TranscriptTurn = { ...turn('stored:turn:3', 3), items: [{ kind: 'execute-tool-call', id: 'stored:turn:3:command',
+      seq: 0, toolCallId: 'command', title: '', status: 'done', held: true }] };
+    internals._olderSource = 'stored'; internals._olderHistoryTurns = [held];
+    const bridge = window.electronAPI;
+    if (!bridge) throw new Error('test desktop bridge missing');
+    const invoke = vi.spyOn(bridge, 'invoke').mockResolvedValue({ turns: [], originTurnIds: [], nextCursor: null });
+    try {
+      store.fillHeldTurn('stored:turn:3:command');
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('sessions.getStoredHistory', {
+        sessionId: store.sessionId, before: 4, limit: 1, lean: true,
+      }));
+    } finally { store.dispose(); }
+  });
+});
+
 describe('lazy tool pictures after the host closes the runtime', () => {
   it('reads the persisted original turn without restarting the stopped runtime', async () => {
     const { store, internals } = makeStore();

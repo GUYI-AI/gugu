@@ -17,7 +17,7 @@ const io = vi.hoisted(() => ({
   enrollSampleProject: vi.fn(async (_userId: string) => undefined),
 }))
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
-vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({ startFirstRunHints: io.startFirstRunHints, readFirstRunHints: vi.fn(async () => null), dismissFirstRunHints: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({ startFirstRunHints: io.startFirstRunHints, readFirstRunHints: vi.fn(async () => null), parseFirstRunHints: () => null, allFirstRunHintsDismissed: () => true, dismissFirstRunHints: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => ({ enrollSampleProject: io.enrollSampleProject }))
 const auth = vi.hoisted(() => ({ updateNickname: vi.fn(async () => ({ success: true })), updateAvatar: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: auth }))
@@ -185,6 +185,20 @@ describe('first run gate (#7348)', () => {
       await typeInto(name(), 'Neo')
       await render({ nickname: 'neo-renamed-elsewhere' })
       expect(name().value).toBe('Neo')
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  it('profile: a new account without an avatar shows its generated face before the identity directory is open', async () => {
+    io.readFirstRunProgress.mockResolvedValue({ stage: 'profile', occupation: null })
+    const harness = await renderGate()
+    try {
+      await waitForCondition(() => !!byTestId(harness.container, 'first-run-profile'), 'profile screen')
+      const profile = byTestId(harness.container, 'first-run-profile')!
+      // No identity directory bridge here (the IM store is not open yet on a first run): the account is a person anyway.
+      expect(profile.querySelector('[data-avatar-empty]')).toBeNull()
+      expect(profile.querySelector('img[alt="neo"]')).not.toBeNull()
     } finally {
       harness.cleanup()
     }

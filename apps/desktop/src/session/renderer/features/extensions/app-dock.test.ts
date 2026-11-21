@@ -17,7 +17,7 @@ const { appIsRunning, openApp, quitApp } = await import('./app-dock');
 const { appPlacementStore } = await import('./app-placement-store');
 const { appState } = await import('@renderer/lib/stores/app-state');
 const { extensionViewStore } = await import('./extension-view-store');
-const { installedExtensionsStore } = await import('./installed-extensions-store');
+const { peekInstalledApps, installedExtensions } = await import('./installed-extensions');
 const { screenLayout } = await import('@renderer/app/screen-layout');
 
 const app = (id: string, more: Record<string, unknown> = {}, tab: Record<string, unknown> = {}) => ({
@@ -31,7 +31,7 @@ const app = (id: string, more: Record<string, unknown> = {}, tab: Record<string,
 });
 
 function install(extensions: unknown[], disabled: string[] = []): void {
-  installedExtensionsStore.applyList({ extensions, invalid: [], icons: {}, disabled, disclosure: {} } as never);
+  installedExtensions.set(['local'], { extensions, invalid: [], icons: {}, disabled, disclosure: {} } as never);
 }
 
 // The rail's dock only needs a box for the page to be placed over; nothing here lays one out.
@@ -40,44 +40,44 @@ const slot = (tabId: string) => ({ tabId, element: {} as HTMLElement });
 describe('左栏「开着」的小点 (#7050)', () => {
   it('声明了后台的 App,启用着就在跑;停用就不跑', () => {
     install([app('timer', { background: { entry: 'bg.html' } })]);
-    expect(appIsRunning('timer')).toBe(true);
+    expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(true);
     install([app('timer', { background: { entry: 'bg.html' } })], ['timer']);
-    expect(appIsRunning('timer')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(false);
   });
 
   it('没有后台的 App:有页活着才算开着 —— 看过之后藏起来的页也算,页销毁了就不算', () => {
     install([app('notes')]);
-    expect(appIsRunning('notes')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'notes')).toBe(false);
 
     const token = extensionViewStore.claim('notes.main', slot('dock'));
-    expect(appIsRunning('notes')).toBe(true);
+    expect(appIsRunning(peekInstalledApps('local')!, 'notes')).toBe(true);
     extensionViewStore.setSurface(token, 7);
     extensionViewStore.release('notes.main', token);
-    expect(appIsRunning('notes')).toBe(true);
+    expect(appIsRunning(peekInstalledApps('local')!, 'notes')).toBe(true);
 
     extensionViewStore.forgetOpened('notes.main');
-    expect(appIsRunning('notes')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'notes')).toBe(false);
   });
 
   it('一次都没画出来就被放下的页不留,也就不算开着', () => {
     install([app('draft')]);
     const token = extensionViewStore.claim('draft.main', slot('dock'));
     extensionViewStore.release('draft.main', token);
-    expect(appIsRunning('draft')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'draft')).toBe(false);
   });
 
   it('为一个文件开的页也算开着,关掉就不算', () => {
     install([app('board', {}, { opensFiles: { chat: ['.board.json'] } })]);
     const token = extensionViewStore.claim('board.main', { ...slot('file'), chatId: 'c1', itemId: 'i1' });
-    expect(appIsRunning('board')).toBe(true);
+    expect(appIsRunning(peekInstalledApps('local')!, 'board')).toBe(true);
     extensionViewStore.release('board.main', token);
-    expect(appIsRunning('board')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'board')).toBe(false);
   });
 
   it('别的 App 的页不算它的', () => {
     install([app('a'), app('b')]);
     const token = extensionViewStore.claim('a.main', slot('dock'));
-    expect(appIsRunning('b')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'b')).toBe(false);
     extensionViewStore.release('a.main', token);
   });
 });
@@ -100,10 +100,10 @@ describe('左栏「退出」(#7050)', () => {
 
   it('退出了的 App,后台不算在跑;它的页再被要(主进程说它不再是退出的)就又算', () => {
     install([app('timer', { background: { entry: 'bg.html' } })]);
-    installedExtensionsStore.applyQuit(['timer']);
-    expect(appIsRunning('timer')).toBe(false);
-    installedExtensionsStore.applyQuit([]);
-    expect(appIsRunning('timer')).toBe(true);
+    installedExtensions.set(['local'], (list) => list && ({ ...list, quit: ['timer'] }));
+    expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(false);
+    installedExtensions.set(['local'], (list) => list && ({ ...list, quit: [] }));
+    expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(true);
   });
 
   it('收掉它在会话里那一格、离开它的整页、告诉主进程,再销毁藏着活的页;还在屏上的页留着', async () => {
@@ -122,13 +122,13 @@ describe('左栏「退出」(#7050)', () => {
     expect(appPlacementStore.of('timer.main')).toBeUndefined();
     expect(appState.navigation.currentViewId).not.toBe('app');
     expect(rpc.extensions.quit).toHaveBeenCalledWith({ extensionId: 'timer' });
-    expect(installedExtensionsStore.quit).toEqual(['timer']);
+    expect(peekInstalledApps('local')?.quit).toEqual(['timer']);
     expect([...extensionViewStore.residentPages.values()].map((page) => page.place)).toEqual(['chat:c1:tab:b']);
     // Still drawn somewhere, so still open: the dot stays until that place goes too.
-    expect(appIsRunning('timer')).toBe(true);
+    expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(true);
     extensionViewStore.release('timer.main', onScreen);
     extensionViewStore.forgetOpened('timer.main');
-    expect(appIsRunning('timer')).toBe(false);
+    expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(false);
   });
 
   it('主进程不肯退出就告诉调用方(左栏据此提示「没能退出」)', async () => {
@@ -144,7 +144,7 @@ describe('右键「App」列出来的 App (#7050)', () => {
       [app('zeta'), app('off'), app('files', {}, { opensFiles: { chat: ['.x.json'] } }), app('alpha')],
       ['off']
     );
-    expect(installedExtensionsStore.openableApps.map((entry) => entry.extensionId)).toEqual(['zeta', 'alpha']);
+    expect(peekInstalledApps('local')!.openableApps.map((entry) => entry.extensionId)).toEqual(['zeta', 'alpha']);
   });
 });
 

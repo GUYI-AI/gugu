@@ -5,6 +5,7 @@ import {
   upsertGitHubAccount,
   type GitHubAccount,
   type GitHubAccountStore,
+  type GitHubTokenVault,
 } from '../accounts/github-accounts';
 import type { GitHubIdentityClient } from './github-identity-client';
 
@@ -39,7 +40,8 @@ export class GitHubDeviceFlowService {
 
   constructor(
     private readonly deps: {
-      accountStore: Pick<GitHubAccountStore, 'upsertAccount'>;
+      accountStore: Pick<GitHubAccountStore, 'upsertAccount' | 'getAccount' | 'relocateSecret'>;
+      tokens: GitHubTokenVault;
       identityClient: Pick<GitHubIdentityClient, 'getAuthenticatedUser'>;
       events: DeviceFlowEvents;
       createDeviceAuth: DeviceAuthFactory;
@@ -92,7 +94,7 @@ export class GitHubDeviceFlowService {
           login: user.login,
           avatarUrl: user.avatar_url,
         },
-      });
+      }, this.deps.tokens);
 
       return { success: true, user, account };
     } catch (error) {

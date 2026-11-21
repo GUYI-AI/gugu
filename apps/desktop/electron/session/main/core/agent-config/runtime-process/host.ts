@@ -185,6 +185,8 @@ export async function clearAgentAuthExpired(providerId: string, sessionId?: stri
 export async function disposeAgentConfigRuntimeProcess(): Promise<void> {
   rendererWireDispose?.();
   rendererWireDispose = null;
+  const { releaseNativeCodexAuthSources } = await import('@main/core/agents/codex-native-auth-source');
+  await releaseNativeCodexAuthSources();
   await agentConfigWorker.dispose();
 }
 
@@ -211,7 +213,7 @@ export function withHostResolvedCli(
     });
   return {
     ...client,
-    scanAgentHomes: ({ providerIds, upgradedOnly }) => connectionOperation(() => scanAgentHomes(providerIds, upgradedOnly)),
+    scanAgentHomes: ({ providerIds, upgradedOnly, firstInstallOnly }) => connectionOperation(() => scanAgentHomes(providerIds, upgradedOnly, firstInstallOnly)),
     importAgentHome: ({ providerId, groups, skip }) => connectionOperation(() => importHarnessHome(providerId, groups, skip)),
     diffAgentHome: ({ providerId }) => connectionOperation(() => diffHarnessHome(providerId)),
     reimportAgentHome: ({ providerId, decisions }) => connectionOperation(() => reimportHarnessHome(providerId, decisions)),
@@ -219,7 +221,7 @@ export function withHostResolvedCli(
       try {
         if (input.providerId && !listPlugins().some((provider) => provider.metadata.id === input.providerId)) return err({ type: 'unknown-provider' as const, providerId: input.providerId });
         if (input.providerId) await localDependencyManager.probe(input.providerId, { waitForInstallations: true });
-        else await localDependencyManager.probeCategory('agent', { refreshShellEnv: input.refreshShellEnv });
+        else await localDependencyManager.probeCategory('agent');
         return client.syncHostDependencyLedger(await hostDependencyInventory());
       } catch (error) {
         return err({ type: 'invalid-state' as const, message: String(error) });

@@ -8,6 +8,7 @@
  *    本机任务不在眼前时 tab 也照样落进它的面板,人回来就看见(open-file-in-file-editor 的 when(viewModel))。
  *    ❌ 让 agent 干等 10 秒超时 —— 那正是 owner 在 d22 上撞到的「等待任务面板打开超时」。
  *  · 浏览器格只有远程 SSH 装上的机器有:看着的桌面都没有这一格 ⇒ 当场失败并说清楚,❌ 攒一个永远开不出来的请求。
+ *  · 网页(`external`)不攒:没人看着、推出去的桌面走了或没回话 ⇒ 当场失败,网址交还给程序(见 open)。
  *
  * 攒着的有界(每条会话最多 `MAX_QUEUED_PER_SESSION` 条、全机最多 `MAX_QUEUED_SESSIONS` 条会话、
  * 一天没人来就丢),同一目标重复开只留最后一次;只在内存里 —— server 重启就丢,那时 agent 那一轮早已结束。
@@ -32,8 +33,8 @@ export const QUEUED_TTL_MS = 24 * 60 * 60_000;
  *  · `no_browser`      看着这条会话的桌面上没有浏览器格(那台机器只经远程隧道连着);
  *  · `open_failed`     桌面开的时候出错了;
  *  · `viewer_outdated` 看着的桌面有浏览器格,但版本太旧,渲染不了这台机器上的 `file:` 网页;
- *  · `viewer_timeout`  推出去了,10 秒没有一台桌面回话(只剩在单测里:真跑时攒着,见 open);
- *  · `no_viewer`       要在人那一侧开网页,却认不出是哪条会话、此刻也没有一台桌面看着这台机器。
+ *  · `viewer_timeout`  推出去了,10 秒没有一台桌面回话(只有网页这样报:别的攒着,见 open);
+ *  · `no_viewer`       要在人那一侧开网页,此刻却没有桌面看着这条会话(不属于任何会话的进程也是这一格)。
  */
 export type RemotePaneErrorCode = 'no_browser' | 'viewer_outdated' | 'open_failed' | 'viewer_timeout' | 'no_viewer';
 
@@ -56,7 +57,7 @@ export function describeRemotePaneFailure(code: RemotePaneErrorCode): string {
     case 'viewer_timeout':
       return 'the Gugu window showing this session did not confirm within 10s, so the tab may not have opened. Tell the person the path or URL in your reply.';
     case 'no_viewer':
-      return 'no Gugu window is showing this machine right now, so the page could not be opened on the person\'s computer. Tell the person the URL.';
+      return 'no Gugu window is showing this session right now, so the page could not be opened on the person\'s computer. Tell the person the URL.';
   }
 }
 
@@ -113,7 +114,7 @@ type Viewer = {
   tabs: boolean;
   /** Opens App tabs a program here asks for (older desktops do not). */
   apps: boolean;
-  /** 最后一次订上 / 保活的时刻:这台机器上的程序要开网页、又认不出是哪条会话时,交给最近还活着的那台桌面。 */
+  /** 最后一次订上 / 保活的时刻:列 / 关页签只问最近还活着的那一台。 */
   seenAt: number;
   publish: (event: SessionpagePaneOpenEvent) => void;
 };
@@ -150,7 +151,6 @@ export type RemotePaneRoute = ReturnType<typeof createRemotePaneRoute>;
 function sameTarget(a: SessionpagePaneTarget, b: SessionpagePaneTarget): boolean {
   if (a.kind === 'file' && b.kind === 'file') return a.path === b.path;
   if (a.kind === 'browser' && b.kind === 'browser') return a.url === b.url;
-  if (a.kind === 'external' && b.kind === 'external') return a.url === b.url;
   if (a.kind === 'app-tab' && b.kind === 'app-tab') return a.tabKind === b.tabKind;
   return false;
 }
@@ -194,15 +194,6 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
       return true;
     }
     return false;
-  };
-
-  /** 这台机器上最近还活着的、接得住这一格的那台桌面(看着哪条会话都行)。 */
-  const freshestCapable = (target: SessionpagePaneTarget): Viewer | null => {
-    let best: Viewer | null = null;
-    for (const viewer of viewers.values()) {
-      if (canOpen(viewer, target) && (!best || viewer.seenAt > best.seenAt)) best = viewer;
-    }
-    return best;
   };
 
   const dropViewerFromWaiters = (subscriptionId: string) => {
@@ -298,7 +289,7 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
     ): Promise<RemotePaneOutcome> {
       signal?.throwIfAborted();
       const request: SessionpagePaneOpenRequest = { requestId: newId(), sessionId, target, intent };
-      let watching = viewersOf(sessionId);
+      const watching = viewersOf(sessionId);
       let capable = watching.filter((viewer) => canOpen(viewer, target));
       const managing = target.kind === 'tabs' || target.kind === 'close-tab';
       if (managing) {
@@ -308,16 +299,6 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
         capable = [capable.sort((a, b) => b.seenAt - a.seenAt)[0]!];
       }
 
-      if (target.kind === 'external' && capable.length === 0) {
-        // 这台机器上的程序要在人那一侧开网页(照 VS Code 远端的 $BROWSER):看着这条会话的桌面接不住,
-        // 就交给最近还看着这台机器的那一台 —— 人在那儿;它按自己在看的会话开(requestId 不变)。
-        const fallback = freshestCapable(target);
-        if (fallback) {
-          request.sessionId = fallback.sessionId;
-          watching = [fallback];
-          capable = [fallback];
-        }
-      }
       if (watching.length > 0 && capable.length === 0) {
         // 有浏览器格、只是太旧渲染不了这台机器上的网页 ⇒ 说「旧」,❌ 说「没有浏览器」让 agent 以为这台机器连不了网页。
         const outdated =
@@ -326,7 +307,8 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
       }
       if (watching.length === 0) {
         if (target.kind === 'browser' && browserSeen === 'none') throw new RemotePaneError('no_browser');
-        if (!sessionId) throw new RemotePaneError('no_viewer');
+        // 网页(`external`)❌ 攒:要开它的程序此刻活着(登录器等着回跳),攒到下次有人打开会话时它早已退出。
+        if (!sessionId || target.kind === 'external') throw new RemotePaneError('no_viewer');
         enqueue(request);
         return { queued: true };
       }
@@ -363,10 +345,11 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
       if (outcome.ok) return { opened: true, ...(outcome.tabs ? { tabs: outcome.tabs } : {}), ...(outcome.closed === undefined ? {} : { closed: outcome.closed }) };
       if (managing) throw new Error(outcome.error ?? (outcome.code === 'left' ? 'The Gugu window showing this task disconnected.' : describeRemotePaneFailure(outcome.code)));
       if (outcome.code === 'left') {
+        if (target.kind === 'external') throw new RemotePaneError('no_viewer');
         enqueue(request);
         return { queued: true };
       }
-      if (outcome.code === 'viewer_timeout') {
+      if (outcome.code === 'viewer_timeout' && target.kind !== 'external') {
         // #6264 推出去了、没人回话:桌面多半合盖睡着了(订阅要 90 秒 + 清扫才拆)。攒着 —— 它醒来的下一次保活
         // (touch)或下一台打开会话时补开;迟到的回话会把它从攒着的里拿掉(ack)。
         log('pane open unconfirmed, queued', { requestId: request.requestId, sessionId: request.sessionId });

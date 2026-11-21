@@ -8,6 +8,7 @@
  * 一格里贴同一张纹理的几片攒成一次绘制:本体和它的刚体部件、接触阴影拼在一张图集里(loadCharacter),
  * 一只鸟一格只画一次 —— 每次绘制在 GPU 进程里都有固定开销(实测一片一画一次:10 只空闲头像的 GPU 进程多 1.4 CPU 秒/分)。
  */
+import { imageLoaded } from '@/lib/imageLoaded'
 import { rendererLogger } from '@/lib/log'
 import type { Character, Pack } from './characters'
 import type { Rgb } from './identity'
@@ -251,8 +252,7 @@ export class GuguGL {
   private async decode(id: string, url: string, size: { w: number; h: number }): Promise<ImageBitmap> {
     // 走 <img> 解码而不是 fetch：素材与页面同源，img 不受 connect-src 约束，file:// / 自定义协议下都能读
     const img = new Image()
-    img.src = url
-    await img.decode()
+    await imageLoaded(img, url)
     // ImageBitmap 会无视 UNPACK_PREMULTIPLY_ALPHA，必须在创建位图时就预乘，否则边缘按直通色当预乘色混合会出白边
     const bmp = await createImageBitmap(img, {
       premultiplyAlpha: 'premultiply',

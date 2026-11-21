@@ -1,13 +1,12 @@
 import type { ChatComposerProps, MentionItem } from '@gugu/session-ui/react/components';
 import { Avatar } from '@/components/Avatar';
 import { useAvatarIdentity } from '@/lib/avatarIdentity';
-import {
-  agentCreationToolsFromDescriptors,
-  LOCAL_AGENT_CREATION_TOOLS,
-  type AgentCreationToolDescriptor,
-  type LocalAgentCreationTool,
-} from '@/lib/agentCreationTools';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { loadLocalAgentCreationTools, type LocalAgentCreationTool } from '@/lib/agentCreationTools';
+import { replica, useReplica } from '@/lib/replica';
+import { platform } from '@/platform';
+import { events } from '@renderer/lib/ipc';
+import { agentCapabilitiesChangedChannel } from '@shared/core/agents/agentEvents';
+import { useCallback, useMemo } from 'react';
 
 type RenderMentionIcon = NonNullable<ChatComposerProps['renderMentionIcon']>;
 
@@ -18,42 +17,26 @@ function MentionAvatar({ id, name, role }: { id: string; name: string; role?: Me
     isAgent={role ? role === 'agent' : undefined} size={14} harnessBadge={false} still />;
 }
 
+/** The agent tools this computer can create agents with (web and mobile have the static catalog). */
+export const agentCreationTools = replica({
+  name: 'agentCreationTools',
+  scope: 'device',
+  read: () => loadLocalAgentCreationTools(platform),
+  fresh: 5 * 60_000,
+  watch: { start: () => events.on(agentCapabilitiesChangedChannel, () => { void agentCreationTools.refresh(); }) },
+});
+
+
 /** The provider and initial task composer share the same Electron tool catalog. */
 export function useSessionAgentCreationTools(): {
-  tools: readonly LocalAgentCreationTool[];
-  error: string | null;
-  byEngine: ReadonlyMap<string, LocalAgentCreationTool>;
+  /** The catalog by engine; null until main answers (or unreadable): no @-mention entry for creating an agent yet. */
+  byEngine: ReadonlyMap<string, LocalAgentCreationTool> | null;
   renderMentionIcon: RenderMentionIcon;
 } {
-  const [tools, setTools] = useState<readonly LocalAgentCreationTool[]>(() =>
-    typeof window !== 'undefined' && window.electronAPI ? [] : LOCAL_AGENT_CREATION_TOOLS,
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const electron = typeof window !== 'undefined' ? window.electronAPI : undefined;
-    const load = electron?.getAgentCreationTools
-      ? electron
-          .getAgentCreationTools()
-          .then((raw) => agentCreationToolsFromDescriptors(raw as AgentCreationToolDescriptor[]))
-      : Promise.resolve(LOCAL_AGENT_CREATION_TOOLS);
-    let active = true;
-    void load
-      .then((next) => {
-        if (!active) return;
-        setTools(next);
-        setError(null);
-      })
-      .catch((reason: unknown) => {
-        if (active) setError(reason instanceof Error ? reason.message : String(reason));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const byEngine = useMemo(() => new Map<string, LocalAgentCreationTool>(tools.map((tool) => [tool.engine, tool])), [tools]);
+  const reading = useReplica(agentCreationTools, []);
+  const tools = reading.state === 'value' ? reading.value : null;
+  const byEngine = useMemo(() => (tools ? new Map<string, LocalAgentCreationTool>(tools.map((tool) => [tool.engine, tool])) : null), [tools]);
   const renderMentionIcon = useCallback<RenderMentionIcon>(({ id, label, name, kind, role }) =>
     kind === 'custom' ? <MentionAvatar id={id} name={name ?? label} role={role} /> : null, []);
-  return { tools, error, byEngine, renderMentionIcon };
+  return { byEngine, renderMentionIcon };
 }

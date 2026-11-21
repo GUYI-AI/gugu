@@ -22,7 +22,8 @@ import { registeredViews } from '@renderer/lib/layout/registered-views';
 import type { ViewDefinition } from './view-registry';
 import { useRecentSessions, type SessionParams } from './recent-session-pages';
 import { ScreenBlockContext } from './screen-block-context';
-import { anchoredToBlock, BlockDropPreviewLayer, ScreenFrame, screenDropHandlers } from './screen-frame';
+import { anchoredToBlock, ScreenFrame, screenDropHandlers } from './screen-frame';
+import { DropHighlightLayer, hideDropHighlight } from '@renderer/lib/drop-highlight';
 import { hasDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
 import { screenLayout } from './screen-layout';
@@ -125,7 +126,10 @@ const ScreenArea = observer(function ScreenArea({
       shieldNativeDrags(
         document,
         hasDraggedScreenContent,
-        () => setBlockDropPreview(null)
+        () => {
+          setBlockDropPreview(null);
+          hideDropHighlight();
+        }
       ),
     []
   );
@@ -159,7 +163,7 @@ const ScreenArea = observer(function ScreenArea({
         );
       })}
       {onSessionView && !screenLayout.layout && currentWindow ? <InWindowNotice windowId={currentWindow.id} /> : null}
-      {onSessionView ? <BlockDropPreviewLayer /> : null}
+      <DropHighlightLayer />
       {children}
     </div>
   );

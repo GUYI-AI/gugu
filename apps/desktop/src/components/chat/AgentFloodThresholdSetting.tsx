@@ -20,11 +20,8 @@ import type { CSSProperties } from 'react'
 import { useReplica } from '../../lib/replica'
 import { groupSettings, writeGroupSettings } from './useGroupChatSettings'
 import { Unknown } from '../ui/Unknown'
-import { rendererLogger } from '../../lib/log'
 import { useToast } from '../toastContext'
 import { parseAgentFloodThresholdDraft } from './agentFloodThresholdModels'
-
-const floodLog = rendererLogger('chat/agent-flood-threshold')
 
 const ROW_STYLE: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16,
@@ -68,7 +65,6 @@ export function AgentFloodThresholdSetting({
   }, [chatId, revision])
   const settings = reading.state === 'value' ? reading.value : null
   // ❌ 不静默:读不到就说读不到,失败本身也留在日志里。
-  useEffect(() => { if (reading.state === 'error') floodLog.error({ error: reading.error, chatId }, 'agent flood threshold load failed') }, [reading, chatId])
   const failed = reading.state === 'error' ? messageForUser(reading.error) : ''
   const editable = settings?.can_manage === true
   const value = settings ? settings.agent_flood_threshold : null

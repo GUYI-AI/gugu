@@ -27,6 +27,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
 import { wireReadingZoom } from './preview/image-reading-zoom'
+import { usesPhoneFlight, wirePhoneFlight } from './preview/image-viewer-phone-flight'
 import {
   decodedSizeOf,
   downloadNameFor,
@@ -127,7 +128,8 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     dataSource: request.items.map(slideFor),
     index: request.index,
     mainClass: 'gg-image-viewer',
-    showHideAnimationType: 'zoom',
+    // 手机上开、关、下拉由 image-viewer-phone-flight 画(#3311),PhotoSwipe 自己瞬开瞬关
+    showHideAnimationType: usesPhoneFlight(mobile, request.items[request.index]) ? 'none' : 'zoom',
     showAnimationDuration: DUR_SLOW_MS,
     hideAnimationDuration: DUR_SLOW_MS,
     zoomAnimationDuration: DUR_SLOW_MS,
@@ -207,8 +209,13 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   pswp.on('openingAnimationEnd', upgradeAround)
   pswp.on('change', upgradeAround)
   // A slide with no pixels yet (its bytes are being read) is not loaded: an <img> without a source is drawn broken.
+  // @@@unsized-first-frame - PhotoSwipe puts the current slide's <img> on screen before it loads, in the placeholder box
+  // (the whole viewport when the size is unknown): its first pixels would paint stretched to that box until `loadComplete`
+  // below sets the real one. Such an image stays invisible until then.
   pswp.on('contentLoadImage', (event) => {
-    if (!event.content.data.src) event.preventDefault()
+    const { content } = event
+    if (!(content.data as ViewerSlide).sizeKnown && content.element) content.element.style.visibility = 'hidden'
+    if (!content.data.src) event.preventDefault()
   })
   // Nor is a placeholder box drawn for it: until its pixels come, the slide is the viewer's own background.
   pswp.addFilter('useContentPlaceholder', (use, content) => use && Boolean(content.data.src || content.data.msrc))
@@ -216,7 +223,10 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
+    if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof HTMLImageElement)) return
+    // Shown from here on (@@@unsized-first-frame): in its real box set below, in this same task, or as it is when it has none.
+    img.style.visibility = ''
+    if (!img.naturalWidth || !img.naturalHeight) return
     const size = data.item.size ?? { width: img.naturalWidth, height: img.naturalHeight }
     data.width = content.width = size.width
     data.height = content.height = size.height
@@ -431,6 +441,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           if (disposed) return
           const { t: translate, mobile: isMobile } = latest.current
           const pswp = new PhotoSwipeCtor(viewerOptions(request, isMobile, translate('shell.imagePreview.loadFailed')))
+          if (usesPhoneFlight(isMobile, request.items[request.index])) wirePhoneFlight(pswp, request.items, request.index)
           wireViewer(pswp, translate('shell.imagePreview.dialog'), (item, error) => {
             const target = item.resource?.target
             void (async () => {
@@ -536,12 +547,15 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onCloseCapture, { capture: true })
   }, [openPswp, editing, isTopLayer, viewer])
 
+  // @@@edit-no-flash - until the editor can show the picture, the viewer stays as it was: its chrome while the editor's code
+  // loads, its picture under the editor's loading page until that page is due (annotate.css `.ia-loading`).
+  const chrome = viewer ? <ImageViewerChrome viewer={viewer} mobile={mobile} onEdit={() => setEditing(viewer.items[viewer.index])} /> : null
   return (
     <>
       {children}
-      {viewer ? createPortal(editing ? <Suspense fallback={<div role="status">{t('imageAnnotate.loading')}</div>}>
+      {viewer ? createPortal(editing ? <Suspense fallback={chrome}>
         <UiPortalContainerProvider value={viewer.root}><AnnotateEditor item={editing} imageBounds={imageBounds} mobile={mobile} onCancel={() => setEditing(null)} onDone={() => viewer.pswp.close()} /></UiPortalContainerProvider>
-      </Suspense> : <ImageViewerChrome viewer={viewer} mobile={mobile} onEdit={() => setEditing(viewer.items[viewer.index])} />, viewer.root) : null}
+      </Suspense> : chrome, viewer.root) : null}
     </>
   )
 }

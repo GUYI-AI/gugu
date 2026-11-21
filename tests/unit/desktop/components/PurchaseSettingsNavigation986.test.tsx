@@ -17,9 +17,9 @@ vi.mock('@/platform', async original => {
   return { ...actual, platform: { ...actual.platform, get kind() { return state.kind } } }
 })
 vi.mock('@gugu/core/cloud/optionalServices', async original => ({ ...await original<object>(), cloudComputerEnabled: () => true }))
-vi.mock('@/lib/billing/membership', () => ({ getMembership: async () => ({ tier: 'free', expiresAt: null }) }))
+vi.mock('@/lib/billing/useSpendingPower', async (original) => ({ ...await original<object>(), refreshSpendingPower: () => undefined, useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: { tier: 'free' } } : { state: 'unknown', membership: null }) }))
 vi.mock('@/lib/firstRun', async original => ({ ...await original<object>(), takeAssistantStartAtHome: () => true, readOccupation: async () => null }))
-vi.mock('@/lib/cloudComputerStore', async original => ({ ...await original<object>(), wakeCloudComputer: state.wake }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), wakeCloudComputer: state.wake }))
 
 const { AssistantOnboarding } = await import('@/components/assistant/AssistantOnboarding')
 const { AssistantMoveGroup } = await import('@/components/assistant/AssistantMoveGroup')
@@ -66,7 +66,7 @@ it.each(['electron', 'capacitor'] as const)('onboarding membership action reache
 
 it.each(['electron', 'capacitor'] as const)('expired assistant membership renewal reaches the credit card on %s', async kind => {
   state.kind = kind
-  await render(<AssistantMoveGroup ownerUserId="purchase-986" assistantId="assistant" assistantName="Gugu" home={{ kind: 'cloud', deviceId: 'cloud' }} localDeviceId={null} cloudAvailable />)
+  await render(<AssistantMoveGroup ownerUserId="purchase-986" assistantId="assistant" assistantName="Gugu" home={{ kind: 'cloud', deviceId: 'cloud' }} localDeviceId={null} cloud={{ state: 'value', value: { available: true, snapshot: {} }, stale: false, error: null } as never} />)
   await until('renew action is ready', () => !!document.querySelector('[data-testid="assistant-move-renew"]'))
   await clickElement(button('assistant-move-renew'))
   expect(destinations).toEqual([kind === 'capacitor' ? 'account' : 'subscriptions'])

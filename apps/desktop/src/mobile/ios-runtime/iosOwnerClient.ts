@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { Capacitor, registerPlugin } from '@capacitor/core'
 
 export interface IOSOwnerBinding {
@@ -31,11 +32,11 @@ export function iosOwnerAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('GuguIOSOwner')
 }
 function requireNative(ownerId: string): void {
-  if (!iosOwnerAvailable()) throw new IOSOwnerClientError('unavailable', '此安装包暂未提供本机身份核验。')
+  if (!iosOwnerAvailable()) throw new IOSOwnerClientError('unavailable', mobileWorkspaceText('ios.ownerUnavailable'))
   if (!UUID.test(ownerId)) throw invalidReply()
 }
 function invalidReply(): IOSOwnerClientError {
-  return new IOSOwnerClientError('invalid_native_reply', '未读到有效的本机身份，请重新核验。')
+  return new IOSOwnerClientError('invalid_native_reply', mobileWorkspaceText('ios.ownerInvalid'))
 }
 function bindingReply(value: unknown, ownerId: string): IOSOwnerBinding | null {
   if (!value || typeof value !== 'object') throw invalidReply()

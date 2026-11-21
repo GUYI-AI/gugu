@@ -126,23 +126,114 @@ it('icon and label sit in the vertical middle of each tab', async () => {
   await page.screenshot({ path: 'phone-tabbar-chats.png' })
 })
 
-it('tapping a tab slides the selection over a short transition, never while swiping, and not under reduced motion', async () => {
+it('tapping a tab runs the liquid capsule animation (#3310), never while swiping, and not under reduced motion', async () => {
   const { barRef, items } = await mountBar('dark')
   const pill = () => getComputedStyle(document.querySelector('.gg-phone-nav-destinations')!, '::before')
   expect(Number.parseFloat(pill().transitionDuration), 'a swipe writes the position every frame: no transition to lag the finger').toBe(0)
+  expect(pill().animationName, 'nothing animates on top of a swipe either').toBe('none')
   items[1]!.click()
   await until('the second tab is current', () => items[1]!.getAttribute('aria-current') === 'page')
-  expect(barRef.current!.hasAttribute('data-tab-switching')).toBe(true)
-  expect(pill().transitionProperty).toContain('transform')
-  expect(Number.parseFloat(pill().transitionDuration)).toBeGreaterThan(0)
+  expect(barRef.current!.getAttribute('data-tab-switching')).toBe('forward')
+  expect(pill().animationName).toBe('gg-phone-nav-liquid-forward')
+  const duration = Number.parseFloat(pill().animationDuration) * 1000
+  expect(duration).toBeGreaterThan(0)
   expect(getComputedStyle(items[1]!).transitionProperty).toContain('color')
-  await until('the transition window closes', () => !barRef.current!.hasAttribute('data-tab-switching'))
+  // 动画到四成:朝目标那条边已到目标格,另一条边还没走,胶囊横跨两格、略压扁。
+  const liquid = document.getAnimations().find((a): a is CSSAnimation => a instanceof CSSAnimation && a.animationName === 'gg-phone-nav-liquid-forward')
+  expect(liquid, 'the capsule animation is running').toBeDefined()
+  liquid!.pause()
+  liquid!.currentTime = duration * 0.4
+  const [stretchX, stretchY] = pill().scale.split(' ').map(Number.parseFloat)
+  expect(stretchX, 'halfway the capsule covers both tabs').toBeGreaterThan(1.8)
+  expect(stretchY, 'and gets a little flatter').toBeLessThan(1)
+  liquid!.play()
+  await until('the animation window closes', () => !barRef.current!.hasAttribute('data-tab-switching'))
+  expect(pill().animationName).toBe('none')
   await page.screenshot({ path: 'phone-tabbar-contacts.png' })
+
+  items[0]!.click()
+  await until('the first tab is current again', () => items[0]!.getAttribute('aria-current') === 'page')
+  expect(barRef.current!.getAttribute('data-tab-switching')).toBe('back')
+  expect(pill().animationName).toBe('gg-phone-nav-liquid-back')
+  await until('the animation window closes', () => !barRef.current!.hasAttribute('data-tab-switching'))
 
   const motionRules = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
     .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && [...rule.cssRules].some((inner) => inner.cssText.includes('data-tab-switching')))
   expect(motionRules.length).toBeGreaterThan(0)
   for (const rule of motionRules) expect(rule.conditionText).toContain('prefers-reduced-motion: no-preference')
+})
+
+// #3310 真界面对照:动画跑到一半又点回去,胶囊曾一帧跳回整格(量到 0.95 格);原型里两条边是弹簧,接着当前位置走。
+it('tapping the other tab mid-animation carries on from where the capsule is, without a jump', async () => {
+  const { items } = await mountBar('dark')
+  const nav = document.querySelector<HTMLElement>('.gg-phone-nav-destinations')!
+  // 以格为单位、相对第 0 格:左沿 = 目标格 + translate,宽 = scale X(原点在目标格左沿,见 phone-look.css)。
+  const edges = () => {
+    const pill = getComputedStyle(nav, '::before')
+    const index = Number(getComputedStyle(nav).getPropertyValue('--phone-nav-selected-index'))
+    const left = index + (pill.translate === 'none' ? 0 : Number.parseFloat(pill.translate) / 100)
+    return { left, width: pill.scale === 'none' ? 1 : Number.parseFloat(pill.scale) }
+  }
+  const liquid = (name: string) => document.getAnimations().find((a): a is CSSAnimation => a instanceof CSSAnimation && a.animationName === name)!
+  items[1]!.click()
+  await until('the second tab is current', () => items[1]!.getAttribute('aria-current') === 'page')
+  const forward = liquid('gg-phone-nav-liquid-forward')
+  forward.pause()
+  forward.currentTime = Number(forward.effect!.getComputedTiming().duration) * 0.4
+  const before = edges()
+  expect(before.width, 'stretched over both tabs').toBeGreaterThan(1.8)
+  items[0]!.click()
+  await until('the first tab is current again', () => items[0]!.getAttribute('aria-current') === 'page')
+  const back = liquid('gg-phone-nav-liquid-back')
+  back.pause()
+  back.currentTime = 0
+  const after = edges()
+  expect(after.left).toBeCloseTo(before.left, 2)
+  expect(after.width).toBeCloseTo(before.width, 2)
+  back.play()
+  await until('the animation window closes', () => !nav.closest('nav')!.hasAttribute('data-tab-switching'))
+  // 停稳后再点,起点又是整整一格(上一次的接续起点不残留)。
+  items[1]!.click()
+  await until('the second tab is current', () => items[1]!.getAttribute('aria-current') === 'page')
+  const fresh = liquid('gg-phone-nav-liquid-forward')
+  fresh.pause()
+  fresh.currentTime = 0
+  expect(edges()).toEqual({ left: 0, width: 1 })
+})
+
+// #3310 真界面对照:安卓 WebView 点完一格,:hover 粘在那一格上,ghost 按钮的悬停底(4% 白)铺在目标格,
+// 胶囊拉长时叠出两截颜色。触屏(hover: none)上底栏格子不留悬停底;有鼠标的照旧。
+it('a tab left hovered by a finger tap paints no surface of its own, only on touch screens', async () => {
+  const { items } = await mountBar('dark')
+  // 底色有 150ms 的颜色过渡:先跑完再读,读透明度不读字符串(过渡中途是 oklab(0 0 0 / 0) 这类写法)
+  const surfaceAlpha = (el: HTMLElement) => {
+    el.getAnimations().forEach((animation) => animation.finish())
+    const color = getComputedStyle(el).backgroundColor
+    const slash = color.match(/\/\s*([\d.]+)(%?)\s*\)$/)
+    if (slash) return Number(slash[1]) / (slash[2] ? 100 : 1)
+    const rgba = color.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/)
+    return rgba ? Number(rgba[1]) : color === 'transparent' ? 0 : 1
+  }
+  await userEvent.hover(items[1]!)
+  expect(items[1]!.matches(':hover')).toBe(true)
+  expect(surfaceAlpha(items[1]!), 'a mouse still gets its hover surface').toBeGreaterThan(0)
+  // Not via CDP touch emulation: switching it off makes Chromium re-detect the real input devices, and a Linux CI
+  // runner has no mouse, so every later test file in this tab would be left on a hover-less screen. Instead the
+  // touch-only rule is lifted out of its media query and applied directly.
+  const rulesOf = (list: CSSRuleList): CSSRule[] => [...list].flatMap((rule) => ('cssRules' in rule ? [rule, ...rulesOf((rule as CSSGroupingRule).cssRules)] : [rule]))
+  const sheetRules = [...document.styleSheets].flatMap((sheet) => { try { return rulesOf(sheet.cssRules) } catch { return [] } })
+  const touchOnly = sheetRules
+    .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && rule.conditionText === '(hover: none)')
+    .flatMap((rule) => [...rule.cssRules])
+    .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && items[1]!.matches(rule.selectorText))
+  expect(touchOnly.length, 'a touch-only rule targets the hovered tab').toBeGreaterThan(0)
+  const lifted = document.head.appendChild(document.createElement('style'))
+  try {
+    lifted.textContent = touchOnly.map((rule) => rule.cssText).join('\n')
+    expect(surfaceAlpha(items[1]!), 'a finger-hovered tab paints nothing').toBe(0)
+  } finally {
+    lifted.remove()
+  }
 })
 
 it.each(['light', 'dark'] as const)('%s: pressing search preserves the glyph as well as the glass surface', async (theme) => {

@@ -27,6 +27,8 @@ describe('ContactsPanel contact multi-select', () => {
     const createGroupButton = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.contactsCreateGroupFromSelection}"]`) as HTMLButtonElement | null
     expect(createGroupButton()).toBeTruthy()
     expect(createGroupButton()?.disabled).toBe(true)
+    // 人住在「个人」分组:点开它,右边铺开的就是可勾选的人。
+    await clickElement(harness.container.querySelector('[data-section-key="people"]') as HTMLElement)
     const rows = () => Array.from(harness.container.querySelectorAll('[data-contact-option]')) as HTMLElement[]
     await clickElement(rows().find((row) => row.dataset.contactOption === 'alice')!)
     await clickElement(rows().find((row) => row.dataset.contactOption === 'brenda')!)
@@ -47,5 +49,30 @@ describe('ContactsPanel contact multi-select', () => {
     const modal = document.body.querySelector('[data-testid="create-group-modal"]') as HTMLElement
     expect(modal).toBeTruthy()
     expect(modal.querySelector('[data-contact-option="charlie"]')).toBeTruthy()
+  })
+
+  it('enters and leaves multi-select in place: the open contact stays open, focus stays on the toggle, New requests reads as unavailable', async () => {
+    await renderWithAppProviders(harness, createNode(ContactsPanel, {}), { shellTab: 'contacts',
+      auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
+      contacts: { contacts: [contact({ id: 'alice', display_name: 'Alice' })] },
+      chat: { chats: [] }
+    })
+    const $ = (selector: string) => harness.container.querySelector(selector) as HTMLElement | null
+    const requests = () => $(`[data-testid="${AUTOMATION_TEST_IDS.contactsNewFriendsNav}"]`)!
+    await clickElement($('[data-section-key="people"]')!)
+    await clickElement($('[data-contact-id="alice"]')!)
+    const drawer = () => $('[data-testid="contacts-detail-drawer"] [data-slot="pane-header"]')?.textContent
+    expect(drawer()).toBe('Alice')
+    const enter = $(`[data-testid="${AUTOMATION_TEST_IDS.contactsSelectModeButton}"]`)!
+    enter.focus()
+    await clickElement(enter)
+    expect(drawer()).toBe('Alice')
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(AUTOMATION_TEST_IDS.contactsSelectModeDoneButton)
+    expect(requests().getAttribute('aria-disabled')).toBe('true')
+    expect(requests().tabIndex).toBe(-1)
+    await clickElement(document.activeElement as HTMLElement)
+    expect(document.activeElement?.getAttribute('data-testid')).toBe(AUTOMATION_TEST_IDS.contactsSelectModeButton)
+    expect(requests().hasAttribute('aria-disabled')).toBe(false)
+    expect(drawer()).toBe('Alice')
   })
 })

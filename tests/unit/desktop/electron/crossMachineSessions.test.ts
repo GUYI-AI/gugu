@@ -424,6 +424,14 @@ describe('doing things on another machine', () => {
     await expect(xm.withRemoteChildren(local, undefined, async () => CALLER)).resolves.toBe(local)
     expect(call).not.toHaveBeenCalled()
   })
+
+  it('#2007 forwards the metadata-only child index mode without per-row calls', async () => {
+    const { xm, call } = makeCrossMachine(async () => ({ result: [] }))
+    await xm.withRemoteChildren([], 'parent', async () => CALLER, undefined, true)
+    expect(call.mock.calls.map(([deviceId, , { action }]) => [deviceId, action])).toEqual([
+      ['dev-b', { action: 'children', session_id: 'parent', metadata_only: true }],
+    ])
+  })
 })
 
 describe('session_message to another machine', () => {
@@ -476,6 +484,10 @@ describe('answering another machine', () => {
     const { xm } = makeCrossMachine()
     const h = host()
     await expect(xm.answer('peers', CALLER, { action: 'peers' }, h)).resolves.toEqual(['peer'])
+    expect(h.peers).toHaveBeenLastCalledWith(undefined)
+    // An attachment names its one recipient session: only that row is resolved there.
+    await xm.answer('peers', CALLER, { action: 'peers', session_id: 's-recipient' }, h)
+    expect(h.peers).toHaveBeenLastCalledWith('s-recipient')
     await expect(xm.answer('get', CALLER, { action: 'get', session_id: 's' }, h)).resolves.toEqual({ ran: true })
     expect(h.run).toHaveBeenCalledWith(CALLER, { action: 'get', session_id: 's' })
   })

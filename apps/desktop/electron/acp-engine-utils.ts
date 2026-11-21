@@ -1,4 +1,3 @@
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { registerPasswordBetaTools } from './mcp/password-beta-tools'
 import { guguMcpToolScope } from './mcp/password-native-identity'
 import { registerGuguActivityTools } from './mcp/gugu-activity-tool'
@@ -39,7 +38,7 @@ import { registerGuguAppSearchTool, type AppSearchHit } from './mcp/gugu-app-sea
 import { buildAgentIdentityBlock } from '@gugu/core/local/agent/deviceCommandRuntime'
 import type { McpServerOwner } from '@gugu/session-core/mcp'
 import { startupDiscovery } from './sessionpage/startup-discovery'
-import type { FileActor, FileRef, ResolvedFile } from '@gugu/core/shared/fileResolver'
+import type { FileActor, FileContext, FileRef, ResolvedFile } from '@gugu/core/shared/fileResolver'
 import type { GuguMcpRequestTracker } from './gugu-mcp-host'
 import { anySignal } from '@gugu/core/shared/anySignal'
 
@@ -171,6 +170,8 @@ interface GuguMcpContextBase {
   grantKey?: string
   /** Raw session ID stamped by the native bridge creator; never parse grantKey for identity. */
   nativeSessionId?: string
+  /** The owner reads this session's own record (a structured session page): a message to the owner is committed there. */
+  ownerReadsSession?: true
 }
 
 /** #6615 会话经 catalog_* 够得到的扩展工具,与此刻被排除在外的程序(问题 16);扩展服务就绪后由宿主设上,没设 = 没有。 */
@@ -197,7 +198,7 @@ export type GuguMcpContext = GuguMcpContextBase & (
       threadRootId: string | null
       guguHome: string
       getAccessToken: (signal?: AbortSignal) => Promise<string>
-      resolveFile?: (ref: FileRef, actorId: string) => Promise<ResolvedFile>
+      resolveFile?: (ref: FileRef, actorId: string, options?: { progress?: FileContext['progress'] }) => Promise<ResolvedFile>
       publishFile?: ProjectFilePublish
       attachments?: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
       runHostAction?: (action: unknown, signal?: AbortSignal) => Promise<unknown>
@@ -254,7 +255,6 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
   const search = initial.webSearch?.available() ? initial.webSearch : undefined
   const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
-  if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_fill']) listedTools.add(name)
   const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
     const tracked = trackHostRequest(work, toolName, requestId)
     if (initial.personalAssistant && toolName) {
@@ -412,7 +412,7 @@ export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, act
 
 export interface BuildSocialBridgeDeps {
   webSearch?: SessionWebSearch
-  resolveFile?: (ref: FileRef, actor: FileActor) => Promise<ResolvedFile>
+  resolveFile?: (ref: FileRef, actor: FileActor, options?: { progress?: FileContext['progress'] }) => Promise<ResolvedFile>
   /** The host's project file publisher (the composer's): a file of a chat that keeps files on this machine, with its message. */
   publishFile?: ProjectFilePublish
   attachments: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
@@ -421,6 +421,7 @@ export interface BuildSocialBridgeDeps {
   host: DesktopGuguMcpHost
   grantKey: string
   nativeSessionId?: string
+  ownerReadsSession?: true
   personalAssistant?: true
   assistantWork?: AssistantWorkBinding
   runHostAction?: (action: unknown, auth: RuntimeAuth, signal: AbortSignal) => Promise<unknown>
@@ -467,6 +468,7 @@ export async function buildSocialBridge(
       guguHome: resolveGuguHome(context.env),
       grantKey: deps.grantKey,
       nativeSessionId: deps.nativeSessionId,
+      ...(deps.ownerReadsSession ? { ownerReadsSession: true as const } : {}),
       ...(deps.webSearch ? { webSearch: {
         available: deps.webSearch.available,
         run: async (query: string, signal: AbortSignal) => {
@@ -479,7 +481,7 @@ export async function buildSocialBridge(
       ...(deps.personalAssistant ? { personalAssistant: true as const } : {}),
       ...(deps.personalAssistant && deps.assistantWork ? { assistantWork: deps.assistantWork } : {}),
       getAccessToken: async (signal?: AbortSignal) => (await getBoundAuth(signal)).accessToken,
-      ...(deps.resolveFile ? { resolveFile: (ref: FileRef, actorId: string) => deps.resolveFile!(ref, { accountId: expectedOwnerUserId, actorId }) } : {}),
+      ...(deps.resolveFile ? { resolveFile: (ref: FileRef, actorId: string, options?: { progress?: FileContext['progress'] }) => deps.resolveFile!(ref, { accountId: expectedOwnerUserId, actorId }, options) } : {}),
       ...(deps.publishFile ? { publishFile: async (...args: Parameters<ProjectFilePublish>) => {
         await getBoundAuth()
         return deps.publishFile!(...args)

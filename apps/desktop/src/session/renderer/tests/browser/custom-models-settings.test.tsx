@@ -39,7 +39,7 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   const row = () => document.querySelector('[data-custom-connection]');
   await until('the device record renders inside Settings', () => !!row());
   expect(row()?.textContent).toContain('This custom provider has no model selected yet');
-  expect(row()?.textContent).toContain('This device does not have the key yet');
+  expect(row()?.textContent).toContain('No key saved on this device');
   await userEvent.click(page.getByRole('button', { name: 'Select models', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
   expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();

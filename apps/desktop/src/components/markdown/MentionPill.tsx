@@ -12,7 +12,7 @@ import { FILE_PILL_CLASS } from './filePills'
  */
 export function MentionPill({ href, title, file, icon, mention, unavailable, onClick, children, rest }: {
   href: string
-  title: string
+  title?: string
   file?: string
   /** The kind's line mark, drawn where a file's mark goes (LinkPill's marks). */
   icon?: ReactNode

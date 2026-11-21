@@ -100,12 +100,12 @@ describe('#6334「活跃」页', () => {
     } finally { harness.cleanup() }
   })
 
-  it('汇总挂了 → 格子写「暂时取不到」,热力图不画成全灰', async () => {
+  it('汇总挂了 → 格子写「暂不可用」,热力图不画成全灰', async () => {
     state.activity = activity({ usage: { status: 'error', error: 'rpc down' } })
     const harness = await render(renderActivity)
     try {
-      expect(tile('sessions')).toContain('暂时取不到')
-      expect(tile('gugu-tokens')).toContain('暂时取不到')
+      expect(tile('sessions')).toContain('暂不可用')
+      expect(tile('gugu-tokens')).toContain('暂不可用')
       expect(document.querySelector('[data-testid="usage-heatmap-grid"]')).toBeNull()
     } finally { harness.cleanup() }
   })

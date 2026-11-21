@@ -11,7 +11,8 @@
   --gg-viewer-control-bg-hover: color-mix(in oklab, var(--bg-overlay-modal), var(--color-white) 16%);
 }
 
-.pswp.gg-image-viewer[data-annotating] .pswp__scroll-wrap { visibility: hidden; pointer-events: none; }
+/* The editor covers the picture; until it does (@@@edit-no-flash) the picture stays drawn but takes no gestures. */
+.pswp.gg-image-viewer[data-annotating] .pswp__scroll-wrap { pointer-events: none; }
 
 .pswp.gg-image-viewer .pswp__error-msg {
   /* PhotoSwipe 只把点在 .pswp__item、.pswp__zoom-wrap 上的算背景:这行字接了指针,点它就关不掉 */
@@ -101,4 +102,29 @@
 .pswp.gg-image-viewer .pswp__preloader {
   margin: auto;
   pointer-events: none;
+}
+
+/* 手机看图的替身(preview/image-viewer-phone-flight.ts,#3311):开、关、下拉时代替 PhotoSwipe 本体出现,
+   与查看器同一层、排在它后面所以压在上面;不接指针,手势照样落到底下透明的查看器。
+   框自己带圆角、自己裁切,图 cover 铺满:框从缩略图的形状变到大图的形状,裁切与圆角都连续。 */
+.gg-image-flight {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  pointer-events: none;
+}
+.gg-image-flight__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--image-bg);
+}
+.gg-image-flight__frame {
+  position: absolute;
+  overflow: hidden;
+}
+.gg-image-flight__frame > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
