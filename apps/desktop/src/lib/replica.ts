@@ -691,7 +691,7 @@ function retryPolicyOf<A extends unknown[]>(retry: (failures: number, error: Err
   return (failures: number, error: Error) => retry(failures, error, ...(key.slice(2) as A))
 }
 
-function readingOfState(state: { data: unknown; error: Error | null; status: string } | undefined, stale: boolean, key: QueryKey): Reading<never> {
+function readingOfState(state: { data: unknown; error: Error | null } | undefined, stale: boolean, key: QueryKey): Reading<never> {
   if (!state) return UNKNOWN
   // A failed refresh being retried is not said yet: a transient failure recovers silently; it is said once the retries are spent.
   if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, error: state.error, retry: retryOfKey(key) }
@@ -699,11 +699,7 @@ function readingOfState(state: { data: unknown; error: Error | null; status: str
   return error ? { state: 'error', error, retry: retryOfKey(key) } : UNKNOWN
 }
 
-function readingOf<V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> {
-  if (result.data !== undefined) return { state: 'value', value: result.data, stale: result.isStale, error: result.error, retry: retryOfKey(key) }
-  const error = result.error ?? lastFailure.get(hashKey(key))
-  return error ? { state: 'error', error, retry: retryOfKey(key) } : UNKNOWN
-}
+const readingOf = <V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> => readingOfState(result, result.isStale, key)
 
 const IDLE_KEY = ['read-model:idle'] as const
 
@@ -739,7 +735,6 @@ export function useReplicaFetching<A extends unknown[], V>(model: Replica<A, V>,
   const owner = model.key(...([] as unknown as A))?.[1] ?? null
   return useIsFetching({
     queryKey: [model.name],
-    predicate: (query) => args !== null && owner !== null && query.queryKey[1] === owner
-      && args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
+    predicate: (query) => args !== null && owner !== null && query.queryKey[1] === owner && argsMatch(query.queryKey, args),
   }, queryClient) > 0
 }
