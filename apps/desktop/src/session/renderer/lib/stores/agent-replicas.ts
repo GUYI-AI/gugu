@@ -24,8 +24,7 @@ const AGENT_READINGS = 'agent-readings';
 /** A machine's reading: asked even while the browser says offline (the machine answers, or the read fails loud). */
 const ofMachine = { scope: 'account', networkMode: 'always', tags: [AGENT_READINGS] } as const;
 
-const backoff = (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000);
-/** Then the reading is an error (❌ unknown for ever). */
+/** Then the reading is an error (❌ unknown for ever); the pause between is react-query's own (1 s, 2 s, 4 s). */
 const RETRIES = 3;
 
 export const agentsMetadata = replica({
@@ -48,7 +47,6 @@ export const managementAgent = replica({
   ...ofMachine,
   read: (_owner, machine: Machine, id: string) => rpcOn(machine).agents.getManagement(id) as Promise<AgentPayload | null>,
   retry: RETRIES,
-  retryDelay: backoff,
 });
 
 export const agentMetadata = replica({
@@ -105,7 +103,6 @@ export const agentInstallationStatus = replica({
   read: (_owner, machine: Machine) => rpcOn(machine).agents.listAgentInstallationStatus() as Promise<AgentInstallationStatus[]>,
   fresh: 30_000,
   retry: RETRIES,
-  retryDelay: backoff,
 });
 
 export const installSourceVersions = replica({
@@ -115,7 +112,6 @@ export const installSourceVersions = replica({
     rpcOn(machine).agents.getInstallSourceVersions(id as never) as Promise<InstallSourceVersions>,
   fresh: 30 * 60_000,
   retry: RETRIES,
-  retryDelay: backoff,
 });
 
 export const agentSettings = replica({
