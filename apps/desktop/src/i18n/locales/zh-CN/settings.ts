@@ -1,4 +1,26 @@
 export default {
+  "accountDeletion": {
+    "phoneRetryUnavailable": "这一步的结果尚未确认，暂不能重试。",
+    "entry": "注销账号",
+    "compactImpact": "智能体、项目和文件会删除",
+    "compactHistory": "发过的消息保留，显示为「已注销用户」",
+    "compactWaive": "放弃剩余 {{amount}} 积分",
+    "sendCode": "发送验证码",
+    "sendingCode": "正在发送验证码…",
+    "loadingBalance": "正在读取剩余积分…",
+    "preparing": "正在停止本机工作…",
+    "cancelling": "正在取消…",
+    "continueLocalCleanup": "继续清理本机",
+    "code": "邮箱验证码",
+    "resend": "重新发送",
+    "cancel": "取消",
+    "deleting": "正在注销账号…",
+    "phoneCheckResult": "查看结果",
+    "phoneLocalPending": "账号已注销，本机清理尚未完成。你可以稍后手动重试。",
+    "closeResultUnknown": "注销结果尚未确认，请不要重复操作。",
+    "deleted": "账号已注销",
+    "unavailable": "暂时无法读取账号信息"
+  },
   "externalHistory": {
     "readOnly": "只读历史",
     "user": "你",

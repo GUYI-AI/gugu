@@ -372,6 +372,13 @@
       "when": 1794609516964,
       "tag": "0053_personal_conversation_history",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1795079485153,
+      "tag": "0054_retired_message_accounts",
+      "breakpoints": true
     }
   ]
 }

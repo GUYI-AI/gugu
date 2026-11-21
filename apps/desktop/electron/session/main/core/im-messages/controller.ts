@@ -15,3 +15,9 @@ export const imMessagesController = createRPCController({
   search: (accountId: string, chatId: string, query: string, limit: number, fromUserId?: string) =>
     localStore().search(accountId, chatId, query, limit, fromUserId),
 })
+
+/** Imported only by the native trusted-deleted receiver. The RPC namespace
+ * above intentionally exposes no retirement or unretirement command. */
+export function retireNativeImMessageAccount(accountId: string): void {
+  localStore().retireAccount(accountId)
+}

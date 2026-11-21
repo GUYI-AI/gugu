@@ -48,14 +48,15 @@ import { readPhoneDataStatus } from './phoneDataActions'
 import { phoneDeviceRow } from './phoneDeviceRow'
 import { registerGuguDevice } from '@gugu/core/cloud/deviceRegistration'
 import { readPhoneInstallation } from './phoneInstallation'
+import { resumePhoneAfterAccountClosure } from './phoneAccountClosureResume'
 import {
   effectiveGrants,
   groupGranted,
   phoneDeviceId,
   phoneInstallId,
   readPhoneDeviceSettings,
+  pausePhoneDeviceForAccountClosure,
   setPhoneAgentHostEnabled,
-  setPhoneDeviceEnabled,
   subscribePhoneDeviceSettings,
   thisPhoneDeviceId,
 } from './phoneDeviceSettings'
@@ -142,6 +143,7 @@ async function readHealthStatus(): Promise<NativeHealthStatus> {
 
 interface Session {
   ownerId: string
+  delegateNativeStopToAccountClosure: () => void
   stop: () => void
   /** 停下之后:等还在路上的那一拍心跳落地(断开时先等它,再删设备行 —— ❌ 删完又被它写回来)。 */
   drain: () => Promise<void>
@@ -188,6 +190,7 @@ export function startPhoneDevice(options: {
   const embeddedHost = phoneAgentAvailable() && options.hostEnabled === true
   let hostTimer: ReturnType<typeof setInterval> | null = null
   let stoppingHost: Promise<void> | null = null
+  let closureOwnsNativeStop = false
   let booting: Promise<void> | null = null
   const readCurrentOs = () => readLatestOs(() => alive, (next) => { os = next })
 
@@ -434,6 +437,7 @@ export function startPhoneDevice(options: {
 
   const current: Session = {
     ownerId: userId,
+    delegateNativeStopToAccountClosure: () => { closureOwnsNativeStop = true },
     stop: () => {
       if (!alive) return
       alive = false
@@ -459,7 +463,7 @@ export function startPhoneDevice(options: {
       // A WebView/root remount is not a request to cancel native agents. Explicit disconnect,
       // logout or an account switch revokes the host; a same-owner remount reuses it.
       const remainsEnabled = readPhoneDeviceSettings(userId).hostEnabled && getRendererSession()?.user.id === userId
-      if (embeddedHost && !remainsEnabled) {
+      if (embeddedHost && !remainsEnabled && !closureOwnsNativeStop) {
         stoppingHost = withPhoneHostAuthHandoff(() => nativeAgent.stopHost({ ownerId: userId, clearCredentials: true }))
         void stoppingHost.catch((error: unknown) => log.warn({ error: errorText(error) }, 'phone host stop failed'))
       }
@@ -499,7 +503,8 @@ export async function refreshPhoneDevice(): Promise<void> {
 }
 
 async function stopPhoneAgentRuntime(userId: string): Promise<void> {
-  const current = session
+  if (getRendererSession()?.user.id !== userId) throw Object.assign(new Error('Current phone owner changed'), { code: 'wrong_local_owner' })
+  const current = session?.ownerId === userId ? session : null
   setPhoneAgentHostEnabled(userId, false)
   current?.stop()
   if (current) await current.drain()
@@ -508,6 +513,10 @@ async function stopPhoneAgentRuntime(userId: string): Promise<void> {
     previousSessionDrain = stopping
     await stopping
   }
+}
+
+export async function enablePhoneAgentHost(userId: string): Promise<void> {
+  await resumePhoneAfterAccountClosure(userId, () => setPhoneAgentHostEnabled(userId, true))
 }
 
 /** Stop the task host without changing the owner's device-action grants. */
@@ -541,7 +550,7 @@ async function retainPhoneAgentDevice(userId: string, deviceId: string): Promise
 
 export async function restartPhoneAgentHost(userId: string): Promise<void> {
   await stopPhoneAgentRuntime(userId)
-  setPhoneAgentHostEnabled(userId, true)
+  await enablePhoneAgentHost(userId)
 }
 
 /**
@@ -578,11 +587,34 @@ export async function quiescePhoneForAccountClosure(ownerId: string): Promise<vo
   }
   sameOwner()
   const current = session?.ownerId === ownerId ? session : null
-  setPhoneAgentHostEnabled(ownerId, false)
-  setPhoneDeviceEnabled(ownerId, false)
+  // Capture has already sealed native admission. Its prepare operation owns the
+  // native stop proof; ordinary iOS stopHost cannot borrow sealed publication.
+  current?.delegateNativeStopToAccountClosure()
+  pausePhoneDeviceForAccountClosure(ownerId)
   current?.stop()
   if (current) await current.drain()
   await previousSessionDrain
+  sameOwner()
+}
+
+/** Only after native reports original-owner local-complete. Auth may already be
+ * absent. Native has proved its own stop; settle renderer work without issuing
+ * another ordinary stop/retirement or borrowing a later account's publication.
+ */
+export async function quiesceClosedPhoneOwner(ownerId: string): Promise<void> {
+  const sameOwner = () => {
+    const current = getRendererSession()?.user.id
+    if (current && current !== ownerId) throw Object.assign(new Error('Local phone owner changed'), { code: 'wrong_local_owner' })
+  }
+  sameOwner()
+  const current = session?.ownerId === ownerId ? session : null
+  current?.delegateNativeStopToAccountClosure()
+  pausePhoneDeviceForAccountClosure(ownerId)
+  current?.stop()
+  // A rejected boot/heartbeat is settled work. Its error cannot authorize any
+  // native release; that proof was already checked before this local-only port.
+  if (current) await current.drain().catch(() => undefined)
+  await previousSessionDrain.catch(() => undefined)
   sameOwner()
 }
 

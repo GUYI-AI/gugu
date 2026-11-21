@@ -11,7 +11,9 @@ const DB_NAME = 'gugu.localSync.v1'
 // ⇒ 升级时丢掉缓存的消息窗口和从它们推出来的东西:`view`(消息窗口视图、账号修订记录)与 `sync_state`(修订游标 ——
 //   游标留着,会话列表就当本机已是最新、只拿空的消息仓推可见会话,列表变空,安卓实测)。游标归零 = 冷启动那条路:
 //   重新拿一次快照,打开会话时按新的选列取消息。会话、身份、成员、在线、发件箱照留。
-const SCHEMA_VERSION = 4
+// v5 adds an owner retirement tombstone. Ordinary cache clears never remove it.
+const SCHEMA_VERSION = 5
+const RETIRED_ACCOUNTS = 'retired_accounts'
 const LEGACY_CHAT_LIST_PREFIX = 'gugu.chatListCache.v2:'
 
 export const IM_STORE_NAMES = [
@@ -43,6 +45,8 @@ export interface LocalImDbAdapter {
   prepareLocalMessages?(accountId: string): Promise<void>
   loadAccount(accountId: string): Promise<Record<ImStoreName, LocalImRow[]>>
   commit(operations: readonly LocalImDbOperation[]): Promise<void>
+  /** Trusted native deleted only: retire and clear this owner atomically. */
+  retireAccount?(accountId: string): Promise<void>
   close(): void
 }
 
@@ -66,6 +70,7 @@ export async function openLocalSyncDb(indexedDb: IDBFactory = window.indexedDB):
 
 export function createMemoryLocalSyncDb(): LocalImDbAdapter {
   let stores = emptyMemoryStores()
+  const retired = new Set<string>()
   return {
     async prepareLocalMessages(accountId) {
       for (const name of ['message', 'stream', 'view'] as const) {
@@ -81,12 +86,35 @@ export function createMemoryLocalSyncDb(): LocalImDbAdapter {
       ])) as Record<ImStoreName, LocalImRow[]>
     },
     async commit(operations) {
+      for (const owner of writeOwners(operations)) if (retired.has(owner)) throw new Error('Account cache is retired')
       const next = cloneMemoryStores(stores)
       applyMemoryOperations(next, operations)
       stores = next
     },
+    async retireAccount(accountId) {
+      assertId(accountId, 'accountId')
+      const next = cloneMemoryStores(stores)
+      applyMemoryOperations(next, [{ type: 'clearAccount', accountId }])
+      stores = next; retired.add(accountId)
+    },
     close() {},
   }
+}
+
+function writeOwners(operations: readonly LocalImDbOperation[]): string[] {
+  return [...new Set(operations.flatMap(operation => {
+    if (operation.type === 'clearAccount') return []
+    const owner = operation.type === 'put' ? operation.value.accountId : Array.isArray(operation.key) ? operation.key[0] : null
+    if (typeof owner !== 'string') return []
+    assertId(owner, 'operation.accountId'); return [owner]
+  }))]
+}
+
+export function clearClosedLegacyChatList(accountId: string): void {
+  assertId(accountId, 'accountId')
+  const key = LEGACY_CHAT_LIST_PREFIX + accountId
+  window.localStorage.removeItem(key)
+  if (window.localStorage.getItem(key) !== null) throw new Error('Closed account legacy cache remains')
 }
 
 export async function migrateLegacyChatList(
@@ -165,6 +193,7 @@ function openDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
         return
       }
       const oldVersion = (event as IDBVersionChangeEvent).oldVersion
+      if (!db.objectStoreNames.contains(RETIRED_ACCOUNTS)) db.createObjectStore(RETIRED_ACCOUNTS, { keyPath: 'accountId' })
       if (oldVersion === 0) {
         createNormalizedStores(db)
         return
@@ -361,12 +390,16 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
     async loadAccount(accountId) {
       assertId(accountId, 'accountId')
       const db = await handle.get()
-      const transaction = db.transaction(IM_STORE_NAMES, 'readonly')
+      const transaction = db.transaction([...IM_STORE_NAMES, RETIRED_ACCOUNTS], 'readonly')
+      const done = transactionDone(transaction)
+      const retired = requestResult(transaction.objectStore(RETIRED_ACCOUNTS).get(accountId))
       const entries = await Promise.all(IM_STORE_NAMES.map(async (name) => {
         const values = await requestResult<LocalImRow[]>(transaction.objectStore(name).index('accountId').getAll(accountId))
         return [name, values] as const
       }))
-      await transactionDone(transaction)
+      const isRetired = await retired
+      await done
+      if (isRetired) return Object.fromEntries(IM_STORE_NAMES.map(name => [name, []])) as unknown as Record<ImStoreName, LocalImRow[]>
       const raw = Object.fromEntries(entries) as Record<ImStoreName, LocalImRow[]>
       // Validate user-authored data first; never discard an invalid unsent message.
       const outbox = raw.outbox.map((row) => validateCurrentRow('outbox', row, accountId))
@@ -388,7 +421,7 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
         ? [...IM_STORE_NAMES]
         : [...new Set(operations.flatMap((operation) => operation.type === 'clearAccount' ? [] : [operation.store]))]
       const db = await handle.get()
-      const transaction = db.transaction(touched, 'readwrite')
+      const transaction = db.transaction([...touched, RETIRED_ACCOUNTS], 'readwrite')
       let enqueueError: unknown
       // A clear's cursor must finish BEFORE replacement puts: an advancing
       // IndexedDB cursor would otherwise visit and delete the new rows too.
@@ -417,8 +450,31 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
         }
       }
       const done = transactionDone(transaction)
-      enqueue(0)
+      const owners = writeOwners(operations)
+      let pending = owners.length, refused = false
+      if (!pending) enqueue(0)
+      for (const owner of owners) {
+        const check = transaction.objectStore(RETIRED_ACCOUNTS).get(owner)
+        check.onsuccess = () => {
+          if (refused) return
+          if (check.result) {
+            refused = true; enqueueError = new Error('Account cache is retired'); transaction.abort(); return
+          }
+          if (--pending === 0) enqueue(0)
+        }
+      }
       await done.catch((error) => { throw enqueueError ?? error })
+    },
+    async retireAccount(accountId) {
+      assertId(accountId, 'accountId')
+      const db = await handle.get()
+      const transaction = db.transaction([...IM_STORE_NAMES, RETIRED_ACCOUNTS], 'readwrite')
+      const done = transactionDone(transaction)
+      try {
+        transaction.objectStore(RETIRED_ACCOUNTS).put({ accountId, protocolVersion: 2 })
+        for (const name of IM_STORE_NAMES) deleteAccountRows(transaction.objectStore(name), accountId, () => {})
+      } catch (error) { transaction.abort(); await done.catch(() => undefined); throw error }
+      await done
     },
     close: () => handle.close(),
   }

@@ -173,9 +173,9 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
     }
   })
 
-  expect(result.version).toBe(4)
+  expect(result.version).toBe(5)
   expect(result.stores.sort()).toEqual([
-    'chat', 'identity', 'membership', 'message', 'outbox', 'presence', 'stream', 'sync_state', 'view',
+    'chat', 'identity', 'membership', 'message', 'outbox', 'presence', 'retired_accounts', 'stream', 'sync_state', 'view',
   ])
   expect(result.accountA).toMatchObject({ identity: 2, membership: 2, message: 2, stream: 1, view: 1, outbox: 1 })
   expect(result.accountB).toMatchObject({ outbox: 1 })
@@ -186,13 +186,14 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
     message: { keyPath: ['accountId', 'id'], indexes: ['accountChatSeq', 'accountId', 'accountStreamSeq'] },
     outbox: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     presence: { keyPath: ['accountId', 'identityId'], indexes: ['accountId'] },
+    retired_accounts: { keyPath: 'accountId', indexes: [] },
     stream: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     sync_state: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
     view: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
   })
 })
 
-test('published v1 upgrades every legacy row directly to v4', async ({ page }) => {
+test('published v1 upgrades every legacy row directly to v5', async ({ page }) => {
   await seedVersionOne(page)
 
   const result = await page.evaluate(async () => {
@@ -220,16 +221,16 @@ test('published v1 upgrades every legacy row directly to v4', async ({ page }) =
   })
 
   expect(result.error).toBe('')
-  expect(result.version).toBe(4)
+  expect(result.version).toBe(5)
   expect(result.stores.sort()).toEqual([
-    'chat', 'identity', 'membership', 'message', 'outbox', 'presence', 'stream', 'sync_state', 'view',
+    'chat', 'identity', 'membership', 'message', 'outbox', 'presence', 'retired_accounts', 'stream', 'sync_state', 'view',
   ])
   expect(result.counts).toMatchObject({ identity: 2, membership: 2, message: 2, stream: 1, view: 1 })
 })
 
 // #7290 v3 → v4:老客户端存下的消息行没有指向字节的列 ⇒ 消息窗口和从它推出来的(stream、view、sync_state 游标)丢掉重取;
 // 会话、身份、成员、在线、发件箱照留。
-test('v3 upgrades to v4 by dropping the cached message window and its cursors, keeping the rest', async ({ page }) => {
+test('v3 upgrades to v5 by dropping the cached message window and its cursors, keeping the rest', async ({ page }) => {
   await page.evaluate(async (name) => {
     const keyPaths: Record<string, string[]> = {
       identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
@@ -284,15 +285,15 @@ test('v3 upgrades to v4 by dropping the cached message window and its cursors, k
     return { version, counts }
   })
 
-  expect(result.version).toBe(4)
-  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, message: 0, stream: 0, view: 0, sync_state: 0 })
+  expect(result.version).toBe(5)
+  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, message: 0, stream: 0, view: 0, sync_state: 0, retired_accounts: 0 })
 })
 
 for (const version of [1, 2] as const) {
-  test(`published v${version} empty 0/0 window upgrades to v4`, async ({ page }) => {
+  test(`published v${version} empty 0/0 window upgrades to v5`, async ({ page }) => {
     await seedEmptyLegacy(page, version, 0)
     const result = await openLegacyUpgrade(page)
-    expect(result).toMatchObject({ error: '', version: 4, view: { oldestSeq: 0, maxSeq: 0, hasMoreOlder: true } })
+    expect(result).toMatchObject({ error: '', version: 5, view: { oldestSeq: 0, maxSeq: 0, hasMoreOlder: true } })
   })
 
   test(`published v${version} empty nonzero window rolls back byte-for-byte`, async ({ page }) => {

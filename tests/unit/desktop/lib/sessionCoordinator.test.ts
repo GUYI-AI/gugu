@@ -38,7 +38,8 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
   const foregroundUnsubscribe = vi.fn(() => { foregroundListener = () => {} })
   const deps: SessionCoordinatorDeps = {
     getSession: vi.fn(() => new Promise<{ data: { session: Session | null }; error: unknown }>(() => {})),
-    getUser: vi.fn(async () => ({ data: { user: session().user }, error: null })),
+    // Auth answers the owner of the token it was asked about, as restoreSession does below.
+    getUser: vi.fn(async (accessToken?: string) => ({ data: { user: session(accessToken?.replace(/^access-/, '') || 'user-a').user }, error: null })),
     refreshSession: vi.fn(async () => ({ data: { session: session() }, error: null })),
     restoreSession: vi.fn(async ({ access_token }) => ({
       data: { session: session(access_token.replace(/^access-/, '')) }, error: null,
@@ -107,6 +108,31 @@ describe('SessionCoordinator', () => {
     expect(await logout).toEqual({ success: false })
     expect(other.deps.signOut).not.toHaveBeenCalled()
     stopOther()
+  })
+  it('finalizes the closed owner locally without another live-auth logout or mirror clear', async () => {
+    const h = harness(); h.coordinator.start(); await h.login(session())
+    vi.mocked(h.deps.clearMirror).mockClear(); vi.mocked(h.deps.clearPersistedSession).mockClear()
+    await h.coordinator.finalizeClosedOwner('user-a')
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'anonymous', session: null })
+    expect(h.deps.clearPersistedSession).toHaveBeenCalledWith(session(), expect.any(AbortSignal))
+    expect(h.deps.signOut).not.toHaveBeenCalled(); expect(h.deps.clearMirror).not.toHaveBeenCalled()
+    expect(h.deps.publishSession).toHaveBeenLastCalledWith('ACCOUNT_CLOSED', null)
+  })
+  it('refuses A closure finalization while B is current', async () => {
+    const h = harness(); h.coordinator.start(); await h.login(session('user-b'))
+    await expect(h.coordinator.finalizeClosedOwner('user-a')).rejects.toMatchObject({ code: 'wrong_local_owner' })
+    expect(h.coordinator.getSnapshot().session?.user.id).toBe('user-b')
+    expect(h.deps.clearPersistedSession).not.toHaveBeenCalled(); expect(h.deps.signOut).not.toHaveBeenCalled()
+  })
+  it('a B login during A local cleanup is preserved and cannot be published as signed out', async () => {
+    const clearing = deferred<void>()
+    const h = harness({ clearPersistedSession: vi.fn(() => clearing.promise) }); h.coordinator.start(); await h.login(session())
+    const closing = h.coordinator.finalizeClosedOwner('user-a')
+    await vi.waitFor(() => expect(h.deps.clearPersistedSession).toHaveBeenCalledOnce())
+    await h.login(session('user-b')); clearing.resolve()
+    await expect(closing).rejects.toMatchObject({ code: 'wrong_local_owner' })
+    expect(h.coordinator.getSnapshot().session?.user.id).toBe('user-b')
+    expect(h.deps.publishSession).not.toHaveBeenCalledWith('ACCOUNT_CLOSED', null)
   })
   it('keeps startup user validation on the request-only auth overload', async () => {
     const getUser = vi.fn<SessionCoordinatorDeps['getUser']>(async (accessToken) => {

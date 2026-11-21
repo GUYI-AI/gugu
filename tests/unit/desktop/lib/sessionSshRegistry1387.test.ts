@@ -16,7 +16,8 @@ vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: host.warn, info: vi
 vi.mock('@/lib/auth', () => ({ hydrateIdentityAuthUser: async (user: { id: string }) => ({ id: user.id, email: '', nickname: 'Owner' }) }))
 vi.mock('@/lib/phoneHostAuth', () => ({ phoneHostAuthAvailable: () => false,
   phoneHostGetSession: (fallback: () => unknown) => fallback(), phoneHostRefreshSession: (_token: string, fallback: () => unknown) => fallback(),
-  phoneHostRestoreSession: (fallback: () => unknown) => fallback(), phoneHostSignOut: (fallback: () => unknown) => fallback(), setPhoneHostAuthHandoffBarrier: () => {} }))
+  phoneHostRestoreSession: (fallback: () => unknown) => fallback(), phoneHostSignOut: (fallback: () => unknown) => fallback(), setPhoneHostAuthHandoffBarrier: () => {},
+  forgetClosedPhoneHostSession: () => {} }))
 vi.mock('@/lib/supabase', () => ({
   supabase: { auth: {
     getSession: () => new Promise(() => {}),
