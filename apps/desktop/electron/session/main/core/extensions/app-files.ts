@@ -868,11 +868,11 @@ export const viewedAmong = files.viewedAmong;
 /** A page naming a chat file to open: refused, as `openWithTarget` would, before anything is read. */
 export const mayOpen = (page: DesktopFilePage, itemId: string): void => files.mayName(chatSurface(page), itemId, 'opening');
 
-/** API 14 `chatFile`: the file an App opened in this chat shows, as that file opened with it (made the first time). */
-export function appChatFile(chatId: string, extensionId: string) {
+/** An App opened in a chat other than as a page of its own: the file it names there (made the first time), or its files there. */
+export function appInChat(chatId: string, extensionId: string) {
   const service = extensionsService();
   const manifest = service.list().extensions.find((entry) => entry.manifest.id === extensionId && service.isEnabled(extensionId))?.manifest;
-  return files.appChatFile(chatId, manifest);
+  return files.appInChat(chatId, manifest);
 }
 
 /**

@@ -42,6 +42,7 @@ import {
   placeOf,
   sessionIdOf,
   type AppFileUpload,
+  type AppInChat,
   type AppOpenWithDetail,
   type AppShowMessageDetail,
   type FrameToHost,
@@ -60,7 +61,6 @@ import {
   type ExtensionHostEvent,
   type ExtensionMember,
 } from '../../session/shared/extensions/bridge-protocol'
-import { filesOpenedBy } from '../../session/shared/extensions/app-files-core'
 import { coalescedReads } from '../../session/shared/extensions/coalesced-reads'
 import { localizedManifestText } from '../../session/shared/extensions/catalog'
 import { claimantOf, openerChoice, placeFor, placeLink, requireOwnTabChoice, type FileOpenerCandidate } from '../../session/shared/extensions/file-openers'
@@ -370,19 +370,10 @@ export async function groupFileOpener(args: { chatId?: string; itemId: string; a
   }
 }
 
-/** API 14 `chatFile`: the file an App opened in this chat shows, as that file opened with it (made the first time) — main's answer too. */
-export async function appChatFile(args: { chatId: string; extensionId: string }): Promise<Result<AppOpenWithDetail>> {
+/** An App opened in a chat other than as a page of its own: the file it names there, or its files there — main's answer too. */
+export async function appInChat(args: { chatId: string; extensionId: string }): Promise<Result<AppInChat>> {
   try {
-    return { success: true, data: await files.appChatFile(args.chatId, appsHereNow().find((manifest) => manifest.id === args.extensionId)) }
-  } catch (error) {
-    return failure(error)
-  }
-}
-
-/** 摩擦单 F51: the files of this group a tap opens with this App, newest first (`filesOpenedBy`, main's answer too). */
-export async function groupFilesOpenedBy(args: { chatId: string; extensionId: string }): Promise<Result<ReturnType<typeof filesOpenedBy>>> {
-  try {
-    return { success: true, data: filesOpenedBy(await files.groupFiles(args.chatId), args.extensionId) }
+    return { success: true, data: await files.appInChat(args.chatId, appsHereNow().find((manifest) => manifest.id === args.extensionId)) }
   } catch (error) {
     return failure(error)
   }
