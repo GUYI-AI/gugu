@@ -1,0 +1,3 @@
+# Findings of scripts/checks/effect-fetch-state.mts that are not a read put into component state, one line each:
+# `<path under apps/desktop/src>: <kind>(<category>) - <reason>`. Per file and kind there are as many lines as findings.
+# The categories are EXEMPTIONS in effect-fetch-state.mts. Generated from the old markers by convert-markers.py; edit by hand.
