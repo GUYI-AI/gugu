@@ -10,8 +10,8 @@ const result = (data, content) => ({ content: content ?? [{ type: 'text', text: 
 const failure = (code, message) => Object.assign(new Error(message), { code })
 const isFile = (name) => name === 'photos.read' || name === 'recordings.read'
 const phoneFileDescriptions = {
-  'recordings.read': '读取 recordings.list 返回的原始音频，分块保存到当前手机任务的 App 私有目录；返回可供 message_send_file 发送的完整 file_path、mime_type、size、sha256。建议传列表的 version。不会开启麦克风，也不提供音频转写或理解；撤权、断开或文件变化时不返回残缺文件。',
-  'photos.read': '读取 photos.list 返回的原始照片或视频，分块保存到当前手机任务的 App 私有目录；kind 与列表一致，建议传 version。返回可供 message_send_file 发送的完整文件路径及元数据，不表示本模型已理解图片或视频内容；系统授权范围外的文件不能读取。',
+  'recordings.read': "Reads the raw audio returned by recordings.list and saves it in chunks to the current phone task's App-private directory; returns the full file_path, mime_type, size and sha256 for sending with message_send_file. Pass the version from the list. Does not turn on the microphone and provides no transcription or understanding of the audio; if access is revoked, the connection drops or the file changes, no partial file is returned.",
+  'photos.read': "Reads the raw photo or video returned by photos.list and saves it in chunks to the current phone task's App-private directory; kind matches the list, pass version. Returns the full file path and metadata for sending with message_send_file; this does not mean the model has understood the image or video. Files outside the system-granted scope cannot be read.",
 }
 const confirmationOptions = [{ optionId: 'approve', name: '允许这一次', kind: 'allow_once' }, { optionId: 'cancel', name: '取消', kind: 'reject_once' }]
 
@@ -31,12 +31,12 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
   for (const pending of Object.values(store.state.confirmations)) {
     if (!Object.hasOwn(pending, 'contextEpoch')) {
       pending.contextEpoch = 'legacy-unscoped'
-      if (['pending', 'approved'].includes(pending.status)) { pending.status = 'cancelled'; pending.error = '旧版手机确认缺少任务上下文，已失效，请在任务页重新发起操作' }
+      if (['pending', 'approved'].includes(pending.status)) { pending.status = 'cancelled'; pending.error = 'This phone confirmation is from an older version without task context and is no longer valid; start the action again from the task page' }
     }
     // Old DM prompts are historical messages, never an approval transport after upgrade.
     const question = store.state.outbox[pending.messageId]
     if (question?.status === 'pending') question.status = 'superseded'
-    if (pending.status === 'executing') { pending.status = 'interrupted'; pending.error = '手机在执行中停止，结果尚未确认，不能自动重复执行。' }
+    if (pending.status === 'executing') { pending.status = 'interrupted'; pending.error = 'The phone stopped during execution; the result is not confirmed and must not be repeated automatically.' }
   }
   await store.save()
   const reconcile = async () => {
@@ -55,17 +55,17 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
   const check = async (agent, groups, signal, requirements = []) => {
     if (!groups.length && !requirements.length) return
     const permit = await nativeCall('permissions.check', { groups: [...new Set(groups)], requirements }, signal, { ownerId, sessionId: agent.sessionId })
-    if (!permit?.ok) throw failure(permit?.code ?? 'not_granted', permit?.message ?? '手机能力授权已改变')
+    if (!permit?.ok) throw failure(permit?.code ?? 'not_granted', permit?.message ?? 'Phone capability permission has changed')
   }
   const preflight = async (agent, groups, signal) => {
     const permit = await nativeCall('permissions.preflight', { groups: [...new Set(groups)] }, signal, { ownerId, sessionId: agent.sessionId })
-    if (!permit?.ok) throw failure(permit?.code ?? 'not_granted', permit?.message ?? '手机能力授权已改变')
+    if (!permit?.ok) throw failure(permit?.code ?? 'not_granted', permit?.message ?? 'Phone capability permission has changed')
   }
   const input = (name, raw) => {
     const action = phoneActionByName(name)
-    if (!action) throw failure('unknown_action', `这台手机没有 ${name} 动作`)
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw failure('invalid_args', 'args 必须是参数对象')
-    if (['confirmed', 'approval', 'internalApproval', '_phone_file_transport', 'offset'].some((field) => field in raw)) throw failure('invalid_args', '确认和文件传输由宿主处理，不能由模型填写')
+    if (!action) throw failure('unknown_action', `This phone has no ${name} action`)
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw failure('invalid_args', 'args must be a parameter object')
+    if (['confirmed', 'approval', 'internalApproval', '_phone_file_transport', 'offset'].some((field) => field in raw)) throw failure('invalid_args', 'Confirmation and file transfer are handled by the host; the model cannot fill them in')
     let args
     try { args = validateToolArguments({ name, parameters: action.input_schema }, { name, arguments: raw }) }
     catch (error) { throw failure('invalid_args', error.message) }
@@ -88,7 +88,7 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
     const prepared = isFile(action.name) ? { ...args, _phone_file_transport: 1 } : args
     let data
     try { data = await invoke(prepared) }
-    catch (error) { if (nativeUnconfirmed) throw failure('execution_unknown', '手机原生调用结果尚未确认'); throw error }
+    catch (error) { if (nativeUnconfirmed) throw failure('execution_unknown', 'The native phone call result is not confirmed'); throw error }
     let content
     if (isFile(action.name) && origin === 'phone-agent') {
       const file = await receivePhoneArtifact({ first: data, args: prepared, read: invoke, agent, job, signal, store, root: process.env.GUGU_AGENT_HOME, group: action.group })
@@ -116,25 +116,25 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
       store.state.confirmations[id] = pending
       await store.save()
     }
-    if (pending.status !== 'pending') return result({ ok: false, code: pending.status, message: '这次确认已结束，请检查实际结果后重新发起。' })
+    if (pending.status !== 'pending') return result({ ok: false, code: pending.status, message: 'This confirmation has ended; check the actual result before starting again.' })
     await preflight(agent, [action.group], signal)
     await check(agent, job.usedGroups ?? [], signal, job.permissionRequirements ?? [])
     job.waitingConfirmation = pending.id
     await store.save()
     emit({ type: 'confirmation_pending', ownerId, sessionId: agent.sessionId, confirmationId: pending.id })
-    return result({ ok: false, code: 'needs_confirmation', confirmation_id: pending.id, message: '已在这条任务的时间线中请求主人确认。主人在手机任务页明确批准后才会执行；不能自行确认。', question: pending.question })
+    return result({ ok: false, code: 'needs_confirmation', confirmation_id: pending.id, message: "Asked the owner for confirmation in this task's timeline. It runs only after the owner explicitly approves on the phone task page; you cannot confirm it yourself.", question: pending.question })
   }
 
   return {
     reconcile,
     tools({ agent, job }) { return [
-      { name: 'phone_actions', label: '查看手机能力', description: '列出这台手机已有的受控动作、参数和当前授权状态。手机权限与系统权限均由本机执行时检查。', parameters: { type: 'object', properties: { group: { type: 'string' } } },
+      { name: 'phone_actions', label: 'View phone capabilities', description: 'Lists the controlled actions this phone offers, their parameters and current permission status. Phone and system permissions are checked on this phone at execution time.', parameters: { type: 'object', properties: { group: { type: 'string' } } },
         execute: async (_callId, args) => result({ actions: PHONE_ACTIONS.filter((action) => !args.group || action.group === args.group).map((action) => {
           const registered = getManifest().find((entry) => entry.name === action.name)
           const inputSchema = { ...action.input_schema, properties: Object.fromEntries(Object.entries(action.input_schema.properties ?? {}).filter(([name]) => name !== 'confirmed')) }
           return { name: action.name, group: action.group, title: action.title, description: phoneFileDescriptions[action.name] ?? action.description({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, utcOffset: utcOffsetOf(new Date()) }), input_schema: inputSchema, confirm: action.confirm, available: registered?.available ?? false, unavailable_detail: registered?.unavailable_detail ?? null }
         }) }) },
-      { name: 'phone_call', label: '使用手机能力', description: '执行 phone_actions 列出的受控手机动作。name 为动作名，args 按该动作参数填写。需要确认的动作会由宿主在任务时间线中请求真人主人批准；你不能自行确认或填写 confirmed/approval。媒体文件会保存在本会话的私有目录，可通过 message_send_file 发送。', parameters: { type: 'object', required: ['name', 'args'], properties: { name: { type: 'string' }, args: { type: 'object', additionalProperties: true } } },
+      { name: 'phone_call', label: 'Use phone capability', description: "Runs a controlled phone action listed by phone_actions. name is the action name; fill args per that action's parameters. For actions that need confirmation, the host asks the real owner to approve in the task timeline; you cannot confirm them yourself or fill in confirmed/approval. Media files are saved in this session's private directory and can be sent with message_send_file.", parameters: { type: 'object', required: ['name', 'args'], properties: { name: { type: 'string' }, args: { type: 'object', additionalProperties: true } } },
         execute: async (callId, raw, signal) => {
           try {
             const { action, args } = input(raw.name, raw.args)
@@ -151,7 +151,7 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
 
     async resetContext(agent) {
       for (const pending of Object.values(store.state.confirmations)) if (pending.agentUserId === agent.agentUserId && ['pending', 'approved'].includes(pending.status)) {
-        pending.status = 'cancelled'; pending.finishedAt = new Date().toISOString(); pending.error = '手机数据授权已改变，原确认已失效，请重新发起操作'
+        pending.status = 'cancelled'; pending.finishedAt = new Date().toISOString(); pending.error = 'Phone data permission has changed and the earlier confirmation is no longer valid; start the action again'
       }
       await store.save()
     },
@@ -171,7 +171,7 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
       await admit({ id: responseId, agentUserId: agent.agentUserId, kind: 'confirmation', confirmationId: pending.id,
         confirmationDecision: input.optionId === 'approve' ? 'approve' : 'cancel',
         confirmationSource: { kind: 'task', messageId: responseId, senderUserId: ownerId, sessionId: agent.sessionId },
-        prompt: input.optionId === 'approve' ? `主人已在任务页允许这次手机操作：${pending.question}` : `主人已在任务页取消这次手机操作：${pending.question}`,
+        prompt: input.optionId === 'approve' ? `The owner approved this phone action on the task page: ${pending.question}` : `The owner cancelled this phone action on the task page: ${pending.question}`,
         route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
       return { accepted: true, settlement: phoneConfirmationSettlement(pending) }
     },
@@ -186,9 +186,9 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
       const source = job.confirmationSource
       const taskSource = source?.kind === 'task' && source.sessionId === agent.sessionId && pending?.respondedBy === ownerId && source.messageId === stableId(pending?.id, 'task-response')
       if (!pending || pending.agentUserId !== agent.agentUserId || pending.ownerId !== ownerId || source?.senderUserId !== ownerId || !taskSource || source?.messageId !== job.id || pending.contextEpoch !== (agent.contextEpoch ?? null)) throw failure('not_granted', '确认来源与当前主人、操作或任务上下文不匹配')
-      if (pending.status !== 'approved') return { ok: false, code: pending.status, message: pending.error ?? '这次操作已经处理，不能重复执行。' }
-      if (Date.parse(pending.expiresAt) <= Date.now()) { pending.status = 'expired'; await store.save(); return { ok: false, code: 'expired', message: '确认已过期，请重新发起操作。' } }
-      if (job.confirmationDecision === 'cancel') { pending.status = 'cancelled'; await store.save(); return { ok: false, code: 'cancelled', message: '主人已取消本次操作。' } }
+      if (pending.status !== 'approved') return { ok: false, code: pending.status, message: pending.error ?? 'This action has already been handled and cannot run again.' }
+      if (Date.parse(pending.expiresAt) <= Date.now()) { pending.status = 'expired'; await store.save(); return { ok: false, code: 'expired', message: 'The confirmation has expired; start the action again.' } }
+      if (job.confirmationDecision === 'cancel') { pending.status = 'cancelled'; await store.save(); return { ok: false, code: 'cancelled', message: 'The owner cancelled this action.' } }
       const action = phoneActionByName(pending.actionName)
       if (!action || action.confirm !== 'always') throw failure('invalid_args', '这次确认对应的手机动作已改变')
       await preflight(agent, [action.group], signal)
@@ -203,22 +203,22 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
         pending.status = 'done'; pending.outcome = outcome
       } catch (error) {
         const unconfirmed = signal?.aborted || ['execution_unknown', 'timeout'].includes(error.code)
-        outcome = unconfirmed ? { ok: false, action: action.name, code: 'execution_unknown', message: `${signal?.aborted ? '任务在执行过程中取消' : '手机原生调用未能确认完成'}，操作结果尚未确认，请检查手机；不能自动重复执行。` }
+        outcome = unconfirmed ? { ok: false, action: action.name, code: 'execution_unknown', message: `${signal?.aborted ? 'The task was cancelled during execution' : 'The native phone call could not confirm completion'}; the result is not confirmed, check the phone. It must not be repeated automatically.` }
           : { ok: false, action: action.name, code: error.code ?? 'execution_failed', message: error.message }
         pending.status = unconfirmed ? 'interrupted' : 'failed'; pending.error = outcome.message
       }
       pending.finishedAt = new Date().toISOString(); await store.save()
       if (pending.originRoute?.kind === 'session-direct' && pending.originRoute.caller?.sessionId) {
         await check(agent, job.usedGroups ?? [], undefined, job.permissionRequirements ?? [])
-        await sendSession(agent, [pending.originRoute.caller.sessionId], `手机操作确认已处理：${JSON.stringify(outcome)}`, { reply_to_message_id: pending.originRoute.sourceMessageId }, stableId(pending.id, 'confirmed-result'))
+        await sendSession(agent, [pending.originRoute.caller.sessionId], `Phone action confirmation handled: ${JSON.stringify(outcome)}`, { reply_to_message_id: pending.originRoute.sourceMessageId }, stableId(pending.id, 'confirmed-result'))
       }
       return outcome
     },
 
     async runDeviceAction(name, args, context) {
       const action = phoneActionByName(name)
-      if (!action) return { ok: false, code: 'unknown_action', message: `这台手机没有 ${name} 动作` }
-      if (action.confirm === 'always' && args.confirmed !== true) return { ok: false, code: 'needs_confirmation', message: action.confirmQuestion?.(args)?.question ?? `要让手机「${action.title}」吗？` }
+      if (!action) return { ok: false, code: 'unknown_action', message: `This phone has no ${name} action` }
+      if (action.confirm === 'always' && args.confirmed !== true) return { ok: false, code: 'needs_confirmation', message: action.confirmQuestion?.(args)?.question ?? `Let the phone run "${action.title}"?` }
       const agent = { sessionId: stableId('device-action', context.callId) }
       try {
         const completed = await execute({ agent, action, args, signal: context.signal, origin: 'device-rpc', callId: context.callId, approval: action.confirm === 'always' ? { confirmed: true, callId: context.callId } : undefined })

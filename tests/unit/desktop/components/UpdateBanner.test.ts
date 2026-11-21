@@ -298,7 +298,7 @@ describe('#2126 更新失败 fail-loud(显原因 + 重试,不静默 revert 循�
     expect(banner()?.getAttribute('data-phase')).toBe('failed')
     expect(banner()?.textContent).toContain('更新失败')
     // @@@4891 原来拿字面「404」当「显了原因」的记号。状态码已按 owner 拍板移进日志,
-    expect(banner()?.textContent).toContain('安装包还没准备好')
+    expect(banner()?.textContent).toContain('安装包尚未就绪')
     expect(banner()?.textContent).not.toContain('404') // 码进日志,不回显给用户
     expect(retryBtn()).not.toBeNull()
     expect(downloadBtn()).toBeNull() // 不再是「可更新」诱导反复点

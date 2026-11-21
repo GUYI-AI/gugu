@@ -25,7 +25,7 @@ const localFile = (() => {
   return full
 })()
 
-function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response, finishAnswer?: () => Response) {
+function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response, finishAnswer?: () => Response, currentVersion: () => number = () => 2) {
   const rpcs: Array<[string, Record<string, unknown>]> = []
   const commits: Array<Record<string, unknown>> = []
   const uploads: string[] = []
@@ -52,6 +52,7 @@ function makeDeps(commitAnswer?: (args: Record<string, unknown>) => Response, fi
     restInsert: async () => { throw new Error('a file card is never a direct insert') },
     restRpc: async (name: string, body: Record<string, unknown>) => {
       rpcs.push([name, body])
+      if (name === 'workspace_get_as') return [{ id: ITEM, chat_id: CHAT, kind: 'file', version: currentVersion() }]
       if (name === 'chat_facts') return [{ id: CHAT, kind: 'group', source_chat_id: null, group_prompt: null }]
       if (name === 'list_member_ids') return [{ user_id: 'agent-1', role: 'member' }]
       return null
@@ -205,8 +206,18 @@ describe('message_send with a file, by reference', () => {
     expect(shares).toEqual([])
   })
 
+  test('a new upload preparation conflict preserves its actual reason without a file reference', async () => {
+    const h = makeDeps(() => new Response(JSON.stringify({ error: 'version_conflict', message: 'Upload receipt content changed' }), { status: 409 }))
+    await expect(callTool('message_send', { chat_id: CHAT, file_path: localFile }, h.deps)).rejects.toThrow('Upload receipt content changed')
+    expect(h.commits).toHaveLength(1)
+  })
+
   test('a newer version stored since: says what to do and that nothing was sent', async () => {
-    const { deps } = makeDeps(() => new Response(JSON.stringify({ error: 'version_conflict', message: 'workspace item x version conflict: expected 2, got 3' }), { status: 409 }))
+    let version = 2
+    const { deps } = makeDeps(() => {
+      version = 3
+      return new Response(JSON.stringify({ error: 'version_conflict', message: 'workspace item x version conflict: expected 2, got 3' }), { status: 409 })
+    }, undefined, () => version)
     await expect(callTool('message_send', { chat_id: CHAT, file: `gugu-file://${ITEM}?v=2`, file_path: localFile }, deps))
       .rejects.toThrow(/newer version .* since version 2, and nothing was sent/)
   })

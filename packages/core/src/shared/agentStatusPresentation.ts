@@ -128,13 +128,14 @@ export function presentAgentStatus(input: AgentStatusInput & { hostOnline?: bool
 
 /**
  * 一格状态的颜色:设计 token 名(`tokens.css` 的 `--agent-tone-*`);`null` = 不上色(做完、空闲、没有状态源)。
- * 在跑与后台在跑同一个橙,需要你 = --warn 黄,出错 = --danger 红,在线 = 绿(可达,聊天侧)。
+ * 在跑 = 橙,后台在跑 = 黄(画成双竖线,不是点),需要你 = --warn 黄,出错 = --danger 红,在线 = 绿(可达,聊天侧)。
  */
 export function agentStatusColorVar(tone: AgentStatusTone): string | null {
   switch (tone) {
     case 'running':
-    case 'parked':
       return 'var(--agent-tone-running)'
+    case 'parked':
+      return 'var(--agent-tone-parked)'
     case 'needs_user':
       return 'var(--agent-tone-needs-user)'
     case 'error':

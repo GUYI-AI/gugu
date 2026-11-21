@@ -113,7 +113,7 @@ describe('#6562 reaction notice reaches the reacted agent through the existing s
 
     const [text, ...rest] = await deliver(room, room.agent)
     expect(rest).toEqual([])
-    expect(text).toContain('from="咕咕系统" from_id="system:gugu"')
+    expect(text).toContain('from="Gugu" from_id="system:gugu"')
     expect(text).toContain(' mode="notice"')
     expect(text).toContain('not a request')
     expect(text).toContain('<message_context><![CDATA[👍 = 赞 (Like)]]></message_context>')

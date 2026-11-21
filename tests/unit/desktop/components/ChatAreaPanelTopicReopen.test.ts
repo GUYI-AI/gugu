@@ -22,7 +22,6 @@ vi.mock('../../../../apps/desktop/src/lib/topics', () => ({
   topicService: {
     createTopic: vi.fn(),
     listTopicsOfChat: vi.fn(async () => []),
-    getSourceState: vi.fn(async () => ({ kind: 'gone' as const })),
     getAgentFloodAdjustment: vi.fn(async () => null),
     undoAgentFloodAdjustment: vi.fn(async () => 0),
   },

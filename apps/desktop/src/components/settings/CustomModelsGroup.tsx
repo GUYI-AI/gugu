@@ -16,6 +16,7 @@ import { refreshModelSubscriptions, errorText } from '@renderer/features/setting
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
+import { vendorName } from '@/i18n/vendorName';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
@@ -113,9 +114,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       </span>
     </span>} note={translate(note)} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
       {group === 'coding-plan' && agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex').sort((a, b) => Number(a.id === 'claude') - Number(b.id === 'claude')).map(agent => (
-        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows={{
-          onAddAccount: () => setEditing({ group: 'coding-plan', account: agent.id === 'codex' ? 'codex' : 'claude' }),
-        }} />
+        <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />
       ))}
       {reading.state === 'error' ? <SettingsRow description={errorText(reading.error)} control={<Button onClick={refresh}>{translate('common.retry')}</Button>} />
         : reading.state === 'unknown' ? <SettingsRow control={<Unknown className="w-32" />} /> : <>
@@ -124,7 +123,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
             const connections = reading.value.filter(connection => connection.preset === preset.id);
             if (!connections.length) return null;
             const icon = modelProviderIcon({ id: preset.id, name: preset.name, iconKey: preset.icon });
-            return <CodingPlanGroup key={preset.id} id={preset.id} name={preset.name} icon={icon}>
+            return <CodingPlanGroup key={preset.id} id={preset.id} name={vendorName(preset.name)} icon={icon}>
               {connections.flatMap(renderConnection)}
             </CodingPlanGroup>;
           }) : reading.value.filter(connection => groupOf(connection) === group).flatMap(renderConnection)}

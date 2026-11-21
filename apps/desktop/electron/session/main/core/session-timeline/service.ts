@@ -1,4 +1,6 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
+import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -22,7 +24,7 @@ import { ownerNotificationHead, ownerNotificationFile } from '../sessions/owner-
 import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
 import { readProjects } from '@main/core/projects/operations/getProjects';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
@@ -173,11 +175,30 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
   );
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
   const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
-  return createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
+  const row = readSessionRow(sessionId, { includeArchived: true });
+  const pty = row && row.runtime !== 'acp';
+  const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
     sessionId,
+    ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });
+  try {
+    // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
+    const last = timeline.getSnapshot().turns.at(-1);
+    if (pty && last && !last.outcome && last.startedAt !== undefined
+      && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
+      const latest = readSessionRow(sessionId, { includeArchived: true });
+      if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
+        && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
+        recordPtyEngineEnd(sessionId, Date.now(), true, last.startedAt);
+      }
+    }
+    return timeline;
+  } catch (error) {
+    timeline.dispose();
+    throw error;
+  }
 };
 
 let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;
@@ -228,7 +249,7 @@ const subscriptions = new Map<string, ActiveSubscription>();
  * 早先这里只选了列表要显示的那几列，再把它 `as Conversation` 递给注入路径 —— 那是一句
  * 类型上的谎：注入路径哪天多读一个字段，拿到的是 undefined 而类型说它在，静默走错。
  */
-function readSessionRows(includeArchived = false, id?: string): Array<{
+function readSessionRows(includeArchived = false, where?: SQL, limit?: number): Array<{
   session: SessionRow;
   project: SessionpageProjectSummary;
 }> {
@@ -240,7 +261,9 @@ function readSessionRows(includeArchived = false, id?: string): Array<{
     .from(sessions)
     .innerJoin(projects, eq(sessions.projectId, projects.id))
     // 归档的会话不上这张面 —— 与 `getSessions()` 同一条口径:归属键是**会话自己**那一列(spec session-graph)。
-    .where(and(includeArchived ? undefined : isNull(sessions.archivedAt), id === undefined ? undefined : eq(sessions.id, id)))
+    .where(and(includeArchived ? undefined : isNull(sessions.archivedAt), where))
+    .orderBy(desc(sessions.lastInteractedAt))
+    .limit(limit ?? Number.MAX_SAFE_INTEGER)
     .all()
     .map(({ session, project }) => ({ session, project: projectSummary(project) }));
 }
@@ -256,8 +279,7 @@ function projectSummary({ kind, ...project }: { id: string; name: string; path: 
 
 export function readSessionRow(conversationId: string, options: { includeArchived?: boolean } = {}): SessionRow | null {
   return (
-    readSessionRows(options.includeArchived, conversationId).find((row) => row.session.id === conversationId)?.session ??
-    null
+    readSessionRows(options.includeArchived, eq(sessions.id, conversationId)).find((row) => row.session.id === conversationId)?.session ?? null
   );
 }
 
@@ -714,24 +736,29 @@ export async function sessionOfAgent(agentUserId: string): Promise<{ projectId: 
   return row ?? null;
 }
 
-/** 同一份列表,同步、不读名录(行上不带 agent):心跳的离线摘要与换版忙不忙只要状态。 */
-export function listSessionStates(): SessionpageSessionsListResult {
-  return sessionList(null);
+/** 同一份列表(最近动过的在前),同步、不读名录(行上不带 agent):心跳的离线摘要只要前 `limit` 条,在库里截(#3340)。 */
+export function listSessionStates(limit?: number): SessionpageSessionsListResult {
+  return sessionList(null, limit);
 }
 
-function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null): SessionpageSessionsListResult {
-  const rows = readSessionRows();
+/** 可能在忙的会话(状态既不是空闲也不是出错):换版忙不忙只看这几行,每一拍不随闲着的会话数长(#3340)。 */
+export function activeSessionStates(): Array<Pick<SessionpageSessionSummary, 'conversationId' | 'runtime' | 'status'>> {
+  return db.select().from(sessions).where(and(isNull(sessions.archivedAt), notInArray(sessions.agentStatus, ['idle', 'error']))).all()
+    .map((row) => ({ conversationId: row.id, runtime: summaryRuntime(row.runtime), status: statusFieldsOf(row).status }));
+}
+
+function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null, limit?: number): SessionpageSessionsListResult {
   const visibleProjects = readLocalProjects();
-  const visibleIds = new Set(visibleProjects.map(project => project.id));
+  const rows = readSessionRows(false, inArray(sessions.projectId, visibleProjects.map(project => project.id)), limit);
   const projectById = new Map<string, SessionpageProjectSummary>();
-  const sessions: SessionpageSessionSummary[] = [];
-  const schedules = schedulesBySession(listSessionSchedules());
-  const answered = readAnsweredAsks();
+  const summaries: SessionpageSessionSummary[] = [];
+  const ids = limit === undefined ? undefined : rows.map(({ session }) => session.id);
+  const schedules = schedulesBySession(listSessionSchedules(ids));
+  const answered = readAnsweredAsks(ids);
 
   for (const { session, project } of rows) {
-    if (!visibleIds.has(project.id)) continue;
     projectById.set(project.id, project);
-    sessions.push(summaryOf(session, agents, schedules, answered));
+    summaries.push(summaryOf(session, agents, schedules, answered));
   }
   // 还没开过会话的项目也要列:手机新建会话只能挑这里列出的项目,刚在电脑上打开的项目 ❌ 因为没会话就看不见
   // (#6985:在手机上给一台刚加的机器开第一条会话)。只列本机项目,与侧栏同一个口径:隐式的任务工作区不算
@@ -741,13 +768,13 @@ function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: stri
     if (!projectById.has(project.id)) projectById.set(project.id, project);
   }
 
-  return { projects: [...projectById.values()], sessions };
+  return { projects: [...projectById.values()], sessions: summaries };
 }
 
 /** 一条会话的摘要,与 `listSessions` 同一个投影;建会话时交回发起方,它就不用自己拼一份「不知道」的。 */
 export async function sessionSummary(conversationId: string): Promise<SessionpageSessionSummary | null> {
   const [row] = db.select().from(sessions).where(eq(sessions.id, conversationId)).limit(1).all();
-  return row ? summaryOf(row, await sessionAgents(process.env), schedulesBySession(listSessionSchedules()), readAnsweredAsks()) : null;
+  return row ? summaryOf(row, await sessionAgents(process.env), schedulesBySession(listSessionSchedules([row.id])), readAnsweredAsks([row.id])) : null;
 }
 
 /**
@@ -848,7 +875,7 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
           scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId, historyFloor]),
           branchLineage: hash([located.locator.harness, located.locator.providerSessionId]),
           cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) ?? undefined
-            : readSessionRows(false, conversationId).find(value => value.session.id === conversationId)?.project.path,
+            : readSessionRows(false, eq(sessions.id, conversationId)).find(value => value.session.id === conversationId)?.project.path,
           limit, signal, budget: createWindowBudget() };
       },
       reportError: error => log.warn('sessionWindow: bounded source subscription failed', { error: String(error) }),

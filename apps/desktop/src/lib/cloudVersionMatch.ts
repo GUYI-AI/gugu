@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { CloudComputerError, type CloudVersionMatchState } from '@gugu/core/cloud/cloudComputer'
 import { rendererCloudComputerClient } from './cloudComputerClient'
 import { getRendererSession, observeRendererSession } from './sessionPublication'
+import { i18n } from '@/i18n/runtime'
 
 const states = new Map<string, CloudVersionMatchState>()
 const running = new Map<string, AbortController>()
@@ -45,7 +46,7 @@ export async function requestCloudVersionMatch(deviceId: string, retry = false):
       const until = Date.now() + 10 * 60_000
       let state = initial
       while (state.status === 'updating') {
-        if (Date.now() >= until) throw new CloudComputerError(0, 'version_match_failed', '云端咕咕升级一直没有完成，请重试')
+        if (Date.now() >= until) throw new CloudComputerError(0, 'version_match_failed', i18n.t('cloud.upgradeIncomplete', { ns: 'assistant' }))
         await new Promise(resolve => setTimeout(resolve, 2_000))
         assertCurrent()
         state = await client.matchVersion!(deviceId, false, controller.signal)

@@ -9,7 +9,7 @@ export function withoutBlend(svg: string, body: string): string {
   const at = svg.indexOf(blend)
   if (at === -1) return svg
   if (svg.includes(blend, at + 1) || !(BLACK_ICON_BODIES.has(body) || WHITE_ICON_BODIES.has(body))) {
-    throw new Error(`[Avatar] unexpected Notionists blend layer (body ${body}) — DiceBear 升级后要重新实测这张表`)
+    throw new Error(`[Avatar] unexpected Notionists blend layer (body ${body}) — re-measure this table after a DiceBear upgrade`)
   }
   const start = svg.indexOf('>', at) + 1
   if (WHITE_ICON_BODIES.has(body)) return svg.slice(0, at) + svg.slice(at + blend.length)

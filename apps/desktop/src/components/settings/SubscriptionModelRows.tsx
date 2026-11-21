@@ -15,9 +15,9 @@ import { errorText } from '@renderer/features/settings/subscriptions/subscriptio
 import { refreshFailure } from '@/lib/replica';
 import { SubscriptionModelQuota } from './SubscriptionModelQuota';
 
-export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onAddAccount, onRemove, onSelect, onRename, onRetry, error, notice }: {
+export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onRemove, onSelect, onRename, onRetry, error, notice }: {
   agent: AgentPayload; machine: string | null; connections: HarnessConnection[] | undefined; busy: boolean;
-  onSignIn: (id: string) => void; onAddAccount: () => void; onRemove: (id: string) => void; onSelect: (id: string) => void; onRename: (id: string, name: string) => Promise<void>; onRetry: () => void; error?: string | null; notice?: ReactNode;
+  onSignIn: (id: string) => void; onRemove: (id: string) => void; onSelect: (id: string) => void; onRename: (id: string, name: string) => Promise<void>; onRetry: () => void; error?: string | null; notice?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
   const subscriptions = connections;
@@ -26,11 +26,11 @@ export function SubscriptionModelRows({ agent, machine, connections, busy, onSig
     {notice}
     {error && <SettingsRow description={<SettingsNote tone="danger" role="alert">{error}</SettingsNote>} control={<Button size="sm" variant="outline" onClick={onRetry}>{translate('common.retry')}</Button>} />}
     {!error && !connections && <SettingsRow control={<Unknown className="h-4 w-32" />} />}
-    {subscriptions?.map(connection => <SubscriptionModelRow key={connection.id} multiple={(subscriptions?.length ?? 0) > 1} {...{ agent, machine, connection, busy, onSignIn, onAddAccount, onRemove, onSelect, onRename }} />)}
+    {subscriptions?.map(connection => <SubscriptionModelRow key={connection.id} multiple={(subscriptions?.length ?? 0) > 1} {...{ agent, machine, connection, busy, onSignIn, onRemove, onSelect, onRename }} />)}
   </CodingPlanGroup>;
 }
 
-function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAddAccount, onRemove, onSelect, onRename, multiple }: Omit<Parameters<typeof SubscriptionModelRows>[0], 'connections' | 'error' | 'onRetry' | 'notice'> & { connection: HarnessConnection; multiple: boolean }) {
+function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onRemove, onSelect, onRename, multiple }: Omit<Parameters<typeof SubscriptionModelRows>[0], 'connections' | 'error' | 'onRetry' | 'notice'> & { connection: HarnessConnection; multiple: boolean }) {
   const { translate } = useSessionMessages();
   const reading = useConnectionDetails(machine, agent.id, connection.id);
   const details = reading.state === 'value' ? reading.value : undefined;
@@ -51,18 +51,15 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onAd
       <div className="gg-model-subscription-usage">
       {(agent.id === 'claude' || agent.id === 'codex') && <SubscriptionModelQuota machine={machine} provider={agent.id} connectionId={connection.id} account={connection.name}
         enabled={subscription} inlineOnly />}
-      {expired && <>
-        <span className="gg-model-expired">{translate('subscriptions.connections.expired')}</span>
-        {connection.kind === 'native' ? (
-          <Button size="sm" variant="outline" disabled={busy} data-testid={`model-add-account-${agent.id}`} onClick={onAddAccount}>
-            {translate('subscriptions.connections.addAndSignIn')}
-          </Button>
-        ) : (
+      {status?.kind === 'unauthenticated' &&
+        <span className={expired ? 'gg-model-expired' : 'text-xs text-foreground-muted'}>{translate(expired ? 'subscriptions.connections.expired' : 'subscriptions.connections.signedOut')}</span>}
+      {connection.kind === 'native' && status?.kind === 'authenticated' &&
+        <span className="text-xs text-foreground-muted">{translate('subscriptions.connections.signedIn')}</span>}
+      {!(status?.kind === 'authenticated' && status.credentialKind === 'api-key') && (
           <Button size="sm" variant="outline" disabled={busy} data-testid={`model-sign-in-${connection.id}`} onClick={() => onSignIn(connection.id)}>
             {translate('subscriptions.connections.signInAgain')}
           </Button>
-        )}
-      </>}
+      )}
       </div>
       <div className="gg-model-subscription-status">
         {(multiple || connection.kind === 'native') && (connection.current

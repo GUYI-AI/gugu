@@ -10,7 +10,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { desktopIpc } from '@/platform/desktopIpc';
 import { EXTENSION_BRIDGE_CHANNEL, type ExtensionBridgeResponse } from '@shared/extensions/bridge-protocol';
-import { EXTENSION_FILE_ANNOTATION_METHOD, type FileAnnotationAsk } from '@shared/extensions/file-annotation-draft';
+import { EXTENSION_FILE_SELECTION_METHOD, type FileSelectionAsk } from '@shared/extensions/file-selection';
 import type { AppModalHostAction } from '@shared/extensions/app-modal';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 
@@ -25,14 +25,12 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
-  EXTENSION_SELECTION_SEND_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
   EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
   type ResourceRemovalAsk,
-  type SelectionSendAsk,
   type VoiceNoteExportAsk,
   type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
@@ -470,27 +468,13 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
   },
-  /**
-   * API 54/55 Send, over the page that asked, at its selection (into its session, or its chat): the page's CSS px scaled to its guest's box here (its zoom
-   * and the window's included). A selection off the page opens nothing; left alone, it closes as dispatch's picker does.
-   */
-  [EXTENSION_FILE_ANNOTATION_METHOD]: async (params: unknown) => {
-    const ask = params as FileAnnotationAsk;
+  /** API 60 Cite or Send pressed on a page's selection menu (file-selection.ts): a draft, or the host's line at that page. */
+  [EXTENSION_FILE_SELECTION_METHOD]: async (params: unknown) => {
+    const ask = params as FileSelectionAsk;
     const guest = pageElement(ask.webContentsId);
-    if (!guest) return false;
-    const { openGuestFileAnnotation } = await import('../sessions/annotations/guest-file-annotation');
-    return openGuestFileAnnotation(guest, auxWindows.layerOf(guest.ownerDocument), ask, INSTALL_CONSENT_HUMAN_WINDOW_MS);
-  },
-  [EXTENSION_SELECTION_SEND_METHOD]: async (params: unknown) => {
-    const { to, webContentsId, open } = params as SelectionSendAsk;
-    const guest = pageElement(webContentsId);
-    if (!guest) return 'cancelled';
-    const box = guest.getBoundingClientRect(), { rect, viewport } = open, scale = box.width / viewport.width;
-    const anchor = new DOMRect(box.x + rect.x * scale, box.y + rect.y * scale, rect.width * scale, rect.height * scale);
-    if (anchor.right < box.left || anchor.left > box.right || anchor.bottom < box.top || anchor.top > box.bottom) return 'cancelled';
-    const { openSelectionSend } = await import('@/components/chat/selectionSendAsk');
-    const { draft, quote, pills } = open;
-    return openSelectionSend({ cite: { draft, quote, pills }, to, anchor, cover: box, container: auxWindows.layerOf(guest.ownerDocument), closeAfterMs: INSTALL_CONSENT_HUMAN_WINDOW_MS }).finally(() => guest.focus());
+    if (!guest) return;
+    const { runFileSelection } = await import('../sessions/annotations/file-selection-overlay');
+    runFileSelection(guest, auxWindows.layerOf(guest.ownerDocument), ask);
   },
   /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {

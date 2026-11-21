@@ -130,7 +130,7 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
     const { deps, calls } = topicHarness()
     await expect(callTool('topic_delete', { chat_id: TOPIC_CHAT }, deps)).rejects.toThrow()
     expect(calls.rpcs).toEqual([])
-    await expect(callTool('topic_delete', { chat_id: SOURCE_CHAT, confirm_name: 'Topic' }, deps)).rejects.toThrow('不是一条话题')
+    await expect(callTool('topic_delete', { chat_id: SOURCE_CHAT, confirm_name: 'Topic' }, deps)).rejects.toThrow('is not a topic')
     expect(calls.rpcs.some(([name]) => name === 'archive_topic_as')).toBe(false)
   })
 
@@ -286,7 +286,7 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
     // 传串了原先零报错地回一整个群的成员,agent 据此以为一屋子人都在话题里。
     // topic_invite 对同一个错误早就是 fail-loud,同一条产品规则不许一个响一个哑。
     const { deps } = topicHarness()
-    await expect(callTool('topic_members', { chat_id: SOURCE_CHAT }, deps)).rejects.toThrow(/不是一条话题/)
+    await expect(callTool('topic_members', { chat_id: SOURCE_CHAT }, deps)).rejects.toThrow(/is not a topic/)
   })
 
   test('topic_invite 发一条点名消息把人拉进来 —— ❌ 不直写 chat_members', async () => {
@@ -345,9 +345,9 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
   test('topic_invite 不传 text 就报错,且在任何 REST 之前', async () => {
     const { deps, calls } = topicHarness()
     await expect(callTool('topic_invite', { chat_id: TOPIC_CHAT, to_user_ids: [`user:${PEER}`] }, deps))
-      .rejects.toThrow(/topic_invite: text 必填/)
+      .rejects.toThrow(/topic_invite: text is required/)
     await expect(callTool('topic_invite', { chat_id: TOPIC_CHAT, to_user_ids: [`user:${PEER}`], text: '   ' }, deps))
-      .rejects.toThrow(/topic_invite: text 必填/)
+      .rejects.toThrow(/topic_invite: text is required/)
     expect(deps.restGet).not.toHaveBeenCalled()
     expect(calls.inserts).toEqual([])
   })
@@ -355,14 +355,14 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
   test('topic_invite 不点名就报错:没点名的消息谁也拉不进来', async () => {
     const { deps, calls } = topicHarness()
     await expect(callTool('topic_invite', { chat_id: TOPIC_CHAT, to_user_ids: [], text: '来看一眼' }, deps))
-      .rejects.toThrow(/至少要有一个人/)
+      .rejects.toThrow(/needs at least one person/)
     expect(calls.inserts).toEqual([])
   })
 
   test('topic_invite 只在话题里成立:群 / 私聊当场拒,❌ 不发一条拉不进人的消息', async () => {
     const { deps, calls } = topicHarness()
     await expect(callTool('topic_invite', { chat_id: SOURCE_CHAT, to_user_ids: [`user:${PEER}`], text: '来看一眼' }, deps))
-      .rejects.toThrow(/不是一条话题\(kind=group\)/)
+      .rejects.toThrow(/is not a topic \(kind=group\)/)
     expect(calls.inserts).toEqual([])
   })
 
@@ -374,7 +374,7 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
       chat_id: TOPIC_CHAT,
       to_user_ids: [`user:${OUTSIDER}`],
       text: '来看一眼',
-    }, outside.deps)).rejects.toThrow(new RegExp(`收件人不在本 chat.*${OUTSIDER}`))
+    }, outside.deps)).rejects.toThrow(new RegExp(`Recipients are not members of chat.*${OUTSIDER}`))
     expect(outside.calls.inserts).toEqual([])
 
     // 对照:PEER 只在来源线里、还不是话题成员 —— 闸若只看话题成员,这一条会红。
@@ -390,7 +390,7 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
       chat_id: SOURCE_CHAT,
       to_user_ids: [`user:${OUTSIDER}`],
       text: '喂',
-    }, deps)).rejects.toThrow(new RegExp(`收件人不在本 chat.*${OUTSIDER}`))
+    }, deps)).rejects.toThrow(new RegExp(`Recipients are not members of chat.*${OUTSIDER}`))
     expect(calls.inserts).toEqual([])
   })
 })

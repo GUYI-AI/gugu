@@ -1,10 +1,11 @@
 import { codexStartupKind, isCodexProviderStartupKind, type CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 import { AcpStartError } from '@renderer/lib/acp/acp-live-session';
 import { isAgentHomeImportCode } from '@gugu/session-core/workspace-server/agent-config';
+import { isCodexRefreshTokenRevoked } from '@gugu/session-core/acp/client';
 
 export type AcpLoadError =
   | { kind: 'agent_home_import'; message: string }
-  | { kind: 'auth_required'; message: string }
+  | { kind: 'auth_required'; message: string; signInReason?: 'revoked' }
   | { kind: 'adapter_lost'; message: string }
   | { kind: 'history_unavailable'; message: string }
   | { kind: 'provider_session_missing'; message: string }
@@ -104,7 +105,9 @@ export function toLoadError(error: unknown, machine: string | null = null): AcpL
     return { kind: 'connection_lost', message, deviceId: machine };
   }
   if (error instanceof AcpStartError && error.errorType === 'auth_required') {
-    return { kind: 'auth_required', message };
+    const cause = error.runtimeError.cause;
+    return { kind: 'auth_required', message,
+      ...(cause && isCodexRefreshTokenRevoked(cause) ? { signInReason: 'revoked' as const } : {}) };
   }
   if (error instanceof AcpStartError && error.errorType === 'provider_session_missing') {
     return { kind: 'provider_session_missing', message };

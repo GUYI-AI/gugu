@@ -153,9 +153,9 @@ function clipped(words: string): string {
 }
 
 /**
- * API 55 Send from a chat's folder (selection-send.ts): the pills of `refs` as a message holds them, read as the person, every
- * file one of `chatId`'s folder — the chat the page is drawn in, from the host's binding, never a chat the call names — and
- * the person still in that chat. Anything else opens nothing.
+ * A chat folder's files as a selection names them (file-selection.ts): the pills of `refs` as a message holds them, read as
+ * the person, every file one of `chatId`'s folder — the chat the page is drawn in, from the host's binding, never a chat the
+ * call names — and the person still in that chat. Anything else is refused.
  */
 export async function chatSelectionPills(platform: Pick<AppSendPlatform, 'account'>, chatId: string, refs: unknown): Promise<{ label: string; target: string }[]> {
   const checked = refsOf(refs);

@@ -323,9 +323,9 @@ function CreateOnMachine({
       const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
-        if ((phone || files.length) && !ownerId) throw new Error('请先登录后创建 Agent')
+        if ((phone || files.length) && !ownerId) throw new Error(tFlow('errors.signInToCreate'))
         if (attachmentAttempt && !files.length) throw Object.assign(new Error('Original creation attachments are required'), { code: 'creation_attachments_pending' })
-        if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error('上次创建尚未确认，请先发送原来的任务以继续同一次创建')
+        if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error(tFlow('errors.sendOriginalFirst'))
         let request: SessionpageSessionCreateRequest = attachmentAttempt ?? phoneAttempt ?? {
           ...(phone ? { clientRequestId: crypto.randomUUID() } : {}),
           // 手机任务宿主跑它自己报的那个项目;电脑上不带 = 那台的任务工作区。
@@ -358,7 +358,7 @@ function CreateOnMachine({
         // That machine's last-used set changed: the next new session there starts from it.
         void sessionCreateOptions.refresh(device.device_id)
         if (phone) {
-          if (!result.session?.supported || result.session.conversationId !== result.conversationId) throw new Error('手机尚未返回完整的任务记录，请继续同一次创建')
+          if (!result.session?.supported || result.session.conversationId !== result.conversationId) throw new Error(tFlow('errors.taskRecordIncomplete'))
           if (!files.length) forgetPhoneSessionCreate(ownerId!, device.device_id, request)
           if (page.active) setPhoneAttempt(null)
         }

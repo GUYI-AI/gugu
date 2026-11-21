@@ -1,7 +1,7 @@
 /*
  * Connection state in a header subtitle (ConnectionStatus.tsx). Inherits the subtitle's 12/18 type and muted color;
  * no background, border or padding of its own — it is never a banner.
- * The glyph is the agent-watch 12×12 shell / 8×8 inner (StatusGlyph), on the machine axis: live blue, ❌ agent tones.
+ * The glyph is the agent-watch 12×12 shell / 8×8 inner (LiveGlyph), on the machine axis: live blue, ❌ agent tones.
  */
 .gg-conn-status {
   display: inline-flex;

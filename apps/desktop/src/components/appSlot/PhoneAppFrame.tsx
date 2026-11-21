@@ -254,8 +254,8 @@ export function PhoneAppFrame({
     <div hidden={hidden} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {workingCopy ? <Suspense fallback={null}><OpenedFilePreview
         {...workingCopy} deviceId={session?.deviceId ?? ''} sessionId={session?.id ?? ''}
-        // A working copy is its session's file: its cite goes into that session's composer, the session brought up, as the
-        // desktop's does (draftOfWorkingCopyRefs) — a chat's composer has no such file to point at.
+        // A working copy is its session's file: its cite goes into that session's composer, the session brought up — the
+        // conversation its page belongs to (file-selection.ts `selectionConversationOf`).
         onQuote={(text) => {
           const listed = listedSession(devicesRef.current, liveDeviceSessions(), session?.id ?? '')
           if ('row' in listed) window.dispatchEvent(new CustomEvent<AppShowSessionDetail>(APP_SHOW_SESSION_EVENT, { detail: { ...listed.row, draft: { text } } }))

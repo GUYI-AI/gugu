@@ -417,6 +417,22 @@ it.each([1440, 1024, 800, 390])(
   }
 )
 
+it('an authenticated native Codex connection keeps its row login entry and menu login action', async () => {
+  control.state = 'authenticated'
+  control.nativeState = 'authenticated'
+  render(<AgentDetailModal agentId="codex" onClose={vi.fn()} />)
+  await expect.element(page.getByTestId('subscription-sign-in-codex')).toHaveTextContent('Sign in again')
+  await userEvent.click(page.getByRole('combobox', { name: 'Current connection', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Options for Existing CLI configuration', exact: true }))
+  const login = page.getByRole('menuitem', { name: 'Sign in again', exact: true })
+  await expect.element(login).toBeVisible()
+  expect(page.getByRole('menuitem', { name: 'Remove', exact: true }).query()).toBeNull()
+  await userEvent.click(login)
+  await until('the native login flow opens without deleting the connection', () => modalStore.activeModalId === 'agentSignInModal')
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'codex', connectionId: 'native' })
+  expect(control.removed).toEqual([])
+})
+
 it('working sessions refuse a task connection switch with a calm status and keep the native connection', async () => {
   control.state = 'authenticated'
   control.nativeState = 'authenticated'

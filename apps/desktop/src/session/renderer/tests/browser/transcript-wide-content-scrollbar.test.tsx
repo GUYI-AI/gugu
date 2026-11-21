@@ -18,13 +18,16 @@ import '@renderer/index.css'
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => harness?.cleanup())
 
+// Every cell caps at 24em (markdown.css), so the table's width is set by its column count, not by how wide the
+// runner's fonts draw the text: eight columns of long text are wider than any desktop transcript.
+const CELL = '运行在服务器上，负责理解问题、决定调用哪些工具、组织回答，看不到自己的权重'
+const COLUMNS = 8
 const REPLY = [
   '三层能看到的程度各不相同：',
   '',
-  '| 层 | 是什么 | 我能看到什么 |',
-  '| --- | --- | --- |',
-  '| 模型 | 运行在服务器上，负责理解问题、决定调用哪些工具、组织回答 | 看不到自己的权重，只能看到对话、工具返回的结果和系统提示里的说明文字 |',
-  '| 命令行程序 | 在你电脑上执行读文件、跑命令的程序，所有工具调用都经过它 | 是打包好的单文件程序，能找到压缩后的 JavaScript 源码，但没有注释和类型 |',
+  `| ${Array.from({ length: COLUMNS }, (_, i) => `列 ${i + 1}`).join(' | ')} |`,
+  `| ${Array.from({ length: COLUMNS }, () => '---').join(' | ')} |`,
+  `| ${Array.from({ length: COLUMNS }, () => CELL).join(' | ')} |`,
   '',
   '```powershell',
   `Get-ChildItem -Path "C:\\Users\\me\\AppData\\Local\\Programs\\gugu\\resources\\app\\node_modules\\${'deep\\'.repeat(20)}dist" -Recurse`,
@@ -50,12 +53,17 @@ it('leaves every sideways-scrolling box in a transcript reply to the themed scro
   await until('the reply table and code line are drawn', () => !!harness.container.querySelector('.gg-md-table-scroll') && harness.container.textContent!.includes('Get-ChildItem'))
 
   const root = harness.container.querySelector<HTMLElement>('[data-chat-root]')!
+  const table = root.querySelector<HTMLElement>('.gg-md-table-scroll')!
+  const code = root.querySelector<HTMLElement>('[class*="codeWrapper"]')!
   const sideways = [...root.querySelectorAll<HTMLElement>('*')].filter(el => getComputedStyle(el).overflowX === 'auto' && el.scrollWidth > el.clientWidth)
-  expect(sideways.map(el => el.className), 'the table and the code line each overflow sideways').toHaveLength(2)
+  expect(sideways, 'the table box and the code box each overflow sideways').toEqual(expect.arrayContaining([table, code]))
   // Headless Chromium hides every scrollbar (0px), so the paint is proven natively; this pins the cause: any
   // `scrollbar-width` / `scrollbar-color` on the box switches the themed ::-webkit-scrollbar off.
   for (const box of sideways) {
     const style = getComputedStyle(box)
     expect([style.scrollbarWidth, style.scrollbarColor], 'a system scrollbar setting would disable the themed one').toEqual(['auto', 'auto'])
+    // The box itself scrolls to its far edge: the clipped columns are reachable.
+    box.scrollLeft = box.scrollWidth
+    expect(box.scrollLeft + box.clientWidth, 'the box scrolls to its last column').toBeGreaterThanOrEqual(box.scrollWidth - 1)
   }
 })

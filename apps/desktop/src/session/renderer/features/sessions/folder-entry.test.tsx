@@ -110,14 +110,14 @@ describe('folder entry E1-E3', () => {
   it('E1 / CmdT: puts Folder first, where a chat\'s + puts its folder, and keeps its original open target', async () => {
     const groupGlyph = glyph((await menu('group'))[0]!);
     const items = await menu(undefined, true);
-    expect(items.filter((item) => !item.closest('[data-apps]')).map(text)).toEqual(['Folder', 'Side chat', 'Review', 'Terminal', 'Browser', 'Ports']);
+    expect(items.map(text)).toEqual(['Folder', 'Side chat', 'Review', 'Terminal', 'Browser', 'Ports']);
     expect(glyph(items[0]!)).toBe(groupGlyph);
     await act(async () => items[0]!.click());
     expect(h.open).toHaveBeenCalledWith('workspace.main', {});
   });
-  it('E1: the task Apps section omits only the folder and keeps other Apps', async () => {
-    await menu();
-    expect([...container.querySelectorAll('[data-apps] [role="menuitem"]')].map(text)).toEqual(['Notes', 'Add App…']);
+  it.each([undefined, 'dm'])('E1: the %s + lists no Apps: they are the header\'s one Apps button', async (chatId) => {
+    expect((await menu(chatId)).map(text)).not.toContain('Notes');
+    expect(container.querySelector('[data-apps]')).toBeNull();
   });
   it.each(['dm', 'group'])('E2: %s offers its own named folder first and opens that chat', async (chatId) => {
     const items = await menu(chatId);
@@ -144,10 +144,5 @@ describe('folder entry E1-E3', () => {
   it('control: a task does not resurrect an unavailable/disabled folder contribution', async () => {
     h.folderEnabled = false;
     expect((await menu()).map(text)).not.toContain('Folder');
-  });
-  it('control: other task Apps keep their original opening route', async () => {
-    const items = await menu();
-    await act(async () => items.find((item) => text(item) === 'Notes')!.click());
-    expect(h.open).toHaveBeenCalledWith('notes.main', {});
   });
 });

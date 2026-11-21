@@ -1482,7 +1482,7 @@ export function ChatRoot(props: ChatRootProps) {
   // 从前窗口内晚到的量高(视口之上、渲染窗口之外)没人补,读者看到内容整块跳一下,约 120ms 后投影才补回
   // (负载下实测 426px)。补偿在 commit 新 canvas 高度的同一帧、绘制之前写 ⇒ 没有一帧画出「已长高未补偿」。
   // 仍只经 writeScrollTop 写(同时更新 expectedScrollTop ⇒ readPhase 不会把它误读成用户滚动)。
-  // 参照行:行锚那一行;tail 意图下只在平滑滚动途中取视口上沿那一行(贴底读者由 tail 重投影负责)。
+  // 参照行:行锚那一行;其余(tail)取上一帧画在视口上沿的那一行 —— 贴底读者补偿后仍在底部,读者刚往上滚、这一帧还没读到时也不跳。
   // 窗口过后 projectAnchor 的目标恰随补偿平移,被 <1px no-op 守卫跳过 —— 与 #3992 的逐输入重投影交换。
   // 尺寸变化在三处进来,各自在「坐标被读或被画」之前结清:两帧之间(预取、展开)→ readPhase 在判定用户滚动、
   // 从当前 virt 重取锚之前;animate 相的 tween → writePhase 开头、投影之前;setVisible 新挂载的行同步量高 →
@@ -1502,7 +1502,7 @@ export function ChatRoot(props: ChatRootProps) {
     // The collapse projects both shrinking geometry and the viewport together. An additional
     // above-row compensation here would first pull it to the conclusion in the same frame.
     if (activityCollapse?.model === state() && m.kind === 'anchor' && activityCollapse.itemId === m.itemId) return;
-    const ref = m.kind === 'anchor' ? unitIndexOf(m.itemId, m.edge) : smoothScrolling ? lastTopUnitIndex : -1;
+    const ref = m.kind === 'anchor' ? unitIndexOf(m.itemId, m.edge) : lastTopUnitIndex;
     if (ref < 0) return;
     let aboveDelta = 0;
     for (const [i, d] of deltas) if (i < ref) aboveDelta += d;

@@ -889,7 +889,7 @@ export const extensionManifestSchema = z
         ctx.addIssue({
           code: 'custom',
           path: ['permissions', 'capabilities'],
-          message: `"${other}" 与 "${word}" 是同一个能力的两档 —— 只声明一档`,
+          message: `"${other}" and "${word}" are two levels of the same capability; declare only one`,
         });
       }
       byFamily.set(family, word);

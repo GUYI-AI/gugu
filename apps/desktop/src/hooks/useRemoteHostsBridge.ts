@@ -46,7 +46,7 @@ export function useRemoteHostsBridge(
   pickFolder: (deviceId: string, initialPath: string) => Promise<string | null>,
   openAddMachine?: () => void,
 ): void {
-  const { devices } = useDevicesStore()
+  const { devices, loading } = useDevicesStore()
   const cloudComputer = useCloudComputer()
   const currentDevice = devices.find(device => device.is_current_device)
   const currentMachineKey = currentDevice ? machineKeyOf(currentDevice) : null
@@ -112,6 +112,9 @@ export function useRemoteHostsBridge(
     [devices, currentMachineKey, sshMachines, signIns, linkProblems, tunnels, homeId, homeName],
   )
   const remoteRef = useRef(remote)
+  // #3433 设备表读完之前 `remote` 是空的:告诉会话页「还没读」,别把空当成「名下没有别的机器」。
+  const devicesReadRef = useRef(!loading)
+  devicesReadRef.current = !loading
   const pickFolderRef = useRef(pickFolder)
   pickFolderRef.current = pickFolder
   const openAddMachineRef = useRef(openAddMachine)
@@ -121,7 +124,7 @@ export function useRemoteHostsBridge(
   useEffect(() => {
     remoteRef.current = remote
     for (const listener of listenersRef.current) listener()
-  }, [remote])
+  }, [remote, loading])
 
   // #6264 远程 SSH 的机器说「这台电脑上的咕咕太旧」(版本信号):这台桌面够得着它,请它换成匹配的那一版 ——
   // 同一账号没有更新的桌面在用它时就降到这一版;有的话什么也不换,照旧提示更新这台电脑(主进程判,带冷却)。
@@ -139,6 +142,7 @@ export function useRemoteHostsBridge(
     if (!enabled) return
     const bridge: RemoteHostsBridge = {
       listDevices: () => remoteRef.current,
+      devicesRead: () => devicesReadRef.current,
       subscribeDevices: (listener) => {
         listenersRef.current.add(listener)
         return () => {

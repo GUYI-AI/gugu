@@ -38,6 +38,9 @@ vi.mock('sonner', () => ({ toast: Object.assign(notices.show, {
 }) }))
 import { notify } from '../../../../apps/desktop/src/lib/notices'
 vi.mock('../../../../apps/desktop/src/lib/widgetLabels', () => ({ widgetReferenceTexts: async () => new Map() }))
+// A delivered send advances the read marker, whose write would go to the network: it failed late, inside a later test,
+// and the failed write's probe request counted as that test's pull (CI: called 2 times). No test here is about reads.
+vi.mock('../../../../apps/desktop/src/lib/readWriter', async (original) => ({ ...(await original<object>()), writeRead: async () => {} }))
 
 function persistedMessage(id: string): MessageItem {
   return {

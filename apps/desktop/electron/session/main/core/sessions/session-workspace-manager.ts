@@ -258,6 +258,10 @@ class SessionWorkspaceManager {
     return this._lifecycle.get(sessionId)?.sessionMount;
   }
 
+  sessionsOf(projectId: string): string[] {
+    return [...(this._sessionsByProject.get(projectId) ?? [])];
+  }
+
   getWorkspaceId(sessionId: string): string | undefined {
     return this._lifecycle.get(sessionId)?.persistData.workspaceId;
   }

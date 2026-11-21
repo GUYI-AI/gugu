@@ -258,7 +258,7 @@ export function createSshLinkManager(options: {
         if (!request) return false
         if (!SERVER_UPDATE_CONTROL_RPCS.has(request.type)) {
           options.onMessage(deviceId, { type: 'broadcast', event: 'broadcast', payload: createDeviceRpcReplyEnvelope(request.type, request.request_id, {
-            error: { code: 'server_outdated', message: '请更新那台机器上的咕咕' },
+            error: { code: 'server_outdated', message: '请更新该设备上的咕咕' },
           }) })
           return true
         }

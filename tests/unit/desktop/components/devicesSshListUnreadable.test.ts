@@ -71,13 +71,13 @@ describe('DevicesSection with the SSH machine list unreadable', () => {
       const value = store({ devices: [device({ device_id: 'away', label: 'Away', is_online: false, status: 'offline' })] })
       await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
       await flush()
-      await vi.waitFor(() => expect(container.textContent).toContain('没读到这台电脑通过 SSH'))
+      await vi.waitFor(() => expect(container.textContent).toContain('无法读取此电脑通过 SSH'))
       const row = container.querySelector<HTMLElement>('[data-testid="settings-device-row"][data-device-id="away"]')!
       expect(row.textContent).toContain('上次在线')
       fails = false
-      const retry = [...container.querySelectorAll('button')].find((button) => button.parentElement?.textContent?.includes('没读到这台电脑通过 SSH'))!
+      const retry = [...container.querySelectorAll('button')].find((button) => button.parentElement?.textContent?.includes('无法读取此电脑通过 SSH'))!
       await act(async () => { retry.click() })
-      await vi.waitFor(() => expect(container.textContent).not.toContain('没读到这台电脑通过 SSH'))
+      await vi.waitFor(() => expect(container.textContent).not.toContain('无法读取此电脑通过 SSH'))
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

@@ -12,11 +12,10 @@ import { ChatHeaderActions } from './ChatHeaderActions'
 import { TopicMembers } from './ChatSettingsPanel'
 import { useChatOpener } from '../appSlot/useChatOpener'
 
-export const TopicToolWorkspace = observer(function TopicToolWorkspace({ chatId, name, memberCount, title, visible, onForward, children }: {
+export const TopicToolWorkspace = observer(function TopicToolWorkspace({ chatId, name, memberCount, visible, onForward, children }: {
   chatId: string
   name: string
   memberCount?: number
-  title: ReactNode
   visible: boolean
   onForward?: (message: MessageItem) => void
   children: ReactNode
@@ -36,7 +35,7 @@ export const TopicToolWorkspace = observer(function TopicToolWorkspace({ chatId,
     onToggleHeaderMenu={() => setMenu(true)} onCloseHeaderMenu={() => setMenu(false)} />
   return (
     <div className="relative h-full min-h-0 min-w-0" data-topic-tool-workspace={chatId}>
-      <TopicChatPanes chatId={chatId} title={title} actions={actions} body={children} />
+      <TopicChatPanes chatId={chatId} name={name} actions={actions} body={children} />
       <ChatTabPortals
         chatId={chatId}
         panel={(tab) => <GroupTabContent chatId={chatId} tabId={tab.tabId} item={tab.item} tabbed inWindow={tab.inWindow} mobile={false} visible={visible && tab.shown} onForward={onForward} onOpenWith={opener.openWith} />}

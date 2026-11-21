@@ -5,13 +5,13 @@ import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/t
 import { useChatStore } from '../../store/chatContext'
 import { LayoutGrid, MessageSquare, SquarePen, Users } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import type { groupAgentStatusIndicatorProps } from '../../lib/groupAgentStatus'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
 import { DropdownMenu, MenuItem, MenuSeparator, MenuSubmenu } from '../ui/Menu'
 import { ChatHeaderMenu } from './ChatHeaderMenu'
-import { GroupAppsPicker } from './GroupAppsPicker'
+import { AppsButton, ChatAppsPicker } from './ChatAppsPicker'
+import { openApp } from '../appSlot/useOpenApp'
 import { GroupTopicsRows, TopicCallChip, TopicUnreadChip } from './GroupTopicsRows'
 import { useChatTopicPins } from './useChatTopicPins'
 import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
@@ -35,7 +35,6 @@ interface ChatHeaderActionsProps {
     /** null until the roster is read: the count is a placeholder, ❌ 0. */
     snapshot: GroupCollabSnapshot | null
     settings: GroupChatSettings | null
-    statusIndicatorProps?: ReturnType<typeof groupAgentStatusIndicatorProps>
     onReload: () => Promise<void>
   }
   moreButtonRef: RefObject<HTMLButtonElement | null>
@@ -69,14 +68,14 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   const toggleMembers = () => infoShown ? onCloseInfo() : onOpenInfo('members')
   const folded = density === 'menu'
   const labeled = density === 'labeled' || (density === undefined && !narrow)
-  const showApps = isGroupChat && !folded && (density !== undefined || !narrow)
+  const showApps = !!activeChatId && !folded && (density !== undefined || !narrow)
   // #2548 桌面内层侧栏挂着这个对话时，隐藏重复的话题按钮。手机居中页头把成员入口收进更多。
   const innerChat = useInnerSidebarChat()
   const innerColumn = !mobile && activeChatId !== null && innerChat === activeChatId
   const showTopics = !mobile && !innerColumn && !!groupId
   const membersInMore = hasMembers && (folded || membersInMenu)
   const topicsInMore = folded && showTopics
-  const appsInMore = folded && !!groupId
+  const appsInMore = folded && !!activeChatId
   const hasFoldedItems = folded && (membersInMore || topicsInMore || appsInMore)
   const actionSize = density ? 'sm' : 'md'
   return <Popover.Root open={popup.kind === 'apps' && !mobile} modal={false} onOpenChange={(open) => open ? openPopup('apps') : closePopup()}>
@@ -100,17 +99,16 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
           <GroupTopicsRows chatId={groupId} />
         </DropdownMenu.Content>
       </DropdownMenu.Root>}
-      {showApps && <>
-        <Popover.Trigger ref={appsButton} data-testid={AUTOMATION_TEST_IDS.chatHeaderAppsButton} onClick={onCloseHeaderMenu}
-          render={<Button variant="ghost" size={actionSize} aria-label={t('header.groupApps')} title={t('header.groupApps')}><LayoutGrid />{labeled && t('header.groupApps')}</Button>} />
-        {labeled && <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />}
-      </>}
+    </>}
+    {showApps && <>
+      <Popover.Trigger ref={appsButton} onClick={onCloseHeaderMenu} render={<AppsButton size={actionSize} labeled={labeled} />} />
+      {labeled && <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />}
     </>}
     <ChatHeaderMenu
       chatId={activeChatId} isGroupChat={isGroupChat} isRoomChat={isRoomChat} mobile={mobile} compactButton={density !== undefined} buttonRef={moreButtonRef}
       open={showHeaderMenu} onOpenChange={(open) => open ? onToggleHeaderMenu() : onCloseHeaderMenu()}
       onSearch={onSearch} onOpenFolder={onOpenFolder} onOpenInfo={() => isGroupChat ? onOpenInfo('main') : onOpenInfo()}
-      onOpenGroupApps={groupId && density === undefined && narrow ? () => openPopup('apps') : undefined} showOpenApps={!showApps && !appsInMore}
+      onOpenApps={activeChatId && density === undefined && narrow ? () => openPopup('apps') : undefined}
     >
       {membersInMore ? <MenuItem data-pane-opener="" icon={<Users size={16} />} onClick={toggleMembers}>
         {t('header.memberList')}{memberCount == null ? '' : ` (${memberCount})`}
@@ -118,10 +116,10 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       {topicsInMore && groupId && <MenuSubmenu icon={<MessageSquare size={16} />} label={t('history.tabs.topics')}>
         <GroupTopicsRows chatId={groupId} />
       </MenuSubmenu>}
-      {appsInMore && <MenuItem icon={<LayoutGrid size={16} />} onClick={() => openPopup('apps')}>{t('header.groupApps')}</MenuItem>}
+      {appsInMore && <MenuItem icon={<LayoutGrid size={16} />} onClick={() => openPopup('apps')}>{t('header.apps')}</MenuItem>}
       {hasFoldedItems && <MenuSeparator />}
     </ChatHeaderMenu>
-    {groupId && popup.kind === 'apps' && <GroupAppsPicker chatId={groupId} mobile={mobile} anchor={showApps ? appsButton : moreButtonRef} onClose={closePopup} />}
+    {activeChatId && popup.kind === 'apps' && <ChatAppsPicker chatId={activeChatId} onOpen={(app) => openApp(app.extensionId, activeChatId)} mobile={mobile} anchor={showApps ? appsButton : moreButtonRef} onClose={closePopup} />}
   </Popover.Root>
 })
 

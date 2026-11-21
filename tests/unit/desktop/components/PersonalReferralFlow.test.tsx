@@ -30,7 +30,7 @@ it('shows real success and actually received credits even when rewards are disab
 it('shows an unavailable state without a fabricated zero count or enabled share buttons', async () => {
   rpc.read.mockRejectedValue(new Error('offline'))
   await renderWithAppProviders(harness,createNode(InvitationPanel))
-  expect(harness.container.textContent).toContain('暂时读不到')
+  expect(harness.container.textContent).toContain('无法读取邀请信息')
   expect(harness.container.querySelector('.gg-referral-stats')?.textContent).toBe('—已邀请—已到账')
   const copy = [...harness.container.querySelectorAll('button')].find(button => button.textContent === '复制邀请码')!
   expect(copy.disabled).toBe(true)
@@ -85,7 +85,7 @@ it('loads genuine paginated activity and preserves historical credited values', 
   await clickElement([...list.querySelectorAll('button')].find(button => button.textContent === '加载更多')!)
   expect(list.textContent).toContain('受邀朋友甲')
   expect(list.textContent).toContain('受邀朋友乙')
-  expect(list.textContent).toContain('还没发消息')
+  expect(list.textContent).toContain('尚未发送消息')
   expect(list.textContent).not.toContain('加载更多')
   expect(rpc.activity.mock.calls.at(-1)?.[1]).toBe('next')
 })
@@ -95,10 +95,10 @@ it('keeps an activity failure distinct from a genuinely empty history', async ()
     .mockResolvedValueOnce({ status: 'ok', items: [], next_cursor: null })
   await renderWithAppProviders(harness, createNode(InvitationPanel))
   const list = harness.container.querySelector('[data-testid="referral-activity"]')!
-  expect(list.textContent).toContain('暂时读不到邀请记录')
-  expect(list.textContent).not.toContain('还没有邀请记录')
+  expect(list.textContent).toContain('无法读取邀请记录')
+  expect(list.textContent).not.toContain('暂无邀请记录')
   await clickElement(list.querySelector('button')!)
-  expect(list.textContent).toContain('还没有邀请记录')
+  expect(list.textContent).toContain('暂无邀请记录')
 })
 
 it('shares one account reading across source fields and keeps another account isolated from late activity', async () => {
@@ -112,6 +112,6 @@ it('shares one account reading across source fields and keeps another account is
   await renderWithAppProviders(harness, createNode(InvitationPanel), { auth: { id: 'second' } })
   await act(async () => { finishOld({ status: 'ok', items: [{ key: 'old', display_name: '前一个账号的朋友', avatar: null, invited_at: '2026-11-18T12:00:00Z', state: 'credited', credited: true, credited_cny: '1' }], next_cursor: null }) })
   expect(harness.container.textContent).not.toContain('前一个账号的朋友')
-  expect(harness.container.textContent).toContain('还没有邀请记录')
+  expect(harness.container.textContent).toContain('暂无邀请记录')
   expect(rpc.activity.mock.calls.at(-1)?.[0]).toBe('second')
 })

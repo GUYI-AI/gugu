@@ -170,11 +170,15 @@ export class RemoteHostsStore {
   private readonly waitReadings = new Map<string, AgentWatchStatusMap>();
   private stopDevices: (() => void) | null = null;
   private started = false;
+  /** #3433 reconcile 正在把名册里的机器一台台登记进来:这一轮没走完,项目表里没有的别机项目还不能判「已删」。 */
+  private reconciling = false;
+  /** #3433 这一座桥的设备列表读过一次、并已重判过恢复的视图。 */
+  private rosterRead = false;
 
   constructor() {
     makeAutoObservable<
       RemoteHostsStore,
-      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'waitReadings' | 'stopDevices' | 'started' | 'listSyncs' | 'directorySessions' | 'digestSessions'
+      'bridge' | 'linkOffs' | 'projectPromises' | 'accountSeenLive' | 'waitReadings' | 'stopDevices' | 'started' | 'reconciling' | 'rosterRead' | 'listSyncs' | 'directorySessions' | 'digestSessions'
     >(this, {
       bridge: observable.ref,
       directory: observable.ref,
@@ -187,6 +191,8 @@ export class RemoteHostsStore {
       waitReadings: false,
       stopDevices: false,
       started: false,
+      reconciling: false,
+      rosterRead: false,
     });
   }
 
@@ -327,7 +333,14 @@ export class RemoteHostsStore {
    */
   awaitsMachineLists(): boolean {
     if (!this.started) return true;
+    // #3433 名册还没接上 / 接上了设备列表还没读 / 正在一台台登记:空的名册(或登记到一半的)不等于「名下没有别的机器」。
+    if (this.reconciling || !this.bridge || this.bridge.devicesRead?.() === false) return true;
     return [...this.hosts.values()].some((state) => !state.synced && !state.device.projects);
+  }
+
+  /** 那台机器自己的项目清单这一端读到过了(连上读的,不是账号上记着的那份)。 */
+  hasReadList(deviceId: string): boolean {
+    return this.hosts.get(deviceId)?.synced === true;
   }
 
   /** 这个项目在哪台别的机器上;本机项目 = null。 */
@@ -506,7 +519,7 @@ export class RemoteHostsStore {
     return requested;
   }
 
-  /** 远程 SSH 的机器要先登录:经窗口顶上那张卡片问一次。老宿主没有 = false。 */
+  /** 远程 SSH 的机器要先登录(选择器里选它、新建框提示条上的「登录」):提问浮在窗口顶上那张卡片里。老宿主没有 = false。 */
   signIn(deviceId: string): Promise<boolean> {
     return this.bridge?.signInSsh?.(deviceId) ?? Promise.resolve(false);
   }
@@ -606,6 +619,7 @@ export class RemoteHostsStore {
     runInAction(() => {
       this.bridge = bridge;
     });
+    this.rosterRead = false;
     if (!bridge) {
       setAssistantProjectHosts([]);
       for (const deviceId of [...this.hosts.keys()]) this.forget(deviceId);
@@ -632,9 +646,13 @@ export class RemoteHostsStore {
     const devices = bridge.listDevices();
     setAssistantProjectHosts(devices);
     const seen = new Set<string>();
+    // #3433 登记到一半时(第一台并进项目表就会重判守卫,后面的机器还没登记)别判「已删」;这一轮走完再重判一次。
+    let changed = !this.rosterRead && bridge.devicesRead?.() !== false;
+    this.reconciling = true;
     for (const device of devices) {
       seen.add(device.id);
       const current = this.hosts.get(device.id);
+      if (!current) changed = true;
       const cameBack = current !== undefined && !remoteHostReachable(current.device) && remoteHostReachable(device);
       runInAction(() => {
         if (current) current.device = device;
@@ -653,6 +671,11 @@ export class RemoteHostsStore {
       }
     }
     for (const deviceId of [...this.hosts.keys()]) if (!seen.has(deviceId)) this.forget(deviceId);
+    this.reconciling = false;
+    if (changed) {
+      if (bridge.devicesRead?.() !== false) this.rosterRead = true;
+      appState.navigation.revalidate();
+    }
   }
 
   private watch(deviceId: string): void {

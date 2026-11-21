@@ -304,7 +304,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       chat = repository.snapshot().chat.find(row => row.id === message.chat_id)?.value
     }
     if (!chat || imRepositoryScope.disposed || repository.accountId !== userId) return
-    await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen,
+    await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen, isCurrent: () => !imRepositoryScope.disposed,
       notificationsEnabled: devicePreferences.chatMessages, soundEnabled: devicePreferences.chatSound })
   }
 

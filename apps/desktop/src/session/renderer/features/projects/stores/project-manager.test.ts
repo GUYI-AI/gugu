@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@shared/core/sessions/sessions';
-import { projectCreatedChannel, projectDeletedChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
+import { projectCreatedChannel, projectDeletedChannel, projectRootRestoredChannel, projectVisibilityChangedChannel } from '@shared/core/projects/projectEvents';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
 import type { LocalProject } from '@shared/projects';
 // 这个模块被 vi.mock 掉了,导进来拿到的就是那份替身 —— 挂载末尾补跑的 revalidate 打在它上面。
@@ -341,6 +341,30 @@ describe('ProjectManagerStore project creation', () => {
     expect(store.projects.get(project.id)?.name).toBe(project.name);
     expect(mount).toHaveBeenCalledWith(project.id);
     expect(mocks.createProject).not.toHaveBeenCalled();
+  });
+
+  it.each(['/project', '/restored-folder'])('reopens the retained project provider after root recovery at %s', (path) => {
+    const store = new ProjectManagerStore();
+    const project = localProject({ repositoryWorkspaceId: 'retained-root' });
+    const known = createUnmountedProject(project, 'idle');
+    const dispose = vi.fn();
+    known.state = 'mounted';
+    known.mountedProject = { dispose } as never;
+    store.projects.set(project.id, known);
+    const mount = vi.spyOn(store, 'mountProject').mockResolvedValue(undefined);
+    const handler = mocks.eventOn.mock.calls.find(([channel]) => channel === projectRootRestoredChannel)?.[1];
+    if (!handler) throw new Error('Expected root-restored subscription');
+    const restored = localProject({ ...project, path: path as CanonicalPath });
+
+    handler({ project: restored });
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(store.projects.size).toBe(1);
+    expect(store.projects.get(project.id)?.data).toEqual(restored);
+    expect(store.projects.get(project.id)?.mountedProject).toBeNull();
+    expect(mount).toHaveBeenCalledWith(project.id);
+    expect(mocks.createProject).not.toHaveBeenCalled();
+    store.dispose();
   });
 
   it('hands a session created in a project that is not mounted yet to its task manager once it mounts', async () => {
@@ -715,6 +739,26 @@ describe('remote project classification on reconnect', () => {
       expect(isWorkspaceProject(known)).toBe(false);
       expect(known.mountedProject).toBe(taskState);
     } finally {
+      store.dispose();
+      machineRegistry.forgetMachine(deviceId);
+    }
+  });
+
+  it('does not re-point a task at a project this desktop has no entry for (the other machine\'s hidden task workspace is in no account copy)', async () => {
+    const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const deviceId = 'other-config-device';
+    const home = '00000000-0000-4000-8000-000000000001';
+    const ordinary = localProject({ id: 'other-config-project' });
+    const store = new ProjectManagerStore();
+    const saved = appState.navigation.viewParamsStore;
+    appState.navigation.viewParamsStore = { session: { projectId: home, sessionId: 'local-task' } };
+    try {
+      // that machine's session list names the same task under its hidden task workspace, which its project list does not carry
+      store.syncMachineProjects(deviceId, [ordinary], [{ conversationId: 'local-task', projectId: `${home}~${deviceId}` }]);
+      expect(appState.navigation.updateViewParams).not.toHaveBeenCalled();
+    } finally {
+      appState.navigation.viewParamsStore = saved;
+      vi.mocked(appState.navigation.updateViewParams).mockReset();
       store.dispose();
       machineRegistry.forgetMachine(deviceId);
     }

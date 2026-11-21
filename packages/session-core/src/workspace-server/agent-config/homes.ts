@@ -26,7 +26,7 @@ export const agentHomeScanSchema = z.object({
   nativeHistory: z.object({ removed: z.number(), pending: z.number(), retained: z.number(), unowned: z.number() }).optional(),
   historyImport: historyImportSchema.optional(),
   migrationSpace: z.object({ requiredBytes: z.number(), availableBytes: z.number(), shortfallBytes: z.number() }).optional(),
-  upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin']).optional(),
+  upgraded: z.boolean().optional(), upgradeSignIn: z.enum(['copied', 'relogin', 'reference']).optional(),
   terminalNeedsSignIn: z.boolean().optional(), oldSessionsSkipped: z.number().optional(), upgradeIssues: z.array(agentHomeIssueSchema).optional(),
   groups: z.array(z.object({ id: agentHomeGroupIdSchema, count: z.number(), mcpCount: z.number().optional() })),
   issues: z.array(agentHomeIssueSchema),

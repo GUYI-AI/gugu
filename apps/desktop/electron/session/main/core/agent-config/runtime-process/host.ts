@@ -185,6 +185,8 @@ export async function clearAgentAuthExpired(providerId: string, sessionId?: stri
 export async function disposeAgentConfigRuntimeProcess(): Promise<void> {
   rendererWireDispose?.();
   rendererWireDispose = null;
+  const { releaseNativeCodexAuthSources } = await import('@main/core/agents/codex-native-auth-source');
+  await releaseNativeCodexAuthSources();
   await agentConfigWorker.dispose();
 }
 

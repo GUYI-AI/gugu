@@ -53,4 +53,14 @@ describe('sender-device resend position persistence', () => {
     expect(imSelectors.messagesForChat('chat')(repository.snapshot()).map(row => row.id)).toEqual(['before', 'failed', 'later'])
     repository.close()
   })
+
+  it('slots an outbox entry saved without a position after what the conversation shows when it is resent', async () => {
+    const repository = await openImRepository('sender', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
+    await repository.transaction(tx => { tx.putMessage(row('before', 10, 1)); tx.putMessage(row('later', 11, 3)) })
+    const record = outboxMessagePosition(repository, { ...outbox(), state: 'pending' })
+    await confirmSentMessage(repository, record, row('failed', 12, 4))
+    // No clock comparison: a record without a slot gets one from the rows on screen, like a new send.
+    expect(imSelectors.messagesForChat('chat')(repository.snapshot()).map(row => row.id)).toEqual(['before', 'later', 'failed'])
+    repository.close()
+  })
 })
