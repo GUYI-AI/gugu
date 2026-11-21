@@ -1,5 +1,5 @@
 import type { RecordEntry, SessionRecordLocator, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
-import { deliverInSlices, forEachJsonLine, pollInterval, warnOf, type RecordSourceWarn, type SessionRecordSourceOptions } from './shared';
+import { forEachJsonLine, pollInterval, warnOf, type RecordSourceWarn, type SessionRecordSourceOptions } from './shared';
 import { TailReader } from './tail-reader';
 
 /**
@@ -73,9 +73,7 @@ class TreeJsonlTail {
     const lines: string[] = [];
     await this.reader.readFromStart((chunk) => lines.push(...chunk));
     for (const node of this.parse(lines)) this.remember(node);
-    // A long branch is reduced slice by slice, as every source's initial read is (see `readSlices`).
-    await deliverInSlices(this.branch(), (slice) => events.onEntries(slice), () => this.stopped);
-    if (this.stopped) return;
+    this.emitPath(events);
     this.reader.start();
   }
 
@@ -102,8 +100,7 @@ class TreeJsonlTail {
     if (moved) {
       // 叶子跳到了别的分支(回退、重设根):这一段时间线已经不是那一段了，整份重来。
       events.onReset('source_replaced');
-      const path = this.branch();
-      if (path.length > 0) events.onEntries(path);
+      this.emitPath(events);
       return;
     }
     if (batch.length > 0) events.onEntries(batch);
@@ -114,8 +111,8 @@ class TreeJsonlTail {
     this.leaf = node.id;
   }
 
-  /** 从根到叶子那一条分支上的全部条目。 */
-  private branch(): RecordEntry[] {
+  /** 把从根到叶子那一条分支整份交出去。 */
+  private emitPath(events: SessionRecordSourceEvents): void {
     const path: TreeNode[] = [];
     const seen = new Set<string>();
     for (let id = this.leaf; id && !seen.has(id); ) {
@@ -125,7 +122,8 @@ class TreeJsonlTail {
       path.push(node);
       id = node.parentId;
     }
-    return path.reverse().flatMap((node) => this.format.decode(node));
+    const out = path.reverse().flatMap((node) => this.format.decode(node));
+    if (out.length > 0) events.onEntries(out);
   }
 
   private parse(lines: string[]): TreeNode[] {
