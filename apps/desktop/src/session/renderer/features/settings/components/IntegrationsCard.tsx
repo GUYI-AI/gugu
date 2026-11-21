@@ -26,6 +26,7 @@ import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Sheet, SheetContent } from '@renderer/lib/ui/sheet';
 import { TooltipProvider } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { configuredConnections as configuredOnHost } from '@/components/connections/connection-replicas';
 import type { AgentIconAsset } from '@shared/core/agents/agent-payload';
 import type { ConnectionStatus } from '@shared/issue-providers';
 import { IntegrationDetailSidebar } from './IntegrationDetailSidebar';
@@ -279,7 +280,7 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
       playbooks={selectedIntegration.playbooks}
       local={{ host, deviceId: host.remote?.deviceId ?? null }}
       readDevice={keptByPlatform(selectedMetadata || undefined) ? undefined : async ({ host: target }) =>
-        (await target.integrations.checkConfiguredConnections())[selectedIntegration.id] === true}
+        (await configuredOnHost.fetch(target.key))[selectedIntegration.id] === true}
       onConnected={reloadConnections}
       onDisconnect={selectedIntegration.id === 'github' ? async () => {
         for (const { accountId } of sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value : []) {

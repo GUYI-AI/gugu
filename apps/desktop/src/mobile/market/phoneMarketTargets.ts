@@ -4,7 +4,7 @@ import { marketDeviceReading, readOnDevicesWith } from '@renderer/features/exten
 import { PHONE_HOST } from '@renderer/features/extensions/extensions-api'
 import { installedExtensions, useInstalledApps, type InstalledExtensionsList } from '@renderer/features/extensions/installed-extensions'
 import { marketEntry } from '@renderer/features/extensions/market-replicas'
-import { refreshAgentReadings } from '@renderer/lib/stores/agent-replicas'
+import { managementAgent, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas'
 import { askInShell, installConsentPrompt } from '@renderer/features/extensions/install-consent'
 import { isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order'
 import { marketAgentInstallPlan } from '@renderer/features/extensions/panel/market-agent-install-plan'
@@ -105,7 +105,7 @@ export function usePhoneAppInstallTargets(id: string, devices: readonly Device[]
 export function usePhoneAgentInstallTargets(id: string, devices: readonly Device[]) {
   return usePhoneMarketTargets(devices, {
     key: `agent:${id}`,
-    read: ({ host }) => host.agents.getManagement(id),
+    read: ({ device }) => managementAgent.fetch(device.device_id, id),
     describe: (agent: AgentPayload | null, { host }) => {
       if (!agent?.reading) return { status: 'unavailable' }
       const present = isInstalledAgent(agent)
