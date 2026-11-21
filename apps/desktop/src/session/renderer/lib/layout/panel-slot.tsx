@@ -6,6 +6,8 @@ import type { PanelTrack } from './panel-track';
  * One slot of a PanelTrack (panel-track.ts): its place in the flow, the window that clips it at its drawn edge, and its
  * content. Sizes and transforms are written by the track only; this renders the three boxes and hands them over.
  * `windowProps` go on the window (the box the panel is seen through: data attributes, z, a hidden style).
+ * `fill`: the track's fill in the same three boxes (it takes the rest, nothing clips it), so a child that becomes or stops
+ * being the last of a cut keeps its nodes (TrackCut).
  */
 export function PanelSlot({
   track,
@@ -13,6 +15,7 @@ export function PanelSlot({
   axis = 'x',
   className,
   windowProps,
+  fill = false,
   children,
 }: {
   track: PanelTrack;
@@ -21,25 +24,34 @@ export function PanelSlot({
   axis?: 'x' | 'y';
   className?: string;
   windowProps?: HTMLAttributes<HTMLDivElement> & Record<`data-${string}`, string | undefined>;
+  fill?: boolean;
   children: ReactNode;
 }) {
   const nodes = useRef<{ place?: HTMLDivElement | null; window?: HTMLDivElement | null; content?: HTMLDivElement | null }>({});
+  const role = useRef(fill);
   const attach = useCallback(() => {
     const { place, window, content } = nodes.current;
-    track.attach(id, place && window && content ? { place, window, content } : null);
-  }, [track, id]);
+    // Became the fill or stopped being it: what the other role's track wrote goes, the new track writes its own.
+    if (role.current !== fill && place && window && content) {
+      role.current = fill;
+      for (const { style } of [place, window, content]) style.width = style.height = style.transform = style.opacity = style.maskImage = style.willChange = '';
+      window.inert = false;
+    }
+    if (fill) track.attachFill(place ?? null);
+    else track.attach(id, place && window && content ? { place, window, content } : null);
+  }, [track, id, fill]);
   const ref = (key: 'place' | 'window' | 'content') => (element: HTMLDivElement | null) => {
     nodes.current[key] = element;
     attach();
   };
   return (
-    <div ref={ref('place')} data-panel-slot={id} className={cn('relative shrink-0', axis === 'x' ? 'h-full' : 'w-full', className)}>
+    <div ref={ref('place')} data-panel-slot={fill ? undefined : id} className={cn(fill ? 'relative min-h-0 min-w-0 flex-1' : 'relative shrink-0', axis === 'x' ? 'h-full' : 'w-full', className)}>
       <div
         {...windowProps}
         ref={ref('window')}
-        className={cn('absolute top-0 left-0 overflow-hidden', axis === 'x' ? 'h-full' : 'w-full', windowProps?.className)}
+        className={cn('absolute top-0 left-0 overflow-hidden', fill ? 'size-full' : axis === 'x' ? 'h-full' : 'w-full', windowProps?.className)}
       >
-        <div ref={ref('content')} className={cn('absolute top-0 left-0', axis === 'x' ? 'h-full' : 'w-full')}>
+        <div ref={ref('content')} className={cn('absolute top-0 left-0', fill ? 'size-full' : axis === 'x' ? 'h-full' : 'w-full')}>
           {children}
         </div>
       </div>

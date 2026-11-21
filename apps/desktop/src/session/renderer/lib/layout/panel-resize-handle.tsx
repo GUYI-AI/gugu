@@ -8,8 +8,8 @@ import { cn } from '@renderer/utils/utils';
  */
 export const PANEL_SNAP_RATIO = 0.5;
 
-/** 键盘调宽的步长 —— 与 react-resizable-panels 的方向键行为同档,别让改造把纯键盘用户丢下。 */
-const KEYBOARD_STEP_PX = 16;
+/** 键盘调宽的步长:会话页的边与分栏的分界线(TrackCut)同一档,纯键盘用户也调得动。 */
+export const KEYBOARD_STEP_PX = 16;
 /** 命中带宽度(px)。视觉上的那条发丝线由面板自己的边框画,这一条只负责"抓得住"。 */
 const HIT_STRIP_PX = 4;
 
@@ -56,11 +56,7 @@ interface PanelResizeHandleProps {
 /**
  * 侧栏 / 工作区面板的拖拽分隔条。
  *
- * 为什么不继续用 react-resizable-panels:它把面板宽度记在自己的 flex 布局里,程序性 collapse 是
- * **瞬间**改 flex-grow —— 没有可插入过渡的量(product spec「尺寸变化必须过渡,
- * 面板展开/收缩不允许瞬跳」在会话页一直是破的)。想让它动起来只能每帧调 `resize()`,但那会一路撞上
- * 它自己的收起阈值(动画中途宽度必然低于 minSize,面板会在半路被判成收起而吸走)和它每次布局提交
- * 都落 localStorage 的行为。所以宽度改由 motion value 持有,分隔条只负责把指针位移翻译成宽度。
+ * 分隔条只负责把指针位移翻译成宽度;宽度在屏上怎么走归 PanelTrack(panel-track.ts)。
  *
  * **它是脱离文档流的**(绝对定位骑在边界上),这一点是动效的一部分而不是写法偏好:留在流里的话,
  * 面板一开始收起它就整条消失,主区会先横跳一个把手宽再开始滑 —— 那一下正是"发虚"。
