@@ -72,5 +72,13 @@ describe('which engine a tab gets when the standalone browser is selected', () =
   it('does not look at either when the built-in browser was chosen anyway', async () => {
     m.selection.mockResolvedValue('builtin');
     expect((await registerBrowserKernel(tab)).kernel).toBe('builtin');
+    expect(m.installation).not.toHaveBeenCalled();
+    expect(m.reserveTab).not.toHaveBeenCalled();
+  });
+
+  it('does not start a standalone profile for an explicit built-in tab when standalone is the default', async () => {
+    expect((await registerBrowserKernel({ ...tab, kernel: 'builtin' })).kernel).toBe('builtin');
+    expect(m.installation).not.toHaveBeenCalled();
+    expect(m.reserveTab).not.toHaveBeenCalled();
   });
 });
