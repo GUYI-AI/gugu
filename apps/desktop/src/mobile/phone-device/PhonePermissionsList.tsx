@@ -9,6 +9,7 @@ import { platform } from '@/platform'
 import { requirementGranted, type PhoneActionGroup, type PhoneOsState } from './phoneActionCatalog'
 import { HEALTH_TYPES } from './nativePhoneActions'
 import { connectPhoneActionGroupChoice, setPhoneActionGroup, usePhoneDeviceSettings } from './phoneDeviceSettings'
+import { resumePhoneAfterAccountClosure } from './phoneAccountClosureResume'
 import { openPhonePermissionSettings, requestPhoneRequirement } from './phonePermissionActions'
 import { readPhoneOsState, refreshPhoneDevice, usePhoneDevice } from './phoneDeviceRuntime'
 import { PHONE_PERMISSION_ROWS, type PhonePermissionRow } from './phonePermissionRows'
@@ -59,7 +60,7 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
       else if (group === 'photos' && (!os.data?.images || !os.data.videos)) await requestPhoneRequirement('photos', os)
       else if (group !== 'alarm') await openPhonePermissionSettings(requirement === 'notification_listener' ? 'notification_listener' : requirement === 'dnd_access' ? 'dnd' : group === 'health' ? 'health' : 'app')
     }
-    if (!selected) connectPhoneActionGroupChoice(ownerId, group)
+    if (!selected) await resumePhoneAfterAccountClosure(ownerId, () => connectPhoneActionGroupChoice(ownerId, group))
     report('group-enabled', true, group)
   }
   const status = ({ group, requirement }: PhonePermissionRow) => {

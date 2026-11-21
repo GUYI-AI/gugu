@@ -30,20 +30,8 @@ final class PhoneRegistrationIdentity {
         uuid(installationKey);
         File marker = new File(root.getCanonicalFile(), "phone-installation/registration");
         if (!marker.getCanonicalFile().equals(marker.getAbsoluteFile())) throw new IOException("Invalid registration identity path");
-        if (marker.exists()) {
-            if (!marker.isFile() || marker.length() > 256) throw new IOException("Invalid registration identity");
-            byte[] bytes = new byte[257];
-            int length = 0;
-            try (FileInputStream input = new FileInputStream(marker)) {
-                int count;
-                while (length < bytes.length && (count = input.read(bytes, length, bytes.length - length)) != -1) length += count;
-            }
-            if (length > 256) throw new IOException("Invalid registration identity");
-            String[] lines = new String(bytes, 0, length, StandardCharsets.UTF_8).split("\n", -1);
-            if (lines.length != 4 || !"1".equals(lines[0]) || !installationKey.equals(lines[1]) || !lines[3].isEmpty())
-                throw new IOException("Registration does not belong to this installation");
-            return uuid(lines[2]);
-        }
+        String existing = readExisting(root, installationKey);
+        if (existing != null) return existing;
         // Resolve legacy state before committing anything. A failed migration must not create a third identity.
         String previous = legacy.read();
         String registration = previous == null ? installationKey : uuid(previous);
@@ -60,6 +48,27 @@ final class PhoneRegistrationIdentity {
             if (temporary.exists() && !temporary.delete()) throw new IOException("Cannot remove incomplete registration");
         }
         return registration;
+    }
+    /** Recovery verifies an existing installation marker without Auth, migration or creating an identity. */
+    static synchronized String readExisting(File root, String installationKey) throws Exception {
+        uuid(installationKey);
+        File marker = new File(root.getCanonicalFile(), "phone-installation/registration");
+        if (!marker.getCanonicalFile().equals(marker.getAbsoluteFile())) throw new IOException("Invalid registration identity path");
+        if (marker.exists()) {
+            if (!marker.isFile() || marker.length() > 256) throw new IOException("Invalid registration identity");
+            byte[] bytes = new byte[257];
+            int length = 0;
+            try (FileInputStream input = new FileInputStream(marker)) {
+                int count;
+                while (length < bytes.length && (count = input.read(bytes, length, bytes.length - length)) != -1) length += count;
+            }
+            if (length > 256) throw new IOException("Invalid registration identity");
+            String[] lines = new String(bytes, 0, length, StandardCharsets.UTF_8).split("\n", -1);
+            if (lines.length != 4 || !"1".equals(lines[0]) || !installationKey.equals(lines[1]) || !lines[3].isEmpty())
+                throw new IOException("Registration does not belong to this installation");
+            return uuid(lines[2]);
+        }
+        return null;
     }
 
     private static String uuid(String value) throws IOException {

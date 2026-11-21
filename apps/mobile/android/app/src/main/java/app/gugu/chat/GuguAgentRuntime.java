@@ -46,7 +46,12 @@ final class GuguAgentRuntime {
         builder.environment().put("PI_PACKAGE_DIR", runtime.getPath());
         builder.environment().put("GUGU_AGENT_HOME", home.getPath());
         builder.environment().put("TZ", java.util.TimeZone.getDefault().getID());
-        return builder.start();
+        // Asset preparation can outlive the first check. Serialize the final launch
+        // with the native closure seal; prepare never waits for drain under this lock.
+        synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
+            AccountClosurePreparation.requireOpen(context, owner);
+            return builder.start();
+        }
     }
 
     private static void copyAssets(Context context, String source, File destination) throws Exception {

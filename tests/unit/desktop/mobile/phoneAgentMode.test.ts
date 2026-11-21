@@ -36,7 +36,7 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneActionCatalog', (
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneActionProvider', () => ({ createPhoneActionProvider: () => ({}), mergeCallRecord: () => [] }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRpcHost', () => ({ createPhoneDeviceRpcHost: test.rpcHost }))
 
-import { disconnectPhoneDevice, startPhoneDevice, stopPhoneAgentHost, restartPhoneAgentHost, refreshPhoneDevice, PHONE_HEARTBEAT_MS, usePhoneDevice as readSnapshot } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime'
+import { disconnectPhoneDevice, startPhoneDevice, stopPhoneAgentHost, restartPhoneAgentHost, refreshPhoneDevice, quiescePhoneForAccountClosure, PHONE_HEARTBEAT_MS, usePhoneDevice as readSnapshot } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime'
 import { phoneDeviceId, phoneInstallId, readPhoneDeviceSettings, setPhoneAgentHostEnabled, setPhoneDeviceEnabled } from '../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings'
 
 function deferred<T = void>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
@@ -77,6 +77,17 @@ afterEach(async () => {
 })
 
 describe('one phone endpoint owns registration and RPC', () => {
+  it('drains renderer publication for V2 while leaving the sealed native stop to native preparation', async () => {
+    setPhoneAgentHostEnabled(test.ownerId, true)
+    stop = start(true)
+    await vi.waitFor(() => expect(test.configure).toHaveBeenCalledOnce())
+    await quiescePhoneForAccountClosure(test.ownerId)
+    expect(readPhoneDeviceSettings(test.ownerId)).toMatchObject({ enabled: false, hostEnabled: false })
+    expect(test.stopHost).not.toHaveBeenCalled()
+    stop(); stop = null
+    expect(test.stopHost).not.toHaveBeenCalled()
+  })
+
   it.each([
     { data: null, error: { code: 'P0001', message: 'PHONE_DEVICE_ID_CONFLICT' } },
     { data: { device_id: 'historical-phone-id', created: false }, error: null },

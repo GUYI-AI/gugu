@@ -79,6 +79,10 @@ public class GuguAgentService extends Service {
         }
         return completion;
     }
+    static java.util.concurrent.CompletableFuture<Void> stopOwnerAndWaitForClosure(AccountClosureOperationV2.SideEffects admission) throws Exception {
+        admission.check();
+        return stopOwnerAndWait(admission.ownerId);
+    }
     static void forgetClosedOwner(String owner) { synchronized (LOCK) { if (owner.equals(snapshot.optString("ownerId"))) snapshot = new JSObject(); } }
     @Override public void onCreate() { super.onCreate(); active = this; }
     static void clearState(Context context, String ownerId) throws Exception {
