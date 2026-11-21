@@ -554,6 +554,7 @@ export class AgentPluginHost {
       });
     }
 
+    Object.assign(env, method.env);
     if (options.headless) {
       if (!method.headlessArgs) {
         return err({
