@@ -1,3 +1,4 @@
+import { nativeDesktopAccountClosureV2, resumeDesktopAgentsAfterAccountClosure } from './desktopAccountClosureV2'
 import { nativeDesktopAccountClosure } from './desktopAccountClosure'
 import { stageFileHandle } from '@gugu/core/shared/fileResolver'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
@@ -51,6 +52,8 @@ function unavailable(feature: string): Error {
 
 export const electronPlatform: AppPlatform = {
   accountClosure: nativeDesktopAccountClosure,
+  accountClosureV2: nativeDesktopAccountClosureV2,
+  resumeAgentsAfterAccountClosure: resumeDesktopAgentsAfterAccountClosure,
   kind: 'electron',
   documentTitle: '咕咕 Desktop',
   authCallbacks: electronAuthCallbacks,
