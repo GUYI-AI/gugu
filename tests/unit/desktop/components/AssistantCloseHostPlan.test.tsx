@@ -23,7 +23,7 @@ vi.mock('@gugu/core/cloud/cloudComputer', async (original) => ({ ...await origin
 vi.mock('../../../../apps/desktop/src/lib/cloudComputerClient', () => ({
   rendererCloudComputerClient: () => ({ prepareAssistantClose: async () => undefined, closeAssistant: async () => undefined }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ refreshMyAssistant: async () => undefined, myAssistant: { peek: () => ({ state: 'unknown' }) } }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { refresh: async () => undefined }, myAssistant: { peek: () => ({ state: 'unknown' }) } }))
 vi.mock('../../../../apps/desktop/src/lib/assistantClose', async (original) => ({
   ...await original<object>(),
   closeLocalAssistant: rig.close,

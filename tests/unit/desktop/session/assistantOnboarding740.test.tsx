@@ -24,7 +24,7 @@ vi.mock('@/lib/assistantSetup', () => ({ setUpAssistantOnThisComputer: f.setup, 
   AssistantSetupError: f.SetupError, draftAvatarUrl: () => '', claimCloudAssistant: f.claimCloud }))
 vi.mock('@/lib/firstRun', () => ({ takeAssistantStartAtHome: () => true, readOccupation: async () => null }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: f.writeStep }))
-vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn() }))
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn() } }))
 vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
 vi.mock('@/lib/billing/useSpendingPower', async (original) => ({ ...await original<object>(), refreshSpendingPower: () => undefined, useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: { tier: 'pro' } } : { state: 'unknown', membership: null }) }))
 vi.mock('@gugu/core/cloud/optionalServices', async (original) => ({ ...await original<object>(), cloudComputerEnabled: () => f.cloudEnabled }))

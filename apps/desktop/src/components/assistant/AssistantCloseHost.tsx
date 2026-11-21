@@ -15,7 +15,7 @@ import { listDevicesOnceIdentified } from '../../lib/listDevicesOnceIdentified'
 import { wakeCloudComputerUntilOnline } from '@gugu/core/cloud/cloudComputer'
 import { rendererCloudComputerClient } from '../../lib/cloudComputerClient'
 import { useAssistantHome } from '../../lib/useAssistantHome'
-import { refreshMyAssistant } from '../../lib/myAssistant'
+import { myAssistant } from '../../lib/myAssistant'
 import { assistantResumeStore } from '../../lib/assistantSetup'
 import { retireCustomizeCard, writeSetupStep } from '../../lib/assistantSetupState'
 import { ASSISTANT_HOME_CHANNELS } from '../../lib/assistantHomeIpc'
@@ -144,7 +144,7 @@ export function AssistantCloseHost() {
         retireCustomizeCard(ownerUserId)
         for (const record of assistantResumeStore.list(ownerUserId)) assistantResumeStore.forget(ownerUserId, record.operationId)
         moveJournalStore(ownerUserId).clear()
-        void refreshMyAssistant()
+        void myAssistant.refresh()
       },
     }
   }, [ownerUserId, removeOwnedAgent, open, refresh])

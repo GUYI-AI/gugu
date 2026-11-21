@@ -20,7 +20,7 @@ vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
     }),
   }
 })
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ refreshMyAssistant: async () => undefined, useMyAssistantContact: () => ({ homeDeviceId: (mine.value as { homeDeviceId?: string }).homeDeviceId ?? 'cloud-1', contact: mine.value.contact,
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { refresh: async () => undefined }, useMyAssistantContact: () => ({ homeDeviceId: (mine.value as { homeDeviceId?: string }).homeDeviceId ?? 'cloud-1', contact: mine.value.contact,
   reading: mine.value.loading ? { state: 'unknown' } : mine.value.error ? { state: 'error', error: new Error(mine.value.error) }
     : { state: 'value', value: { agentId: mine.value.agentId, provisionDeviceId: 'cloud-1' }, stale: false, error: (mine.value as { keptError?: Error }).keptError ?? null } }) }))
 

@@ -87,7 +87,7 @@ vi.mock('@/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 
 vi.mock('@/lib/identityReadAdapter', () => ({ readDisplayIdentities: vi.fn() }));
 vi.mock('@/lib/agentModelSelection', () => ({ readAgentModelSelection: vi.fn(), setAgentModelSelection: vi.fn(), platformProtocolForAgentType: vi.fn() }));
 vi.mock('@/lib/cloudComputer', () => ({ knownCloudDeviceId: () => 'cloud', provisionCloudComputer: server.provisionCloud, readCloudSnapshotNow: vi.fn(), wakeCloudComputer: vi.fn() }));
-vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn(async () => undefined) }));
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn(async () => undefined) } }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { connectionState: () => 'connected' } }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: vi.fn() }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: {} }));

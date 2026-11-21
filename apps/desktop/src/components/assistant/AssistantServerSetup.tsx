@@ -9,7 +9,7 @@ import {
 } from '../../lib/assistantServerSetup'
 import type { AssistantSetupDraft } from '../../lib/assistantSetup'
 import { offerCustomizeCard, writeSetupStep } from '../../lib/assistantSetupState'
-import { refreshMyAssistant } from '../../lib/myAssistant'
+import { myAssistant } from '../../lib/myAssistant'
 import { rendererLogger } from '../../lib/log'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { requestAddServerOnOpen } from '../../lib/addServerIntent'
@@ -77,7 +77,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
         await setUpAssistantOnServer(await createDraft(), selected.deviceId, options)
       }
       writeSetupStep(ownerUserId, 'connect')
-      void refreshMyAssistant()
+      void myAssistant.refresh()
     } catch (error) {
       const record = pendingServerAssistant(ownerUserId)
       setPending(record)
@@ -147,7 +147,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
       {!busy && !fixedTarget ? <Button variant="secondary" className="rounded-full" onClick={onBack}>{t('setup.back')}</Button> : null}
       {!installing && progress?.cancellable ? <Button variant="secondary" className="rounded-full" disabled={cancelling}
         onClick={() => { if (busy) { setCancelling(true); attempt.current?.abort() } else void run(true) }}>{t(cancelling ? 'setup.cancelling' : 'setup.back')}</Button> : null}
-      {failure && errorCode === 'assistant_exists' ? <Button onClick={() => void refreshMyAssistant()}>{t('server.openAssistant')}</Button>
+      {failure && errorCode === 'assistant_exists' ? <Button onClick={() => void myAssistant.refresh()}>{t('server.openAssistant')}</Button>
         : !busy && (pending || targets?.some(target => target.selectable)) ? <Button variant="primary" className="rounded-full" disabled={!pending && (!selected?.selectable || devices.state === 'error')}
           onClick={() => void run()} data-testid="assistant-server-install">{t(pending ? 'setup.retry' : 'server.install', { name })}</Button> : null}
     </div>

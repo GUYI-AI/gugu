@@ -17,7 +17,7 @@ import {
   type AssistantSetupStep,
 } from '../../lib/assistantShellBridge'
 import { canSetUpCloudAssistant, cloudComputer, cloudFailureOf, cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
-import { assistantIdentityState, refreshMyAssistant, useMyAssistantContact } from '../../lib/myAssistant'
+import { assistantIdentityState, myAssistant, useMyAssistantContact } from '../../lib/myAssistant'
 import { assistantHomePlace, withoutAssistantHome } from '../../lib/assistantHome'
 import { readSetupStep, subscribeSetupStep, writeSetupStep } from '../../lib/assistantSetupState'
 import { pendingLocalAssistant, resumeLocalAssistant, setupStillStarting } from '../../lib/assistantSetup'
@@ -151,7 +151,7 @@ export function AssistantShellHost() {
   useEffect(() => {
     // A retry completes the same provision and identity: the contacts key can
     // remain unchanged. Re-read its marker when the host reports completion.
-    if (ownerUserId && readyCloudDeviceId) void refreshMyAssistant()
+    if (ownerUserId && readyCloudDeviceId) void myAssistant.refresh()
   }, [ownerUserId, readyCloudDeviceId])
   useEffect(() => {
     const bridge = readAssistantShellBridge()
@@ -211,7 +211,7 @@ export function AssistantShellHost() {
       resume: async (record) => {
         await resumeLocalAssistant(record)
         writeSetupStep(ownerUserId, 'connect')
-        await refreshMyAssistant()
+        await myAssistant.refresh()
       },
       // 只有「还没起来」值得过一会儿再推;别的失败(真失败、那一单已被收回……)再推也一样,停下、原因进日志,下次打开 App 再试。
       isFinal: (error) => !setupStillStarting(error),

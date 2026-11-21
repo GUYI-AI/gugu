@@ -31,7 +31,7 @@ import { pendingServerAssistant } from '../../lib/assistantServerSetup'
 import { clearAssistantOnboardingNavigation, readAssistantOnboardingNavigation, saveAssistantOnboardingNavigation } from '../../lib/assistantOnboardingNavigation'
 import { AssistantSetupIdentity } from './AssistantSetupIdentity'
 import { DEFAULT_ASSISTANT_LOOK } from '../agentAvatar/look'
-import { refreshMyAssistant } from '../../lib/myAssistant'
+import { myAssistant } from '../../lib/myAssistant'
 import { rendererLogger } from '../../lib/log'
 import { refreshSpendingPower, useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
@@ -135,7 +135,7 @@ export function AssistantOnboarding({
     setBusy('resume')
     writeSetupStep(ownerUserId, 'shell')
     resumeLocalAssistant(record)
-      .then(() => { resumed = true; writeSetupStep(ownerUserId, 'connect'); void refreshMyAssistant() })
+      .then(() => { resumed = true; writeSetupStep(ownerUserId, 'connect'); void myAssistant.refresh() })
       .catch((e: unknown) => {
         writeSetupStep(ownerUserId, 'shell')
         setSetupEnded(e instanceof AssistantSetupError && e.kind === 'cancelled')
@@ -191,7 +191,7 @@ export function AssistantOnboarding({
         await resumeLocalAssistant(pending)
       } else await setUpAssistantOnThisComputer(await setupDraft(), localDeviceId, { signal: attempt.signal, onInstalling, engine })
       writeSetupStep(ownerUserId, 'connect')
-      void refreshMyAssistant()
+      void myAssistant.refresh()
     } catch (e) {
       keepBusy = localInstallationStarted.current || e instanceof AssistantSetupCleanupError
       writeSetupStep(ownerUserId, keepBusy ? 'shell' : null)

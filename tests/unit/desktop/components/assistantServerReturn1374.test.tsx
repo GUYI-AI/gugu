@@ -39,7 +39,7 @@ vi.mock('@/lib/assistantSetup', () => ({
 vi.mock('@/lib/agentProvision', () => ({ provisionSingleAgent: vi.fn(), resumeSingleAgent: vi.fn() }))
 vi.mock('@/lib/agentModelSelection', () => ({ fetchAgentHarnessModels: vi.fn() }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: vi.fn() }))
-vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn() }))
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn() } }))
 vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 vi.mock('@/components/agentAvatar/AgentAvatar', () => ({ AgentAvatar: () => null }))
