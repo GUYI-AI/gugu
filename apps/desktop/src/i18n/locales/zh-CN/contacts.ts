@@ -100,6 +100,8 @@ export default {
     "emptyContacts": "暂无联系人",
     "failed": "创建群聊失败",
     "fallbackName": "群聊",
+    "nameLabel": "群名称",
+    "namePlaceholder": "群名称（可选）",
     "noResults": "未找到成员",
     "removeMember": "移除 {{name}}",
     "searchPlaceholder": "搜索名字、任务、项目或设备",
