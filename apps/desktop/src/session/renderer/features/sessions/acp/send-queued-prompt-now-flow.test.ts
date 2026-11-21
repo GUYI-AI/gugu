@@ -14,7 +14,6 @@ vi.mock('@renderer/features/settings/app-settings-client', () => ({
   setAppSettingsValueInCache: mocks.setAppSettingsValueInCache,
   updateAppSettingsRequest: mocks.updateAppSettingsRequest,
   invalidateAppSettingsKey: vi.fn(),
-  beginAppSettingsWrite: () => () => {},
   writeAppSetting: (key: string, value: unknown) => mocks.updateAppSettingsRequest(key, value),
 }));
 vi.mock('@/platform', () => ({ platform: mocks.platform }));

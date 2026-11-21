@@ -21,11 +21,11 @@ vi.mock('@/session/renderer/features/settings/app-settings-client', async (origi
       return { value: { defaultProjectsDirectory: '/home/me/Projects' } }
     },
   })
-  return { ...(await original<object>()), settingsModelOf: () => model }
+  return { ...(await original<object>()), appSettingsModel: model }
 })
 
 const { PhoneNewProjectPage } = await import('../../../apps/desktop/src/mobile/partners/PhoneNewProjectPage')
-const { settingsModelOf } = await import('@/session/renderer/features/settings/app-settings-client')
+const { appSettingsModel } = await import('@/session/renderer/features/settings/app-settings-client')
 
 let h: ReturnType<typeof createReactHarness>
 beforeEach(() => {
@@ -44,7 +44,7 @@ it('read before, the directory read again failing is said with a retry; the dire
   expect(folderRow()).toContain('Projects')
   expect(failed()).toBeNull()
   world.fail = true
-  await act(async () => { await (settingsModelOf('mac') as unknown as { refresh: (...args: string[]) => Promise<unknown> }).refresh('localProject', 'mac').catch(() => undefined) })
+  await act(async () => { await (appSettingsModel as unknown as { refresh: (...args: string[]) => Promise<unknown> }).refresh('localProject', 'mac').catch(() => undefined) })
   expect(failed()).not.toBeNull()
   expect(folderRow()).toContain('Projects')
   world.fail = false

@@ -6,7 +6,6 @@ import type { AgentInstallationStatus } from '@shared/core/agents/agent-payload'
 import { defineEvent } from '@shared/lib/ipc/events';
 import type { CommandId } from '@shared/commands';
 import type { TabNavigationDirection } from '@shared/shortcuts';
-import type { AppSettingsKey } from '@shared/core/app-settings';
 
 /** A working copy's file or folder moved (`to`: its path there now) or deleted (`to` null): what shows it follows. */
 export const workingCopyMovedChannel = defineEvent<{ workspace: string; from: string; to: string | null }>('app:working-copy-moved');
@@ -248,6 +247,3 @@ export const agentInstallationStatusUpdatedChannel = defineEvent<AgentInstallati
  * 「这次量不出分母」，界面应当只显示已完成量与速度（product spec）。
  */
 export const agentInstallProgressChannel = defineEvent<AgentInstallProgress>('agent:install-progress');
-
-/** A settings key of this device changed (any window, the main process, a reset): every window reads it again. */
-export const appSettingsChangedChannel = defineEvent<{ key: AppSettingsKey }>('app-settings:changed');
