@@ -83,13 +83,14 @@ it('at 640px Size and Modified are columns under the head, in the same one-line 
   for (const id of entries.map((e) => e.id)) expect(box(row(id)).height, id).toBeLessThanOrEqual(32);
 });
 
-it('the phone keeps its two-line rows: a 40px mark, the value under the name', async () => {
+it('the phone keeps its two-line rows, in the list\'s language: a 24px muted mark, the name at 400, the value under it', async () => {
   // The coarse-pointer block, switched on as the phone tests do (this browser has a mouse).
   style.textContent = appPaletteCss(tokensCss) + uiCss + workspaceCss.replaceAll('@media (hover: none) and (pointer: coarse)', '@media all');
   await page.viewport(390, 700);
-  await until('the phone rows are drawn', () => box(row('md').querySelector('.file-mark')).width === 40);
+  await until('the phone rows are drawn', () => box(row('md').querySelector('.file-mark')).width === 24);
   for (const id of ['pdf', 'md']) {
     const li = row(id);
+    expect(getComputedStyle(li.querySelector('.file-name')!).fontWeight, id).toBe('400');
     expect(box(li.querySelector('.file-meta')).top, id).toBeGreaterThanOrEqual(box(li.querySelector('.file-name')).bottom - 1);
   }
 });
