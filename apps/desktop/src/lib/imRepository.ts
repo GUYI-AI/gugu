@@ -98,7 +98,6 @@ export interface ImRepositoryTransaction {
   putMembership(chatId: string, identityId: string, value: EntityValue): void
   readView(key: string): unknown
   putPresence(identityId: string, value: EntityValue): void
-  putOutbox(value: OutboxRecord): void
   putView(key: string, value: unknown): void
   putSyncState(key: string, value: unknown): void
   delete(store: ImStoreName, key: IDBValidKey): void
@@ -320,7 +319,12 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
   const identityWrites = new Set<string>()
   let cleared = false
   return {
-    clear: () => { cleared = true; operations.push({ type: 'clearAccount', accountId }) },
+    clear: () => {
+      cleared = true
+      operations.push({ type: 'clearAccount', accountId })
+      // @@@legacy-chat-outbox — a rebuild replaces the cache; sends an older build queued here are not cache, they wait for the outbox to take them.
+      for (const row of stored.outbox) put('outbox', row)
+    },
     putIdentity: (value) => {
       const id = value && typeof value === 'object' && 'id' in value ? value.id : undefined
       const previous = typeof id === 'string' ? imSelectors.identitiesById(stored)[id] : undefined
@@ -349,10 +353,6 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
       identityId: nonEmpty(identityId, 'presence.identityId'),
       value,
     }),
-    putOutbox(value) {
-      validateOutbox(value, accountId)
-      put('outbox', { accountId, id: value.clientMessageId, value })
-    },
     putView: (key, value) => put('view', { accountId, key: nonEmpty(key, 'view.key'), value }),
     putSyncState: (key, value) => put('sync_state', { accountId, key: nonEmpty(key, 'sync_state.key'), value }),
     delete: (store, key) => {
@@ -537,35 +537,31 @@ export function readGroupRoster(repository: AccountImRepository, chatId: string)
   return { scheduler: emptyScheduler(chatId), humans, agents, tasks: [] }
 }
 
-export function readOutboxRecords(repository: AccountImRepository): OutboxRecord[] {
-  return imSelectors.outbox(repository.snapshot())
-}
-
-export async function putOutboxRecord(repository: AccountImRepository, record: OutboxRecord): Promise<void> {
-  const snapshot = repository.snapshot()
-  const previous = snapshot.outbox.find(row => row.id === record.clientMessageId)?.value
-  const held = previous?.preview?.local_timeline ?? record.preview?.local_timeline
+/** The place a new row keeps in its conversation until it is confirmed (stored with its outbox write). */
+export function outboxMessagePosition(repository: AccountImRepository, record: OutboxRecord): OutboxRecord {
+  if (record.preview?.local_timeline) return record
   const root = record.payload.threadRootId ?? null
   const rows = messageWindow(repository.accountId, record.chatId, root) ?? []
-  record.preview = { ...record.preview, local_timeline: held ?? captureMessagePosition(rows, record.enqueuedAt) }
-  await repository.transaction((transaction) => transaction.putOutbox(record))
+  return { ...record, preview: { ...record.preview, local_timeline: captureMessagePosition(rows, record.enqueuedAt) } }
 }
 
-export async function deleteOutboxRecord(repository: AccountImRepository, clientMessageId: string): Promise<void> {
-  await repository.transaction((transaction) => transaction.delete('outbox', [repository.accountId, clientMessageId]))
-}
-
-export async function ackOutboxRecord(
-  repository: AccountImRepository,
-  clientMessageId: string,
-  message: MessageItem,
-): Promise<MessageItem> {
-  if (message.id !== clientMessageId) throw new Error(`outbox ack id mismatch: ${clientMessageId} != ${message.id}`)
-  const position = repository.snapshot().outbox.find(row => row.id === clientMessageId)?.value.preview?.local_timeline
+/** A confirmed send: the authoritative message, at the place its row held, written where messages are read. */
+export async function confirmSentMessage(repository: AccountImRepository, record: OutboxRecord, message: MessageItem): Promise<MessageItem> {
+  if (message.id !== record.clientMessageId) throw new Error(`outbox ack id mismatch: ${record.clientMessageId} != ${message.id}`)
+  const position = record.preview?.local_timeline
   if (position) message = { ...message, local_timeline: position }
   await ingestMessages(repository.accountId, { writes: [{ type: 'put', message }], revisions: [] })
-  await repository.transaction((transaction) => transaction.delete('outbox', [repository.accountId, clientMessageId]))
   return message
+}
+
+/**
+ * @@@legacy-chat-outbox — chat sends an older build queued in this cache: each handed to `take` (the outbox), then removed
+ * here; one whose source was discarded goes with it. Delete with the `outbox` store once no build that writes it is in use.
+ */
+export async function takeLegacyOutboxRecords(repository: AccountImRepository, take: (record: OutboxRecord) => Promise<void>): Promise<void> {
+  const rows = imSelectors.outbox(repository.snapshot()).filter((row) => row.senderUserId === repository.accountId)
+  for (const row of rows) if (!row.dependencyDiscarded) await take(row)
+  if (rows.length) await repository.transaction((transaction) => { for (const row of rows) transaction.delete('outbox', [repository.accountId, row.clientMessageId]) })
 }
 
 function emptyScheduler(chatId: string): GroupSchedulerState {
@@ -576,23 +572,6 @@ function emptyScheduler(chatId: string): GroupSchedulerState {
     blocked_count: 0,
     summary: null,
     updated_at: new Date(0).toISOString(),
-  }
-}
-
-function validateOutbox(record: OutboxRecord, accountId: string): void {
-  if (record.senderUserId !== accountId) throw new Error(`outbox account mismatch: ${record.senderUserId} != ${accountId}`)
-  nonEmpty(record.clientMessageId, 'outbox.clientMessageId')
-  nonEmpty(record.chatId, 'outbox.chatId')
-  if (!record.payload
-    || typeof record.payload.content !== 'string'
-    || typeof record.payload.contentType !== 'string'
-    || (record.payload.toUserIds !== null && (!Array.isArray(record.payload.toUserIds) || record.payload.toUserIds.some((id) => !id)))
-    || (record.payload.replyToMessageId !== null && typeof record.payload.replyToMessageId !== 'string')
-    || (record.payload.threadRootId !== null && typeof record.payload.threadRootId !== 'string')
-    || typeof record.payload.isThreadRoot !== 'boolean'
-    || typeof record.payload.isWhisper !== 'boolean'
-    || (record.payload.resolveDmPeer !== undefined && typeof record.payload.resolveDmPeer !== 'boolean')) {
-    throw new Error('outbox payload is invalid')
   }
 }
 

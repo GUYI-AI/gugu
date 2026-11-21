@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ChatCommands } from '@gugu/session-chat-ui'
-import { changeRejectedSessionInput, retrySessionInput, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import { changeRejectedSessionInput, retrySessionInput, useQueuedSessionInputs } from '@/lib/outbox/kinds/sessionInput'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 
 /** Bind sender-owned refusals to the transcript's existing editor and failed-message actions. */

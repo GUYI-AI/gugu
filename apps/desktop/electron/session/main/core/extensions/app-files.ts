@@ -59,7 +59,7 @@ import { fileIconKey } from '@shared/extensions/app-icon';
 import { claimantOf, openerChoice as chatOpenerChoice, requireOwnTabChoice } from '@shared/extensions/file-openers';
 import { sessionHostLocale } from '@main/core/host-locale';
 import { localizedManifestText } from '@shared/extensions/catalog';
-import { PACKAGE_MESSAGE_SELECT, type PackageMessageRow, type PackageReads } from '@shared/extensions/attachment-install';
+import type { PackageMessageRow, PackageReads } from '@shared/extensions/attachment-install';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { events } from '@main/lib/events';
 import { appFileHeardElsewhereChannel, appFileWatchElsewhereChannel, workingCopyMovedChannel } from '@shared/events/appEvents';
@@ -212,22 +212,23 @@ export async function readAccount(id: string) {
 }
 
 /**
- * #7290 How main reads a card's message and signs its bytes for an install (`resolveAttachmentPackage`): as the signed-in
- * person — the chat's own rules, a message they cannot read is not there. Asked only for a card by its message.
+ * #7290 How main reads a card's message and signs its bytes for an install (`resolveAttachmentPackage`): as its reader —
+ * the agent whose `app_install` named it, else the signed-in person (`chat.messages_by_id_as`, the chat's own rules: a
+ * message they cannot read is not there). Asked only for a card by its message.
  */
 export const packageReads: PackageReads = {
-  async message(messageId) {
+  async message(messageId, reader) {
     const me = await signedIn();
     if (!me) throw new AppFileError('failed', 'Not signed in');
     const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${me.token}` } });
-    const { data, error } = await client.from('messages_view').select(PACKAGE_MESSAGE_SELECT).eq('id', messageId).maybeSingle();
+    const { data, error } = await client.rpc('messages_by_id_as', { p_as: reader ?? me.userId, p_id: messageId });
     if (error) throw new AppFileError('failed', error.message);
-    return (data as unknown as PackageMessageRow | null) ?? null;
+    return ((data as unknown as PackageMessageRow[] | null) ?? [])[0] ?? null;
   },
-  async open(source) {
+  async open(source, reader) {
     const ref = attachmentFileRef(source);
     if (!ref) return null;
-    const file = await resolveAccountFile(ref);
+    const file = await resolveAccountFile(ref, reader);
     return file?.status === 'ready' ? file : null;
   },
 };

@@ -15,14 +15,17 @@ import { replacesWithoutAsking, type ExtensionOrigin } from './upgrade';
  */
 
 /**
- * A package sent in a chat, as an install names it: the card's message (#7290). The host reads that message as the
- * signed-in person and takes the package from it (`resolveAttachmentPackage`) — old cards and new ones alike.
+ * A package sent in a chat, as an install names it: the card's message (#7290). The host reads that message as its
+ * reader — the agent whose `app_install` named it, else the signed-in person — and takes the package from it
+ * (`resolveAttachmentPackage`), old cards and new ones alike.
  */
 export interface AttachmentPackage {
   messageId: string;
+  /** The agent of the signed-in person who asked (its user id); absent: the person. */
+  reader?: string;
 }
 
-/** The columns of the card's message an install reads (`chat.messages_view`, as the signed-in person). */
+/** The columns of the card's message an install reads (the phone reads them from `chat.messages_view`, as the person). */
 export const PACKAGE_MESSAGE_SELECT = 'id,sender_user_id,content,file_item_id,file_version,file_blob_id';
 export interface PackageMessageRow {
   id: string;
@@ -53,10 +56,10 @@ export function messagePackageSource(row: PackageMessageRow): { publisher: strin
 
 /** How a host reads a card's message and signs a link to its bytes — its own clients; what is decided is decided here. */
 export interface PackageReads {
-  /** The card's message as the signed-in person reads it (`PACKAGE_MESSAGE_SELECT` from `chat.messages_view`); null: none they can read. */
-  message(messageId: string): Promise<PackageMessageRow | null>;
-  /** A lazy verified-original capability; null: no longer there. Resolving never signs or reads. */
-  open(source: AttachmentSource): Promise<FileHandle | null>;
+  /** The card's message as `reader` (default: the signed-in person) reads it; null: none they can read. */
+  message(messageId: string, reader?: string): Promise<PackageMessageRow | null>;
+  /** A lazy verified-original capability, resolved as `reader`; null: no longer there. Resolving never signs or reads. */
+  open(source: AttachmentSource, reader?: string): Promise<FileHandle | null>;
 }
 
 /** Both hosts preserve the package's bounded download deadline and cancel the underlying verified acquisition. */
@@ -67,13 +70,13 @@ export const packageBytes = (file: FileHandle) => withBoundedOperation(15_000, (
   finally { signal.removeEventListener('abort', cancel); }
 });
 
-/** Who published a card's package and where its bytes are (#7290): read from its message, as the signed-in person. */
+/** Who published a card's package and where its bytes are (#7290): read from its message, as its reader. */
 export async function resolveAttachmentPackage(pkg: AttachmentPackage, reads: PackageReads): Promise<{ publisher: string; file: FileHandle }> {
-  const row = await reads.message(pkg.messageId);
+  const row = await reads.message(pkg.messageId, pkg.reader);
   if (!row) throw new Error(`There is no message ${pkg.messageId} you can read`);
   const found = messagePackageSource(row);
   if ('problem' in found) throw new Error(found.problem);
-  const file = await reads.open(found.source);
+  const file = await reads.open(found.source, pkg.reader);
   if (!file) throw new Error(`The App package of message ${pkg.messageId} is no longer there`);
   return { publisher: found.publisher, file };
 }

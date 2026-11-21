@@ -4,7 +4,7 @@ import { page } from 'vitest/browser';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import { SessionConversation } from '@/components/session-watch/SessionConversation';
 import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge';
+import { state, changed, EMPTY } from '@/lib/outbox/kinds/sessionInput';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';

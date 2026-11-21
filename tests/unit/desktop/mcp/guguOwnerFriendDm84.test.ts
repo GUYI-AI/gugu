@@ -59,10 +59,12 @@ function fakeDb({ staleOnce }: { staleOnce?: string } = {}) {
       return ids.includes(AGENT) || ids.includes(OWNER) ? ids.map((user_id) => ({ user_id, role: 'member', listen_mode: 'active' })) : []
     }
     if (name === 'create_topic') return [{ chat_id: 'topic-x' }]
-    // 照库里的 can_read_message:按传进来的那个人判,他是那条线的成员才看得见。
-    if (name === 'can_read_message') {
-      const message = attachmentMessages[String(body.p_message_id)]
-      return Boolean(message && membersOf(message.chat_id).includes(String(body.p_user_id)))
+    // 照库里的 messages_by_id_as:按传进来的那个人读,他是那条线的成员才读得到这一行。
+    if (name === 'messages_by_id_as') {
+      const id = String(body.p_id)
+      const message = attachmentMessages[id]
+      return message && membersOf(message.chat_id).includes(String(body.p_as))
+        ? [{ id, chat_id: message.chat_id, content: '[附件] 报告.pdf (application/pdf)\n[Size] 5\n[Kind] file', content_type: 'attachment', file_item_id: `item-${id}`, file_version: 1, file_blob_id: null }] : []
     }
     if (name === 'chat_facts') return [{ id: body.p_chat_id, kind: kinds[String(body.p_chat_id)], source_chat_id: null, group_prompt: null }]
     if (name === 'message_history_as' || name === 'message_search_as') return [{ id: 'm1', seq: 3, sender_user_id: FRIEND, content: '下午见' }]
@@ -80,11 +82,6 @@ function fakeDb({ staleOnce }: { staleOnce?: string } = {}) {
     if (path.startsWith(`users?id=in.(`)) return [{ id: FRIEND, display_name: 'shuxue', type: 'human' }]
     if (path.startsWith(`users?id=eq.${FRIEND}&`)) return [{ type: 'human' }]
     if (path.startsWith('contact_overrides?')) return [{ contact_user_id: FRIEND, alias: '费俊杰' }]
-    if (path.startsWith('messages?id=eq.')) {
-      const id = path.slice('messages?id=eq.'.length).split('&')[0]
-      const message = attachmentMessages[id]
-      return message ? [{ id, chat_id: message.chat_id, content: '[附件] 报告.pdf (application/pdf)\n[Size] 5\n[Kind] file', content_type: 'attachment', file_item_id: `item-${id}`, file_version: 1, file_blob_id: null }] : []
-    }
     throw new Error(`unexpected read: ${path}`)
   }
   const restInsert = async (_table: string, row: unknown) => { inserts.push(row) }
@@ -190,7 +187,7 @@ describe('owner DMs with friends (#84)', () => {
     it('a file in a friend DM is read and signed as the owner, and saved', async () => {
       const { out, db } = await download('00000000-0000-4000-8000-0000000000f1')
       expect(db.signedAs).toEqual([OWNER])
-      expect(db.rpcs.filter(([name]) => name === 'can_read_message').map(([, body]) => body.p_user_id)).toEqual([AGENT, OWNER])
+      expect(db.rpcs.filter(([name]) => name === 'messages_by_id_as').map(([, body]) => body.p_as)).toEqual([AGENT, OWNER])
       const { file_path: path } = JSON.parse(out)
       expect(await readFile(path, 'utf8')).toBe('bytes')
     })

@@ -3,7 +3,8 @@ import 'fake-indexeddb/auto'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
-import { SessionInputOutboxHost } from '@/hooks/useSessionInputOutbox'
+import { OutboxHost as SessionInputOutboxHost } from '@/hooks/useOutboxHost'
+import { installOutboxCore } from '../../../helpers/sessionInputOutbox'
 import { OfflineSessionSlotHost } from '@/components/chat/OfflineSessionSlotHost'
 import { OfflineSessionSlot } from '@renderer/lib/offline-session-slot'
 import { handoffNativeComposer } from '@/lib/nativeComposerHandoff'
@@ -24,6 +25,8 @@ vi.mock('@/components/chat/NativeConversationReadHost', () => ({ NativeConversat
 vi.mock('@/components/session-watch/SessionTimelinePage', () => ({ SessionTimelinePage: () => <output data-shared-native-timeline="">Native timeline</output> }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: () => 'Waiting for host' }))
+vi.mock('@/lib/outbox/kinds/assistantNotice', () => ({ assistantNoticeOutboxKind: { name: 'assistantNotice', lane: () => 'assistant', send: async () => {} } }))
+vi.mock('@/lib/outbox/legacy', () => ({ importLegacyWrites: async () => {} }))
 
 let harness: ReturnType<typeof createReactHarness>
 let sessionId: string
@@ -40,8 +43,11 @@ beforeEach(() => {
   sessionId = `unlisted-task-${serial}`
   localStorage.clear()
   harness = createReactHarness()
+  core = installOutboxCore({ accountId: scope.account })
 })
-afterEach(() => { harness.cleanup(); localStorage.clear() })
+// The window's one outbox for this account (the app's follows the replica's account).
+let core: ReturnType<typeof installOutboxCore>
+afterEach(() => { core.dispose(); harness.cleanup(); localStorage.clear() })
 
 it.each(['absent', 'missing-version'])('accepts durable input when the Peek row is %s', async row => {
   if (row === 'missing-version') scope.devices[0].session_digest = [{ conversationId: sessionId, title: 'Offline task', runtime: 'acp', supported: true }]

@@ -808,7 +808,7 @@ export function readOnce<V>(read: () => Promise<V>, options: Pick<Definition<[],
   })
 }
 
-/** The account the replica follows now: an action that awaited asks whether the person who started it is still signed in. */
+/** The account the replica follows now: the outbox binds its writes to it; an action that awaited asks whether the person who started it is still signed in. */
 export function replicaAccount(): AccountState { return account }
 
 /** Whether a read of this model's entry (arguments left out match any) is on its way now: e.g. a check running. */

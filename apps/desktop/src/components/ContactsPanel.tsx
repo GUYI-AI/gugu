@@ -697,7 +697,7 @@ export const ContactsPanel = memo(function ContactsPanel({
     () => new Map(groupChats.map((g) => [g.id, (chats.find((c) => c.id === g.id)?.notification_level ?? 'all') === 'none'])),
     [groupChats, chats]
   )
-  // #2598 置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次:分组页、导图、搜索读同一个次序。
+  // #2598 置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次:分组页、agent 家族、搜索读同一个次序。
   const sections = useContactsSections(
     useMemo(() => sortContactsPinnedFirst(agentContacts, (c) => contactPinned.get(c.id) ?? false), [agentContacts, contactPinned]),
     useMemo(() => sortContactsPinnedFirst(humanContacts, (c) => contactPinned.get(c.id) ?? false), [humanContacts, contactPinned]),

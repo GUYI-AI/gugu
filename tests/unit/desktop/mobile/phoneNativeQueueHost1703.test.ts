@@ -2,8 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { NativeSessionRecord, TimelineSnapshot, TimelineAfterResult } from '@gugu/session-core/session-record/contract'
-import { SessionInputOutbox, type SessionInput } from '@/lib/sessionInputOutbox'
-import { changed, state, EMPTY } from '@/lib/sessionInputOutboxBridge'
+import type { SessionInput } from '@/lib/sessionInput'
+import { changed, inputOf, state, SESSION_INPUT, type SessionSend } from '@/lib/outbox/kinds/sessionInput'
+import { installSessionInputOutbox, settle, type InstalledSessionInputs } from '../../../helpers/sessionInputOutbox'
 import { watchPhoneSessionSendQueues } from '@/components/session-watch/phone-send-queue-host'
 
 const remote = vi.hoisted(() => ({
@@ -38,17 +39,16 @@ const turn = (id: string, outcome?: TranscriptTurn['outcome']): TranscriptTurn =
 const record = (turns: TranscriptTurn[], activeTurn: TranscriptTurn | null = null): NativeSessionRecord => ({
   turns, activeTurn, originTurnIds: turns.map(t => t.id), hasNewer: false, latestStoredSeq: turns.at(-1)?.seq ?? -1, nextCursor: null,
 })
-let rows: Map<string, SessionInput>, outbox: SessionInputOutbox, stop: (() => void) | undefined
+let installed: InstalledSessionInputs, stop: (() => void) | undefined
 const delivered = vi.fn<(input: SessionInput) => Promise<void>>()
-beforeEach(() => {
+const first: SessionSend = { deviceId: 'host', sessionId: 'session', text: 'same', createdAt: 1, queued: true, sendQueue: { order: 1 } }
+/** The outbox's own row, whatever the rows view currently shows. */
+const read = (id: string) => { const item = installed.outbox.get<SessionSend>(id); return item ? inputOf(item) : undefined }
+beforeEach(async () => {
   vi.clearAllMocks(); remote.events.clear(); remote.runtime = 'acp'
-  rows = new Map([['first', { id: 'first', accountId: 'owner', deviceId: 'host', sessionId: 'session', text: 'same', createdAt: 1,
-    queued: true, sendQueue: { order: 1 } }]])
-  const publish = () => { state().rows = [...rows.values()]; changed() }
   delivered.mockResolvedValue(undefined)
-  outbox = new SessionInputOutbox('owner', { list: async () => [...rows.values()], put: async row => { rows.set(row.id, row) },
-    remove: async (_, id) => { rows.delete(id) } }, delivered, () => state().valid(), publish)
-  Object.assign(state(), { accountId: 'owner', valid: () => true, queue: Promise.resolve(outbox) }); publish()
+  installed = installSessionInputOutbox({ send: input => delivered(input) })
+  await installed.outbox.enqueue(SESSION_INPUT, first, { id: 'first', hold: true })
   remote.life.mockResolvedValue({ kind: 'ready', hold: null })
   remote.snapshot.mockResolvedValue({ cursor: { epoch: 'provider', seq: 1 }, turns: [turn('provider-unsettled')],
     queuedPrompts: [], settlements: [], liveReply: null, hasOlder: false } satisfies TimelineSnapshot)
@@ -56,7 +56,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   stop?.(); stop = undefined
-  Object.assign(state(), { accountId: null, valid: () => false, queue: null, rows: EMPTY }); changed()
+  installed.dispose()
 })
 
 it('drains the actual persistent outbox without a task page when the provider has no terminal boundary', async () => {
@@ -73,9 +73,9 @@ it('does not release from an older provider completion while the native foregrou
   remote.native.mockResolvedValue({ ok: true, value: record([], turn('current-native')) })
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.snapshot).toHaveBeenCalled())
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
-  expect(rows.get('first')?.sendQueue).toBeDefined()
+  expect(read('first')?.sendQueue).toBeDefined()
 })
 
 it('releases after native persistence even when the provider emits no completion event', async () => {
@@ -92,16 +92,16 @@ it.each(['cancelled', 'error'] as const)('retains the input after native %s', as
   remote.native.mockResolvedValue({ ok: true, value: record([turn('current-native', { kind })]) })
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalled())
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
-  expect(rows.get('first')?.sendQueue).toBeDefined()
+  expect(read('first')?.sendQueue).toBeDefined()
 })
 
 it.each(['user-stop', 'start-failed'])('does not bypass Life hold %s with a completed native record', async hold => {
   remote.life.mockResolvedValue({ kind: 'ready', hold })
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.life).toHaveBeenCalled())
-  await outbox.flush()
+  await settle()
   expect(remote.native).not.toHaveBeenCalled()
   expect(delivered).not.toHaveBeenCalled()
 })
@@ -113,7 +113,7 @@ it('keeps a failed durable writer blocked instead of using an older successful n
   remote.native.mockResolvedValue({ ok: true, value: record([turn('old-native', { kind: 'done' })]) })
   remote.events.get('session:turn-settled')!({ sessionId: 'session', referenceId: 'current-source', status: 'failed', cause: { message: 'disk unavailable' } } as never)
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(2))
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
 })
 
@@ -126,9 +126,9 @@ it('only clears a failed write after a successful receipt for that same referenc
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(2))
   remote.events.get('session:turn-settled')!({ sessionId: 'session', referenceId: 'old-source', status: 'persisted' } as never)
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(3))
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
-  expect(rows.get('first')?.sendQueue).toBeDefined()
+  expect(read('first')?.sendQueue).toBeDefined()
   remote.native.mockResolvedValue({ ok: true, value: record([turn('current-native', { kind: 'done' })]) })
   remote.events.get('session:turn-settled')!({ sessionId: 'session', referenceId: 'current-source', status: 'persisted' } as never)
   await vi.waitFor(() => expect(delivered).toHaveBeenCalledTimes(1))
@@ -145,7 +145,7 @@ it('retains other failed references when one write is successfully retried', asy
   remote.native.mockResolvedValue({ ok: true, value: record([turn('first-retried', { kind: 'done' })]) })
   remote.events.get('session:turn-settled')!({ sessionId: 'session', referenceId: 'first-failed', status: 'persisted' } as never)
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(4))
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
   remote.native.mockResolvedValue({ ok: true, value: record([turn('second-retried', { kind: 'done' })]) })
   remote.events.get('session:turn-settled')!({ sessionId: 'session', referenceId: 'second-failed', status: 'persisted' } as never)
@@ -161,20 +161,20 @@ it.each(['disconnect', 'account-change', 'dispose'] as const)('ignores a late co
   else if (reason === 'account-change') { state().valid = () => false; changed() }
   else stop()
   pending.resolve({ ok: true, value: record([turn('completed', { kind: 'done' })]) })
-  await pending.promise; await Promise.resolve(); await outbox.flush()
+  await pending.promise; await Promise.resolve(); await settle()
   expect(delivered).not.toHaveBeenCalled()
-  expect(rows.get('first')?.sendQueue).toBeDefined()
+  expect(read('first')?.sendQueue).toBeDefined()
 })
 
 it('requires a completed predecessor identity even when a different input has identical text', async () => {
-  rows.set('first', { ...rows.get('first')!, sendQueue: { order: 1, afterInputId: 'expected-client' } })
+  await installed.outbox.edit('first', { ...first, sendQueue: { order: 1, afterInputId: 'expected-client' } })
   const completed = (clientMessageId: string): TranscriptTurn => ({ ...turn('stored', { kind: 'done' }), items: [
     { kind: 'message', role: 'user', seq: 0, id: 'provider-user', text: 'same', _meta: { guguClientMessageId: clientMessageId } },
   ] })
   remote.native.mockResolvedValue({ ok: true, value: record([completed('different-client')]) })
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(1))
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
   remote.native.mockResolvedValue({ ok: true, value: record([completed('expected-client')]) })
   remote.events.get('session:turn-settled')!({ sessionId: 'session', referenceId: 'expected-source', status: 'persisted' } as never)
@@ -188,9 +188,9 @@ it('does not fall back to an older completed provider record after a native read
   remote.native.mockResolvedValue({ ok: false, error: { code: 'record_not_found', message: 'Native record unavailable' } })
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.report).toHaveBeenCalled())
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
-  expect(rows.get('first')?.sendQueue).toBeDefined()
+  expect(read('first')?.sendQueue).toBeDefined()
 })
 
 it('waits for the directory to identify the target before interpreting provider history', async () => {
@@ -199,7 +199,7 @@ it('waits for the directory to identify the target before interpreting provider 
     queuedPrompts: [], settlements: [], liveReply: null, hasOlder: false } satisfies TimelineSnapshot)
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.snapshot).toHaveBeenCalled())
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
   remote.runtime = 'acp'; remote.directoryChanged()
   await vi.waitFor(() => expect(delivered).toHaveBeenCalledTimes(1))
@@ -234,7 +234,7 @@ it.each(['resolved', 'cancelled'] as const)('rechecks a completed native foregro
   remote.snapshot.mockResolvedValue(base)
   stop = watchPhoneSessionSendQueues('owner')
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(1))
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
   const settled = { ...pending, state }
   remote.snapshot.mockResolvedValue({ ...base, settlements: [settled] })
@@ -256,7 +256,7 @@ it('retains the queue when another settlement is still pending', async () => {
   remote.timeline({ ok: true, batch: { from: 1, cursor: { epoch: 'provider', seq: 2 }, turns: [],
     removedTurnIds: [], settlements: [settledFirst], queuedPrompts: [], liveReply: null } })
   await vi.waitFor(() => expect(remote.native).toHaveBeenCalledTimes(2))
-  await outbox.flush()
+  await settle()
   expect(delivered).not.toHaveBeenCalled()
   const settledSecond = { ...second, state: 'cancelled' as const }
   remote.snapshot.mockResolvedValue({ ...base, settlements: [settledFirst, settledSecond] })

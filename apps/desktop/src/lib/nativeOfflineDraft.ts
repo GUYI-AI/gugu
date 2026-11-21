@@ -1,4 +1,4 @@
-import { state } from './sessionInputOutboxBridge'
+import { state } from './outbox/kinds/sessionInput'
 import { clearViewState, readViewState, writeViewState, type ViewPanel } from './viewStateTable'
 import { i18n } from '@/i18n/runtime'
 

@@ -101,7 +101,10 @@
 | 消息窗口：`ChatWindowCache`、`messageWindows`、快照 epoch、跳号修复、补洞、冷启判定、覆盖层重验证、话题消息 | 日志，流形状 | **保留，作为 IM 消息存储这个流引擎的一部分**，不并进 replica：区间覆盖没有「键 → 读数」的对应。引擎自己的不变量：游标只在已验证连续的区间内推进；区间有洞时先补，补好了才发布。手机端的 IndexedDB 窗口和桌面的 SQLite 是同一份存储契约的两个实现，要并成一个，平台差异只留在存储适配层（PR 4）。 |
 | 回执、对端读位 | 日志 | 单调合并的覆盖层条目：delivered → read 只往前走，读位取较大值（PR 4） |
 | 回应 | 日志 | 后写为准，推送只用来失效：取消一个 👍 不能被单调合并吞掉。靠 I1 的凭据补上现在「跳过自己再重取」那条路承认的乱序缺口（PR 4） |
-| 发件箱：`chatOutbox`、`sessionInputOutbox`、`pendingSessionDeliveries`、`attachmentSendRecovery`、`readWriter.unconfirmed` | — | 并成一个发件箱机制（PR 4） |
+| 写入：聊天消息（文本、卡片、附件、转发、新话题）、会话输入、读位与回执、回应、助理面板的 App 变更通知 | — | **一个发件箱** `lib/outbox`（`@@@outbox`）：一张 IndexedDB 表，id 即幂等键；各 kind 只声明怎么发、按什么分道、怎么合并。lane 之间并行、lane 内先进先出；入队时合并；统一退避（自动重试 3 次：1 s、4 s、15 s，之后标红「未发出」）和每次尝试的期限；入队时绑定账号。到不了的失败在后端恢复、联网、目标就绪时自动重发，被拒的等人处理。守卫：`tests/unit/desktop/lib/oneOutbox.test.ts`（PR 4a） |
+| `pendingSessionDeliveries` | 宿主 | 不是发件箱：它是宿主 `session_pending` 队列的只读投影，归宿主档（PR 5） |
+| 字节上传（`declaredUploads`、宿主 `attachment-uploads`） | — | 保留：字节不进发件箱，消息条目依赖上传完成 |
+| 助理工作发件箱（主进程 `assistantWorkOutbox`） | — | 保留：渲染进程关着时主进程也要能写 |
 | 修订侧：对账节拍、跳过事件重放、首帧快照 | — | 保留，它们是日志通道本身 |
 | 宿主侧：`deviceRpc`、session-host 的 ws 连接、`agentStatusFeedBridge` 的本机写入 | 宿主 | 保留，作为宿主档的通道 |
 | `acp-chat-store`、终端输出 | — | 保留，作为会话宿主流引擎 |

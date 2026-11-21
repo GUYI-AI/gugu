@@ -3,8 +3,9 @@ import { act, createElement } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { createReactHarness } from '../../../support/testHarness'
-import { SessionInputOutbox, type SessionInput } from '@/lib/sessionInputOutbox'
-import { state, changed, EMPTY, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import type { SessionInput } from '@/lib/sessionInput'
+import { editQueuedSessionInput, state, useQueuedSessionInputs, SESSION_INPUT, type SessionSend } from '@/lib/outbox/kinds/sessionInput'
+import { installSessionInputOutbox, memoryOutboxStorage, settle, type InstalledSessionInputs } from '../../../helpers/sessionInputOutbox'
 import { usePhoneInputQueue } from '@/components/session-watch/use-phone-input-queue'
 import { phoneQueueReady } from '@/components/session-watch/phone-input-queue'
 
@@ -21,11 +22,11 @@ vi.mock('@/mobile/local-agent/phoneTimelineClient', () => ({ phoneTimelineClient
 vi.mock('@renderer/features/sessions/acp/send-queued-prompt-now-flow', () => ({ requestSendQueuedPromptNow: ({ send }: { send(): void }) => send() }))
 
 const target = { deviceId: 'host', sessionId: 'session', local: false }
-const held = (id: string, order: number): SessionInput => ({ id, text: id, createdAt: order, accountId: 'owner', ...target, queued: true, sendQueue: { order } })
+const held = (id: string, order: number): SessionSend => ({ text: id, createdAt: order, deviceId: target.deviceId, sessionId: target.sessionId, queued: true, sendQueue: { order } })
 let harness: ReturnType<typeof createReactHarness>
 let queue: ReturnType<typeof usePhoneInputQueue>
-let rows: Map<string, SessionInput>
-let outbox: SessionInputOutbox
+let installed: InstalledSessionInputs
+let storage: ReturnType<typeof memoryOutboxStorage>
 let deliver: ReturnType<typeof vi.fn<(input: SessionInput) => Promise<void>>>
 
 function Host({ ready = false, working = true, turns = [], life = { kind: 'ready', hold: null }, phoneHost = false, hosted = [], steers = false }: {
@@ -36,27 +37,25 @@ function Host({ ready = false, working = true, turns = [], life = { kind: 'ready
   return createElement('div', null, queue.error)
 }
 const render = (props: Parameters<typeof Host>[0] = {}) => harness.render(createElement(Host, props))
-const read = (id: string) => rows.get(id)!
+const read = (id: string) => state().rows.find(row => row.id === id)!
 
-beforeEach(() => {
+beforeEach(async () => {
   harness = createReactHarness()
-  rows = new Map([['first', held('first', 1)], ['second', held('second', 2)]])
   deliver = vi.fn(async () => {})
-  const publish = () => { state().rows = [...rows.values()]; changed() }
-  outbox = new SessionInputOutbox('owner', {
-    list: async () => [...rows.values()], put: async input => { rows.set(input.id, input) }, remove: async (_, id) => { rows.delete(id) },
-  }, deliver, () => true, publish)
-  Object.assign(state(), { accountId: 'owner', valid: () => true, queue: Promise.resolve(outbox) })
-  publish()
+  storage = memoryOutboxStorage()
+  installed = installSessionInputOutbox({ storage, send: input => deliver(input) })
+  // Two composer-queued (held) inputs, as the composer leaves them.
+  await installed.outbox.enqueue(SESSION_INPUT, held('first', 1), { id: 'first', hold: true })
+  await installed.outbox.enqueue(SESSION_INPUT, held('second', 2), { id: 'second', hold: true })
 })
 afterEach(() => {
   harness.cleanup(); vi.useRealTimers(); cancel.mockReset(); cancel.mockResolvedValue({ cancelled: true }); remote.mockClear(); snapshot.mockReset(); timeline.unsubscribe.mockClear()
-  Object.assign(state(), { accountId: null, valid: () => false, queue: null, rows: EMPTY }); changed()
+  installed.dispose()
 })
 
 it('exposes all controls on the first local queue frame and edits in place without losing attachments', async () => {
+  await installed.outbox.edit('first', { ...held('first', 1), files: [{ itemId: 'file', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 }] })
   vi.useFakeTimers()
-  read('first').files = [{ itemId: 'file', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 }]
   await render()
   expect(queue.props.queuedPrompts.map(prompt => [prompt.id, prompt.locked])).toEqual([['first', undefined], ['second', undefined]])
   await act(async () => { queue.props.onBeginEditQueuedPrompt('first', 'normal unsent draft') })
@@ -77,7 +76,7 @@ it('deletes and reorders the durable local queue without contacting a busy host'
   expect(queue.props.queuedPrompts.map(prompt => prompt.id)).toEqual(['second', 'first'])
   await act(async () => { queue.props.onDeleteQueuedPrompt('second') })
   expect(queue.props.queuedPrompts.map(prompt => prompt.id)).toEqual(['first'])
-  expect(rows.has('second')).toBe(false)
+  expect(read('second')).toBeUndefined()
   expect(deliver).not.toHaveBeenCalled()
   expect(remote).not.toHaveBeenCalled()
 })
@@ -120,15 +119,17 @@ it('waits for life after history and does not restart a late user-stopped sessio
   await vi.waitFor(() => expect(deliver).toHaveBeenCalledTimes(1))
 })
 
-it('rechecks a stop arriving while a durable release waits for the storage lane', async () => {
+it('rechecks a stop arriving while a durable release waits behind an earlier queue write', async () => {
   let unlock!: () => void
   const gate = new Promise<void>(done => { unlock = done })
-  const original = outbox.releaseQueued.bind(outbox)
-  const waiting = vi.spyOn(outbox, 'releaseQueued').mockImplementationOnce(async (...args) => { await gate; return original(...args) })
+  const original = storage.write.bind(storage)
+  vi.spyOn(storage, 'write').mockImplementationOnce(async (...args) => { await gate; return original(...args) })
+  await render()
+  // An earlier write in the queue's order (an edit) is still on its way to disk when the foreground becomes idle.
+  const edit = editQueuedSessionInput('second', 'second')
   await render({ ready: true, working: false })
-  await vi.waitFor(() => expect(waiting).toHaveBeenCalledTimes(1))
   await render({ ready: true, working: false, life: { kind: 'ready', hold: 'user-stop' } })
-  await act(async () => { unlock(); await gate })
+  await act(async () => { unlock(); await edit; await settle() })
   expect(deliver).not.toHaveBeenCalled()
   expect(read('first').sendQueue).toBeDefined()
 })

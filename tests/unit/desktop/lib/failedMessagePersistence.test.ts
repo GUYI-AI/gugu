@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { createMemoryLocalSyncDb } from '@/lib/localSyncDb'
-import { ackOutboxRecord, openImRepository, putOutboxRecord, type OutboxRecord } from '@/lib/imRepository'
+import { confirmSentMessage, openImRepository, outboxMessagePosition, type OutboxRecord } from '@/lib/imRepository'
 import { ingestMessages } from '@/lib/messageIngest'
 import { clearMessageWindows, messageWindow } from '@/lib/messageWindows'
 
@@ -23,12 +23,11 @@ describe('sender-device resend position persistence', () => {
     const adapter = createMemoryLocalSyncDb()
     let repository = await openImRepository('sender', { adapter, storage: window.localStorage })
     await put(row('before', 10, 1))
-    await putOutboxRecord(repository, outbox())
+    const record = outboxMessagePosition(repository, outbox())
     await put(row('later', 11, 3))
-    const acknowledged = await ackOutboxRecord(repository, 'failed', row('failed', 12, 4))
+    const acknowledged = await confirmSentMessage(repository, record, row('failed', 12, 4))
     expect(acknowledged.seq).toBe(12)
     expect(acknowledged.created_at).toBe('2026-11-16T00:04:00.000Z')
-    expect(repository.snapshot().outbox).toHaveLength(0)
     repository.close()
     clearMessageWindows('sender')
     repository = await openImRepository('sender', { adapter, storage: window.localStorage })
@@ -41,22 +40,32 @@ describe('sender-device resend position persistence', () => {
   it('uses the observed sequence anchor even when the sending device clock is behind', async () => {
     const repository = await openImRepository('sender', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
     await put(row('before', 10, 5))
-    const record = outbox()
-    await putOutboxRecord(repository, record)
+    const record = outboxMessagePosition(repository, outbox())
     await put(row('later', 11, 6))
-    await ackOutboxRecord(repository, record.clientMessageId, row('failed', 12, 7))
+    await confirmSentMessage(repository, record, row('failed', 12, 7))
+    expect(shown()).toEqual(['before', 'failed', 'later'])
+    repository.close()
+  })
+
+  it('a failed entry sent again keeps its original creation position', async () => {
+    const repository = await openImRepository('sender', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
+    await put(row('before', 10, 1))
+    const record = outboxMessagePosition(repository, outbox())
+    await put(row('later', 11, 3))
+    // Queued again (a retry, an import from an older build): the place it was given first stays.
+    const again = outboxMessagePosition(repository, { ...record, state: 'pending' })
+    expect(again.preview?.local_timeline).toEqual(record.preview?.local_timeline)
+    await confirmSentMessage(repository, again, row('failed', 12, 4))
     expect(shown()).toEqual(['before', 'failed', 'later'])
     repository.close()
   })
 
   it('slots an outbox entry saved without a position after what the conversation shows when it is resent', async () => {
     const repository = await openImRepository('sender', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
-    const record = outbox()
     await put(row('before', 10, 1))
-    await repository.transaction(tx => tx.putOutbox(record))
     await put(row('later', 11, 3))
-    await putOutboxRecord(repository, { ...record, state: 'pending' })
-    await ackOutboxRecord(repository, record.clientMessageId, row('failed', 12, 4))
+    const record = outboxMessagePosition(repository, { ...outbox(), state: 'pending' })
+    await confirmSentMessage(repository, record, row('failed', 12, 4))
     // No clock comparison: a record without a slot gets one from the rows on screen, like a new send.
     expect(shown()).toEqual(['before', 'later', 'failed'])
     repository.close()

@@ -4,14 +4,13 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { createMemoryLocalSyncDb, openLocalSyncDb, type LocalImDbAdapter } from '../../../../apps/desktop/src/lib/localSyncDb'
 import {
-  ackOutboxRecord,
+  confirmSentMessage,
   imSelectors,
   openImRepository,
-  putOutboxRecord,
   readChatRows,
-  readOutboxRecords,
   replaceChatRows,
   replaceChatRowsAndIdentities,
+  takeLegacyOutboxRecords,
   type OutboxRecord,
 } from '../../../../apps/desktop/src/lib/imRepository'
 import { message as messageFixture, displayIdentity as identity } from '../../../support/testHarness'
@@ -100,7 +99,7 @@ describe('account-scoped normalized IM repository', () => {
     })
     expect(imSelectors.identitiesById(repository.snapshot()).person).toEqual(held)
   })
-  it('writes seven normalized tables atomically, selects them, and publishes once after commit', async () => {
+  it('writes the normalized tables atomically, selects them, and publishes once after commit', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
     const notifications: string[][] = []
     repository.subscribe(imSelectors.chats, (rows) => notifications.push(rows.map((row) => row.id)))
@@ -109,7 +108,6 @@ describe('account-scoped normalized IM repository', () => {
       transaction.putChat('chat-1', chat('chat-1'))
       transaction.putMembership('chat-1', 'identity-1', { role: 'member' })
       transaction.putPresence('identity-1', { state: 'online' })
-      transaction.putOutbox(outbox('pending-1', 'account-a'))
       transaction.putView('active-chat', 'chat-1')
       transaction.putSyncState('cursor', { revision: 7 })
     })
@@ -118,7 +116,6 @@ describe('account-scoped normalized IM repository', () => {
     expect(snapshot.chat).toHaveLength(1)
     expect(snapshot.membership).toHaveLength(1)
     expect(snapshot.presence).toHaveLength(1)
-    expect(snapshot.outbox).toHaveLength(1)
     expect(snapshot.view).toHaveLength(1)
     expect(snapshot.sync_state).toHaveLength(1)
     expect(notifications).toEqual([[], ['chat-1']])
@@ -203,15 +200,15 @@ describe('account-scoped normalized IM repository', () => {
       vi.unstubAllGlobals()
     }
   })
-  it('keeps outbox durable across reopen and atomically replaces it with the acknowledged message', async () => {
+  it('writes a confirmed send at the place its row held', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    await putOutboxRecord(repository, outbox('message-1', 'account-a'))
+    const local_timeline = { afterSeq: 0, createdAt: '2026-08-09T00:00:00.000Z' }
+    const written = await confirmSentMessage(repository, { ...outbox('message-1', 'account-a'), preview: { local_timeline } }, message('message-1'))
+    expect(written.local_timeline).toEqual(local_timeline)
     repository.close()
-    const recovered = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect(readOutboxRecords(recovered).map((row) => row.clientMessageId)).toEqual(['message-1'])
-    await ackOutboxRecord(recovered, 'message-1', message('message-1'))
-    expect(readOutboxRecords(recovered)).toEqual([])
+    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
     expect(await storedIds()).toEqual(['message-1'])
+    await expect(confirmSentMessage(reopened, outbox('message-2', 'account-a'), message('message-3'))).rejects.toThrow('outbox ack id mismatch')
   })
   it('computes concurrent out-of-order ack bounds from the latest queued snapshot', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
@@ -219,24 +216,47 @@ describe('account-scoped normalized IM repository', () => {
     const mainSeven = { ...message('message-7'), seq: 7 }
     const mainSix = { ...message('message-6'), seq: 6 }
     await ingestMessages('account-a', { writes: [{ type: 'put', message: mainFive }], revisions: [] })
-    await repository.transaction((transaction) => {
-      transaction.putOutbox(outbox('message-7', 'account-a'))
-      transaction.putOutbox(outbox('message-6', 'account-a'))
-    })
-    const ackSeven = ackOutboxRecord(repository, 'message-7', mainSeven)
-    const ackSix = ackOutboxRecord(repository, 'message-6', mainSix)
-    await Promise.all([ackSeven, ackSix])
+    await Promise.all([
+      confirmSentMessage(repository, outbox('message-7', 'account-a'), mainSeven),
+      confirmSentMessage(repository, outbox('message-6', 'account-a'), mainSix),
+    ])
     repository.close()
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect({
-      seqs: (await readMessagePage('account-a', { chatId: 'chat-1', limit: 10 })).rows.map((row) => row.seq),
-      outbox: readOutboxRecords(reopened).length,
-    }).toEqual({ seqs: [5, 6, 7], outbox: 0 })
+    expect((await readMessagePage('account-a', { chatId: 'chat-1', limit: 10 })).rows.map((row) => row.seq)).toEqual([5, 6, 7])
   })
-  it('rejects an outbox row owned by another account', async () => {
+  it('hands chat sends an older build queued here to the outbox once, in order, and keeps another account\'s', async () => {
+    const legacy = (record: OutboxRecord) => ({ type: 'put' as const, store: 'outbox' as const, value: { accountId: record.senderUserId, id: record.clientMessageId, value: record } })
+    await adapter.commit([
+      legacy({ ...outbox('later', 'account-a'), enqueuedAt: '2026-08-09T00:00:02.000Z' }),
+      legacy({ ...outbox('first', 'account-a'), enqueuedAt: '2026-08-09T00:00:01.000Z' }),
+      legacy({ ...outbox('orphan', 'account-a'), dependsOn: 'gone', dependencyDiscarded: true }),
+      legacy(outbox('theirs', 'account-b')),
+    ])
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    await expect(putOutboxRecord(repository, outbox('foreign', 'account-b'))).rejects.toThrow('outbox account mismatch')
-    expect(readOutboxRecords(repository)).toEqual([])
+    const taken: string[] = []
+    await takeLegacyOutboxRecords(repository, async (record) => { taken.push(record.clientMessageId) })
+    expect(taken, 'a row whose source was discarded goes with it').toEqual(['first', 'later'])
+    expect(imSelectors.outbox(repository.snapshot())).toEqual([])
+    await takeLegacyOutboxRecords(repository, async (record) => { taken.push(record.clientMessageId) })
+    expect(taken, 'once').toEqual(['first', 'later'])
+    const other = await openImRepository('account-b', { adapter, storage: window.localStorage })
+    expect(imSelectors.outbox(other.snapshot()).map((row) => row.clientMessageId)).toEqual(['theirs'])
+  })
+  it('keeps an older build\'s queued sends through a rebuild of the cache, for the outbox to take', async () => {
+    await adapter.commit([{ type: 'put', store: 'outbox', value: { accountId: 'account-a', id: 'kept', value: outbox('kept', 'account-a') } }])
+    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
+    await repository.transaction((transaction) => { transaction.clear(); transaction.putView('active-chat', 'chat-1') })
+    expect(imSelectors.outbox(repository.snapshot()).map((row) => row.clientMessageId)).toEqual(['kept'])
+    repository.close()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
+    expect(imSelectors.outbox(reopened.snapshot()).map((row) => row.clientMessageId)).toEqual(['kept'])
+    reopened.close()
+  })
+  it('keeps the rows when handing one to the outbox fails, so the next start tries again', async () => {
+    await adapter.commit([{ type: 'put', store: 'outbox', value: { accountId: 'account-a', id: 'kept', value: outbox('kept', 'account-a') } }])
+    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
+    await expect(takeLegacyOutboxRecords(repository, async () => { throw new Error('outbox not ready') })).rejects.toThrow('outbox not ready')
+    expect(imSelectors.outbox(repository.snapshot()).map((row) => row.clientMessageId)).toEqual(['kept'])
   })
   it('rejects a delete keyed to another account without touching that account', async () => {
     const repositoryA = await openImRepository('account-a', { adapter, storage: window.localStorage })
@@ -246,43 +266,6 @@ describe('account-scoped normalized IM repository', () => {
       transaction.delete('chat', ['account-b', 'shared-id'])
     })).rejects.toThrow('delete crossed account boundary')
     expect(readChatRows(repositoryB).map((row) => row.id)).toEqual(['shared-id'])
-  })
-  it('isolates throwing observers from durable commit and atomic outbox ack', async () => {
-    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    await putOutboxRecord(repository, outbox('message-1', 'account-a'))
-    let throwOnPublish = false
-    const healthySnapshots: number[] = []
-    repository.subscribe(imSelectors.outbox, () => {
-      if (throwOnPublish) throw new Error('observer exploded')
-    })
-    repository.subscribe(imSelectors.outbox, (rows) => healthySnapshots.push(rows.length))
-    throwOnPublish = true
-    let ackError = ''
-    try {
-      await ackOutboxRecord(repository, 'message-1', message('message-1'))
-    } catch (error) {
-      ackError = error instanceof Error ? error.message : String(error)
-    }
-    const committedBeforeReopen = {
-      outbox: readOutboxRecords(repository).map((row) => row.clientMessageId),
-      messages: await storedIds(),
-    }
-    repository.close()
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect({
-      ackError,
-      healthySnapshots,
-      committedBeforeReopen,
-      reopened: {
-        outbox: readOutboxRecords(reopened).map((row) => row.clientMessageId),
-        messages: await storedIds(),
-      },
-    }).toEqual({
-      ackError: '',
-      healthySnapshots: [1, 0],
-      committedBeforeReopen: { outbox: [], messages: ['message-1'] },
-      reopened: { outbox: [], messages: ['message-1'] },
-    })
   })
   it('does not allow nested selector values to mutate the committed snapshot', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })

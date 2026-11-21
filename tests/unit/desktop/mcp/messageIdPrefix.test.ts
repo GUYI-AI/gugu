@@ -17,12 +17,16 @@ function deps(rows: Array<{ id: string; content: string; created_at: string }>, 
     gets, rpcs,
     restGet: async (path: string) => {
       gets.push(path)
-      if (path.startsWith('messages?id=gte.')) return rows
       return []
     },
     restRpc: async (name: string, body: Record<string, unknown>) => {
       rpcs.push([name, body])
-      if (name === 'can_read_message') return !hidden.includes(String(body.p_message_id))
+      // The server's answer as the agent: a message it may not read is not there.
+      if (name === 'messages_by_id_as') {
+        // A short id spans the UUIDs it starts; anything else is matched as written.
+        const id = String(body.p_id)
+        return rows.filter((row) => (id.length < 36 ? row.id.startsWith(id) : row.id === id) && !hidden.includes(row.id))
+      }
       if (name === 'chat_facts') return [{ id: body.p_chat_id, kind: 'group', source_chat_id: null, group_prompt: null }]
       return []
     },
@@ -35,8 +39,7 @@ describe('message ids written as a prefix', () => {
   it('reads the thread of the one message the prefix names in that chat', async () => {
     const d = deps([{ id: FULL, content: 'root', created_at: '2026-11-16T10:00:00Z' }])
     await history('msg:abcdef12', d)
-    expect(d.gets[0]).toBe(`messages?id=gte.abcdef12-0000-0000-0000-000000000000&id=lte.abcdef12-ffff-ffff-ffff-ffffffffffff&chat_id=eq.${CHAT}`
-      + '&select=id,content,created_at&order=created_at.desc&limit=11')
+    expect(d.rpcs[0]).toEqual(['messages_by_id_as', { p_as: AGENT, p_id: 'abcdef12', p_chat_id: CHAT }])
     const read = d.rpcs.find(([name]) => name === 'message_history_as')
     expect(read?.[1].p_thread_root_id).toBe(FULL)
   })
@@ -52,16 +55,16 @@ describe('message ids written as a prefix', () => {
   it('a full id is never looked up', async () => {
     const d = deps([])
     await history(`msg:${FULL}`, d)
-    expect(d.gets.filter((path) => path.startsWith('messages?id=gte.'))).toEqual([])
+    expect(d.rpcs.map(([name]) => name)).not.toContain('messages_by_id_as')
     expect(d.rpcs.find(([name]) => name === 'message_history_as')?.[1].p_thread_root_id).toBe(FULL)
   })
 
   it('a file is fetched by its message prefix among every message the agent can read', async () => {
     const d = deps([{ id: FULL, content: 'file', created_at: 't1' }])
     await callTool(context, 'message_download_file', { source_message_id: 'msg:abcdef12' }, d).catch(() => null)
-    expect(d.gets[0]).toBe('messages?id=gte.abcdef12-0000-0000-0000-000000000000&id=lte.abcdef12-ffff-ffff-ffff-ffffffffffff&select=id,content,created_at&order=created_at.desc&limit=11')
-    // The full id goes on to the download, which asks as the agent — never the owner's row of it.
-    expect(d.rpcs.filter(([name]) => name === 'can_read_message').at(-1)?.[1]).toMatchObject({ p_message_id: FULL })
-    expect(d.gets).toHaveLength(1)
+    expect(d.rpcs[0]).toEqual(['messages_by_id_as', { p_as: AGENT, p_id: 'abcdef12', p_chat_id: null }])
+    // The full id goes on to the download, which reads it as the agent too; nothing reads with the owner's token.
+    expect(d.rpcs.filter(([name]) => name === 'messages_by_id_as').at(-1)?.[1]).toMatchObject({ p_as: AGENT, p_id: FULL })
+    expect(d.gets).toEqual([])
   })
 })

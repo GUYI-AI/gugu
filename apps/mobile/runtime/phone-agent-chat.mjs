@@ -61,13 +61,8 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
   // agent may read; only the full id goes on.
   const messageId = async (value, id, label) => {
     const written = bare(value, 'msg')
-    const range = typeof written === 'string' ? uuidPrefixRange(written) : null
-    if (!range) return uuid(written, label)
-    const { data, error } = await cloud.chat.from('messages').select('id,content,created_at').eq('chat_id', id)
-      .gte('id', range.lo).lte('id', range.hi).order('created_at', { ascending: false }).limit(11)
-    if (error) throw new Error(error.message)
-    const readable = await Promise.all(data.map((message) => cloud.rpc('chat', 'can_read_message', { p_message_id: message.id, p_user_id: agent.agentUserId })))
-    const rows = data.filter((_message, index) => readable[index] === true)
+    if (typeof written !== 'string' || !uuidPrefixRange(written)) return uuid(written, label)
+    const rows = await cloud.rpc('chat', 'messages_by_id_as', { p_as: agent.agentUserId, p_id: written, p_chat_id: id }) ?? []
     return matchIdPrefix({
       kind: 'msg', id: written, rows, keyOf: (message) => message.id, noun: 'messages',
       describe: (message) => `${JSON.stringify(String(message.content ?? '').slice(0, 40))}, ${message.created_at}`,

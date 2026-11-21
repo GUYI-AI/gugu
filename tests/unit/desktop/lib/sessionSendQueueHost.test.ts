@@ -1,7 +1,4 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import 'fake-indexeddb/auto'
-import { IDBFactory } from 'fake-indexeddb'
-import { openSessionInputStorage, SessionInputOutbox } from '@/lib/sessionInputOutbox'
 import { SessionMachine } from '../../../../packages/session-runtime/src/acp-agents/machine/machine'
 
 const fixture = vi.hoisted(() => ({
@@ -12,7 +9,7 @@ const fixture = vi.hoisted(() => ({
   rowListeners: new Set<() => void>(), changes: new Set<() => void>(),
   gone: undefined as undefined | ((error: unknown) => void), lifeEvent: undefined as undefined | ((view: { sessionId: string }) => void),
 }))
-vi.mock('@/lib/sessionInputOutboxBridge', () => ({
+vi.mock('@/lib/outbox/kinds/sessionInput', () => ({
   state: () => ({ get rows() { return fixture.rows }, get accountId() { return fixture.accountId }, valid: () => fixture.valid }),
   subscribeSessionInputs: (listener: () => void) => { fixture.rowListeners.add(listener); return () => fixture.rowListeners.delete(listener) },
   releaseQueuedSessionInput: (...args: unknown[]) => fixture.release(...args),
@@ -55,21 +52,17 @@ it('does not open ACP transport for a target assigned to the phone observer', as
   expect(fixture.release).not.toHaveBeenCalled()
 })
 
-it.each([0, 1])('actually sends a busy queued input after a real normal WorkEnded snapshot (background agents=%s)', async background => {
+it.each([0, 1])('releases a busy queued input after a real normal WorkEnded snapshot (background agents=%s)', async background => {
   const machine = new SessionMachine('session')
   machine.apply({ type: 'SessionReady' })
   machine.apply({ type: 'WorkStarted' })
   machine.apply({ type: 'AgentsChanged', runningCount: background })
   fixture.snapshot = machine.sessionState('foreground')
-  const storage = await openSessionInputStorage(new IDBFactory())
+  // The release itself (and its send through the outbox) is covered in sessionSendQueue.test.ts; this observer only decides when.
   const sent: string[] = []
-  const queue = new SessionInputOutbox('owner', storage, async input => { sent.push(input.id) }, () => true)
-  const input = await queue.enqueue({ sessionId: 'session', deviceId: null, text: 'queued while busy', queued: true, sendQueue: { order: 1 } })
-  fixture.rows = [{ ...input, sendQueue: input.sendQueue! }]
   fixture.release.mockImplementation(async (sessionId: string, _turns: unknown, _id: unknown, _steer: unknown, allowed: () => boolean) => {
-    const released = await queue.releaseQueued(sessionId, {}, new Set(), undefined, false, allowed)
-    await queue.flush()
-    return released
+    if (allowed()) sent.push(sessionId)
+    return null
   })
   close = watchSessionSendQueues('owner', () => undefined)
   await expect.poll(() => !!fixture.lifeEvent).toBe(true)
@@ -78,8 +71,7 @@ it.each([0, 1])('actually sends a busy queued input after a real normal WorkEnde
   fixture.snapshot = machine.sessionState(null)
   expect(fixture.snapshot).toMatchObject({ lifecycle: 'ready', activeTurnId: null, lastTurnOutcome: 'stopped', lastStopReason: 'end_turn' })
   for (const change of fixture.changes) change()
-  await expect.poll(() => sent).toEqual([input.id])
-  expect(await queue.list()).toEqual([])
+  await expect.poll(() => sent).toEqual(['session'])
 })
 
 it.each(['cancelled', 'errored'] as const)('retains the held input after a real %s WorkEnded snapshot', async reason => {

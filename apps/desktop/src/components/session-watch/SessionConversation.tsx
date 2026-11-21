@@ -59,13 +59,14 @@ import { Plus } from '@/lib/icons'
 import { messageForUser } from '@/lib/userFacingError'
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
+import { resendNativeInputByPerson } from '@/lib/nativeInputResend'
 import { nativeUserAttachmentCommands } from './native-user-attachments'
 import { usePhoneSessionQuotes } from './use-phone-session-quotes'
 import { EngineIcon } from '@/components/AgentHarnessIdentity'
 import { engineLabel } from '@/lib/usage/engineLabel'
-import { useQueuedSessionInputs, useSessionInputAccount } from '@/lib/sessionInputOutboxBridge'
+import { useQueuedSessionInputs, useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput'
 import { localQueuedInputs } from './local-queued-inputs'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput'
 import { phoneRecordWait, projectPhonePendingInputs, type PhoneRecordWait } from './phone-pending-inputs'
 import { projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries'
@@ -362,7 +363,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     onRetrySend: id => {
       const input = received.current.inputs.find(input => input.id === id && (input.delivery?.state === 'unknown' || (input.delivery?.state === 'failed' && settledHostRow(lifeView.current, id))))
       if (!input) return rejectedInputCommands.onRetrySend?.(id)
-      if (input.delivery?.retryable) void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeRetryUnknown(sessionId, id))
+      if (input.delivery?.retryable) void resendNativeInputByPerson(sessionId, id, local ? null : deviceId,
+        options => machineRpc(deviceId, local).sessions.lifeRetryUnknown(sessionId, id, options))
     },
     canDiscardSend: id => !!rejectedInputCommands.canDiscardSend?.(id) || settledHostRow(lifeView.current, id),
     onDiscardSend: id => {

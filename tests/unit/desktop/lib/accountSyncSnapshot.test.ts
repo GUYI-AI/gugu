@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { openLocalSyncDb, type LocalImDbAdapter, type LocalImDbOperation } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { deleteOutboxRecord, openImRepository, putOutboxRecord, readChatRows, readOutboxRecords, replaceChatRowsAndIdentities, type OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
+import { openImRepository, readChatRows, replaceChatRowsAndIdentities, type OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 import { createChatOutbox } from '../../../../apps/desktop/src/store/chatOutbox'
+import { createOutbox } from '../../../../apps/desktop/src/lib/outbox/core'
+import { openOutboxStorage } from '../../../../apps/desktop/src/lib/outbox/storage'
+import { fakeAccount } from '../store/chatOutboxHarness'
 import { ACCOUNT_REVISION_CURSOR_KEY, createAccountRevisionRuntime } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { assemble } from '../../../../apps/desktop/src/lib/chatProjectionAlgebra'
 import { decodeAccountSnapshot, initializeAccountSync } from '../../../../apps/desktop/src/lib/accountSyncSnapshot'
@@ -46,27 +49,25 @@ beforeEach(async () => {
 afterEach(() => { adapter.close(); vi.unstubAllGlobals() })
 
 describe('account snapshot bootstrap and repair', () => {
+  // Unsent sends live in the outbox's own database: rebuilding this cache from a cold snapshot cannot touch them.
   it.each([1, 2, 3])('loads conversations and durably fails %i interrupted uploads without deleting their intent', async (count) => {
     rpc.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ data: populatedSnapshot(), error: null }) })
-    const beforeRestart = await openImRepository('account-a', { adapter })
+    const storage = openOutboxStorage(factory)
+    const callbacks = { deliver: vi.fn(), onState: vi.fn(), onSent: vi.fn(), onDiscarded: vi.fn() }
+    const beforeRestart = createOutbox({ storage, account: fakeAccount('account-a'), online: () => () => {} })
+    const uploading = createChatOutbox(beforeRestart, callbacks)
     const uploads: OutboxRecord[] = Array.from({ length: count }, (_, index) => ({
       ...pending, clientMessageId: `upload-${index}`, state: 'uploading', operation: { kind: 'upload' },
       payload: { ...pending.payload, contentType: 'attachment', content: JSON.stringify({ url: `blob:gugu-app://interrupted-${index}`, filename: `${index}.bin` }) },
     }))
-    for (const upload of uploads) await putOutboxRecord(beforeRestart, upload)
-    beforeRestart.close()
+    await beforeRestart.loaded()
+    for (const upload of uploads) await uploading.stageUpload(upload)
+    beforeRestart.dispose()
 
-    // ChatProvider opens this validated durable store before interrupted uploads
-    // can transition to failed. A rejected row must not strand the whole list.
-    const reopenedAdapter = await openLocalSyncDb(factory)
-    const repository = await openImRepository('account-a', { adapter: reopenedAdapter, initialize: initializeAccountSync })
-    const deliver = vi.fn()
-    const outbox = createChatOutbox({
-      load: async () => readOutboxRecords(repository),
-      save: row => putOutboxRecord(repository, row),
-      remove: id => deleteOutboxRecord(repository, id),
-      deliver, onState: vi.fn(), onSent: vi.fn(), onDiscarded: vi.fn(),
-    })
+    // The cache is rebuilt from a cold snapshot (no cursor): the unsent rows are not part of it.
+    const repository = await openImRepository('account-a', { adapter, initialize: initializeAccountSync })
+    const box = createOutbox({ storage, account: fakeAccount('account-a'), online: () => () => {} })
+    const outbox = createChatOutbox(box, callbacks)
     try {
       expect(readChatRows(repository)).toMatchObject([{ id: 'chat-1', name: 'Remote group' }])
       expect(rpc).toHaveBeenCalledTimes(1)
@@ -76,20 +77,16 @@ describe('account snapshot bootstrap and repair', () => {
         expect(row).toMatchObject({ state: 'failed', operation: { kind: 'upload' } })
         expect(row.lastError).toBeTruthy()
       }
-      await outbox.retryAllFailed()
-      expect(deliver).not.toHaveBeenCalled()
-      const durable = await reopenedAdapter.loadAccount('account-a')
-      expect(durable.chat.map(row => row.id)).toEqual(['chat-1'])
-      expect(durable.outbox.map(row => (row.value as OutboxRecord).state)).toEqual(uploads.map(() => 'failed'))
-      const nextBoot = await openImRepository('account-a', { adapter: reopenedAdapter, initialize: initializeAccountSync })
+      expect(callbacks.deliver).not.toHaveBeenCalled()
+      expect((await storage.list('account-a')).map(row => row.state)).toEqual(uploads.map(() => 'failed'))
+      const nextBoot = await openImRepository('account-a', { adapter, initialize: initializeAccountSync })
       expect(readChatRows(nextBoot).map(row => row.id)).toEqual(['chat-1'])
-      expect(readOutboxRecords(nextBoot)).toHaveLength(count)
+      expect(await storage.list('account-a')).toHaveLength(count)
       expect(rpc).toHaveBeenCalledTimes(1)
       nextBoot.close()
     } finally {
-      outbox.dispose()
+      box.dispose()
       repository.close()
-      reopenedAdapter.close()
     }
   })
 
@@ -136,7 +133,7 @@ describe('account snapshot bootstrap and repair', () => {
 
   it('aborts a replacement transaction midway and fully succeeds on the next retry', async () => {
     const cached = await openImRepository('account-a', { adapter })
-    await cached.transaction((tx) => { tx.putOutbox(pending); tx.putIdentity({ ...identity, display_name: 'old' }) })
+    await cached.transaction((tx) => { tx.putIdentity({ ...identity, display_name: 'old' }) })
     let fail = true
     const failingAdapter: LocalImDbAdapter = { ...adapter, commit: async (operations) => {
       const next: LocalImDbOperation[] = [...operations]
@@ -150,11 +147,9 @@ describe('account snapshot bootstrap and repair', () => {
     const beforeRetry = await adapter.loadAccount('account-a')
     expect(beforeRetry.sync_state).toEqual([])
     expect((beforeRetry.identity[0]!.value as { display_name: string }).display_name).toBe('old')
-    expect(beforeRetry.outbox[0]!.value).toEqual(pending)
     await openImRepository('account-a', { adapter: failingAdapter, initialize: initializeAccountSync })
     const afterRetry = await adapter.loadAccount('account-a')
     expect(afterRetry.sync_state[0]!.value).toEqual({ revision: '422010' })
-    expect(afterRetry.outbox[0]!.value).toEqual(pending)
     expect((afterRetry.identity[0]!.value as { display_name: string }).display_name).toBe('A')
   })
 
