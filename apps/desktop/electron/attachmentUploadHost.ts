@@ -16,6 +16,8 @@ export function createAttachmentUploadHost(deps: {
   account(): Promise<{ id: string; home: string; endpoint(): Promise<AttachmentsEndpoint> } | null>
   progress(event: AttachmentProgressEvent): void
   warn(error: unknown): void
+  /** Offer an image's preview for its bytes; the send never waits for it. */
+  preview?(endpoint: AttachmentsEndpoint, original: Blob, contentType: string, sha256: string, as: string): Promise<void>
   result?(result: { messageId: string; attempt: number; elapsedMs: number; outcome: 'success' | 'failed' }): void
 }) {
   let current: { id: string; home: string; queue: ReturnType<typeof createDeclaredUploads> } | null = null
@@ -71,6 +73,9 @@ export function createAttachmentUploadHost(deps: {
         name: file.name, contentType: file.contentType, size: file.size }, copy, declared.plan ?? null)
       // A caller may fail its commit before awaiting this attempt; the queue still owns its retries.
       void uploaded.catch(() => {})
+      if (file.contentType.startsWith('image/') && deps.preview) {
+        void account.endpoint().then(endpoint => deps.preview!(endpoint, copy, file.contentType, sha256, account.id)).catch(deps.warn)
+      }
       return { declared: { staging_key: declared.staging_key, sha256, size_bytes: declared.size_bytes }, uploaded }
     },
     async drop(messageId: string) {

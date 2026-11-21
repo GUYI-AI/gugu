@@ -30,6 +30,7 @@ import { configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
+import { offerNativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
@@ -2543,6 +2544,7 @@ const attachmentUploads = createAttachmentUploadHost({
       }, electronFetch, SERVER_MODE)
     } }
   },
+  preview: offerNativeImagePreview,
   result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
   progress: event => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('attachments:progress', event) },
   warn: error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Attachment upload failed; pending bytes remain on this device'),
