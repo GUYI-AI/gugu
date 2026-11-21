@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "bc81da876c20e304c3a98abe7bf0991bedaf787b",
-  "status": "Backend PR #386 (presence last_interacted_at) head, unmerged: the client sends p_last_interacted_at. Move to its merge commit once #386 lands on dev."
+  "ref": "9ed0730043162f3e87dfe0066e490341bd84719c",
+  "status": "Backend #386 merged on dev and deployed: presence carries last_interacted_at and set_agent_runtime_state takes p_last_interacted_at."
 }
