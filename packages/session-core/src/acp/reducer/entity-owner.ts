@@ -28,6 +28,7 @@ export function findEntityOwner(
   };
   if (transcript.active && contains(transcript.active)) return transcript.active;
   const has = committedTest(event);
+  if (transcript.committed.length === 0 || !has(committedUnion(transcript.committed))) return;
   for (let i = transcript.committed.length - 1; i >= 0; i--) if (has(entityIndex(transcript.committed[i]))) return transcript.committed[i];
 }
 
@@ -59,12 +60,38 @@ export function entityIndex(turn: TranscriptTurn): EntityIndex {
   return index;
 }
 
+/**
+ * @@@committed-union - most events belong to the active turn or to no turn yet (every new tool call), and for those the
+ * backward scan above probed every committed turn: still O(events x turns) per replay. The union of the committed turns'
+ * indexes answers "in none of them" with one probe. It is kept per session (keyed by the first turn) and only grows, so
+ * after a revert it may still hold ids of turns that are gone: a hit then falls through to the exact scan, a miss never lies.
+ */
+const unions = new WeakMap<TranscriptTurn, { index: EntityIndex; members: WeakSet<TranscriptTurn> }>();
+const synced = new WeakMap<readonly TranscriptTurn[], EntityIndex>();
+
+function committedUnion(committed: readonly TranscriptTurn[]): EntityIndex {
+  const known = synced.get(committed);
+  if (known) return known;
+  let union = unions.get(committed[0]);
+  if (!union) unions.set(committed[0], union = { index: { ids: new Set(), local: new Set(), toolCallIds: new Set(), planIds: new Set() }, members: new WeakSet() });
+  for (const turn of committed) {
+    if (union.members.has(turn)) continue;
+    union.members.add(turn);
+    const index = entityIndex(turn);
+    for (const key of ['ids', 'local', 'toolCallIds', 'planIds'] as const) for (const id of index[key]) union.index[key].add(id);
+  }
+  synced.set(committed, union.index);
+  return union.index;
+}
+
 /** `contains` for a committed turn, by its index. Message and thinking ids are `${turn.id}:<local>` unless a client id. */
 function committedTest(event: NormalizedEvent): (index: EntityIndex) => boolean {
   if (event.kind === 'message') {
     if (event.messageId === null) return () => false;
     const wanted = messageEntityId(LOCAL, { ...event, messageId: event.messageId });
-    return wanted.startsWith(LOCAL_PREFIX) ? (index) => index.local.has(wanted.slice(LOCAL_PREFIX.length)) : (index) => index.ids.has(wanted);
+    if (!wanted.startsWith(LOCAL_PREFIX)) return (index) => index.ids.has(wanted);
+    const local = wanted.slice(LOCAL_PREFIX.length);
+    return (index) => index.local.has(local);
   }
   if (event.kind === 'thinking') {
     if (event.messageId === null) return () => false;
