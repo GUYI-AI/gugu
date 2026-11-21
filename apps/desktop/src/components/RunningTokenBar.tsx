@@ -128,7 +128,9 @@ function RunningTokenItem({
       closeDelay={150}
       payload={token}
       className={overflow ? 'rtb-otok' : 'rtb-tok'}
+      // A folded pill stays only to be measured: it is hidden, so its highlight would animate where nothing can show it.
       style={folded ? { position: 'absolute', left: 0, top: 0, visibility: 'hidden' } : undefined}
+      data-animation-off={folded ? '' : undefined}
       data-clickable={onTokenClick ? 'true' : 'false'}
       data-message-preview-trigger={token.id}
       aria-label={t('runtime.viewDetails', { name: displayName, status: stateWord })}
