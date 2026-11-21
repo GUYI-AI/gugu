@@ -15,12 +15,15 @@ type Node = import('typescript').Node
  * data such as sample content or matching tables) is listed file by file, with a reason, in
  * `hardcoded-cjk-exceptions.json`. An exception that no longer matches anything fails as stale.
  *
- * @@@roots - the renderer and the session UI packages. The main process (`apps/desktop/electron`) is
+ * @@@roots - the renderer and the session UI packages. Core is also checked at direct Error message
+ * and string-throw sites, where diagnostics can cross IPC into a UI. Its existing exceptions are pinned
+ * by file and complete expression in coreErrorDebt, counted separately, and fail when changed or removed.
+ * Prompts and ordinary data in core are outside this error-only scan. The main process (`apps/desktop/electron`) is
  * not a root: most CJK there is agent-facing tool text or diagnostics, and its user-visible strings
  * (dialogs, tray, menus, notifications) go through `apps/desktop/shared/host-localization.ts`, whose
  * en-US block is checked here as an English catalog.
  */
-export type HardcodedCjkCategory = 'user-visible' | 'english-catalog' | 'excepted' | 'developer' | 'false-positive'
+export type HardcodedCjkCategory = 'user-visible' | 'english-catalog' | 'excepted' | 'developer' | 'false-positive' | 'legacy-core-error'
 export type HardcodedCjkExceptionClass = 'C' | 'D' | 'E'
 
 export interface HardcodedCjkRow {
@@ -43,6 +46,7 @@ export interface HardcodedCjkException {
 export interface HardcodedCjkExceptions {
   englishCatalogAllowed: { text: string; reason: string }[]
   exceptions: HardcodedCjkException[]
+  coreErrorDebt: { file: string; text: string; reason: string }[]
 }
 
 export interface HardcodedCjkAudit {
@@ -56,12 +60,13 @@ export interface HardcodedCjkAudit {
 
 export interface HardcodedCjkOptions {
   roots?: readonly string[]
+  errorRoots?: readonly string[]
   exceptionsFile?: string
 }
 
 const CJK = /[㐀-鿿]/u
 const CJK_GLOBAL = /[㐀-鿿]/gu
-const CATEGORIES: readonly HardcodedCjkCategory[] = ['user-visible', 'english-catalog', 'excepted', 'developer', 'false-positive']
+const CATEGORIES: readonly HardcodedCjkCategory[] = ['user-visible', 'english-catalog', 'excepted', 'developer', 'false-positive', 'legacy-core-error']
 const FAILING: ReadonlySet<HardcodedCjkCategory> = new Set(['user-visible', 'english-catalog'])
 
 export const DEFAULT_ROOTS = [
@@ -71,6 +76,7 @@ export const DEFAULT_ROOTS = [
   'apps/desktop/shared/host-localization.ts',
 ] as const
 export const DEFAULT_EXCEPTIONS_FILE = 'scripts/checks/hardcoded-cjk-exceptions.json'
+export const DEFAULT_ERROR_ROOTS = ['packages/core/src'] as const
 
 /**
  * Catalog files. Inside an `english` block every CJK value fails unless `englishCatalogAllowed` covers it;
@@ -229,6 +235,7 @@ export function loadExceptions(root: string, exceptionsFile: string = DEFAULT_EX
   const parsed = JSON.parse(readFileSync(path.resolve(root, exceptionsFile), 'utf8')) as Partial<HardcodedCjkExceptions>
   const englishCatalogAllowed = parsed.englishCatalogAllowed ?? []
   const exceptions = parsed.exceptions ?? []
+  const coreErrorDebt = parsed.coreErrorDebt ?? []
   for (const entry of englishCatalogAllowed) {
     if (!entry.text || !entry.reason) throw new Error(`hardcoded-cjk-audit: englishCatalogAllowed entry needs text and reason: ${JSON.stringify(entry)}`)
   }
@@ -237,18 +244,42 @@ export function loadExceptions(root: string, exceptionsFile: string = DEFAULT_EX
       throw new Error(`hardcoded-cjk-audit: exception needs file, class C/D/E and reason: ${JSON.stringify(entry)}`)
     }
   }
-  return { englishCatalogAllowed, exceptions }
+  for (const entry of coreErrorDebt) {
+    if (!entry.file || !entry.text || !entry.reason) throw new Error('hardcoded-cjk-audit: coreErrorDebt needs file, text and reason')
+  }
+  return { englishCatalogAllowed, exceptions, coreErrorDebt }
 }
 
 function normalized(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+/** Direct Error constructors/calls, including custom *Error classes, plus thrown strings/templates. */
+function errorMessageArgument(node: Node): Node | undefined {
+  if (ts.isNewExpression(node) || ts.isCallExpression(node)) {
+    const expression = node.expression
+    const name = ts.isIdentifier(expression) ? expression.text
+      : ts.isPropertyAccessExpression(expression) ? expression.name.text : ''
+    if (/Error$/.test(name)) return node.arguments?.[name === 'AggregateError' ? 1 : 0]
+  }
+  if (ts.isThrowStatement(node) && node.expression
+    && (ts.isStringLiteral(node.expression) || ts.isNoSubstitutionTemplateLiteral(node.expression) || ts.isTemplateExpression(node.expression))) {
+    return node.expression
+  }
+}
+
+function hasCjkLiteral(node: Node, sourceFile: import('typescript').SourceFile): boolean {
+  if (isTextNode(node) && !ts.isRegularExpressionLiteral(node) && CJK.test(textValue(node, sourceFile))) return true
+  return ts.forEachChild(node, child => hasCjkLiteral(child, sourceFile) || undefined) === true
+}
+
 export function auditHardcodedCjk(root: string = process.cwd(), options: HardcodedCjkOptions = {}): HardcodedCjkAudit {
   const roots = options.roots ?? DEFAULT_ROOTS
-  const { englishCatalogAllowed, exceptions } = loadExceptions(root, options.exceptionsFile)
+  const errorRoots = options.errorRoots ?? (options.roots ? [] : DEFAULT_ERROR_ROOTS)
+  const { englishCatalogAllowed, exceptions, coreErrorDebt } = loadExceptions(root, options.exceptionsFile)
   const usedAllowed = new Set<number>()
   const usedExceptions = new Set<number>()
+  const usedCoreDebt = new Set<number>()
   const rows: HardcodedCjkRow[] = []
 
   const englishAllowed = (value: string): boolean => {
@@ -314,7 +345,28 @@ export function auditHardcodedCjk(root: string = process.cwd(), options: Hardcod
     visit(sourceFile)
   }
 
+  for (const file of [...new Set(errorRoots.flatMap(target => sourceFilesBelow(root, target)))]) {
+    const sourceFile = ts.createSourceFile(file, readFileSync(path.resolve(root, file), 'utf8'), ts.ScriptTarget.Latest, true)
+    const visit = (node: Node): void => {
+      const message = errorMessageArgument(node)
+      if (message && hasCjkLiteral(message, sourceFile)) {
+        const text = normalized(message.getText(sourceFile))
+        // Each debt entry admits one existing occurrence, not all future copies of that sentence.
+        const index = coreErrorDebt.findIndex((entry, index) => !usedCoreDebt.has(index) && entry.file === file && entry.text === text)
+        if (index >= 0) usedCoreDebt.add(index)
+        const position = sourceFile.getLineAndCharacterOfPosition(message.getStart(sourceFile))
+        rows.push({ file, line: position.line + 1, column: position.character + 1, kind: 'error-message', text,
+          category: index >= 0 ? 'legacy-core-error' : 'user-visible',
+          reason: index >= 0 ? coreErrorDebt[index]!.reason : 'core-error-message' })
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
+
   const staleExceptions = [
+    ...coreErrorDebt.filter((_entry, index) => !usedCoreDebt.has(index))
+      .map(entry => `coreErrorDebt ${entry.file} ${entry.text} matches no error message`),
     ...exceptions
       .filter((_entry, index) => !usedExceptions.has(index))
       .map((entry) => `exception ${entry.file}${entry.text === undefined ? '' : ` "${entry.text}"`} matches no CJK literal`),
