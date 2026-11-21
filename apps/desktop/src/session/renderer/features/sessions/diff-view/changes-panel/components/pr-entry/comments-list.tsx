@@ -87,7 +87,7 @@ function CommentItem({ comment }: { comment: PullRequestSessionItem }) {
 export function CommentsList({ comments }: { comments: Reading<PullRequestSessionItem[]> }) {
   const { translate } = useSessionMessages();
   return (
-    <ReadingSlot reading={comments} placeholder="mx-3 my-2 block h-10 w-auto" failed={() => translate('pr.commentsFailed')}>
+    <ReadingSlot reading={comments} placeholder="mx-3 my-2 block h-10 w-auto" className="px-3 py-2" failed={() => translate('pr.commentsFailed')}>
       {(items) => items.length === 0 ? <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div> : (
         <div className="flex flex-col gap-[1px]">
           {[...items].sort(sortPullRequestSessionItems).map((comment) => (

@@ -86,7 +86,7 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
 
   if (!range) return <EmptyState label={emptyState.label} description={emptyState.description} />;
   return (
-    <ReadingSlot reading={first} placeholder="my-2 h-[125px] w-full" failed={() => translate('pr.commitsFailed')}>
+    <ReadingSlot reading={first} placeholder="my-2 h-[125px] w-full" className="px-3 py-2" failed={() => translate('pr.commitsFailed')}>
       {() => commits.length === 0 ? <EmptyState label={emptyState.label} description={emptyState.description} /> : (
         <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
           <GrowingList
@@ -265,7 +265,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
 
   return (
     <div className="pr-1 pb-1 pl-5">
-      <ReadingSlot reading={files} placeholder="h-7 w-full" failed={() => translate('pr.filesFailed')}>
+      <ReadingSlot reading={files} placeholder="h-7 w-full" className="py-1" failed={() => translate('pr.filesFailed')}>
         {(changes) => changes.length === 0 ? <div className="px-1 py-1 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div> : (
           <div className="flex flex-col gap-0.5">
             {changes.map((change) => (
