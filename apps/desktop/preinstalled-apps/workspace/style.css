@@ -167,6 +167,10 @@ img.details-picture { object-fit: contain; }
   .file-list.as-grid { grid-template-columns: repeat(3, 1fr); gap: 0 3px; }
   .file-list.as-grid > .file.cell { margin-bottom: 3px; }
 }
+/* With a mouse the details are a side panel at any width: over the list's end in a narrow pane, beside it from 720px. */
+@media (hover: hover), (pointer: fine) {
+  .details { inset: 0 0 0 auto; width: min(300px, 85vw); max-height: none; border-radius: 0; border-left: 1px solid var(--em-border); }
+}
 @media (min-width: 720px) {
   .details { inset: 0 0 0 auto; width: 300px; max-height: none; border-radius: 0; box-shadow: none; border-left: 1px solid var(--em-border); }
   body.has-details .files { margin-inline-end: 300px; }
