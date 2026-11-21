@@ -179,7 +179,7 @@ type Subscriber = {
   listener: (result: TimelineAfterResult) => void;
 };
 
-type PublishedItem = { item: TranscriptItem; json: string; seq: number };
+type PublishedItem = { item: TranscriptItem; seq: number };
 /**
  * 上一次发布出去的一轮，按**条目**记版本：每条条目各有自己的 seq（最后一次变化的发布序号），
  * 轮的元信息（seq/initiator/startedAt/endedAt/outcome）与条目顺序也各记一个 seq。
@@ -187,9 +187,7 @@ type PublishedItem = { item: TranscriptItem; json: string; seq: number };
  */
 type PublishedTurn = {
   turn: TranscriptTurn;
-  metaJson: string;
   metaSeq: number;
-  orderJson: string;
   orderSeq: number;
   items: Map<string, PublishedItem>;
   /** 上面几个 seq 里最大的那个：这一轮最后一次有任何变化的发布序号。 */
@@ -343,30 +341,22 @@ class RecordTimeline implements SessionTimeline {
     this.removed = new Map(archive.removed.map(([id, at]) => [id, at]));
     this.recentActionEntries = new Map(archive.recentActions.map((one) => [one.id, one]));
     this.archivedImages = new Map(archive.images.map(([id, refs]) => [id, refs]));
-    // `published` 里那两串 JSON 是用来比对"这一轮变了没有"的，存下来纯属浪费（它就是整条会话）——
-    // 装回来时按当前的轮重算一遍即可（一份 39MB 的记录实测 23ms）。seq 才是必须存的那一半。
+    // 存档只存 seq;比对「这一轮变了没有」按当前的轮在发布时现算(见 publish)。
     this.published = new Map();
     this.publishedSteps = new Map();
     const byId = new Map(this.currentTurns().map((turn) => [turn.id, turn]));
     for (const entry of archive.published) {
       const turn = byId.get(entry.turnId);
       if (!turn) continue;
-      const { items: _items, ...meta } = turn;
       const seqById = new Map(entry.items.map(([id, at]) => [id, at]));
       const items = new Map<string, PublishedItem>();
       for (const item of turn.items) {
-        items.set(item.id, {
-          item,
-          json: JSON.stringify(item),
-          // 存档里没有的条目只可能来自版本漂移；给它当前 seq，宁可多发一次也不少发。
-          seq: seqById.get(item.id) ?? entry.touchedSeq
-        });
+        // 存档里没有的条目只可能来自版本漂移；给它当前 seq，宁可多发一次也不少发。
+        items.set(item.id, { item, seq: seqById.get(item.id) ?? entry.touchedSeq });
       }
       this.published.set(turn.id, {
         turn,
-        metaJson: JSON.stringify(meta),
         metaSeq: entry.metaSeq,
-        orderJson: JSON.stringify(turn.items.map((item) => item.id)),
         orderSeq: entry.orderSeq,
         items,
         touchedSeq: entry.touchedSeq
@@ -990,33 +980,27 @@ class RecordTimeline implements SessionTimeline {
       // 不跳过的话，直播时每吐一段都要把**整条会话**重新序列化一遍，成本随会话长度线性涨
       // （实测 2000 轮的会话每推一次 28ms，而真正变了的只有最后那一轮）。
       if (prior && prior.turn === turn) continue;
-      const { items: _items, ...meta } = turn;
-      const metaJson = JSON.stringify(meta);
-      const order = turn.items.map((item) => item.id);
-      const orderJson = JSON.stringify(order);
+      // @@@publish-by-identity - 条目同样不可变:同一个对象 = 没变,只有换了对象的才按 JSON 比一次。从前每一轮、每一条都先
+      // 序列化存下来备比:打开一条长会话的第一次发布要把整条会话(上百 MB)一口气序列化一遍,而那些串多数永远用不上。
       let touched = false;
-
       const nextItems = new Map<string, PublishedItem>();
       for (const item of turn.items) {
-        const json = JSON.stringify(item);
         const priorItem = prior?.items.get(item.id);
-        if (priorItem && priorItem.json === json) {
-          nextItems.set(item.id, priorItem);
+        if (priorItem && (priorItem.item === item || JSON.stringify(priorItem.item) === JSON.stringify(item))) {
+          nextItems.set(item.id, priorItem.item === item ? priorItem : { item, seq: priorItem.seq });
           continue;
         }
-        nextItems.set(item.id, { item, json, seq: nextSeq });
+        nextItems.set(item.id, { item, seq: nextSeq });
         touched = true;
       }
-      const metaSeq = prior && prior.metaJson === metaJson ? prior.metaSeq : nextSeq;
-      const orderSeq = prior && prior.orderJson === orderJson ? prior.orderSeq : nextSeq;
+      const metaSeq = prior && JSON.stringify(turnMeta(prior.turn)) === JSON.stringify(turnMeta(turn)) ? prior.metaSeq : nextSeq;
+      const orderSeq = prior && sameOrder(prior.turn.items, turn.items) ? prior.orderSeq : nextSeq;
       if (metaSeq === nextSeq || orderSeq === nextSeq) touched = true;
       if (!touched && prior) continue;
 
       staged.set(turn.id, {
         turn,
-        metaJson,
         metaSeq,
-        orderJson,
         orderSeq,
         items: nextItems,
         touchedSeq: nextSeq
@@ -1188,6 +1172,15 @@ class RecordTimeline implements SessionTimeline {
  * `max_turn_requests` 在三家记录里都没出现过（它是 ACP 侧的说法），留着是因为契约上那一档存在；
  * 真映射不出来的一律落回 `end_turn` —— 一轮结束了是确定的，只是没说清为什么。
  */
+function turnMeta(turn: TranscriptTurn): Omit<TranscriptTurn, 'items'> {
+  const { items: _items, ...meta } = turn;
+  return meta;
+}
+
+function sameOrder(a: readonly TranscriptItem[], b: readonly TranscriptItem[]): boolean {
+  return a.length === b.length && a.every((item, index) => item.id === b[index].id);
+}
+
 function sameSettlement(a: Settlement, b: Settlement): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
