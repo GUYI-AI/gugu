@@ -7,6 +7,48 @@
     { "text": "Apps → 咕咕 →", "reason": "Android settings path; the installed app is labelled 咕咕." },
     { "text": "drag 咕咕 into Applications", "reason": "The macOS app bundle in the .dmg is named 咕咕." }
   ],
+  "coreErrorDebt": [
+    {
+        "file": "packages/core/src/billing/quotaWindows.ts",
+        "text": "`额度信息不可用：${what} 不是有效时间（${String(value)}）`",
+        "reason": "Existing quota validation diagnostic; requires a separate localized billing error contract. Refs #3447."
+    },
+    {
+        "file": "packages/core/src/cloud/deviceActionCaller.ts",
+        "text": "`你的账号下没有设备 ${deviceId}(不带 device 调 device_actions 列出你的设备)`",
+        "reason": "Existing device-action tool error returned to the calling agent, rather than UI copy."
+    },
+    {
+        "file": "packages/core/src/cloud/deviceActionCaller.ts",
+        "text": "`${device.label} 上没有${filter.name ? `动作 ${filter.name}` : `分组 ${filter.group}`}(带 device 不带 group / name 调 device_actions 看它有哪些)`",
+        "reason": "Existing device-action tool error returned to the calling agent, rather than UI copy."
+    },
+    {
+        "file": "packages/core/src/cloud/devices.ts",
+        "text": "'设备名不能为空'",
+        "reason": "Existing device rename validation error; localized error contract is tracked separately from enabling this guard. Refs #3447."
+    },
+    {
+        "file": "packages/core/src/local/agent/agentRuntimeSession.ts",
+        "text": "'[agentRuntimeSession] 云 agent(gugu-cloud) 不应进入本机 runtime 身份解析'",
+        "reason": "Internal runtime invariant diagnostic, not a product sentence."
+    },
+    {
+        "file": "packages/core/src/local/agent/modelAccess.ts",
+        "text": "'这个 Agent 不在当前设备上运行'",
+        "reason": "Existing local-agent selection error; localized error contract is tracked separately from enabling this guard. Refs #3447."
+    },
+    {
+        "file": "packages/core/src/local/agent/transcriptSources/index.ts",
+        "text": "`未接通的 transcript 来源：${String(source)}`",
+        "reason": "Existing unknown-source diagnostic still listed in the #3447 checklist."
+    },
+    {
+        "file": "packages/core/src/shared/ui/agentModels.ts",
+        "text": "'项目目录必须是设备上的绝对路径，请等待目录加载完成后再选择。'",
+        "reason": "Existing project-path validation error; localized error contract is tracked separately from enabling this guard. Refs #3447."
+    }
+],
   "exceptions": [
     { "file": "apps/desktop/src/session/app-runtime/glue-entry.ts", "class": "C", "reason": "App-page runtime bundle without the host catalogs: every sentence is chosen by the page's locale (zh ? … : …) with its English beside it." },
     { "file": "apps/desktop/src/session/app-runtime/markdown-entry.ts", "class": "C", "reason": "App-page runtime bundle: the copy label is chosen by the document language with its English beside it." },
