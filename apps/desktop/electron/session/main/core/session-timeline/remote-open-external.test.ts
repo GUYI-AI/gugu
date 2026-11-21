@@ -3,22 +3,16 @@ import {
   answerOpenExternal,
   classifyOpenTarget,
   openExternalFromMachine,
-  pickSessionForCwd,
   type OpenExternalDeps,
 } from './remote-open-external';
 import { RemotePaneError } from './remote-pane';
-import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 function deps(overrides: Partial<OpenExternalDeps> = {}) {
   const open = vi.fn(async () => ({ opened: true as const }));
+  const roots: Record<string, string> = { app: '/srv/app', web: '/srv/app/web' };
   const base: OpenExternalDeps = {
-    route: { open, watching: () => false },
-    sessionFromPtyId: () => null,
-    sessionRoots: async () => [
-      { sessionId: 'recent', root: '/srv/app' as CanonicalPath },
-      { sessionId: 'older', root: '/srv/app' as CanonicalPath },
-      { sessionId: 'deep', root: '/srv/app/web' as CanonicalPath },
-    ],
+    route: { open },
+    sessionRoot: async (sessionId) => roots[sessionId] ?? null,
     isFile: async () => true,
     ...overrides,
   };
@@ -35,51 +29,43 @@ describe('open a web page from a program on this machine', () => {
     expect(() => classifyOpenTarget('  ', '/')).toThrow();
   });
 
-  it('finds the session: deepest folder wins, then one someone is watching, then the most recent', () => {
-    const roots = [
-      { sessionId: 'recent', root: '/srv/app' as CanonicalPath },
-      { sessionId: 'watched', root: '/srv/app/' as CanonicalPath },
-      { sessionId: 'deep', root: '/srv/app/web' as CanonicalPath },
-    ];
-    expect(pickSessionForCwd('/srv/app/web/src' as CanonicalPath, roots, () => false)).toBe('deep');
-    expect(pickSessionForCwd('/srv/app/api' as CanonicalPath, roots, () => false)).toBe('recent');
-    expect(pickSessionForCwd('/srv/app/api' as CanonicalPath, roots, (id) => id === 'watched')).toBe('watched');
-    expect(pickSessionForCwd('/home/alice' as CanonicalPath, roots, () => false)).toBeNull();
-  });
-
-  it('prefers the session named by GUGU_PTY_ID over the folder', async () => {
-    const { deps: d, open } = deps({ sessionFromPtyId: () => 'from-pty' });
-    await openExternalFromMachine({ target: 'https://x.test/', cwd: '/srv/app', ptyId: 'claude:from-pty' }, d);
-    expect(open).toHaveBeenCalledWith('from-pty', { kind: 'external', url: 'https://x.test/' }, 'pinned');
-  });
-
-  it('hands an unknown session to the route as "" (it falls back to whoever is looking at the machine)', async () => {
+  it('opens on the session named by the program environment, never one guessed from its folder', async () => {
     const { deps: d, open } = deps();
-    await openExternalFromMachine({ target: 'https://x.test/', cwd: '/home/alice', ptyId: '' }, d);
-    expect(open).toHaveBeenCalledWith('', { kind: 'external', url: 'https://x.test/' }, 'pinned');
+    await openExternalFromMachine({ target: 'https://x.test/', cwd: '/srv/app/web', sessionId: 'app' }, d);
+    expect(open).toHaveBeenCalledWith('app', { kind: 'external', url: 'https://x.test/' }, 'pinned');
+    // The socket call carries it as `open-url` sends it (GUGU_TASK_ID).
+    await answerOpenExternal({ target: 'https://y.test/', cwd: '/', sessionId: 'web' }, d);
+    expect(open).toHaveBeenLastCalledWith('web', { kind: 'external', url: 'https://y.test/' }, 'pinned');
+  });
+
+  // A model probe or an installer carries no session: the route reaches nobody with it (no_viewer).
+  it('hands a program outside any session to the route as "", even inside a session folder', async () => {
+    const { deps: d, open } = deps();
+    await openExternalFromMachine({ target: 'https://sign-in.test/cli-auth', cwd: '/srv/app', sessionId: '' }, d);
+    expect(open).toHaveBeenCalledWith('', { kind: 'external', url: 'https://sign-in.test/cli-auth' }, 'pinned');
   });
 
   it('renders a file inside the session folder in the desktop browser tab; refuses anything outside', async () => {
     const { deps: d, open } = deps();
-    await openExternalFromMachine({ target: 'dist/index.html', cwd: '/srv/app/web', ptyId: '' }, d);
-    expect(open).toHaveBeenCalledWith('deep', { kind: 'browser', url: 'file:///srv/app/web/dist/index.html' }, 'pinned');
-    await expect(openExternalFromMachine({ target: '/etc/passwd', cwd: '/srv/app', ptyId: '' }, d)).rejects.toMatchObject({
+    await openExternalFromMachine({ target: 'dist/index.html', cwd: '/srv/app/web', sessionId: 'web' }, d);
+    expect(open).toHaveBeenCalledWith('web', { kind: 'browser', url: 'file:///srv/app/web/dist/index.html' }, 'pinned');
+    await expect(openExternalFromMachine({ target: '/etc/passwd', cwd: '/srv/app', sessionId: 'app' }, d)).rejects.toMatchObject({
       code: 'outside_workspace',
     });
     const missing = deps({ isFile: async () => false }).deps;
-    await expect(openExternalFromMachine({ target: 'nope.html', cwd: '/srv/app', ptyId: '' }, missing)).rejects.toMatchObject({
+    await expect(openExternalFromMachine({ target: 'nope.html', cwd: '/srv/app', sessionId: 'app' }, missing)).rejects.toMatchObject({
       code: 'not_a_file',
     });
-    await expect(openExternalFromMachine({ target: 'a.html', cwd: '/home/x', ptyId: '' }, d)).rejects.toMatchObject({
+    await expect(openExternalFromMachine({ target: 'a.html', cwd: '/srv/app', sessionId: '' }, d)).rejects.toMatchObject({
       code: 'no_session',
     });
   });
 
   it('answers the socket call in the device-RPC shape, queued included', async () => {
     const queued = deps({
-      route: { open: async () => ({ queued: true as const }), watching: () => false },
+      route: { open: async () => ({ queued: true as const }) },
     }).deps;
-    await expect(answerOpenExternal({ target: 'https://x.test/', cwd: '/srv/app' }, queued)).resolves.toEqual({
+    await expect(answerOpenExternal({ target: 'report.html', cwd: '/srv/app', sessionId: 'app' }, queued)).resolves.toEqual({
       result: { outcome: 'queued', note: expect.stringContaining('next time') },
     });
     const failing = deps({
@@ -87,7 +73,6 @@ describe('open a web page from a program on this machine', () => {
         open: async () => {
           throw new RemotePaneError('no_viewer');
         },
-        watching: () => false,
       },
     }).deps;
     await expect(answerOpenExternal({ target: 'https://x.test/' }, failing)).resolves.toMatchObject({ error: { code: 'no_viewer' } });
