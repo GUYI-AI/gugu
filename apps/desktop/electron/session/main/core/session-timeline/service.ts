@@ -22,6 +22,7 @@ import { readAgentQuestionRecords, rememberAgentQuestion } from '../sessions/age
 import { nativeConversationAliases, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
 import { ownerNotificationHead, ownerNotificationFile } from '../sessions/owner-notifications';
 import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
+import { followSessionIndex, sessionIndexed, writeSessionIndex } from '../session-index/session-index';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
 import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
@@ -257,6 +258,8 @@ type TimelineEntry = {
    * 就该开真时间线,而缓存里的替身会把它挡住。用完即拆。
    */
   standIn?: boolean;
+  /** Stops keeping the session index current from this timeline (`followSessionIndex`). */
+  stopIndex?: () => void;
 };
 
 const entries = new Map<string, TimelineEntry>();
@@ -433,6 +436,7 @@ function disposeEntry(entry: TimelineEntry): void {
     });
   }
   entry.pendingWatch = null;
+  entry.stopIndex?.();
   entry.timeline.dispose();
 }
 
@@ -605,7 +609,7 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
       disposed: false,
     };
     entries.set(conversationId, entry);
-    try { attachInteractive(entry, row); }
+    try { attachInteractive(entry, row); entry.stopIndex = followSessionIndex(conversationId, timeline); }
     catch (error) { entries.delete(conversationId); timeline.dispose(); throw error; }
     return entry;
   });
@@ -1217,6 +1221,31 @@ export async function recordHistoryPage(input: {
     return fail('timeline_failed', (error as Error)?.message ?? String(error));
   } finally {
     release(acquired.value);
+  }
+}
+
+/**
+ * The session index holds this session's turns (`core/session-index`): read its timeline once if nobody has had it
+ * open since the index was built. A session with no record to read has none.
+ */
+export async function ensureSessionIndexed(conversationId: string): Promise<void> {
+  if (sessionIndexed(conversationId) || entries.has(conversationId)) return;
+  const row = readSessionRow(conversationId, { includeArchived: true });
+  if (!row) return;
+  const location = locateRow(row);
+  const journal = summaryRuntime(row.runtime) === 'acp' ? journalLocator(conversationId) : null;
+  if (!location.supported && !(journal && journalOnly(row))) {
+    writeSessionIndex(conversationId, []);
+    return;
+  }
+  if (!timelineFactory) throw new Error('session index: no timeline factory installed');
+  if (journal) await ensureJournal(conversationId);
+  // A reader of its own, outside the interactive cache: read once and let go, like the settling watch.
+  const timeline = await timelineFactory({ locator: location.supported ? location.locator : null, journal, conversationId });
+  try {
+    writeSessionIndex(conversationId, timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns);
+  } finally {
+    timeline.dispose();
   }
 }
 

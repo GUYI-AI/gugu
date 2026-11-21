@@ -108,7 +108,7 @@ import {
 import { rpcRouter } from '@main/rpc' // ← the complete router, every controller
 import { initializeDatabase } from '@main/db/initialize'
 import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
-import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
+import { indexSessionsInBackground, type SessionIndexLogger } from '@main/core/session-index/background'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
 import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
 import { loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
@@ -460,8 +460,8 @@ export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<Sessio
 }
 
 /** Host service readiness, rather than module initialization, starts the optional index work. */
-export function startSessionpageSearchBackfill(logger: SearchBackfillLogger): void {
-  startTurnTextBackfillWorker(logger)
+export function startSessionpageSearchBackfill(logger: SessionIndexLogger): void {
+  void indexSessionsInBackground(logger).catch(error => logger.error({ error: String(error) }, 'Session index failed'))
 }
 
 async function maybeStartDevWsHost(): Promise<HostIpc | null> {
@@ -850,7 +850,6 @@ let disposeEmdashModulePromise: Promise<void> | null = null
 let stopPtyRecordSync: () => void = () => {}
 
 async function disposeEmdashModuleOnce(): Promise<void> {
-  stopTurnTextBackfillWorker()
   stopTaskTurnSearch()
   const failures: unknown[] = []
   const runPhase = async (phase: string, action: () => void | Promise<void>): Promise<void> => {

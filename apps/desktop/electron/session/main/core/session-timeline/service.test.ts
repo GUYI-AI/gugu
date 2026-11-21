@@ -106,6 +106,8 @@ vi.mock('../sessions/session-conversation-activity', () => ({ nativeConversation
 
 vi.mock('../sessions/session-turn-store', () => ({ getStoredHistory: (...args: unknown[]) => state.storedHistory(...args), getStoredToolImage: vi.fn() }));
 
+// The session index has tests of its own (session-index.db.test.ts); here the timelines it follows are fakes.
+vi.mock('../session-index/session-index', () => ({ followSessionIndex: () => () => {}, sessionIndexed: () => true, writeSessionIndex: () => {} }));
 vi.mock('@main/db/client', () => ({
   db: {
     select: () => ({

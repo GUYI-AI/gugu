@@ -2,13 +2,14 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 
-const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
+const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as unknown }));
 
 vi.mock('@main/db/client', () => ({
   get db() {
     if (!mocks.db) throw new Error('Test database not initialized');
     return mocks.db;
   },
+  get sqlite() { return mocks.sqlite; },
 }));
 vi.mock('../agent-hooks/hook-server', () => ({
   HookServer: class {
@@ -35,11 +36,12 @@ vi.mock('@main/core/agent-hooks/notification', () => ({ maybeShowNotification: v
 const { agentHookService } = await import('../agent-hooks/agent-hook-service');
 const { statusWritesSettled } = await import('./_support/status-writes-settled');
 const { agentStatusWriter } = await import('./agent-status-writer');
+const { writeSessionIndex } = await import('../session-index/session-index');
 
 describe('acknowledged persistent quota errors', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
   beforeEach(async () => {
-    fixture = await openFixture('empty'); mocks.db = fixture.db;
+    fixture = await openFixture('empty'); mocks.db = fixture.db; mocks.sqlite = fixture.sqlite;
     fixture.sqlite.prepare("INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo')").run();
     for (const id of ['c1', 'c2']) fixture.sqlite.prepare("INSERT INTO sessions (id, project_id, provider, runtime, agent_status, agent_status_seen) VALUES (?, 'p1', 'claude', 'acp', 'idle', 1)").run(id);
     await agentHookService.initialize(); agentStatusWriter.initialize();
@@ -67,8 +69,7 @@ describe('acknowledged persistent quota errors', () => {
   it.each([0, 1])('recognizes a stored quota error from before the upgrade (seen=%s)', async seen => {
     fixture.sqlite.prepare("UPDATE sessions SET agent_status = 'error', agent_status_seen = ?, config = ? WHERE id = 'c1'")
       .run(seen, JSON.stringify({ version: '1', type: 'acp', model: 'model-a' }));
-    fixture.sqlite.prepare("INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('t1', 'c1', 0, 't1', ?)")
-      .run(JSON.stringify({ outcome: { kind: 'error', detail: weekly } }));
+    writeSessionIndex('c1', [{ id: 't1', seq: 0, initiator: 'user', items: [], outcome: { kind: 'error', reason: 'prompt_failed', detail: weekly } }]);
     if (!seen) await agentStatusWriter.markSeen('c1');
     await fail(); expect(row()).toEqual({ status: 'error', seen: 1 });
   });

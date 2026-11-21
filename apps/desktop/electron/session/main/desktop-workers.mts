@@ -11,10 +11,6 @@ export const desktopWorkers = {
     entry: 'main/core/git/status/worker.ts',
     file: 'git-status.js',
   },
-  'turn-text-backfill': {
-    entry: 'main/db/turn-text-backfill-worker.ts',
-    file: 'turn-text-backfill.js',
-  },
   'task-turn-search': {
     entry: 'main/core/search/task-turn-search-worker.ts',
     file: 'task-turn-search.js',
