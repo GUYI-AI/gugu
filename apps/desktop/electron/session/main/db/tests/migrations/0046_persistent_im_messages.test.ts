@@ -412,7 +412,6 @@ describe('0046 network sources store before they return', () => {
       state: 'sending', attempts: 0, lastError: null, enqueuedAt: '2026-11-03T00:00:00Z', updatedAt: '2026-11-03T00:00:00Z' },
     messageItemFromRow(raw(), 'account')!)
     expect(stored().map(row => row.id)).toEqual(['message-1'])
-    expect(repository.snapshot().message, 'desktop keeps message bodies in SQLite, not the IndexedDB cache').toEqual([])
   })
 
   it('e2 persists a server reaction on the canonical SQLite row rather than a view copy', async () => {

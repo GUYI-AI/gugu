@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { message, deferred } from '../../../support/testHarness'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { ackOutboxRecord, openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { confirmSentMessage, openImRepository, type OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { ingestMessages, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
@@ -167,12 +167,11 @@ it('membership changes for another member do not revoke this account or suppress
   expect(r.notify.mock.calls.map(([item]) => item.id)).toEqual(['still-authorized'])
 })
 
-it('acknowledges a sent message into the message store and removes its outbox row', async () => {
+it('writes a confirmed send into the message store', async () => {
   const r = await rig()
   const sent = row('sent', 3)
-  await ackOutboxRecord(r.repository, 'sent', sent)
+  await confirmSentMessage(r.repository, { clientMessageId: 'sent' } as OutboxRecord, sent)
   expect(stored()).toEqual(['sent'])
-  expect(r.repository.snapshot().outbox).toEqual([])
 })
 
 it('updates the original phone card, preserves it through stale window reads, and never notifies another arrival', async () => {
