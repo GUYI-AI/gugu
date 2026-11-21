@@ -310,3 +310,43 @@ export function passwordBetaRemoteHandlers() {
     },
   }
 }
+
+/** A saved credential as the host's own screens show it: never a secret value. */
+export interface HostCredential { id: string; name: string; origin: string; account?: string; maskedAccount: string }
+/** Whether a credential is for `site` (a bare hostname): its own website or one of its other sites, subdomains included. */
+export const credentialServes = (item: { origin: string; sites: readonly string[] }, site: string) =>
+  [item.origin, ...item.sites].some(origin => { const host = new URL(origin).hostname; return host === site || host.endsWith(`.${site}`) })
+/**
+ * The host's own use of the vault (main only): a connector keeps its token here, an App's request carries the one the
+ * person chose. The host lists, saves and removes as the person's own screens do, and reads a value only for itself.
+ */
+export const passwordVaultForHost = Object.freeze({
+  async list(site?: string): Promise<HostCredential[]> {
+    const value = await account()
+    return accounts.run(value, async () => (await value.vault.list(person))
+      .filter(item => site === undefined || credentialServes(item, site))
+      .map(item => ({ id: item.reference.id, name: item.name, origin: item.origin, ...(item.account !== undefined ? { account: item.account } : {}), maskedAccount: item.maskedAccount })))
+  },
+  /** Saves a value the person handed the host (a device-flow token); `credentialId`: over that one. Answers its id. */
+  async save(input: { origin: string; name: string; account: string; password: string }, credentialId?: string): Promise<string> {
+    const value = await account()
+    return accounts.run(value, async () => {
+      const previous = credentialId ? (await value.vault.list(person)).find(item => item.reference.id === credentialId) : undefined
+      const saved = await value.vault.save(person, randomUUID(), { ...input, fields: previous?.fields.map(field => ({ id: field.id, name: field.name, value: '', secret: field.secret })) ?? [] }, previous?.reference)
+      changed()
+      return saved.reference.id
+    })
+  },
+  async secret(credentialId: string): Promise<string | null> {
+    const value = await account()
+    return accounts.run(value, () => value.vault.hostSecret(person, credentialId))
+  },
+  /** Gone already is done. */
+  async remove(credentialId: string): Promise<void> {
+    const value = await account()
+    await accounts.run(value, async () => {
+      const item = (await value.vault.list(person)).find(entry => entry.reference.id === credentialId)
+      if (item) { await value.vault.delete(person, randomUUID(), item.reference); changed() }
+    })
+  },
+})
