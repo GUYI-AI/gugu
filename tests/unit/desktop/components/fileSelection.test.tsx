@@ -62,15 +62,14 @@ describe('what a press hands the host', () => {
 
 describe('a cite', () => {
   const session = { kind: 'session' as const, sessionId: 's-1' }, chat = { kind: 'chat' as const, chatId: 'g-1' }
-  it('names a computer\'s file by its path, a pill per place in a session, and reads as a quote then the pills', async () => {
+  it('names a computer\'s file by its path, a pill per place in a session, and no quote of its words beside it', async () => {
     await i18n.changeLanguage('en-US')
     const cite = selectionCite(session, { name: 'proof.md', target: '/repo/docs/proof.md' }, { text: '设 a 为偶数', places: [{ at: { lines: '3-4' } }] })
     expect(cite.refs).toEqual([{ label: 'proof.md (Lines 3–4)', link: '/repo/docs/proof.md' }])
-    expect(cite.draft).toBe('> 设 a 为偶数\n\n@[proof.md (Lines 3–4)](/repo/docs/proof.md)')
+    expect(cite.draft).toBe('@[proof.md (Lines 3–4)](/repo/docs/proof.md)')
     await act(async () => root.render(createElement(Markdown, { content: cite.draft, trust: 'chat' })))
-    const blocks = [...host.querySelectorAll('blockquote, p')].filter(block => !block.parentElement?.closest('blockquote'))
-    expect(blocks.map(block => block.tagName)).toEqual(['BLOCKQUOTE', 'P'])
-    expect(blocks[1]!.textContent).toContain('proof.md (Lines 3–4)')
+    expect(host.querySelector('blockquote')).toBeNull()
+    expect(host.textContent).toContain('proof.md (Lines 3–4)')
   })
 
   it('in a chat, a computer\'s file is named in words with its path written out: a chat has no pill that opens it', async () => {
