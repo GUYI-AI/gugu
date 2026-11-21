@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from '../../../../apps/desktop/electron/account-closure/v2-ipc'
+import { registerAccountClosedNoticeIpc, registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from '../../../../apps/desktop/electron/account-closure/v2-ipc'
 import type { AccountClosureV2Native } from '../../../../apps/desktop/src/platform/accountClosureV2'
 import { resumeDesktopAgentsAfterAccountClosure } from '../../../../apps/desktop/src/platform/desktopAccountClosureV2'
 const handle={localOperationId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',nativeGeneration:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',localRevision:3}
@@ -74,5 +74,34 @@ describe('separate owner-bound manual Agent enable',()=>{
    invoke.mockResolvedValueOnce({ok:false,code:'wrong_local_owner'} as never)
    await expect(resumeDesktopAgentsAfterAccountClosure(handle.localOperationId)).rejects.toMatchObject({code:'wrong_local_owner'})
   } finally { vi.unstubAllGlobals() }
+ })
+})
+
+function noticeFixture(initial:Record<string,unknown>={}) {
+ let invoke!: (event:unknown,input:unknown)=>unknown
+ const frame={},sender={mainFrame:frame},window={isDestroyed:()=>false,webContents:sender}
+ const file={state:structuredClone(initial)}
+ const read=vi.fn(()=>structuredClone(file.state)),write=vi.fn((next:Record<string,unknown>)=>{file.state=structuredClone(next)})
+ registerAccountClosedNoticeIpc({handle:(_channel:string,fn:unknown)=>{invoke=fn as typeof invoke}} as never,()=>window as never,{read,write})
+ return {invoke,file,read,write,event:{sender,senderFrame:frame}}
+}
+describe('one-shot account-closed notice across the relaunch',()=>{
+ it('rejects other frames and anything but mark/take before touching the state file',()=>{
+  const f=noticeFixture()
+  expect(f.invoke({...f.event,senderFrame:{}},{type:'mark'})).toEqual({ok:false})
+  for(const input of [undefined,'mark',{},{type:'clear'},{type:'take',owner:'x'}])expect(f.invoke(f.event,input)).toEqual({ok:false})
+  expect(f.read).not.toHaveBeenCalled();expect(f.write).not.toHaveBeenCalled()
+ })
+ it('marks beside other host state, then exactly one take reads and clears it',()=>{
+  const f=noticeFixture({windowTone:'dark'})
+  expect(f.invoke(f.event,{type:'mark'})).toEqual({ok:true,value:true})
+  expect(f.file.state).toEqual({windowTone:'dark',accountClosedNotice:true})
+  expect(f.invoke(f.event,{type:'take'})).toEqual({ok:true,value:true})
+  expect(f.invoke(f.event,{type:'take'})).toEqual({ok:true,value:false})
+  expect(f.file.state).toEqual({windowTone:'dark'});expect(f.write).toHaveBeenCalledTimes(2)
+ })
+ it('reports an unreadable state file as a failure, never as a shown notice',()=>{
+  const f=noticeFixture();f.read.mockImplementationOnce(()=>{throw Object.assign(Error('EACCES'),{code:'EACCES'})})
+  expect(f.invoke(f.event,{type:'take'})).toEqual({ok:false})
  })
 })

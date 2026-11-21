@@ -45,7 +45,7 @@ import { startAndroidPush } from './mobile/android-push/startAndroidPush'
 import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
 import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
-import { observeAccountClosureV2Recovery } from './components/settings/accountDeletion/accountClosureV2Runtime'
+import { announceAccountClosedAfterRelaunch, observeAccountClosureV2Recovery } from './components/settings/accountDeletion/accountClosureV2Runtime'
 import { rendererLogger } from './lib/log'
 import { isAccountClosureV2ErrorCode } from './platform/accountClosureV2'
 
@@ -142,6 +142,8 @@ export default function App() {
     const code = (error as { code?: unknown } | null)?.code
     rendererLogger('account-closure/recovery').warn({ code: isAccountClosureV2ErrorCode(code) ? code : 'closure_unavailable' }, 'Original account closure remains pending')
   }), [])
+  // After the session is decided, so the signed-out page's notice host is already mounted.
+  useEffect(() => { if (!loading) announceAccountClosedAfterRelaunch() }, [loading])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => teamInvitation.start(), [])
