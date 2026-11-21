@@ -21,6 +21,7 @@ import { useContactsStore } from '../../store/contactsContext'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import type { AgentRequestState } from './agentContactRequest'
 import { nameClampClass, profileCardStyles as styles } from './contactsPanelStyles'
+import { ProfileCardAction } from './ProfileCardAction'
 export type { AgentRequestState } from './agentContactRequest'
 
 
@@ -108,29 +109,15 @@ export function AgentContactProfileCard({
       {allowsLiveActions ? (
         hasOwnedActions ? <div className={styles.actions}>
           {allowsLiveActions && onSwitchToChat ? (
-            <button
-              type="button"
-              className={styles.action}
-              data-testid={AUTOMATION_TEST_IDS.contactsDetailSendMessageButton}
-              onClick={onSwitchToChat}
-            >
-              <MessageCircle size={19} />
-              {t('common.sendMessage')}
-            </button>
+            <ProfileCardAction icon={MessageCircle} label={t('common.sendMessage')} testId={AUTOMATION_TEST_IDS.contactsDetailSendMessageButton} onClick={onSwitchToChat} />
           ) : null}
           {/* @@@1990 owner 门控与「删除」同款:handler 缺席即不渲染——分享 RPC(share_agent)与
               Agent 设置都是 owner-only,非 owner 渲染出来就是必撞 not-owned 的死按钮(无权就不给入口)。 */}
           {onShare ? (
-            <button type="button" className={styles.action} onClick={onShare}>
-              <Share size={19} />
-              {t('common.share')}
-            </button>
+            <ProfileCardAction icon={Share} label={t('common.share')} onClick={onShare} />
           ) : null}
           {onSettings ? (
-            <button type="button" className={styles.action} onClick={onSettings}>
-              <Settings size={19} />
-              {t('common.settings')}
-            </button>
+            <ProfileCardAction icon={Settings} label={t('common.settings')} onClick={onSettings} />
           ) : null}
         </div> : null
       ) : null}
@@ -234,15 +221,7 @@ export function PersonContactProfileCard({
       </div>
       <PersonAliasField contact={contact} />
       <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.action}
-          data-testid={AUTOMATION_TEST_IDS.contactsDetailSendMessageButton}
-          onClick={onSwitchToChat}
-        >
-          <MessageCircle size={19} />
-          {t('common.sendMessage')}
-        </button>
+        <ProfileCardAction icon={MessageCircle} label={t('common.sendMessage')} testId={AUTOMATION_TEST_IDS.contactsDetailSendMessageButton} onClick={onSwitchToChat} />
       </div>
     </div>
   )

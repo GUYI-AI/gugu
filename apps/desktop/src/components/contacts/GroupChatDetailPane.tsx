@@ -23,6 +23,7 @@ import { ContactGroupAvatar } from './ContactSearch'
 import { GroupInviteRow } from './GroupInvite'
 import { useGroupProject } from './groupRowFacts'
 import { ct, detailCaptionClass, detailPlaceholderClass, nameClampClass, profileBodyClass, profileCardStyles as card } from './contactsPanelStyles'
+import { ProfileCardAction } from './ProfileCardAction'
 
 // 群资料:桌面通讯录的抽屉与手机群列表点进去的是同一份。头部(群头像 · 名字 · 项目群 · 人数 · 进入群聊)、
 // 群号与项目文件夹、成员按「人 / Agent」分开列;我自己的 Agent 说它在哪台机器、此刻在做什么。
@@ -95,9 +96,7 @@ function GroupDetail({ group, mobile, onBack, onOpenGroupChat }: { group: Contac
               </div>
             ) : null}
             <div className={cn(card.actions, 'flex-wrap justify-center')}>
-              <button type="button" className={card.action} onClick={() => onOpenGroupChat?.(group)}>
-                <MessageCircle size={19} />{ct('panel.enterGroup')}
-              </button>
+              <ProfileCardAction icon={MessageCircle} label={ct('panel.enterGroup')} onClick={() => onOpenGroupChat?.(group)} />
               <GroupInviteRow group={group} />
             </div>
           </div>

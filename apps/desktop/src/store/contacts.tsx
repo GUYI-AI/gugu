@@ -144,10 +144,9 @@ export function ContactsProvider({ children, active = true }: { children: React.
   useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]),
     () => {
       const relations = contactRelations.peek()
-      if (relations.state !== 'value') return null
       const requests = contactRequests.peek()
-      const requestRows = requests.state === 'value' ? [...requests.value.received, ...requests.value.sent] : []
-      return [...relations.value.map((relation) => relation.id), ...requestRows.flatMap((request) => [request.sender_id, request.receiver_id]), ...joinRequestIdentityIds(managedJoinRequests)]
+      if (relations.state !== 'value' || requests.state !== 'value') return null
+      return [...relations.value.map((relation) => relation.id), ...[...requests.value.received, ...requests.value.sent].flatMap((request) => [request.sender_id, request.receiver_id]), ...joinRequestIdentityIds(managedJoinRequests)]
     })
 
   // ── Actions ────────────────────────────────────────────────────────────────

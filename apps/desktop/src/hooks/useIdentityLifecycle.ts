@@ -12,7 +12,7 @@ import { rendererLogger } from '../lib/log'
  * identity cache keeps only what the conversation list and the contacts domain still name, so the re-read that follows
  * asks for live identities only (an archived or departed agent's cached row is not read again on every reconnect).
  * `contactIds` returns every identity the contacts domain names (contacts, request peers, join requesters), or null
- * while the contacts are unknown (then nothing is dropped).
+ * while the contacts or the requests are still unknown (then nothing is dropped).
  */
 export function useIdentityLifecycle(userId: string | null | undefined, getRepository: () => Promise<AccountImRepository>, reload: () => Promise<unknown>, contactIds: () => readonly string[] | null): void {
   const reloadRef = useRef(reload)
