@@ -22,11 +22,11 @@ import '@/components/assistant/assistant-onboarding.css';
 const f = vi.hoisted(() => ({
   states: { claude: 'authenticated', codex: 'authenticated' } as Record<string, string>,
   hold: null as Promise<void> | null,
-  continued: vi.fn(), back: vi.fn(), missingProgram: false, saved: false, selected: '',
+  continued: vi.fn(), back: vi.fn(), missing: [] as string[], saved: false, selected: '',
 }));
 function agent(id: string): AgentPayload {
-  return { id, name: id === 'codex' ? 'Codex' : 'Claude', status: f.missingProgram ? 'missing' : 'available',
-    reading: f.missingProgram ? 'not-detected' : 'installed', command: id, installOptions: [], capabilities: {
+  return { id, name: id === 'codex' ? 'Codex' : 'Claude', status: f.missing.includes(id) ? 'missing' : 'available',
+    reading: f.missing.includes(id) ? 'not-detected' : 'installed', command: id, installOptions: [], capabilities: {
       hostDependency: { updates: { kind: 'none' }, uninstall: { kind: 'none' } },
       hooks: { kind: 'none' }, sessions: { kind: 'stateless' },
       auth: { kind: 'supported', methods: [{ kind: 'cli-login', id: `${id}-login`, name: id, args: ['login'] }] },
@@ -76,7 +76,7 @@ let host: HTMLDivElement;
 let client: QueryClient;
 beforeEach(() => {
   setLocalePreference('en-US');
-  f.states = { claude: 'authenticated', codex: 'authenticated' }; f.hold = null; f.missingProgram = false; f.saved = false; f.selected = '';
+  f.states = { claude: 'authenticated', codex: 'authenticated' }; f.hold = null; f.missing = []; f.saved = false; f.selected = '';
   f.continued.mockClear(); f.back.mockClear();
   // The connection readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient;
@@ -85,10 +85,10 @@ beforeEach(() => {
 });
 afterEach(() => { modalStore.closeModal(); root.unmount(); client.clear(); host.remove(); });
 function Harness() {
-  const [engine, setEngine] = useState<AssistantEngine>('claude');
+  const [engine, setEngine] = useState<AssistantEngine | null>(null);
   return <div className="ta-onb-slot ta-onb-slot-engine"><section className="ta-onb ta-onb-engine" data-testid="engine-frame">
     <AssistantEngineChoice engine={engine} onEngineChange={setEngine} draft={{ name: 'Gugu', ...DEFAULT_ASSISTANT_LOOK,
-      owner: { preferredName: 'Owner', about: '' } }} onContinue={() => f.continued(engine)} onBack={f.back} />
+      owner: { preferredName: 'Owner', about: '' } }} onContinue={f.continued} onBack={f.back} />
     <ModalRenderer />
   </section></div>;
 }
@@ -137,7 +137,7 @@ it.each([1440, 390])('keeps both 74px cards, the frame and single action fixed t
       await expect.element(page.getByRole('button', { name, exact: true })).toBeVisible();
       samples.push({ engine: id, state, boxes: boxes() });
       expect(boxes()).toEqual(initial);
-      if (state === 'authenticated') expect(page.getByTestId(`assistant-engine-${id}`).element().textContent).not.toContain('Not ready');
+      if (state === 'authenticated') expect(page.getByTestId(`assistant-engine-${id}`).element().textContent).not.toMatch(/Not signed in|Not installed/);
     }
     let finish!: () => void;
     f.hold = new Promise<void>(resolve => { finish = resolve; });
@@ -230,6 +230,18 @@ it.each(['claude', 'codex'])('with a saved %s connection, the menu, its options 
   expectSolidOnTop(await openAddDialog(name), 'add dialog');
 });
 
+// An installed engine nobody has signed in to is not the same as a missing one: the label says which, ❌ one blanket "Unavailable".
+it('labels an installed but signed-out engine "Not signed in"', async () => {
+  f.states.codex = 'unauthenticated'; render();
+  await expect.element(page.getByTestId('assistant-engine-codex')).toHaveTextContent('Not signed in');
+  expect(page.getByTestId('assistant-engine-codex').element().textContent).not.toContain('Not installed');
+});
+
+it('labels a not-detected engine "Not installed"', async () => {
+  f.missing = ['claude', 'codex']; f.states.codex = 'unauthenticated'; render();
+  await expect.element(page.getByTestId('assistant-engine-codex')).toHaveTextContent('Not installed');
+});
+
 it('shows retry while unknown and completes a fresh check before allowing setup', async () => {
   f.states.claude = 'unknown'; render();
   await userEvent.click(page.getByRole('button', { name: 'Check again', exact: true }));
@@ -240,7 +252,7 @@ it('shows retry while unknown and completes a fresh check before allowing setup'
 });
 
 it('offers connection configuration before installing a not-detected local engine', async () => {
-  f.missingProgram = true; f.states.codex = 'unknown'; render();
+  f.missing = ['claude', 'codex']; f.states.codex = 'unknown'; render();
   await userEvent.click(page.getByTestId('assistant-engine-codex'));
   await expect.element(page.getByRole('button', { name: 'Configure Codex', exact: true })).toBeVisible();
   expect(f.continued).not.toHaveBeenCalled();
@@ -260,4 +272,21 @@ it('returns from account sign-in and continues with the selected Codex engine', 
   await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));
   expect(f.selected).toBe('codex');
   expect(f.continued).toHaveBeenCalledExactlyOnceWith('codex');
+});
+
+// First install with only Codex on the computer: the step offers Codex, ❌ a hard-coded Claude the person cannot use.
+it('defaults to the installed Codex when Claude is not installed, and continues with it', async () => {
+  f.missing = ['claude']; render();
+  await expect.element(page.getByTestId('assistant-engine-codex')).toHaveAttribute('aria-checked', 'true');
+  await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));
+  expect(f.continued).toHaveBeenCalledExactlyOnceWith('codex');
+});
+
+it('keeps a pick over the installed default', async () => {
+  f.missing = ['claude']; render();
+  await expect.element(page.getByTestId('assistant-engine-codex')).toHaveAttribute('aria-checked', 'true');
+  await userEvent.click(page.getByTestId('assistant-engine-claude'));
+  await expect.element(page.getByTestId('assistant-engine-claude')).toHaveAttribute('aria-checked', 'true');
+  await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));
+  expect(f.continued).toHaveBeenCalledExactlyOnceWith('claude');
 });

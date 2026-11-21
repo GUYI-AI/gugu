@@ -111,7 +111,8 @@ export default {
     "engineChecking": "正在检查…",
     "engineRetry": "重新检查",
     "engineConfigure": "配置 {{name}}",
-    "engineUnusable": "不可用",
+    "engineNotInstalled": "未安装",
+    "engineSignedOut": "未登录",
     "engineReadFailed": "读取失败",
 
     "identityTitle": "设置名字和形象",

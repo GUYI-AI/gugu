@@ -111,7 +111,8 @@ export default {
     "engineChecking": "Checking…",
     "engineRetry": "Check again",
     "engineConfigure": "Configure {{name}}",
-    "engineUnusable": "Unavailable",
+    "engineNotInstalled": "Not installed",
+    "engineSignedOut": "Not signed in",
     "engineReadFailed": "Could not read",
 
     "identityTitle": "Choose a name and look",
