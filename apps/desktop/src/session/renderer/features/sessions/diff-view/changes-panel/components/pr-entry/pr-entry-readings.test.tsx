@@ -12,7 +12,7 @@ vi.mock('@renderer/lib/ipc', () => ({ rpc: { app: {} }, events: { on: () => () =
 describe('the changes panel while its git reads are on their way', () => {
   it('comments not read yet hold their place, ❌ "no comments"', async () => {
     const harness = createReactHarness()
-    await harness.render(createElement(CommentsList, { comments: { state: 'unknown' }, onRetry: () => {} }))
+    await harness.render(createElement(CommentsList, { comments: { state: 'unknown' } }))
     expect(harness.container.querySelector('[data-unknown]')).not.toBeNull()
     expect(harness.container.textContent).not.toContain('pr.noComments')
     harness.cleanup()
@@ -21,7 +21,7 @@ describe('the changes panel while its git reads are on their way', () => {
   it('comments that could not be read say so, with a retry', async () => {
     const harness = createReactHarness()
     const onRetry = vi.fn()
-    await harness.render(createElement(CommentsList, { comments: { state: 'error', error: new Error('rate limited') }, onRetry }))
+    await harness.render(createElement(CommentsList, { comments: { state: 'error', error: new Error('rate limited'), retry: async () => { onRetry() } } }))
     expect(harness.container.textContent).toContain('pr.commentsFailed')
     expect(harness.container.textContent).not.toContain('pr.noComments')
     harness.container.querySelector<HTMLButtonElement>('[data-read-failed] button')!.click()

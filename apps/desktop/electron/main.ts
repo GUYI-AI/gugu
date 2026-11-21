@@ -2380,11 +2380,8 @@ app.on('browser-window-focus', sendAppActive)
 app.on('browser-window-focus', () => { if (hostLocaleStore) applyHostLocale() })
 app.on('browser-window-blur', sendAppActive)
 // @@@app-presence — in Gugu or not, for the reads on a return (electron/app-presence.ts).
-const appPresence = followAppPresence({
-  platform: process.platform,
-  on: (event, listener) => { app.on(event as 'did-become-active', listener) },
-  focused: () => BrowserWindow.getFocusedWindow() !== null,
-  send: (present) => { for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present) },
+const appPresence = followAppPresence((present) => {
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:presence-changed', present)
 })
 ipcMain.handle('app:is-present', () => appPresence.present())
 // @@@win-titlebar-row — Windows 标题栏「编辑 / 视图」菜单的命令(清单与理由见 window-menu-commands.ts)。
@@ -5211,7 +5208,7 @@ app.whenReady().then(async () => {
       if (record.action === 'children') {
         if (elsewhere) await crossMachine().deviceOfSession(sessionId, await remoteCaller(auth, context), signal)
         const local = await emdash.runSessionAction(context, record as SessionAction, signal)
-        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal)
+        return crossMachine().withRemoteChildren(local, sessionId, () => remoteCaller(auth, context), signal, record.metadata_only === true)
       }
       if (['get', 'stop', 'archive', 'set_parent', 'schedule_list', 'schedule_cancel'].includes(String(record.action)) && elsewhere) {
         return crossMachine().runOnSession(sessionId, await remoteCaller(auth, context), record as { action: string }, signal)
@@ -6448,6 +6445,13 @@ app.whenReady().then(async () => {
       .then(() => { adoptCloudTaskNames = adoptTaskNames; return adoptTaskNames() })
       .catch((error: unknown) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting task names failed'))
     refreshPlatformCredentials()
+    // The resource monitor switch is also the agents' grant to read it (ResourceMonitorSettingsPage): a monitor that was
+    // already on, from before that or from another start, gets the perf group connected here.
+    void emdashBoot.then(async () => {
+      if (!(await appSettingsService.get('resourceMonitor')).enabled || !deviceActionsRuntime().ungrantedGroup('perf.snapshot')) return
+      const result = await deviceActionsRuntime().connect('perf')
+      if (!result.ok) createLogger('device-actions').warn({ code: result.code, message: result.message }, 'could not connect perf for the running resource monitor')
+    }).catch((error: unknown) => createLogger('device-actions').warn({ error: String(error) }, 'could not connect perf for the running resource monitor'))
     // session-life signs in once the backend that owns it is up; later account changes come through the auth IPC.
     void emdashBoot.then(async () => {
       sessionLifeBooted = true

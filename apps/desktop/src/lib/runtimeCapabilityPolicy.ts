@@ -1,4 +1,3 @@
-import { rendererLogger } from './log'
 import { replica } from './replica'
 import { dataClient } from './supabase'
 
@@ -13,12 +12,8 @@ export const runtimeCapabilityPolicy = replica({
       .from('gugu_runtime_capability_policy')
       .select('min_critical_capability')
       .single()
-    if (error || typeof data?.min_critical_capability !== 'number') {
-      const failure = error ?? new Error('min_critical_capability is not a number')
-      // The badge is not drawn while the policy is unknown; say why it is missing.
-      rendererLogger('runtime-capability-policy').warn({ error: failure }, 'could not read the runtime capability policy; no stale-host badge this run')
-      throw failure
-    }
+    // The badge is not drawn while the policy is unknown; the failed read is logged with the model.
+    if (error || typeof data?.min_critical_capability !== 'number') throw error ?? new Error('min_critical_capability is not a number')
     return data.min_critical_capability
   },
   fresh: Infinity,

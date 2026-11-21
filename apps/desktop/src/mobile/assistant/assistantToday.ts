@@ -1,5 +1,5 @@
 import { readChatFolderText } from '@/lib/chatFolder'
-import { replica, useReplica, type Reading } from '@/lib/replica'
+import { replica } from '@/lib/replica'
 import { ChatFolderReadError } from '@/session/shared/extensions/chat-folder-text'
 import { TODAY_FILE_NAME, TODAY_REFRESH_MS, TodayReadError, todayReadOf, type TodayRead } from '@/session/renderer/features/assistant/assistant-today-file'
 
@@ -20,7 +20,3 @@ export const assistantToday = replica({
   refreshEvery: TODAY_REFRESH_MS,
 })
 
-/** 「动态」那一格与「<名字>」那一格的日记都读它。A refresh that failed stays on the reading (said where it is drawn). */
-export function usePhoneToday(chatId: string): { today: Reading<TodayRead>; retry: () => void } {
-  return { today: useReplica(assistantToday, [chatId]), retry: () => { void assistantToday.refresh(chatId) } }
-}

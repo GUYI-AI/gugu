@@ -81,8 +81,9 @@ export function useMarketDevicePicker<Reading, Plan>({
     mutationFn: ({ target, plan }: Operation) => install(target, plan),
     onSuccess: async (ok, { target }) => {
       if (!ok) return;
+      // What the reading is made of first (the device's installed list, say), then the reading.
+      await refresh?.(target).catch((error: unknown) => log.warn('Marketplace device inventory refresh failed:', error));
       await marketDeviceReading.refresh(readKey, target.device.id);
-      void refresh?.(target).catch((error: unknown) => log.warn('Marketplace device inventory refresh failed:', error));
     },
     onError: (error, { target }) => {
       log.error('Marketplace install on another computer failed:', { deviceId: target.device.id, error });
@@ -130,12 +131,14 @@ export function useMarketDevicePicker<Reading, Plan>({
   };
 }
 
-export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, blockDismiss = false }: {
+export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, blockDismiss = false, size }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rows: readonly PickerRow[];
   submitLabel?: string;
   blockDismiss?: boolean;
+  /** The trigger's size: an App's page puts it in its row of large buttons. */
+  size?: 'lg';
 }) {
   const { translate } = useSessionMessages();
   const confirming = useMarketDetailConfirming();
@@ -169,7 +172,7 @@ export function MarketDevicePicker({ open, onOpenChange, rows, submitLabel, bloc
       }
       onOpenChange(next);
     }}>
-      <PopoverTrigger render={<Button variant="outline" data-testid="market-detail-other-devices" />}>
+      <PopoverTrigger render={<Button variant="outline" size={size} data-testid="market-detail-other-devices" />}>
         {translate('marketDetail.otherDevices')}
         <ChevronDown className={open ? 'rotate-180' : undefined} aria-hidden />
       </PopoverTrigger>

@@ -6,7 +6,7 @@ import { ResourceMenu } from '../ResourceMenu'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from '@/lib/icons'
-import { PHONE_HOST, useInstalledApps, type InstalledApps, type MarketUpdates } from '../../session/renderer/features/extensions/installed-extensions'
+import type { InstalledApps, MarketUpdates } from '../../session/renderer/features/extensions/installed-extensions'
 import type { Reading } from '../../lib/replica'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
@@ -33,8 +33,9 @@ const installedApps = (installed: InstalledApps, assistant: boolean): { manifest
 const unusableApps = (installed: InstalledApps, assistant: boolean): { id: string; reason: string }[] =>
   assistant ? [] : installed.invalid.map((entry) => ({ id: entry.dirName, reason: entry.reason }))
 
-/** `offered` (`marketUpdates('phone')`): while unknown a row says nothing about versions. */
-export function AppsSection({ offered, onManage, assistant = false, hideEmpty = false }: {
+/** `installed`: the phone's list, read (its three states are the page's, MobileAppsSection). `offered` (`marketUpdates('phone')`): while unknown a row says nothing about versions. */
+export function AppsSection({ installed, offered, onManage, assistant = false, hideEmpty = false }: {
+  installed: InstalledApps
   offered: Reading<MarketUpdates>
   onManage: (id: string) => void
   /** The assistant's own row only (the assistant page), or every other App. */
@@ -44,8 +45,6 @@ export function AppsSection({ offered, onManage, assistant = false, hideEmpty = 
   const { t, i18n } = useTranslation('main')
   const { t: tm } = useTranslation('messaging')
   const titleId = useId()
-  // Unknown draws placeholder rows (❌ "no Apps installed" first).
-  const installed = useInstalledApps(PHONE_HOST)
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
@@ -58,9 +57,9 @@ export function AppsSection({ offered, onManage, assistant = false, hideEmpty = 
     setFailed(result.success ? null : result.error)
   }
 
-  // The rows below are drawn only once what is installed is read (the unknown and error branches come first).
-  const lists = installed.state === 'value' ? { apps: installedApps(installed.value, assistant), unusable: unusableApps(installed.value, assistant) } : null
-  if (hideEmpty && lists && !lists.apps.length && !lists.unusable.length) return null
+  const apps = installedApps(installed, assistant)
+  const unusable = unusableApps(installed, assistant)
+  if (hideEmpty && !apps.length && !unusable.length) return null
 
   return (
     <SettingsPage data-testid="settings-apps">
@@ -69,20 +68,16 @@ export function AppsSection({ offered, onManage, assistant = false, hideEmpty = 
           failure is said by MobileAppsSection's banner. */}
       <SettingsGroup note={!assistant ? t('settings.apps.intro') : undefined}
         footer={offered.state === 'value' ? <RefreshFailed reading={offered} /> : undefined}>
-        {installed.state === 'unknown' ? (
-          <SettingsRow data-testid="settings-apps-unknown" leading={<Unknown className="mk-icon" />} title={<Unknown className="w-24" />} description={<Unknown className="w-32" />} />
-        ) : installed.state === 'error' ? (
-          <SettingsRow data-testid="settings-apps-unreadable" description={installed.error.message} />
-        ) : lists!.apps.length === 0 && lists!.unusable.length === 0 ? (
+        {apps.length === 0 && unusable.length === 0 ? (
           <SettingsRow description={t('settings.apps.empty')} data-testid="settings-apps-empty" />
         ) : (
           <>
-            {lists!.apps.map(({ manifest, from, enabled }) => (
+            {apps.map(({ manifest, from, enabled }) => (
               <ResourceMenu key={manifest.id} resource={{ kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}>
                 <SettingsRow
                   data-app-id={manifest.id}
                   data-testid="settings-apps-row"
-                  leading={<span className="mk-icon"><ExtensionMonogram name={localizedManifestText(manifest, i18n.language).name} iconDataUrl={installed.value.appIcons[manifest.id]} /></span>}
+                  leading={<span className="mk-icon"><ExtensionMonogram name={localizedManifestText(manifest, i18n.language).name} iconDataUrl={installed.appIcons[manifest.id]} /></span>}
                   onClick={() => onManage(manifest.id)}
                   // 名字跟界面语言走,和电脑上 App 页同一个挑法(manifest 的 localized)。
                   title={localizedManifestText(manifest, i18n.language).name}
@@ -101,7 +96,7 @@ export function AppsSection({ offered, onManage, assistant = false, hideEmpty = 
                 />
               </ResourceMenu>
             ))}
-            {lists!.unusable.map(({ id, reason }) => (
+            {unusable.map(({ id, reason }) => (
               <SettingsRow
                 key={id}
                 data-app-id={id}

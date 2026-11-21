@@ -600,8 +600,8 @@ export default {
       "myAgents": "我的智能体",
       "otherAgents": "其他人的 agent",
       "listen": {
-        "activeHint": "主动：也会接收群内未提及它的消息。",
-        "passiveHint": "被动：仅接收提及或回复它的消息。"
+        "activeHint": "主动：群里有人发的、没指定对象的消息也收。",
+        "passiveHint": "被动：只收 @它、回复它、@所有人和给它的悄悄话。"
       },
       "title": "群成员",
       "titleTopic": "话题成员"

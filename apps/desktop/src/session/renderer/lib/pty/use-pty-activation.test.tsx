@@ -14,7 +14,7 @@ const eventOn = vi.hoisted(() => vi.fn());
 const sendInput = vi.hoisted(() => vi.fn());
 vi.mock('./send-terminal-input', () => ({ sendTerminalInput: sendInput }));
 vi.mock('@renderer/lib/ipc', () => ({
-  rpc: { pty: { resize }, appSettings: { get: async () => ({}) } },
+  rpc: { pty: { resize }, appSettings: { getWithMeta: async () => ({ value: {}, defaults: {}, overrides: {} }) } },
   events: { on: eventOn },
 }));
 vi.mock('@renderer/lib/hotkeys/dispatch-matching-hotkeys', () => ({ dispatchMatchingHotkeys: () => false }));

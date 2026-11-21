@@ -43,6 +43,8 @@ it.each([false, true])('retains own input while a preceding commit crosses a nat
     return { turns, nextCursor: old.seq, originTurnIds: turns.map(turn => origins.get(turn.id) ?? `origin:${turn.seq}`) }
   })
   const reader = createNativeRecordReader({ readSession: () => ({ runtime: 'acp' }), activeTurn: () => active,
+    activePreview: async () => null,
+    withArchive: async (_id, fn) => ({ ok: true, value: await fn(null) }),
     withTimeline: async (_id, fn) => ({ ok: true, value: await fn({} as never) }) })
   scope.rpc.mockImplementation(async request => { reads.push(request); return reader.snapshot(request) })
   const harness = createReactHarness(); cleanups.push(() => harness.cleanup())

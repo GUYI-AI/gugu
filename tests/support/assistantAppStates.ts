@@ -2,7 +2,7 @@
 // installed-Apps store holds, and what main said about the installed copy. Every route into the assistant is tested against
 // each state it must treat the same way: the App not usable here.
 import { ASSISTANT_APP_ID, installAssistantAppEntryBridge, publishAssistantAppWord } from '../../apps/desktop/src/lib/assistantEntry'
-import { tellInstalled } from '../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { EXTENSION_API_VERSION } from '../../apps/desktop/src/session/shared/extensions/manifest'
 
 export type AssistantAppState = 'usable' | 'switched off' | 'being put in' | 'failing to go in'
@@ -15,7 +15,7 @@ const manifest = {
   permissions: { capabilities: ['chat:unread'], bindings: [{ name: 'main', kind: 'conversation', actions: ['unread', 'surface', 'work'] }] },
   contributes: { tabs: [{ name: 'today', title: 'A' }] },
 }
-const apply = (installed: boolean, disabled: boolean) => tellInstalled('local', {
+const apply = (installed: boolean, disabled: boolean) => installedExtensions.set(['local'], {
   extensions: installed ? [manifest] : [], invalid: [], icons: {}, disabled: installed && disabled ? [ASSISTANT_APP_ID] : [], disclosure: {}, dock: [],
 } as never)
 

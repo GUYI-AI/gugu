@@ -15,7 +15,7 @@ import { listDevicesOnceIdentified } from '../../lib/listDevicesOnceIdentified'
 import { wakeCloudComputerUntilOnline } from '@gugu/core/cloud/cloudComputer'
 import { rendererCloudComputerClient } from '../../lib/cloudComputerClient'
 import { useAssistantHome } from '../../lib/useAssistantHome'
-import { refreshMyAssistant } from '../../lib/myAssistant'
+import { myAssistant } from '../../lib/myAssistant'
 import { assistantResumeStore } from '../../lib/assistantSetup'
 import { retireCustomizeCard, writeSetupStep } from '../../lib/assistantSetupState'
 import { ASSISTANT_HOME_CHANNELS } from '../../lib/assistantHomeIpc'
@@ -31,7 +31,6 @@ import { rendererLogger } from '../../lib/log'
 import { desktopIpc } from '../../platform/desktopIpc'
 import { machineRpc } from '../session-watch/sessionpage-rpc'
 import { clearServerAssistantSetup } from '../../lib/assistantServerSetup'
-import { refreshFailure, replica, useReplica } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -40,26 +39,11 @@ import '../../i18n/registerAssistantCatalog'
 const log = rendererLogger('assistant/close')
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
 
-type Home = { kind: 'local' } | { kind: 'cloud'; deviceId: string } | { kind: 'server'; deviceId: string }
-type Open = { assistantId: string; name: string } & (Home | { kind: 'elsewhere'; device: string })
-
-const sessionsHost = (kind: Home['kind'], deviceId: string | null) => kind === 'server' && deviceId ? machineRpc(deviceId) : rpcOn(kind === 'cloud' ? deviceId : null)
-const listHomeSessions = async (kind: Home['kind'], deviceId: string | null) => (await sessionsHost(kind, deviceId).sessionTimeline.sessionsList()).sessions
-
-/** The sessions the close confirmation shows, read once the home is woken and checked; the confirm closes exactly this plan. */
-const assistantClosePlan = replica({
-  name: 'assistantClosePlan',
-  scope: 'account',
-  keep: 0,
-  read: async (_owner: string, assistantId: string, kind: Home['kind'], deviceId: string | null): Promise<LocalClosePlan> => {
-    try {
-      return planLocalClose(assistantId, await listHomeSessions(kind, deviceId))
-    } catch (error) {
-      log.warn({ error: String(error) }, 'list sessions for closing the assistant failed')
-      throw error
-    }
-  },
-})
+type Open = { assistantId: string; name: string } & (
+  | { kind: 'local' }
+  | { kind: 'cloud'; deviceId: string }
+  | { kind: 'server'; deviceId: string }
+  | { kind: 'elsewhere'; device: string })
 
 export function AssistantCloseHost() {
   const { t } = useTranslation('assistant')
@@ -94,8 +78,7 @@ export function AssistantCloseHost() {
     const cloud = open?.kind === 'cloud' ? open : null
     const server = open?.kind === 'server' ? open : null
     const target = server?.deviceId ?? cloud?.deviceId ?? null
-    const kind: Home['kind'] = server ? 'server' : cloud ? 'cloud' : 'local'
-    const remote = () => sessionsHost(kind, target)
+    const remote = () => server ? machineRpc(server.deviceId) : rpcOn(target)
     const checkCloud = async () => {
       if (server) {
         const row = (await listDevicesOnceIdentified()).find(device => device.device_id === server.deviceId)
@@ -113,7 +96,7 @@ export function AssistantCloseHost() {
     }
     return {
       check: checkCloud,
-      listSessions: () => listHomeSessions(kind, target),
+      listSessions: async () => (await remote().sessionTimeline.sessionsList()).sessions,
       listAutomations: () => remote().automations.listAutomations(),
       deleteAutomation: (id) => remote().automations.deleteAutomation(id),
       removeAgent: (agentUserId) => removeOwnedAgent(agentUserId),
@@ -144,7 +127,7 @@ export function AssistantCloseHost() {
         retireCustomizeCard(ownerUserId)
         for (const record of assistantResumeStore.list(ownerUserId)) assistantResumeStore.forget(ownerUserId, record.operationId)
         moveJournalStore(ownerUserId).clear()
-        void refreshMyAssistant()
+        void myAssistant.refresh()
       },
     }
   }, [ownerUserId, removeOwnedAgent, open, refresh])
@@ -168,39 +151,33 @@ export function AssistantCloseHost() {
   }
 
   if (!localDeps) return null
-  return <LocalCloseDialog assistantId={open.assistantId} name={name} home={open.kind === 'local' ? [open.kind, null] : [open.kind, open.deviceId]} deps={localDeps} onClose={close} />
+  return <LocalCloseDialog assistantId={open.assistantId} name={name} deps={localDeps} onClose={close} />
 }
 
-function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
-  assistantId: string; name: string; home: [Home['kind'], string | null]; deps: LocalCloseDeps; onClose: () => void
-}) {
+function LocalCloseDialog({ assistantId, name, deps, onClose }: { assistantId: string; name: string; deps: LocalCloseDeps; onClose: () => void }) {
   const { t } = useTranslation('assistant')
-  const [woken, setWoken] = useState<'checking' | 'ready' | 'failed'>('checking')
+  const [plan, setPlan] = useState<LocalClosePlan | 'loading' | 'unreadable'>('loading')
   const [deleteStarted, setDeleteStarted] = useState(false)
   const [closing, setClosing] = useState(false)
   const [failure, setFailure] = useState<AssistantCloseError | null>(null)
 
-  // @@@effect-flow(command) - the close preflight wakes / checks the home once per opened dialog (a cloud computer is woken until online); state holds only whether that check passed, the sessions are the assistantClosePlan reading
   useEffect(() => {
     let cancelled = false
-    setWoken('checking')
-    Promise.resolve(deps.check?.()).then(
-      () => { if (!cancelled) setWoken('ready') },
-      (error: unknown) => {
-        log.warn({ error: String(error) }, 'checking the assistant home before closing failed')
-        if (!cancelled) setWoken('failed')
-      },
-    )
+    Promise.resolve(deps.check?.())
+      .then(() => deps.listSessions())
+      .then((listed) => !cancelled && setPlan(planLocalClose(assistantId, listed)))
+      .catch((error: unknown) => {
+        // 读不到它开过哪些会话 = 不知道那个勾在说什么、也不知道它自己的会话在哪:❌ 照着空清单关。
+        log.warn({ error: String(error) }, 'list sessions for closing the assistant failed')
+        if (!cancelled) setPlan('unreadable')
+      })
     return () => {
       cancelled = true
     }
-  }, [deps])
-  const reading = useReplica(assistantClosePlan, woken === 'ready' ? [assistantId, ...home] : null)
-  // 读不到它开过哪些会话 = 不知道那个勾在说什么、也不知道它自己的会话在哪:❌ 照着空清单关。
-  // 读到过、再读失败也一样:清单照画,说读不到,❌ 照着旧清单关。
-  const unreadable = woken === 'failed' || refreshFailure(reading) !== null
+  }, [assistantId, deps])
 
-  const confirm = async (plan: LocalClosePlan) => {
+  const confirm = async () => {
+    if (typeof plan !== 'object') return
     setClosing(true)
     setFailure(null)
     try {
@@ -215,7 +192,7 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
     }
   }
 
-  const plan = reading.state === 'value' ? reading.value : null
+  const started = typeof plan === 'object' ? plan.started : []
   return (
     <Sheet
       onClose={closing ? () => undefined : onClose}
@@ -229,9 +206,9 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
       <div className="flex flex-col gap-3 overflow-y-auto p-[18px]">
         <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t('closeDialog.title', { name })}</div>
         <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('closeDialog.body')}</div>
-        {!plan && !unreadable && <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('closeDialog.checking')}</div>}
-        {unreadable && <div className={cn(text, 'text-[var(--danger-fg)]')} role="alert">{t('closeDialog.unreadable')}</div>}
-        {plan && plan.started.length > 0 && (
+        {plan === 'loading' && <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('closeDialog.checking')}</div>}
+        {plan === 'unreadable' && <div className={cn(text, 'text-[var(--danger-fg)]')} role="alert">{t('closeDialog.unreadable')}</div>}
+        {started.length > 0 && (
           <div className="flex flex-col gap-2">
             <label className={cn(text, 'flex cursor-pointer items-start gap-2 text-[var(--fg)]')}>
               <input
@@ -242,10 +219,10 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
                 className="mt-[2px]"
                 data-testid="assistant-close-delete-started"
               />
-              <span>{t('closeDialog.deleteStarted', { count: plan.started.length })}</span>
+              <span>{t('closeDialog.deleteStarted', { count: started.length })}</span>
             </label>
             <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
-              {plan.started.map((session) => (
+              {started.map((session) => (
                 <div key={session.conversationId} className={cn(text, 'truncate text-[var(--fg)]')}>{session.title}</div>
               ))}
             </div>
@@ -259,7 +236,7 @@ function LocalCloseDialog({ assistantId, name, home, deps, onClose }: {
         )}
         <div className="flex justify-end gap-2">
           <Button size="sm" onClick={onClose} disabled={closing}>{t('closeDialog.cancel')}</Button>
-          <Button size="sm" variant="danger" disabled={closing || !plan || unreadable} onClick={() => { if (plan) void confirm(plan) }} data-testid="assistant-close-confirm">
+          <Button size="sm" variant="danger" disabled={closing || typeof plan !== 'object'} onClick={() => void confirm()} data-testid="assistant-close-confirm">
             {closing ? t('closeDialog.closing') : t('closeDialog.confirm')}
           </Button>
         </div>

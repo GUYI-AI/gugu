@@ -11,7 +11,7 @@ import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension
 import { AppProductPage } from '@renderer/features/extensions/panel/app-product-page'
 import { ShelfSkeleton } from '@renderer/features/extensions/panel/extension-skeletons'
 import { installedExtensions, useInstalledApps } from '@renderer/features/extensions/installed-extensions'
-import { refreshFailure } from '@/lib/replica'
+import { refreshFailure, useReplica } from '@/lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
@@ -26,7 +26,7 @@ import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from './SettingsPrimitives'
 import { AppsSection } from './AppsSection'
 import { PhoneAppManage } from './PhoneAppManage'
-import { PHONE_HOST, phoneMarketRows, useOfferedVersions, usePhoneMarketPage } from './phoneMarketPage'
+import { PHONE_HOST, phoneMarketCatalog, phoneMarketRows, useOfferedVersions } from './phoneMarketPage'
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
@@ -52,7 +52,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const { t } = useTranslation('main')
   const { translate, locale } = useSessionMessages()
   const platform = mode === 'installed' ? 'phone' : 'desktop'
-  const catalog = usePhoneMarketPage(platform)
+  const catalog = useReplica(phoneMarketCatalog, [platform])
   const entries = catalog.state === 'value' ? catalog.value.entries : null
   const offered = useOfferedVersions()
   const installedIds = usePhoneMarketInstalledAppIds(mode === 'market' ? devices : NO_DEVICES)
@@ -67,8 +67,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const installedReading = useInstalledApps(PHONE_HOST)
   const store = installedReading.state === 'value' ? installedReading.value : null
   // Unread, or read before and its read again failing (the list read stays drawn), or the phone's store unreadable: said with a retry.
-  const unreadable = installedReading.state === 'error' || refreshFailure(installedReading) !== null || store?.unreadable != null
-  const inventoryLoaded = store !== null
+  const unreadable = refreshFailure(installedReading) !== null || store?.unreadable != null
   const reloadInventory = () => {
     void phoneApps.reload().then(() => installedExtensions.refresh(PHONE_HOST), (error: unknown) => {
       log.error({ error: String(error) }, 'Phone Apps unreadable')
@@ -78,7 +77,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
 
   useEffect(() => {
     if (!appDetail || openedLink.current === appDetail) return
-    if (openInstalledDetail && !inventoryLoaded) return
+    if (openInstalledDetail && !store) return
     const installed = openInstalledDetail && !!store?.manifests.some(app => app.id === appDetail.extensionId)
     if (!installed && !entries) return
     openedLink.current = appDetail
@@ -90,7 +89,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
     const item = entries && phoneMarketRows(entries, '').find(row => row.manifest.id === appDetail.extensionId)
     if (item) setDetail(item)
     else setError(translate('extensions.marketUnavailable'))
-  }, [appDetail, entries, store, onHandledAppDetail, openInstalledDetail, inventoryLoaded, translate])
+  }, [appDetail, entries, store, onHandledAppDetail, openInstalledDetail, translate])
 
   const closeDetail = () => {
     setDetail(null)
@@ -108,8 +107,8 @@ export const MobileAppsSection = observer(function MobileAppsSection({
     {unreadable && mode === 'installed' && <SettingsNote tone="danger" role="alert" data-testid="phone-apps-unreadable">
       {translate('extensions.loadFailed')} <Button onClick={reloadInventory}>{translate('extensions.retry')}</Button>
     </SettingsNote>}
-    {mode === 'installed' && (inventoryLoaded
-      ? <AppsSection offered={offered} onManage={setManage}
+    {mode === 'installed' && (store
+      ? <AppsSection installed={store} offered={offered} onManage={setManage}
         assistant={installedAssistant} hideEmpty={hideInstalledEmpty} />
       : !unreadable ? <ShelfSkeleton label={translate('extensions.loading')} /> : null)}
     {mode === 'market' && <div className="phone-market" data-testid="phone-app-market">

@@ -6,8 +6,9 @@ import type { TFunction } from 'i18next'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { passwordSaveDraft, passwordVault } from '@/lib/passwordBetaNotifications'
-import { useReplica, type Reading, retryOf } from '@/lib/replica'
+import { refreshFailure, useReplica, type Reading, retryOf } from '@/lib/replica'
 import { Unknown } from '../ui/Unknown'
+import { ReadingSlot } from '../ui/ReadingSlot'
 import { ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, Trash, X } from '@/lib/icons'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { useSettingsDetail } from './SettingsDetailNavigation'
@@ -73,7 +74,6 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
   const [view, setView] = useState<View>({ kind: 'list' })
   const [query, setQuery] = useState('')
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
-  // @@@effect-flow(event) - opens the form an Agent's save request asks for (its id only, once per request); what it proposed is the passwordSaveDraft reading
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     const open = () => {
@@ -114,8 +114,8 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
       {!!snapshot?.items.length && !listed?.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{t('passwords.noMatches')}</span>} />}
       {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{t('passwords.empty')}</span>} />}
     </SettingsGroup>
-    {(vault.state === 'error' || (vault.state === 'value' && vault.error)) && <div className="flex items-center gap-2" data-testid="password-vault-failed">
-      <SettingsNote tone="danger" role="alert">{vault.error?.message}</SettingsNote>
+    {refreshFailure(vault) && <div className="flex items-center gap-2" data-testid="password-vault-failed">
+      <SettingsNote tone="danger" role="alert">{refreshFailure(vault)!.message}</SettingsNote>
       <Button variant="secondary" size="sm" onClick={retryOf(vault)}>{t('passwords.retry')}</Button>
     </div>}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
@@ -134,11 +134,9 @@ function RequestedForm({ requestId, ...props }: ScreenProps & { requestId: strin
     return <CredentialForm item={item} request={{ id: requestId, draft: draft.value }} {...props} />
   }
   return <RequestWaiting requestId={requestId} go={props.go}>
-    {draft.state === 'error' ? <>
-      <SettingsNote tone="danger" role="alert">{draft.error.message}</SettingsNote>
-      <Button variant="secondary" onClick={retryOf(draft)}>{t('passwords.retry')}</Button>
-    </> : draft.state === 'value' && !draft.value ? <SettingsNote>{t('passwords.requestHandled')}</SettingsNote>
-      : <Unknown className="h-40 w-full" />}
+    <ReadingSlot reading={draft} placeholder="h-40 w-full">
+      {value => value ? <Unknown className="h-40 w-full" /> : <SettingsNote>{t('passwords.requestHandled')}</SettingsNote>}
+    </ReadingSlot>
   </RequestWaiting>
 }
 

@@ -84,6 +84,22 @@ describe('member picker', () => {
     expect(q('[data-contact-option="alice"]')?.getAttribute('aria-selected')).toBe('true')
   })
 
+  it('creates the group with the typed name in the same call; an empty field keeps the member-name default', async () => {
+    const create = vi.fn().mockResolvedValue('new-group')
+    await renderWithAppProviders(harness, createNode(CreateGroupChatForm, { onClose: () => {}, onCreated: () => {} }), { ...providers, chat: { chats: [], createGroupChat: create } })
+    await clickElement(q('[data-contact-option="alice"]')!)
+    await clickElement(q('[data-contact-option="bob"]')!)
+    const name = q<HTMLInputElement>('[data-testid="create-group-name"]')!
+    expect(name.placeholder).toBe('群名称（可选）')
+    await typeInto(name, '  ')
+    await clickElement([...harness.container.querySelectorAll('button')].find((b) => /创建群聊/.test(b.textContent ?? ''))!)
+    expect(create).toHaveBeenLastCalledWith('Alice、Bob', ['alice', 'bob'])
+    await typeInto(name, ' 周会 ')
+    await clickElement([...harness.container.querySelectorAll('button')].find((b) => /创建群聊/.test(b.textContent ?? ''))!)
+    expect(create).toHaveBeenLastCalledWith('周会', ['alice', 'bob'])
+    expect(create).toHaveBeenCalledTimes(2)
+  })
+
   it('works from the keyboard: search + Enter picks and clears, Space toggles a focused row, Backspace drops the last pick', async () => {
     await renderWithAppProviders(harness, createNode(CreateGroupChatForm, { onClose: () => {}, onCreated: () => {} }), providers)
     await typeInto(search(), 'help')
@@ -111,17 +127,13 @@ describe('member picker', () => {
 
 describe('the open-time read of the contacts (F1-6)', () => {
   it('waits from the first frame: no "selection unavailable" judged by the list as last read, confirmation held', async () => {
-    const { followRendererSession, queryClient } = await import('../../../../apps/desktop/src/lib/replica')
-    const { contactsService } = await import('../../../../apps/desktop/src/lib/contacts')
-    queryClient.clear()
-    followRendererSession('SIGNED_IN', 'owner-1')
-    const read = vi.spyOn(contactsService, 'getContacts').mockReturnValue(new Promise(() => {}))
+    // The picker asks its contacts store to read again as it opens; the store's own reading says the read is on its way.
+    const refreshContacts = vi.fn(() => new Promise<void>(() => {}))
     const picker = createNode(MemberPicker, { title: 'Add', confirmLabel: (n: number) => `Add ${n}`, initialSelectedIds: ['newcomer'], onConfirm: () => {}, onClose: () => {} })
-    await renderWithAppProviders(harness, picker, providers)
-    expect(read).toHaveBeenCalled()
+    await renderWithAppProviders(harness, picker, { ...providers, contacts: { ...providers.contacts, loadingContacts: true, refreshContacts } })
+    expect(refreshContacts).toHaveBeenCalled()
     expect(harness.container.querySelector('[role="alert"]')).toBeNull()
     const button = [...harness.container.querySelectorAll('button')].find((b) => /^Add/.test(b.textContent ?? ''))
     expect(button?.disabled).toBe(true)
-    read.mockRestore()
   })
 })

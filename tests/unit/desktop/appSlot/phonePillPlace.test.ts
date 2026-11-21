@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { holdPlaceForOpeningPage, hostAppFrame } from '../../../../apps/desktop/src/components/appSlot/phoneAppHost'
-import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { APP_FRAME_MARKER } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import type { FileOpenerCandidate } from '../../../../apps/desktop/src/session/shared/extensions/file-openers'
 import { until } from '../../../support/awaitCondition'
@@ -56,7 +56,7 @@ function start(extensionId: string, chatId: string, itemId = 'item-1') {
 beforeAll(() => vi.useFakeTimers({ toFake: ['Date'] }))
 beforeEach(() => {
   // What the phone has installed is read (nothing): an App's calls are answered against it.
-  tellInstalled('phone', { extensions: [], invalid: [] } as never)
+  installedExtensions.set(['phone'], { extensions: [], invalid: [] } as never)
   vi.setSystemTime(Date.now() + 60_000)
   frame = document.createElement('iframe')
   frame.src = `${ORIGIN}/index.html`

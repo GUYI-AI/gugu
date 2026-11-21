@@ -1,5 +1,5 @@
 import { JSDOM } from 'jsdom';
-import { observable, runInAction } from 'mobx';
+import { observable, reaction, runInAction } from 'mobx';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,7 @@ import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/a
 
 const mocks = vi.hoisted(() => ({
   binding: null as null | {
-    status: { current(): AuthStatusModelState };
+    status: { follow(listener: (state: AuthStatusModelState) => void): () => void };
     sendInput: ReturnType<typeof vi.fn>;
     resize: ReturnType<typeof vi.fn>;
     markUrlHandled: ReturnType<typeof vi.fn>;
@@ -26,7 +26,7 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
     create: async () => {
       if (mocks.startFailure) throw mocks.startFailure;
       mocks.binding = {
-        status: { current: () => state.get() },
+        status: { follow: (listener) => reaction(() => state.get(), listener, { fireImmediately: true }) },
         sendInput: vi.fn(),
         resize: vi.fn(),
         markUrlHandled: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock('@renderer/lib/open-external-link', () => ({
   copyExternalLink: async () => true,
 }));
 vi.mock('./AcpAuthenticateSignIn', () => ({ AcpAuthenticateSignIn: () => null }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ reading: { state: 'value', value: null, stale: false, error: null } }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ state: 'value', value: null, stale: false, error: null }) }));
 vi.mock('@/components/settings/addServer/CommandBlock', () => ({ CommandBlock: () => null }));
 vi.mock('@/i18n/registerSettingsCatalog', () => ({}));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: (...args: unknown[]) => mocks.logged.push(args) }) }));
@@ -179,6 +179,24 @@ describe('终端登录不摆终端:链接 + 等待 + 填码(#2507)', () => {
     });
     expect(q('agent-sign-in-failed')?.textContent).toContain('Error: token exchange failed (403)');
     expect(dom.window.document.body.textContent).toContain('agentsPage.signInRetry');
+  });
+
+  it('钥匙串锁着、Claude Code 存不下登录 ⇒ 不摆像是码错了的原话,说清楚去解锁再重试', async () => {
+    await render();
+    const tail = "Paste code here if prompted > Login failed: Couldn't save your login. If your Mac's keychain is locked, unlock it and log in again.";
+    await set({ status: { kind: 'unauthenticated' }, login: login({ exit: { exitCode: 1, signal: null, tail } }) });
+    expect(q('agent-sign-in-keychain-locked')?.textContent).toBe('agentsPage.signInKeychainLocked');
+    expect(q('agent-sign-in-failed')?.textContent).not.toContain("Couldn't save your login");
+    expect(dom.window.document.body.textContent).toContain('agentsPage.signInRetry');
+  });
+
+  it('「粘贴」把剪贴板里的码填进框里,交不交由人点', async () => {
+    vi.stubGlobal('navigator', { clipboard: { readText: async () => ' abc123#state\n' } });
+    await render();
+    await set({ status: { kind: 'unauthenticated' }, login: login({ awaitingInput: true, inputPromptCount: 1 }) });
+    await act(async () => q('agent-sign-in-code-paste')!.click());
+    expect((q('agent-sign-in-code-input') as HTMLInputElement).value).toBe('abc123#state');
+    expect(mocks.binding?.sendInput).not.toHaveBeenCalled();
   });
 
   it('登录起不来 ⇒ 原文进日志,界面只说没登录成功并给「重试」', async () => {

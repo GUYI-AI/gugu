@@ -1,7 +1,7 @@
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { useReplica } from '@/lib/replica';
+import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
@@ -118,7 +118,6 @@ import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTa
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
-import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
 import { scheduleSlotShown, SessionScheduleSlot } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';
@@ -1742,8 +1741,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       ? sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)
       : undefined
   );
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const providerId = sessionStore?.data.providerId ?? null;
   // 上一轮被宿主的退出打断(开机收残记下的):停着时说明原因;兼容旧 error 记录,下一轮开工就不是了。
   const interruptedBy = sessionStore?.status === 'idle' || sessionStore?.status === 'error'
@@ -2217,11 +2215,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const render = new AbortController();
         mermaidViewerRender.current = render;
         const caches = store.chatContext.sharedCaches;
-        const theme = readMermaidTheme();
-        const cached = caches.peekMermaid(arg.chart, theme);
+        const cached = caches.peekMermaid(arg.chart);
         setMermaidViewer({ svg: cached, pending: cached === null });
         if (cached !== null) return;
-        void caches.renderMermaid(arg.chart, theme, render.signal).then((svg) => {
+        void caches.renderMermaid(arg.chart, render.signal).then((svg) => {
           if (!render.signal.aborted) setMermaidViewer({ svg, pending: false });
         });
       },

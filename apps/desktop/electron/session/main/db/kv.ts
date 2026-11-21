@@ -1,4 +1,4 @@
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { log } from '@main/lib/logger';
 import { db } from './client';
 import { kv } from './schema';
@@ -25,6 +25,21 @@ export class KV<TSchema extends Record<string, unknown>> {
     } catch {
       return null;
     }
+  }
+
+  /** Read a selected batch, preserving get's malformed/missing-value semantics. */
+  async getMany<K extends keyof TSchema & string>(keys: readonly K[]): Promise<Map<K, TSchema[K]>> {
+    const unique = [...new Set(keys)];
+    const result = new Map<K, TSchema[K]>();
+    if (!unique.length) return result;
+    const byKey = new Map(unique.map(key => [this.prefixed(key), key]));
+    const rows = await db.select({ key: kv.key, value: kv.value }).from(kv).where(inArray(kv.key, [...byKey.keys()]));
+    for (const row of rows) {
+      const key = byKey.get(row.key);
+      if (key === undefined) continue;
+      try { result.set(key, JSON.parse(row.value) as TSchema[K]); } catch { /* Same as get: malformed means absent. */ }
+    }
+    return result;
   }
 
   async set<K extends keyof TSchema & string>(key: K, value: TSchema[K]): Promise<void> {

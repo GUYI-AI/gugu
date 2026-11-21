@@ -160,5 +160,6 @@ it('counts a genuinely absent Codex index as zero without starting an import', a
   expect(await provider.scan(null)).toEqual({ count: 0, pending: false });
   expect(calls.tasks).not.toHaveBeenCalled();
   calls.scanTasks.mockResolvedValue({ status: 'unavailable', reason: 'unsupported-index', rows: [], blocked: [] });
-  await expect(provider.scan(null)).rejects.toThrow('unsupported-index');
+  await expect(provider.scan(null)).rejects.toThrow(/^codex-import-index-unreadable:$/);
+  expect(calls.tasks).not.toHaveBeenCalled();
 });

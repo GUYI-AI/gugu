@@ -14,8 +14,8 @@ export const SUBSCRIPTIONS = 'subscriptions';
 export const SUBSCRIPTION_STALE_MS = 30_000;
 type Machine = string | null;
 
-export async function readPlan(machine: string | null, providerId: string, connectionId?: string): Promise<SubscriptionPlanReading> {
-  const result = await (await getAgentConfigRuntimeClient(machine)).readSubscription({ providerId, connectionId });
+async function readPlan(machine: string | null, providerId: string): Promise<SubscriptionPlanReading> {
+  const result = await (await getAgentConfigRuntimeClient(machine)).readSubscription({ providerId });
   if (!result.success) throw new Error(errorText(result.error));
   return result.data;
 }
@@ -26,11 +26,12 @@ export async function readUsage(machine: string | null, providerId: string, forc
   return result.data;
 }
 
+/** A provider's plan on a machine when it has no connections to manage; a connection's plan is `connectionDetails`' (❌ asked twice). */
 export const subscriptionPlan = replica({
   name: 'subscriptionPlan',
   scope: 'device',
   tags: [SUBSCRIPTIONS],
-  read: (_device: string, machine: Machine, providerId: string, connectionId: string | null) => readPlan(machine, providerId, connectionId ?? undefined),
+  read: (_device: string, machine: Machine, providerId: string) => readPlan(machine, providerId),
   fresh: SUBSCRIPTION_STALE_MS,
   persist: { maxBytes: 1024, maxEntries: 4 },
 });
@@ -57,7 +58,7 @@ export const harnessConnections = replica({
   persist: { maxBytes: 1024, maxEntries: 4 },
 });
 
-/** One connection's sign-in reading and plan. */
+/** One connection's sign-in reading and plan (`planError`: the plan could not be read; the sign-in reading still stands). */
 export const connectionDetails = replica({
   name: 'connectionDetails',
   scope: 'device',
@@ -67,7 +68,7 @@ export const connectionDetails = replica({
     const input = { providerId, connectionId };
     const [status, plan] = await Promise.all([client.refreshAuthStatus(input), client.readSubscription(input)]);
     if (!status.success) throw new Error(errorText(status.error));
-    return { status: status.data, plan: plan.success ? plan.data : null };
+    return { status: status.data, plan: plan.success ? plan.data : null, ...(plan.success ? {} : { planError: errorText(plan.error) }) };
   },
   fresh: SUBSCRIPTION_STALE_MS,
   persist: { maxBytes: 1024, maxEntries: 6 },
@@ -121,8 +122,8 @@ export async function refreshModelSubscriptions(machine: Machine, providers: rea
   if (failed) throw failed.reason;
 }
 
-export function useSubscriptionPlan(machine: Machine, agentId: string, connectionId?: string, enabled = true) {
-  return useReplica(subscriptionPlan, enabled ? [machine, agentId, connectionId ?? null] : null);
+export function useSubscriptionPlan(machine: Machine, agentId: string, enabled = true) {
+  return useReplica(subscriptionPlan, enabled ? [machine, agentId] : null);
 }
 
 export function useSubscriptionUsage(machine: Machine, agentId: string, connectionId: string | undefined, enabled: boolean) {

@@ -44,7 +44,7 @@ const { ask, linkShell, pill, shownItem } = await import('./chatTabsHarness')
 const { folderItem, isFolderItem } = await import('@/session/renderer/features/chats/chat-tabs/chat-panel-item')
 const { chatAlone, chatPaneOf, closeChatTab, openPanelItem, panelFull, panelTabsOf, shownPanelTab } = await import('@/session/renderer/features/chats/chat-tabs/chat-layouts')
 import { tabFullscreen } from '@/session/renderer/features/tabs/tab-fullscreen'
-const { tellInstalled } = await import('@/session/renderer/features/extensions/installed-extensions')
+const { installedExtensions } = await import('@/session/renderer/features/extensions/installed-extensions')
 const { appsHere } = await import('@/components/appSlot/appsHere')
 const workspace = { id: 'workspace', name: '文件夹', version: '0.2.53', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: '文件夹', opensFiles: { chat: ['.md', '.json'] } }] } }
 const candidate = { extensionId: 'workspace', tabKind: 'workspace.main', tabTitle: '文件夹', app: { name: '文件夹', defaultLocale: 'zh-CN' }, onlyTab: true, state: false, suffix: '.md' }
@@ -82,7 +82,7 @@ beforeEach(() => {
   boundary.document.mockResolvedValue({ text: '<h1>live report</h1>' })
   boundary.save.mockResolvedValue(undefined)
   for (const tab of panelTabsOf('preview-group')) closeChatTab('preview-group', tab.tabId)
-  act(() => tellInstalled('local', { extensions: [workspace], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [workspace], invalid: [] } as never))
 })
 // Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
 // the setup above, whose closing of tabs is itself remembered).
@@ -93,7 +93,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   HTMLElement.prototype.checkVisibility = checkVisibility
-  act(() => tellInstalled('local', { extensions: [], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [], invalid: [] } as never))
 })
 
 /** What the tab's × does in the strip: the engine asks the tab, and its close hands back what opened it. */
@@ -370,7 +370,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     const release = async () => act(async () => answer({ success: true, data: later } as never))
     if (answerFirst) await release()
     const app = { ...workspace, id: 'exe-reader', contributes: { tabs: [{ name: 'main', title: 'Reader', opensFiles: { chat: ['.exe'] } }] } }
-    await act(async () => tellInstalled('local', { extensions: [workspace, app], invalid: [] } as never))
+    await act(async () => installedExtensions.set(['local'], { extensions: [workspace, app], invalid: [] } as never))
     expect(shownItem(file.chatId)?.itemId, 'the later ask is not answered by the App arriving').toBe(answerFirst ? later.itemId : file.itemId)
     if (!answerFirst) await release()
     expect(shownItem(file.chatId)).toMatchObject({ kind: 'workspace.main', itemId: later.itemId })
@@ -381,7 +381,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     await slot(file)
     expect(harness.container.querySelector('[data-preview-kind="unsupported"]')).not.toBeNull()
     const app = { ...workspace, id: 'exe-reader', contributes: { tabs: [{ name: 'main', title: 'Reader', opensFiles: { chat: ['.exe'] } }] } }
-    await act(async () => tellInstalled('local', { extensions: [workspace, app], invalid: [] } as never))
+    await act(async () => installedExtensions.set(['local'], { extensions: [workspace, app], invalid: [] } as never))
     expect(shownItem(file.chatId)).toMatchObject({ kind: 'exe-reader.main', itemId: file.itemId })
     expect(harness.container.querySelector('[data-preview-kind="unsupported"]')).toBeNull()
   })

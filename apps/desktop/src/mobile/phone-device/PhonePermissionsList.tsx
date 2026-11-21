@@ -10,7 +10,7 @@ import { requirementGranted, type PhoneActionGroup, type PhoneOsState } from './
 import { HEALTH_TYPES } from './nativePhoneActions'
 import { connectPhoneActionGroupChoice, setPhoneActionGroup, usePhoneDeviceSettings } from './phoneDeviceSettings'
 import { openPhonePermissionSettings, requestPhoneRequirement } from './phonePermissionActions'
-import { phoneOsState, readPhoneOsState, refreshPhoneDevice } from './phoneDeviceRuntime'
+import { phoneOsState, refreshPhoneDevice } from './phoneDeviceRuntime'
 import { useReplica } from '@/lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { PHONE_PERMISSION_ROWS, type PhonePermissionRow } from './phonePermissionRows'
@@ -52,7 +52,7 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
     }
     if (!requirementGranted(requirement, os)) {
       await requestPhoneRequirement(requirement, os)
-      if (!requirementGranted(requirement, await readPhoneOsState())) return
+      if (!requirementGranted(requirement, await phoneOsState.reread())) return
     } else if (group === 'location' && !os.special.location_enabled) await openPhonePermissionSettings('location')
     else if (selected) {
       if (group === 'health' && (os.health.granted_types.length < HEALTH_TYPES.length || (os.health.background_supported && !os.health.background_granted))) await requestPhoneRequirement('health_connect', os)

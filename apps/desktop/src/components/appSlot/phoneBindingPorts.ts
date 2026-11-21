@@ -34,7 +34,6 @@ const lazyPanelClient = {
 /** The App as installed on this phone (phoneApps.ts), a one-moment answer. */
 export function phoneInstalledApp(extensionId: string): PhoneInstalledApp | null {
   const installed = peekInstalledApps(PHONE_HOST)
-  // @@@reading-default(moment) - a binding asked before the phone's list was read answers "not installed here": the call is refused, not drawn
   const manifest = installed ? installed.manifestFor(extensionId) : undefined
   if (!installed || !manifest) return null
   const record = phoneApps.installRecord(extensionId)

@@ -27,12 +27,12 @@ vi.mock('../../../../apps/desktop/src/store/theme', () => ({ useTheme: () => ({ 
 vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ onMachineChannel: () => () => undefined }))
 
 const { SessionAppFrame } = await import('../../../../apps/desktop/src/components/appSlot/SessionAppFrame')
-const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const office = { id: 'office', version: '0.2.0', entry: 'index.html', permissions: { capabilities: ['files:read'] }, contributes: { tabs: [{ name: 'home', title: 'Office', entry: 'home.html' }] } }
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
-  tellInstalled('phone', { extensions: [office], invalid: [] } as never)
+  installedExtensions.set(['phone'], { extensions: [office], invalid: [] } as never)
   harness = createReactHarness()
   host.hooks = null
   host.filesChanged.length = 0

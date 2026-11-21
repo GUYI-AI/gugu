@@ -100,6 +100,8 @@ export default {
     "emptyContacts": "No contacts",
     "failed": "Could not create the group chat",
     "fallbackName": "Group chat",
+    "nameLabel": "Group name",
+    "namePlaceholder": "Group name (optional)",
     "noResults": "No members found",
     "removeMember": "Remove {{name}}",
     "searchPlaceholder": "Search names, tasks, projects or devices",
@@ -276,7 +278,9 @@ export default {
     "agents": "Agents",
     "count_one": "{{count}} contact",
     "count_other": "{{count}} contacts",
-    "groups": "Groups"
+    "groups": "Groups",
+    "showLess": "Show less",
+    "showMore": "Show {{count}} more"
   },
   "panel": {
     "addContact": "Add contact",

@@ -14,7 +14,8 @@ import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { ChevronLeft } from '@/lib/icons'
 import { IconButton } from '@/components/ui/IconButton'
 import { SettingsNote } from '@/components/settings/SettingsPrimitives'
-import { usePhoneMarketPage, phoneMarketRows } from '@/components/settings/phoneMarketPage'
+import { phoneMarketCatalog, phoneMarketRows } from '@/components/settings/phoneMarketPage'
+import { retryOf, useReplica } from '@/lib/replica'
 import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from './PhoneMarketInstallSheet'
 import { usePhoneAgentInstallTargets, usePhoneMarketInstalledAppIds } from './phoneMarketTargets'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
@@ -46,7 +47,7 @@ export const PhoneMarketAgents = observer(function PhoneMarketAgents({ device, t
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<Category>('all')
   const [detail, setDetail] = useState<AgentPayload | null>(null)
-  const market = usePhoneMarketPage()
+  const market = useReplica(phoneMarketCatalog, ['phone'])
   // The assistant's row, once the catalog is read.
   const assistant = !installed && category !== 'coding' && market.state === 'value'
     ? phoneMarketRows(market.value.entries, '').find(item =>
@@ -111,14 +112,14 @@ function AgentRows({ query, category, targets, installed, onOpen }: {
   const { locale, translate } = useSessionMessages()
   const host = useLibraryHost()
   const agents = useManagementAgents()
-  if (agents.reading.state !== 'value') {
+  if (agents.state !== 'value') {
     if (host.remote?.online === false) return <SettingsNote role="status">{t('phoneMarket.deviceOffline')}</SettingsNote>
-    if (agents.reading.state === 'error') return <SettingsNote tone="danger" role="alert">{t('phoneMarket.agentUnavailable')}
-      <Button size="sm" onClick={() => void agents.refetch()}>{translate('extensions.retry')}</Button>
+    if (agents.state === 'error') return <SettingsNote tone="danger" role="alert">{t('phoneMarket.agentUnavailable')}
+      <Button size="sm" onClick={retryOf(agents)}>{translate('extensions.retry')}</Button>
     </SettingsNote>
     return <AppConnectionListPlaceholder />
   }
-  const rows = [...agents.reading.value].sort(compareAgents).flatMap(agent => {
+  const rows = [...agents.value].sort(compareAgents).flatMap(agent => {
     const local = agent.reading !== undefined && isInstalledAgent(agent)
     const present = local || !installed && targets.some(device => device.capabilities.runtimes.includes(agent.id))
     const description = marketAgentDescription(agent, locale)
@@ -127,7 +128,7 @@ function AgentRows({ query, category, targets, installed, onOpen }: {
     return [{ agent, present, description }]
   })
   return <>
-    <RefreshFailed reading={agents.reading} />
+    <RefreshFailed reading={agents} />
     {rows.map(({ agent, present, description }) =>
       <PhoneMarketRow key={agent.id} testId={`phone-market-agent-${agent.id}`} name={agent.name} description={description}
         icon={<AppIcon id={agent.id} asset={agent.icon} size={42} />} onOpen={() => onOpen(agent)}

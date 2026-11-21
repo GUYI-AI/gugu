@@ -16,7 +16,7 @@ vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', ()
   SessionpageRpcError: class extends Error { constructor(readonly code: string, message: string) { super(message) } },
 }))
 vi.mock('../../../apps/desktop/src/components/appSlot/phoneProgramCall', () => ({ callOnComputer: m.call }))
-const { tellInstalled } = await import('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const { installedExtensions } = await import('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 
 let h: ReturnType<typeof createReactHarness>
 // "abc"
@@ -25,7 +25,7 @@ let open: (path: string, source?: 'diff' | 'file-op' | 'resource-link' | 'prose-
 beforeEach(() => {
   vi.clearAllMocks()
   // What is installed here: the folder App (its version goes with the working copy it reads).
-  for (const host of ['local', 'phone']) tellInstalled(host, { extensions: [{ id: 'workspace', name: '文件', version: '0.2.75', contributes: { tabs: [] } }], invalid: [] } as never)
+  for (const host of ['local', 'phone']) installedExtensions.set([host], { extensions: [{ id: 'workspace', name: '文件', version: '0.2.75', contributes: { tabs: [] } }], invalid: [] } as never)
   m.ledger.mockResolvedValue(chunk)
   m.workingCopy.mockResolvedValue(chunk)
   h = createReactHarness()

@@ -28,9 +28,7 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDis
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
   PHONE_HOST: 'phone',
-  tellInstalled: (_host: string, list: { disabled: string[] }) => shell.lists.push(list),
-  definePhoneInstalledList: () => undefined,
-  definePhoneMarketUpdates: () => undefined,
+  installedExtensions: { set: (_args: [string], list: { disabled: string[] }) => shell.lists.push(list) },
   marketUpdates: { refresh: async () => undefined },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/phoneMarket', () => ({

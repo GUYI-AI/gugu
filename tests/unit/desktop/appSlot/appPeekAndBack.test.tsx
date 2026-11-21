@@ -34,7 +34,7 @@ import { tabFullscreen } from '../../../../apps/desktop/src/session/renderer/fea
 const { AppPeekSlot } = await import('../../../../apps/desktop/src/components/appSlot/AppPeekSlot')
 const { ClaimedPage } = await import('../../../../apps/desktop/src/components/appSlot/ClaimedPage')
 const { peekStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/peek-store')
-const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { extensionViewStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store')
 
 const board = { id: 'kanban', name: 'Kanban', version: '1.0.0', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'board', title: 'Kanban' }] } }
@@ -68,7 +68,7 @@ beforeEach(() => {
     return !this.closest('.invisible')
   }
   HTMLElement.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 520, bottom: 800, width: 520, height: 800, toJSON: () => ({}) })
-  act(() => tellInstalled('local', { extensions: [board], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [board], invalid: [] } as never))
 })
 // Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
 // the setup above, whose closing of tabs is itself remembered).
@@ -78,7 +78,7 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore()
   HTMLElement.prototype.checkVisibility = original.checkVisibility
   HTMLElement.prototype.getBoundingClientRect = original.rect
-  act(() => tellInstalled('local', { extensions: [], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [], invalid: [] } as never))
 })
 
 const button = (testId: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)

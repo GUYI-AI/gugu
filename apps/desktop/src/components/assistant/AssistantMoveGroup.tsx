@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsRow } from '../settings/SettingsPrimitives'
 import type { AssistantHomePlace } from '../../lib/assistantHome'
-import { refreshSpendingPower, useSpendingPower } from '../../lib/billing/useSpendingPower'
+import { isMember, membershipFailure, refreshSpendingPower, useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
@@ -41,9 +41,8 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
   const { t, i18n } = useTranslation('assistant')
   // 会员档(账号额度那一份 replica):没读到 = null(不当成非会员),读不到如实说并给重试。管家那扇门没开 = 不问。
   const spending = useSpendingPower(cloudAvailable ? { id: ownerUserId } : null)
-  const member = spending.state === 'value' && spending.membership ? spending.membership.tier !== 'free' : null
-  // The plan unread (its read failed while the balance's did not: a value without membership) is unreadable too.
-  const membershipFailed = spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
+  const member = isMember(spending)
+  const membershipFailed = membershipFailure(spending)
   // 一次搬的状态是模块级的:搬着时这一组被换位置重挂,照样读得到;每次状态变都重渲染、重读日志
   // (搬完 / 搬断了「接着搬」那一行才跟着变;读日志只是一次 localStorage)。
   const move = useSyncExternalStore(subscribeMove, getMoveState)

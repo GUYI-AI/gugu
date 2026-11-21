@@ -28,6 +28,7 @@ import {
   useWorkspaceSlots,
 } from '@renderer/lib/layout/navigation-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { hasStatusSource } from '@shared/core/sessions/initial-agent-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
@@ -123,8 +124,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const { currentView } = useWorkspaceSlots();
   const installed = useInstalledApps(LOCAL_HOST);
   const { params } = useParams('session');
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const { translate } = useSessionMessages();
   const shownStatus = useShownAgentStatus();
   const assistantName = useAssistantShell()?.assistant?.display_name ?? null;

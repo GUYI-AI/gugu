@@ -18,7 +18,7 @@ import { requestAssistantSettingsSection, takeAssistantSettingsSection } from '.
 import { appConversationSlotKey, installAppConversationSurfaceBridge, publishAppConversationSurfaces } from '../../../../apps/desktop/src/lib/appConversationSurfaceBridge'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } from '../../../../apps/desktop/src/lib/appHostLayerBridge'
-import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { appConversationPanelCollapsed, setAppConversationPanelCollapsed } from '../../../../apps/desktop/src/session/renderer/features/apps/app-conversation-panel'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
@@ -46,8 +46,8 @@ const decide = (over: Partial<Parameters<typeof decideAssistantEntry>[0]> = {}) 
 const appManifest = (actions: string[] = ['unread', 'surface']) => ({ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
   permissions: { capabilities: ['chat:unread'], bindings: [{ name: 'main', kind: 'conversation', actions }] }, contributes: { tabs: [{ name: 'today', title: 'A' }] } })
 const installApp = (actions?: string[], disabled: string[] = []) =>
-  tellInstalled('local', { extensions: [appManifest(actions)], invalid: [], icons: {}, disabled, disclosure: {}, dock: [] } as never)
-const noApps = () => tellInstalled('local', { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+  installedExtensions.set(['local'], { extensions: [appManifest(actions)], invalid: [], icons: {}, disabled, disclosure: {}, dock: [] } as never)
+const noApps = () => installedExtensions.set(['local'], { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
 
 describe('decideAssistantEntry', () => {
   it('goes to the App when it is the trusted one for this account and on, its conversation the one beside it', () => {
@@ -320,7 +320,7 @@ describe('openAssistantPageInApp', () => {
     opened.length = 0
     expect(openAssistantPageInApp('connected-apps')).toBe(true)
     expect(appState.navigation.currentViewId).toBe('apps')
-    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ marketPage: 'connectors', installedSection: 'connectors' })
+    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ location: { tab: 'connectors', installed: { section: 'connectors', direct: true } } })
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')

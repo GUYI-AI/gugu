@@ -492,7 +492,6 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       .catch((err) => console.error('[ChatStore] persist repository chats failed', err))
   }, [chats, userId])
 
-  // @@@effect-flow(event) - registers this account's revision listeners (the log channel itself, kept per §3)
   useEffect(() => {
     if (!userId) return
     const unsubscribes = [

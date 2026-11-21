@@ -29,6 +29,8 @@ export interface SessionpageToolDef {
   schema: z.ZodTypeAny
   /** 宿主分派器的动作名。❌ 别让工具面与分派器各写一份动作名清单。 */
   action: string
+  /** Host-owned read mode; never exposed as a model argument. */
+  dispatchArgs?: Readonly<Record<string, unknown>>
   /** 列表工具:结果按 list-window 的约定切窗(顺序是宿主排好的)。 */
   list?: SessionpageListSpec
   /** It returns a session: that gets its session_link (withSessionLink). Only session_spawn (owner 2026-11-15: rarely called, so the link costs no context elsewhere). */
@@ -38,6 +40,8 @@ export interface SessionpageToolDef {
 }
 
 export interface SessionpageListSpec extends ListSpec<Record<string, unknown>> {
+  /** Enrich the selected page as batches, after filtering/windowing. */
+  eachPage?: (items: Record<string, unknown>[], call: (action: SessionDispatchAction) => Promise<unknown>) => Promise<Record<string, unknown>[]>
   /** 宿主回的是对象时,那张表的键;缺省 = 宿主直接回数组,切完放在 `items` 里。 */
   key?: string
   /** 这个工具自己的筛选参数:在注册机这里判,❌ 传给分派器。 */
@@ -47,9 +51,10 @@ export interface SessionpageListSpec extends ListSpec<Record<string, unknown>> {
 }
 
 async function eachWindowed(spec: SessionpageListSpec, windowed: unknown, call: (action: SessionDispatchAction) => Promise<unknown>): Promise<unknown> {
-  if (!spec.eachItem) return windowed
+  if (!spec.eachItem && !spec.eachPage) return windowed
   const key = spec.key ?? 'items'
   const out = windowed as Record<string, unknown>
+  if (spec.eachPage) return { ...out, [key]: await spec.eachPage(out[key] as Record<string, unknown>[], call) }
   return { ...out, [key]: await Promise.all((out[key] as Record<string, unknown>[]).map((item) => spec.eachItem!(item, call))) }
 }
 
@@ -78,6 +83,9 @@ function decodeAction(action: SessionDispatchAction): SessionDispatchAction {
   }
   if (typeof out.session_id === 'string') {
     out.session_id = decodeTypedId('session', out.session_id, 'session_id')
+  }
+  if (out.action === 'get_many' && Array.isArray(out.session_ids)) {
+    out.session_ids = out.session_ids.map(id => decodeTypedId('session', id, 'session_ids'))
   }
   if (typeof out.parent_session_id === 'string') {
     out.parent_session_id = decodeTypedId('session', out.parent_session_id, 'parent_session_id')
@@ -138,7 +146,7 @@ export function registerSessionpageTools(
       try {
         const args = (rawArgs ?? {}) as Record<string, unknown>
         const hostArgs = def.list ? withoutListArgs(args, def.list.filterKeys) : args
-        const action = decodeAction({ ...hostArgs, action: def.action })
+        const action = decodeAction({ ...hostArgs, ...def.dispatchArgs, action: def.action })
         parsed = true
         auditToolCall({ phase: 'parsed', tool: def.name, action })
         if (!dispatch) throw new Error(unavailableMessage(def.name))

@@ -1,4 +1,4 @@
-import { replica, useReplica, type Reading } from '../../lib/replica'
+import { replica } from '../../lib/replica'
 import type { MarketOffer } from '../extensionBundle/installOffers'
 import { appsHere } from './appsHere'
 
@@ -16,7 +16,3 @@ export const marketOffers = replica({
   watch: { start: () => appsHere!.onMarketChanged(() => void marketOffers.refresh()) },
 })
 
-
-export function useMarketOffers(asked: boolean): Reading<MarketOffer[]> {
-  return useReplica(marketOffers, asked && appsHere ? [] : null)
-}

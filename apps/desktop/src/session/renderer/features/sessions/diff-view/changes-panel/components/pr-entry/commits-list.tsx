@@ -15,9 +15,10 @@ import { RelativeTime } from '@renderer/lib/ui/relative-time';
 import { cn } from '@renderer/utils/utils';
 import { commitRef, refsEqual } from '@shared/core/git/utils';
 import { ChangesListItem } from '../changes-list-item';
-import { Unknown } from '@/components/ui/Unknown';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import { retryOf, useReplica } from '@/lib/replica';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
-import { useCommitFiles } from './use-commit-files';
+import { commitFiles } from './use-commit-files';
 import { type CommitRange, useCommits } from './use-commits';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -63,13 +64,8 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     hashes: new Set(),
   }));
   const { translate } = useSessionMessages();
-  const { pages, hasMore, loadMore, retry } = useCommits(projectId, workspaceId, range);
-  // The pages read so far, up to the first one not read (yet, or at all): what follows it is not drawn out of order.
-  const pending = pages.findIndex((page) => page.state !== 'value');
-  const commits = (pending === -1 ? pages : pages.slice(0, pending))
-    .filter((page): page is Extract<typeof page, { state: 'value' }> => page.state === 'value')
-    .flatMap((page) => page.value.commits);
-  const waiting = pending === -1 ? null : pages[pending]!;
+  const { first, pages, more, loadingMore, moreFailed } = useCommits(projectId, workspaceId, range);
+  const commits = pages.flatMap((page) => page.commits);
   const expandedHashes =
     expanded.rangeIdentity === rangeIdentity ? expanded.hashes : EMPTY_EXPANDED_HASHES;
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
@@ -89,58 +85,46 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
   };
 
   if (!range) return <EmptyState label={emptyState.label} description={emptyState.description} />;
-  if (pending === 0 && waiting?.state === 'unknown') {
-    return (
-      <div className="flex flex-col gap-1 py-2">
-        {Array.from({ length: 3 }, (_, index) => (
-          <Unknown key={index} className="h-[39px] w-full" />
-        ))}
-      </div>
-    );
-  }
-  if (pending === 0 && waiting?.state === 'error') {
-    return <ReadFailedLine className="px-3 py-2" message={translate('pr.commitsFailed')} onRetry={() => retry(0)} />;
-  }
-  if (commits.length === 0) {
-    return <EmptyState label={emptyState.label} description={emptyState.description} />;
-  }
-
   return (
-    <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
-      <GrowingList
-        scroller={scroller}
-        count={commits.length}
-        getKey={(index) => commits[index]?.hash ?? index}
-        gap={COMMIT_ROW_GAP}
-        estimateSize={() => ESTIMATED_COMMIT_ROW_HEIGHT}
-        overscan={5}
-        renderLine={(index) => {
-          const commit = commits[index]!;
-          return (
-            <CommitItem
-              commit={commit}
-              isExpanded={expandedHashes.has(commit.hash)}
-              isFirst={index === 0}
-              isLast={index === commits.length - 1}
-              onToggleExpanded={() => toggleExpanded(commit.hash)}
-            />
-          );
-        }}
-      />
-      {waiting?.state === 'error' ? (
-        <ReadFailedLine className="justify-center py-2" message={translate('pr.commitsFailed')} onRetry={() => retry(pending)} />
-      ) : (waiting || hasMore) && (
-        <div className="flex justify-center py-2">
-          <button
-            className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted transition-colors hover:text-foreground"
-            onClick={loadMore}
-            disabled={!!waiting}
-          >
-            {waiting ? 'Loading...' : 'Load more'}
-          </button>
+    <ReadingSlot reading={first} placeholder="my-2 h-[125px] w-full" className="px-3 py-2" failed={() => translate('pr.commitsFailed')}>
+      {() => commits.length === 0 ? <EmptyState label={emptyState.label} description={emptyState.description} /> : (
+        <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
+          <GrowingList
+            scroller={scroller}
+            count={commits.length}
+            getKey={(index) => commits[index]?.hash ?? index}
+            gap={COMMIT_ROW_GAP}
+            estimateSize={() => ESTIMATED_COMMIT_ROW_HEIGHT}
+            overscan={5}
+            renderLine={(index) => {
+              const commit = commits[index]!;
+              return (
+                <CommitItem
+                  commit={commit}
+                  isExpanded={expandedHashes.has(commit.hash)}
+                  isFirst={index === 0}
+                  isLast={index === commits.length - 1}
+                  onToggleExpanded={() => toggleExpanded(commit.hash)}
+                />
+              );
+            }}
+          />
+          {moreFailed ? (
+            <ReadFailedLine className="justify-center py-2" message={translate('pr.commitsFailed')} onRetry={retryOf(moreFailed)} />
+          ) : (loadingMore || more) && (
+            <div className="flex justify-center py-2">
+              <button
+                className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted transition-colors hover:text-foreground"
+                onClick={more ?? undefined}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading...' : 'Load more'}
+              </button>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </ReadingSlot>
   );
 });
 
@@ -224,7 +208,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
   const originalRef = useMemo(() => parentRefForCommit(commit), [commit]);
   const modifiedRef = useMemo(() => commitRefForCommit(commit), [commit]);
   const originalSha = useMemo(() => parentShaForCommit(commit), [commit]);
-  const files = useCommitFiles(projectId, workspaceId, commit.hash);
+  const files = useReplica(commitFiles, [projectId, workspaceId, commit.hash]);
   const prefetchDiff = usePrefetchDiffModels(
     projectId,
     workspaceId,
@@ -279,43 +263,25 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
     );
   };
 
-  if (files.state === 'unknown') {
-    return (
-      <div className="pr-1 pb-1 pl-5">
-        <Unknown className="h-7 w-full" />
-      </div>
-    );
-  }
-
-  if (files.state === 'error') {
-    return (
-      <ReadFailedLine
-        className="px-6 py-2"
-        message={translate('pr.filesFailed')}
-        onRetry={files.retry}
-      />
-    );
-  }
-
-  if (files.value.length === 0) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div>;
-  }
-
   return (
     <div className="pr-1 pb-1 pl-5">
-      <div className="flex flex-col gap-0.5">
-        {files.value.map((change) => (
-          <ChangesListItem
-            key={change.path}
-            change={change}
-            isActive={change.path === activePath}
-            className="h-7"
-            onClick={() => openPreview(change)}
-            onDoubleClick={() => openDiff(change)}
-            onMouseEnter={() => prefetchDiff(change.path)}
-          />
-        ))}
-      </div>
+      <ReadingSlot reading={files} placeholder="h-7 w-full" className="py-1" failed={() => translate('pr.filesFailed')}>
+        {(changes) => changes.length === 0 ? <div className="px-1 py-1 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div> : (
+          <div className="flex flex-col gap-0.5">
+            {changes.map((change) => (
+              <ChangesListItem
+                key={change.path}
+                change={change}
+                isActive={change.path === activePath}
+                className="h-7"
+                onClick={() => openPreview(change)}
+                onDoubleClick={() => openDiff(change)}
+                onMouseEnter={() => prefetchDiff(change.path)}
+              />
+            ))}
+          </div>
+        )}
+      </ReadingSlot>
     </div>
   );
 });

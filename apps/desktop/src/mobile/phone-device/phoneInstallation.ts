@@ -13,7 +13,12 @@ async function readInstallationWithId(owner: string) {
 }
 
 /** This phone's installation as the signed-in account's device: read once per account and run (it does not change while the app runs). */
-export const phoneInstallation = replica({ name: 'phoneInstallation', scope: 'account', read: readInstallationWithId, fresh: Infinity })
+export const phoneInstallation = replica({
+  name: 'phoneInstallation',
+  scope: 'account',
+  read: readInstallationWithId,
+  fresh: Infinity,
+})
 
 /** For code outside React (the device runtime): the installation of `ownerId`, through the replica when it is the account. */
 export async function readPhoneInstallationOf(ownerId: string) {

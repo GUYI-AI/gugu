@@ -127,6 +127,10 @@ RestartPreventExitStatus=${EXIT_CONFIG} ${EXIT_SIGNED_OUT}
 RestartSec=3
 # 只停 server 本身:tmux 里的终端会话要活过重启和升级。
 KillMode=process
+# cgroup 里还跑着 agent 起的一切(构建、测试、typecheck)。默认 OOMPolicy=stop:内核 OOM 杀掉其中任何一个进程,
+# systemd 就把整个 unit 停掉再重启 —— 一条吃内存的命令让所有会话同时掉线(#3344)。continue = 只死被杀的那个,
+# server 与别的会话照常;它的命令失败,跟在桌面被 OOM 杀一样。旧 systemd 不识这个键,记一条 unknown-lvalue 就过。
+OOMPolicy=continue
 
 [Install]
 WantedBy=default.target

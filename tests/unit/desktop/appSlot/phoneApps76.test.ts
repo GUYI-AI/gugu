@@ -141,9 +141,7 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
   PHONE_HOST: 'phone',
-  tellInstalled: (_host: string, list: (typeof shell.lists)[number]) => shell.lists.push(list),
-  definePhoneInstalledList: () => undefined,
-  definePhoneMarketUpdates: () => undefined,
+  installedExtensions: { set: (_args: [string], list: (typeof shell.lists)[number]) => shell.lists.push(list) },
   marketUpdates: { refresh: async (host: string) => { shell.marketAsked.push(host) } },
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/install-consent', () => ({

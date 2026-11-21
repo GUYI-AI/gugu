@@ -24,7 +24,7 @@ vi.mock('@/store/chatContext', () => ({
 // Whose assistant is which agent (the myAssistant replica's reading): read, and none of these agents (or not read yet).
 const mine = vi.hoisted(() => ({ reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } as unknown }))
 const refreshMyAssistant = vi.hoisted(() => vi.fn(async () => undefined))
-vi.mock('@/lib/myAssistant', () => ({ useMyAssistant: () => mine.reading, refreshMyAssistant }))
+vi.mock('@/lib/myAssistant', () => ({ useMyAssistant: () => mine.reading }))
 vi.mock('@/store/contactsContext', () => ({
   useContactsStore: () => ({
     contacts: [{ id: 'agent-a', display_name: 'Coder', avatar: null, bio: null, type: 'agent', owner_user_id: 'me' }],

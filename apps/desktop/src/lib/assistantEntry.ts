@@ -21,7 +21,7 @@ import { openLinkTarget } from './guguLinks'
 import { notify } from './notices'
 import { platform } from '../platform'
 import { UI_EVENTS } from './uiEvents'
-import { peekInstalledApps, watchInstalled } from '../session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
 import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { readsWork } from '../components/appSlot/appWorkLedger'
 
@@ -119,7 +119,6 @@ function assistantAppEnabled(): boolean | null {
 }
 
 function appReadsWork(): boolean {
-  // @@@reading-default(moment) - a command, one moment: the list not read yet cannot say the App reads its work, so the task is refused (said by the caller)
   const manifest = peekInstalledApps(LISTED_HOST)?.manifestFor(ASSISTANT_APP_ID)
   return !!manifest && readsWork(manifest)
 }
@@ -146,7 +145,7 @@ function subscribeAll(listener: () => void): () => void {
   const offs = [readAssistantShellBridge(), readAppConversationSurfaceBridge(), readAssistantAppEntryBridge()]
     .map((source) => source?.subscribe(listener) ?? (() => undefined))
   // …and what is installed here (the App switched on or off, the list read for the first time).
-  offs.push(watchInstalled(LISTED_HOST, listener))
+  offs.push(installedExtensions.subscribe([LISTED_HOST], listener))
   return () => offs.forEach((off) => off())
 }
 
@@ -216,9 +215,7 @@ export function openInstalledConnectors(deviceId?: string): boolean {
   window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
   window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
   appState.navigation.navigate('apps', {
-    marketPage: 'connectors',
-    installedSection: 'connectors',
-    ...(deviceId ? { installedDeviceId: deviceId } : {}),
+    location: { tab: 'connectors', installed: { section: 'connectors', direct: true, ...(deviceId ? { deviceId } : {}) } },
   })
   return true
 }

@@ -1,6 +1,8 @@
 import { computed, makeObservable, observable, reaction, runInAction } from 'mobx';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 import { platform } from '@/platform';
+import { valueOf } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import { readDeviceRevision, readRevisionResourceKey, type AccountRevisionEvent, type AccountRevisionListener } from '@/lib/accountRevisionCoordinator';
 import { deviceProjectsPublishedChannel } from '@shared/core/projects/projectEvents';
 import { events } from '@renderer/lib/ipc';
@@ -25,6 +27,10 @@ export type SubscribeAccountRevision = (event: AccountRevisionEvent, listener: A
 
 const bindingKey = (deviceId: string, localProjectId: string) => `${deviceId}\u0000${localProjectId}`;
 
+/** For MobX: a tick each time the replica `thisDeviceId` changes (no copy of the id is held here). */
+const selfTick = observable.box(0);
+thisDeviceId.subscribe([], () => runInAction(() => selfTick.set(selfTick.get() + 1)));
+
 /**
  * 账号上的项目(identity.list_my_projects,项目与机器解耦):项目就是它的项目群,一个文件夹都没有也在。
  * 侧栏、项目选择器、任务历史、手机都只从这一份认「有哪些项目、一个本地项目属于哪个项目」;❌ 各处再按群拼本地项目。
@@ -36,8 +42,6 @@ export class AccountProjectsStore {
   list: readonly AccountProject[] = [];
   status: AccountProjectsStatus = 'loading';
   error: string | null = null;
-  /** 这台电脑的设备 id(绑定里的 deviceId 是它 = 这台电脑上的本地项目);手机上没有 = null。 */
-  localDeviceId: string | null = null;
   local: LocalProjects | null = null;
   /** 这份属于哪个账号(写缓存用);登出 / 换账号前由 {@link clear} 清掉。 */
   private accountId: string | null = null;
@@ -50,11 +54,19 @@ export class AccountProjectsStore {
       list: observable.ref,
       status: observable,
       error: observable,
-      localDeviceId: observable,
       local: observable.ref,
       membership: computed,
       byBinding: computed,
     });
+  }
+
+  /**
+   * 这台电脑的设备 id(绑定里的 deviceId 是它 = 这台电脑上的本地项目);手机上没有 = null。读 replica `thisDeviceId`
+   * (本机自己知道的,不随账号列表读失败而丢:断网重载时这台电脑的项目照样认得出自己的绑定),❌ 这里另存一份。
+   */
+  get localDeviceId(): string | null {
+    selfTick.get();
+    return valueOf(thisDeviceId.peek()) ?? null;
   }
 
   get projects(): readonly AccountProject[] {
@@ -79,7 +91,10 @@ export class AccountProjectsStore {
     if (this.accountId !== null && this.accountId !== accountId) this.clear();
     this.restore(accountId);
     void this.refresh();
+    // Which machine this is: the replica reads it, and hears it again when this computer is identified (its feed held here).
+    void thisDeviceId.prefetch();
     const offs = [
+      thisDeviceId.hold(),
       subscribeRevision('device_changed', (operations) => {
         if (operations.some((operation) => {
           const key = readDeviceRevision(operation.payload);
@@ -115,11 +130,6 @@ export class AccountProjectsStore {
       return this.inFlight;
     }
     const generation = this.generation;
-    // Which machine this is comes from this machine, not from the account list: read it on its own, so a list read that
-    // fails (offline, a reload over the cached list) still knows which bindings are this computer's.
-    const self = Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then((self) => {
-      if (generation === this.generation && self?.device_id) runInAction(() => { this.localDeviceId = self.device_id; });
-    }, (error: unknown) => log.warn('[projects] this computer\'s device id could not be read', error));
     const read = import('@/lib/deviceProjects').then((cloud) => cloud.listMyAccountProjects())
       .then((list) => {
         if (generation !== this.generation) return;
@@ -146,9 +156,8 @@ export class AccountProjectsStore {
           void this.refresh();
         }
       });
-    const both = Promise.all([self, read]).then(() => undefined);
-    this.inFlight = both;
-    return both;
+    this.inFlight = read;
+    return read;
   }
 
   /** 登出 / 换账号:上一个账号的项目一条不留,在途的那次读回来也不要。 */
@@ -161,7 +170,6 @@ export class AccountProjectsStore {
       this.list = [];
       this.status = 'loading';
       this.error = null;
-      this.localDeviceId = null;
     });
   }
 

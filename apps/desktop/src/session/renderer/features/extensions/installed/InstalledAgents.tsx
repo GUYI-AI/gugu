@@ -30,5 +30,5 @@ export function InstalledAgents({ render, onOpenAgent }: {
       remove: control.canRemove ? () => operations.uninstallAsync({ id }) : undefined,
     }
   })
-  return render(items, { loading: inventory.reading.state === 'unknown', error: inventory.reading.state === 'error' })
+  return render(items, { loading: inventory.state === 'unknown', error: inventory.state === 'error' })
 }

@@ -28,7 +28,7 @@ vi.mock('@/store/devicesCache', async (original) => ({
 }))
 vi.mock('@/lib/assistantServerTargets', () => ({ assistantServerTargets: (rows: unknown) => rows }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: vi.fn() }))
-vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn() }))
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn() } }))
 vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), readCloudSnapshotNow: vi.fn() }))
 vi.mock('@gugu/core/cloud/optionalServices', async (original) => ({ ...await original<object>(), cloudComputerEnabled: () => false }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))

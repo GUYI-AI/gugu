@@ -7,7 +7,7 @@ vi.mock('@/lib/assistantSetup', () => ({ assistantResumeStore: {} }));
 vi.mock('@/lib/agentProvision', () => ({ completedSingleProvisionSession: vi.fn(), provisionSingleAgent: vi.fn(), resumeSingleAgent: vi.fn(), findOpenAdoption: vi.fn(), completeProvision: vi.fn(), cancelProvisionOperation: vi.fn() }));
 vi.mock('@/lib/agentModelSelection', () => ({ readAgentModelSelection: vi.fn(), setAgentModelSelection: vi.fn(), platformProtocolForAgentType: vi.fn() }));
 vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), wakeCloudComputer: vi.fn(), provisionCloudComputer: vi.fn(), readCloudSnapshotNow: vi.fn(), knownCloudDeviceId: vi.fn() }));
-vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: vi.fn(async () => undefined) }));
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: vi.fn(async () => undefined) } }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { connectionState: () => 'connected' } }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: mocks.rpc }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: {} }));

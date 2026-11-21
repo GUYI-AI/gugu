@@ -30,10 +30,7 @@ const chatTaskProject = replica({
   name: 'chatTaskProject',
   scope: 'account',
   networkMode: 'always',
-  read: (_owner, chatId: string, deviceId: string) => sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).catch((error: unknown) => {
-    log.warn('read the project remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
-    throw error;
-  }),
+  read: (_owner, chatId: string, deviceId: string) => sessionpageMessageHost().rememberedTaskProject(chatId, deviceId),
   fresh: 0,
 });
 

@@ -43,7 +43,7 @@ import { resolveSignInMethod } from '../agents-page/agent-account'
 import { useAgentSignIn } from '../agents-page/use-agent-sign-in'
 import { dropIfNeverSignedIn } from './drop-unsigned-connection'
 import { rendererLogger } from '@/lib/log'
-import { refreshTag } from '@/lib/replica'
+import { refreshFailure, refreshTag } from '@/lib/replica'
 import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
 import {
   ConnectionActionError,
@@ -131,8 +131,8 @@ export function SubscriptionConnections({
   const host = useLibraryHost()
   // A failed read says so at once on every surface (a value already read stays, with the failure next to it).
   const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent)
-  const connectionsError = connections.state === 'unknown' ? null : connections.error
-  const nativeError = native.state === 'unknown' ? null : native.error
+  const connectionsError = refreshFailure(connections)
+  const nativeError = refreshFailure(native)
   const empty = listed?.length === 0
   const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
     if (next && empty) setAdding(true)
@@ -166,7 +166,7 @@ export function SubscriptionConnections({
   const canAdd = accountMethod !== null || vendorKeyMethod
   const refresh = () => {
     refreshTag(SUBSCRIPTIONS, machine, agent.id)
-    void harnessModelCredential.refresh(agent.id)
+    void harnessModelCredential.refresh(undefined, agent.id)
   }
   const action = useMutation({
     mutationFn: async ({
@@ -342,7 +342,6 @@ export function SubscriptionConnections({
     cli.openSignIn()
   }
   const signInAttempt = useRef<object | null>(null)
-  // @@@effect-flow(command) - carries out a sign-in press once the readings it acts on have landed; state holds only whether the sheet opens
   useEffect(() => {
     if (!signInRequested || signInAttempt.current === signInRequested) return
     if (connectionsError || nativeError) {
@@ -567,7 +566,7 @@ function ConnectionOption({
   const { translate } = useSessionMessages()
   const reading = useConnectionDetails(machine, agent.id, connection.id)
   const details = reading.state === 'value' ? reading.value : undefined
-  const detailsError = reading.state === 'unknown' ? null : reading.error
+  const detailsError = refreshFailure(reading)
   // 不切过去也看得到这个号还剩多少(10-30 owner):按连接读，与「订阅」行同一把键、同一份读数。
   // 没登录的号没有额度可读;API key 的余量只在厂商后台。
   const usage = useSubscriptionUsage(machine, agent.id, connection.id, details?.status.kind === 'authenticated')

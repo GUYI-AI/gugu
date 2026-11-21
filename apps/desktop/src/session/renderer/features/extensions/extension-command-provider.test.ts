@@ -8,7 +8,7 @@ vi.mock('@renderer/utils/logger', () => ({ log: { warn: vi.fn(), error: vi.fn() 
 vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({ openHostRequestedExtensionInSessionWhenReady: vi.fn() }));
 
 const { createExtensionCommandProvider } = await import('./extension-command-provider');
-const { tellInstalled, putInstalled } = await import('./installed-extensions');
+const { installedExtensions } = await import('./installed-extensions');
 const { setLocalePreference } = await import('@/i18n');
 const { extensionViewStore: views } = await import('./extension-view-store');
 const { extensionSurfaceStore: surfaces } = await import('./extension-surface-store');
@@ -24,7 +24,7 @@ const app = (id = 'board') => ({ id, name: 'Board', version: '1.0.0', apiVersion
   ] } });
 function install(apps: unknown[] = [app()], disabled: string[] = []) {
   setLocalePreference('en-US');
-  tellInstalled('local', { extensions: apps, invalid: [], icons: {}, disabled, disclosure: {} } as never);
+  installedExtensions.set(['local'], { extensions: apps, invalid: [], icons: {}, disabled, disclosure: {} } as never);
 }
 afterEach(() => {
   invokeCommand.mockClear();
@@ -49,9 +49,9 @@ describe('enabled App commands in the global registry', () => {
     const seen: string[][] = [];
     const dispose = autorun(() => { seen.push(provider.getCommands().map((entry) => entry.label!)); });
     try {
-      putInstalled('local', (list) => ({ ...list, disabled: ['board'] }));
+      installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['board'] }));
       expect(seen.at(-1)).toEqual([]);
-      putInstalled('local', (list) => ({ ...list, disabled: [] }));
+      installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: [] }));
       expect(seen.at(-1)).toEqual(['Board: New card', 'Board: Refresh']);
       const updated = app(); updated.contributes.tabs[0]!.menu = [{ id: 'export', title: 'Export' }];
       updated.contributes.tabs[0]!.toolbar = [];

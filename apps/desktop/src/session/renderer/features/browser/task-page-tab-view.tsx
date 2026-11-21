@@ -50,7 +50,6 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
   const [state, setState] = useState<ProjectionViewState>('connecting');
   const [watchId, setWatchId] = useState<string | null>(null);
   // Watched only while on screen: a hidden tab costs that machine nothing.
-  // @@@effect-flow(lifecycle) - opens a live projection watch of the remote task page while the tab is visible (its state is the watch's connection)
   useEffect(() => {
     if (!visible || !root.current) return;
     let mounted: Awaited<ReturnType<typeof mountProjection>> | null = null;

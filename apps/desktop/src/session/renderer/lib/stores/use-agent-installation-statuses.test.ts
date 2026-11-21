@@ -360,9 +360,9 @@ describe('useAgentInstallationStatuses invalidate', () => {
   });
 
   /**
-   * 这条判的是**整族**:装完 / 重新检测之后,从安装状态派生的每一个读数都重读。成员只在一处列出
-   * (`refreshAgentReadings`,agent-replicas.ts)。这里的键覆盖那个模块导出的**每一个** replica(下面先核覆盖):
-   * 那里新加一个读数,这条先红,直到它列在这里 —— 也就得在 refreshAgentReadings 里登记,否则后半条红。
+   * 这条判的是**整族**:装完 / 重新检测之后,从安装状态派生的每一个读数都重读(`refreshAgentReadings`,
+   * agent-replicas.ts)。这里的键覆盖那个模块导出的**每一个** replica(下面先核覆盖):那里新加一个读数,这条先红,
+   * 直到它列在这里 —— 它没带 `ofMachine`(标签与机器在前)的话,后半条红。
    */
   it('这一族里每一个都被作废', async () => {
     const keys = [
@@ -370,10 +370,10 @@ describe('useAgentInstallationStatuses invalidate', () => {
       agentsMetadata.key(null),
       managementAgents.key(null),
       managementAgent.key(null, 'claude'),
-      agentIcons.key(),
-      agentMetadata.key('claude'),
-      harnessModelCatalog.key('claude', 'acp', null),
-      harnessModelCredential.key('claude', 'opus', null),
+      agentIcons.key(null),
+      agentMetadata.key(null, 'claude'),
+      harnessModelCatalog.key(null, 'claude', 'acp'),
+      harnessModelCredential.key(null, 'claude', 'opus'),
       agentReplicas.targetModelCatalog.key(null, 'claude', 'acp', 'opus'),
       installSourceVersions.key(null, 'claude'),
       agentSettings.key(null, 'claude'),

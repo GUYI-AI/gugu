@@ -6,7 +6,7 @@ import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
-import { putInstalled, tellInstalled } from '../../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { UI_EVENTS } from '../../../../../apps/desktop/src/lib/uiEvents'
 
@@ -20,7 +20,7 @@ vi.mock('@/lib/chatPinSettings', () => ({ readChatPinSettings: async () => ({ to
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
-  tellInstalled('local', {
+  installedExtensions.set(['local'], {
     extensions: [
       app('turtle-soup', '海龟汤', {}),
       app('paper-reader', '读论文', {}),
@@ -32,7 +32,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   harness.cleanup()
-  tellInstalled('local', { extensions: [], invalid: [], disabled: [] } as never)
+  installedExtensions.set(['local'], { extensions: [], invalid: [], disabled: [] } as never)
 })
 
 async function openMenu(mobile: boolean, kind: 'group' | 'dm' = 'group') {
@@ -76,7 +76,7 @@ describe('应用 打开本机的 App', () => {
   }
 
   it('没有可打开的 App:应用 列表为空', async () => {
-    putInstalled('local', (list) => ({ ...list, disabled: ['turtle-soup', 'paper-reader'] }))
+    installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['turtle-soup', 'paper-reader'] }))
     expect(await openMenu(false)).toEqual([])
   })
 })

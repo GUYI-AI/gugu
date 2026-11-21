@@ -13,7 +13,6 @@
  *     while the conversation column's top band still is one and its buttons (search, gear, expand) are not;
  *   · another App's page keeps the window band above it, as before, and that band still does not reach the page.
  */
-import { motionValue } from 'framer-motion';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,10 +45,6 @@ vi.mock('@renderer/lib/layout/navigation-provider', async (original) => ({
   ...await original<typeof import('@renderer/lib/layout/navigation-provider')>(),
   useParams: () => ({ params: { appId: APP }, setParams: () => undefined }),
 }));
-vi.mock('@renderer/lib/layout/layout-provider', async (original) => ({
-  ...await original<typeof import('@renderer/lib/layout/layout-provider')>(),
-  useWorkspaceLayoutContext: () => ({ leftAnimatedWidth: motionValue(0) }),
-}));
 // The App's page itself is the stand-in webview below; the slot only holds its place, as the real one does.
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
   ExtensionSharedSlot: () => <div className="flex min-h-0 flex-1" data-extension-slot="" />,
@@ -64,7 +59,7 @@ vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCou
 const { appView } = await import('@renderer/features/apps/apps-views');
 const { WorkspaceContentLayout } = await import('@renderer/lib/layout/workspace-layout');
 const { setAppConversationPanelCollapsed } = await import('@renderer/features/apps/app-conversation-panel');
-const { tellInstalled } = await import('@renderer/features/extensions/installed-extensions');
+const { installedExtensions } = await import('@renderer/features/extensions/installed-extensions');
 const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('@/lib/appConversationSurfaceBridge');
 const { installAssistantShellBridge, publishAssistantShell } = await import('@/lib/assistantShellBridge');
 const { installShellSlots } = await import('@/lib/shellSlots');
@@ -135,7 +130,7 @@ beforeEach(async () => {
   installShellSlots();
   installAppConversationSurfaceBridge();
   installAssistantShellBridge();
-  tellInstalled('local', {
+  installedExtensions.set(['local'], {
     extensions: [{
       id: APP, name: 'Gugu', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
       contributes: { tabs: [{ name: 'main', title: 'Gugu' }], conversationSurface: { binding: 'conversation', header: 'assistant' } },
@@ -159,7 +154,7 @@ afterEach(async () => {
   setAppConversationPanelCollapsed(APP, false);
   host.remove();
   publishAppConversationSurfaces({});
-  tellInstalled('local', { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never);
+  installedExtensions.set(['local'], { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never);
 });
 
 describe('no window drag region over an App\'s page', () => {

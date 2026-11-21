@@ -30,8 +30,9 @@ import { paletteTasks } from './palette-tasks';
 import { recentTaskIds } from './recent-tasks';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { refreshFailure, replica, useReplica, retryOf } from '@/lib/replica';
+import { refreshFailure, replica, useReplica, retryOf, valueOf } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import type { SearchItem } from '@shared/core/search';
 
 const commandPaletteSearch = replica({
@@ -48,12 +49,8 @@ interface CommandPaletteProps {
 
 const GROUP_CLASS = '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-foreground/50';
 
-/** O and P differ only in their initial input; the prefix is the mode's only state. */
-export function CommandPaletteModal(props: CommandPaletteProps & BaseModalProps) {
-  return <Palette key={props.initialQuery ?? ''} {...props} />;
-}
-
-function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseModalProps) {
+/** O and P differ only in their initial input; the prefix is the mode's only state. Each opening starts fresh (ModalRenderer keys it). */
+export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseModalProps) {
   // Picking a row is the palette doing its job: close it as done (focus goes where the row leads; see @@@modal-focus-return).
   const done = () => onSuccess(undefined);
   const [query, setQuery] = useState(initialQuery);
@@ -63,16 +60,13 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const { navigate } = useNavigate();
   const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
-  const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery]);
+  const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery], { keepPrevious: true });
   // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
   const settled = debouncedQuery === search;
-  const current = settled && reading.state === 'value' ? reading.value : null;
   // The last completed reading stays shown (.gg-stale), including zero rows, while the next words' are on their way.
-  const [heldQuery, setHeldQuery] = useState<string | null>(null);
-  if (current && heldQuery !== debouncedQuery) setHeldQuery(debouncedQuery);
-  const held = useReplica(commandPaletteSearch, !commandsMode && heldQuery !== null ? [heldQuery] : null, { read: false });
-  const results = current ?? (!commandsMode && held.state === 'value' ? held.value : null);
-  const stale = current === null && results !== null;
+  const results = valueOf(reading) ?? null;
+  const stale = results !== null && (!settled || (reading.state === 'value' && reading.stale));
+  const current = stale ? null : results;
   // Only retained read rows are stale; live chats and the current words' search link are independent.
   const readingGroupClass = stale ? `${GROUP_CLASS} gg-stale` : GROUP_CLASS;
   // A failed read, or a refresh failing over results still drawn: said above them with a retry.
@@ -139,14 +133,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           </Command.Group>
         ) : (
           <>
-            {failed && (
-              <div role="alert" className="flex items-center gap-2 px-2 py-2 text-sm text-[var(--em-foreground-destructive)]">
-                <span className="flex-1 truncate">{translate('palette.searchFailed')}</span>
-                <button type="button" className="shrink-0 text-foreground/60 hover:text-foreground" onClick={retryOf(reading)}>
-                  {translate('common.retry')}
-                </button>
-              </div>
-            )}
+            {failed && <ReadFailedLine className="p-2" message={translate('palette.searchFailed')} onRetry={retryOf(reading)} />}
             {!tasks && !failed && (
               <div data-testid="palette-search-pending" className="p-0">
                 {[0, 1, 2].map((row) => <div key={row} className={PALETTE_ITEM_CLASS}><Unknown className="w-48" /></div>)}

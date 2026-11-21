@@ -1393,7 +1393,9 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(h.deps)
     const r = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: 'hi', to_user_ids: ['user:ghost'] } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost. Look up current members with message_members and send again.')
+    // The refusal names who can be addressed instead, so a made-up recipient is corrected from the refusal itself.
+    expect(text(r)).toContain('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost. Members you can address: ')
+    expect(text(r)).toMatch(/aid:alice\)?\. Send again to one of these addresses\./)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })

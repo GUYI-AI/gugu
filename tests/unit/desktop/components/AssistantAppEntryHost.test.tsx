@@ -40,9 +40,9 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
 }));
 
 const { AssistantAppEntryHost } = await import('../../../../apps/desktop/src/components/appSlot/AssistantAppEntryHost');
-const { tellInstalled } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
 /** What main lists as installed here, as the test's state says it now. */
-const listInstalled = () => tellInstalled('local', { extensions: state.manifest ? [state.manifest] : [], invalid: [], origins: { 'gugu-assistant': 'market' } } as never);
+const listInstalled = () => installedExtensions.set(['local'], { extensions: state.manifest ? [state.manifest] : [], invalid: [], origins: { 'gugu-assistant': 'market' } } as never);
 const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge');
 const { publishAppConversationSurfaces, installAppConversationSurfaceBridge } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge');
 const { readAssistantAppEntryBridge, readAssistantEntryTarget, ASSISTANT_APP_ID } = await import('../../../../apps/desktop/src/lib/assistantEntry');

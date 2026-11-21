@@ -23,10 +23,6 @@ export interface DevicesContextValue {
   /** cascade=false 时若设备有绑定 agent 会 fail-loud（DEVICE_HAS_AGENTS）；UI 先列 agent 再让用户显式勾选级联。 */
   remove: (deviceId: string, options?: { cascade?: boolean }) => Promise<void>
   listBoundAgents: (deviceId: string) => Promise<DeviceBoundAgent[]>
-  /**
-   * #6264 since 之后这个账号有没有哪台咕咕 server 因为机器上限没登上(远程隧道那一段就地等时顺带问)。
-   * 可选:没接这一格的场合(测试、只读面板)就不问。
-   */
 }
 
 export const DevicesContext = createContext<DevicesContextValue>({

@@ -28,6 +28,7 @@ import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@m
 import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
 import { prepareWindowCommitStorage } from '../../session-timeline/window-projection-production';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
+import { publishNativeMessagePreviewChanged } from '../../session-timeline/native-preview-events';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
 import { applyStartToAuthExpiry, applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
@@ -286,6 +287,10 @@ const acpWorker = lazyWorker(
       }, handle.connection, prepareWindowCommitStorage);
       handle.scope.add(() => committed.close());
       const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
+      handle.scope.add(await handle.client.messagePreviewChanged.subscribe(undefined, {
+        onEvent: ({ sessionId }) => publishNativeMessagePreviewChanged(sessionId),
+      }));
+      handle.scope.add(() => publishNativeMessagePreviewChanged());
       handle.scope.add(() => conversationPreviews.dispose());
       handle.scope.add(await handle.client.conversationActivity.subscribe(undefined, {
         onEvent: event => {
@@ -301,6 +306,7 @@ const acpWorker = lazyWorker(
           void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
           committed.invalidate();
           conversationPreviews.reset();
+          publishNativeMessagePreviewChanged();
           // A restarted worker has no surviving adapter processes or session records.
           void releaseEmdashPlatformSession(null);
         })

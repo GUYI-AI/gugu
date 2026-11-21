@@ -13,7 +13,7 @@ import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
   innerSidebarTopicsSlotKey,
-  publishInnerSidebarChat,
+  publishInnerSidebarPresent,
   publishMyChatAgentCounts,
   setInnerSidebarTopicsAll,
   useInnerSidebarTopicsAll,
@@ -154,8 +154,11 @@ export const InnerSidebar = observer(function InnerSidebar() {
   // 换了对话就回到第一级(「全部」只对那一个对话)。
   useEffect(() => setInnerSidebarTopicsAll(null), [next?.chatId]);
   useEffect(() => runInAction(() => innerSidebarChat.set(next)), [next?.chatId, next?.kind]);
-  // 壳据此收起对话页头上与这一列重复的那一枚(话题)。
-  useEffect(() => publishInnerSidebarChat(next?.chatId ?? null), [next?.chatId]);
+  // 壳据此收起群页头上与这一列重复的话题钮(每一块都收:按到哪一块,这一列就挂过去)。
+  useEffect(() => {
+    publishInnerSidebarPresent(true);
+    return () => publishInnerSidebarPresent(false);
+  }, []);
   // 头一行是这一列自己:群 / 项目开着它的对话时,智能体开着它自己的(顶层)会话时(❌ 它的子智能体)。
   const ownSessions = next?.kind === 'agent' ? (families.topLevelOf.get(next.agentUserId) ?? []) : [];
   const headActive =

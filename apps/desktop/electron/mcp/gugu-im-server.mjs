@@ -395,7 +395,7 @@ export function restWriteError(what, status, body) {
  * 归档 agent 照收、只给它记 refusal;从来不是成员的 id 才拒,带 hint recipient_not_member、details 列出这些 id。
  * 发送者自己没权限仍是 RLS 的 42501,不会走到这里。把这种拒绝还原成给 agent 看得懂的一句,其余原样抛。
  */
-function recipientRefusal(error, chatId) {
+async function recipientRefusal(error, chatId, deps) {
   // 附件走 attachments 函数:同一个拒绝变成 HTTP 400 { error: 'recipient_not_member', details } (gugu-supabase#242),
   // 悄悄话的变成 400 invalid、原文照带。
   const viaAttachments = error instanceof AttachmentsError
@@ -405,7 +405,16 @@ function recipientRefusal(error, chatId) {
   const notMember = error?.hint === 'recipient_not_member' || (viaAttachments && error.code === 'recipient_not_member')
   if (!notMember && !whisper) return error
   const ids = whisper ? [whisper[1]] : String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
-  return new Error(`Recipients are not members of chat ${chatId}: ${ids.join(', ')}. Look up current members with message_members and send again.`)
+  return new Error(`Recipients are not members of chat ${chatId}: ${ids.join(', ')}. ${await addressableMembers(chatId, deps)}`)
+}
+/** Who a refused send can go to instead, so the agent corrects the address from the refusal itself rather than guessing. */
+async function addressableMembers(chatId, deps) {
+  const ids = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id)).filter((id) => id !== deps.context.agentId)
+  const names = new Map((await restGetInBatches(ids, (batch) =>
+    deps.restGet(`users?id=in.(${batch.map(enc).join(',')})&select=id,display_name`, 'identity'))).map((user) => [user.id, user.display_name]))
+  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (aid:${id})` : `aid:${id}`)
+  const more = ids.length > shown.length ? ` and ${ids.length - shown.length} more (message_members lists them all)` : ''
+  return `Members you can address: ${shown.join(', ') || 'none besides you'}${more}. Send again to one of these addresses.`
 }
 async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {
   const accessToken = await context.getAccessToken()
@@ -1662,7 +1671,7 @@ async function handleMessage(args, deps) {
         fileReceipt = await sendFileMessage(args, deps, { chatId, messageId: row.id, toUserIds: row.to_user_ids, replyToMessageId,
           isWhisper, threadRootId: sessionThread, caption: row.content })
       } else {
-        await postCommandMessageRow(deps, row).catch((error) => { throw recipientRefusal(error, chatId) })
+        await postCommandMessageRow(deps, row).catch(async (error) => { throw await recipientRefusal(error, chatId, deps) })
       }
       sentKind = kind
     }
@@ -2422,26 +2431,24 @@ async function handleOwnerFile(args, deps) {
 /**
  * 以谁的身份读这条消息的附件:agent 自己看得见就是它(零额外读取);看不见、而这是主人与好友的私聊(#84)
  * 就按主人 —— 与读历史同一个人,看不看得见、签名链接两处都按他。都不成立回 null。
+ * 消息行只在主人那一支按主人令牌读(那条私聊主人是一方):发给 agent 的悄悄话,主人令牌读不到。
  */
-async function attachmentReaderOf(deps, message) {
-  if (await agentCanSee(deps, message)) return deps.context.agentId
-  if (!(await ownerFriendOfDm(deps, message.chat_id))) return null
+async function attachmentReaderOf(deps, messageId) {
+  if (await agentCanSee(deps, { id: messageId })) return deps.context.agentId
+  const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=chat_id`)
+  if (!message || !(await ownerFriendOfDm(deps, message.chat_id))) return null
   const ownerUserId = await currentAuthUserId(deps)
-  return (await agentCanSee(deps, message, ownerUserId)) ? ownerUserId : null
+  return (await agentCanSee(deps, { id: messageId }, ownerUserId)) ? ownerUserId : null
 }
 
 /** message_download_file 的三种来源,各自变成 resolver 的一个 FileRef 和读者:消息、session 附件、群文件夹的那一版。 */
 async function downloadSourceOf(args, deps) {
   if (args.source_message_id) {
     const messageId = String(args.source_message_id)
-    const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
-    const reader = message ? await attachmentReaderOf(deps, message) : null
+    const reader = await attachmentReaderOf(deps, messageId)
     if (!reader) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
-    const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-    if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
-    if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
-    const item = attachment.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
-    return { ref: { message_id: messageId }, reader, name: attachment.fileName, item, echo: { source_message_id: `msg:${messageId}` } }
+    // What the message holds — a folder version, a whisper's own bytes, an old object, or nothing — the resolver reads as this reader.
+    return { ref: { message_id: messageId }, reader, item: null, label: `the file of message ${messageId}`, gone: `message_download_file: message ${messageId} has no attachment, or its file was deleted`, echo: { source_message_id: `msg:${messageId}` } }
   }
   if (args.source_attachment_id) {
     const id = String(args.source_attachment_id)
@@ -2480,13 +2487,14 @@ async function downloadFile(args, deps) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
         file = await deps.resolveFile(source.ref, source.reader, { progress })
       }
-      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
-      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.label ?? 'this file').message}`)
+      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.label ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status === 'gone' && source.gone) throw new Error(source.gone)
       if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+      const saved = await saveToFileStore(file, home, file.revision.file_name)
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
     })()
     // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
@@ -2564,7 +2572,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     throw new Error(`message_send: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
   }
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
-  const refused = (error) => { throw recipientRefusal(error, chatId) }
+  const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
   const said = String(caption ?? '').trim()
   const meta = { to_user_ids: toUserIds ?? [], thread_root_id: threadRootId, ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}), ...(said ? { caption: said } : {}) }
   let message
@@ -2589,7 +2597,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
     const reason = String(error?.message ?? error)
     if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
-    refused(error)
+    await refused(error)
   }))) {
     fileName = resolveUploadName(args)
   } else {
@@ -2625,7 +2633,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       }
       await deps.attachments.drop(messageId)
       if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
-      refused(error)
+      await refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
       const mismatch = error instanceof AttachmentsError && error.code === 'upload_mismatch'

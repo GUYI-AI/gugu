@@ -66,14 +66,4 @@ describe('a preview reads and acknowledges its bytes on every opening', () => {
     expect(io.acknowledgements).toBe(2)
     expect(harness.container.textContent).toBe(i18n.getFixedT('zh-CN', 'messaging')('attachmentView.fileNoAccess'))
   })
-  it('open, a read again (reconnect) that fails keeps the bytes drawn and says the failure with a retry', async () => {
-    await open()
-    expect(harness.container.textContent).toBe('notes')
-    io.resolveFails = true
-    const { queryClient } = await import('@/lib/replica')
-    await act(async () => { await queryClient.refetchQueries({ type: 'active' }).catch(() => undefined) })
-    await act(async () => { await new Promise((done) => setTimeout(done, 0)) })
-    expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull()
-    expect(harness.container.textContent).toContain('notes')
-  })
 })

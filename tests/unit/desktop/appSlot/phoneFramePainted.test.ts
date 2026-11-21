@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import { hostAppFrame } from '../../../../apps/desktop/src/components/appSlot/phoneAppHost';
-import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions';
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest';
 import { APP_FRAME_MARKER } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol';
 
@@ -27,7 +27,7 @@ const from = (frame: HTMLIFrameElement, t: string) =>
 
 // A preloaded widget frame loads half a screen early; its placeholder goes when the App has drawn, not when it has loaded.
 it('tells the slot its document painted, and only the frame that painted', () => {
-  tellInstalled('phone', { extensions: [manifest], invalid: [] } as never);
+  installedExtensions.set(['phone'], { extensions: [manifest], invalid: [] } as never);
   const first = vi.fn(), second = vi.fn();
   const one = hosted(first);
   hosted(second);

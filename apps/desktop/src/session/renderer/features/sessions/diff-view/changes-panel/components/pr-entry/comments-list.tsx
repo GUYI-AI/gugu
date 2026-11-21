@@ -1,8 +1,6 @@
 import { ExternalLink, MessageSquare } from '@/lib/icons'
-import { useMemo } from 'react';
-import { Unknown } from '@/components/ui/Unknown';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
 import type { Reading } from '@/lib/replica';
-import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { rpc } from '@renderer/lib/ipc';
 import { MarkdownRenderer } from '@renderer/lib/ui/markdown-renderer';
 import { RelativeTime } from '@renderer/lib/ui/relative-time';
@@ -86,43 +84,17 @@ function CommentItem({ comment }: { comment: PullRequestSessionItem }) {
   );
 }
 
-export function CommentsList({
-  comments,
-  onRetry,
-}: {
-  comments: Reading<PullRequestSessionItem[]>;
-  onRetry: () => void;
-}) {
+export function CommentsList({ comments }: { comments: Reading<PullRequestSessionItem[]> }) {
   const { translate } = useSessionMessages();
-  const sorted = useMemo(
-    () => (comments.state === 'value' ? [...comments.value].sort(sortPullRequestSessionItems) : null),
-    [comments]
-  );
-
-  if (comments.state === 'unknown') {
-    return (
-      <div className="px-3 py-2">
-        <Unknown className="h-10 w-full" />
-      </div>
-    );
-  }
-
-  if (comments.state === 'error') {
-    return <ReadFailedLine className="px-3 py-2" message={translate('pr.commentsFailed')} onRetry={onRetry} />;
-  }
-
-  if (!sorted || sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div>;
-  }
-
   return (
-    <div className="flex flex-col gap-[1px]">
-      {sorted.map((comment) => (
-        <CommentItem key={comment.id} comment={comment} />
-      ))}
-      {comments.error && (
-        <ReadFailedLine className="px-3 py-2" message={translate('pr.commentsFailed')} onRetry={onRetry} />
+    <ReadingSlot reading={comments} placeholder="mx-3 my-2 block h-10 w-auto" className="px-3 py-2" failed={() => translate('pr.commentsFailed')}>
+      {(items) => items.length === 0 ? <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div> : (
+        <div className="flex flex-col gap-[1px]">
+          {[...items].sort(sortPullRequestSessionItems).map((comment) => (
+            <CommentItem key={comment.id} comment={comment} />
+          ))}
+        </div>
       )}
-    </div>
+    </ReadingSlot>
   );
 }

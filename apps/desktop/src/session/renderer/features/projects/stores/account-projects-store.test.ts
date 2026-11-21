@@ -1,18 +1,20 @@
 import { runInAction } from 'mobx';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
+import { followRendererSession, queryClient } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import { AccountProjectsStore } from './account-projects-store';
 
 const read = vi.hoisted(() => ({
   list: vi.fn<() => Promise<AccountProject[]>>(),
   self: vi.fn(async () => ({ device_id: 'this-computer' })),
   events: new Map<string, () => void>(),
-  identified: null as null | (() => void),
+  identified: new Set<() => void>(),
 }));
 vi.mock('@/lib/deviceProjects', () => ({ listMyAccountProjects: () => read.list() }));
 vi.mock('@/platform', () => ({ platform: {
   getLocalDeviceSelfSnapshot: () => read.self(),
-  subscribeLocalDeviceIdentified: (listener: () => void) => { read.identified = listener; return () => { read.identified = null; }; },
+  subscribeLocalDeviceIdentified: (listener: () => void) => { read.identified.add(listener); return () => { read.identified.delete(listener); }; },
 } }));
 vi.mock('@renderer/lib/ipc', () => ({
   events: { on: (event: { name: string }, handler: () => void) => { read.events.set(event.name, handler); return () => read.events.delete(event.name); } },
@@ -42,16 +44,21 @@ function storeWith(projects: AccountProject[], local: { here?: boolean } = {}) {
   ]);
   const machineOf: Record<string, string> = { 'gpu-paper': 'gpu', 'juma-paper': 'juma' };
   store.attach({ projects: table, machineOf: (id) => machineOf[id] ?? null, connected: (deviceId) => deviceId === 'gpu' });
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
     store.list = projects;
-    store.localDeviceId = 'this-computer';
     store.status = 'ready';
   });
   return store;
 }
 
+beforeEach(() => {
+  followRendererSession('SIGNED_IN', 'user-a');
+});
+
 afterEach(() => {
   read.list.mockReset();
+  queryClient.clear();
 });
 
 describe('accountProjectsStore helpers', () => {
@@ -87,13 +94,12 @@ describe('accountProjectsStore helpers', () => {
 });
 
 describe('accountProjectsStore reading', () => {
-  it('reads the list and this computer, fails loud on error, and clear drops the account', async () => {
+  it('reads the list, fails loud on error, and clear drops the account', async () => {
     const store = new AccountProjectsStore();
     expect(store.status).toBe('loading');
     read.list.mockResolvedValueOnce([paper]);
     await store.refresh();
     expect(store.status).toBe('ready');
-    expect(store.localDeviceId).toBe('this-computer');
     expect(store.projects).toEqual([paper]);
 
     read.list.mockRejectedValueOnce(new Error('rpc down'));
@@ -104,17 +110,20 @@ describe('accountProjectsStore reading', () => {
     store.clear();
     expect(store.status).toBe('loading');
     expect(store.projects).toEqual([]);
-    expect(store.localDeviceId).toBeNull();
   });
 
   // An offline reload: the list read fails, but which machine this is is this machine's own fact — its projects still
   // match their bindings (otherwise this computer's project rows turn into folderless group rows and reorder).
+  // Which machine this is is the replica `thisDeviceId`'s (read on start); a sign-out drops it with the account.
   it('knows this computer even when the first list read fails', async () => {
     const store = new AccountProjectsStore();
     read.list.mockRejectedValueOnce(new Error('fetch failed'));
-    await store.refresh();
-    expect(store.status).toBe('error');
-    expect(store.localDeviceId).toBe('this-computer');
+    const stop = store.start('user-a', (() => () => undefined) as unknown as Parameters<AccountProjectsStore['start']>[1]);
+    await vi.waitFor(() => expect(store.status).toBe('error'));
+    await vi.waitFor(() => expect(store.localDeviceId).toBe('this-computer'));
+    stop();
+    followRendererSession('SIGNED_OUT', null);
+    expect(store.localDeviceId).toBeNull();
   });
 
   // owner asked whether the account list makes the client depend on the backend: reloading while it is unreachable keeps
@@ -204,13 +213,13 @@ describe('accountProjectsStore reading', () => {
     // A project made here is in list_my_projects only once this machine's publish lands — that, not the creation.
     expect(read.events.has('project:created')).toBe(false);
     await readsAgain(() => read.events.get('project:device-projects-published')!(), [empty]);
-    await readsAgain(() => read.identified!(), [paper]);
+    await readsAgain(() => read.identified.forEach((listener) => listener()), [paper]);
     expect(read.list).toHaveBeenCalledTimes(5);
 
     stop();
     expect(revisions.size).toBe(0);
     expect(read.events.size).toBe(0);
-    expect(read.identified).toBeNull();
+    expect(read.identified.size).toBe(0);
     // stop only unsubscribes: a moment without a signed-in user is not a sign-out.
     expect(store.projects).toEqual([paper]);
     // Another account signs in: the previous account's projects go before anything is read.

@@ -58,9 +58,10 @@ export function resolveImportSource(deviceId: string, directTerminal = false): S
   return machineImportSource(deviceId, directTerminal);
 }
 
-/** Read each time it is selected (the file may change). */
+/** Read each time it is selected (the file may change). One read, as dev's pane did: an unreadable file is said at once, not after retries. */
 export const sessionImportPreview = replica({
   name: 'sessionImportPreview',
+  retry: 0,
   scope: 'account',
   networkMode: 'always',
   read: (_owner, deviceId: string, filePath: string, engine: PreviewLocalSessionParams['engine']) =>

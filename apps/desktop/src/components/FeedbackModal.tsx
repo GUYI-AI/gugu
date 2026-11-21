@@ -86,7 +86,6 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
   // 是空态 → 续填;若 user 引用变化(owner token resync)重跑时用户可能正在编辑(非空)→ 不覆盖。
   // ❌ 不用 loadedRef「只载一次」守卫:它与 React StrictMode 双调用 + alive 清理相冲——run1 置 ref 后被
   // 自身 cleanup 设 alive=false 吞掉回填,run2 又被 ref 挡掉 → 重开草稿彻底丢(e2e 实测)。
-  // @@@effect-flow(view-state) - restores the unsent draft into the editable form (③ draft: the form owns it afterwards)
   useEffect(() => {
     if (!user) return
     let alive = true

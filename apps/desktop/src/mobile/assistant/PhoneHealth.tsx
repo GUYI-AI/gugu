@@ -16,7 +16,7 @@ import { PhoneMachineView, ReadFailed, ReadingNow, ReadView } from './PhoneMachi
 import { healthClock, type PhoneHealthView } from './phoneHealthView'
 import { phoneHealth } from './phoneHealthReplica'
 import type { Reading } from '@/lib/replica'
-import { RefreshFailed } from '@/components/ui/RefreshFailed'
+import { ReadingSlot } from '@/components/ui/ReadingSlot'
 import { useReplica } from '@/lib/replica'
 import './phone-memory.css'
 
@@ -27,7 +27,7 @@ import './phone-memory.css'
  * 下面「你的健康分析」(让它解读,只填不发;它记进记忆的 health_* 几条,醒着读到了才列)、「分析健康报告」(选文件排进聊天)。
  */
 export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: PhonePageProps & {
-  healthNotes: { reading: Reading<{ notes: MemoryEntry[] }> }
+  healthNotes: Reading<{ notes: MemoryEntry[] }>
 }) {
   const { t } = useTranslation('assistant')
   const name = assistant.display_name
@@ -51,18 +51,11 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
           </IconButton>
         }
       />
-      {health.state === 'value' ? <RefreshFailed reading={health} /> : null}
-      {health.state === 'unknown' ? (
-        <ReadingNow label={t('health.loading')} />
-      ) : health.state === 'error' ? (
-        <div className="ta-card">
-          <ReadFailed title={t('health.state.errorTitle')} error={health.error} onRetry={reload} />
-        </div>
-      ) : health.value.state === 'ok' ? (
-        <HealthBody summary={health.value.summary} t={t} />
-      ) : (
-        <ConnectCard view={health.value} onGrant={openPhonePermissions} onRetry={reload} />
-      )}
+      <ReadingSlot reading={health} placeholder={<ReadingNow label={t('health.loading')} />}
+        failed={(error) => <div className="ta-card"><ReadFailed title={t('health.state.errorTitle')} error={error} onRetry={reload} /></div>}>
+        {(value) => value.state === 'ok' ? <HealthBody summary={value.summary} t={t} />
+          : <ConnectCard view={value} onGrant={openPhonePermissions} onRetry={reload} />}
+      </ReadingSlot>
       <AssistantSection
         title={t('health.analysisTitle')}
         action={
@@ -75,7 +68,7 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
       >
         <PhoneMachineView machine={machine} name={name}>
           {() => (
-            <ReadView reading={healthNotes.reading} failedTitle={t('memory.loadFailed')}>
+            <ReadView reading={healthNotes} failedTitle={t('memory.loadFailed')}>
               {({ notes }) => {
                 const analysis = notes.filter((note) => isHealthNote(note.file))
                 return analysis.length === 0 ? (

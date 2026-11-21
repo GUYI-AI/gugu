@@ -1,5 +1,5 @@
-import { QueryClient, focusManager, hashKey, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
-import { useSyncExternalStore } from 'react'
+import { QueryClient, focusManager, hashKey, keepPreviousData, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
+import { useMemo, useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
 import { recordSnapshotRefusal } from './perfCounters'
 import { rendererLogger } from './log'
@@ -44,6 +44,11 @@ export const UNKNOWN: Reading<never> = { state: 'unknown' }
  */
 export function refreshFailure(reading: Reading<unknown>): Error | null {
   return reading.state === 'unknown' ? null : reading.error
+}
+
+/** The value a reading shows, or undefined (unknown, or an error with nothing read). */
+export function valueOf<V>(reading: Reading<V>): V | undefined {
+  return reading.state === 'value' ? reading.value : undefined
 }
 
 /** The reading's own retry, for a 「重试」 drawn by hand beside its failure (none before the first answer). */
@@ -117,6 +122,12 @@ const definitions = new Map<string, Definition<unknown[], unknown>>()
  */
 const writes = new Map<string, number>()
 
+/** Rereads begun per entry: of two on their way, the one begun later lands. */
+const rereads = new Map<string, number>()
+
+/** Entries whose last read failed (its failure already logged). */
+const failing = new Set<string>()
+
 const readFromKey = async ({ queryKey }: QueryFunctionContext) => {
   const [name, owner, ...args] = queryKey as [string, string, ...unknown[]]
   const definition = definitions.get(name)
@@ -126,8 +137,13 @@ const readFromKey = async ({ queryKey }: QueryFunctionContext) => {
   const overtaken = () => (writes.get(hash) ?? 0) !== before && queryClient.getQueryData(queryKey) !== undefined
   try {
     const value = await definition.read(owner, ...args)
+    failing.delete(hash)
     if (!overtaken()) return value
   } catch (error) {
+    // A failed read is logged here with its model, once until the entry reads again (a poll failing every 750 ms says it
+    // once): ❌ a catch that logs and rethrows in each reader.
+    if (!failing.has(hash)) replicaLog.warn({ model: name, args, error: String(error) }, `${name}: read failed`)
+    failing.add(hash)
     if (!overtaken()) throw error
   }
   return queryClient.getQueryData(queryKey)
@@ -392,7 +408,16 @@ function dropKept(key: QueryKey): void {
   const hash = hashKey(key)
   if (!snapshot[hash]) return
   delete snapshot[hash]
-  try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* the entry is gone from memory anyway */ }
+  writeSnapshot(owner, snapshot, String(key[0]))
+}
+
+/** Store an owner's snapshot block; a refusal is said for the model that asked (❌ swallowed). */
+function writeSnapshot(owner: string, snapshot: Snapshot, name: string): void {
+  try {
+    localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
+  } catch (error) {
+    refuseSnapshotWrite(name, `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
+  }
 }
 
 function readSnapshot(owner: string): Snapshot {
@@ -426,11 +451,7 @@ function writeSnapshotEntry(key: QueryKey, value: unknown, at: number, limits: L
     const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => y.at - x.at)
     for (const [hash] of own.slice(limits.maxEntries)) delete snapshot[hash]
   }
-  try {
-    localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
-  } catch (error) {
-    refuseSnapshotWrite(name, `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
-  }
+  writeSnapshot(owner, snapshot, name)
 }
 
 /** What a model as defined now admits of its kept entries (an older build's snapshot goes no further): none without `persist`, each within `maxBytes`, the newest `maxEntries`. */
@@ -481,11 +502,7 @@ function pruneSnapshot(definition: Definition<unknown[], unknown>): void {
 function dropFromSnapshot(owner: string, snapshot: Snapshot, dropped: SnapshotEntry[]): void {
   if (dropped.length === 0) return
   for (const entry of dropped) delete snapshot[hashKey(entry.key)]
-  try {
-    localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
-  } catch (error) {
-    refuseSnapshotWrite(String(dropped[0]!.key[0]), `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
-  }
+  writeSnapshot(owner, snapshot, String(dropped[0]!.key[0]))
 }
 
 hydrateSnapshot(DEVICE)
@@ -509,6 +526,8 @@ export type Replica<A extends unknown[], V> = {
   at(...args: A): { set(value: V | ((old: V | undefined) => V | undefined)): void }
   /** Mark stale and read again where shown; without arguments, every entry of this model. */
   refresh(...args: Partial<A>): Promise<void>
+  /** Read again now, shown or not (`refresh` only marks an entry nobody shows), and return the new value: never the answer of a read begun before this call. */
+  reread(...args: A): Promise<V>
   /** Hear when an entry changes, for code outside React (React: `useReplica`). Arguments left out match any; only the current account's entries. */
   subscribe(args: Partial<A>, listener: (entry: Entry<A, V>) => void): () => void
   /** The entries of this model now held for the account signed in (arguments left out match any): a one-moment look. */
@@ -677,6 +696,38 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const owner = ownerOf(definition.scope)
       if (owner) await refreshWhere(definition as Definition<unknown[], unknown>, matching(definition as Definition<unknown[], unknown>, owner, args))
     },
+    reread: async (...args) => {
+      const k = requireKey(args)
+      if (model.isShown(...args)) {
+        await model.refresh(...args)
+        // Shown, the refresh has read it: that answer, ❌ a second read (a `fresh: 0` value is stale at once).
+        const state = queryClient.getQueryState(k)
+        if (state?.data !== undefined && !state.isInvalidated) return state.data as V
+      }
+      // Not shown (or the refresh left it unread): a read of its own, begun now, ❌ joining one already on its way (it may
+      // predate a change). Its answer is put as a write (@@@write-over-read): the earlier read cannot overwrite it, and of
+      // two rereads the later one stays.
+      const hash = hashKey(k)
+      const mine = (rereads.get(hash) ?? 0) + 1
+      rereads.set(hash, mine)
+      const latest = () => rereads.get(hash) === mine && k[1] === ownerOf(definition.scope)
+      let value: V
+      try {
+        value = await readFromKey({ queryKey: k } as QueryFunctionContext) as V
+      } catch (error) {
+        // The failure is the reading's (a surface shown later says it), ❌ the earlier answer left standing as now.
+        if (latest()) {
+          const query = queryClient.getQueryCache().build(queryClient, { queryKey: k })
+          query.setState({ ...query.state, status: 'error', error: error as Error, errorUpdatedAt: Date.now() })
+        }
+        throw error
+      }
+      if (latest()) {
+        const shown = queryClient.getQueryData(k) as V | undefined
+        putValue(k, shown !== undefined && definition.merge ? definition.merge(shown, value) : value)
+      }
+      return value
+    },
   }
   models.set(definition.name, model as unknown as Replica<unknown[], unknown>)
   return model
@@ -691,7 +742,7 @@ function retryPolicyOf<A extends unknown[]>(retry: (failures: number, error: Err
   return (failures: number, error: Error) => retry(failures, error, ...(key.slice(2) as A))
 }
 
-function readingOfState(state: { data: unknown; error: Error | null; status: string } | undefined, stale: boolean, key: QueryKey): Reading<never> {
+function readingOfState(state: { data: unknown; error: Error | null } | undefined, stale: boolean, key: QueryKey): Reading<never> {
   if (!state) return UNKNOWN
   // A failed refresh being retried is not said yet: a transient failure recovers silently; it is said once the retries are spent.
   if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, error: state.error, retry: retryOfKey(key) }
@@ -699,23 +750,35 @@ function readingOfState(state: { data: unknown; error: Error | null; status: str
   return error ? { state: 'error', error, retry: retryOfKey(key) } : UNKNOWN
 }
 
-function readingOf<V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> {
-  if (result.data !== undefined) return { state: 'value', value: result.data, stale: result.isStale, error: result.error, retry: retryOfKey(key) }
-  const error = result.error ?? lastFailure.get(hashKey(key))
-  return error ? { state: 'error', error, retry: retryOfKey(key) } : UNKNOWN
-}
+const readingOf = <V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> => readingOfState(result, result.isStale || result.isPlaceholderData, key)
 
 const IDLE_KEY = ['read-model:idle'] as const
 
-/** The reading for these arguments; `null` = no subject (`unknown`, nothing requested). Account models read only while the session is live. */
-export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean } = {}): Reading<V> {
+/**
+ * The reading for these arguments; `null` = no subject (`unknown`, nothing requested). Account models read only while the session is live.
+ * `keepPrevious`: while the new arguments' first read is on its way, show the previous arguments' value, stale (a search typed on).
+ */
+export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean; keepPrevious?: boolean } = {}): Reading<V> {
   const current = useSyncExternalStore(subscribeAccount, accountSnapshot)
   const definition = definitions.get(model.name)!
   const k = args ? model.key(...args) : null
   // `read: false`: show what is there (a snapshot, another reader's value) without asking yet.
   const canRead = !!k && options.read !== false && (definition.scope === DEVICE || current.live)
-  const result = useQuery({ ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: canRead }, queryClient) as UseQueryResult<V>
+  const query = { ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: canRead, ...(options.keepPrevious ? { placeholderData: keepPreviousData } : {}) }
+  const result = useQuery(query, queryClient) as UseQueryResult<V>
   return k ? readingOf(result, k) : UNKNOWN
+}
+
+/**
+ * The entry for these arguments, bound to the account this render drew: a write that answers after an await lands there,
+ * ❌ in the account signed in when it answers. null without a subject or an account.
+ */
+export function useEntry<A extends unknown[], V>(model: Replica<A, V>, args: A | null): ReturnType<Replica<A, V>['at']> | null {
+  useSyncExternalStore(subscribeAccount, accountSnapshot)
+  const k = args ? model.key(...args) : null
+  const hash = k ? hashKey(k) : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key's hash names the entry and its account
+  return useMemo(() => (args && k ? model.at(...args) : null), [hash])
 }
 
 /** One reading per subject (rows of a list), in the order given. */
@@ -730,7 +793,22 @@ export function useReplicas<A extends unknown[], V>(model: Replica<A, V>, argsLi
   return results.map((result, index) => (keys[index] ? readingOf(result, keys[index]!) : UNKNOWN))
 }
 
-/** The account as the replica sees it (the outbox binds its writes to it; tests read it too). */
+let readsOnce = 0
+/**
+ * One read that is not kept (a file's bytes for one preview, a one-off check), retried as a model's reads are: ❌ a hand
+ * loop with timers. Nothing is cached: the next call reads again.
+ */
+export function readOnce<V>(read: () => Promise<V>, options: Pick<Definition<[], V>, 'retry' | 'retryDelay'> = {}): Promise<V> {
+  return queryClient.fetchQuery({
+    queryKey: ['read-model:once', ++readsOnce],
+    queryFn: read,
+    gcTime: 0,
+    retry: options.retry ?? 0,
+    ...(options.retryDelay ? { retryDelay: options.retryDelay } : {}),
+  })
+}
+
+/** The account the replica follows now: the outbox binds its writes to it; an action that awaited asks whether the person who started it is still signed in. */
 export function replicaAccount(): AccountState { return account }
 
 /** Whether a read of this model's entry (arguments left out match any) is on its way now: e.g. a check running. */
@@ -739,7 +817,6 @@ export function useReplicaFetching<A extends unknown[], V>(model: Replica<A, V>,
   const owner = model.key(...([] as unknown as A))?.[1] ?? null
   return useIsFetching({
     queryKey: [model.name],
-    predicate: (query) => args !== null && owner !== null && query.queryKey[1] === owner
-      && args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
+    predicate: (query) => args !== null && owner !== null && query.queryKey[1] === owner && argsMatch(query.queryKey, args),
   }, queryClient) > 0
 }

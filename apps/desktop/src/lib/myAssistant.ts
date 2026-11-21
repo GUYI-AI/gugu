@@ -29,7 +29,8 @@ async function readMyAssistant(owner: string): Promise<MyAssistant> {
 
 /**
  * @@@client-state-model, signal tier: `agent_provisions` writes no account revision (gugu-supabase dev 5f12312): read again on
- * focus, bus resubscribe, `agent_changed` and this device's own writes (`refreshMyAssistant`). Kept for the first frame.
+ * focus, bus resubscribe, `agent_changed` and this device's own writes (a provision / move / close just landed: ❌ wait for
+ * contacts to change — a move adds no agent). Kept for the first frame.
  */
 export const myAssistant = replica({
   name: 'myAssistant',
@@ -52,11 +53,6 @@ export const myAssistant = replica({
     },
   },
 })
-
-/** A provision / move / close just landed: that row was just written, read it again (❌ wait for contacts to change — a move adds no agent). */
-export function refreshMyAssistant(): Promise<void> {
-  return myAssistant.refresh()
-}
 
 /** This account's personal assistant: unknown until read, then who it is (or that there is none), or why it could not be read. */
 export function useMyAssistant(): Reading<MyAssistant> {

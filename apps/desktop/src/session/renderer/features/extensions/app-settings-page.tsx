@@ -38,10 +38,10 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
   const prefix = useId();
   const text = localizedManifestText(manifest, locale);
   const installed = useInstalledApps(LOCAL_HOST);
+  const main = installed.state === 'value' ? installed.value.mainTabOf(manifest.id) : null;
   const fields = manifest.settings ?? [];
   const tabs = [...(text.examples.length > 0 ? ['overview' as const] : []), ...(fields.length > 0 ? ['settings' as const] : [])];
   const [tab, setTab] = useState<Tab>(tabs[0] ?? 'overview');
-  // @@@effect-flow(command) - opening this page tells main the App was opened (it un-quits it, controller.ts openSettings); its settings are read through the form's replica
   useEffect(() => {
     if (!active) return;
     void rpc.extensions.openSettings({ extensionId: manifest.id }).then((result) => {
@@ -56,7 +56,9 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
 
   return <main className="tool-app-page" aria-label={text.name}>
     <div className="tool-app-content">
-      {installed.state !== 'value' ? <Unknown className="mk-back w-16" /> : <AppSettingsBack installedMain={installed.value.mainTabOf(manifest.id)} onBack={() => openApp(manifest.id)} label={t('common.back')} />}
+      {installed.state !== 'value' ? <Unknown className="mk-back w-16" /> : main && !main.hostSettings ? <button type="button" className="mk-back" data-testid="app-settings-back" onClick={() => openApp(manifest.id)}>
+        <ChevronLeft className="size-3.5" />{t('common.back')}
+      </button> : null}
       <header className="tool-app-header">
         {installed.state !== 'value' ? <Unknown className="tool-app-icon" />
           : installed.value.appIcons[manifest.id] ? <img className="tool-app-icon" src={installed.value.appIcons[manifest.id]} alt="" />
@@ -108,11 +110,4 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
         save={(settings) => rpc.extensions.setSettings({ extensionId: manifest.id, settings })} /> : null}
     </div>
   </main>;
-}
-
-function AppSettingsBack({ installedMain, onBack, label }: { installedMain: { hostSettings?: boolean } | null; onBack: () => void; label: string }) {
-  if (!installedMain || installedMain.hostSettings) return null;
-  return <button type="button" className="mk-back" data-testid="app-settings-back" onClick={onBack}>
-    <ChevronLeft className="size-3.5" />{label}
-  </button>;
 }

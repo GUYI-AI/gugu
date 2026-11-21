@@ -32,7 +32,7 @@ import { createLogger } from './lib/logger'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
-import { parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
+import { parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
 
 // Protocol membership is decided by the shared protocol table, so adding a
 // protocol never means editing a literal union in this file.
@@ -267,7 +267,7 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
         displayName,
         protocols,
         enabled: row.enabled === true,
-        creditMultipliers: creditMultipliers(row.credit_multipliers),
+        creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
         contextWindow: positiveIntOrNull(row.context_window),
         reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
         requiresMembership: row.requires_membership === true,
@@ -280,22 +280,6 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
 /** 目录/签发里的上下文窗口:只认正整数,其余(缺省、0、负、非数)一律 null → 注入侧不注入该键。 */
 function positiveIntOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
-}
-
-/**
- * 目录里的倍率映射,只留下这台客户端认识的协议和真实的正数。
- *
- * 旧版服务端不带这个字段 → 空表 → UI 只是不显示数字。倍率缺失从来不是错误路径。
- */
-function creditMultipliers(value: unknown): Partial<Record<ModelAccessProtocol, number>> {
-  if (!value || typeof value !== 'object') return {}
-  const parsed: Partial<Record<ModelAccessProtocol, number>> = {}
-  for (const [protocol, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!isModelAccessProtocol(protocol)) continue
-    const ratio = Number(raw)
-    if (Number.isFinite(ratio) && ratio > 0) parsed[protocol] = ratio
-  }
-  return parsed
 }
 
 export async function issuePlatformModelAccess(input: {

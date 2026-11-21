@@ -151,7 +151,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
         await api.deleteAutomation(schedule.id);
         if (kind === 'cancel') toast({ title: translate('sessionSchedule.cancelled', { title: schedule.title }) });
       }
-      void sessionSchedules.refresh(machine ?? 'local');
+      void sessionSchedules.refresh(machine);
     } catch (error) {
       log.error('session schedule action failed', { kind, scheduleId: schedule.id, error: String(error) });
       const code = error instanceof Error ? error.message : '';

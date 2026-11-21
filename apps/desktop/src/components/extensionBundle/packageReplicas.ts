@@ -1,6 +1,6 @@
+import { sourceKeyOf } from '../../lib/attachmentBytes'
 import { replica, replicaAccount } from '../../lib/replica'
 import { createSelectStore, patch } from '../../lib/selectStore'
-import { newestPackageOf } from '../../session/shared/extensions/app-card-state'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { chatPackageCards, newestSharedPackages, packageKey, PackageUnavailableError, readPackageSummary, type PackageCard, type SharedPackage } from './sharedPackages'
 import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
@@ -31,9 +31,10 @@ export function noteKeptCopy(key: string, sha256: string | null): void {
 export const extensionPackageSummary = replica({
   name: 'extensionPackageSummary',
   scope: 'account',
-  read: async (_owner: string, key: string): Promise<ExtensionBundleSummary> => {
+  read: async (_owner: string, source: PackageCard['source']): Promise<ExtensionBundleSummary> => {
+    const key = sourceKeyOf(source)
     try {
-      return await readPackageSummary(key, keptCopies.get(key) ?? null, (done, total) => noteProgress(key, done, total))
+      return await readPackageSummary(source, keptCopies.get(key) ?? null, (done, total) => noteProgress(key, done, total))
     } finally {
       forgetProgress(key)
     }
@@ -53,7 +54,7 @@ export const sharedAppPackages = replica({
     // A package whose bytes are not there offers no App (as one this build cannot read); any other failure fails the list.
     const read = await Promise.all(cards.map(async (card) => ({
       card,
-      summary: await extensionPackageSummary.fetch(packageKey(card)).catch((error: unknown) => {
+      summary: await extensionPackageSummary.fetch(card.source).catch((error: unknown) => {
         if (error instanceof PackageUnavailableError) return null
         throw error
       }),
@@ -71,17 +72,8 @@ export const shownPackages = createSelectStore<ReadonlyMap<string, SharedPackage
 
 export function showPackage(pkg: SharedPackage): () => void {
   const key = packageKey(pkg.card)
-  shownPackages.publish(new Map(shownPackages.get()).set(key, pkg))
-  shownPackages.notify()
+  patch(shownPackages, key, pkg)
   return () => {
-    if (shownPackages.get().get(key) !== pkg) return
-    const next = new Map(shownPackages.get())
-    next.delete(key)
-    shownPackages.publish(next)
-    shownPackages.notify()
+    if (shownPackages.get().get(key) === pkg) patch(shownPackages, key, undefined)
   }
-}
-
-export function newestShownPackage(shown: ReadonlyMap<string, SharedPackage>, id: string): SharedPackage | undefined {
-  return newestPackageOf(shown.values(), id)
 }

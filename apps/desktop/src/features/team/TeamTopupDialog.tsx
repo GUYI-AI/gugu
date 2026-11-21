@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { refreshFailure, useReplica } from '@/lib/replica'
-import { teamApiKey, teamTopupOrder, teamTopupQuote } from './replicas'
+import { teamTopupOrder, teamTopupQuote } from './replicas'
 import { useTranslation } from 'react-i18next'
 import { serverNow } from '@gugu/core/shared/serverClock'
 import { useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { teamCnyCents, teamTopupAmount, type TeamCheckoutIntent, type TeamPayType } from '../../../shared/team-topup'
-import { useTeamApi, useTeamSession } from './context'
+import { useTeamSession } from './context'
 import { teamErrorCopy } from './copy'
 import { TeamDialog } from './TeamPrimitives'
 import { createTeamTopupCheckout, openTeamPayment, type OpenTeamPayment } from './topup-checkout'
@@ -23,7 +23,7 @@ function moveRadio<T extends number | string>(event: KeyboardEvent<HTMLDivElemen
 export function TeamTopupDialog({ onClose, onSettled, openPayment = openTeamPayment }: {
   onClose(): void; onSettled(): Promise<void>; openPayment?: OpenTeamPayment
 }) {
-  const { t, i18n } = useTranslation('team'), { user } = useAuth(), api = useTeamApi(), session = useTeamSession()
+  const { t, i18n } = useTranslation('team'), { user } = useAuth(), session = useTeamSession()
   const teamId = session.context?.team_id ?? '', actorId = user?.id ?? ''
   const checkout = useMemo(() => createTeamTopupCheckout(actorId, teamId, localStorage, openPayment), [actorId, teamId, openPayment])
   const [amountText, setAmountText] = useState('500'), [couponText, setCouponText] = useState(''), [couponCode, setCouponCode] = useState('')
@@ -37,7 +37,7 @@ export function TeamTopupDialog({ onClose, onSettled, openPayment = openTeamPaym
   const amount = teamTopupAmount(amountText), admin = session.status === 'ready' && session.context?.role !== 'member'
   const context = session.context
   const quote = useReplica(teamTopupQuote, admin && initialized && !intent && amount !== null && context
-    ? [teamApiKey(api), teamId, context.membership_revision, amount, couponCode] : null)
+    ? [teamId, context.membership_revision, amount, couponCode] : null)
   const quoteFailure = refreshFailure(quote)
   const offered = quote.state === 'value' ? quote.value : undefined, expired = offered ? offered.expiresAt <= serverNow() : false
   const current = offered && offered.teamId === teamId && offered.credits === amount && !expired && !quoteFailure
@@ -48,11 +48,9 @@ export function TeamTopupDialog({ onClose, onSettled, openPayment = openTeamPaym
     return () => clearTimeout(timer)
   }, [offered, expired])
   const order = useReplica(teamTopupOrder, admin && intent?.orderId
-    ? [teamApiKey(api), teamId, intent.orderId, intent.quote.amountCny, intent.quote.credits] : null)
+    ? [teamId, intent.orderId, intent.quote.amountCny, intent.quote.credits] : null)
   const settledOrder = order.state === 'value' ? order.value : undefined
   const orderFailure = refreshFailure(order)
-  // @@@effect-flow(command) - settling this checkout consumes its original intent and refreshes the parent balance.
-  // Order data stays in the query; the asynchronous continuation only reports this interaction's refresh failure.
   useEffect(() => {
     const value = settledOrder
     if (!value || value.status === 'pending' || settled.current === value.id) return

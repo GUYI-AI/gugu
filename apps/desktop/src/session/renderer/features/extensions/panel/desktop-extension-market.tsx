@@ -1,38 +1,40 @@
-import { useMemo, useState, type Ref } from 'react';
-import { useReplica } from '@/lib/replica';
+import { useMemo, type Ref } from 'react';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { localizedManifestText, MARKET_CATEGORIES, marketCategoryOf, type MarketCategory } from '@shared/extensions/catalog';
 import { marketHome } from '@shared/extensions/market-home';
 import type { MarketListItem } from '@shared/extensions/market';
 import type { ResourceContext } from '@shared/resource-actions';
-import { marketInstallRanking, type MarketShelfFull } from '../market-replicas';
+import type { AppsSort } from '@renderer/features/apps/apps-location';
+import type { MarketShelfFull } from '../market-replicas';
 import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured, type MarketCategoryChoice } from './desktop-market-cards';
 import { MarketExtensionIcon } from './market-extension-icon';
 import { ShelfMoreSkeleton } from './extension-skeletons';
 
 type ExtensionMarketFilter = 'all' | MarketCategory;
-type AppSort = 'recommended' | 'newest' | 'popular';
 /** The shelf as the page draws it: which search it is (`query`, '' = none) and whether the next page is on its way. */
 export type DesktopMarketShelf = Omit<MarketShelfFull, 'fetchedAt'> & { status: 'ready'; query: string; loadingMore: boolean };
 
 export function DesktopExtensionMarket({
-  shelf, query, category, onCategoryChange, installedIds, onOpen, resourceOf, sentinelRef, stale,
+  shelf, scores, query, category, onCategoryChange, sort = 'recommended', onSortChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
 }: {
   shelf: DesktopMarketShelf;
+  /** Installs per App, which orders the home (featured, recommended, popular); null = unreadable: the catalog's order. */
+  scores: ReadonlyMap<string, number> | null;
   query: string;
   category: ExtensionMarketFilter;
   onCategoryChange: (category: ExtensionMarketFilter) => void;
+  /** The order picked, part of where you are on the Apps page (apps-location). */
+  sort?: AppsSort;
+  onSortChange: (sort: AppsSort) => void;
   installedIds?: ReadonlySet<string>;
   onOpen: (item: MarketListItem) => void;
   resourceOf: (id: string) => ResourceContext;
   sentinelRef: Ref<HTMLDivElement>;
   stale: string | null;
+  /** An App's page is open beside the list: no featured row, every App in the one list, this one marked. */
+  selectedId?: string;
 }) {
   const { translate, locale } = useSessionMessages();
-  const [sort, setSort] = useState<AppSort>('recommended');
-  // Unreadable or not read yet: the catalog's own order (the ranking only reorders; ❌ held back for it).
-  const ranking = useReplica(marketInstallRanking, query ? null : []);
-  const scores = ranking.state === 'value' ? ranking.value : null;
   const home = useMemo(() => {
     if (shelf.query || shelf.hasMore || shelf.items.some(({ cloud }) => !cloud.firstPublishedAt)) return null;
     const byId = new Map(shelf.items.map((item) => [item.manifest.id, item]));
@@ -52,7 +54,7 @@ export function DesktopExtensionMarket({
   }, [shelf, scores]);
 
   const categoryLabel = (key: MarketCategory) => translate(`extensions.category.${key}`);
-  const sorts: MarketCategoryChoice<AppSort>[] = [{ value: 'recommended', label: translate('extensions.recommended') }];
+  const sorts: MarketCategoryChoice<AppsSort>[] = [{ value: 'recommended', label: translate('extensions.recommended') }];
   if (home?.newest.length) sorts.push({ value: 'newest', label: translate('extensions.newest') });
   if (home?.popular?.length) sorts.push({ value: 'popular', label: translate('extensions.popular') });
   const activeSort = sorts.some((choice) => choice.value === sort) ? sort : 'recommended';
@@ -65,7 +67,7 @@ export function DesktopExtensionMarket({
   ];
   const activeCategory = choices.some((choice) => choice.value === category) ? category : 'all';
   const featured = useMarketFeatured(home?.featured ?? [], home?.moreFeatured ?? []);
-  const featuredOnPage = !query && activeSort === 'recommended' && activeCategory === 'all'
+  const featuredOnPage = !query && !selectedId && activeSort === 'recommended' && activeCategory === 'all' && home
     ? featured.items : [];
   const visible = activeCategory === 'all'
     ? entries.filter((item) => !featuredOnPage.includes(item))
@@ -87,6 +89,7 @@ export function DesktopExtensionMarket({
         description={locale.startsWith('zh') ? subtitle.replace(/\bagents?\b/gi, '智能体') : subtitle}
         installed={installedIds?.has(id)}
         deprecated={Boolean(item.cloud.deprecated)}
+        selected={id === selectedId}
         onOpen={() => onOpen(item)}
         resource={resourceOf(id)}
       />
@@ -95,11 +98,11 @@ export function DesktopExtensionMarket({
 
   return (
     <>
-      {!query && activeSort === 'recommended' && activeCategory === 'all' && home && (
+      {featuredOnPage.length > 0 && (
         <MarketFeatured title={translate('extensions.featuredApps')} {...featured} renderCard={(item) => card(item, true)} />
       )}
       {!query && (
-        <MarketCategoryBar choices={sorts} selected={activeSort} onChange={setSort} testIdPrefix="extensions-market-sort" variant="subnav" />
+        <MarketCategoryBar choices={sorts} selected={activeSort} onChange={onSortChange} testIdPrefix="extensions-market-sort" variant="subnav" />
       )}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={activeCategory} onChange={onCategoryChange} testIdPrefix="extensions-market-chip" />

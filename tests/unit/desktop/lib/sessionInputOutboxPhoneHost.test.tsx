@@ -26,7 +26,7 @@ vi.mock('@/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => 
 vi.mock('@/session/shared/remote-sessions/session-list-cache', () => ({ readCachedSessionList: async () => null, writeCachedSessionList() {} }))
 vi.mock('@/components/chat/ChatSummariesHost', () => ({ ChatSummariesHost: () => null }))
 vi.mock('@/components/chat/NativeConversationReadHost', () => ({ NativeConversationReadHost: () => null }))
-vi.mock('@/store/devicesCache', () => ({ subscribeCachedDevices: () => () => {} }))
+vi.mock('@/store/devicesCache', () => ({ devicesModel: { subscribe: () => () => {} } }))
 vi.mock('@/lib/outbox/kinds/assistantNotice', () => ({ assistantNoticeOutboxKind: { name: 'assistantNotice', lane: () => 'assistant', send: async () => {} } }))
 vi.mock('@/lib/outbox/legacy', () => ({ importLegacyWrites: async () => {} }))
 vi.mock('@/lib/sessionSendQueueHost', () => ({ watchSessionSendQueues: (...args: unknown[]) => { fixture.native(...args); return fixture.stopNative } }))

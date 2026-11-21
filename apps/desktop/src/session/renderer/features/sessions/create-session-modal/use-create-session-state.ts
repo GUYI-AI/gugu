@@ -83,7 +83,6 @@ export function useCreateSessionState(
     mutationFn: (asked: NameRequest) => rpc.sessionCreate.generateSessionName(asked.input),
   }, queryClient);
   const { mutate } = generate;
-  // @@@effect-flow(command) - asks the model for a task-name suggestion (a command, once per request); its answer fills an editable input
   useEffect(() => {
     if (request) mutate(request);
   }, [request?.key, mutate]);

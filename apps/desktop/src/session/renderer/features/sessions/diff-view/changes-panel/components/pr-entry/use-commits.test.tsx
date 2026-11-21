@@ -2,7 +2,9 @@
 import { act, createElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../../../../../../../../../tests/support/testHarness'
-import { COMMIT_PAGE_SIZE, useCommits, type CommitPages } from './use-commits'
+import { COMMIT_PAGE_SIZE, useCommits } from './use-commits'
+
+type CommitPages = ReturnType<typeof useCommits>
 
 const git = vi.hoisted(() => ({ getLog: vi.fn() }))
 vi.mock('@renderer/features/sessions/workspace-backend/workspace-backend', () => ({ workspaceRpc: () => ({ gitWorktree: { getLog: git.getLog } }) }))
@@ -22,17 +24,17 @@ describe('commits of a range', () => {
     const harness = createReactHarness()
     await harness.render(createElement(Probe))
     expect(seen!.pages).toHaveLength(1)
-    expect(seen!.pages[0]).toMatchObject({ state: 'value' })
-    expect(seen!.hasMore).toBe(true)
-    await act(async () => { seen!.loadMore() })
-    expect(seen!.pages.map((p) => p.state)).toEqual(['value', 'value'])
+    expect(seen!.first).toMatchObject({ state: 'value' })
+    expect(seen!.more).not.toBeNull()
+    await act(async () => { seen!.more!() })
+    expect(seen!.pages).toHaveLength(2)
     expect(git.getLog.mock.calls.map((call) => call[3])).toEqual([0, COMMIT_PAGE_SIZE])
-    expect(seen!.hasMore).toBe(false)
+    expect(seen!.more).toBeNull()
     harness.cleanup({ keepReads: true })
 
     const again = createReactHarness()
     await again.render(createElement(Probe))
-    expect(seen!.pages[0]).toMatchObject({ state: 'value' })
+    expect(seen!.first).toMatchObject({ state: 'value' })
     expect(git.getLog).toHaveBeenCalledTimes(2)
     again.cleanup()
   })
@@ -43,7 +45,7 @@ describe('commits of a range', () => {
     const Probe = () => { seen = useCommits('p', 'w', { source: 'branch', baseRefOid: 'b2', headRefOid: 'h2' }); return null }
     const harness = createReactHarness()
     await harness.render(createElement(Probe))
-    expect(seen!.pages[0]).toMatchObject({ state: 'error' })
+    expect(seen!.first).toMatchObject({ state: 'error' })
     harness.cleanup()
   })
 })

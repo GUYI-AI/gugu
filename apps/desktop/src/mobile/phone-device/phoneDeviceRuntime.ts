@@ -80,8 +80,6 @@ export const RECENT_CALLS_LIMIT = 30
 
 export interface PhoneDeviceSnapshot {
   link: PhoneDeviceLink
-  /** 系统此刻给了什么;还没读到 = null。 */
-  info: PhoneDeviceInfo | null
   deviceId: string | null
   /** 最近一次心跳成功的时刻。 */
   lastHeartbeatAt: number | null
@@ -89,9 +87,8 @@ export interface PhoneDeviceSnapshot {
   host: PhoneAgentHostState | null
 }
 
-const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, info: null, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
+const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
 let snapshot: PhoneDeviceSnapshot = OFF
-let osReadRevision = 0
 const listeners = new Set<() => void>()
 
 function publish(next: Partial<PhoneDeviceSnapshot>): void {
@@ -128,20 +125,14 @@ function osNow(): PhoneOsState | null {
   return reading.state === 'value' ? reading.value : null
 }
 
-/** All readers share ordering, including the settings page while both endpoints are off. */
+/**
+ * A new read of the OS state (heartbeat, foreground return, the settings page through refreshPhoneDevice): `reread`
+ * reads anew and the read begun last lands, so a permission changed in the system settings is not answered by an older
+ * read. Whether the caller goes on (the session that asked is still the current one) is the caller's.
+ */
 async function readLatestOs(isCurrent: () => boolean): Promise<boolean> {
-  const revision = ++osReadRevision
-  let os: PhoneOsState
-  try {
-    os = await readPhoneOsState()
-  } catch (error) {
-    // A failure is the reading's (the page says so), ❌ the earlier answer left standing as now.
-    if (revision === osReadRevision) void phoneOsState.prefetch()
-    throw error
-  }
-  if (revision !== osReadRevision || !isCurrent()) return false
-  phoneOsState.set([], os)
-  return true
+  await phoneOsState.reread()
+  return isCurrent()
 }
 
 /** 网页比安装包新时,原生还没有 healthStatus:如实标成「这个版本读不了」(old_app),❌ 让整份系统状态读失败。 */
@@ -186,7 +177,6 @@ export function startPhoneDevice(options: {
   claimNotice: (label: string) => () => void
 }): () => void {
   session?.stop()
-  osReadRevision++
   const beforeBoot = previousSessionDrain
   const { userId } = options
   let alive = true
@@ -395,7 +385,7 @@ export function startPhoneDevice(options: {
       })
       await readCurrentOs()
       if (!alive) return
-      publish({ info, deviceId })
+      publish({ deviceId })
       rebuildCapability()
       await beat()
       if (!alive) return
@@ -454,7 +444,6 @@ export function startPhoneDevice(options: {
     stop: () => {
       if (!alive) return
       alive = false
-      osReadRevision++
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (hostTimer) clearInterval(hostTimer)
       unsubscribeSettings()
@@ -483,7 +472,7 @@ export function startPhoneDevice(options: {
       if (session === current) session = null
       previousSessionDrain = current.drain()
       // 系统权限的读数留着(phoneOsState):设置页关掉总开关之后仍要显示各组「系统给没给」。
-      publish({ ...OFF, info: snapshot.info })
+      publish(OFF)
     },
     refresh: refreshOs,
     drain: async () => {

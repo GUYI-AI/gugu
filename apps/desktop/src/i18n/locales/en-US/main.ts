@@ -600,7 +600,6 @@ export default {
       "cancel": "Cancel Google sign-in",
       "waiting": "Complete Google sign-in in your browser",
       "exchanging": "Completing sign-in…",
-      "cancelled": "Google sign-in cancelled",
       "staleCallback": "Ignored an earlier sign-in callback. Complete your current Google sign-in.",
       "timeout": "Google sign-in timed out. Try again.",
       "invalidCallback": "Invalid sign-in callback. Start Google sign-in again.",

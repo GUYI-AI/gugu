@@ -1,21 +1,18 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { usePhoneToday } from '../../../apps/desktop/src/mobile/assistant/usePhoneToday'
+import { assistantToday } from '../../../apps/desktop/src/mobile/assistant/assistantToday'
 import { TODAY_REFRESH_MS, type TodayRead } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-file'
 import type { Reading } from '../../../apps/desktop/src/lib/replica'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
-import { followRendererSession, queryClient } from '../../../apps/desktop/src/lib/replica'
+import { followRendererSession, queryClient, retryOf, useReplica } from '../../../apps/desktop/src/lib/replica'
 
 const mocks = vi.hoisted(() => ({ read: vi.fn() }))
 vi.mock('../../../apps/desktop/src/lib/chatFolder', () => ({ readChatFolderText: mocks.read }))
 
 let latest: Reading<TodayRead> | null = null
-let retry: () => void = () => undefined
 function Probe({ chatId }: { chatId: string }) {
-  const view = usePhoneToday(chatId)
-  latest = view.today
-  retry = view.retry
+  latest = useReplica(assistantToday, [chatId])
   return null
 }
 const file = (title: string) => ({ text: JSON.stringify({ version: 1, widgets: [{ id: title, title }] }), updatedAt: title })
@@ -64,7 +61,7 @@ describe('phone Today reads', () => {
     mocks.read.mockRejectedValueOnce(new Error('file service unavailable')).mockResolvedValueOnce(null)
     await harness.render(createNode(Probe, { chatId: 'one' }))
     expect(latest).toMatchObject({ state: 'error' })
-    await act(async () => { retry() })
+    await act(async () => { retryOf(latest!)!() })
     expect(latest).toMatchObject({ state: 'value', value: { state: 'none' } })
   })
 

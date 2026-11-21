@@ -122,7 +122,7 @@ const RECORD_NOT_YET = new Set(['record_unsupported', 'record_not_found'])
  * ❌ 不拿定时器轮询去「等它出现」。
  */
 export function useSessionpageSessionTimeline(sessionId: string | null): SessionpageSessionTimeline {
-  const facts = useSelect(sessionpageTimelineFacts, (map) => (sessionId ? map.get(sessionId) ?? null : null), Object.is)
+  const facts = useSelect(sessionpageTimelineFacts, (map) => (sessionId ? map[sessionId] ?? null : null), Object.is)
   const attachedRef = useRef<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 

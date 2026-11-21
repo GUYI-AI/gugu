@@ -1,4 +1,3 @@
-import { motionValue } from 'framer-motion';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -123,12 +122,6 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
   }
 }));
 
-vi.mock('@renderer/features/sessions/create-session-modal/use-project-git-context', () => ({
-  useProjectGitContext: () => ({
-    repositoryWorkspaceId: null
-  })
-}));
-
 vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
   useSessionSettings: () => ({ settings: mocks.sessionSettings, reload: mocks.reloadSettings })
 }));
@@ -176,11 +169,8 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 }));
 
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  // 顶栏的左侧槽位让位量读的是侧栏那条动画宽度(motion value),替身也得给一个真的 —— 给个假对象
-  // 会在 useTransform 里炸,而炸出来的是「读不到 .get()」这种和布局毫不相干的报错。
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
-    leftAnimatedWidth: motionValue(260),
     setCollapsed: vi.fn(),
   })
 }));
@@ -208,6 +198,9 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
   const { runInAction } = await import('mobx');
   class TestAccounts extends actual.AccountProjectsStore {
     extra: AccountProject[] = [];
+    override get localDeviceId(): string | null {
+      return 'this-computer';
+    }
     override get projects(): readonly AccountProject[] {
       return [
         ...mocks.orderedProjects.map((project) => ({
@@ -225,7 +218,6 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
     connected: () => true,
   });
   runInAction(() => {
-    accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.status = 'ready';
   });
   return { ...actual, accountProjectsStore };
@@ -655,8 +647,8 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1' })));
     });
-    // 没选 = 项目根目录(这里的 git 上下文桩给的根目录是 null)。
-    expect(mocks.createSessionStateWorkspaceId).toBeNull();
+    // 没选 = 项目根目录(这里的项目桩给的根目录是项目自己的 id)。
+    expect(mocks.createSessionStateWorkspaceId).toBe('project-1');
   });
 
   it('draws the shared machine picker (compact size) in the composer tray', async () => {

@@ -10,7 +10,7 @@ vi.mock('@/platform', () => ({ platform: {
 } }))
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: boundary.open }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
-vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ openAttachmentImage: vi.fn() })))
+vi.mock('@/lib/attachmentBytes', () => ({ openAttachmentImage: vi.fn() }))
 vi.mock('@/components/ui/sheetStack', () => ({ useBackLayer: () => () => true }))
 vi.mock('@/components/ui/Sheet', () => ({ Sheet: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/components/chat/MessageFilePreview', () => ({

@@ -15,8 +15,7 @@ export function useSessionSchedules(
   sessionId: string,
   enabled = true
 ): Reading<readonly SessionSchedule[]> {
-  const key = machine ?? 'local';
-  const reading = useReplica(sessionSchedules, enabled ? [key] : null);
+  const reading = useReplica(sessionSchedules, enabled ? [machine] : null);
   const all = reading.state === 'value' ? reading.value : null;
   const bySession = useMemo(() => (all ? schedulesBySession(all) : null), [all]);
   if (reading.state !== 'value' || !bySession) return reading.state === 'error' ? reading : { state: 'unknown' };

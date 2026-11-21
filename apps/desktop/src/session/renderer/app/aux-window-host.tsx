@@ -282,7 +282,6 @@ function AuxExtensionSurface({ windowId, tabKind, extensionId }: { windowId: str
   const sizeWatch = useRef<ResizeObserver | null>(null);
   const tabId = `window:${windowId}`;
 
-  // @@@effect-flow(lifecycle) - activates the App surface in this window (a command: starts it; the handle lives as long as this window holds it)
   useEffect(() => {
     // 主窗那层里它那张页此刻没人要了(它刚从一块 / 一条会话里拿过来):收掉,❌ 两张同时跑。
     extensionViewStore.forgetIdle(tabKind);

@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
 
-vi.mock('../../../../apps/desktop/src/lib/billing/useSpendingPower', () => ({
+vi.mock('../../../../apps/desktop/src/lib/billing/useSpendingPower', async (original) => ({
+  ...await original<object>(),
   refreshSpendingPower: () => undefined,
   // tier null: the plan's read failed while the balance's did not (a value without membership, its failure said).
   useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: mocks.tier ? { tier: mocks.tier } : null, balanceError: mocks.tier ? null : 'plan read failed' } : { state: 'unknown', membership: null }),

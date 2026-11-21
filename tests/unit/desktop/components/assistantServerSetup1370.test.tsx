@@ -22,7 +22,7 @@ vi.mock('@/store/devicesCache', async () => ({
 }))
 vi.mock('@/lib/assistantServerTargets', () => ({ assistantServerTargets: (rows: unknown) => rows }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: f.step }))
-vi.mock('@/lib/myAssistant', () => ({ refreshMyAssistant: f.reload }))
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: f.reload } }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 
 import { AssistantServerSetup } from '../../../../apps/desktop/src/components/assistant/AssistantServerSetup'

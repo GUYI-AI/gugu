@@ -7,7 +7,7 @@ import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/libr
 import { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Pencil, Trash2, Link, RefreshCw } from '@/lib/icons';
-import { useReplica } from '@/lib/replica';
+import { useReplica, valueOf } from '@/lib/replica';
 import { Button } from '@renderer/lib/ui/button';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -49,15 +49,13 @@ export const CustomModelsGroup = observer(function CustomModelsGroup({ addReques
 const CustomModels = observer(function CustomModels({ machine, addRequested, onAddClose }: { machine: string | null } & AddRequest) {
   const { translate } = useSessionMessages();
   const reading = useReplica(customModels, [machine]);
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const [userEdit, setEditing] = useState<CustomModelConnection | NewModel | null>(null);
   const editing: CustomModelConnection | NewModel | null = addRequested ? { group: 'custom' } : userEdit;
   const [refreshing, setRefreshing] = useState(false);
   const refreshPlans = async () => {
     if (refreshing) return;
     setRefreshing(true); setFeedback(null);
-    // @@@reading-default(moment) - the refresh button's click: agents not read yet = no subscription account to refresh
     const providers = (agents ?? []).filter(agent => agent.id === 'claude' || agent.id === 'codex').map(agent => agent.id);
     try { await refreshModelSubscriptions(machine, providers); }
     catch (error) { setFeedback({ group: 'coding-plan', text: errorText(error) }); }

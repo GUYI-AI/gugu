@@ -67,7 +67,6 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
   // 身份是自己那一行设置里的一个键:和首次引导、文件存储等读同一份(lib/ownSettings)。
   const settingsRow = useReplica(ownSettings, user?.id && !teamAccount ? ['user'] : null)
-  useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
   const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
   // 改了但还没存的那一份;没有 = 没动过,显示存着的。
   const occupationEdit = edit.occupation ?? null
@@ -283,7 +282,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
       </>}
 
       {mobile && !teamAccount && officialServicesEnabled() && (
-        <SettingsGroup presentation="summary"><GuguSubscriptionRow /></SettingsGroup>
+        <GuguSubscriptionRow />
       )}
 
       {/* Account-wide action stays below the editor and its save feedback. */}

@@ -3,13 +3,14 @@ import type {AssistantWorkTask} from '@gugu/core/cloud/assistantWork'
 import type {Device} from '@gugu/core/shared/types/chat'
 import {assistantWorkCloud,watchAssistantWork} from '../../lib/assistantWork'
 import {replica,useReplica,type Reading} from '../../lib/replica'
-import {rendererLogger} from '../../lib/log'
 import {assistantWorkTitleOf} from '../../lib/assistantWorkTitle'
 import {devicesModel} from '../../store/devicesCache'
 
-const log=rendererLogger('assistant/work')
-
-/** 42501 until the account's own assistant is set up: a list not there yet, read again (owner 11-12); the list says "preparing". */
+/**
+ * The cloud answers 42501 「Assistant is not available to this account」 for the account's own assistant until its setup is
+ * ready (its provision not ready / completed yet): not a list that cannot be read, a list that is not there yet — read
+ * again until it is, the list says "preparing" (owner 11-12: the list said 「没读到」 for good right after setup).
+ */
 export const assistantWorkNotReadyYet=(error:unknown)=>String((error as {code?:unknown}|null)?.code??'')==='42501'
 export class AssistantWorkNotReady extends Error {
  readonly code='42501'
@@ -25,16 +26,12 @@ export const assistantWorkRecords=replica({
  scope:'account',
  read:async(_owner:string,assistantId:string):Promise<AssistantWorkTask[]>=>{
   try{return await assistantWorkCloud.listAll(assistantId)}
-  catch(error){
-   if(assistantWorkNotReadyYet(error)){log.info({code:'not-ready'},'account task list not there yet');throw new AssistantWorkNotReady()}
-   log.warn({error},'account task read failed')
-   throw error
-  }
+  catch(error){throw assistantWorkNotReadyYet(error)?new AssistantWorkNotReady():error}
  },
  fresh:60_000,
  refreshJoinsRead:true,
  refreshOnFocus:true,
- watch:{group:(assistantId)=>assistantId,start:(owner,assistantId)=>watchLedger(owner,assistantId)},
+ watch:{group:(assistantId)=>assistantId,start:(owner,assistantId):(()=>void)=>watchWork(assistantWorkRecords,owner,assistantId)},
 })
 
 /** One work and its events (serves the window and the chat rows). */
@@ -45,24 +42,15 @@ export const assistantWork=replica({
  fresh:60_000,
  refreshJoinsRead:true,
  refreshOnFocus:true,
- watch:{group:(assistantId)=>assistantId,start:(owner,assistantId)=>watchWorks(owner,assistantId)},
+ watch:{group:(assistantId)=>assistantId,start:(owner,assistantId):(()=>void)=>watchWork(assistantWork,owner,assistantId)},
 })
 
-function watchLedger(owner:string,assistantId:string):()=>void {
- return watchWork(owner,assistantId,()=>void assistantWorkRecords.refresh(assistantId),(check)=>assistantWorkRecords.subscribe([assistantId],check),
-  ()=>assistantWorkRecords.entries(assistantId),()=>void assistantWorkRecords.refresh(assistantId))
-}
-function watchWorks(owner:string,assistantId:string):()=>void {
- return watchWork(owner,assistantId,()=>void assistantWork.refresh(assistantId),(check)=>assistantWork.subscribe([assistantId],check),
-  ()=>assistantWork.entries(assistantId),(entry)=>void assistantWork.refresh(assistantId,entry.args[1] as string))
-}
-
-type Landed={args:unknown[];reading:{state:string;error?:Error|null};fetching:boolean}
+type Landed={args:string[];reading:{state:string;error?:Error|null};fetching:boolean}
+type WorkModel={refresh(...args:string[]):Promise<void>;subscribe(args:[string],listener:(entry:Landed)=>void):()=>void;entries(assistantId:string):Landed[]}
 
 /** While shown: the signal reads the model again; a failed entry is read again after WORK_RETRY_MS, each on its own. */
-function watchWork(owner:string,assistantId:string,changed:()=>void,follow:(listener:(entry:Landed)=>void)=>()=>void,
- held:()=>Landed[],readAgain:(entry:Landed)=>void):()=>void {
- const stopSignal=watchAssistantWork(owner,assistantId,changed)
+function watchWork(model:WorkModel,owner:string,assistantId:string):()=>void {
+ const stopSignal=watchAssistantWork(owner,assistantId,()=>void model.refresh(assistantId))
  const pending=new Map<string,{failures:number;timer?:ReturnType<typeof setTimeout>}>()
  const failedOf=(reading:Landed['reading'])=>reading.state==='error'||(reading.state==='value'&&!!reading.error)
  const check=(entry:Landed)=>{
@@ -73,11 +61,11 @@ function watchWork(owner:string,assistantId:string,changed:()=>void,follow:(list
   if(retry.timer!==undefined)return
   const delay=WORK_RETRY_MS[Math.min(retry.failures,WORK_RETRY_MS.length-1)]!
   retry.failures+=1
-  retry.timer=setTimeout(()=>{retry.timer=undefined;readAgain(entry)},delay)
+  retry.timer=setTimeout(()=>{retry.timer=undefined;void model.refresh(...entry.args)},delay)
   pending.set(id,retry)
  }
- const stopFollow=follow(check)
- for(const entry of held())check(entry)
+ const stopFollow=model.subscribe([assistantId],check)
+ for(const entry of model.entries(assistantId))check(entry)
  return()=>{stopSignal();stopFollow();for(const retry of pending.values())clearTimeout(retry.timer)}
 }
 

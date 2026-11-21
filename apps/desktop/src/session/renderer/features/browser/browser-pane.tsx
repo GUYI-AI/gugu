@@ -248,7 +248,6 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   // #7191 页签开在哪条会话里,一并告诉主进程:那条会话的 agent 只拿得到它自己会话的页签。
   const annotations = useBrowserAnnotations({ conversation, browserId, visible, available: !!adapter && !showStartPage && !loadError,
     inspect: (query, capture) => rpc.browser.inspectAnnotation({ browserId, conversation: conversation!, query, capture }) });
-  // @@@effect-flow(lifecycle) - registers this pane's browser session with main for its lifetime (a command, not a read)
   useEffect(() => {
     if (!sessionBrowserId || !sessionPartition) return;
     let disposed = false;
