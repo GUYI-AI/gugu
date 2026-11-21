@@ -180,34 +180,30 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     setRead(null)
     setFraction(undefined)
     const source = file.source
-    const failed = (error: unknown) => {
-      if (!live) return
-      // The read already checked the holder afresh. A closed preview must not start another metadata read after sign-out.
-      const offline = error instanceof OfflinePreviewRead ? error.holder : null
-      setWaitingFor(offline)
-      setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
-    }
-    // Only a failure that may pass by itself is thrown, to be read again; the others (the machine off, the file gone, a
-    // refusal, the preview closed) are the read's answer. A read that lands after the preview closed is released below.
-    if (kind !== 'unsupported') void readOnce(async (): Promise<PreviewRead | { unread: unknown }> => {
+    // A read that lands after the preview closed is released below; a failure then is not read again.
+    if (kind !== 'unsupported') void readOnce(async () => {
       try { return await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }) }
       catch (error) {
-        if (!live) return { unread: error }
+        if (!live) throw error
         const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
-        if (holder) return { unread: new OfflinePreviewRead(holder, error) }
-        if (previewFailure(error, t).retryable) throw error
-        return { unread: error }
+        if (holder) throw new OfflinePreviewRead(holder, error)
+        throw error
       }
-    }, { retry: 3 }).then(
+    }, { retry: (failures, error) => live && failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true }).then(
       (done) => {
-        if ('unread' in done) return failed(done.unread)
         release = done.release
         // Shown before the server acknowledged the read: a refusal takes it down and says why.
         done.acknowledged?.catch((error) => { if (!live) return; void release?.(); release = undefined; setRead(previewFailure(error, t)) })
         if (!live) { void release?.(); return }
         setRead(done)
       },
-      failed,
+      (error) => {
+        if (!live) return
+        // The read already checked the holder afresh. A closed preview must not start another metadata read after sign-out.
+        const offline = error instanceof OfflinePreviewRead ? error.holder : null
+        setWaitingFor(offline)
+        setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
+      },
     )
     return () => { live = false; void release?.() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- source kind/id/version and the preview kind identify the bytes; attempt reads them again

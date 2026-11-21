@@ -4,6 +4,7 @@ import { queryClient, refreshFailure, replica, useReplica, type Reading } from '
 import { writeOver } from '@/lib/replicaWrite';
 import { keepLibraryHost, libraryHostOf, useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
+import { managementAgents } from '@renderer/lib/stores/agent-replicas';
 import type { GuguToolsOff } from '@shared/gugu-tool-groups';
 import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpProvided, LibraryMcpServer } from '@shared/mcp-library';
 
@@ -46,7 +47,7 @@ export function useMcpLibrary() {
   const list = useReplica(mcpLibraryServers, [host.key], { read: reachable });
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
   const provided = useReplica(mcpProvided, [host.key], { read: reachable });
-  const { reading: agents, refetch: refetchAgents } = useManagementAgents();
+  const agents = useManagementAgents();
   const installed = useMemo(
     () => (agents.state === 'value' ? agents.value : []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
     [agents]
@@ -119,7 +120,7 @@ export function useMcpLibrary() {
       void mcpLibraryServers.refresh(host.key);
       void mcpProvided.refresh(host.key);
       void harnessMcpServers.refresh(host.key);
-      void refetchAgents();
+      void managementAgents.refresh(host.remote?.deviceId ?? null);
     },
     isBusy: add.isPending || update.isPending || remove.isPending,
     add: add.mutateAsync,

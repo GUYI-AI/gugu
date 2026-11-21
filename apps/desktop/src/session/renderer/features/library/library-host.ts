@@ -16,13 +16,10 @@ import {
 } from '@renderer/features/extensions/extensions-host';
 import { agentInstallProgressChannel } from '@shared/events/appEvents';
 import type {
-  AgentInstallationStatus,
   AgentPayload,
-  AgentSettings,
   HostDependencySelection,
   Installation,
   InstallMethod,
-  InstallSourceVersions,
 } from '@shared/core/agents/agent-payload';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
@@ -30,19 +27,15 @@ import type { ConnectionMetadataStore } from '@/components/connections/connectio
 
 /** 与本机 `rpc.agents.*` 同名同参的那几个(资源库「智能体」一页用到的全部)。 */
 export type LibraryAgentsRpc = {
-  listManagement(): Promise<AgentPayload[]>;
   getManagement(id: string): Promise<AgentPayload | null>;
-  listAgentInstallationStatus(): Promise<AgentInstallationStatus[]>;
   install(id: string, method?: InstallMethod, registry?: string): Promise<unknown>;
   update(id: string, method?: InstallMethod, registry?: string): Promise<unknown>;
   uninstall(id: string, method?: InstallMethod): Promise<unknown>;
   cancelInstall(id: string): Promise<boolean>;
   probeAll(): Promise<unknown>;
   refreshLatestVersion(id: string): Promise<void>;
-  getInstallSourceVersions(id: string): Promise<InstallSourceVersions>;
   setUsedInstallation(id: string, selection: HostDependencySelection): Promise<void>;
   probeOverride(id: string, selection: { path?: string; cli?: string }): Promise<Installation | null>;
-  getSettings(id: string): Promise<AgentSettings | null>;
   getDefaultSettings(id: string): Promise<ProviderCustomConfig | null>;
   updateSettings(id: string, config: Partial<ProviderCustomConfig>): Promise<void>;
   /** 这台机器上安装的实时读数;返回退订。 */
@@ -124,19 +117,15 @@ export type LibraryHost = {
 export const LOCAL_HOST_KEY = 'local';
 
 const localAgents: LibraryAgentsRpc = {
-  listManagement: () => rpc.agents.listManagement() as Promise<AgentPayload[]>,
   getManagement: (id) => rpc.agents.getManagement(id) as Promise<AgentPayload | null>,
-  listAgentInstallationStatus: () => rpc.agents.listAgentInstallationStatus() as Promise<AgentInstallationStatus[]>,
   install: (id, method, registry) => rpc.agents.install(id as never, method, registry) as Promise<unknown>,
   update: (id, method, registry) => rpc.agents.update(id as never, method, registry) as Promise<unknown>,
   uninstall: (id, method) => rpc.agents.uninstall(id as never, method) as Promise<unknown>,
   cancelInstall: (id) => rpc.agents.cancelInstall(id as never) as Promise<boolean>,
   probeAll: () => rpc.agents.probeAll() as Promise<unknown>,
   refreshLatestVersion: (id) => rpc.agents.refreshLatestVersion(id as never) as Promise<void>,
-  getInstallSourceVersions: (id) => rpc.agents.getInstallSourceVersions(id as never) as Promise<InstallSourceVersions>,
   setUsedInstallation: (id, selection) => rpc.agents.setUsedInstallation(id as never, selection as never) as Promise<void>,
   probeOverride: (id, selection) => rpc.agents.probeOverride(id as never, selection) as Promise<Installation | null>,
-  getSettings: (id) => rpc.agents.getSettings(id) as Promise<AgentSettings | null>,
   getDefaultSettings: (id) => rpc.agents.getDefaultSettings(id) as Promise<ProviderCustomConfig | null>,
   updateSettings: (id, config) => rpc.agents.updateSettings(id, config) as Promise<void>,
   onInstallProgress: (listener) => events.on(agentInstallProgressChannel, listener),
@@ -204,19 +193,15 @@ export function createRemoteLibraryHost(
   const there = rpcOn(deviceId);
   const subscribe: RemoteLibraryTransport['onEvent'] = transport?.onEvent ?? ((event, listener) => onMachineEvent(deviceId, event, listener));
   const agents: LibraryAgentsRpc = {
-    listManagement: () => there.agents.listManagement() as Promise<AgentPayload[]>,
     getManagement: (id) => there.agents.getManagement(id) as Promise<AgentPayload | null>,
-    listAgentInstallationStatus: () => there.agents.listAgentInstallationStatus() as Promise<AgentInstallationStatus[]>,
     install: (id, method, registry) => there.agents.install(id as never, method, registry) as Promise<unknown>,
     update: (id, method, registry) => there.agents.update(id as never, method, registry) as Promise<unknown>,
     uninstall: (id, method) => there.agents.uninstall(id as never, method) as Promise<unknown>,
     cancelInstall: (id) => there.agents.cancelInstall(id as never) as Promise<boolean>,
     probeAll: () => there.agents.probeAll() as Promise<unknown>,
     refreshLatestVersion: (id) => there.agents.refreshLatestVersion(id as never) as Promise<void>,
-    getInstallSourceVersions: (id) => there.agents.getInstallSourceVersions(id as never) as Promise<InstallSourceVersions>,
     setUsedInstallation: (id, selection) => there.agents.setUsedInstallation(id as never, selection as never) as Promise<void>,
     probeOverride: (id, selection) => there.agents.probeOverride(id as never, selection) as Promise<Installation | null>,
-    getSettings: (id) => there.agents.getSettings(id) as Promise<AgentSettings | null>,
     getDefaultSettings: (id) => there.agents.getDefaultSettings(id) as Promise<ProviderCustomConfig | null>,
     updateSettings: (id, config) => there.agents.updateSettings(id, config) as Promise<void>,
     onInstallProgress: (listener) => subscribe(agentInstallProgressChannel, listener),

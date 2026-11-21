@@ -17,7 +17,7 @@ import {
 } from './automation-replicas';
 
 function machineOf(host: AutomationsHost): AutomationMachine {
-  return host.remote?.deviceId ?? 'local';
+  return host.remote?.deviceId ?? null;
 }
 
 /** A reading of the automations host's machine (its first argument). 别的机器离线就不问(问不到,只会挂满超时),照旧画上次读到的(#6264)。 */

@@ -51,8 +51,8 @@ export const managementAgent = replica({
 
 export const agentMetadata = replica({
   name: 'agentMetadata',
-  scope: 'device',
-  read: (_owner, id: string) => rpc.agents.get(id) as Promise<AgentPayload | null>,
+  ...ofMachine,
+  read: (_owner, machine: Machine, id: string) => rpcOn(machine).agents.get(id) as Promise<AgentPayload | null>,
   fresh: 5 * 60_000,
 });
 
@@ -141,7 +141,7 @@ export function refreshAgentReadings(machine: Machine, options: { keepStatus?: b
   return Promise.all([
     refreshTag(AGENT_READINGS, machine),
     ...(options.keepStatus ? [] : [agentInstallationStatus.refresh(machine)]),
-    ...(machine === null ? [agentMetadata.refresh(), agentIcons.refresh()] : []),
+    ...(machine === null ? [agentIcons.refresh()] : []),
   ]).then(() => undefined);
 }
 
@@ -150,7 +150,7 @@ export function wireAgentReadings(): () => void {
   const offs = [
     events.on(agentCapabilitiesChangedChannel, () => {
       void agentsMetadata.refresh(null);
-      void agentMetadata.refresh();
+      void agentMetadata.refresh(null);
     }),
     events.on(agentInstallationStatusUpdatedChannel, (event: AgentInstallationStatus) => {
       if (agentInstallationStatus.key(null)) {

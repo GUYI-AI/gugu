@@ -42,7 +42,7 @@ vi.mock('@renderer/lib/open-external-link', () => ({
   copyExternalLink: async () => true,
 }));
 vi.mock('./AcpAuthenticateSignIn', () => ({ AcpAuthenticateSignIn: () => null }));
-vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ reading: { state: 'value', value: null, stale: false, error: null } }) }));
+vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ state: 'value', value: null, stale: false, error: null }) }));
 vi.mock('@/components/settings/addServer/CommandBlock', () => ({ CommandBlock: () => null }));
 vi.mock('@/i18n/registerSettingsCatalog', () => ({}));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: (...args: unknown[]) => mocks.logged.push(args) }) }));

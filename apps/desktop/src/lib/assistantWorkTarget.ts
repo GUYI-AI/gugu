@@ -1,5 +1,5 @@
 import type {AssistantWorkTask} from '@gugu/core/cloud/assistantWork'
-import {assistantWorkCloud} from './assistantWork'
+import {assistantWorkRecords} from '../components/assistant/assistant-work-records'
 import type {AssistantTaskChat} from './assistantTaskChat'
 
 export function assistantWorkTarget(work:AssistantWorkTask,sessionId?:string):AssistantTaskChat|null {
@@ -8,9 +8,9 @@ export function assistantWorkTarget(work:AssistantWorkTask,sessionId?:string):As
     task:{sessionId:executor.session_id,deviceId:executor.device_id},assistants:[{sessionId:work.coordinator_session_id,deviceId:work.coordinator_device_id}]}:null
 }
 
-/** A link reads its own account facts, independent of the task panel's cache or device directory. */
+/** A link reads the account's work list now (reread: ❌ the panel's held copy, which may predate the work the link names). */
 export async function resolveAssistantWorkTarget(assistantId:string,target:{sessionId?:string;agentId?:string}):Promise<AssistantTaskChat|null>{
-  const matches=(await assistantWorkCloud.listAll(assistantId)).flatMap(work=>work.executors
+  const matches=(await assistantWorkRecords.reread(assistantId)).flatMap(work=>work.executors
     .filter(executor=>target.sessionId?executor.session_id===target.sessionId:executor.agent_user_id===target.agentId)
     .map(executor=>assistantWorkTarget(work,executor.session_id)!))
   return matches.length===1?matches[0]!:null

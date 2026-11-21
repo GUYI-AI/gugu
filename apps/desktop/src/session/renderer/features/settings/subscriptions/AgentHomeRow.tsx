@@ -4,16 +4,8 @@ import { AgentHomePreparationStatus } from '@/components/settings/data-import/Ag
 import { Button } from '@/components/ui/Button'
 import { SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { messageForUser } from '@/lib/userFacingError'
-import { refreshFailure, replica, useReplica } from '@/lib/replica'
-import { openAgentHomeImport, readAgentHome } from './ensure-agent-home'
-
-const agentHome = replica({
-  name: 'agentHome',
-  scope: 'device',
-  read: (_device: string, machine: string | null, providerId: string) => readAgentHome(providerId, machine),
-  // While the home is being prepared for a move, it is read every second until it says it is done.
-  refreshEvery: (home) => (home?.migrationPreparation ? 1000 : false),
-})
+import { refreshFailure, useReplica } from '@/lib/replica'
+import { agentHome, openAgentHomeImport } from './ensure-agent-home'
 
 export function AgentHomeRow({ providerId, machine, disabled = false }: { providerId: string; machine: string | null; disabled?: boolean }) {
   const { t, i18n } = useTranslation('main')

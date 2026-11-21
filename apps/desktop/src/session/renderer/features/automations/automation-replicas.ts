@@ -10,11 +10,10 @@ import type { SessionSchedule } from '@shared/core/automations/session-schedule'
 
 // What 已安排 and a task's own schedules show of one machine: push-fed (`watch`), ❌ polled.
 
-/** `'local'` = this computer, else a device id. */
-export type AutomationMachine = string;
+/** null = this computer, else a device id (as every machine reading, @@@agent-readings). */
+export type AutomationMachine = string | null;
 
-const hostOf = (machine: AutomationMachine) => (machine === 'local' ? null : machine);
-const apiOf = (machine: AutomationMachine) => rpcOn(hostOf(machine)).automations;
+const apiOf = (machine: AutomationMachine) => rpcOn(machine).automations;
 
 type MachineEvent = { automationId: string; run?: AutomationRun };
 
@@ -28,7 +27,7 @@ function machineFeed(events: readonly (keyof typeof CHANNELS)[], refresh: (machi
   return {
     group: (machine: AutomationMachine) => machine,
     start: (_owner: string, machine: AutomationMachine) => {
-      const offs = events.map((name) => onMachineEvent(hostOf(machine), CHANNELS[name], (event: MachineEvent) => refresh(machine, event)));
+      const offs = events.map((name) => onMachineEvent(machine, CHANNELS[name], (event: MachineEvent) => refresh(machine, event)));
       return () => offs.forEach((off) => off());
     },
   };

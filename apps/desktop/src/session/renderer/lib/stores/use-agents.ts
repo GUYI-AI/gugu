@@ -15,15 +15,13 @@ export function useAgents(): Reading<AgentPayload[]> {
  * 资源库 →「智能体」那张列表 —— 与 composer 同一份上架名单（#6099）。
  * #6264 资源库选了别的机器时,问的是那台机器(见 features/library/library-host.ts);离线时不问,手上有上次的就照旧画。
  */
-export function useManagementAgents() {
-  const { machine, online } = useHostMachine();
-  const reading = useReplica(managementAgents, [machine], { read: online });
-  return { reading, refetch: () => managementAgents.refresh(machine) };
+export function useManagementAgents(): Reading<AgentPayload[]> {
+  return useHostReplica(managementAgents, []);
 }
 
-export function useAgent(id: string) {
-  const reading = useReplica(agentMetadata, [id]);
-  return { reading, refetch: () => agentMetadata.refresh(id) };
+/** One agent's metadata on this computer. */
+export function useAgent(id: string): Reading<AgentPayload | null> {
+  return useReplica(agentMetadata, [null, id]);
 }
 
 /** Until its own answer lands, the library list's row stands in (the detail opens at once). */

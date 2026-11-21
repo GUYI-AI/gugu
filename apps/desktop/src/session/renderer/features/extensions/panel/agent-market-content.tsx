@@ -1,6 +1,7 @@
 import { vendorName } from '@/i18n/vendorName';
 import { CircleAlert } from '@/lib/icons';
 import { AppIcon } from '@renderer/lib/components/app-icon';
+import { retryOf } from '@/lib/replica';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import { Button } from '@renderer/lib/ui/button';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -34,7 +35,7 @@ export function AgentMarketContent({
   assistantResource?: ResourceContext;
 }) {
   const { translate, locale } = useSessionMessages();
-  const { reading, refetch } = useManagementAgents();
+  const reading = useManagementAgents();
   const data = reading.state === 'value' ? reading.value : null;
   const isPending = reading.state === 'unknown';
   const isError = reading.state === 'error';
@@ -120,7 +121,7 @@ export function AgentMarketContent({
         <div className="mk-status" role="alert">
           <CircleAlert className="size-4 shrink-0" aria-hidden />
           <span>{translate('extensions.agentMarketUnavailable')}</span>
-          <Button type="button" variant="ghost" size="sm" onClick={() => void refetch()}>{translate('extensions.retry')}</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={retryOf(reading)}>{translate('extensions.retry')}</Button>
         </div>
       )}
       {visible.length > 0 || showAssistant ? (
