@@ -31,7 +31,6 @@ export function turnImages(value: unknown, images: ImagePayloads = new Map(), se
 export function sharedJson(value: string, bodies: readonly string[], literalOf: (body: string) => string = JSON.stringify)
   : { parsed: object; indent: 0 | 2 } | undefined {
   const token = randomUUID();
-  if (value.includes(token)) return undefined;
   const slots = new Map<string, string>(), cuts: Array<{ at: number; end: number; placeholder: string }> = [];
   for (const body of new Set(bodies)) {
     if (body === value || body.length > value.length || cuts.length >= 16) continue;
@@ -47,6 +46,11 @@ export function sharedJson(value: string, bodies: readonly string[], literalOf: 
   let skeleton = '', from = 0;
   for (const cut of cuts) { skeleton += value.slice(from, cut.at) + JSON.stringify(cut.placeholder); from = cut.end; }
   skeleton += value.slice(from);
+  // Each placeholder spells the token once, between delimiters it cannot contain. Any further spelling is text the cuts left
+  // in place, which could parse to a placeholder: refuse it. A cut body may contain the token; it is restored verbatim.
+  let spelled = 0;
+  for (let at = skeleton.indexOf(token); at !== -1; at = skeleton.indexOf(token, at + 1)) spelled++;
+  if (spelled !== cuts.length) return undefined;
   let parsed: unknown;
   try { parsed = JSON.parse(skeleton); } catch { return undefined; }
   if (!parsed || typeof parsed !== 'object') return undefined;

@@ -58,11 +58,15 @@ function random(seed: number) {
 }
 const PIECES = ['a', 'Z', ' ', '"', '\\', '/', '\n', '\r', '\t', '\b', '\f', '\u0000', '\u001f', '\u007f', '\u2028', '\u2029', 'é', 'e\u0301',
   '中文', '🙂', '\ud800', '\udfff', '\\u00e9', '\\"', '{', '}', '[', ']', ':', ',', '"aggregatedOutput"', '\u0000gugu-shared-body:'];
+// The property runs pin the placeholder token, so bodies and other strings can spell it, whole placeholders included.
+const TOKEN = '6f0c2b1e-9d4a-4c3b-8e7f-0a1b2c3d4e5f';
+const TOKEN_PIECES = [TOKEN, `\u0000gugu-shared-body:${TOKEN}:0`, `\u0000gugu-shared-body:${TOKEN}:1`, `x${TOKEN}`];
 const KEYS = ['aggregatedOutput', 'stdout', '__proto__', 'constructor', '1', '0', 'b', 'a', '', '中', 'é', 'e\u0301', '"', '\\'];
 const NUMBERS = [0, -1, 1.5, 0.1, 1e21, 5e-7, 2 ** 53 + 2, -1e-300];
 function generator(next: () => number) {
   const pick = <T>(list: readonly T[]): T => list[Math.floor(next() * list.length)];
-  const text = (min: number) => { let one = ''; while (one.length < min || next() < 0.3) one += pick(PIECES); return one; };
+  const piece = () => next() < 0.002 ? pick(TOKEN_PIECES) : pick(PIECES);
+  const text = (min: number) => { let one = ''; while (one.length < min || next() < 0.3) one += piece(); return one; };
   const tree = (depth: number, bodies: readonly string[]): unknown => {
     const roll = next();
     if (depth > 0 && roll < 0.25) return Object.fromEntries(Array.from({ length: Math.floor(next() * 5) },
@@ -71,6 +75,7 @@ function generator(next: () => number) {
     if (roll < 0.6) return pick(bodies);
     if (roll < 0.7) return next() < 0.5 ? pick(bodies) + text(0) : text(0) + JSON.stringify(pick(bodies));
     if (roll < 0.85) return pick(NUMBERS);
+    if (roll < 0.87) return pick(TOKEN_PIECES);
     return roll < 0.9 ? text(0) : pick([true, false, null]);
   };
   return { pick, text, tree };
@@ -93,8 +98,9 @@ function spellings(value: unknown, bodies: readonly string[]): string[] {
 
 it.each([1, 2, 3, 4, 5, 6, 7, 8])('shares a sibling body inside raw JSON only when the raw text is restored byte for byte (seed %i)', seed => {
   const { tree, text } = generator(random(seed));
-  let shared = 0, refused = 0;
-  for (let run = 0; run < 40; run += 1) {
+  let shared = 0, refused = 0, tokenInBody = 0;
+  uuid.next = TOKEN;
+  try { for (let run = 0; run < 40; run += 1) {
     const bodies = [text(1024), text(1024)];
     for (const raw of spellings(tree(4, bodies), bodies)) {
       const fast = sharedJson(raw, bodies);
@@ -105,6 +111,7 @@ it.each([1, 2, 3, 4, 5, 6, 7, 8])('shares a sibling body inside raw JSON only wh
       } catch { /* not JSON */ }
       if (fast) {
         shared += 1;
+        if (raw.includes(TOKEN)) tokenInBody += 1;
         // The restored tree serializes back to the very same code units, keeps key order and own "__proto__" keys.
         expect(JSON.stringify(fast.parsed, null, fast.indent) === raw).toBe(true);
         expect(JSON.stringify(fast.parsed)).toBe(JSON.stringify(exact));
@@ -114,9 +121,11 @@ it.each([1, 2, 3, 4, 5, 6, 7, 8])('shares a sibling body inside raw JSON only wh
       expect(encoded).toEqual(generic);
       expect(decodeTurnValue(encoded, files) === raw).toBe(true);
     }
-  }
+  } } finally { uuid.next = undefined; }
   expect(shared).toBeGreaterThan(0);
   expect(refused).toBeGreaterThan(0);
+  // A body that spells the token is cut out before the count, so it still takes the fast path.
+  expect(tokenInBody).toBeGreaterThan(0);
 });
 
 it.each([
@@ -148,6 +157,33 @@ it('falls back when the raw text already spells the placeholder it would use', (
   uuid.next = '00000000-0000-4000-8000-000000000000';
   try {
     const raw = JSON.stringify([`\u0000gugu-shared-body:${uuid.next}:0`, 'BODY']);
+    expect(sharedJson(raw, ['BODY'])).toBeUndefined();
+    expect(decodeTurnValue(encodeTurnValue(raw, files, 'rawOutput', undefined, ['BODY']), files) === raw).toBe(true);
+  } finally { uuid.next = undefined; }
+});
+
+it('shares a body that spells the token itself: only the skeleton outside the cut bodies is counted', () => {
+  uuid.next = '00000000-0000-4000-8000-000000000000';
+  try {
+    const body = `before ${uuid.next} \u0000gugu-shared-body:${uuid.next}:0 after `.repeat(30);
+    const raw = JSON.stringify({ aggregatedOutput: body, exitCode: 0 }, null, 2), fast = sharedJson(raw, [body])!;
+    expect(fast.indent).toBe(2);
+    expect((fast.parsed as { aggregatedOutput: string }).aggregatedOutput === body).toBe(true);
+    expect(JSON.stringify(fast.parsed, null, fast.indent) === raw).toBe(true);
+    const encoded = encodeTurnValue(raw, files, 'rawOutput', undefined, [body]);
+    expect(encoded).toEqual(encodeTurnValue(raw, files, 'rawOutput'));
+    expect(decodeTurnValue(encoded, files) === raw).toBe(true);
+  } finally { uuid.next = undefined; }
+});
+
+it.each([
+  ['inside a longer string', (token: string) => JSON.stringify([`x${token}`, 'BODY'])],
+  ['as a key', (token: string) => JSON.stringify({ [token]: 'BODY' })],
+  ['as a placeholder of a slot that is not used', (token: string) => JSON.stringify([`\u0000gugu-shared-body:${token}:1`, 'BODY'])],
+])('falls back when the skeleton spells the token once more than its placeholders: %s', (_, spell) => {
+  uuid.next = '00000000-0000-4000-8000-000000000000';
+  try {
+    const raw = spell(uuid.next);
     expect(sharedJson(raw, ['BODY'])).toBeUndefined();
     expect(decodeTurnValue(encodeTurnValue(raw, files, 'rawOutput', undefined, ['BODY']), files) === raw).toBe(true);
   } finally { uuid.next = undefined; }
