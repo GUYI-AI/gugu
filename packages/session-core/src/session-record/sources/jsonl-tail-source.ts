@@ -32,6 +32,11 @@ export type JsonlTailFormat<S> = {
   snapshot?(state: S): S;
   /** The native children `state` already knows (`SessionRecordSource.childIdsAt`). */
   childIds?(state: S): string[];
+  /**
+   * A line changed what lines already read mean (a Codex rollback drops turns already sent): the state a read from the
+   * start should begin with, carrying what was learned, or null. The source resets and reads the record again.
+   */
+  again?(state: S): S | null;
 };
 
 type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S; prefixBytes?: number };
@@ -48,12 +53,60 @@ export function createJsonlTailSource<S>(
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
   let prefixBytes = 0;
+  /** A whole read is running: a line asking for another read waits until it ends (`readWhole`). */
+  let reading = false;
 
   const emit = (lines: string[], offsets: number[], file = path, seekable = true) => {
     if (stopped || !sink) return;
     const events = sink;
     emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
       file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, seekable ? offsets : undefined);
+    const next = reading ? null : format.again?.(state);
+    if (next) void replay(next).catch((error: unknown) => warn('重读失败', { path, error: (error as Error).message }));
+  };
+
+  const open = (found: string): TailReader => {
+    const mine: TailReader = new TailReader(
+      found,
+      pollInterval(options),
+      {
+        // A replaced reader may still be handing over lines it read before: they are read again by its successor.
+        onLines: (lines, offsets) => { if (reader === mine) emit(lines, offsets); },
+        onRestart: (reason) => {
+          if (reader !== mine) return;
+          state = format.initial();
+          sink?.onReset(reason);
+        }
+      },
+      warn,
+      options?.fill
+    );
+    return mine;
+  };
+
+  /** Prefixes, then the record from its start; again while a line asks for it (`JsonlTailFormat.again`). */
+  const readWhole = async (read: (reader: TailReader) => Promise<void>) => {
+    reading = true;
+    try {
+      for (;;) {
+        if (format.prefixes) await streamPrefixes(path!);
+        await read(reader!);
+        const next = stopped ? null : format.again?.(state);
+        if (!next) return;
+        sink?.onReset('source_replaced');
+        state = next;
+      }
+    } finally { reading = false; }
+  };
+
+  /** A tailed line asked for another read: a fresh reader reads the record again, then tails it. */
+  const replay = async (next: S) => {
+    reader?.stop();
+    sink?.onReset('source_replaced');
+    state = next;
+    reader = open(path!);
+    await readWhole((fresh) => fresh.readFromStart(emit));
+    reader?.start();
   };
 
   const streamPrefixes = async (found: string) => {
@@ -83,24 +136,11 @@ export function createJsonlTailSource<S>(
       const found = await format.resolve();
       if (stopped) return; // 找文件的工夫里已经被拆了
       path = found;
-      reader = new TailReader(
-        found,
-        pollInterval(options),
-        {
-          onLines: emit,
-          onRestart: (reason) => {
-            state = format.initial();
-            events.onReset(reason);
-          }
-        },
-        warn,
-        options?.fill
-      );
+      reader = open(found);
       if (options?.readMode === 'snapshot') {
         if (resume) events.onReset('source_replaced');
         state = format.initial();
-        if (format.prefixes) await streamPrefixes(found);
-        await reader.readSnapshot(emit);
+        await readWhole((whole) => whole.readSnapshot(emit));
         return;
       }
       const data = resume?.data as ResumeData<S> | undefined;
@@ -109,16 +149,24 @@ export function createJsonlTailSource<S>(
       // 先读后装 ⇒ 那一段按初始状态编号，键与存档里前几轮撞车，被上层去重表当成重复整条丢掉(#6357)。
       state = canResume ? structuredClone(data!.state) : format.initial();
       prefixBytes = canResume ? data!.prefixBytes ?? 0 : 0;
-      const resumed = canResume ? await reader.resumeFrom(data!.tail, emit) : false;
-      if (!resumed) {
+      let resumed = false;
+      if (canResume) {
+        reading = true;
+        try { resumed = await reader.resumeFrom(data!.tail, emit); } finally { reading = false; }
+      }
+      const again = resumed ? format.again?.(state) : null;
+      if (again) {
+        events.onReset('source_replaced');
+        state = again;
+        await readWhole((whole) => whole.readFromStart(emit));
+      } else if (!resumed) {
         // 要过存档、却没能续上 ⇒ 必须显式作废上层那份状态:不说的话整份重读会被旧去重表全部吃掉，
         // 留下一份过期且不再更新的历史。
         if (resume) events.onReset('source_replaced');
         state = format.initial();
-        if (format.prefixes) await streamPrefixes(found);
-        await reader.readFromStart(emit);
+        await readWhole((whole) => whole.readFromStart(emit));
       }
-      reader.start();
+      reader?.start();
     },
     catchUp: async () => { if (options?.readMode !== 'snapshot') await reader?.catchUp(); },
     readImage: readRecordImage,
