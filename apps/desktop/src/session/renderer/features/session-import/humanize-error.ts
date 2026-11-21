@@ -4,7 +4,7 @@
  * 原样显示等于把 IPC 管道的内幕怼到用户脸上，真正那句人话还被挤到最后。
  * 这里只留最里层那句，前面的包装层与重复的 "Error:" 全部剥掉。
  *
- * 剥出来的那句是**原始诊断**，逐字保留、不翻译；只有一个字都没剥出来时才落到调用方给的兜底标签。
+ * 剥出来的那句是**原始诊断**，逐字保留、不翻译（主进程报的原因码 `<码>:<名字>` 由 import-error-copy 在它之后翻成人话）；只有一个字都没剥出来时才落到调用方给的兜底标签。
  * 兜底是 chrome，所以由调用方从 catalog 取好传进来 —— 这个函数保持纯，不去读当前 locale。
  */
 export function humanizeRpcError(error: unknown, unknownLabel: string): string {

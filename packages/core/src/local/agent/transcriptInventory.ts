@@ -3,6 +3,7 @@ import { open, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, join, sep } from 'node:path'
 import type { JsonlSearchResult } from './runtimeInfo'
 import { readDeliveryEnvelope } from './deliveryEnvelope'
+import { TranscriptAccessError } from './transcriptAccessError'
 import { asRecord, clipTitle, scanRootsOf, type TranscriptFrame, type TranscriptScanOptions, type TranscriptSourceSpec } from './transcriptSource'
 import { allTranscriptSourceSpecs, requireTranscriptSourceSpec } from './transcriptSources'
 import type {
@@ -282,7 +283,7 @@ export async function readLocalTranscript(
     if (frame.turn) turns.push(frame.turn)
   }
   if (turns.length === 0 && options.view !== 'context') {
-    throw new Error(`transcript 中没有可导入的用户/助手对话：${filePath}`)
+    throw new TranscriptAccessError('transcript-empty', filePath)
   }
   const metadata = {
     source,
@@ -316,7 +317,7 @@ export async function assertPathInScanRoots(
   try {
     realFile = await realpath(filePath)
   } catch {
-    throw new Error(`transcript 路径不存在或不可读：${filePath}`)
+    throw new TranscriptAccessError('transcript-unreadable', filePath)
   }
   for (const root of scanRootsOf(spec, options)) {
     let realRoot: string
@@ -327,5 +328,5 @@ export async function assertPathInScanRoots(
     }
     if (realFile === realRoot || realFile.startsWith(realRoot + sep)) return
   }
-  throw new Error(`transcript 路径不在允许的扫描目录内：${filePath}`)
+  throw new TranscriptAccessError('transcript-outside-roots', filePath)
 }

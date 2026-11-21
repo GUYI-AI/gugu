@@ -37,6 +37,18 @@ it('executes the bundled reader on its thread, keeps a main-thread heartbeat and
   } finally { clearInterval(heartbeat); await client.dispose(); }
 });
 
+it('a missing file on the real worker thread reaches the caller as `<code>:<file name>`: only message and name cross, the full path does not (#3447)', async () => {
+  const directory = join(root, 'native', 'projects'); await mkdir(directory, { recursive: true });
+  const filePath = join(directory, 'gone.jsonl');
+  const client = createLocalSessionPreviewClient(() => new Worker(bundle, { execArgv: [] }));
+  try {
+    const failure = await client.read(request(filePath), new AbortController().signal).catch((error: Error) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe('transcript-unreadable:gone.jsonl');
+    expect((failure as Error).message).not.toContain(root);
+  } finally { await client.dispose(); }
+});
+
 class HeldWorker extends EventEmitter {
   postMessage = vi.fn(); unref = vi.fn(); terminate = vi.fn(async () => 0);
 }

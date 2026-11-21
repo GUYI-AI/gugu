@@ -55,12 +55,36 @@ export function useMarketDetailQueue<T>() {
   return { active, enqueue, finish };
 }
 
-export function MarketDetailDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+/** Gives `useMarketDetailConfirmation` its dialog, one question at a time; outside a detail dialog too (an App's market page). */
+export function MarketDetailConfirmations({ children }: { children: ReactNode }) {
   const { translate } = useSessionMessages();
-  const opener = useRef(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const { active, enqueue, finish } = useMarketDetailQueue<Confirmation>();
   const request = active?.value;
+  return (
+    <ConfirmContext.Provider value={{ ask: enqueue, confirming: !!request }}>
+      {children}
+      {request && (
+        <Dialog open onOpenChange={(open) => { if (!open) finish(false); }}>
+          <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]" data-testid="market-detail-confirmation">
+            <DialogHeader className="pb-4">
+              <DialogTitle className="text-base font-semibold">{request.title}</DialogTitle>
+            </DialogHeader>
+            <DialogDescription render={<div />} className="mx-6 mb-5 whitespace-pre-line">
+              {request.description}
+            </DialogDescription>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => finish(false)}>{translate('common.cancel')}</Button>
+              <Button variant={request.variant ?? 'default'} onClick={() => finish(true)} data-testid="market-detail-confirm">{request.confirmLabel}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </ConfirmContext.Provider>
+  );
+}
 
+export function MarketDetailDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const opener = useRef(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null);
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
@@ -68,25 +92,7 @@ export function MarketDetailDialog({ onClose, children }: { onClose: () => void;
         finalFocus={() => opener.current?.isConnected ? opener.current : false}
         data-testid="market-detail-dialog"
       >
-        <ConfirmContext.Provider value={{ ask: enqueue, confirming: !!request }}>
-          {children}
-          {request && (
-            <Dialog open onOpenChange={(open) => { if (!open) finish(false); }}>
-              <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]" data-testid="market-detail-confirmation">
-                <DialogHeader className="pb-4">
-                  <DialogTitle className="text-base font-semibold">{request.title}</DialogTitle>
-                </DialogHeader>
-                <DialogDescription render={<div />} className="mx-6 mb-5 whitespace-pre-line">
-                  {request.description}
-                </DialogDescription>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => finish(false)}>{translate('common.cancel')}</Button>
-                  <Button variant={request.variant ?? 'default'} onClick={() => finish(true)} data-testid="market-detail-confirm">{request.confirmLabel}</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-        </ConfirmContext.Provider>
+        <MarketDetailConfirmations>{children}</MarketDetailConfirmations>
       </DialogContent>
     </Dialog>
   );

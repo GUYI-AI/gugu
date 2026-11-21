@@ -104,8 +104,21 @@ it('rejects a symlink outside scan roots before source I/O', async () => {
   const input = await fixture();
   await writeFile(join(input.root, 'outside.jsonl'), message('private'));
   await symlink(join(input.root, 'outside.jsonl'), input.filePath);
-  await expect(readBoundedLocalSessionPreview(input)).rejects.toThrow('扫描目录');
+  await expect(readBoundedLocalSessionPreview(input)).rejects.toThrow('transcript-outside-roots:session.jsonl');
   expect(observed.reads).toEqual([]);
+});
+
+it('names a missing file by file name only: the code travels, the full path does not', async () => {
+  const input = await fixture();
+  const failure = await readBoundedLocalSessionPreview(input).catch((error: Error) => error);
+  expect(failure).toMatchObject({ name: 'TranscriptAccessError', code: 'transcript-unreadable', message: 'transcript-unreadable:session.jsonl', filePath: input.filePath });
+  expect((failure as Error).message).not.toContain(input.root);
+  expect(observed.reads).toEqual([]);
+});
+
+it('reports a complete transcript without any user or assistant turn as transcript-empty', async () => {
+  const input = await fixture(); await writeFile(input.filePath, JSON.stringify({ type: 'summary', sessionId: 'native-id', cwd: '/work' }) + '\n');
+  await expect(readBoundedLocalSessionPreview(input)).rejects.toThrow('transcript-empty:session.jsonl');
 });
 
 it('reports cancellation and source truncation rather than a successful empty preview', async () => {

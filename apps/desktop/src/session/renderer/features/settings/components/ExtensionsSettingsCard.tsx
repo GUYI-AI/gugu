@@ -7,7 +7,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { Archive, CircleAlert, LayoutGrid, Plug, SquareTerminal, Trash2Icon } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -50,11 +50,9 @@ import { AddConnectorButton, ConnectorMarketPage } from '@renderer/features/exte
 import { DesktopExtensionMarket, type DesktopMarketShelf } from '@renderer/features/extensions/panel/desktop-extension-market';
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
 import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle';
-import { MarketDetailDialog } from '@renderer/features/extensions/panel/market-detail-dialog';
+import { MarketDetailConfirmations, MarketDetailDialog } from '@renderer/features/extensions/panel/market-detail-dialog';
 import { MarketAgentDetail } from '@renderer/features/extensions/panel/market-detail-agent';
-import { MarketExtensionDetail } from '@renderer/features/extensions/panel/market-detail-extension';
-import type { ConfirmMarketInstall } from '@renderer/features/extensions/panel/market-detail-install';
-import { commitMarketInstall } from '@renderer/features/extensions/panel/market-extension-install-rpc';
+import { MarketExtensionDevices } from '@renderer/features/extensions/panel/market-detail-extension-devices';
 import type { AppLifecycle } from '@renderer/features/extensions/panel/app-lifecycle-button';
 import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-page';
 import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/extensions/panel/app-product-page';
@@ -190,7 +188,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const [agentCategory, setAgentCategory] = useState<AgentMarketFilter>('all');
   const [chip, setChip] = useState<'all' | MarketCategory>('all');
   const [agentDetailId, setAgentDetailId] = useState<string | null>(null);
-  const [marketDetail, setMarketDetail] = useState<{ agentId: string } | { item: ShelfItem } | null>(null);
+  const [marketDetail, setMarketDetail] = useState<{ agentId: string } | null>(null);
   const closeMarketDetail = () => setMarketDetail(null);
   // 刚在产品页里装好的那一个:那一页头下面说一句「装好了」和去哪找它。
   const [justInstalled, setJustInstalled] = useState<string | null>(null);
@@ -351,6 +349,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   }, [canLoadMore, tab, detail]);
 
   const detailId = detail ? `${detail.page}:${appDetailId(detail)}` : null;
+  // An App opened from the market list: its page beside the list (Obsidian's plugin browser); from its settings page it is
+  // the whole page, its back button returns there.
+  const browsing = detail?.page === 'market' && !detail.from && tab === 'market' ? detail : null;
   useLayoutEffect(() => {
     const page = scroller();
     if (page) page.scrollTop = detailId ? 0 : listScroll.current;
@@ -434,8 +435,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
    * ⚠️ 用户点头的是「这个包声明了什么」:main 读的是解开的那一份 manifest,不是清单上那张卡片写的。
    */
   const installFromShelf = useCallback(
-    async (ref: MarketSourceRef, extensionId?: string, options: { confirm?: ConfirmMarketInstall; singleMachine?: boolean } = {}) => {
-      const { confirm, singleMachine = false } = options;
+    async (ref: MarketSourceRef, extensionId?: string, options: { singleMachine?: boolean } = {}) => {
+      const { singleMachine = false } = options;
       if (extensionId) {
         if (inFlight.current[extensionId]) return;
         beginPending(extensionId, 'inspecting');
@@ -445,10 +446,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         if (!handed.success || !handed.data) throw new Error(handed.error ?? '');
         if (handed.data.outcome !== 'ask') return;
         const { ask, asks } = handed.data;
-        if (confirm) {
-          if (await confirm(ask, asks)) await completeMarketInstall(ask, true);
-          return;
-        }
         // 第一次装、什么都不要的,以及同来源、不多要权限的更新:点「安装」本身就是同意(main 的 installPlan 判的,
         // #7059 原型「什么权限都不要的直接装」)。
         if (!asks) {
@@ -561,15 +558,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
 
   /** A market App the person agreed to (`given`): main installs the very bytes it read for that consent. */
-  const completeMarketInstall = (ask: InstallConsentAsk, marketDialog = false): Promise<void> =>
+  const completeMarketInstall = (ask: InstallConsentAsk): Promise<void> =>
     installing(
       ask.manifest,
-      () => marketDialog ? commitMarketInstall(api, ask) :
-        api.installFromMarket({
-          ref: { extensionId: ask.manifest.id, version: ask.manifest.version },
-          consent: { kind: 'given', digest: ask.manifestDigest },
-        }),
-      () => completeMarketInstall(ask, marketDialog)
+      () => api.installFromMarket({
+        ref: { extensionId: ask.manifest.id, version: ask.manifest.version },
+        consent: { kind: 'given', digest: ask.manifestDigest },
+      }),
+      () => completeMarketInstall(ask)
     );
 
   /** Installing one App, as its card shows it: busy, then the list read again, its tabs, 「装好了」 — or why not, with a retry. */
@@ -915,15 +911,17 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     else (onOpenAgentDetail ?? setAgentDetailId)(agentId);
   };
   const openShelfDetail = (item: ShelfItem) => {
-    if (host.local) {
-      setMarketDetail({ item });
-      return;
-    }
-    rememberListScroll();
+    // Another App picked beside the list: the list stays where it is, so the way back is still to before the first.
+    if (!browsing) rememberListScroll();
     setJustInstalled(null);
     setDetail({ page: 'market', subject: { manifest: item.manifest, installRef: item.ref, cloud: item.cloud } });
   };
-  useAppDetailRequest({ target: detailLink, ready: installed.state === 'value', host, setDetail, detail, rootRef });
+  // A link to an App not installed here opens its page beside the market list.
+  const openLinkedDetail = useCallback((next: SetStateAction<AppDetail | null>) => {
+    if (typeof next === 'object' && next?.page === 'market') setTab('market');
+    setDetail(next);
+  }, []);
+  useAppDetailRequest({ target: detailLink, ready: installed.state === 'value', host, setDetail: openLinkedDetail, detail, rootRef });
   // 产品页右栏「类似 App」点一个:换到它的产品页。❌ 记清单的滚动位置 —— 此刻滚的是产品页,回清单要回到进产品页之前那里。
   const openSimilar = (item: ShelfItem) => {
     setJustInstalled(null);
@@ -1119,8 +1117,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     );
   }
 
-  // ── 市场页:就在这一栏里铺开,左上「‹ App」回到清单 ──
-  if (detail?.page === 'market') {
+  // ── 市场页:在清单旁边(browsing),或就在这一栏里铺开;左上「‹ App」回到清单 ──
+  const productPage = (detail: Extract<AppDetail, { page: 'market' }>) => {
     // The catalog read again while this page is open (a new version listed): the page says the newer one, as the list does.
     const listed = marketRows.find((row) => row.manifest.id === detail.subject.manifest.id);
     const subject = listed ? { manifest: listed.manifest, cloud: listed.cloud, installRef: listed.ref } : detail.subject;
@@ -1128,38 +1126,44 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const installedHere = installedById?.get(manifest.id);
     const item = { manifest, cloud: subject.cloud, ref: subject.installRef };
     return (
+      <div className="pt-10 pb-14">
+        <AppProductPage
+          // 点「类似 App」是换一个 App:整页重来,❌ 带着上一个的截图、展开的版本历史画一帧。
+          key={manifest.id}
+          subject={{ ...subject, installedVersion: installedHere?.version }}
+          iconDataUrl={installedHere ? apps!.appIcons[installedHere.id] : undefined}
+          lifecycle={lifecycleOf(manifest.id, item)}
+          pending={pending[manifest.id]}
+          pendingPercent={downloadPercent[manifest.id]}
+          locale={locale}
+          translate={translate}
+          machine={remote?.deviceLabel}
+          hostKey={host.key}
+          readOnly={!!notice?.readOnly}
+          justInstalled={justInstalled === manifest.id && Boolean(installedHere)}
+          backLabel={detail.from ? translate('extensions.appSettings') : undefined}
+          onBack={() => {
+            if (!detail.from) onCloseDetailLink?.();
+            setDetail(detail.from ?? null);
+            setJustInstalled(null);
+          }}
+          onLifecycle={() => runLifecycle(manifest.id, item)}
+          onInstallVersion={(ref) => void installFromShelf(ref, manifest.id)}
+          onManage={installedHere ? () => setDetail({ page: 'manage', extensionId: manifest.id, from: detail }) : undefined}
+          onForward={installedHere && host.local ? () => forwardExtension(installedHere) : undefined}
+          onAsk={askAgent}
+          similar={similarOf(manifest)}
+          resource={resourceOf(manifest.id)}
+          targetSummary={host.local ? <MarketDetailConfirmations><MarketExtensionDevices item={item} /></MarketDetailConfirmations> : undefined}
+        />
+      </div>
+    );
+  };
+  if (detail?.page === 'market' && !browsing) {
+    return (
       <div className="mk" data-testid="extensions-product" ref={rootRef}>
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} noHeading />}
-        <div className="pt-10 pb-14">
-          <AppProductPage
-            // 点「类似 App」是换一个 App:整页重来,❌ 带着上一个的截图、展开的版本历史画一帧。
-            key={manifest.id}
-            subject={{ ...subject, installedVersion: installedHere?.version }}
-            iconDataUrl={installedHere ? apps!.appIcons[installedHere.id] : undefined}
-            lifecycle={lifecycleOf(manifest.id, item)}
-            pending={pending[manifest.id]}
-            pendingPercent={downloadPercent[manifest.id]}
-            locale={locale}
-            translate={translate}
-            machine={remote?.deviceLabel}
-            hostKey={host.key}
-            readOnly={!!notice?.readOnly}
-            justInstalled={justInstalled === manifest.id && Boolean(installedHere)}
-            backLabel={detail.from ? translate('extensions.appSettings') : undefined}
-            onBack={() => {
-              if (!detail.from) onCloseDetailLink?.();
-              setDetail(detail.from ?? null);
-              setJustInstalled(null);
-            }}
-            onLifecycle={() => runLifecycle(manifest.id, item)}
-            onInstallVersion={(ref) => void installFromShelf(ref, manifest.id)}
-            onManage={installedHere ? () => setDetail({ page: 'manage', extensionId: manifest.id, from: detail }) : undefined}
-            onForward={installedHere && host.local ? () => forwardExtension(installedHere) : undefined}
-            onAsk={askAgent}
-            similar={similarOf(manifest)}
-            resource={resourceOf(manifest.id)}
-          />
-        </div>
+        {productPage(detail)}
       </div>
     );
   }
@@ -1254,12 +1258,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     );
   }
 
-  const marketItem = marketDetail && 'item' in marketDetail
-    ? marketRows.find(({ manifest }) => manifest.id === marketDetail.item.manifest.id) ?? marketDetail.item
-    : null;
-  const marketInstalled = marketItem && installedById?.get(marketItem.manifest.id);
-  const marketAction = marketItem && lifecycleOf(marketItem.manifest.id, marketItem);
-
   const search = (
     <SearchInput
       ref={searchRef}
@@ -1337,54 +1335,58 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         )}
 
         {tab === 'market' && (
-          <div className="pb-14" data-testid="extensions-market-panel">
-            {/* 那台机器此刻连不上:清单问不了(问了只会挂满超时),照实说,❌ 一直转骨架。 */}
-            {/* 那台机器连不上时只有这一句:下面读清单的几种结果(转圈、出错、连不上下载站)都不画,❌ 两条「连不上」叠在一起。 */}
-            {machineOffline ? (
-              <div className="mk-status" role="status" data-testid="extension-market-offline">
-                <span>{translate('extensions.marketOfflineUnreachable')}</span>
-              </div>
-            ) : null}
-            {!machineOffline && extensionShelf.status === 'loading' ? (
-              <div className="mk-sec">
-                <ShelfSkeleton label={translate('extensions.loading')} />
-              </div>
-            ) : null}
-
-            {!machineOffline && (extensionShelf.status === 'error' || shownFailure) && (
-              <div className="mk-status" role="alert">
-                <CircleAlert className="size-4 shrink-0" />
-                <span className="min-w-0">{translate('extensions.marketUnavailable')}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
-                  {translate('extensions.retry')}
-                </Button>
-              </div>
-            )}
-
-            {!machineOffline &&
-              extensionShelf.status === 'ready' &&
-              (extensionShelf.errorKind ? (
-                // 连不上下载站:只说这一句和「重试」—— 市场只有这一个来源,已装的 App 照常能用(App 市场方案 10-07);
-                // ❌ 再画「这里还没有 App」:读不到清单和清单是空的是两件事。
+          <div className="pb-14 mk-browse" data-testid="extensions-market-panel" data-browsing={browsing ? '' : undefined}>
+            <div className="mk-browse-list">
+              {/* 那台机器此刻连不上:清单问不了(问了只会挂满超时),照实说,❌ 一直转骨架。 */}
+              {/* 那台机器连不上时只有这一句:下面读清单的几种结果(转圈、出错、连不上下载站)都不画,❌ 两条「连不上」叠在一起。 */}
+              {machineOffline ? (
                 <div className="mk-status" role="status" data-testid="extension-market-offline">
                   <span>{translate('extensions.marketOfflineUnreachable')}</span>
+                </div>
+              ) : null}
+              {!machineOffline && extensionShelf.status === 'loading' && (
+                <div className="mk-sec">
+                  <ShelfSkeleton label={translate('extensions.loading')} />
+                </div>
+              )}
+
+              {!machineOffline && (extensionShelf.status === 'error' || shownFailure) && (
+                <div className="mk-status" role="alert">
+                  <CircleAlert className="size-4 shrink-0" />
+                  <span className="min-w-0">{translate('extensions.marketUnavailable')}</span>
                   <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
                     {translate('extensions.retry')}
                   </Button>
                 </div>
-              ) : (
-                <DesktopExtensionMarket
-                  shelf={extensionShelf}
-                  query={extensionShelf.query}
-                  category={chip}
-                  onCategoryChange={setChip}
-                  installedIds={installedById ? new Set(installedById.keys()) : undefined}
-                  onOpen={openShelfDetail}
-                  resourceOf={resourceOf}
-                  sentinelRef={sentinelRef}
-                  stale={marketStale ? translate('extensions.marketStale', { time: marketStaleTime(marketStale, locale) }) : null}
-                />
-              ))}
+              )}
+
+              {!machineOffline &&
+                extensionShelf.status === 'ready' &&
+                (extensionShelf.errorKind ? (
+                  // 连不上下载站:只说这一句和「重试」—— 市场只有这一个来源,已装的 App 照常能用(App 市场方案 10-07);
+                  // ❌ 再画「这里还没有 App」:读不到清单和清单是空的是两件事。
+                  <div className="mk-status" role="status" data-testid="extension-market-offline">
+                    <span>{translate('extensions.marketOfflineUnreachable')}</span>
+                    <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
+                      {translate('extensions.retry')}
+                    </Button>
+                  </div>
+                ) : (
+                  <DesktopExtensionMarket
+                    shelf={extensionShelf}
+                    query={extensionShelf.query}
+                    category={chip}
+                    onCategoryChange={setChip}
+                    installedIds={installedById ? new Set(installedById.keys()) : undefined}
+                    onOpen={openShelfDetail}
+                    resourceOf={resourceOf}
+                    sentinelRef={sentinelRef}
+                    stale={marketStale ? translate('extensions.marketStale', { time: marketStaleTime(marketStale, locale) }) : null}
+                    selectedId={browsing?.subject.manifest.id}
+                  />
+                ))}
+            </div>
+            {browsing && <div className="mk-browse-page" data-testid="extensions-product">{productPage(browsing)}</div>}
           </div>
         )}
 
@@ -1495,31 +1497,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       </fieldset>
       {shown && marketDetail && (
         <MarketDetailDialog onClose={closeMarketDetail}>
-          {'agentId' in marketDetail ? (
-            <MarketAgentDetail agentId={marketDetail.agentId} onCreate={() => {
-              closeMarketDetail();
-              navigate('new-session', { agentId: marketDetail.agentId });
-            }} />
-          ) : marketItem && (
-            <MarketExtensionDetail
-              item={marketItem}
-              installedVersion={marketInstalled?.version}
-              icon={apps?.appIcons[marketItem.manifest.id]}
-              lifecycle={marketAction}
-              pending={pending[marketItem.manifest.id]}
-              pendingPercent={downloadPercent[marketItem.manifest.id]}
-              // What is installed unread (its read failed, the shelf read): no version is changed from here.
-              canChangeVersion={apps ? !apps.isPreinstalled(marketItem.manifest.id) : false}
-              onInstall={(ref, confirm) => void installFromShelf(ref, marketItem.manifest.id, { confirm })}
-              onLifecycle={() => {
-                if (marketAction?.kind === 'open') closeMarketDetail();
-                runLifecycle(marketItem.manifest.id, marketItem);
-              }}
-              onUninstall={marketInstalled && apps && !apps.isPreinstalled(marketInstalled.id)
-                ? () => void uninstall({ id: marketInstalled.id, name: localizedManifestText(marketInstalled, locale).name })
-                : undefined}
-            />
-          )}
+          <MarketAgentDetail agentId={marketDetail.agentId} onCreate={() => {
+            closeMarketDetail();
+            navigate('new-session', { agentId: marketDetail.agentId });
+          }} />
         </MarketDetailDialog>
       )}
       {agentDetailId && <AgentDetailModal agentId={agentDetailId} onClose={() => setAgentDetailId(null)} />}

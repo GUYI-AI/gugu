@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { TranscriptAccessError } from '@gugu/core/local/agent/transcriptAccessError';
 import { assertPathInScanRoots, newDigest, absorbFrame, readFrame, parseJsonLine } from '@gugu/core/local/agent/transcriptInventory';
 import { requireTranscriptSourceSpec } from '@gugu/core/local/agent/transcriptSources/index';
 import type { ImportedTranscriptTurn, TranscriptSource, TranscriptScanOptions } from '@gugu/core';
@@ -76,8 +77,8 @@ export async function readBoundedLocalSessionPreview(request: LocalPreviewReques
     }
     signal?.throwIfAborted();
     if ((await source.snapshot()).snapshotRevision !== snapshot.snapshotRevision) throw new Error('Native source changed during preview');
-    if (!digest.providerSessionId && !complete) throw new Error('预览窗口内未找到原会话身份，不能猜测恢复目标');
-    if (complete && turns.length === 0) throw new Error(`transcript 中没有可导入的用户/助手对话：${filePath}`);
+    if (!digest.providerSessionId && !complete) throw new TranscriptAccessError('transcript-no-identity', filePath);
+    if (complete && turns.length === 0) throw new TranscriptAccessError('transcript-empty', filePath);
     const result = { providerSessionId: digest.providerSessionId ?? basename(filePath, spec.fileExtension),
       title: digest.title ?? '（无标题会话）', cwd: digest.cwd,
       turnCount: complete ? turns.length : null,
