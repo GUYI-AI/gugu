@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { AssistantShellSnapshot } from '../../lib/assistantShellBridge'
 import { assistantWorkrooms, type AssistantWorkrooms } from '../../lib/assistantChatList'
-import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
 import { replica, useReplica } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
@@ -11,7 +10,6 @@ import { projectGroupBindingChangedChannel } from '../../session/shared/core/pro
 import { sessionCreatedChannel } from '../../session/shared/core/sessions/sessionEvents'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 
-const log = rendererLogger('assistant/workrooms')
 
 type WorkroomSources = { sessions: SessionpageSessionSummary[]; bindings: { projectId: string; chatId: string }[] }
 
@@ -23,10 +21,7 @@ export const assistantWorkroomSources = replica({
   read: async (_owner: string, machine: string | null): Promise<WorkroomSources> => {
     const rpc = platform.capabilities.agentRuntime ? rpcOn(machine) : machineRpc(machine!)
     const [listed, bound] = await Promise.all([rpc.sessionTimeline.sessionsList(), rpc.projects.listProjectGroupBindings()])
-    if (!bound.success) {
-      log.warn({ error: JSON.stringify(bound.error) }, 'could not read assistant workroom ownership')
-      throw new Error(JSON.stringify(bound.error))
-    }
+    if (!bound.success) throw new Error(JSON.stringify(bound.error))
     return { sessions: listed.sessions, bindings: bound.data }
   },
   fresh: platform.capabilities.agentRuntime ? Infinity : 0,

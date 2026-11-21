@@ -3,11 +3,8 @@ import type {AssistantWorkTask} from '@gugu/core/cloud/assistantWork'
 import type {Device} from '@gugu/core/shared/types/chat'
 import {assistantWorkCloud,watchAssistantWork} from '../../lib/assistantWork'
 import {replica,useReplica,type Reading} from '../../lib/replica'
-import {rendererLogger} from '../../lib/log'
 import {assistantWorkTitleOf} from '../../lib/assistantWorkTitle'
 import {devicesModel} from '../../store/devicesCache'
-
-const log=rendererLogger('assistant/work')
 
 /**
  * The cloud answers 42501 「Assistant is not available to this account」 for the account's own assistant until its setup is
@@ -29,11 +26,7 @@ export const assistantWorkRecords=replica({
  scope:'account',
  read:async(_owner:string,assistantId:string):Promise<AssistantWorkTask[]>=>{
   try{return await assistantWorkCloud.listAll(assistantId)}
-  catch(error){
-   if(assistantWorkNotReadyYet(error)){log.info({code:'not-ready'},'account task list not there yet');throw new AssistantWorkNotReady()}
-   log.warn({error},'account task read failed')
-   throw error
-  }
+  catch(error){throw assistantWorkNotReadyYet(error)?new AssistantWorkNotReady():error}
  },
  fresh:60_000,
  refreshJoinsRead:true,
