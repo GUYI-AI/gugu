@@ -27,3 +27,13 @@ export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[]
 export function roomAgentEntry(profile: Pick<MemberProfileCardModel, 'type' | 'ownerUserId'>, userId: string | null, hasSession: boolean) {
   return profile.type === 'agent' && !!userId && profile.ownerUserId === userId && hasSession ? 'session' : 'profile'
 }
+
+/**
+ * The Agents sheet's order: the last one to act first (presence lastActionAt), then the newest account, then id.
+ * No status tiers: status is the avatar badge and the row text, never the position.
+ */
+export function roomAgentsByRecentActivity<T extends { id: string }>(agents: readonly T[], lastActionAt: (id: string) => string | null | undefined, createdAt: (id: string) => string | null | undefined): T[] {
+  const time = (at: string | null | undefined) => at ? Date.parse(at) || 0 : 0
+  return [...agents].sort((a, b) => time(lastActionAt(b.id)) - time(lastActionAt(a.id)) || time(createdAt(b.id)) - time(createdAt(a.id))
+    || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
