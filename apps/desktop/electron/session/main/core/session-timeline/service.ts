@@ -6,7 +6,6 @@ import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/sess
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
-import { createNativeRecordReader } from './native-record';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -14,8 +13,7 @@ import { answeredAskOf, readAnsweredAsks, recordAnsweredAsk } from '../asks/answ
 import { askSourceSpec } from '../asks/sources';
 import { readAgentQuestionRecords, rememberAgentQuestion } from '../sessions/agent-question-store';
 import { nativeConversationAliases, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
-import { ownerNotificationHead, ownerNotificationFile } from '../sessions/owner-notifications';
-import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
+import { ownerNotificationFile } from '../sessions/owner-notifications';
 import { followSessionIndex, sessionIndexed, writeSessionIndex } from '../session-index/session-index';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
@@ -53,7 +51,6 @@ import {
   type SessionpageOpenedFileReadRequest,
   type SessionpageOpenedFileChunk,
   type SessionpageSessionToolImageRequest,
-  type SessionpageSessionOlderRequest,
   type TimelineAfterResult,
   type TimelineOlderResult,
   type TimelineSnapshot,
@@ -69,7 +66,7 @@ import { db } from '@main/db/client';
 import { sessions, projects, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { events, tapMainEvents } from '@main/lib/events';
-import { onNativeMessagePreviewChanged, readNativeActiveMessagePreview } from './native-preview-events';
+import { onNativeMessagePreviewChanged } from './native-preview-events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
   automationChangedChannel,
@@ -81,7 +78,6 @@ import {
   type SessionSchedule,
 } from '@shared/core/automations/session-schedule';
 import { log } from '@main/lib/logger';
-import { app } from 'electron';
 import {
   legacyAgentStatusWord,
   parseAgentStatus,
@@ -242,7 +238,6 @@ type TimelineEntry = {
   pendingWatch: SessionStateWatch | null;
   /** What the live runtime last reported waiting (an ACP session's own approvals); the host's asks are added to it (D-31). */
   runtimeRequests: readonly PendingRequest[];
-  nativeActiveTurn?: import('@gugu/session-core/acp/client').TranscriptTurn | null;
   disposed: boolean;
   /**
    * 没有记录可读时的替身(见 stand-in-timeline.ts)。它**不进缓存**:真记录一出现,下一次 acquire
@@ -440,7 +435,6 @@ function attachPendingRequests(entry: TimelineEntry): void {
   void watchSessionState(entry.conversationId, (requests, queuedPrompts, liveReply, terminals, activeTurn) => {
     if (entry.disposed) return;
     entry.runtimeRequests = requests;
-    entry.nativeActiveTurn = activeTurn ?? null;
     syncPending(entry);
     entry.timeline.syncQueuedPrompts(queuedPrompts.filter(isVisibleQueuedPrompt).map(prompt => ({ ...prompt, text: conversationQueueText(prompt.text) })));
     entry.timeline.syncLiveReply(liveReply ?? null);
@@ -815,8 +809,6 @@ function summaryOf(
     nativeLastMessage: nativeConversationListActivity(session.id),
     nativeUnreadKeys: nativeConversationUnread(session.id),
     nativeOwnerNotificationUnreadCount: nativeOwnerNotificationUnread(session.id).length,
-    nativeOwnerNotificationSeq: ownerNotificationHead(session.id) ?? -1,
-    nativeOwnerNotificationEpoch: ownerNotificationEpoch(session.id),
     nativeUnreadAliases: nativeConversationAliases(session.id),
     ...(location.supported ? {} : { unsupportedReason: location.reason, ...notStartedFacts(session) }),
     // 这三项库里早就有,先前没往手机端传 —— 手机上于是既没有置顶区、也认不出未读、
@@ -1095,6 +1087,20 @@ export async function recordTurns(conversationId: string): Promise<TimelineSnaps
   }
 }
 
+/** The session's history as the person sees it now: every turn of its timeline after the cleared part. */
+export async function historyTurns(conversationId: string): Promise<TimelineSnapshot['turns']> {
+  const acquired = await acquire(conversationId);
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  try {
+    const timeline = acquired.value.timeline;
+    const floor = await nativeConversationHistoryFloor(conversationId);
+    await timeline.catchUp();
+    return clearedHistoryResult({ turns: timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns }, floor).turns;
+  } finally {
+    release(acquired.value);
+  }
+}
+
 /**
  * The session index holds this session's turns (`core/session-index`): read its timeline once if nobody has had it
  * open since the index was built. A session with no record to read has none.
@@ -1166,7 +1172,7 @@ export async function readOpenedFile(
   input: SessionpageOpenedFileReadRequest
 ): Promise<SessionTimelineResult<SessionpageOpenedFileChunk>> {
   try {
-    if (!(await sessionOpenedFile(input.conversationId, input.path)) && !ownerNotificationFile(input.conversationId, input.path)) {
+    if (!(await sessionOpenedFile(input.conversationId, input.path)) && !(await ownerNotificationFile(input.conversationId, input.path))) {
       return fail('not_opened', `这条会话没有打开过 ${input.path}`);
     }
     return { ok: true, value: await readOpenedFileChunk(input.path, input.offset, input.length) };
@@ -1322,7 +1328,7 @@ const sessionsSubscriptions = new Map<string, { stop: () => void }>();
 const SESSIONS_PUSH_DEBOUNCE_MS = 200;
 
 /** 列表上看得见、又不经状态写入者的变化:会话增删、这几格元信息,以及会话给自己排的定时。 */
-const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'nativeOwnerNotificationSeq', 'nativeOwnerNotificationEpoch', 'lastAnswered'];
+const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'lastAnswered'];
 function changesSessionList(channel: string, data: unknown): boolean {
   if (channel === sessionCreatedChannel.name) {
     return true;
@@ -1746,18 +1752,4 @@ export async function changeQueue(input: { conversationId: string; action: impor
   }
 }
 
-const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, activePreview: readNativeActiveMessagePreview, withTimeline,
-  async withArchive<T>(conversationId: string, read: (historyFloor: string | null) => T | Promise<T>): Promise<SessionTimelineResult<T>> {
-    try {
-      const floor = await nativeConversationHistoryFloor(conversationId);
-      const value = await read(floor);
-      return { ok: true as const, value: clearedHistoryResult(value, floor) };
-    } catch (error) {
-      return fail('code' in Object(error) && (error as { code: unknown }).code === 'history_epoch_unstable' ? 'history_epoch_unstable' : 'timeline_failed', (error as Error)?.message ?? String(error));
-    }
-  },
-});
-export const nativeRecord = nativeRecordReader.snapshot;
-export const compactNativeRecord = nativeRecordReader.preview;
-export const nativeToolImage = nativeRecordReader.image;
 export { nativeAttachment } from './native-attachment';

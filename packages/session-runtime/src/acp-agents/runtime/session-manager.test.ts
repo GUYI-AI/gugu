@@ -13,8 +13,6 @@ import {
 } from '../acp-test-support';
 import { AcpRuntime } from './runtime';
 import type { AcpStartInput } from './types';
-import { projectMessagePreview, MESSAGE_PREVIEW_MAX_BYTES } from '@gugu/session-core/session-record/message-preview';
-import { clearedHistoryTurns } from '@gugu/session-core/session-record/conversation-history-clear';
 
 function modeConfigOptions(selected: 'agent' | 'agent-full-access') {
   return [
@@ -55,42 +53,23 @@ function platformInjection() {
 }
 
 describe('AcpRuntime session manager', () => {
-  it('#2007 projects a running turn in its owner process and emits identity-only preview invalidations', async () => {
+  it('#2007 says a running turn moved by session identity only: readers project the preview from the timeline', async () => {
     const h = makeAcpHarness();
     const changed = vi.fn();
-    h.deps.messagePreview = { onChange: changed, project: (turn, floor) => {
-      const visible = clearedHistoryTurns([turn], floor);
-      return visible.length ? projectMessagePreview(visible) : null;
-    } };
+    h.deps.messagePreview = { onChange: changed };
     const rt = new AcpRuntime(h.deps);
-    expect(rt.manager.activeMessagePreview('missing', null)).toBeNull();
     await rt.startSession(makeStartInput({ sessionId: 'bounded-live' }));
     let finish!: (value: { stopReason: 'end_turn' }) => void;
     h.agent.prompt = vi.fn(() => new Promise<{ stopReason: 'end_turn' }>(resolve => { finish = resolve; }));
     const prompt = rt.sendPrompt('bounded-live', { text: 'input' });
     await h.agent.called('prompt');
-    const secret = 'not-for-preview-'.repeat(100_000);
     await h.client().sessionEvent({ sessionId: 'session-1', event: decodeSessionUpdate({
-      sessionUpdate: 'agent_message_chunk', sessionId: 'session-1', messageId: 'large', content: { type: 'text', text: secret + 'visible tail' },
+      sessionUpdate: 'agent_message_chunk', sessionId: 'session-1', messageId: 'large', content: { type: 'text', text: 'visible tail' },
     } as SessionUpdate) });
-    const live = rt.sessionLiveModels('bounded-live')!;
-    const before = structuredClone(live.states.activeTurn.snapshot().data);
-    const preview = rt.manager.activeMessagePreview('bounded-live', null);
-    expect(preview?.projection).toMatchObject({ running: true, entries: [
-      { kind: 'prompt' }, { kind: 'text', truncated: true, text: expect.stringContaining('visible tail') },
-    ] });
-    expect(Buffer.byteLength(JSON.stringify(preview))).toBeLessThan(MESSAGE_PREVIEW_MAX_BYTES);
-    expect(JSON.stringify(preview)).not.toContain(secret);
-    expect(rt.manager.activeMessagePreview('bounded-live', '2999-01-01T00:00:00Z')).toBeNull();
-    expect(live.states.activeTurn.snapshot().data).toEqual(before);
-    expect(changed).toHaveBeenCalledWith({ sessionId: 'bounded-live' });
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ sessionId: 'bounded-live' }));
     expect(changed.mock.calls.every(([event]) => Object.keys(event).join() === 'sessionId')).toBe(true);
-    h.deps.messagePreview.project = () => ({ running: true, now: null, ended: null,
-      entries: [{ kind: 'text', id: 'oversize', text: '界'.repeat(12_000), truncated: false, at: null }] });
-    expect(() => rt.manager.activeMessagePreview('bounded-live', null)).toThrow('32 KiB response budget');
     finish({ stopReason: 'end_turn' });
     await prompt;
-    expect(rt.manager.activeMessagePreview('bounded-live', null)).toBeNull();
     await rt.dispose();
   });
 

@@ -252,7 +252,6 @@ import { readAcpSessionSummaries } from '@main/core/acp/session-summary-reader'
 import { flushLogWrites, setLogFileOwner } from '@main/lib/file-logger'
 import { setSessionMessageOutboxReady } from '@main/core/sessions/session-message-router'
 import { sessionProcess } from '@main/core/sessions/session-process'
-import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
 // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
 // 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
@@ -561,12 +560,14 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 那次 tmux 后台清扫落定(改名改到一半被它看见会收掉后台)。段 2 失败不拦启动:不写 .done、下次重试,失败项响亮记下。
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
-  // The turns only the old turn table holds go into the session journals before a migration can drop that table.
+  // The turns only the old turn table holds go into the session journals before a migration drops that table. A
+  // failure stops the start here, loudly, before the drop: the next start tries again.
   try {
     const { exportStoredTurnsToJournals } = await import('./core/sessions/session-journal-export')
     await exportStoredTurnsToJournals(sqlite, app.getPath('userData'))
   } catch (error) {
-    log.error('sessionJournal: export failed; retrying next start', { error: String(error) })
+    log.error('sessionJournal: export failed; the database is not migrated until it succeeds', { error: String(error) })
+    throw error
   }
   await initializeDatabase()
   const { migrateCustomModelConnections, dropRemovedConnectionKeys } = await import('./core/agents/custom-models')
@@ -651,7 +652,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   const dataDir = app.getPath('userData')
   const occupancy = dataDirHeldByAnotherHost(dataDir)
   // Terminal records to read once at boot; the persisted facts are read here, before the sweep settles their status.
-  let ptyRecordResume: string[] = []
   let updateInterrupted: string[] = []
   let lastExit: ReturnType<typeof takeLastExit> = { reason: 'unclean', at: null }
   let presenceReconciliation = Promise.resolve()
@@ -675,7 +675,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
       log.error('[session-host] 无法读取 tmux 会话清单，保留原会话状态', { error: String(error) })
       return null
     })
-    ptyRecordResume = ptyRecordResumeSet()
     if (tmuxSessionNames !== null) {
       lastExit = takeLastExit(dataDir)
       updateInterrupted = await sessionBootTasks.run('status-sweep', '', () => agentStatusWriter.settleAfterRestart(tmuxSessionNames, lastExit.reason)) ?? []
@@ -749,7 +748,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await promptLibraryService.initialize()
   // 写入者先于任何事件来源就位:它订 hook 总线,births / 收残 / 回收都经它(spec agent-status-writer)。
   agentStatusWriter.initialize()
-  stopPtyRecordSync = startPtyRecordSync(ptyRecordResume)
   installSessionsGoneFeed()
   onSessionsGone((scope) => {
     agentStatusWriter.forget(scope)
@@ -847,7 +845,6 @@ let stopActivityCollector: (() => void) | null = null
  * `before-quit` rather than letting the session backend register its own preventDefault quit handler.
  */
 let disposeEmdashModulePromise: Promise<void> | null = null
-let stopPtyRecordSync: () => void = () => {}
 
 async function disposeEmdashModuleOnce(): Promise<void> {
   stopTaskTurnSearch()
@@ -870,7 +867,6 @@ async function disposeEmdashModuleOnce(): Promise<void> {
   await runPhase('automations', () => automationsService.stop())
   await runPhase('extension-programs', stopAllExtensionPrograms)
   await runPhase('agent-hooks', () => agentHookService.dispose())
-  await runPhase('pty-record-sync', () => stopPtyRecordSync())
   await runPhase('agent-status', () => agentStatusWriter.dispose())
   await runPhase('resource-sampler', stopResourceSampler)
   await runPhase('pr-sync', () => prSyncScheduler.dispose())

@@ -4,7 +4,7 @@ import { isAppRoute, readDeliveryEnvelope, type DeliveryReadFacts } from '@gugu/
 import { timelineRailAdmits, timelineRailMessages, timelineRailPreviewText, type TimelineRailOptions } from '@gugu/core/shared/timelineRail';
 import { shownSender, type SelfIdentity, type TranscriptTurn } from '@gugu/session-chat-ui';
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
-import type { StoredOutlineTurn } from '@shared/core/sessions/session-outline';
+import type { SessionOutlineTurn } from '@shared/core/sessions/session-outline';
 
 /**
  * Who a delivered turn came from. The rail paints these ticks differently from
@@ -39,8 +39,8 @@ export interface TimelineTurn {
   reference?: string;
 }
 
-/** What the machine that keeps the conversation says about one turn this window has not loaded (`getStoredOutline`). */
-export type TimelineOutlineTurn = StoredOutlineTurn;
+/** What the machine that keeps the conversation says about one turn this window has not loaded (`getOutline`). */
+export type TimelineOutlineTurn = SessionOutlineTurn;
 
 function senderOf(facts: DeliveryReadFacts, self: SelfIdentity | null): TimelineSender {
   // #5048 the signed-in user's own delivered turn is named from the local profile, like the card.

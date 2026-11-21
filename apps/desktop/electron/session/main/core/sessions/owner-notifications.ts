@@ -4,8 +4,6 @@ import { isAbsolute, join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
-import { events } from '@main/lib/events';
-import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { resolveWorkspace } from '../projects/utils';
 import { createAttachmentUploads } from '../files/attachment-uploads';
 import { ATTACHMENT_UPLOAD_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
@@ -105,7 +103,6 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
     });
     await appendJournalTurn(context.sessionId, prepared.turn);
     publish?.();
-    events.emit(sessionChangedChannel, { sessionId: context.sessionId, projectId: context.projectId, changes: { nativeOwnerNotificationSeq: true } });
     return receipt(files);
   });
 }

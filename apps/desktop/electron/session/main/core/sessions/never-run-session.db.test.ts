@@ -73,7 +73,7 @@ describe('isResidentNeverRun (#7223)', () => {
     await expect(isResidentNeverRun('s')).resolves.toBe(false);
   });
 
-  it('阴控 —— 聊过(session_turns 有行):不算', async () => {
+  it('阴控 —— 聊过(会话索引里有轮):不算', async () => {
     seedSession({ firstUtterance: RESIDENT_AGENT_FIRST_UTTERANCE });
     seedTurn();
     await expect(isResidentNeverRun('s')).resolves.toBe(false);

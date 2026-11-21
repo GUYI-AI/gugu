@@ -76,9 +76,6 @@ export function watchPhoneSessionSendQueues(accountId: string, options?: { phone
         const snapshot = await client.fetchSnapshot(deviceId, sessionId, 100)
         const summary = liveDeviceSessions()[deviceId]?.sessions.find(session => session.conversationId === sessionId)
         if (!phone && !summary) return { ready: false, turns: [] }
-        const native = !phone && summary?.runtime === 'acp'
-          ? await remote.machineRpc(deviceId).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, tail: true, limit: 100 }) : null
-        if (native && !native.ok) throw Object.assign(new Error(native.error.message), { code: native.error.code })
         if (closed || !current() || readingEpoch !== epoch) return { ready: false, turns: [] }
         queuedIds = queueIds(snapshot.queuedPrompts)
         replying = Boolean(snapshot.liveReply)
@@ -90,11 +87,9 @@ export function watchPhoneSessionSendQueues(accountId: string, options?: { phone
           }
           subscribed = true
         }
-        // Provider JSONL can omit its end marker; only the native durable foreground owns ACP completion.
-        const record = native?.ok ? native.value : null
         return { ready: readingEpoch === epoch && connected && !failedSettlements.size && !snapshot.liveReply && !snapshot.queuedPrompts?.length
-          && !snapshot.settlements?.some(settlement => settlement.state === 'pending') && (!record || (!record.hasNewer && !record.activeTurn)),
-        turns: record ? record.turns : snapshot.turns }
+          && !snapshot.settlements?.some(settlement => settlement.state === 'pending'),
+        turns: snapshot.turns }
       },
       dispose() {
         closed = true; stopEvents(); stopErrors?.(); stopLink(); stopLife(); stopSettled()

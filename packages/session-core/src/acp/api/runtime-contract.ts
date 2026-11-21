@@ -1,7 +1,6 @@
 import { defineContract, eventStream, liveModel, liveState, procedure } from '@gugu/session-wire';
 import { z } from 'zod';
 import { previewActivitySourceSchema } from '../../session-record/preview-activity';
-import { messagePreviewProjectionSchema } from '../../session-record/message-preview';
 import { agentRunContextSchema } from '../../agents/agent-run-context';
 import { acpStartInputSchema } from './commands';
 import { terminalStateSchema } from '../models/terminals';
@@ -138,10 +137,6 @@ const detachedPromptWaitInputSchema = z.object({ requestId: z.string() });
 export const acpRuntimeApiContract = defineContract({
   ...acpApiContract,
   ...acpSessionLifecycleProcedures,
-  activeMessagePreview: procedure({
-    input: z.object({ sessionId: z.string().min(1), historyFloor: z.string().nullable() }),
-    output: z.object({ turnId: z.string(), projection: messagePreviewProjectionSchema }).nullable(),
-  }),
   messagePreviewChanged: eventStream({ key: z.void(), event: z.object({ sessionId: z.string() }) }),
   // Private worker state; the public session contract retains its old set of states.
   // Declared clients are routed here by the host's subscription handshake.
@@ -240,12 +235,6 @@ export const acpRuntimeApiContract = defineContract({
       source: z.enum(['live', 'replay', 'revision', 'backfill']),
       turn: transcriptTurnSchema,
     }),
-  }),
-  /** Primary scalar proof for a stopped-window active candidate. This private
-   * point read never clones an active turn or starts a session/worker. */
-  windowActiveReference: procedure({
-    input: z.strictObject({ sessionId: z.string().min(1).max(2048), referenceId: z.string().min(1).max(2048) }),
-    output: z.boolean(),
   }),
   /** 主进程保存回退后的显示历史,再放开这条会话的发送。 */
   finishHistoryRevert: procedure({

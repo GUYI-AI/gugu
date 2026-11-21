@@ -768,10 +768,6 @@ export type SessionpageSessionSummary = {
   nativeUnreadKeys?: string[];
   /** Only deliberate owner notifications contribute a numeric notification badge. */
   nativeOwnerNotificationUnreadCount?: number;
-  /** Last committed notification sequence; -1 when none remains, absent on older hosts. */
-  nativeOwnerNotificationSeq?: number;
-  /** Increases when history is reverted, so reused sequences cannot retain an old notification cursor. */
-  nativeOwnerNotificationEpoch?: number;
   nativeUnreadAliases?: Record<string, string>;
   conversationId: string;
   projectId: string;
@@ -1366,23 +1362,5 @@ export type SessionpageQueueAction =
   | { kind: 'delete'; id: string }
   | { kind: 'reorder'; ids: string[] }
   | { kind: 'send-now'; id: string; steers: boolean };
-
-/** ACP clients read the same durable commits and live turn as the desktop task page. */
-export type NativeSessionRecord = {
-  nativeOwnerNotificationEpoch?: number;
-  latestStoredSeq: number;
-  hasNewer: boolean;
-  turns: TranscriptTurn[];
-  originTurnIds: string[];
-  nextCursor: number | null;
-  activeTurn: TranscriptTurn | null;
-  /**
-   * Aligned with `turns`: how many times the host rewrote each one. A reader that keeps turns compares it with what it
-   * holds (`revisions`). Hosts from before it send nothing, and such a reader falls back to reading the pages again.
-   */
-  turnRevisions?: number[];
-  /** Asked for with `revisionsFrom`: every stored row from that sequence on, oldest first, as `[seq, revision]`. */
-  revisions?: Array<[seq: number, revision: number]>;
-};
 
 export * from './attachment-upload-contract';

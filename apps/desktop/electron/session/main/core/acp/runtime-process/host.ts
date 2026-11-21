@@ -24,8 +24,7 @@ import { getHostIpc } from '@main/lib/host-ipc';
 import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
-import { withStoredTurns } from '@main/core/sessions/session-turn-store';
-import { forgetRevertedTurns, observeCommittedTurn } from '@main/core/sessions/committed-turn-observer';
+import { committedTurnsObserved, forgetRevertedTurns, observeCommittedTurn } from '@main/core/sessions/committed-turn-observer';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { publishNativeMessagePreviewChanged } from '../../session-timeline/native-preview-events';
 import { createHistoryReverter } from './history-revert';
@@ -279,9 +278,8 @@ const acpWorker = lazyWorker(
           },
         })
       );
-      // #5381 会话历史落盘。运行时那份 transcript 只活在内存里,进程一走就没了,而重放能不能
-      // 把它补回来取决于 provider —— 所以历史在这里落进库,界面重开时直接读库。
-      // 写失败**不许**冒到运行时:那会把一次写盘失败升级成会话起不来,而丢一条历史远没有那么严重。
+      // A committed turn: what it means beyond the history (`observeCommittedTurn`), and the journal for what no record
+      // holds. A failure here never reaches the runtime: a lost side effect must not stop the session.
       handle.scope.add(await handle.client.turnCommitted.subscribe(undefined, {
         onEvent: event => {
           void observeCommittedTurn(event).catch(error => log.error('Committed turn: its effects failed', { sessionId: event.sessionId, error }));
@@ -289,7 +287,7 @@ const acpWorker = lazyWorker(
           journalCommittedTurn(event);
         },
       }));
-      const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
+      const conversationPreviews = openNativeConversationPreviews(committedTurnsObserved);
       handle.scope.add(await handle.client.messagePreviewChanged.subscribe(undefined, {
         onEvent: ({ sessionId }) => publishNativeMessagePreviewChanged(sessionId),
       }));

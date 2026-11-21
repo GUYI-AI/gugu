@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { identityKeys } from '@gugu/session-core/session-record/runtime-turn';
+import { identityKeys } from '@gugu/session-core/session-record';
 import type { ActivityEvent, ActivityQuery } from '@shared/core/activity';
 import { activityJournal } from './collector';
 

@@ -100,11 +100,12 @@ export function useTranscriptTimeline<T>(
       // What is loaded is drawn from the turns themselves; the outline only speaks for what is older than them.
       const [older, setOlder] = createSignal<readonly TimelineOutlineTurn[]>(latestOutline.current ?? []);
       setOutline.current = setOlder;
-      const oldestLoaded = createMemo(() => transcript.state.committedTurns[0]?.seq);
+      const loadedIds = createMemo(() => new Set(transcript.state.committedTurns.map((turn) => turn.id)));
       const unloaded = createMemo(() => {
         identityRevision();
-        const from = oldestLoaded(), turns = older();
-        const outlined = from === undefined ? turns : turns.filter((turn) => turn.seq < from);
+        // Pages loaded since the outline came cover its newest entries: those are drawn from their own turns.
+        const loaded = loadedIds(), turns = older();
+        const outlined = turns.filter((turn) => !loaded.has(turn.id));
         return outlined.length ? timelineTurnsFromOutline(outlined, selfIdentity(), options) : [];
       });
       const selected = createMemo(() => select([...unloaded(), ...committed(), ...active()]));

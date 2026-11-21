@@ -7,7 +7,7 @@ import { SYNTHETIC_ROW_SUFFIXES } from './session-timeline-geometry';
 import { observeReadingTurn } from './session-timeline-reading';
 import { SessionTimelineRail } from './session-timeline-rail';
 import type { TimelineTurn } from './session-timeline-turns';
-import { useStoredOutline } from './session-timeline-outline';
+import { useOutline } from './session-timeline-outline';
 import { useTranscriptTimeline } from './use-transcript-timeline';
 import { askTaskReveal } from '@/hooks/useSourceMessageReveal';
 import { UI_EVENTS } from '@/lib/uiEvents';
@@ -63,7 +63,7 @@ function useSessionTimelineProjection<T>(
   const store = sessionId ? findAcpChatStore(sessionId) : undefined;
   void store?.messageCount;
   // The turns older than the loaded ones come from their outline, so the rail covers the whole conversation.
-  const outline = useStoredOutline(sessionId, store?.chatState.transcript.state.committedTurns[0]?.seq, store?.canLoadOlderHistory === true);
+  const outline = useOutline(sessionId, store?.chatState.transcript.state.committedTurns[0]?.id, store?.canLoadOlderHistory === true);
   return useTranscriptTimeline(store?.chatState.transcript, getSharedChatContext().selfIdentity, select, store?.chatState.session, outline);
 }
 

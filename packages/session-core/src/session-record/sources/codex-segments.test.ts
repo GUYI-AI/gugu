@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RecordEntry, SessionRecordLocator, SessionRecordResume } from '../contract';
-import { readRecordFrom } from '../fill-read';
 import { createCodexJsonlSource, resolveRolloutFile } from './codex-jsonl';
 
 const THREAD = '019ed98a-a0ce-7f63-a9aa-04e0760a80c2';
@@ -89,25 +88,6 @@ describe('Codex history_base segments', () => {
     expect(resumed.resets).toEqual([]);
     expect(said(resumed.entries)).toEqual(['question appended', 'appended']);
     expect(resumed.entries.find(entry => entry.event?.kind === 'message' && entry.event.role === 'assistant')?.key).toBe(`codex:${THREAD}:4:2`);
-  });
-
-  it('fills ancestors from the beginning and can seek a turn in the current segment without replaying ancestors', async () => {
-    const { locator } = await stage();
-    const read = async (position = 0, state?: unknown, turn = 0) => {
-      const turns: import('../../acp/models/turns/turn').TranscriptTurn[] = [];
-      const starts: Array<import('../contract').TurnStart | null> = [];
-      const result = await readRecordFrom({ locator, sessionId: 'segments', fill: true, position, at: { state, turn },
-        onSettled: (batch, _from, at) => { turns.push(...batch); starts.push(...at); } });
-      return { ...result, turns: [...turns, ...result.tail], starts: [...starts, ...result.tailStarts] };
-    };
-    const whole = await read();
-    expect(whole.turns).toHaveLength(3);
-    expect(whole.starts.slice(0, 2)).toEqual([null, null]);
-    const current = whole.starts[2]!;
-    expect(current).not.toBeNull();
-    const tail = await read(current.position, current.state, 2);
-    expect(tail.from).toBe(current.position);
-    expect(tail.turns).toEqual(whole.turns.slice(2));
   });
 
   it('invalidates a saved tail when another segment becomes current', async () => {

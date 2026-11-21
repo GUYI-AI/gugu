@@ -39,9 +39,6 @@ const state = vi.hoisted(() => ({
   schedules: [] as unknown[],
   deliverText: vi.fn(),
   nativeUnread: [] as string[],
-  notificationEpoch: 0,
-  storedHistory: vi.fn(),
-  activePreview: vi.fn(),
   deliverPermission: vi.fn(),
   prepareQuestion: vi.fn(),
   deliverQuestion: vi.fn(),
@@ -72,7 +69,6 @@ const state = vi.hoisted(() => ({
 const persistedQuestions = vi.hoisted(() => new Map<string, Settlement[]>());
 const previewListeners = vi.hoisted(() => new Set<(id?: string) => void>());
 vi.mock('./native-preview-events', () => ({
-  readNativeActiveMessagePreview: (...args: unknown[]) => state.activePreview(...args),
   onNativeMessagePreviewChanged: (listener: (id?: string) => void) => {
     previewListeners.add(listener);
     return () => { previewListeners.delete(listener); };
@@ -100,11 +96,9 @@ vi.mock('../sessions/agent-question-store', () => ({
 
 vi.mock('../sessions/session-conversation-read', () => ({ nativeConversationUnread: () => state.nativeUnread, nativeConversationAliases: () => ({}), nativeOwnerNotificationUnread: () => [] }));
 const notificationFiles = vi.hoisted(() => new Map<string, string[]>());
-vi.mock('../sessions/owner-notifications', () => ({ ownerNotificationHead: () => undefined, ownerNotificationFile: (sessionId: string, path: string) => notificationFiles.get(sessionId)?.includes(path) ?? false }));
-vi.mock('../sessions/owner-notification-state', () => ({ ownerNotificationEpoch: () => state.notificationEpoch }));
+vi.mock('../sessions/owner-notifications', () => ({ ownerNotificationFile: async (sessionId: string, path: string) => notificationFiles.get(sessionId)?.includes(path) ?? false }));
 vi.mock('../sessions/session-conversation-activity', () => ({ nativeConversationActivity: () => null }));
 
-vi.mock('../sessions/session-turn-store', () => ({ getStoredHistory: (...args: unknown[]) => state.storedHistory(...args), getStoredToolImage: vi.fn() }));
 
 // The session index has tests of its own (session-index.db.test.ts); here the timelines it follows are fakes.
 vi.mock('../session-index/session-index', () => ({ followSessionIndex: () => () => {}, sessionIndexed: () => true, writeSessionIndex: () => {} }));
@@ -438,9 +432,6 @@ describe('session timeline service', () => {
     state.pendingWatchDisposed = 0;
     state.emitPending = null;
     state.nativeUnread = [];
-    state.notificationEpoch = 0;
-    state.storedHistory.mockReset();
-    state.activePreview.mockReset().mockResolvedValue(null);
     state.rows = [row()];
     state.projects = [];
     state.deliverText = vi.fn(async () => ({ accepted: 'started' as const }));
@@ -503,59 +494,6 @@ describe('session timeline service', () => {
     }
   });
 
-  it('uses the native archive at the first unread stored identity, with bounded older/newer pages and the real active turn', async () => {
-    state.rows = [row({ runtime: 'acp' })];
-    service.setSessionTimelineFactory(async () => makeTimeline().timeline);
-    state.nativeUnread = ['conv-1:turn:s5:message:auto:assistant:0'];
-    const turns = Array.from({ length: 10 }, (_, seq) => ({ id: `conv-1:turn:s${seq}`, seq, initiator: 'user', items: [] }));
-    state.storedHistory.mockImplementation(async ({ before, limit }: { before?: number; limit: number }) => {
-      const page = turns.filter(turn => before === undefined || turn.seq < before).slice(-limit);
-      return { turns: page, nextCursor: page[0]?.seq || null, originTurnIds: page.map(turn => `live:${turn.seq}`) };
-    });
-    expect(await service.nativeRecord({ conversationId: 'conv-1', limit: 3 })).toMatchObject({ ok: true, value: { turns: [{ seq: 5 }, { seq: 6 }, { seq: 7 }], hasNewer: true } });
-    const active = { id: 'live:10', seq: 10, initiator: 'user' as const, items: [] };
-    state.emitPending?.([], [], null, [], active);
-    expect(await service.nativeRecord({ conversationId: 'conv-1', tail: true, limit: 3 })).toMatchObject({ ok: true, value: { turns: [{ seq: 7 }, { seq: 8 }, { seq: 9 }], activeTurn: active, hasNewer: false } });
-    expect(await service.nativeRecord({ conversationId: 'conv-1', after: 7, limit: 3 })).toMatchObject({ ok: true, value: { turns: [{ seq: 8 }, { seq: 9 }], hasNewer: false } });
-  });
-
-  it('returns raw notification rows so phone page merging can project each request exactly once', async () => {
-    state.rows = [row({ runtime: 'acp' })];
-    service.setSessionTimelineFactory(async () => makeTimeline().timeline);
-    const notice = { id: 'conv-1:turn:s59', seq: 59, initiator: 'agent', items: [{ kind: 'message', id: 'notice', seq: 0, role: 'assistant', text: 'Review',
-      ownerNotification: { requestId: 'request', requestHash: 'hash', sourceTurnId: 'provider-source' } }] };
-    const source = { id: 'conv-1:turn:s60', seq: 60, initiator: 'user', items: [{ kind: 'message', id: 'input', seq: 0, role: 'user', text: 'Work' }] };
-    const turns = [notice, source];
-    state.storedHistory.mockImplementation(async ({ limit }: { limit: number }) => ({ turns: turns.slice(-limit), nextCursor: null,
-      originTurnIds: turns.slice(-limit).map(turn => turn === source ? 'provider-source' : 'owner-notify:request') }));
-    const result = await service.nativeRecord({ conversationId: 'conv-1', tail: true, limit: 2 });
-    expect(result).toMatchObject({ ok: true, value: { turns, originTurnIds: ['owner-notify:request', 'provider-source'], nativeOwnerNotificationEpoch: 0 } });
-  });
-
-  it('#2007 reads a cold native preview without creating or acquiring the complete provider timeline', async () => {
-    state.rows = [row({ runtime: 'acp' })];
-    const factory = vi.fn(async () => { throw new Error('A compact preview must not replay the provider history'); });
-    service.setSessionTimelineFactory(factory);
-    const turn = { id: 'conv-1:turn:s9', seq: 9, initiator: 'user', items: [], outcome: { kind: 'done', reason: 'end_turn' } };
-    state.storedHistory.mockResolvedValue({ turns: [turn], originTurnIds: ['real-origin'], nextCursor: null });
-    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
-      .toMatchObject({ ok: true, value: { turns: [turn], activeTurn: null } });
-    expect(factory).not.toHaveBeenCalled();
-    expect(state.pendingWatchCalls).toEqual([]);
-    expect(state.wake).not.toHaveBeenCalled();
-  });
-
-  it('#2007 stops an archive snapshot after three crossed epochs instead of spinning forever', async () => {
-    state.rows = [row({ runtime: 'acp' })];
-    state.storedHistory.mockImplementation(async () => {
-      state.notificationEpoch++;
-      return { turns: [], originTurnIds: [], nextCursor: null };
-    });
-    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
-      .toMatchObject({ ok: false, error: { code: 'history_epoch_unstable' } });
-    expect(state.storedHistory).toHaveBeenCalledTimes(6);
-  });
-
   it('#2007 keeps cold native preview subscriptions independent of full timeline watchers', async () => {
     state.rows = [row({ runtime: 'acp' })];
     const factory = vi.fn(async () => { throw new Error('Must not build a complete timeline'); });
@@ -580,92 +518,22 @@ describe('session timeline service', () => {
     expect(state.wake).not.toHaveBeenCalled();
   });
 
-  it('#2007 reads bounded active projections without waking a timeline and discards an already committed live origin', async () => {
-    state.rows = [row({ runtime: 'acp' })];
-    state.storedHistory.mockResolvedValue({ turns: [], originTurnIds: [], nextCursor: null });
-    const projection = { running: true, now: 'thinking', ended: null, entries: [] };
-    state.activePreview.mockResolvedValue({ turnId: 'live-origin', projection });
-    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
-      .toMatchObject({ ok: true, value: { activeTurn: null, activePreview: projection } });
-    state.storedHistory.mockResolvedValue({ turns: [{ id: 'stored', seq: 0, initiator: 'user', items: [] }], originTurnIds: ['live-origin'], nextCursor: null });
-    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
-      .toMatchObject({ ok: true, value: { activeTurn: null, activePreview: null } });
-    state.activePreview.mockRejectedValue(new Error('Worker transport failed'));
-    expect(await service.compactNativeRecord({ conversationId: 'conv-1', limit: 4 }))
-      .toMatchObject({ ok: false, error: { message: 'Worker transport failed' } });
-    expect(state.pendingWatchCalls).toEqual([]);
-  });
-
-  it('retries a native page read crossed by a revert instead of labeling old rows with the new epoch', async () => {
-    state.rows = [row({ runtime: 'acp' })];
-    service.setSessionTimelineFactory(async () => makeTimeline().timeline);
-    const old = { id: 'conv-1:turn:s5', seq: 5, initiator: 'user', items: [] };
-    const current = { id: 'conv-1:turn:s0', seq: 0, initiator: 'user', items: [] };
-    state.storedHistory.mockImplementationOnce(async () => {
-      state.notificationEpoch = 1;
-      return { turns: [old], nextCursor: null, originTurnIds: ['old'] };
-    }).mockResolvedValue({ turns: [current], nextCursor: null, originTurnIds: ['current'] });
-    expect(await service.nativeRecord({ conversationId: 'conv-1', tail: true }))
-      .toMatchObject({ ok: true, value: { turns: [current], nativeOwnerNotificationEpoch: 1 } });
-    expect(state.storedHistory).toHaveBeenCalledTimes(4);
-  });
-
-  it.each([
-    ['cancellation', { kind: 'cancelled', reason: 'cancelled' }],
-    ['message interruption', { kind: 'cancelled', reason: 'interrupted_for_message' }],
-    ['process interruption', { kind: 'error', reason: 'process_closed', detail: 'Adapter exited with SIGTERM' }],
-  ] as const)('#1477 previews the latest committed %s even when the provider record ends at an older failure', async (_label, outcome) => {
+  it('previews an ACP session from its timeline, the latest committed turn included', async () => {
     const { readSessionPreview } = await import('./preview-rpc');
     state.rows = [row({ runtime: 'acp' })];
     const recorded = { id: 'old', seq: 0, initiator: 'user' as const,
       items: [{ kind: 'message' as const, id: 'old:input', seq: 0, role: 'user' as const, text: '<gugu_delivery route="chat" msg="msg:old"><![CDATA[old]]></gugu_delivery>' }],
       outcome: { kind: 'error' as const, reason: 'prompt_failed' as const } };
-    const cancelled = { ...recorded, id: 'conv-1:turn:s9', seq: 9,
-      items: [{ ...recorded.items[0]!, id: 'conv-1:turn:s9:input', text: '<gugu_delivery route="chat" msg="msg:new"><![CDATA[new]]></gugu_delivery>' }],
-      outcome };
+    const cancelled = { ...recorded, id: 'conv-1:turn:9', seq: 1,
+      items: [{ ...recorded.items[0]!, id: 'conv-1:turn:9:input', text: '<gugu_delivery route="chat" msg="msg:new"><![CDATA[new]]></gugu_delivery>' }],
+      outcome: { kind: 'cancelled' as const, reason: 'cancelled' as const } };
     const fake = makeTimeline();
     const snapshot = fake.timeline.getSnapshot();
-    fake.timeline.getSnapshot = () => ({ ...snapshot, turns: [recorded] });
+    fake.timeline.getSnapshot = () => ({ ...snapshot, turns: [recorded, cancelled] });
     service.setSessionTimelineFactory(async () => fake.timeline);
-    state.storedHistory.mockResolvedValue({ turns: [cancelled], originTurnIds: ['live:cancelled'], nextCursor: null });
-    state.nativeUnread = ['conv-1:turn:s0:message:auto:assistant:0'];
     state.pendingWatchAvailable = false;
-
-    for (let read = 0; read < 2; read++) {
-      expect(await readSessionPreview('conv-1')).toMatchObject({ ok: true, value: {
-        running: false, ended: cancelled.outcome, entries: [{ kind: 'prompt', messageId: 'msg:new' }],
-      } });
-    }
-    // A preview is not a page the reader went back for: it reads at the first-screen size.
-    expect(state.storedHistory).toHaveBeenCalledWith({ sessionId: 'conv-1', before: undefined, limit: 4 }, { older: false });
-    expect(state.wake).not.toHaveBeenCalled();
-  });
-
-  it('#1477 replaces an older failure with a newly committed successful turn without waiting for the provider file', async () => {
-    const { readSessionPreview } = await import('./preview-rpc');
-    state.rows = [row({ runtime: 'acp' })];
-    state.pendingWatchAvailable = false;
-    const old = { id: 'old', seq: 0, initiator: 'user' as const,
-      items: [{ kind: 'message' as const, id: 'old:input', seq: 0, role: 'user' as const,
-        text: '<gugu_delivery route="chat" msg="msg:old"><![CDATA[old]]></gugu_delivery>' }],
-      outcome: { kind: 'error' as const, reason: 'prompt_failed' as const } };
-    const latest = { id: 'conv-1:turn:s9', seq: 9, initiator: 'user' as const,
-      items: [{ kind: 'message' as const, id: 'new:input', seq: 0, role: 'user' as const,
-        text: '<gugu_delivery route="chat" msg="msg:new"><![CDATA[new]]></gugu_delivery>' },
-      { kind: 'message' as const, id: 'new:reply', seq: 1, role: 'assistant' as const, text: 'New committed reply' }],
-      outcome: { kind: 'done' as const, reason: 'end_turn' as const } };
-    const fake = makeTimeline();
-    const snapshot = fake.timeline.getSnapshot();
-    fake.timeline.getSnapshot = () => ({ ...snapshot, turns: [old] });
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    state.storedHistory.mockResolvedValue({ turns: [old], originTurnIds: ['live:old'], nextCursor: null });
-    expect(await readSessionPreview('conv-1')).toMatchObject({ ok: true, value: { ended: old.outcome } });
-
-    state.storedHistory.mockResolvedValue({ turns: [old, latest], originTurnIds: ['live:old', 'live:new'], nextCursor: null });
     expect(await readSessionPreview('conv-1')).toMatchObject({ ok: true, value: {
-      running: false, ended: latest.outcome, entries: [
-        { kind: 'prompt', messageId: 'msg:old' }, { kind: 'prompt', messageId: 'msg:new' }, { kind: 'text', text: 'New committed reply' },
-      ],
+      running: false, ended: cancelled.outcome, entries: [{ kind: 'prompt', messageId: 'msg:old' }, { kind: 'prompt', messageId: 'msg:new' }],
     } });
     expect(state.wake).not.toHaveBeenCalled();
   });

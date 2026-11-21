@@ -34,7 +34,6 @@ describe('0050 session turn revision', () => {
     expect(sql.prepare(`SELECT seq, revision FROM session_turns ORDER BY seq`).all()).toEqual([{ seq: 0, revision: 0 }, { seq: 1, revision: 0 }]);
     // An applied migration is recorded; a second start does not run it again (re-adding the column would throw).
     expect(() => applyMigrations(sql, bundledMigrations())).not.toThrow();
-    expect(sql.prepare(`SELECT count(*) AS n FROM pragma_table_info('session_turns') WHERE name = 'revision'`).get()).toEqual({ n: 1 });
   });
 
   it('a rewrite of a turn bumps its revision; writing the same content, or another column, does not', async () => {

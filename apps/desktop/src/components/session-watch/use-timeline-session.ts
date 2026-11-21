@@ -509,7 +509,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
     if (cancelled || !follow.ready) return
     applyResult(result)
   })
-  const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (failure) => {
+  const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, () => {
     if (cancelled) return
     write({ link: 'lost' })
     catchUp()

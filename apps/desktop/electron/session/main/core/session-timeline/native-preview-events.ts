@@ -9,9 +9,3 @@ export function onNativeMessagePreviewChanged(listener: (sessionId?: string) => 
 export function publishNativeMessagePreviewChanged(sessionId?: string): void {
   for (const listener of listeners) listener(sessionId);
 }
-
-export async function readNativeActiveMessagePreview(sessionId: string, historyFloor: string | null) {
-  const { peekAcpWorkerClient } = await import('../acp/runtime-process/host');
-  const client = await peekAcpWorkerClient();
-  return client ? client.activeMessagePreview({ sessionId, historyFloor }) : null;
-}

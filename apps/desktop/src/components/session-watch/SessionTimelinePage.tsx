@@ -8,7 +8,6 @@ import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
@@ -129,24 +128,20 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const apps = useSessionApps()
   const browserApp = { kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
-  const { nativeHistory, nativeRecord } = useSessionHistorySource({ deviceId: device.device_id, sessionId: session.conversationId, native, online, local })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
     reload, loadOlder, loadToolImage, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
     useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local)
 
-  const conversation = nativeHistory ? { ...timeline,
-    turns: [...(nativeRecord.record?.turns ?? []), ...(nativeRecord.record?.activeTurn ? [nativeRecord.record.activeTurn] : [])],
-    hasOlder: nativeRecord.record ? nativeRecord.record.nextCursor !== null : false,
-  } : timeline
+  const conversation = timeline
   const recovery = useSessionRestart({ deviceId: device.device_id, projectId: session.projectId, sessionId: session.conversationId,
-    missing: nativeHistory ? nativeRecord.errorCode === 'record_not_found' : errorCode === 'record_not_found', online, local,
-    onReady: () => { reload(); return nativeHistory ? nativeRecord.reload() : undefined } })
-  useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error ?? (nativeHistory ? nativeRecord.error : null), recovery)
+    missing: errorCode === 'record_not_found', online, local,
+    onReady: () => { reload() } })
+  useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error, recovery)
   // The directory says a crashed / unplugged machine is online until its lease runs out (about two minutes): its not
   // answering is the earlier fact: the header says 「连接中」 (❌ 「设备离线」); the reads keep trying and the page comes back by itself.
-  const hostSilent = !local && online && ((link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')) || (nativeHistory && nativeRecord.unreachable))
+  const hostSilent = !local && online && link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
   const answering = online && !hostSilent
   // Header state (owner 11-08: 「连接中」/「设备离线」 in the header, ❌ a banner, ❌ 「未连接」). The directory saying
   // the machine is off and this page's link not answering are separate facts: only the first is 「设备离线」.
@@ -164,7 +159,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // 会话列表、乃至刚切走时都叫得住人。这里再发一份的话,正开着这条会话时同一件事会响两次。
   const attention = deriveAttention(conversation)
   const foregroundWorking = attention === 'running' || attention === 'waiting' || recovery.pendingPrompt !== null
-  const queueReady = answering && phase === 'ready' && link === 'ok' && (!native || (Boolean(nativeRecord.ready && nativeRecord.record && !nativeRecord.record.hasNewer && !nativeRecord.record.activeTurn)))
+  const queueReady = answering && phase === 'ready' && link === 'ok'
   const queuedInput = foregroundWorking || queuedInputs.length > 0
   const beforeSend = () => {
     if (mobile && native && queuedInput && session.nativeInputIdentity !== true) {
@@ -182,7 +177,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
       }
     }
-    if (nativeHistory) nativeRecord.followTail()
   }
   // Identified agents share the group/avatar reading; transport only governs timeline access.
   const shownStatus = useShownAgentStatus()
@@ -342,10 +336,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onStop={cancel}
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}
-          onAtBottom={nativeHistory ? nativeRecord.loadNewer : undefined}
-          historyReady={!nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
-          onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
-          onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
+          onLoadOlder={loadOlder}
           onLoadToolImage={loadToolImage}
           emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——

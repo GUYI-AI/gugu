@@ -10,7 +10,7 @@ vi.mock('@main/db/client', () => ({ db: {} }));
 vi.mock('@main/db/schema', () => ({ sessions: {} }));
 vi.mock('../session-timeline/locate', () => ({ sessionRecordHarnessForProvider: (provider?: string) => provider === 'claude' ? 'claude' : null }));
 
-const { appendJournalTurn, journalCommittedTurn, journalHasTurns, mergeIntoJournal, revertJournal } = await import('./session-journal');
+const { appendJournalTurn, journalCommittedTurn, journalHasTurns, journalTurnIndexBase, mergeIntoJournal, revertJournal } = await import('./session-journal');
 
 const turn = (id: string, startedAt: number, text: string, anchor?: string): TranscriptTurn => ({
   id, seq: 0, initiator: 'user', startedAt, outcome: { kind: 'done' },
@@ -23,6 +23,15 @@ beforeEach(async () => { mocks.userData = await mkdtemp(join(tmpdir(), 'journal-
 afterEach(async () => { await rm(mocks.userData, { recursive: true, force: true }); });
 
 describe('session journal', () => {
+  it('numbers a resumed runtime past every runtime turn it names, owner notifications\' sources included', async () => {
+    expect(await journalTurnIndexBase('S1')).toBe(0);
+    await appendJournalTurn('S1', turn('S1:turn:3', 10, 'three'));
+    const notice = { ...turn('owner-notify:n', 20, ''), items: [{ kind: 'message', id: 'owner-notify:n:message:n', seq: 0, role: 'assistant', text: 'n',
+      ownerNotification: { requestId: 'n', requestHash: 'h', sourceTurnId: 'S1:turn:7' } }] } as TranscriptTurn;
+    await appendJournalTurn('S1', notice);
+    expect(await journalTurnIndexBase('S1')).toBe(8);
+  });
+
   it('appends whole turns, a turn again under its id', async () => {
     expect(journalHasTurns('S1')).toBe(false);
     await appendJournalTurn('S1', turn('S1:turn:0', 10, 'one'));

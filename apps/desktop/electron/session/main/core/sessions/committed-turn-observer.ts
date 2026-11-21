@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { identityKeys } from '@gugu/session-core/session-record/runtime-turn';
+import { identityKeys } from '@gugu/session-core/session-record';
 import { db } from '@main/db/client';
 import { events } from '@main/lib/events';
 import { sessionTurnSettledChannel } from '@shared/core/sessions/sessionEvents';
@@ -35,6 +35,11 @@ export function observeCommittedTurn(input: Committed): Promise<void> {
   return next;
 }
 const tails = new Map<string, Promise<void>>();
+
+/** Once every turn of the session observed so far has been taken in. */
+export function committedTurnsObserved(sessionId: string): Promise<void> {
+  return tails.get(sessionId) ?? Promise.resolve();
+}
 
 async function observe({ sessionId, source, turn }: Committed): Promise<void> {
   const context = source === 'live' ? await nativePublicationContext(sessionId) : null;
