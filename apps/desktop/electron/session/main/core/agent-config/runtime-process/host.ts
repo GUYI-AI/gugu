@@ -23,6 +23,7 @@ import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
 import { getPlugin, listPlugins } from '@main/core/agents/plugin-registry';
 import { desktopWorkerPath } from '@main/worker-manifest';
+import { harnessWorkerHost } from '@main/harness-worker-host';
 import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
@@ -41,6 +42,7 @@ const agentConfigWorker = lazyWorker(
     name: 'agent-config',
     contract: agentConfigRuntimeContract,
     entry: desktopWorkerPath('agent-config'),
+    host: harnessWorkerHost,
     scope: agentConfigRuntimeScope,
     // #6264「登录已失效」标记按「这台机器 × 这家的配置家」记(见 session-runtime auth-expiry-file.ts):
     // 咕咕 server 上放在几个账号共用的数据根(同机账号共用 claude 那份登录,A 发现过期 B 也看得到);

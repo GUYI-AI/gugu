@@ -63,6 +63,7 @@ import { log } from '@main/lib/logger';
 import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
+import { harnessWorkerHost } from '@main/harness-worker-host';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
 import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
@@ -247,6 +248,7 @@ const acpWorker = lazyWorker(
       name: 'acp',
       contract: acpRuntimeApiContract,
       entry: desktopWorkerPath('acp'),
+      host: harnessWorkerHost,
       scope: acpRuntimeScope,
       env: {
         ...process.env,

@@ -24,13 +24,15 @@ export function messageBytes(value: unknown): number {
 
 /** This is an output pressure threshold, not a universal RPC message-size limit.
  * Histories and image replies have no 32 MiB contract limit and must not crash the worker.
- * Pressure must reach producers; merely respecting Node's boolean without pausing input still grows a JS queue. */
-export function createIpcPressureSender(
-  send: (message: unknown, callback: (error: Error | null) => void) => boolean,
-  onError: (error: Error) => void,
+ * Pressure must reach producers; merely respecting the channel's boolean without pausing input still grows a JS queue.
+ * The parent acknowledges how many wire messages it took off the channel, so the same accounting works on a Node
+ * IPC channel and on an Electron utility parentPort, which has no send callback. */
+export function createAckPressureSender(
+  send: (message: unknown) => void,
   onPressure: (paused: boolean) => void,
   highWaterBytes = HIGH_WATER_BYTES,
 ) {
+  const inFlight: number[] = [];
   let pendingBytes = 0;
   let paused = false;
   const pressure = (next: boolean) => {
@@ -44,23 +46,14 @@ export function createIpcPressureSender(
     },
     send(message: unknown): void {
       const bytes = messageBytes(message);
+      inFlight.push(bytes);
       pendingBytes += bytes;
-      let completed = false;
-      const done = (error: Error | null) => {
-        if (completed) return;
-        completed = true;
-        pendingBytes -= bytes;
-        if (pendingBytes <= highWaterBytes / 2) pressure(false);
-        if (error) onError(error);
-      };
-      try {
-        if (pendingBytes >= highWaterBytes) pressure(true);
-        const writable = send(message, done);
-        if (!writable && !completed) pressure(true);
-      } catch (error) {
-        done(null);
-        throw error;
-      }
+      if (pendingBytes >= highWaterBytes) pressure(true);
+      send(message);
+    },
+    ack(count: number): void {
+      for (const bytes of inFlight.splice(0, count)) pendingBytes -= bytes;
+      if (pendingBytes <= highWaterBytes / 2) pressure(false);
     },
   };
 }
