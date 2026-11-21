@@ -547,12 +547,15 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onCloseCapture, { capture: true })
   }, [openPswp, editing, isTopLayer, viewer])
 
+  // @@@edit-no-flash - until the editor can show the picture, the viewer stays as it was: its chrome while the editor's code
+  // loads, its picture under the editor's loading page until that page is due (annotate.css `.ia-loading`).
+  const chrome = viewer ? <ImageViewerChrome viewer={viewer} mobile={mobile} onEdit={() => setEditing(viewer.items[viewer.index])} /> : null
   return (
     <>
       {children}
-      {viewer ? createPortal(editing ? <Suspense fallback={<div role="status">{t('imageAnnotate.loading')}</div>}>
+      {viewer ? createPortal(editing ? <Suspense fallback={chrome}>
         <UiPortalContainerProvider value={viewer.root}><AnnotateEditor item={editing} imageBounds={imageBounds} mobile={mobile} onCancel={() => setEditing(null)} onDone={() => viewer.pswp.close()} /></UiPortalContainerProvider>
-      </Suspense> : <ImageViewerChrome viewer={viewer} mobile={mobile} onEdit={() => setEditing(viewer.items[viewer.index])} />, viewer.root) : null}
+      </Suspense> : chrome, viewer.root) : null}
     </>
   )
 }
