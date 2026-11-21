@@ -269,6 +269,43 @@ async function sendToMember(
   return { id };
 }
 
+/**
+ * `dispatch(text, { widget, to: { chat } })` (63, `chat:relay`): the App view as a message of that chat, in the person's
+ * name, through `chat.send_widget` with `p_via_app` — the App is recorded and counted (30 a minute) as for a message to a
+ * member. A page an agent works is refused: that agent sends widgets with its own `widget_send`, under its chat's rules.
+ */
+async function sendWidget(
+  platform: AppSendPlatform,
+  extensionId: string,
+  chat: string,
+  text: string,
+  widget: NonNullable<ReturnType<typeof dispatchCallOf>['widget']>,
+  as?: string,
+): Promise<{ to: { chat: string }; id: string; widgetId: string }> {
+  if (as) throw new AppSendError('denied', 'An agent sends a widget with widget_send, not through an App page');
+  const { token, userId } = await platform.account();
+  const { data, error } = await client(token, 'chat').rpc('send_widget', {
+    p_message_id: globalThis.crypto.randomUUID(),
+    p_chat_id: chat,
+    p_sender_user_id: userId,
+    p_text: text,
+    p_app: widget.app ?? extensionId,
+    p_view: widget.view,
+    p_data: widget.data ?? null,
+    ...(widget.height === undefined ? {} : { p_height: widget.height }),
+    p_via_app: extensionId,
+  });
+  if (error) {
+    if (error.code === 'PT429' || /rate-limited/.test(error.message)) throw new AppSendError('rate-limited', error.message);
+    if (error.code === '42501') throw new AppSendError('denied', error.message);
+    if (error.code === '23514') throw new AppSendError('invalid', error.message);
+    throw new AppSendError('failed', error.message);
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { message_id?: string; widget_id?: string } | null;
+  if (!row?.message_id || !row.widget_id) throw new AppSendError('failed', 'The server did not confirm the widget');
+  return { to: { chat }, id: row.message_id, widgetId: row.widget_id };
+}
+
 /** A member's name, as a message the chat sees `@`s them; the database's own refusal says when there is none. */
 async function nameOf(token: string, userId: string): Promise<string> {
   const { data, error } = await client(token, 'identity').from('users').select('display_name').eq('id', userId).maybeSingle();
@@ -330,8 +367,9 @@ export async function dispatchFromApp(
   extensionId: string,
   args: Record<string, unknown>,
   here: DispatchHere,
-): Promise<{ to: DispatchTarget; id?: string; deferred?: true } | { cancelled: true }> {
+): Promise<{ to: DispatchTarget; id?: string; deferred?: true; widgetId?: string } | { cancelled: true }> {
   const call = dispatchCallOf(args);
+  if (call.widget && call.to && 'chat' in call.to) return sendWidget(platform, extensionId, call.to.chat, call.text, call.widget, here.as);
   // A binding is the host's to resolve against its own grant (#1927, desktop `dispatchForApp`), before this: one reaching
   // here has no host that resolves it, and is refused rather than read as any other target.
   if (call.to && 'binding' in call.to) throw new AppSendError('denied', 'This host has no conversation binding to put a draft into');

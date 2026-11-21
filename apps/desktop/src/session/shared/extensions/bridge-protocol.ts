@@ -168,7 +168,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // of the page's own chat in the host's sheet; the picked ones are readable by that page with no capability (writing needs
 // `files:write`). `pickAgent({ include })` may also offer the
 // page's chat members (`people`, `all`); a person picked answers `{ member }`.
-export const EXTENSION_API_VERSION = 62;
+// 63 (app-dispatch-core.ts): `dispatch(text, { widget: { app?, view, data?, height? }, to: { chat } })` (`chat:relay`) sends
+// a widget view in the person's name, the App recorded (`p_via_app`) as for a message to a member. An older host ignores
+// `widget` and refuses the call as a plain dispatch to a chat, so an App that sends one says 63, or offers it only where `gugu.apiVersion` is 63 or more.
+export const EXTENSION_API_VERSION = 63;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

@@ -305,7 +305,7 @@ const enUSCoreMessages = {
     'Read the files of every chat you are in, and of the tasks on ALL your computers, not just {computer} (the others read only)',
   'extensions.permissionsFilesWrite': 'Change the files of every chat you are in, and of the tasks on {computer}',
   // `gugu.dispatch` to a member of a chat: a whisper to one person or agent, sent as you and marked as from this App (摩擦单 F16, F79).
-  'extensions.permissionsChatRelay': 'Whisper to a person or agent in any chat you are in, in your name; they see it came from this App',
+  'extensions.permissionsChatRelay': 'Send in your name in any chat you are in: a whisper to a person or agent, or a card the chat sees; it shows it came from this App',
   'extensions.permissionsChatUnread': 'See only whether one conversation you select has unread messages',
   // #1927: the same conversation as `chat:unread`'s, never another.
   'extensions.permissionsChatFiles': 'Read only the files of the conversation you select, without changing them',
@@ -1658,7 +1658,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsFilesRead': '读取你所在的所有对话中的文件，以及{computer}上各个会话中的文件',
   'extensions.permissionsFilesReadAllMachines': '读取你所在的所有对话中的文件，以及你所有电脑（不只是{computer}）上各个会话中的文件（其他电脑上为只读）',
   'extensions.permissionsFilesWrite': '修改你所在的所有对话中的文件，以及{computer}上各个会话中的文件',
-  'extensions.permissionsChatRelay': '以你的名义在你所在的对话中向某个人或 agent 发送悄悄话，对方可看到消息来自此应用',
+  'extensions.permissionsChatRelay': '以你的名义在你所在的对话中发消息：给某个人或 agent 的悄悄话，或全群可见的卡片；消息会注明来自此应用',
   'extensions.permissionsChatUnread': '仅获取你选定的一条会话是否有未读消息',
   'extensions.permissionsChatFiles': '仅读取你选定的会话中的文件，不做修改',
   'extensions.permissionsChatDraft': '仅在你选定的会话输入框中放入草稿，是否发送由你决定',

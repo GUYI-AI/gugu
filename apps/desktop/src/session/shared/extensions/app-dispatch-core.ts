@@ -4,6 +4,7 @@ import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import { personId } from './app-runtime-protocol';
 import { BINDING_NAME } from './unread-binding';
 import { draftAttachmentsOf, type DraftAttachment } from './resources-management';
+import { widgetMessageError } from '@gugu/core/shared/ui/widgetModels';
 
 /**
  * `gugu.dispatch(text, options)` (15): the one way an App hands something to someone — owner 10-25「全部统一」. Before it there
@@ -16,6 +17,8 @@ import { draftAttachmentsOf, type DraftAttachment } from './resources-management
  * - `{ chat }` with `draft`: only into that chat's composer (as `draft` into an agent's): the person sends it, or not.
  * - `{ binding }` with `draft` (40, `chat:draft`): the same, into the one conversation the person chose for the App's
  *   binding (#1927). The host finds the chat; the App never names or learns it.
+ * - `{ chat }` with `widget` (63, `chat:relay`): an App view in a message of that chat, sent as the person through
+ *   `chat.send_widget` with the App named (`p_via_app`), as a message to a member is. `app` defaults to the calling App.
  * No `to`: the person picks in the host's sheet (`DispatchSheet`), seeing the whole text, every pill and the target, and
  * only their press sends — so that call needs no capability, only their gesture (as compose's did).
  */
@@ -68,7 +71,9 @@ export function dispatchTargetOf(to: unknown): DispatchTarget | null {
  * The capability a call needs (its `BRIDGE_VERBS` row): none when the person picks or only a draft is put down — the last
  * step is theirs — else the one the named target's delivery always needed. A bad `to` needs none: the call says what is wrong.
  */
-export function dispatchNeeds(args: { to?: unknown; draft?: unknown; spawn?: unknown }): ExtensionCapability | null {
+export function dispatchNeeds(args: { to?: unknown; draft?: unknown; spawn?: unknown; widget?: unknown }): ExtensionCapability | null {
+  // A widget is a message the chat sees, in the person's name: the same door as a message to a member.
+  if (named(args.widget)) return 'chat:relay';
   if (named((args.spawn as { device?: unknown } | null)?.device)) return 'agents:control:all-machines';
   // Named by its binding (#1927): the conversation the person chose, which only `chat:draft` may put a draft into.
   if (named(args.to) && typeof args.to === 'object' && Object.hasOwn(args.to, 'binding')) return 'chat:draft';
@@ -98,9 +103,34 @@ export interface DispatchCall {
   key?: string;
   spawn: DispatchSpawn;
   offers: readonly DispatchOffer[] | null;
+  /** 63: an App view sent into `to.chat` as the person; `app` absent = the calling App. */
+  widget?: DispatchWidget;
+}
+
+export interface DispatchWidget { app?: string; view: string; data?: Record<string, unknown>; height?: number }
+
+/** `widget` and its one target, checked as `widget_send` checks a widget (one validator); every other option refused. */
+function widgetCallOf(args: Record<string, unknown>): DispatchCall {
+  const widget = args.widget;
+  if (typeof widget !== 'object' || widget === null || Array.isArray(widget)) return invalid('widget is { app?, view, data?, height? }');
+  const { app, view, data, height, ...rest } = widget as Record<string, unknown>;
+  if (Object.keys(rest).length) invalid(`widget is { app?, view, data?, height? }: no ${Object.keys(rest).join(', ')}`);
+  if (named(app) && (typeof app !== 'string' || !app)) invalid("widget.app is an App's id, or absent for this App");
+  const others = ['draft', 'refs', 'images', 'attach', 'visible', 'delivery', 'key', 'spawn', 'offer', 'about'].filter((key) => named(args[key]));
+  if (others.length) invalid(`A widget goes with its text and to { chat } only: no ${others.join(', ')}`);
+  const to = dispatchTargetOf(args.to);
+  if (!to || !('chat' in to) || 'member' in to) invalid('A widget goes into a chat: to { chat }');
+  const text = String(args.text ?? '').trim();
+  const error = widgetMessageError({ v: 2, text, app: typeof app === 'string' ? app : 'this', view, ...(named(height) ? { height } : {}), ...(named(data) ? { data } : {}) });
+  if (error) invalid(`widget: ${error}`);
+  return {
+    text, draft: false, to, refs: undefined, images: undefined, visible: false, spawn: {}, offers: null,
+    widget: { ...(typeof app === 'string' ? { app } : {}), view: view as string, ...(named(data) ? { data: data as Record<string, unknown> } : {}), ...(named(height) ? { height: height as number } : {}) },
+  };
 }
 
 export function dispatchCallOf(args: Record<string, unknown>): DispatchCall {
+  if (named(args.widget)) return widgetCallOf(args);
   if (named(args.about)) invalid('about is gone: name the file in refs — { refs: [{ file }] }');
   const text = String(args.text ?? '').trim();
   const draft = args.draft === true;

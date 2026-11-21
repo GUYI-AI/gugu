@@ -11,6 +11,7 @@ const AGENT = '22222222-2222-4222-8222-222222222222';
 const GROUP = '44444444-4444-4444-8444-444444444444';
 const rpcs: Array<Record<string, unknown>> = [];
 let rpcError: { code: string; message: string } | null = null;
+const rpcNames: string[] = [];
 
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: () => ({
@@ -22,9 +23,10 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
       };
       return q;
     },
-    rpc: async (_name: string, args: Record<string, unknown>) => {
+    rpc: async (name: string, args: Record<string, unknown>) => {
       rpcs.push(args);
-      return { error: rpcError };
+      rpcNames.push(name);
+      return name === 'send_widget' && !rpcError ? { data: [{ message_id: args.p_message_id, widget_id: 'wid-1', seq: 9 }], error: null } : { error: rpcError };
     },
   }),
 }));
@@ -233,5 +235,69 @@ describe('dispatchFromApp (the shared answer)', () => {
     await expect(dispatchFromApp(platform, 'x', { text: 'again', to: { chat: GROUP, member: `user:${AGENT}` } }, { chat, preselect: null })).rejects.toMatchObject({ code: 'rate-limited' });
     rpcError = null;
     await expect(dispatchFromApp(platform, 'x', { text: 'x', about: { id: GROUP } }, { chat, preselect: null })).rejects.toMatchObject({ code: 'invalid', message: expect.stringContaining('about is gone') });
+  });
+});
+
+describe('63: a widget sent into a chat (`widget` + `to: { chat }`)', () => {
+  const here = { chat, preselect: null };
+  const send = async (args: Record<string, unknown>, as?: string) => {
+    rpcs.length = 0;
+    rpcNames.length = 0;
+    const { platform, asked } = phone();
+    const answer = await dispatchFromApp(platform, 'kanban', args, { ...here, ...(as ? { as } : {}) });
+    return { answer, asked, sent: rpcs[0], name: rpcNames[0] };
+  };
+
+  it('needs chat:relay, as a message to a member in the person’s name does', () => {
+    const args = { text: 'a56e · ship', widget: { view: 'card' }, to: { chat: GROUP } };
+    expect(dispatchNeeds(args)).toBe('chat:relay');
+    expect(dispatchNeedsGesture(args)).toBe(false);
+    expect(callRefusal('dispatch', args, { kind: 'page', has: () => false, gesture: true, widget: false })).toMatchObject({ code: 'denied', message: expect.stringContaining('chat:relay') });
+    expect(callRefusal('dispatch', args, { kind: 'page', has: (word: string) => word === 'chat:relay', gesture: false, widget: false })).toBeNull();
+  });
+
+  it('goes as the person, the calling App’s view unless app names another, through send_widget; no sheet', async () => {
+    const { answer, asked, sent, name } = await send({ text: 'a56e · ship', widget: { view: 'card', data: { board: 'f1', card: 'a56e' }, height: 140 }, to: { chat: GROUP } });
+    expect(name).toBe('send_widget');
+    expect(asked).toEqual([]);
+    expect(sent).toMatchObject({ p_chat_id: GROUP, p_sender_user_id: OWNER, p_text: 'a56e · ship', p_app: 'kanban', p_view: 'card', p_data: { board: 'f1', card: 'a56e' }, p_height: 140, p_via_app: 'kanban' });
+    expect(answer).toEqual({ to: { chat: GROUP }, id: sent!.p_message_id, widgetId: 'wid-1' });
+    expect((await send({ text: 'chart', widget: { app: 'data-lens', view: 'card' }, to: { chat: GROUP } })).sent).toMatchObject({ p_app: 'data-lens', p_data: null });
+  });
+
+  it('a page an agent works is refused: the agent sends widgets with widget_send', async () => {
+    await expect(send({ text: 'x', widget: { view: 'card' }, to: { chat: GROUP } }, AGENT)).rejects.toMatchObject({ code: 'denied', message: expect.stringContaining('widget_send') });
+    expect(rpcNames).toEqual([]);
+  });
+
+  it('the App’s minute limit is said as such', async () => {
+    rpcError = { code: 'PT429', message: 'rate-limited: at most 30 messages a minute from one App in one person\'s name' };
+    try {
+      await expect(send({ text: 'x', widget: { view: 'card' }, to: { chat: GROUP } })).rejects.toMatchObject({ code: 'rate-limited' });
+    } finally {
+      rpcError = null;
+    }
+  });
+
+  it('the server’s refusal is the answer: not a member is denied', async () => {
+    rpcError = { code: '42501', message: 'Widgets can be sent only as yourself or your own member agent' };
+    try {
+      await expect(send({ text: 'x', widget: { view: 'card' }, to: { chat: GROUP } })).rejects.toMatchObject({ code: 'denied' });
+    } finally {
+      rpcError = null;
+    }
+  });
+
+  it('checked as widget_send checks a widget, and said where it is wrong', () => {
+    const call = (args: Record<string, unknown>) => () => dispatchCallOf({ text: 'x', to: { chat: GROUP }, ...args });
+    expect(call({ widget: { view: 'card' } })().widget).toEqual({ view: 'card' });
+    expect(() => dispatchCallOf({ text: 'x', widget: { view: 'card' } })).toThrow(/to \{ chat \}/);
+    expect(() => dispatchCallOf({ text: 'x', widget: { view: 'card' }, to: { chat: GROUP, member: `user:${AGENT}` } })).toThrow(/to \{ chat \}/);
+    expect(call({ widget: { view: 'card' }, draft: true })).toThrow(/no draft/);
+    expect(call({ widget: { view: 'card', title: 't' } })).toThrow(/no title/);
+    expect(call({ widget: {} })).toThrow(/app and view are required/);
+    expect(call({ widget: { view: 'card', height: 9 } })).toThrow(/height/);
+    expect(call({ widget: { view: 'card', data: { big: 'x'.repeat(5000) } } })).toThrow(/4096/);
+    expect(() => dispatchCallOf({ text: '', widget: { view: 'card' }, to: { chat: GROUP } })).toThrow(/text/);
   });
 });
