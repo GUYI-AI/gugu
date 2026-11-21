@@ -48,6 +48,8 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onRe
       <div className="gg-model-subscription-usage">
       {(agent.id === 'claude' || agent.id === 'codex') && <SubscriptionModelQuota machine={machine} provider={agent.id} connectionId={connection.id} account={connection.name}
         enabled={subscription} inlineOnly />}
+      </div>
+      <div className="gg-model-subscription-auth">
       {status?.kind === 'unauthenticated' &&
         <span className={expired ? 'gg-model-expired' : 'text-xs text-foreground-muted'}>{translate(expired ? 'subscriptions.connections.expired' : 'subscriptions.connections.signedOut')}</span>}
       {connection.kind === 'native' && status?.kind === 'authenticated' &&
