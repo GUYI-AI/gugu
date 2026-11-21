@@ -118,7 +118,6 @@ import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTa
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
-import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
 import { scheduleSlotShown, SessionScheduleSlot } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';
@@ -2217,11 +2216,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const render = new AbortController();
         mermaidViewerRender.current = render;
         const caches = store.chatContext.sharedCaches;
-        const theme = readMermaidTheme();
-        const cached = caches.peekMermaid(arg.chart, theme);
+        const cached = caches.peekMermaid(arg.chart);
         setMermaidViewer({ svg: cached, pending: cached === null });
         if (cached !== null) return;
-        void caches.renderMermaid(arg.chart, theme, render.signal).then((svg) => {
+        void caches.renderMermaid(arg.chart, render.signal).then((svg) => {
           if (!render.signal.aborted) setMermaidViewer({ svg, pending: false });
         });
       },
