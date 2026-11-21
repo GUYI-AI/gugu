@@ -1,4 +1,4 @@
-import { useMotionValue, useMotionValueEvent, useReducedMotion, type MotionValue } from 'framer-motion';
+import { useMotionValue, useMotionValueEvent, type MotionValue } from 'framer-motion';
 import { clampPaneWidth, definePaneWidth, readPaneWidth, writePaneWidth } from '@/lib/paneWidth';
 import {
   createContext,
@@ -76,11 +76,8 @@ export function sidebarRailTextOpacity(progress: number): number {
 }
 
 /**
- * The rows are laid out as the rail (the count on the avatar's corner) only while the list's content is the rail's width:
- * PanelTrack lays it out at the larger size for the whole move, so that is from the frame a collapse lands to the frame an
- * expand starts. The flip is one restyle of the counts, ❌ mid-motion (it was at 0.45), where it was a long frame inside the
- * spring. The text (sidebarRailTextOpacity) is invisible there, so the names never jump; the corner count fades in when it
- * takes its place (left-sidebar).
+ * The rows are laid out as the rail only while the list's content is the rail's width (a collapse has landed, an expand
+ * not started): one restyle at a move's end, ❌ mid-spring. The names are invisible then (sidebarRailTextOpacity).
  */
 export function sidebarRailLayout(contentWidth: number): boolean {
   return contentWidth - SIDEBAR_RAIL_PX < PANEL_LANDED_PX;
@@ -161,11 +158,8 @@ export interface WorkspaceLayoutContextValue {
 const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undefined>(undefined);
 
 /**
- * 会话页外层布局(列表 ↔ 内层栏 ↔ 正文)的状态。这里只说每一格**该在哪**(一个纯推导:开没开、选定的宽、放得下多宽);
- * 怎么动到那里归 PanelTrack(panel-track.ts):正文 ❌ 逐帧重排,每一格在动效两头各排一次。
- *
- * 动(弹簧):列表开合、拖边松手后的吸附、内层栏收起 / 展开。跳(无动效):首帧、拖动中、窗口变宽变窄、内层栏出现 / 离开
- * (换到另一个对话,不是这一列在开合)、列表所在的页换成不带列表的页、减弱动态。
+ * 会话页外层布局(列表 ↔ 内层栏 ↔ 正文)的状态:只推导每一格**该在哪**,怎么动过去归 PanelTrack。
+ * 动:列表开合、拖边松手后的吸附、内层栏收起 / 展开。跳:首帧、拖动中、窗口宽窄、内层栏出现 / 离开、换到不带列表的页。
  *
  * #3904 那条「窄宽度自动折叠」owner 2026-09-05 推翻过(「新会话创建之后左侧栏就折叠,这个不好,别折叠啊」):
  * 侧栏折不折只由用户说了算,别再以任何形式加回来。
@@ -174,7 +168,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   // Expanded until the user folds it (#2548 「默认展开」); the fold is stored with the sidebar's snapshot (sidebar-folds) and
   // the width under SIDEBAR_PANE, so a restart comes back as it was left.
   const [isLeftOpen, setIsLeftOpen] = useState(() => !sidebarFolds.has('left'));
-  const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
   const leftWidth = useMotionValue(readPaneWidth(SIDEBAR_PANE));
@@ -204,7 +197,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
   const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 } }]));
-  const move = useCallback(() => (prefersReducedMotion ? track.jump(targets()) : track.to(targets())), [prefersReducedMotion, track]);
+  const move = useCallback(() => track.to(targets()), [track]);
   const jump = useCallback(() => track.jump(targets()), [track]);
 
   const leftAnimatedWidth = useMotionValue(track.drawn('list'));

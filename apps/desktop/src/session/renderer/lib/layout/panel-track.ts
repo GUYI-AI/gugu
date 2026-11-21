@@ -1,35 +1,21 @@
 import { animate } from 'framer-motion';
 
 /**
- * @@@panel-track — the one place a panel's size moves on screen: open, fold, and a change of size (a side page that wants
- * another width) are all a slot going from one size to another, played here and nowhere else.
+ * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill` that
+ * takes the rest; callers say where slots go (`to` on the spring, `jump` at once) and never animate.
  *
- * A track is a row of slots before one `fill` (the page, which takes the rest). Callers only say where each slot goes
- * (`to`); they never animate. The motion keeps the page from being laid out in every frame:
- *
- *  · **Laid out once at each end.** For the whole move a slot's place in the layout is the smaller of its two sizes and its
- *    content the larger, so the fill is laid out at its larger size too. Whatever grows is laid out at the start, whatever
- *    shrinks where it lands; in between, nothing is.
- *  · **Every frame is transforms (and opacity).** A slot's content is shown through a window that is moved, with the content
- *    moved back the other way, so the window clips it at the slot's drawn edge; the fill is moved so it starts at the drawn
- *    edges. A slot that opens from or closes to nothing fades with its size, behind a soft edge, so no glyph reads as cut
- *    (owner 09-13: nothing may look clipped; 11-21: a folding panel keeps its width, fades, soft edge).
- *  · **One spring for the track** (`PANEL_SPRING`): every edge that moves, moves on it.
- *
- * Jumps (no motion): the first placement, a slot appearing or going, a resize of the track, a drag, reduced motion.
+ *  · Laid out once at each end: while moving, a slot's place is the smaller of its two sizes and its content the larger.
+ *  · Every frame in between is transforms: the content is seen through a window moved to the drawn edge (the content moved
+ *    back by as much), the fill moved to start there. A slot going to or from nothing fades behind a soft edge (owner 11-21).
  */
 export const PANEL_SPRING = { type: 'spring', duration: 0.5, bounce: 0.1 } as const;
 
-/**
- * Within this of where it goes, every edge has landed and the move ends there: the spring's sub-pixel tail (~130 ms)
- * would otherwise hold the last layout (e.g. the list's rail layout) back after the motion looks done.
- */
+/** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
 export const PANEL_LANDED_PX = 0.5;
 
-/** The soft edge a fading slot shows at its drawn edge while it is clipped. */
+/** A fading slot's soft edge: transparent at its drawn edge, opaque this far in. */
 export const PANEL_SOFT_EDGE_PX = 24;
-/** Transparent at the drawn (right) edge, opaque PANEL_SOFT_EDGE_PX in. */
-const SOFT_EDGE = `linear-gradient(to left, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`;
+const SOFT_EDGE = { x: `linear-gradient(to left, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`, y: `linear-gradient(to top, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)` };
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -41,36 +27,29 @@ export interface SlotTarget {
   content?: number;
 }
 
-/** A slot's state in the layout: what it occupies on screen now, its place in the layout, its content's laid-out size. */
+/** Where a slot is drawn now, its place in the layout, and its content's laid-out size. */
 export interface SlotGeometry {
   drawn: number;
   place: number;
   content: number;
 }
 
-/** What one frame writes for a slot. `window`/`inner` are x offsets (px); `soft` = fade + soft edge. */
+/** One frame of a slot: window and content offsets along the track (px), opacity, soft edge, out of reach. */
 export interface SlotPaint {
   window: number;
   inner: number;
   opacity: number;
   soft: boolean;
-  /** Drawn at nothing: out of focus and reach (inert). It is already invisible (opacity 0); ❌ visibility, which would restyle its whole subtree. */
+  /** Drawn at nothing: inert (❌ visibility, which would restyle its whole subtree). */
   hidden: boolean;
 }
 
-/**
- * The plan for a move from `drawn`/`content` (where a slot is now, maybe mid-move) to `target`: its place is the smaller
- * size, its content the larger, so the fill gets the larger too and neither is laid out again until it lands.
- */
+/** A move from where a slot is drawn (maybe mid-move) to `target`: place the smaller size, lay the content out at the larger. */
 export function planSlot(drawn: number, content: number, target: Required<SlotTarget>): { place: number; content: number } {
   return { place: Math.min(drawn, target.size), content: Math.max(content, target.content) };
 }
 
-/**
- * One frame of a track: each slot's paint and the fill's offset, from the slots' geometry in track order. A slot keeps its
- * content against its left edge and is moved by how far the slots before it are drawn from where they are laid out; so is
- * the fill. The fill is laid out at least as wide as it is drawn: what runs past its right end lies past the track's edge.
- */
+/** One frame: each slot and the fill are moved by how far the slots before them are drawn from where they are laid out. */
 export function paintTrack(slots: readonly SlotGeometry[]): { slots: SlotPaint[]; fill: number } {
   let shift = 0;
   const paint = slots.map((slot) => {
@@ -81,15 +60,11 @@ export function paintTrack(slots: readonly SlotGeometry[]): { slots: SlotPaint[]
   return { slots: paint, fill: shift };
 }
 
-/**
- * A slot's window is laid out at its place's left edge, `content` wide; it is moved so its right end is on the drawn edge,
- * and the content is moved back by the same clip so it stays against the left edge. `shift`: how far the slot's drawn left
- * edge is from its laid-out one.
- */
+/** The window (content wide) is moved so its far end is on the drawn edge; the content back by as much. */
 function paintSlot(slot: SlotGeometry, shift: number): SlotPaint {
   const clip = Math.max(0, slot.content - slot.drawn);
   const clipped = clip > PANEL_LANDED_PX;
-  // Fades only on the way to or from nothing: a rail (the list) keeps what it shows and fades its own text.
+  // Fades only on the way to or from nothing: a rail (the list) fades its own text.
   const soft = clipped && slot.place < PANEL_LANDED_PX;
   return {
     window: shift - clip || 0,
@@ -119,17 +94,18 @@ interface Slot {
 
 export type PanelTrackListener = (drawn: ReadonlyMap<string, number>, landed: boolean) => void;
 
-/**
- * A track: its slots (in order) and its fill. `to` says where slots go; `jump` puts them there now. The nodes are attached
- * by PanelSlot / the fill's ref; a track without nodes still keeps its geometry (it is written when they come).
- */
+/** Slots (in order) and a fill, attached by PanelSlot and the fill's ref; geometry is kept, and written when nodes come. */
 export class PanelTrack {
   private readonly slots: Slot[];
   private fill: HTMLElement | null = null;
   private running: { stop: () => void } | null = null;
   private readonly listeners = new Set<PanelTrackListener>();
 
-  constructor(slots: readonly { id: string; at: SlotTarget }[]) {
+  /** `axis`: a row (x, sizes are widths) or a column (y, heights). */
+  constructor(
+    slots: readonly { id: string; at: SlotTarget }[],
+    private readonly axis: 'x' | 'y' = 'x'
+  ) {
     this.slots = slots.map(({ id, at }) => {
       const target = full(at);
       return { id, nodes: null, from: target.size, target, geometry: { drawn: target.size, place: target.size, content: target.content } };
@@ -174,13 +150,11 @@ export class PanelTrack {
     this.write(true);
   }
 
-  /**
-   * Moves the slots there on the spring, from wherever they are drawn now (a move under way is taken over). A slot not
-   * named keeps its target. Nothing to move = nothing happens.
-   */
+  /** Moves the slots there on the spring from where they are drawn now (a move under way is taken over). */
   to(targets: Readonly<Record<string, SlotTarget>>): void {
+    // Reduced motion is the track's to honour, ❌ each caller's.
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return this.jump(targets);
     const next = this.slots.map((slot) => (targets[slot.id] ? full(targets[slot.id]) : slot.target));
-    // At rest the geometry is the target; mid-move the move already goes there.
     if (this.slots.every((slot, at) => same(slot.target, next[at]))) return;
     this.stop();
     this.slots.forEach((slot, at) => {
@@ -188,9 +162,9 @@ export class PanelTrack {
       slot.from = slot.geometry.drawn;
       slot.geometry = { drawn: slot.from, ...planSlot(slot.from, slot.geometry.content, slot.target) };
     });
-    // Frame 0 is written with the start's layout, in the same task as the click: the page is never drawn in between.
+    // Frame 0 with the start's layout, in the click's task.
     this.write(true);
-    // The move is ours before the spring starts: its first frame or its end may come before `animate` returns.
+    // Ours before the spring starts: its first frame or its end may come before `animate` returns.
     const move = { stop: () => {} };
     this.running = move;
     const controls = animate(0, 1, {
@@ -228,27 +202,28 @@ export class PanelTrack {
     return slot;
   }
 
-  /** Writes the current geometry: `layout` also writes the places and content sizes (the start and the landing only). */
+  /** `layout`: also the places and content sizes (only at a move's two ends). */
   private write(layout: boolean): void {
-    const translate = (offset: number) => (offset ? `translateX(${offset}px)` : '');
+    const size = this.axis === 'x' ? 'width' : 'height';
+    const translate = (offset: number) => (offset ? `translate${this.axis.toUpperCase()}(${offset}px)` : '');
     const paint = paintTrack(this.slots.map((slot) => slot.geometry));
-    // Its own compositor layer while it moves, so a frame repaints nothing; dropped at rest (layers cost memory).
+    // Own layers while moving, so a frame repaints nothing; dropped at rest.
     const moving = this.slots.some((slot) => slot.geometry.drawn !== slot.target.size) ? 'transform' : '';
     this.slots.forEach((slot, at) => {
       const nodes = slot.nodes;
       if (!nodes) return;
       const p = paint.slots[at];
       if (layout) {
-        nodes.place.style.width = `${slot.geometry.place}px`;
-        nodes.window.style.width = `${slot.geometry.content}px`;
-        nodes.content.style.width = `${slot.geometry.content}px`;
+        nodes.place.style[size] = `${slot.geometry.place}px`;
+        nodes.window.style[size] = `${slot.geometry.content}px`;
+        nodes.content.style[size] = `${slot.geometry.content}px`;
       }
       nodes.window.style.transform = translate(p.window);
       nodes.content.style.transform = translate(p.inner);
       nodes.window.style.willChange = moving;
       nodes.content.style.willChange = moving;
       nodes.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
-      nodes.window.style.maskImage = p.soft ? SOFT_EDGE : '';
+      nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis] : '';
       nodes.window.inert = p.hidden;
     });
     if (this.fill) {

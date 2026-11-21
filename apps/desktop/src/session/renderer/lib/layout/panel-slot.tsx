@@ -10,12 +10,15 @@ import type { PanelTrack } from './panel-track';
 export function PanelSlot({
   track,
   id,
+  axis = 'x',
   className,
   windowProps,
   children,
 }: {
   track: PanelTrack;
   id: string;
+  /** The track's axis (PanelTrack): a slot in a row, or in a column. */
+  axis?: 'x' | 'y';
   className?: string;
   windowProps?: HTMLAttributes<HTMLDivElement> & Record<`data-${string}`, string | undefined>;
   children: ReactNode;
@@ -30,13 +33,13 @@ export function PanelSlot({
     attach();
   };
   return (
-    <div ref={ref('place')} data-panel-slot={id} className={cn('relative h-full shrink-0', className)}>
+    <div ref={ref('place')} data-panel-slot={id} className={cn('relative shrink-0', axis === 'x' ? 'h-full' : 'w-full', className)}>
       <div
         {...windowProps}
         ref={ref('window')}
-        className={cn('absolute inset-y-0 left-0 overflow-hidden', windowProps?.className)}
+        className={cn('absolute top-0 left-0 overflow-hidden', axis === 'x' ? 'h-full' : 'w-full', windowProps?.className)}
       >
-        <div ref={ref('content')} className="absolute inset-y-0 left-0">
+        <div ref={ref('content')} className={cn('absolute top-0 left-0', axis === 'x' ? 'h-full' : 'w-full')}>
           {children}
         </div>
       </div>

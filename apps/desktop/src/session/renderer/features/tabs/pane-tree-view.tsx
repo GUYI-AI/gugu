@@ -1,19 +1,16 @@
 import { useDndContext } from '@dnd-kit/core';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { trackRecentTools } from '../browser/workspace-recent-tools';
-import { Fragment, useContext, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
+import { useContext, useEffect, useId, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useGroupRef } from 'react-resizable-panels';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup, setGroupLayout } from '@renderer/lib/ui/resizable';
 import { PaneDimensionProvider } from './pane-dimension-provider';
 import { RetainedTabContent } from './retained-tab-content';
 import { MIN_PANE_HEIGHT_PX, type PaneLayoutStore } from './pane-layout-store';
 import { cornerPane, minExtent, paneOrder, type PaneLayoutNode } from './pane-layout-tree';
 import { fullscreenCover, OverFullscreenStrip, tabFullscreen } from './tab-fullscreen';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import { setDragShield } from '@renderer/lib/drag-shield';
-import { useRef } from 'react';
 import { useChatWorkspaceDivider } from './use-chat-workspace-divider';
+import { TrackCut } from './pane-track-cut';
 import { ChatWorkspaceDropZones } from './chat-workspace-drop-zones';
 import { ChatWorkspaceChrome, type ChatWorkspaceChromeProps } from './chat-workspace-chrome';
 import { MessageSquare } from '@/lib/icons';
@@ -95,37 +92,27 @@ const Tree = observer(function Tree({ node, layout, narrow, visiblePaneId, ancho
 const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorOf }: {
   node: Extract<PaneLayoutNode, { type: 'split' }>; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; anchorOf: (paneId: string) => string;
 }) {
-  const groupRef = useGroupRef();
   const chatDivider = !narrow && layout.chatWorkspaceMode === 'split' && node === layout.layout && node.orientation === 'horizontal' && node.children.length === 2;
   const divider = useChatWorkspaceDivider(layout, chatDivider ? node.id : undefined);
-  const dragging = useRef(false);
-  const endDrag = () => { if (dragging.current) { dragging.current = false; setDragShield(false); } };
-  useEffect(() => {
-    window.addEventListener('pointerup', endDrag);
-    window.addEventListener('pointercancel', endDrag);
-    window.addEventListener('blur', endDrag);
-    return () => { window.removeEventListener('pointerup', endDrag); window.removeEventListener('pointercancel', endDrag); window.removeEventListener('blur', endDrag); endDrag(); };
-  }, []);
-  const ids = node.children.map(childId);
-  const idsKey = ids.join(',');
-  const sizesKey = node.sizes.join(',');
-  useEffect(() => {
-    const handle = groupRef.current;
-    if (!handle || narrow) return;
-    setGroupLayout(handle, Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0])), 0.5);
-  }, [idsKey, sizesKey, groupRef, narrow]);
-  return <ResizablePanelGroup orientation={node.orientation} groupRef={groupRef} style={narrow ? { position: 'relative', display: 'block' } : undefined} onLayoutChanged={(sizes, meta) => {
-    if (!narrow && meta.isUserInteraction) layout.setSplitSizes(node.id, ids.map((id) => sizes[id] ?? 0));
-  }}>
-    {node.children.map((child, index) => {
-      const shown = !narrow || paneOrder(child).includes(visiblePaneId);
-      return <Fragment key={childId(child)}>
-        {index > 0 && <ResizableHandle disabled={narrow} style={{ zIndex: 'var(--z-pane-divider)', ...(narrow ? { display: 'none' } : {}) }} data-chat-tool-divider={chatDivider ? '' : undefined} elementRef={chatDivider ? divider.handleRef : undefined} disableDoubleClick={chatDivider} className={chatDivider ? 'touch-none' : undefined} onPointerDown={chatDivider ? divider.start : (event) => { if (narrow || event.button !== 0) return; dragging.current = true; setDragShield(true); }} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag} onDoubleClick={() => layout.equalizeSplit(node.id)} />}
-        <ResizablePanel id={childId(child)} defaultSize={`${node.sizes[index] ?? 0}%`} minSize={narrow ? 0 : `${node.orientation === 'horizontal' ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX)}px`} style={narrow ? { position: 'absolute', inset: 0, width: '100%', height: '100%', minWidth: 0, minHeight: 0, visibility: shown ? 'visible' : 'hidden', pointerEvents: shown ? undefined : 'none' } : undefined} inert={!shown} aria-hidden={!shown || undefined}>
-          <Tree node={child} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} />
-        </ResizablePanel>
-      </Fragment>;
+  const tree = (child: PaneLayoutNode) => <Tree node={child} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} />;
+  // Narrow: one pane at a time, each child laid over the whole cut (the others hidden, not unmounted).
+  if (narrow) return <div className="relative h-full w-full">
+    {node.children.map((child) => {
+      const shown = paneOrder(child).includes(visiblePaneId);
+      return <div key={childId(child)} className="absolute inset-0 min-h-0 min-w-0" style={{ visibility: shown ? 'visible' : 'hidden', pointerEvents: shown ? undefined : 'none' }} inert={!shown} aria-hidden={!shown || undefined}>{tree(child)}</div>;
     })}
+  </div>;
+  const horizontal = node.orientation === 'horizontal';
+  return <TrackCut
+    axis={horizontal ? 'x' : 'y'}
+    shares={node.sizes}
+    items={node.children.map((child) => ({ id: childId(child), min: horizontal ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX), node: tree(child) }))}
+    // The outermost cut is the pair's: the side page coming to another width (a tab of another kind in front) moves.
+    animate={node === layout.layout}
+    onShares={(sizes) => layout.setSplitSizes(node.id, sizes)}
+    onEqualize={() => layout.equalizeSplit(node.id)}
+    divider={chatDivider ? { at: 0, ref: divider.handleRef, onPointerDown: divider.start, props: { 'data-chat-tool-divider': '' } } : undefined}
+  >
     {chatDivider && divider.preview && <div
       className={`pointer-events-none absolute inset-y-0 border-foreground/25 bg-foreground/10 ${divider.preview === 'left' ? 'left-0 border-r' : 'right-0 border-l'}`}
       style={{ zIndex: 'var(--z-pane-divider)', width: `${node.sizes[divider.preview === 'left' ? 0 : 1]}%` }}
@@ -133,5 +120,5 @@ const Cut = observer(function Cut({ node, layout, narrow, visiblePaneId, anchorO
       data-chat-tool-collapse-preview={divider.preview}
       data-chat-tool-collapse-ready={divider.ready || undefined}
     />}
-  </ResizablePanelGroup>;
+  </TrackCut>;
 });

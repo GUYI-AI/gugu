@@ -2,12 +2,12 @@
 // GUYI-AI/gugu#2548 the sidebar starts expanded, and as one list it collapses to a rail of avatars instead of away.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Reduced motion lands every collapse on its end value at once, so the widths below are read without waiting on a spring.
-vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal<typeof import('framer-motion')>()), useReducedMotion: () => true }));
+// Reduced motion lands every collapse on its end value at once (PanelTrack), so the widths below are read without waiting on a spring.
+window.matchMedia = ((query: string) => ({ matches: query.includes('prefers-reduced-motion'), media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
 
 const {
   innerSidebarMaxWidth,

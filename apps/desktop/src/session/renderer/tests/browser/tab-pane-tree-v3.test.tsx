@@ -65,6 +65,29 @@ it('shields embedded pages during a real divider drag and releases the shield on
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });
 
+it('a cut given other shares moves its divider over frames, and lays its panes out only where it starts and lands', async () => {
+  await mount();
+  const root = layout.layout;
+  if (root.type !== 'split') throw new Error('mount makes a split');
+  const divider = harness.container.querySelector<HTMLElement>('[data-slot="resizable-handle"]')!;
+  const place = harness.container.querySelector<HTMLElement>('[data-panel-slot]')!;
+  const edges: number[] = [];
+  const places = new Set<string>();
+  await act(async () => layout.setSplitSizes(root.id, [30, 70]));
+  const start = performance.now();
+  while (performance.now() - start < 900) {
+    await new Promise(requestAnimationFrame);
+    edges.push(Math.round(divider.getBoundingClientRect().left));
+    places.add(place.style.width);
+  }
+  expect(new Set(edges).size, JSON.stringify(edges)).toBeGreaterThan(5);
+  // the place is the smaller width the whole way (the start's layout), then the landing's: one layout at each end
+  expect(places.size, [...places].join(' ')).toBeLessThanOrEqual(2);
+  // lands on 30% of the cut (less its one divider pixel)
+  const cut = divider.parentElement!.getBoundingClientRect();
+  expect(Math.abs(edges.at(-1)! - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
+});
+
 it('narrowing and widening only change visibility, preserving both panes, tabs and layout shares', async () => {
   await mount();
   const before = JSON.stringify(layout.snapshot);
