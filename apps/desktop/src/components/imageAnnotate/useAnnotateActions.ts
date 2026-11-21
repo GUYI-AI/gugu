@@ -31,6 +31,10 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
     finally { running.current = false; setBusy(false) }
   }
   const putInComposer = () => run(async () => {
+    if (item.replace) {
+      item.replace(new File([await output()], filename, { type: 'image/png' }), annotateCaption(doc, ''))
+      onDone(); return
+    }
     if (!source) throw new Error(t('noSource'))
     const session = getRendererSession()
     if (!session) throw new Error(t('notSignedIn'))
@@ -56,5 +60,5 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
     await saveFilesToChatFolder(source.chatId, [{ name: filename, bytes: await blob.arrayBuffer(), contentType: 'image/png' }], source.messageId ? [source.messageId] : undefined)
     toast(t('savedToFolder'), 'success')
   })
-  return { busy, error, putInComposer, copy, copied: mobile && copied, save, saveToFolder, canCompose: !!source?.chatId }
+  return { busy, error, putInComposer, copy, copied: mobile && copied, save, saveToFolder, canCompose: !!item.replace || !!source?.chatId, canSaveToFolder: !!source?.chatId }
 }
