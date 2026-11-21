@@ -39,9 +39,9 @@ export type FoldAck = { id: number; ack: true };
  * @@@fold-off-main - folding a long record is seconds of reducer work (a 277 MB Claude record: 5 s), and on the
  * main thread every viewer, tunnel and inbox waits behind it. So the fold runs on a worker thread: it starts from the
  * last checkpoint, reads only what the record grew since, and hands back the archive, which the main thread restores
- * in tens of milliseconds (`createSessionTimeline` with `archive`; 45 ms for that record). Nothing here runs on the main
- * thread, so the archive is not bounded by its budget (`TIMELINE_ARCHIVE_MAX_SOURCE_BYTES`). `write` stores the archive
- * as the next checkpoint; it is separate so the caller can hand the archive over first.
+ * in tens of milliseconds (`createSessionTimeline` with `archive`; 45 ms for that record). This thread is the only
+ * writer of the checkpoint. `write` stores the archive as the next checkpoint; it is separate so the caller can hand
+ * the archive over first.
  */
 export async function foldRecord(request: FoldRequest): Promise<{ archive: TimelineArchive | null; write(): Promise<void> }> {
   const checkpoint = await readCheckpoint(request.checkpoint);
@@ -52,7 +52,7 @@ export async function foldRecord(request: FoldRequest): Promise<{ archive: Timel
   });
   let archive: TimelineArchive | null;
   try {
-    archive = await timeline.archive?.(Number.MAX_SAFE_INTEGER) ?? null;
+    archive = await timeline.archive?.() ?? null;
   } finally {
     timeline.dispose();
   }
@@ -60,7 +60,7 @@ export async function foldRecord(request: FoldRequest): Promise<{ archive: Timel
     // Nothing new was read: the checkpoint on disk already says the same.
     if (!archive || archive.sourceBytes === checkpoint?.sourceBytes) return;
     await mkdir(dirname(request.checkpoint), { recursive: true });
-    // Beside the target, so the rename is atomic; `.fold` keeps it apart from the main thread's own save.
+    // Beside the target, so the rename is atomic.
     const tmp = `${request.checkpoint}.${process.pid}.fold.tmp`;
     await writeFile(tmp, JSON.stringify(archive), 'utf8');
     await rename(tmp, request.checkpoint);

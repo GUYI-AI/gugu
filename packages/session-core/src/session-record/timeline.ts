@@ -43,7 +43,6 @@ type PublishedSubagent = {
 const NO_STEPS: readonly ToolNode[] = [];
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
-import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
 import { SESSION_PLAN_ID } from '../acp/models/plan';
 import type { ToolNode } from '../acp/models/turns/tool-calls';
 
@@ -376,13 +375,12 @@ class RecordTimeline implements SessionTimeline {
   /**
    * 交出此刻的存档。返回 null = 这条时间线不能存（记录源不支持续读，或此刻续读点取不到）。
    */
-  async archive(maxSourceBytes = TIMELINE_ARCHIVE_MAX_SOURCE_BYTES): Promise<TimelineArchive | null> {
+  async archive(): Promise<TimelineArchive | null> {
     if (this.disposed) return null;
-    // Each source debits its already-known byte offset before copying resume
-    // state. No JSON-value walk, entry limit, or native-source-count limit.
-    const budget = { remainingBytes: maxSourceBytes };
+    // Each source debits the record bytes it has read, so the archive says how much record it covers.
+    const budget = { remainingBytes: Number.MAX_SAFE_INTEGER };
     const resume = await this.source.resumePoint?.(budget);
-    if (!resume || budget.remainingBytes < 0) return null;
+    if (!resume) return null;
     const { parser, images } = this.parserForArchive();
     const published: TurnPublishArchive[] = [];
     for (const [turnId, entry] of this.published) {
@@ -396,7 +394,7 @@ class RecordTimeline implements SessionTimeline {
     }
     return {
       version: TIMELINE_ARCHIVE_VERSION,
-      sourceBytes: maxSourceBytes - budget.remainingBytes,
+      sourceBytes: Number.MAX_SAFE_INTEGER - budget.remainingBytes,
       resume,
       epoch: this.epochValue,
       seq: this.seq,

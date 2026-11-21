@@ -7,7 +7,6 @@
  */
 export * from './contract';
 export { readNativeInputTail, type NativeInputTail } from './native-input-evidence';
-export { fitsTimelineArchiveSourceBudget } from './archive-budget';
 
 export {
   createSessionTimeline,

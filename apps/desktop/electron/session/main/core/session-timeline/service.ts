@@ -102,9 +102,7 @@ import {
 } from '@shared/core/sessions/sessionEvents';
 import {
   dropTimelineArchive,
-  loadTimelineArchive,
   pruneTimelineArchives,
-  saveTimelineArchive,
   timelineArchiveFile,
 } from './archive-store';
 import { createFoldClient, type FoldClient } from './fold-client';
@@ -206,7 +204,7 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
 
 let foldClient: FoldClient | null = null;
 
-/** The record folded on the fold thread (`fold.ts`); if that thread fails, the stored archive and a fold here. */
+/** The record folded on the fold thread (`fold.ts`); if that thread fails, the timeline folds the record here. */
 async function foldedArchive(input: { locator: SessionRecordLocator; sessionId: string; parentLineage?: readonly RecordLineageNode[]; answerableQuestions?: boolean }) {
   const checkpoint = timelineArchiveFile(input.sessionId);
   if (!checkpoint) return null;
@@ -222,7 +220,7 @@ async function foldedArchive(input: { locator: SessionRecordLocator; sessionId: 
     return archive;
   } catch (error) {
     log.warn('sessionTimeline: fold thread failed; folding on the main thread', { sessionId: input.sessionId, error: String(error) });
-    return loadTimelineArchive(input.sessionId);
+    return null;
   }
 }
 
@@ -416,32 +414,7 @@ export function locateRow(row: SessionRow): SessionRecordLocation {
 
 // ─── timeline 缓存 ──────────────────────────────────────────────────────────
 
-/**
- * 拆之前把折算结果存下来。
- *
- * 放在拆除这一刻是因为它正好是「这条会话这一轮看完了」的时刻:该写的都写完了,
- * 而且此后这份内存状态就没人要了。⚠️ 存档失败不许影响拆除 —— 缓存写不进去是慢,
- * 拆不掉是泄漏。
- */
-function archiveBeforeDispose(entry: TimelineEntry): void {
-  const archive = entry.timeline.archive?.();
-  if (!archive) return;
-  void archive
-    .then(async (one) => {
-      if (!one) return;
-      await saveTimelineArchive(entry.conversationId, one);
-      await pruneTimelineArchives();
-    })
-    .catch((error) => {
-      log.warn('sessionTimeline: 存档失败(不影响拆除)', {
-        conversationId: entry.conversationId,
-        error: String(error),
-      });
-    });
-}
-
 function disposeEntry(entry: TimelineEntry): void {
-  archiveBeforeDispose(entry);
   entry.disposed = true;
   try {
     entry.pendingWatch?.dispose();

@@ -652,7 +652,7 @@ describe('claude jsonl 记录源', () => {
     });
 
     it('拆除时存档:archive() 之后紧接着 dispose(),存档照样写得出来', async () => {
-      // 宿主就是这个顺序(session-timeline 的 archiveBeforeDispose → dispose)。
+      // 折叠线程就是这个顺序(session-timeline 的 fold.ts:archive() 之后 dispose())。
       const { timeline } = await build();
       const archived = timeline.archive?.();
       timeline.dispose();
