@@ -344,7 +344,12 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
   const identityWrites = new Set<string>()
   let cleared = false
   return {
-    clear: () => { cleared = true; operations.push({ type: 'clearAccount', accountId }) },
+    clear: () => {
+      cleared = true
+      operations.push({ type: 'clearAccount', accountId })
+      // @@@legacy-chat-outbox — a rebuild replaces the cache; sends an older build queued here are not cache, they wait for the outbox to take them.
+      for (const row of stored.outbox) put('outbox', row)
+    },
     putIdentity: (value) => {
       const id = value && typeof value === 'object' && 'id' in value ? value.id : undefined
       const previous = typeof id === 'string' ? imSelectors.identitiesById(stored)[id] : undefined

@@ -252,6 +252,17 @@ describe('account-scoped normalized IM repository', () => {
     const other = await openImRepository('account-b', { adapter, storage: window.localStorage })
     expect(imSelectors.outbox(other.snapshot()).map((row) => row.clientMessageId)).toEqual(['theirs'])
   })
+  it('keeps an older build\'s queued sends through a rebuild of the cache, for the outbox to take', async () => {
+    await adapter.commit([{ type: 'put', store: 'outbox', value: { accountId: 'account-a', id: 'kept', value: outbox('kept', 'account-a') } }])
+    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
+    await repository.transaction((transaction) => { transaction.clear(); transaction.putView('active-chat', 'chat-1') })
+    expect(imSelectors.outbox(repository.snapshot()).map((row) => row.clientMessageId)).toEqual(['kept'])
+    repository.close()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
+    expect(imSelectors.outbox(reopened.snapshot()).map((row) => row.clientMessageId)).toEqual(['kept'])
+    reopened.close()
+  })
   it('keeps the rows when handing one to the outbox fails, so the next start tries again', async () => {
     await adapter.commit([{ type: 'put', store: 'outbox', value: { accountId: 'account-a', id: 'kept', value: outbox('kept', 'account-a') } }])
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
