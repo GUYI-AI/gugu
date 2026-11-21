@@ -1849,14 +1849,17 @@ function fileMark(entry) {
   mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
-  if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
+  if (thumbHere(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
   return mark
 }
 
 // ─── thumbnails ─────────────────────────────────────────────────────────────
 // An image is read as any image file is (files.open read-only, its blob), drawn small once, and kept for this page by
 // its id and version; only the ones scrolled into view are read, a few at a time. A file kept on a machine is never
-// read for its picture (that would upload it): it keeps its suffix.
+// read for its picture (that would upload it), nor one of a working copy on another machine (`wantsThumb`'s `far`): it
+// keeps its suffix.
+const farCopy = () => !!copyOf()?.deviceId || copyOf()?.thisMachine === false
+const thumbHere = (entry) => wantsThumb(entry, inCopy(entry) && farCopy())
 
 const thumbs = new Map() // `${id}:${version}` → Promise<object URL | null>
 const thumbWaiting = []
@@ -4450,7 +4453,7 @@ function showDetails(entry) {
   head.append(Object.assign(document.createElement('h2'), { className: 'details-title', textContent: shownName(entry), title: entry.name }), close)
   const picture = fileMark(entry)
   picture.classList.add('details-picture')
-  if (!wantsThumb(entry)) picture.classList.add('details-badge')
+  if (!thumbHere(entry)) picture.classList.add('details-badge')
   const actions = document.createElement('div')
   actions.className = 'details-actions'
   const act = (text, run) => Object.assign(document.createElement('button'), { type: 'button', textContent: text, onclick: run })
