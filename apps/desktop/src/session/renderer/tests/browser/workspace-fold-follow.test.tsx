@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
-import { SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useInnerSidebarFrame, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { INNER_SIDEBAR_MAX_SHARE, INNER_SIDEBAR_MAX_WIDTH_PX, SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useInnerSidebarFrame, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { writeInterface } from '@/lib/viewStateTable';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -95,12 +95,13 @@ it('a fold moves the page with the list\'s edge in every frame, the same way in 
   expect(collapse.before.edge - collapse.end.edge, 'the collapse moved the edge').toBeGreaterThan(0);
 });
 
+function InnerColumn() {
+  const width = useInnerSidebarFrame();
+  return <motion.div data-region="inner-sidebar" className="h-full shrink-0" style={{ width }} />;
+}
+
 it('a place without the list takes no space or motion from it after a resize, while folding, or on return', async () => {
   writeInterface('gugu.taskpage.sidebarWidth', 320);
-  function InnerColumn() {
-    const width = useInnerSidebarFrame();
-    return <motion.div data-region="inner-sidebar" className="h-full shrink-0" style={{ width }} />;
-  }
   function Places() {
     const [sidebarHidden, setSidebarHidden] = useState(false);
     return <>
@@ -123,8 +124,7 @@ it('a place without the list takes no space or motion from it after a resize, wh
   pointer('pointerup', handle, start + 80);
   await userEvent.click(button('switch place'));
   await new Promise(requestAnimationFrame);
-  expect(shell.firstElementChild!.getBoundingClientRect().width, 'unmounting the group column must not restore the hidden list\'s space').toBe(0);
-  expect(surface.getBoundingClientRect().left).toBe(shell.getBoundingClientRect().left);
+  expect(surface.getBoundingClientRect().left, 'unmounting the group column must not restore the hidden list\'s space').toBe(shell.getBoundingClientRect().left);
   await userEvent.click(button('switch place'));
   await expect.poll(() => list.getBoundingClientRect().width).toBe(400);
   for (const landedWidth of [SIDEBAR_RAIL_PX, 400]) {
@@ -139,6 +139,31 @@ it('a place without the list takes no space or motion from it after a resize, wh
     await expect.poll(() => surface.getBoundingClientRect().left - shell.querySelector('[data-region="inner-sidebar"]')!.getBoundingClientRect().right).toBeCloseTo(0);
     expect(shell.querySelector('aside'), 'returning keeps the same list').toBe(list);
   }
+});
+
+it('the inner column\'s widest is a share of the card beside the list\'s place, so folding the list lets it grow', async () => {
+  writeInterface('gugu.taskpage.sidebarWidth', 320);
+  harness = createReactHarness();
+  await harness.render(<div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
+    <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
+      <WorkspaceLayout leftSidebar={<div>project list</div>} innerSidebar={<InnerColumn />} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
+    </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
+  </div>);
+  const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
+  const column = () => shell.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!.getBoundingClientRect().width;
+  const dragInnerEdgeFar = async () => {
+    const handle = await vi.waitFor(() => shell.querySelectorAll<HTMLElement>('[data-panel-resize-handle]')[1]!);
+    const start = edgeOf(handle);
+    pointer('pointerdown', handle, start);
+    pointer('pointermove', handle, start + 900);
+    pointer('pointerup', handle, start + 900);
+  };
+  const widest = (listPlace: number) => Math.min(INNER_SIDEBAR_MAX_WIDTH_PX, (shell.getBoundingClientRect().width - listPlace) * INNER_SIDEBAR_MAX_SHARE);
+  await dragInnerEdgeFar();
+  await expect.poll(column, { message: 'beside the expanded list' }).toBeCloseTo(widest(320), 0);
+  await foldFrames(shell);
+  await dragInnerEdgeFar();
+  await expect.poll(column, { message: 'beside the rail: the card is wider, so is its share' }).toBeCloseTo(widest(SIDEBAR_RAIL_PX), 0);
 });
 
 /** A mouse drag on the list's edge, one move a frame (pointer 1 is the mouse, so pointer capture takes it). */
