@@ -247,7 +247,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const group = useGroupMemberPanelControls({
     chatId,
     chatKind,
-    chatName,
     settings,
     snapshot,
     identities,

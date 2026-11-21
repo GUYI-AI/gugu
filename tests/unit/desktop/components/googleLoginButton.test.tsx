@@ -54,8 +54,14 @@ it('starts Google with one minimal button and exposes explicit cancellation whil
   expect(button('取消 Google 登录').disabled).toBe(true)
 })
 
+it('a cancelled Google sign-in returns to the idle button without an alert', async () => {
+  await state({ phase: 'failed', failure: 'cancelled', busy: false })
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(button('用 Google 登录').disabled).toBe(false)
+})
+
 it.each([
-  ['cancelled', '已取消 Google 登录'], ['timeout', 'Google 登录已超时，请重试'],
+  ['timeout', 'Google 登录已超时，请重试'],
   ['invalidCode', '登录授权已过期或与本次登录不匹配，请重试'],
 ] as const)('shows the real %s failure and enables a fresh attempt', async (failure, copy) => {
   await state({ phase: 'failed', failure, busy: false })
