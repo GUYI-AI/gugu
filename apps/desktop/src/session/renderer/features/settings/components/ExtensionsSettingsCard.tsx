@@ -26,7 +26,7 @@ import {
   useInstalledApps,
   type ExtensionDisclosureLevel,
 } from '@renderer/features/extensions/installed-extensions';
-import { useReplica, type Reading, refreshFailure } from '@/lib/replica';
+import { useReplica, refreshFailure } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -307,16 +307,12 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // enforced a host as off.) The screen that manages this inventory reads
       // it; one list call is not worth a stale one.
       const hostKey = hostKeyRef.current;
+      // What the market says is about what is installed: read again with it (unread, the page's own read is on its way).
+      if (marketUpdates.peek(hostKey).state !== 'unknown') void marketUpdates.refresh(hostKey);
       // Not read yet: the read this page's mount began is the one (❌ a second); read already: read again now. A read that
       // fails is thrown (❌ every switch drawn on while main enforces one off).
-      const readNow = async (model: { peek(hostKey: string): Reading<unknown>; fetch(hostKey: string): Promise<unknown>; refresh(hostKey: string): Promise<void> }) => {
-        if (model.peek(hostKey).state === 'unknown') { await model.fetch(hostKey); return; }
-        await model.refresh(hostKey);
-        const read = model.peek(hostKey);
-        if (read.state === 'error') throw read.error;
-        if (read.state === 'value' && read.error) throw read.error;
-      };
-      await Promise.all([readNow(installedExtensions), readNow(revokedPermissions), readNow(extensionAgentStatus)]);
+      await Promise.all([installedExtensions, revokedPermissions, extensionAgentStatus]
+        .map((model) => (model.peek(hostKey).state === 'unknown' ? model.fetch(hostKey) : model.reread(hostKey))));
     } catch (error) {
       log.error('extension inventory unreadable:', error);
       // 别的机器:那一句话在页头(deviceScopeNotice,从读数来),不弹 toast。
@@ -418,10 +414,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (!shown || (remote && !remote.online)) return;
     if (openedAt.current !== null && Date.now() - openedAt.current < MARKET_REOPEN_MIN_MS) return;
     openedAt.current = Date.now();
+    // With it 「有什么要告诉你的」 too (spec:启动时一次、打开设置页时一次,❌ 轮询;启动时那一次是 wire-market-refresh 的)。
     void refresh();
-    // 打开设置页时也查一次「有什么要告诉你的」(spec:启动时一次、打开设置页时一次,
-    // ❌ 轮询)。embedded.tsx 已经在启动时查过一次;这里是「打开设置页时」那一次。
-    if (marketUpdates.peek(host.key).state !== 'unknown') void marketUpdates.refresh(host.key);
     if (inventoryOnly) return;
     // 这一次和下面的市场清单都先从那台机器手上的目录答(❌ 等下载站);同时让它去下载站取一趟,回来的结果走
     // onMarketRefreshed。结果用回答带回:别的机器的推送未必转得到这个窗口。比这一版旧的机器没有这一问,照旧现取。
@@ -596,9 +590,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         throw new Error(result.error ?? '');
       }
       // This window's tab providers follow the list, no restart; another machine's follow in its own window.
+      // With what is installed, its 「有新版」 (cleared, or the next one after the version just installed).
       await refresh();
-      // 装的这台机器上现在这一版,清出「有新版」的提示（或者换成刚装的这版还在跑的下一个）。
-      void marketUpdates.refresh(host.key);
       if (firstInstall) setJustInstalled(manifest.id);
       // "Did it work" and "what next" in one breath: the tab is where it went.
       // What a task's「+」lists: the App's own page, by its name in this language (installedExtensions → mainTabOf); an App
@@ -745,7 +738,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const result = await host.api.uninstall({ extensionId: app.id, lastAnywhere });
       if (!result.success) throw new Error(result.error ?? '');
       await refresh();
-      void marketUpdates.refresh(host.key);
       // 它的设置页随它一起没了:回到进来的地方(市场页还在,按钮回到「安装」);从别处直接进来的回「已安装」。
       const leaving = detailRef.current;
       if (leaving?.page === 'manage' && leaving.extensionId === app.id) {
