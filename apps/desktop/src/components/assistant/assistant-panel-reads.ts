@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { AssistantPanelDomain, AssistantPanelItem } from '@gugu/core/cloud/assistantPanel'
 import { readableAssistantPanelCollection } from '@gugu/core/cloud/assistantPanelFiles'
-import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
+import { isAssistantPanelReadRetryable, withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
 import { replica, useReplica, type Reading } from '@/lib/replica'
 import { assistantPanelBodies } from '@/lib/assistantPanelBodies'
 import { readMemoryEntry, type AssistantMachine, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
@@ -42,7 +42,10 @@ function machineOf(key: string): AssistantMachine {
 
 type ConnectionList = Awaited<ReturnType<typeof readAssistantPanelIntegrations>>
 
-/** The applications a connection store lists. Signal tier: its panel's changes and `CONNECTIONS_CHANGED` (`watch`). */
+/**
+ * The applications a connection store lists: the one reading of an assistant panel's list (the phone, the App counts and
+ * the desktop's IntegrationsProvider). Signal tier: its panel's changes and `CONNECTIONS_CHANGED` (`watch`).
+ */
 export const connectionList = replica({
   name: 'connectionList',
   scope: 'account',
@@ -57,6 +60,8 @@ export const connectionList = replica({
   },
   retry: 2,
   refreshOnFocus: true,
+  // A panel whose computer is still waking (a retryable failure): asked again while shown, as no push says it woke.
+  refreshEvery: (_value, error, _storeKey, owned) => (!owned && error && isAssistantPanelReadRetryable(error) ? 30_000 : false),
   watch: {
     group: (storeKey) => storeKey,
     start: (_owner, storeKey) => {

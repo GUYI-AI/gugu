@@ -4,8 +4,9 @@ import { builtinConnectionCatalog } from '@/components/connections/builtin-conne
 import type { ConnectionMetadataSnapshot } from '@/components/connections/connection-metadata';
 import { chatChannels, configuredConnections, CONNECTIONS_ON_HOST, integrationsCatalog, integrationStatuses, useOwnerConnectionsReading } from '@/components/connections/connection-replicas';
 import { EMPTY_INTEGRATION_SUMMARIES,useAssistantIntegrationSummaries } from '@/components/assistant/useAssistantIntegrationSummaries';
+import { connectionList, registerConnectionStore, useConnectionList } from '@/components/assistant/assistant-panel-reads';
 import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRead';
-import { refreshFailure, refreshTag, useReplica } from '@/lib/replica';
+import { refreshFailure, refreshTag, useReplica, type Reading } from '@/lib/replica';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { keepLibraryHost, useLibraryHost } from '@renderer/features/library/library-host';
 import { registerIssueMentionIcons } from '@renderer/lib/chat/chat-mention-provider';
@@ -93,9 +94,20 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   const ownerReading = useOwnerConnectionsReading(ownerMode ? host.connectionMetadata : undefined);
   useConnectionReadNotice(`snapshot:${host.key}`, ownerReading.state === 'value', ownerMode && ownerReading.state === 'error' ? Infinity : 0);
   const ownerView = useMemo(() => ownerReading.state === 'value' ? ownerConnectionMetadataView(ownerReading.value, locale) : null, [ownerReading, locale]);
-  const listReading = useReplica(integrationsCatalog, ownerMode ? null : [host.key, locale], { read: enabled });
-  const statusReading = useReplica(integrationStatuses, ownerMode ? null : [host.key], { read: enabled });
-  const configuredReading = useReplica(configuredConnections, ownerMode ? null : [host.key], { read: enabled });
+  // An assistant's panel: its list is the one `connectionList` reading (the App counts read the same entry), ❌ three
+  // host readings of the same rows. A panel that failed to load is that failure.
+  const panelHost = !ownerMode && !!host.assistantPanelExpected;
+  const panelKey = panelHost && metadata ? registerConnectionStore(metadata) : null;
+  const panelList = useConnectionList(panelHost ? metadata : undefined, false, locale, enabled);
+  const panelReading: typeof panelList = panelHost && !metadata && host.assistantPanelError
+    ? { state: 'error', error: host.assistantPanelError as Error } : panelList;
+  const hostKey = ownerMode || panelHost ? null : host.key;
+  const catalogReading = useReplica(integrationsCatalog, hostKey ? [hostKey, locale] : null, { read: enabled });
+  const hostStatusReading = useReplica(integrationStatuses, hostKey ? [hostKey] : null, { read: enabled });
+  const hostConfiguredReading = useReplica(configuredConnections, hostKey ? [hostKey] : null, { read: enabled });
+  const listReading = panelHost ? partOf(panelReading, 'items') : catalogReading;
+  const statusReading = panelHost ? partOf(panelReading, 'statuses') : hostStatusReading;
+  const configuredReading = panelHost ? partOf(panelReading, 'configured') : hostConfiguredReading;
 
   const listData: IntegrationMetadata[] | null = ownerMode ? ownerView?.items ?? builtinConnectionCatalog(locale)
     : listReading.state === 'value' ? listReading.value : null;
@@ -119,8 +131,9 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
     // A completed authorization invalidates both the file snapshot and all visible consumers.
     // The host's subsequent publication uses the same event when authorization finishes elsewhere.
     metadata?.invalidate();
+    if (panelKey) void connectionList.refresh(panelKey);
     void refreshTag(CONNECTIONS_ON_HOST, host.key);
-  }, [host.key, metadata]);
+  }, [host.key, metadata, panelKey]);
 
   const setIntegrationMutating = useCallback((integrationId: string, isMutating: boolean) => {
     setMutatingIntegrationIds((current) => {
@@ -281,12 +294,17 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
         isIntegrationMutating,
         listError,
         hasList: listData !== null,
-        reloadList: () => { void integrationsCatalog.refresh(host.key); },
+        reloadList: () => { void (panelKey ? connectionList.refresh(panelKey) : integrationsCatalog.refresh(host.key)); },
       }}
     >
       {children}
     </IntegrationsContext.Provider>
   );
+}
+
+/** One part of a reading's value; its state (stale, failure, retry) as it is. */
+function partOf<V, K extends keyof V>(reading: Reading<V>, part: K): Reading<V[K]> {
+  return reading.state === 'value' ? { ...reading, value: reading.value[part] } : reading;
 }
 
 export function useIntegrationsContext() {

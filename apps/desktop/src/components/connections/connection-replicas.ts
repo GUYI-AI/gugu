@@ -7,7 +7,6 @@ import { connectionBridge, connectionRoute } from '@/lib/connectionBridge'
 import { refreshTag, refreshTagOn, replica, useReplica, type Reading } from '@/lib/replica'
 import { onAssistantPanelChanged } from '@/components/assistant/assistant-panel-replica'
 import { isTooOld, libraryHostOf, peekLibraryHost } from '@/session/renderer/features/library/library-host'
-import { peekAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations'
 import type { rpc } from '@/session/renderer/lib/ipc'
 import type { ConnectionMetadataSnapshot, ConnectionMetadataStore } from './connection-metadata'
 import { connectionNeedsConfirmation } from './connection-application-status'
@@ -108,11 +107,6 @@ const hostRecheck = (_value: unknown, error: Error | null, hostKey: string) =>
 const hostReadPolicy = { retry: hostRetry, retryDelay: connectionReadDelay, refreshEvery: hostRecheck }
 const hostPolled = { fresh: 30_000, refreshOnFocus: true, ...hostReadPolicy }
 
-const legacyPanelView = (hostKey: string, locale: string) => {
-  const host = peekLibraryHost(hostKey)
-  return host?.assistantPanel ? peekAssistantPanelIntegrations(host.assistantPanel, locale) : undefined
-}
-
 export const integrationsCatalog = replica({
   name: 'integrationsCatalog',
   tags: [CONNECTIONS],
@@ -120,7 +114,6 @@ export const integrationsCatalog = replica({
   read: (_owner: string, hostKey: string, locale: string): Promise<IntegrationList> => libraryHostOf(hostKey).integrations.list(locale),
   fresh: Infinity,
   ...hostReadPolicy,
-  local: (_owner, hostKey, locale) => legacyPanelView(hostKey, locale)?.items as IntegrationList | undefined,
 })
 
 export const integrationStatuses = replica({
@@ -129,7 +122,6 @@ export const integrationStatuses = replica({
   scope: 'device',
   read: (_owner: string, hostKey: string): Promise<ConnectionStatuses> => libraryHostOf(hostKey).integrations.checkAllConnections(),
   ...hostPolled,
-  local: (_owner, hostKey) => legacyPanelView(hostKey, 'en-US')?.statuses as ConnectionStatuses | undefined,
 })
 
 export const configuredConnections = replica({
@@ -139,7 +131,6 @@ export const configuredConnections = replica({
   read: (_owner: string, hostKey: string): Promise<ConfiguredConnections> => libraryHostOf(hostKey).integrations.checkConfiguredConnections(),
   fresh: Infinity,
   ...hostReadPolicy,
-  local: (_owner, hostKey) => legacyPanelView(hostKey, 'en-US')?.configured as ConfiguredConnections | undefined,
 })
 
 export const integrationAccounts = replica({
