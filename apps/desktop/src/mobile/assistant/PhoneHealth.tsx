@@ -27,7 +27,7 @@ import './phone-memory.css'
  * 下面「你的健康分析」(让它解读,只填不发;它记进记忆的 health_* 几条,醒着读到了才列)、「分析健康报告」(选文件排进聊天)。
  */
 export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: PhonePageProps & {
-  healthNotes: { reading: Reading<{ notes: MemoryEntry[] }> }
+  healthNotes: Reading<{ notes: MemoryEntry[] }>
 }) {
   const { t } = useTranslation('assistant')
   const name = assistant.display_name
@@ -75,7 +75,7 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
       >
         <PhoneMachineView machine={machine} name={name}>
           {() => (
-            <ReadView reading={healthNotes.reading} failedTitle={t('memory.loadFailed')}>
+            <ReadView reading={healthNotes} failedTitle={t('memory.loadFailed')}>
               {({ notes }) => {
                 const analysis = notes.filter((note) => isHealthNote(note.file))
                 return analysis.length === 0 ? (
