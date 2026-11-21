@@ -94,7 +94,7 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
       try {
         let status: IOSCalendarSnapshot
         try {
-          status = await client.read(startedFor)
+          status = await iosCalendarConnection.reread()
         } catch (readFailure) {
           // EventKit can answer before the dismissed sheet restores the native
           // foreground guard. Retry only the read once, never the OS request.
@@ -106,12 +106,11 @@ export function IOSCalendarPermissionsPanel({ ownerId }: { ownerId: string }) {
           const active = await waitForCalendarAppActive(controller.signal)
           if (!still()) return
           if (!active) throw readFailure
-          status = await client.read(startedFor)
+          status = await iosCalendarConnection.reread()
         }
         if (!still()) return
         const denied = status.authorization === 'denied' || status.authorization === 'restricted'
         const foregroundRefusal = (cause as { code?: unknown } | null)?.code === 'not_granted'
-        entry.set(status)
         setChange({ ownerId: startedFor, kind: 'settled', ...(denied && foregroundRefusal ? {} : { message: failureMessage(cause) }) })
       } catch {
         if (still()) setChange({ ownerId: startedFor, kind: 'failed', message: failureMessage(cause) })
