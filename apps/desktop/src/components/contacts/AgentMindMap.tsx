@@ -10,7 +10,7 @@ import { Avatar } from '../Avatar'
 import { useShownAgentContactStatus } from '../contactAgentTone'
 import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowActions'
 import { rowKeyActivate } from './contactsPanelStyles'
-import type { AgentTreeNode } from './contactsAgentTree'
+import { agentNodeDrag, type AgentTreeNode } from './contactsAgentTree'
 import { SelectionCheckbox } from './ContactSearch'
 
 // 一组 agent 的派生关系画成导图:每个有子 agent 的顶层 agent 连同子孙是一块「家族图」,父在左、子向右展开,同层对齐,
@@ -106,6 +106,7 @@ const MapNode = memo(function MapNode({ contact, selected, onSelect, menuFor, ha
         onClick={() => onSelect(contact)}
         onKeyDown={rowKeyActivate(() => onSelect(contact))}
         onContextMenu={hasMenu ? onContextMenu : undefined}
+        {...agentNodeDrag(contact.id, name, hasMenu)}
       >
         {picked === undefined ? null : <SelectionCheckbox checked={picked} />}
         <Avatar name={name} avatarUrl={contact.avatar} seed={contact.id} size="sm" isAgent agentStatus={tone ?? undefined} />
