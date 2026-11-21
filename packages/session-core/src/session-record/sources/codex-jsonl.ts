@@ -50,6 +50,7 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
     name: 'codex',
     resumeVersion: 10,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
+    continuesElsewhere: true,
     prefixes: (path) => rolloutPrefixes(locator, path),
     initial: () => initialOrdinals(),
     // `calls`, `children` and `turns` are replaced, never changed in place: a snapshot need not copy them.

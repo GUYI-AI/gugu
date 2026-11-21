@@ -102,6 +102,20 @@ describe('Codex history_base segments', () => {
     expect(said(reopened.entries)).toEqual(['question keep-原始', 'keep-原始', 'question keep-first', 'keep-first', 'question keep-second', 'keep-second']);
   });
 
+  it('a revert while the record is tailed: catching up reads the new segment instead of the old file', async () => {
+    const staged = await stage(1);
+    const tailed = await start(staged.locator);
+    expect(said(tailed.entries)).toContain('discard-first');
+    await writeFile(join(staged.root, `rollout-2026-06-20T07-03-21-${THREAD}_${SECOND}.jsonl`), encoded(staged.secondLines));
+    await tailed.source.catchUp!();
+    expect(tailed.resets).toEqual(['source_replaced']);
+    expect(said(tailed.entries)).toEqual(['question keep-原始', 'keep-原始', 'question keep-first', 'keep-first', 'question keep-second', 'keep-second']);
+    // The new segment is tailed from then on.
+    await appendFile(join(staged.root, `rollout-2026-06-20T07-03-21-${THREAD}_${SECOND}.jsonl`), encoded(turn('later')));
+    await tailed.source.catchUp!();
+    expect(said(tailed.entries).slice(-2)).toEqual(['question later', 'later']);
+  });
+
   it('uses a segment without history_base as a complete record', async () => {
     const { locator, second } = await stage();
     await writeFile(second!, encoded([meta(), ...turn('standalone')]));

@@ -843,7 +843,9 @@ export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
-  return withTimeline(input.conversationId, (timeline, floor) => {
+  return withTimeline(input.conversationId, async (timeline, floor) => {
+    // Asked for now (a revert just landed, say): the record as written by now, wherever it now is.
+    await timeline.catchUp();
     if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
     return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
   });

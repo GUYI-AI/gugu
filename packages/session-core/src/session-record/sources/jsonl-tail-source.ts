@@ -23,6 +23,11 @@ export type JsonlTailFormat<S> = {
   /** 续读点里这份数据的版本。形状或读法变了就升，老存档一律作废重读。 */
   resumeVersion: number;
   resolve(): Promise<string>;
+  /**
+   * The record can go on in another file (a Codex revert writes a new segment): catching up looks for it again, and a
+   * record found elsewhere is read anew from there.
+   */
+  continuesElsewhere?: true;
   /** Immutable ancestors, each cut at its child's file-local byte boundary; only the resolved file is tail-followed. */
   prefixes?(path: string): Promise<ReadonlyArray<{ path: string; endByteOffset: number }>>;
   /** 从头读时的状态。文件被换掉、整份重读时回到它。 */
@@ -156,6 +161,16 @@ export function createJsonlTailSource<S>(
     },
     catchUp: async () => {
       if (options?.readMode === 'snapshot') return;
+      if (adapter.continuesElsewhere && sink && path && !reading) {
+        const events = sink;
+        const found = await format.resolve().catch(() => null);
+        if (found && found !== path && !stopped) {
+          reader?.stop();
+          events.onReset('source_replaced');
+          await source.start(events);
+          return;
+        }
+      }
       await reader?.catchUp();
       await again;
     },
