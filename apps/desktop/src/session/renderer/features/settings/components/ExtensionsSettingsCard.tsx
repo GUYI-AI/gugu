@@ -1045,43 +1045,41 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const installedHere = installedById?.get(manifest.id);
     const item = { manifest, cloud: subject.cloud, ref: subject.installRef };
     return (
-      <div className="pt-10 pb-14">
-        <AppProductPage
-          // 点「类似 App」是换一个 App:整页重来,❌ 带着上一个的截图、展开的版本历史画一帧。
-          key={manifest.id}
-          subject={{ ...subject, installedVersion: installedHere?.version }}
-          iconDataUrl={installedHere ? apps!.appIcons[installedHere.id] : undefined}
-          lifecycle={lifecycleOf(manifest.id, item)}
-          pending={pending[manifest.id]}
-          pendingPercent={downloadPercent[manifest.id]}
-          locale={locale}
-          translate={translate}
-          machine={remote?.deviceLabel}
-          hostKey={host.key}
-          readOnly={!!notice?.readOnly}
-          justInstalled={justInstalled === manifest.id && Boolean(installedHere)}
-          backLabel={fromSettings ? translate('extensions.appSettings') : undefined}
-          onBack={() => {
-            closePage({ ...location, detail: undefined });
-            setJustInstalled(null);
-          }}
-          onLifecycle={() => runLifecycle(manifest.id, item)}
-          onInstallVersion={(ref) => void installFromShelf(ref, manifest.id)}
-          onManage={installedHere ? () => openPage({ page: 'manage', extensionId: manifest.id }) : undefined}
-          onForward={installedHere && host.local ? () => forwardExtension(installedHere) : undefined}
-          onAsk={askAgent}
-          similar={similarOf(manifest)}
-          resource={resourceOf(manifest.id)}
-          targetSummary={host.local ? <MarketDetailConfirmations><MarketExtensionDevices item={item} /></MarketDetailConfirmations> : undefined}
-        />
-      </div>
+      <AppProductPage
+        // 点「类似 App」是换一个 App:整页重来,❌ 带着上一个的截图、展开的版本历史画一帧。
+        key={manifest.id}
+        subject={{ ...subject, installedVersion: installedHere?.version }}
+        iconDataUrl={installedHere ? apps!.appIcons[installedHere.id] : undefined}
+        lifecycle={lifecycleOf(manifest.id, item)}
+        pending={pending[manifest.id]}
+        pendingPercent={downloadPercent[manifest.id]}
+        locale={locale}
+        translate={translate}
+        machine={remote?.deviceLabel}
+        hostKey={host.key}
+        readOnly={!!notice?.readOnly}
+        justInstalled={justInstalled === manifest.id && Boolean(installedHere)}
+        backLabel={fromSettings ? translate('extensions.appSettings') : undefined}
+        onBack={() => {
+          closePage({ ...location, detail: undefined });
+          setJustInstalled(null);
+        }}
+        onLifecycle={() => runLifecycle(manifest.id, item)}
+        onInstallVersion={(ref) => void installFromShelf(ref, manifest.id)}
+        onManage={installedHere ? () => openPage({ page: 'manage', extensionId: manifest.id }) : undefined}
+        onForward={installedHere && host.local ? () => forwardExtension(installedHere) : undefined}
+        onAsk={askAgent}
+        similar={similarOf(manifest)}
+        resource={resourceOf(manifest.id)}
+        targetSummary={host.local ? <MarketDetailConfirmations><MarketExtensionDevices item={item} /></MarketDetailConfirmations> : undefined}
+      />
     );
   };
   if (detail?.page === 'market' && !browsing) {
     return (
       <div className="mk" data-testid="extensions-product" ref={rootRef}>
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} noHeading />}
-        {productPage(detail)}
+        <div className="pt-10 pb-14">{productPage(detail)}</div>
       </div>
     );
   }
