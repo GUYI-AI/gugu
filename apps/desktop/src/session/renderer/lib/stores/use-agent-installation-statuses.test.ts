@@ -370,7 +370,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
       agentsMetadata.key(null),
       managementAgents.key(null),
       managementAgent.key(null, 'claude'),
-      agentIcons.key(),
+      agentIcons.key(null),
       agentMetadata.key(null, 'claude'),
       harnessModelCatalog.key(null, 'claude', 'acp'),
       harnessModelCredential.key(null, 'claude', 'opus'),

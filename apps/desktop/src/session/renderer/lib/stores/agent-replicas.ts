@@ -21,8 +21,10 @@ import type { SessionpageLeg } from '@shared/core/sessions/sessions';
  */
 type Machine = string | null;
 const AGENT_READINGS = 'agent-readings';
+/** All of the family but the install status itself: what a pushed status (already put on its entry) reads again. */
+const STATUS_DERIVED = 'agent-readings-derived';
 /** A machine's reading: asked even while the browser says offline (the machine answers, or the read fails loud). */
-const ofMachine = { scope: 'account', networkMode: 'always', tags: [AGENT_READINGS] } as const;
+const ofMachine = { scope: 'account', networkMode: 'always', tags: [AGENT_READINGS, STATUS_DERIVED] } as const;
 
 /** Then the reading is an error (❌ unknown for ever); the pause between is react-query's own (1 s, 2 s, 4 s). */
 const RETRIES = 3;
@@ -56,10 +58,12 @@ export const agentMetadata = replica({
   fresh: 5 * 60_000,
 });
 
+/** This computer's icon table (the machine is always null: the tag's machine-first rule refreshes it with this computer's family). */
 export const agentIcons = replica({
   name: 'agentIcons',
   scope: 'device',
-  read: () => rpc.agents.listIcons() as Promise<Record<string, AgentIconAsset>>,
+  tags: ofMachine.tags,
+  read: (_device, _machine: null) => rpc.agents.listIcons() as Promise<Record<string, AgentIconAsset>>,
   fresh: Infinity,
 });
 
@@ -98,8 +102,8 @@ export const harnessModelCredential = replica({
 
 export const agentInstallationStatus = replica({
   name: 'agentInstallationStatus',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
+  tags: [AGENT_READINGS],
   read: (_owner, machine: Machine) => rpcOn(machine).agents.listAgentInstallationStatus() as Promise<AgentInstallationStatus[]>,
   fresh: 30_000,
   retry: RETRIES,
@@ -122,8 +126,8 @@ export const agentSettings = replica({
 });
 
 /**
- * 装完 / 卸完 / 重新检测之后,**所有从安装状态派生的读数一次全重读**。`keepStatus`:status 刚由推送手工打准,
- * 连它一起重读会把刚打的补丁冲掉。
+ * 装完 / 卸完 / 重新检测之后,**所有从安装状态派生的读数一次全重读**(连同安装状态本身)。推送来的 status
+ * 只重读 `STATUS_DERIVED`:status 刚由推送手工打准,连它一起重读会把刚打的补丁冲掉。
  *
  * 为什么按标签,而不是一条条列:这个形状已经漏过四次,每次都是同一个症状 —— 主进程那边已经是新的,界面还捧着
  * 旧的,用户要么等 fresh 过期、要么切走再切回、要么重启应用:
@@ -135,14 +139,11 @@ export const agentSettings = replica({
  *
  * 逐条列举要求每加一个派生读数就记得回来补一行,而四次实证说明没人记得住。所以一台机器的每个读数都带
  * `AGENT_READINGS`(`ofMachine`)并把机器放在第一个参数,这里按标签整体重读 —— 「新加的读数忘了登记」这一类
- * bug 归零。❌ 不要回到逐条列举。代价可控:只有挂着的读数会重读,没在屏幕上的只是标脏。
+ * bug 归零(本机的图标表也带它,机器那一格恒为 null)。❌ 不要回到逐条列举。代价可控:只有挂着的读数会重读,
+ * 没在屏幕上的只是标脏。
  */
-export function refreshAgentReadings(machine: Machine, options: { keepStatus?: boolean } = {}): Promise<void> {
-  return Promise.all([
-    refreshTag(AGENT_READINGS, machine),
-    ...(options.keepStatus ? [] : [agentInstallationStatus.refresh(machine)]),
-    ...(machine === null ? [agentIcons.refresh()] : []),
-  ]).then(() => undefined);
+export function refreshAgentReadings(machine: Machine): Promise<void> {
+  return refreshTag(AGENT_READINGS, machine);
 }
 
 /** Wired once per document. */
@@ -160,7 +161,7 @@ export function wireAgentReadings(): () => void {
           return index === -1 ? [...statuses, event] : statuses.map((status, at) => (at === index ? event : status));
         });
       }
-      void refreshAgentReadings(null, { keepStatus: true });
+      void refreshTag(STATUS_DERIVED, null);
     }),
   ];
   return () => offs.forEach((off) => off());
