@@ -97,15 +97,23 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 
 /* Account columns share one width; SettingsRow's general 60% control cap would wrap the two windows. */
 .gg-model-page .gg-coding-provider { overflow-x: auto; }
-.gg-model-page .gg-model-subscription-row { min-width: 560px; }
+/* As wide as its columns need at their narrowest (not a fixed sum to keep in step with them); only a card narrower than that
+   scrolls. SettingsRow's control may shrink to 0, which would leave the account columns out of that width. */
+.gg-model-page .gg-model-subscription-row { min-width: min-content; }
+.gg-model-page .gg-model-subscription-row .gg-settings-row-control { min-width: auto; }
 .gg-model-page .gg-model-subscription-row div.gg-settings-row { grid-template-columns: minmax(112px, 1fr) auto; }
-.gg-model-page .gg-model-subscription-row .gg-settings-row-body { flex-wrap: nowrap; }
+/* Beside a quota, the account's state sits under its name. */
+.gg-model-page .gg-model-subscription-row .gg-settings-row-body { flex-direction: column; align-items: flex-start; gap: 0; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title { width: 100%; }
-.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; justify-content: flex-start; }
 .gg-model-page .gg-model-subscription-row .gg-model-name svg { flex-shrink: 0; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title > input { width: 100%; max-width: 160px; }
-.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: 328px 56px 28px; align-items: center; gap: 12px; }
+.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: 328px auto; align-items: center; gap: 12px; }
 .gg-model-page .gg-model-subscription-usage { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Beside the quota, sign-in joins current/switch and delete: one line when the card has room, else current/switch and
+   delete wrap under the sign-in button, so a row never needs more than the quota plus that block. */
+.gg-model-page .gg-model-subscription-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.gg-model-page .gg-model-subscription-state { display: flex; align-items: center; gap: 12px; }
 .gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: grid; width: 328px; grid-template-columns: repeat(2, 156px); gap: 16px; }
 .gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: 36px 44px 60px; gap: 8px; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='300'] { grid-column: 1; }

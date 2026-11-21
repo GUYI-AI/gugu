@@ -13,6 +13,7 @@ import { useConnectionDetails } from '@renderer/features/settings/subscriptions/
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { SubscriptionModelQuota } from './SubscriptionModelQuota';
+import { useQuotaWindows } from './subscription-quota-windows';
 
 export function SubscriptionModelRows({ agent, machine, connections, busy, onSignIn, onRemove, onSelect, onRename, onRetry, error, notice }: {
   agent: AgentPayload; machine: string | null; connections: HarnessConnection[] | undefined; busy: boolean;
@@ -40,24 +41,28 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onRe
   const brand = agent.id === 'claude' ? 'Claude' : 'ChatGPT';
   const name = connection.name || (connection.kind === 'native' ? translate('subscriptions.connections.existing') : plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
   const subscription = status?.kind === 'authenticated' && details.data?.plan?.payer !== 'api-key' && details.data?.plan?.payer !== 'custom-endpoint';
-  return <SubscriptionModelQuota machine={machine} provider={agent.id === 'claude' ? 'claude' : 'codex'} connectionId={connection.id}
+  const provider = agent.id === 'claude' ? 'claude' : 'codex';
+  // The quota column shows the quota; without one it shows the account's state and its sign-in instead.
+  const quota = useQuotaWindows(machine, provider, connection.id, subscription).windows.length > 0;
+  const state = status?.kind === 'unauthenticated'
+    ? <span className={expired ? 'gg-model-expired' : 'text-xs text-foreground-muted'}>{translate(expired ? 'subscriptions.connections.expired' : 'subscriptions.connections.signedOut')}</span>
+    : connection.kind === 'native' && status?.kind === 'authenticated' ? <span className="text-xs text-foreground-muted">{translate('subscriptions.connections.signedIn')}</span> : null;
+  const signIn = !(status?.kind === 'authenticated' && status.credentialKind === 'api-key') &&
+    <Button size="sm" variant="outline" disabled={busy} data-testid={`model-sign-in-${connection.id}`} onClick={() => onSignIn(connection.id)}>
+      {translate('subscriptions.connections.signInAgain')}
+    </Button>;
+  return <SubscriptionModelQuota machine={machine} provider={provider} connectionId={connection.id}
     account={status?.kind === 'authenticated' ? status.account ?? '' : ''} plan={plan} enabled={subscription}>
   <SettingsRow data-subscription-model={`${agent.id}:${connection.id}`}
-    title={<InlineConnectionName name={name} busy={busy} onRename={name => onRename(connection.id, name)} />} description={details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : undefined}
+    title={<InlineConnectionName name={name} busy={busy} onRename={name => onRename(connection.id, name)} />}
+    description={details.error ? <span role="alert" className="subscription-error block">{translate('customModels.statusReadFailed')}</span> : quota && state ? state : undefined}
     control={<div className="gg-model-subscription-controls">
       <div className="gg-model-subscription-usage">
-      {(agent.id === 'claude' || agent.id === 'codex') && <SubscriptionModelQuota machine={machine} provider={agent.id} connectionId={connection.id} account={connection.name}
-        enabled={subscription} inlineOnly />}
-      {status?.kind === 'unauthenticated' &&
-        <span className={expired ? 'gg-model-expired' : 'text-xs text-foreground-muted'}>{translate(expired ? 'subscriptions.connections.expired' : 'subscriptions.connections.signedOut')}</span>}
-      {connection.kind === 'native' && status?.kind === 'authenticated' &&
-        <span className="text-xs text-foreground-muted">{translate('subscriptions.connections.signedIn')}</span>}
-      {!(status?.kind === 'authenticated' && status.credentialKind === 'api-key') && (
-          <Button size="sm" variant="outline" disabled={busy} data-testid={`model-sign-in-${connection.id}`} onClick={() => onSignIn(connection.id)}>
-            {translate('subscriptions.connections.signInAgain')}
-          </Button>
-      )}
+      {quota ? <SubscriptionModelQuota machine={machine} provider={provider} connectionId={connection.id} account={connection.name} enabled={subscription} inlineOnly /> : <>{state}{signIn}</>}
       </div>
+      <div className="gg-model-subscription-actions">
+      {quota && signIn}
+      <div className="gg-model-subscription-state">
       <div className="gg-model-subscription-status">
         {(multiple || connection.kind === 'native') && (connection.current
           ? <span className="text-xs text-foreground-muted" data-testid={`model-current-${connection.id}`}>{translate('subscriptions.connections.current')}</span>
@@ -65,6 +70,8 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onRe
       </div>
       <div className="gg-model-subscription-remove">
       {connection.kind !== 'native' && <Button className="gg-model-icon-button" size="icon" variant="ghost" disabled={busy} aria-label={translate('customModels.remove')} data-testid={`model-remove-${connection.id}`} onClick={() => onRemove(connection.id)}><Trash2 className="size-4" /></Button>}
+      </div>
+      </div>
       </div>
     </div>} /></SubscriptionModelQuota>;
 }
