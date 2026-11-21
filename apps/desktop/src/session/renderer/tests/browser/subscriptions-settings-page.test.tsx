@@ -110,6 +110,7 @@ const control = vi.hoisted(() => ({
   closeHold: null as Promise<void> | null,
   progressListeners: new Set<(data: { providerId: string; closed: number; total: number }) => void>(),
   usageByConnection: {} as Record<string, { windowMinutes: number; usedPercent: number }[]>,
+  statusByConnection: {} as Record<string, 'signed-in' | 'signed-out' | 'expired'>,
   connectionsError: false,
   keyed: false,
   /** 这几家各有各的连接(缺席的家共用 `connections`,与之前一样)。 */
@@ -145,7 +146,13 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     listConnections: async ({ providerId }: { providerId?: string } = {}) => control.connectionsError
       ? { success: false, error: { message: 'Connections offline' } }
       : { success: true, data: [...connectionsOf(providerId)] },
-    refreshAuthStatus: async () => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test', ...(control.origin ? { credentialSource: control.origin } : {}) } }),
+    refreshAuthStatus: async ({ connectionId }: { connectionId?: string } = {}) => {
+      const state = connectionId ? control.statusByConnection[connectionId] : undefined;
+      return { success: true, data: state === 'expired' || state === 'signed-out'
+        ? { kind: 'unauthenticated', ...(state === 'expired' ? { reason: 'expired' } : {}) }
+        : control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) }
+        : { kind: 'authenticated', account: 'me@example.test', ...(control.origin ? { credentialSource: control.origin } : {}) } };
+    },
     createConnection: async (input: Record<string, unknown>) => {
       control.created = input;
       const connection: HarnessConnection = input.kind === 'account'
@@ -251,6 +258,7 @@ beforeEach(() => {
   control.closeHold = null;
   control.progressListeners.clear();
   control.usageByConnection = {};
+  control.statusByConnection = {};
   control.connectionsError = false;
   control.keyed = false;
   control.connectionsByProvider = {};
@@ -863,6 +871,71 @@ it('keeps Coding Plan accounts on one line with aligned quota, state and delete 
     expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe('切换');
     expect(host.querySelector('[data-testid="model-remove-native"]')).toBeNull();
     await page.screenshot({ element: host, path: '../../../../../../../test-results/coding-plan-single-row-zh.png' });
+  } finally {
+    delete document.documentElement.dataset.theme;
+  }
+});
+
+it.each((['zh-CN', 'en-US'] as const).flatMap(locale => [640, 1024].map(width => ({ locale, width }))))('keeps quota, login and selection columns readable and aligned in $locale at $width px', async ({ locale, width }) => {
+  await setLocalePreference(locale);
+  await page.viewport(1440, 1100);
+  document.documentElement.dataset.theme = 'light';
+  control.connectionsByProvider.claude = [
+    { id: 'native', kind: 'native', name: '', current: false },
+    { id: 'layout-account', kind: 'account', name: 'Personal', current: true },
+    { id: 'layout-signed-out', kind: 'account', name: 'Signed out', current: false },
+    { id: 'layout-expired', kind: 'account', name: 'Expired', current: false },
+  ];
+  control.statusByConnection = { 'layout-signed-out': 'signed-out', 'layout-expired': 'expired' };
+  control.usageByConnection = {
+    native: [{ windowMinutes: 300, usedPercent: 0 }, { windowMinutes: 10_080, usedPercent: 5 }],
+    'layout-account': [{ windowMinutes: 300, usedPercent: 99 }, { windowMinutes: 10_080, usedPercent: 100 }],
+  };
+  host.style.cssText = `width:${width}px;background:var(--model-settings-page)`;
+  try {
+    root.render(<><p>Component fixture · 非真实订阅账号</p><div className="gg-pane gg-settings-detail"><div className="gg-settings-page gg-model-page"><ModelsFixture /></div></div></>);
+    await until('authenticated quotas and both unauthenticated states are rendered', () =>
+      host.querySelectorAll('[data-subscription-model] [role="meter"]').length === 4 &&
+      host.querySelector('[data-subscription-model="claude:layout-expired"] .gg-model-expired') !== null &&
+      host.querySelector('[data-testid="model-sign-in-layout-signed-out"]') !== null);
+    await page.screenshot({ element: host, path: `../../../../../../../test-results/coding-plan-auth-columns-${locale}-${width}.png` });
+    const box = (element: Element) => element.getBoundingClientRect();
+    const oneLine = (element: HTMLElement) => {
+      const range = document.createRange(); range.selectNodeContents(element);
+      const rects = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
+      expect(new Set(rects.map(rect => Math.round(rect.y))).size).toBe(1);
+      expect(element.scrollWidth).toBeLessThanOrEqual(Math.ceil(element.clientWidth));
+    };
+    const rows = [...host.querySelectorAll<HTMLElement>('[data-subscription-model]')];
+    expect(rows).toHaveLength(4);
+    const columns = rows.map(row => {
+      const usage = row.querySelector<HTMLElement>('.gg-model-subscription-usage')!;
+      const auth = row.querySelector<HTMLElement>('.gg-model-subscription-auth')!;
+      const selection = row.querySelector<HTMLElement>('.gg-model-subscription-status')!;
+      const remove = row.querySelector<HTMLElement>('.gg-model-subscription-remove')!;
+      const login = auth.querySelector<HTMLElement>('button')!;
+      expect(box(usage).right).toBeLessThanOrEqual(box(auth).left);
+      expect(box(auth).right).toBeLessThanOrEqual(box(selection).left);
+      expect(box(selection).right).toBeLessThanOrEqual(box(remove).left);
+      expect(auth.scrollWidth).toBeLessThanOrEqual(Math.ceil(auth.clientWidth));
+      oneLine(login);
+      for (const element of row.querySelectorAll<HTMLElement>('.gg-model-quota-label, .gg-model-quota-value, .gg-model-subscription-auth > span, .gg-model-subscription-status > *')) oneLine(element);
+      for (const meter of row.querySelectorAll<HTMLElement>('[role="meter"]')) expect(box(meter).width).toBe(44);
+      for (const value of row.querySelectorAll<HTMLElement>('.gg-model-quota-value')) {
+        expect(box(value).right).toBeLessThanOrEqual(box(usage).right);
+        expect(Math.abs((box(value).top + box(value).height / 2) - (box(login).top + box(login).height / 2))).toBeLessThan(1);
+      }
+      return [box(usage).x, box(auth).x, box(login).x, box(selection).x, box(remove).x];
+    });
+    for (const row of columns) row.forEach((x, index) => expect(Math.abs(x - columns[0][index])).toBeLessThan(1));
+    const provider = host.querySelector<HTMLElement>('[data-coding-provider="claude-subscription"]')!;
+    if (width === 640) {
+      expect(provider.scrollWidth).toBeGreaterThan(provider.clientWidth);
+      provider.scrollLeft = provider.scrollWidth;
+      const remove = rows[1].querySelector<HTMLElement>('.gg-model-subscription-remove')!;
+      expect(box(remove).right).toBeLessThanOrEqual(box(provider).right + 1);
+    }
+    expect(thrown).toEqual([]);
   } finally {
     delete document.documentElement.dataset.theme;
   }

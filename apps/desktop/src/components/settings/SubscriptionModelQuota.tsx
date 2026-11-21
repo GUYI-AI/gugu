@@ -39,7 +39,7 @@ export function SubscriptionModelQuota({ machine, provider, connectionId, accoun
   </div>
   if (inlineOnly) return inline
   return <Tooltip.Root>
-    <Tooltip.Trigger render={<div className={children ? 'gg-model-subscription-row' : undefined} tabIndex={children ? 0 : undefined} />}>
+    <Tooltip.Trigger render={<div lang={locale} className={children ? 'gg-model-subscription-row' : undefined} tabIndex={children ? 0 : undefined} />}>
       {children ?? inline}
     </Tooltip.Trigger>
     <Tooltip.Portal><Tooltip.Positioner side="bottom" align="end" sideOffset={10} className="z-[var(--z-settings-modal)]">

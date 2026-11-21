@@ -365,6 +365,13 @@ jobs:
           name: coding-plan-single-row-zh-${{ matrix.shard }}
           path: test-results/coding-plan-single-row-zh.png
           retention-days: 14
+      - name: Upload Coding Plan authentication column screenshots
+        if: ${{ always() && hashFiles('test-results/coding-plan-auth-columns-*.png') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coding-plan-auth-columns-${{ matrix.shard }}
+          path: test-results/coding-plan-auth-columns-*.png
+          retention-days: 14
   web-smoke:
     name: Web E2E (${{ matrix.id }})
     needs: changes

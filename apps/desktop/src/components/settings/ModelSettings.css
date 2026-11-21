@@ -97,19 +97,38 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 
 /* Account columns share one width; SettingsRow's general 60% control cap would wrap the two windows. */
 .gg-model-page .gg-coding-provider { overflow-x: auto; }
-.gg-model-page .gg-model-subscription-row { min-width: 560px; }
+.gg-model-page .gg-model-subscription-row {
+  --model-quota-width: 328px;
+  --model-quota-window-width: 156px;
+  --model-quota-label-width: 36px;
+  --model-quota-value-width: 60px;
+  --model-auth-width: 176px;
+  --model-selection-width: 56px;
+  min-width: calc(112px + 12px + var(--model-quota-width) + var(--model-auth-width) + var(--model-selection-width) + 28px + 36px);
+}
+/* Keep the existing English labels intact too, including "100% remaining" and "Sign-in expired". */
+.gg-model-page .gg-model-subscription-row:lang(en) {
+  --model-quota-width: 400px;
+  --model-quota-window-width: 192px;
+  --model-quota-label-width: 44px;
+  --model-quota-value-width: 88px;
+  --model-auth-width: 216px;
+  --model-selection-width: 88px;
+}
 .gg-model-page .gg-model-subscription-row div.gg-settings-row { grid-template-columns: minmax(112px, 1fr) auto; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-body { flex-wrap: nowrap; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title { width: 100%; }
 .gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-row .gg-model-name svg { flex-shrink: 0; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title > input { width: 100%; max-width: 160px; }
-.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: 328px 56px 28px; align-items: center; gap: 12px; }
-.gg-model-page .gg-model-subscription-usage { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: grid; width: 328px; grid-template-columns: repeat(2, 156px); gap: 16px; }
-.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: 36px 44px 60px; gap: 8px; }
+.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: var(--model-quota-width) var(--model-auth-width) var(--model-selection-width) 28px; align-items: center; gap: 12px; }
+.gg-model-page .gg-model-subscription-usage { display: flex; align-items: center; min-width: var(--model-quota-width); }
+.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: grid; width: var(--model-quota-width); flex-shrink: 0; grid-template-columns: repeat(2, var(--model-quota-window-width)); gap: 16px; }
+.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: var(--model-quota-label-width) 44px var(--model-quota-value-width); gap: 8px; }
+.gg-model-page .gg-model-subscription-auth { display: flex; align-items: center; justify-content: flex-end; gap: 8px; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-auth > * { flex-shrink: 0; white-space: nowrap; overflow-wrap: normal; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='300'] { grid-column: 1; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='10080'] { grid-column: 2; }
-.gg-model-page .gg-model-subscription-status { display: flex; width: 56px; align-items: center; justify-content: center; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-status { display: flex; width: var(--model-selection-width); align-items: center; justify-content: center; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-status > * { width: 100%; flex-shrink: 0; text-align: center; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-remove { display: flex; width: 28px; min-height: 28px; align-items: center; justify-content: center; }
