@@ -40,6 +40,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog'
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential'
 import { resolveSignInMethod } from '../agents-page/agent-account'
+import { openShellSettings } from '@renderer/lib/open-shell-settings'
 import { useAgentSignIn } from '../agents-page/use-agent-sign-in'
 import { dropIfNeverSignedIn } from './drop-unsigned-connection'
 import { rendererLogger } from '@/lib/log'
@@ -375,6 +376,7 @@ export function SubscriptionConnections({
       vendorKey={vendorKeyMethod}
       onCreated={onCreated}
       onCliSignIn={signInCli}
+      onLeave={() => setAdding(false)}
       {...(settingsRows ? { onCancel: () => setAdding(false) } : {})}
     />
   )
@@ -694,7 +696,7 @@ function remainingLine(
     .join(metadataSeparator())
 }
 
-function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSignIn, onCancel, modelAccount }: {
+function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSignIn, onCancel, onLeave, modelAccount }: {
   agent: AgentPayload
   machine: string | null
   account: AccountMethod
@@ -702,6 +704,7 @@ function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSi
   onCreated: (connection: HarnessConnection) => void
   onCliSignIn: () => void
   onCancel?: () => void
+  onLeave?: () => void
   modelAccount?: { connectionId?: string; onLogin: () => void; onClose: () => void; onBusyChange?: (busy: boolean) => void }
 }) {
   const { translate } = useSessionMessages()
@@ -735,6 +738,9 @@ function ConnectionForm({ agent, machine, account, vendorKey, onCreated, onCliSi
       : <p className="subscription-connection-description">{cliAccount
         ? translate('subscriptions.connections.cliAccountHint', { provider: agent.name })
         : translate('subscriptions.connections.accountHint')}</p>}
+    {/* Keys and addresses for any harness that speaks a model protocol live in Settings → Models, not in this account form. */}
+    {!vendorKey && !!agent.capabilities.modelProtocols?.length && <Button type="button" variant="link" className="h-auto self-start p-0"
+      onClick={() => { onLeave?.(); openShellSettings('model') }}>{translate('customModels.moved')}</Button>}
     {!cliAccount && <>
       <label>{translate('subscriptions.connections.remark')}<Input name="name" maxLength={80} placeholder={translate('subscriptions.connections.remarkPlaceholder')} /></label>
       <p className="subscription-connection-description">{translate('subscriptions.connections.private')}</p>
