@@ -2431,26 +2431,24 @@ async function handleOwnerFile(args, deps) {
 /**
  * 以谁的身份读这条消息的附件:agent 自己看得见就是它(零额外读取);看不见、而这是主人与好友的私聊(#84)
  * 就按主人 —— 与读历史同一个人,看不看得见、签名链接两处都按他。都不成立回 null。
+ * 消息行只在主人那一支按主人令牌读(那条私聊主人是一方):发给 agent 的悄悄话,主人令牌读不到。
  */
-async function attachmentReaderOf(deps, message) {
-  if (await agentCanSee(deps, message)) return deps.context.agentId
-  if (!(await ownerFriendOfDm(deps, message.chat_id))) return null
+async function attachmentReaderOf(deps, messageId) {
+  if (await agentCanSee(deps, { id: messageId })) return deps.context.agentId
+  const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=chat_id`)
+  if (!message || !(await ownerFriendOfDm(deps, message.chat_id))) return null
   const ownerUserId = await currentAuthUserId(deps)
-  return (await agentCanSee(deps, message, ownerUserId)) ? ownerUserId : null
+  return (await agentCanSee(deps, { id: messageId }, ownerUserId)) ? ownerUserId : null
 }
 
 /** message_download_file 的三种来源,各自变成 resolver 的一个 FileRef 和读者:消息、session 附件、群文件夹的那一版。 */
 async function downloadSourceOf(args, deps) {
   if (args.source_message_id) {
     const messageId = String(args.source_message_id)
-    const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
-    const reader = message ? await attachmentReaderOf(deps, message) : null
+    const reader = await attachmentReaderOf(deps, messageId)
     if (!reader) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
-    const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-    if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
-    if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
-    const item = attachment.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
-    return { ref: { message_id: messageId }, reader, name: attachment.fileName, item, echo: { source_message_id: `msg:${messageId}` } }
+    // What the message holds — a folder version, a whisper's own bytes, an old object, or nothing — the resolver reads as this reader.
+    return { ref: { message_id: messageId }, reader, item: null, label: `the file of message ${messageId}`, gone: `message_download_file: message ${messageId} has no attachment, or its file was deleted`, echo: { source_message_id: `msg:${messageId}` } }
   }
   if (args.source_attachment_id) {
     const id = String(args.source_attachment_id)
@@ -2489,13 +2487,14 @@ async function downloadFile(args, deps) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
         file = await deps.resolveFile(source.ref, source.reader, { progress })
       }
-      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
-      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.label ?? 'this file').message}`)
+      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.label ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status === 'gone' && source.gone) throw new Error(source.gone)
       if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+      const saved = await saveToFileStore(file, home, file.revision.file_name)
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
     })()
     // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
