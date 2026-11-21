@@ -139,7 +139,7 @@ export type {
   LiveSettingDimension,
   LiveSettingsCapability,
 } from './capabilities/acp';
-export { UNSUPPORTED_LIVE_SETTINGS, liveSettingsCapabilitySchema, guguBridgeRevert, guguRevertPoint } from './capabilities/acp';
+export { UNSUPPORTED_LIVE_SETTINGS, liveSettingsCapabilitySchema, guguBridgeRevert, guguBridgeRevertSince, guguRevertPoint } from './capabilities/acp';
 export type {
   AgentAuthContext,
   AgentAuthDescriptor,

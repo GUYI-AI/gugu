@@ -5,7 +5,7 @@ import {
   registerPluginBehavior,
   type AgentMemoryDescriptor,
   type SessionBundleDescriptor,
-  guguBridgeRevert,
+  guguBridgeRevertSince,
 } from '@gugu/session-core/agents/plugins';
 import {
   CLAUDE_GUGU_CAPABILITY_PACKAGE,
@@ -359,8 +359,9 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeClaudeSessionBundle,
   },
   acp: {
-    // Gugu's own bridge: `_meta.guguRevert` points, `_session/revert`.
-    revert: guguBridgeRevert,
+    // Gugu's own bridge: `_meta.guguRevert` points, `_session/revert`, from 1.7.1 on. An older Claude CLI pairs with an
+    // older bridge, which has neither.
+    revert: guguBridgeRevertSince('1.7.1'),
     // Its session/load replays the user messages it received: canonical evidence of delivered communications.
     historyRecovery: { canonicalReplay: true },
     explainError: (cause) => {

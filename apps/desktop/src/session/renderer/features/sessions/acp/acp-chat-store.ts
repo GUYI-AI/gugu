@@ -673,7 +673,7 @@ export class AcpChatStore {
   }
 
   get canRevertHistory(): boolean {
-    return !!this.session && !this.reverting && !this.affordances.isBusy
+    return !!this.session && this.session.config.current().canRevert && !this.reverting && !this.affordances.isBusy
       && this.session.sessionState.current().lifecycle === 'ready'
       && !this.affordances.hasPendingPermission && !(this.runningBackgroundTaskIds?.length)
       && !this.session.sessionState.current().queuedPrompts.length;

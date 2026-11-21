@@ -712,6 +712,7 @@ export class SessionManager implements InboundRouter {
     record.cell.setAgent(connection.agent);
     record.cell.setAcceptsImagePrompts(connection.supportsImagePrompt);
     record.cell.setSupportsSteering(connection.supportsSteering);
+    record.cell.setAgentVersion(connection.agentVersion);
     record.cell.setCanReattach(connection.supportsLoadSession || connection.supportsResumeSession);
     this.deps.onForkHandshake?.(input.providerId, connection.supportsForkSession);
 

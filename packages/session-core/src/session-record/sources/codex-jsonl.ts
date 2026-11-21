@@ -37,16 +37,18 @@ type Ordinals = {
   turn: number; item: number; userSeen: boolean; calls: Record<string, Record<string, unknown>>; children: Record<string, Child>;
   /** The previous line on the chain, and the turns still in the thread: each turn's first line and the line before it. */
   last: string; turns: Array<{ id: string; parent: string }>;
+  /** The running turn's own id (`task_started.turn_id`), null when its line has none. */
+  turnId: string | null;
 };
 
-const initialOrdinals = (): Ordinals => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {}, last: RECORD_START, turns: [] });
+const initialOrdinals = (): Ordinals => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {}, last: RECORD_START, turns: [], turnId: null });
 
 export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
   const lineage = new Set(ancestors);
   lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
-    resumeVersion: 9,
+    resumeVersion: 10,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
     prefixes: (path) => rolloutPrefixes(locator, path),
     initial: () => initialOrdinals(),
@@ -72,6 +74,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
       }
       if (!codex.turnStart) return { id, parent, kind: 'line' };
       ordinals.turns = [...ordinals.turns, { id, parent }];
+      const turnId = asRecord(record.payload)?.turn_id;
+      ordinals.turnId = typeof turnId === 'string' && turnId ? turnId : null;
       return { id, parent, kind: 'prompt' };
     },
     decode(record, ordinals) {
@@ -127,6 +131,9 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
         const steering = ordinals.turn > 0 && ordinals.userSeen;
         ordinals.userSeen = true;
         if (steering) return [{ key: entry.key, at: entry.at, event: { ...event, steering: true } }];
+        // The leading input carries the point a revert steps back to, as its live receipt did: the Codex bridge
+        // reverts to before a turn by its id.
+        if (ordinals.turnId) return [{ key: entry.key, at: entry.at, event: { ...event, revertAnchor: ordinals.turnId } }];
       }
       return entry ? [entry] : [];
     }

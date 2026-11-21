@@ -38,7 +38,7 @@ import {
 } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
 import { claudeLine } from './claude-branches';
-import { initialTree, keepNode, markTurn, type RecordFork, type TreeState } from './record-tree';
+import { hasEvent, initialTree, keepNode, markTurn, type RecordFork, type RecordNode, type TreeState } from './record-tree';
 import { withSubagentSources } from './subagent-sources';
 
 
@@ -396,7 +396,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const kept = line?.node ? keepNode(this.tree, line.node) : true;
     const entries = this.decodeRecord(record);
     if (!kept || line?.own) return [];
-    return line?.node ? markTurn(entries, line.node) : entries;
+    return line?.node ? markTurn(withRevertPoint(entries, line.node), line.node) : entries;
   }
 
   /** The whole record is held until its branches are known; it reaches the timeline in slices (see `readSlices`). */
@@ -738,4 +738,15 @@ function replyOf(content: unknown): { outputText?: string } {
   if (!Array.isArray(content)) return {};
   const text = content.map((part) => asRecord(part)?.text).filter((part): part is string => typeof part === 'string').join('\n');
   return text ? { outputText: text } : {};
+}
+
+/**
+ * A prompt read back carries the point a revert steps back to, as its live receipt did (`_meta.guguRevert`):
+ * claude-agent-acp reverts to before a prompt by its uuid, files included. The first prompt has no earlier entry to go
+ * back to, so it has none.
+ */
+function withRevertPoint(entries: RecordEntry[], node: RecordNode): RecordEntry[] {
+  if (node.kind !== 'prompt' || node.parent === null) return entries;
+  return entries.map((entry) => hasEvent(entry) && entry.event.kind === 'message' && entry.event.role === 'user'
+    ? { ...entry, event: { ...entry.event, revertAnchor: node.id, revertFiles: true as const } } : entry);
 }

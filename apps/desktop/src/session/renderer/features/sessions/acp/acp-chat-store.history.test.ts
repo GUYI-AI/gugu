@@ -115,7 +115,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('#7304 原地回退后的历史对账', () => {
-  async function setup() {
+  async function setup(canRevert = true) {
     const { store, internals } = makeStore();
     const turns: TranscriptTurn[] = [0, 1, 2].map((seq) => ({ ...turn(`s${seq}`, seq), items: [
       { kind: 'message' as const, id: `m${seq}`, seq: 0, role: 'user' as const, text: `text-${seq}`, revertAnchor: `native-${seq}` },
@@ -127,6 +127,7 @@ describe('#7304 原地回退后的历史对账', () => {
       activeTurn: { current: () => null },
       setPromptDraft: vi.fn(async () => ({ success: true as const, data: undefined })),
       sessionState: { current: () => ({ lifecycle: 'ready', queuedPrompts: [], pendingPermissions: [], isGenerating: false }) },
+      config: { current: () => ({ canRevert }) },
       getHistory: vi.fn(async () => ({ success: true as const, data: { turns: turns.slice(0, 1), nextCursor: null, cursor: { epoch: 'runtime', seq: 1 }, reset: false, count: 1 } })),
       revertSession: vi.fn(async () => {
         // The revert is in the record now: the timeline reads those turns gone.
@@ -147,6 +148,14 @@ describe('#7304 原地回退后的历史对账', () => {
     expect(store.reverting).toBe(false);
     await internals._refreshHistory();
     expect(committedIds(store)).toEqual(['s0']);
+  });
+
+  it('the record names revert points, but an agent that cannot revert offers none', async () => {
+    const { store, session } = await setup(false);
+    expect(store.canRevertMessage('m1')).toBe(false);
+    await store.revertMessage('m1');
+    expect(session.revertSession).not.toHaveBeenCalled();
+    expect(committedIds(store)).toEqual(['s0', 's1', 's2']);
   });
 
   it('底层拒绝时保留当前显示和草稿', async () => {
