@@ -385,49 +385,4 @@ describe('the App page market: the index in hand at once, the download site behi
     expect(h.api.market).toHaveBeenCalledTimes(2);
     expect(h.api.marketUpdates).toHaveBeenCalledTimes(1);
   });
-
-  it('counts only installed agents and extensions, with the assistant first and no runtime switches', async () => {
-    h.api.list.mockResolvedValue({
-      success: true,
-      data: { extensions: ['notes', 'gugu-assistant'].map((id) => h.item(id).manifest), invalid: [], icons: {}, disabled: [] },
-    });
-    const codex = {
-      id: 'codex',
-      name: 'Codex',
-      description: 'An agent for coding.',
-      reading: 'installed',
-      status: 'available',
-      version: '1.0.0',
-      latestVersion: '2.0.0',
-      updateAvailable: true,
-      installations: [],
-      used: { kind: 'auto' },
-      installOptions: [],
-      capabilities: { hostDependency: { updates: { kind: 'none' } } },
-    } as unknown as AgentPayload;
-    h.listManagement.mockResolvedValue([codex, { ...codex, id: 'pi', name: 'Pi', reading: 'not-detected' }]);
-    const onOpenAgentDetail = vi.fn();
-    await open(onOpenAgentDetail);
-    const tab = doc().querySelector<HTMLButtonElement>('[data-testid="extensions-tab-installed"]')!;
-    await act(async () => tab.click());
-
-    const testId = (id: string) => doc().querySelector(`[data-testid="${id}"]`);
-    await until('both installed sections drawn', () => [
-      testId('installed-apps-agents')?.querySelectorAll('li').length,
-      testId('installed-apps-extensions')?.querySelectorAll('li').length,
-    ], ([agents, extensions]) => agents === 2 && extensions === 1);
-    const agents = testId('installed-apps-agents')!;
-    const extensions = testId('installed-apps-extensions')!;
-    expect([...agents.querySelectorAll('li')].map((row) => row.dataset.testid)).toEqual([
-      'extension-row-gugu-assistant', 'installed-agent-row-codex',
-    ]);
-    expect([...extensions.querySelectorAll('li')].map((row) => row.dataset.testid)).toEqual(['extension-row-notes']);
-    const agent = testId('installed-agent-row-codex')!;
-    expect(agent.querySelector('.mk-tx > span')?.textContent).toMatch(/v2\.0\.0/);
-    expect(agent.querySelector('[role="switch"]')).toBeNull();
-    const openAgent = testId('installed-agent-open-codex') as HTMLButtonElement;
-    expect(openAgent.textContent).toMatch(/Open|打开/);
-    await act(async () => openAgent.click());
-    expect(onOpenAgentDetail).toHaveBeenCalledWith('codex');
-  });
 });

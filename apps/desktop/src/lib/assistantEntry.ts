@@ -202,9 +202,7 @@ export function openInstalledConnectors(deviceId?: string): boolean {
   window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
   window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
   appState.navigation.navigate('apps', {
-    marketPage: 'connectors',
-    installedSection: 'connectors',
-    ...(deviceId ? { installedDeviceId: deviceId } : {}),
+    location: { tab: 'connectors', installed: { section: 'connectors', direct: true, ...(deviceId ? { deviceId } : {}) } },
   })
   return true
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState, type Ref } from 'react';
+import { useMemo, type Ref } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { chatDb } from '@/lib/supabase';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -6,13 +6,13 @@ import { localizedManifestText, MARKET_CATEGORIES, marketCategoryOf, type Market
 import { marketHome } from '@shared/extensions/market-home';
 import type { MarketListItem } from '@shared/extensions/market';
 import type { ResourceContext } from '@shared/resource-actions';
+import type { AppsSort } from '@renderer/features/apps/apps-location';
 import type { AppMarketState } from './app-market-content';
 import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured, type MarketCategoryChoice } from './desktop-market-cards';
 import { MarketExtensionIcon } from './market-extension-icon';
 import { ShelfMoreSkeleton } from './extension-skeletons';
 
 type ExtensionMarketFilter = 'all' | MarketCategory;
-type AppSort = 'recommended' | 'newest' | 'popular';
 export type DesktopMarketShelf = Omit<Extract<AppMarketState, { status: 'ready' }>, 'featured' | 'home'>;
 
 async function readInstallRanking() {
@@ -22,12 +22,15 @@ async function readInstallRanking() {
 }
 
 export function DesktopExtensionMarket({
-  shelf, query, category, onCategoryChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
+  shelf, query, category, onCategoryChange, sort = 'recommended', onSortChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
 }: {
   shelf: DesktopMarketShelf;
   query: string;
   category: ExtensionMarketFilter;
   onCategoryChange: (category: ExtensionMarketFilter) => void;
+  /** The order picked, part of where you are on the Apps page (apps-location). */
+  sort?: AppsSort;
+  onSortChange: (sort: AppsSort) => void;
   installedIds?: ReadonlySet<string>;
   onOpen: (item: MarketListItem) => void;
   resourceOf: (id: string) => ResourceContext;
@@ -37,7 +40,6 @@ export function DesktopExtensionMarket({
   selectedId?: string;
 }) {
   const { translate, locale } = useSessionMessages();
-  const [sort, setSort] = useState<AppSort>('recommended');
   const { data: scores } = useQuery({
     queryKey: ['desktop-market-install-ranking'],
     queryFn: readInstallRanking,
@@ -64,7 +66,7 @@ export function DesktopExtensionMarket({
   }, [shelf, scores]);
 
   const categoryLabel = (key: MarketCategory) => translate(`extensions.category.${key}`);
-  const sorts: MarketCategoryChoice<AppSort>[] = [{ value: 'recommended', label: translate('extensions.recommended') }];
+  const sorts: MarketCategoryChoice<AppsSort>[] = [{ value: 'recommended', label: translate('extensions.recommended') }];
   if (home?.newest.length) sorts.push({ value: 'newest', label: translate('extensions.newest') });
   if (home?.popular?.length) sorts.push({ value: 'popular', label: translate('extensions.popular') });
   const activeSort = sorts.some((choice) => choice.value === sort) ? sort : 'recommended';
@@ -112,7 +114,7 @@ export function DesktopExtensionMarket({
         <MarketFeatured title={translate('extensions.featuredApps')} {...featured} renderCard={(item) => card(item, true)} />
       )}
       {!query && (
-        <MarketCategoryBar choices={sorts} selected={activeSort} onChange={setSort} testIdPrefix="extensions-market-sort" variant="subnav" />
+        <MarketCategoryBar choices={sorts} selected={activeSort} onChange={onSortChange} testIdPrefix="extensions-market-sort" variant="subnav" />
       )}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={activeCategory} onChange={onCategoryChange} testIdPrefix="extensions-market-chip" />

@@ -89,14 +89,32 @@ const { SessionLocalizationProvider } = await import('@renderer/localization/loc
 const { translateSessionMessage } = await import('@renderer/localization/locale-store');
 const { toast } = await import('@renderer/lib/hooks/use-toast');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
+const { appState } = await import('@renderer/lib/stores/app-state');
+const { openAppsLocation } = await import('@renderer/features/apps/apps-location');
+type InstalledItem = import('@renderer/features/extensions/installed/installed-item').InstalledItem;
+
+// Where on the Apps page is app-wide (apps-location): every case starts on the Apps page's first tab, nothing open.
+beforeEach(() => {
+  appState.navigation.updateViewParams('apps', () => ({}));
+  appState.history.prune(() => true);
+});
 
 // How this build refuses an App written for apiVersion 2, as list() hands it over (#6934).
 const REFUSED = 'Invalid manifest:\n- apiVersion: apiVersion 2 is an older App interface; ask an agent to rewrite the App for apiVersion 25 as app_create writes Apps.';
 
-/** These rows live on the Installed tab. */
-async function showInstalled(dom: JSDOM) {
-  const tab = dom.window.document.querySelector('[data-testid="extensions-tab-installed"]') as HTMLButtonElement;
-  await act(async () => void tab.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+/** An App's settings page, opened as the Installed sheet and App links open it: a place on the Apps page. */
+async function openSettings(extensionId: string) {
+  await act(async () => openAppsLocation({ tab: 'agents', detail: { page: 'manage', extensionId } }));
+}
+
+/** The card as the Installed sheet's Apps segment uses it: the installed Apps as items, drawn by the sheet. */
+function inventory() {
+  let items: readonly InstalledItem[] = [];
+  const element = React.createElement(ExtensionsSettingsCard, {
+    renderInstalledApps: (next: readonly InstalledItem[]) => { items = next; return null; },
+    onOpenInstalledApp: () => {},
+  });
+  return { element, items: () => items };
 }
 
 describe('Marketplace installed inventory', () => {
@@ -136,49 +154,51 @@ describe('Marketplace installed inventory', () => {
       },
     } as never);
     try {
+      const sheet = inventory();
+      await act(async () => {
+        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
+      });
+      await settle();
+      expect(sheet.items().map((item) => item.id)).toEqual(expect.arrayContaining(['notes', 'searcher', 'workspace']));
+      // One gugu ships cannot be broken from here: no switch or uninstall in the sheet, and on its settings page no switch,
+      // page switch, revoke, clear, uninstall or agents editor.
+      const workspace = sheet.items().find((item) => item.id === 'workspace')!;
+      expect([workspace.setEnabled, workspace.remove]).toEqual([undefined, undefined]);
+      act(() => root.unmount());
+      root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
+      await openSettings('workspace');
       await act(async () => {
         root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
       });
       await settle();
-      await showInstalled(dom);
-      const rows = [...dom.window.document.querySelectorAll('[data-testid^="extension-row-"]')].map((row) => row.getAttribute('data-testid'));
-      expect(rows).toContain('extension-row-notes');
-      expect(rows).toContain('extension-row-searcher');
-      expect(rows).toContain('extension-row-workspace');
-      // One gugu ships cannot be broken from here: no switch, page switch, revoke, clear, uninstall or agents editor.
       const doc = dom.window.document;
-      await act(async () => void doc.querySelector('[data-testid="extension-row-workspace"] .mk-name')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-      await settle();
       expect(doc.querySelector('[data-testid="app-manage-page"][data-extension-id="workspace"]')).not.toBeNull();
       expect(doc.querySelector('[data-testid="app-manage-page"] [role="switch"]')).toBeNull();
       for (const absent of ['app-manage-uninstall', 'app-manage-data', 'app-manage-pin']) expect(doc.querySelector(`[data-testid="${absent}"]`), absent).toBeNull();
       expect(doc.querySelector('[data-testid="app-manage-permissions"]')?.textContent).not.toContain(translateSessionMessage('extensions.revoke'));
-      await act(async () => void doc.querySelector('[data-testid="app-manage-back"]')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     } finally {
       h.api.list.mockImplementation(listed!);
     }
   });
 
   // L11 复核 60: an installed folder this build cannot read (every v1 / v2 App once apiVersion 3 ships) sat in the list
-  // with no way to remove it. Control (the parent commit): no button in the row.
-  it('an installed folder this build cannot read: the row says why, and Uninstall removes it by its folder name', async () => {
+  // with no way to remove it. It is an item of the sheet, named by its folder, removed by its folder name.
+  it('an installed folder this build cannot read: listed by its folder name, and removing it uninstalls that folder', async () => {
     const listed = h.api.list.getMockImplementation();
     h.api.list.mockResolvedValue({
       success: true,
       data: { extensions: [h.manifest('1.0.0')], invalid: [{ dirName: 'old-notes', reason: REFUSED }], icons: {}, disabled: [] },
     });
     try {
+      const sheet = inventory();
       await act(async () => {
-        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
       });
       await settle();
-      await showInstalled(dom);
-      const row = dom.window.document.querySelector('[data-testid="extension-row-unreadable"][data-extension-dir="old-notes"]');
-      expect(row?.querySelector('.xp-row-error')?.textContent).toBe(translateSessionMessage('extensions.unreadable', { name: 'old-notes', reason: REFUSED }));
-      await act(async () => void row!.querySelector('[data-testid="extension-row-unreadable-uninstall"]')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-      expect(h.showConfirm).toHaveBeenCalledOnce();
-      await act(async () => void (h.showConfirm.mock.calls[0][0] as { onSuccess: () => void }).onSuccess());
-      await settle();
+      const unreadable = sheet.items().find((item) => item.id === 'old-notes')!;
+      expect(unreadable.name).toBe('old-notes');
+      h.api.list.mockResolvedValue({ success: true, data: { extensions: [h.manifest('1.0.0')], invalid: [], icons: {}, disabled: [] } });
+      await act(async () => unreadable.remove!());
       expect(h.api.uninstall).toHaveBeenCalledWith({ extensionId: 'old-notes', lastAnywhere: true });
     } finally {
       h.api.list.mockImplementation(listed!);
@@ -195,15 +215,13 @@ describe('Marketplace installed inventory', () => {
     });
     h.api.uninstall.mockRejectedValueOnce(new Error('device offline'));
     try {
+      const sheet = inventory();
       await act(async () => {
-        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
       });
       await settle();
-      await showInstalled(dom);
-      const row = dom.window.document.querySelector('[data-testid="extension-row-unreadable"][data-extension-dir="old-notes"]');
-      await act(async () => void row!.querySelector('[data-testid="extension-row-unreadable-uninstall"]')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-      await act(async () => void (h.showConfirm.mock.calls[0][0] as { onSuccess: () => void }).onSuccess());
-      await settle();
+      const unreadable = sheet.items().find((item) => item.id === 'old-notes')!;
+      await act(async () => { await expect(unreadable.remove!()).rejects.toThrow(); });
       // One uninstall for every App (L11 64): the failure reads as it does for a readable one — the words, and Retry.
       expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({
         title: translateSessionMessage('extensions.uninstallFailed'),
@@ -277,16 +295,13 @@ describe('Installing one version from the market: the sheet speaks of that versi
   });
 
   it('the sheet says what the installed version changed and that it came from the market', async () => {
+    const sheet = inventory();
     await act(async () => {
-      root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+      root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
     });
-    await settle();
-    await showInstalled(dom);
-    // 有新版的那一行:名字下面写「有新版 v2.0.0」,行尾那颗按钮是「更新」(#7059 一个按钮走完一生)。
-    expect(dom.window.document.querySelector('[data-testid="extension-row-notes"]')?.textContent).toContain('2.0.0');
-    const link = dom.window.document.querySelector('[data-testid="extension-row-action-notes"][data-lifecycle="update"]');
-    expect(link, 'the row offers the update').not.toBeNull();
-    await act(async () => void link!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    await until('the update is offered', () => sheet.items().find((item) => item.id === 'notes')?.update !== undefined);
+    // 有新版的那一项带「更新」(#7059 一个按钮走完一生)。
+    void Promise.resolve(sheet.items().find((item) => item.id === 'notes')!.update!()).catch(() => {});
     await settle();
     expect(h.showConfirm).toHaveBeenCalledOnce();
     const { description } = h.showConfirm.mock.calls[0][0] as { description: string };
@@ -426,8 +441,9 @@ describe('Desktop marketplace tabs and app details', () => {
     await press('[data-testid="extension-card-gugu-assistant"]');
     expect(document.querySelector<HTMLElement>('[data-testid="extensions-market-panel"] [data-testid="app-product-page"]')?.dataset.extensionId).toBe('gugu-assistant');
     await press('[data-testid="app-product-back"]');
-    await press('[data-testid="extensions-tab-installed"]');
-    expect(document.querySelector('[data-testid="extensions-installed-panel"]')).not.toBeNull();
+    // 「已安装」 opens the Installed sheet: a place on the Apps page, on its first segment.
+    await press('[data-testid="extensions-open-installed"]');
+    expect(appState.navigation.viewParamsStore.apps?.location?.installed).toEqual({ section: 'agents', deviceId: undefined });
   });
 
   it('searches the current catalog with the same search field', async () => {
@@ -648,10 +664,8 @@ describe('App variant switching uses the existing install consent', () => {
   });
 
   async function openVariantList() {
+    await openSettings('notes');
     await render();
-    await showInstalled(dom);
-    await until('the installed Notes row', () => !!doc().querySelector('[data-testid="extension-row-notes"]'));
-    await press('[data-testid="extension-row-notes"] .mk-name');
     await until('the Notes variants', () => !!doc().querySelector('[data-testid="app-variant-upstream"]'));
     expect(doc().querySelector('[data-testid="app-manage-page"]')).not.toBeNull();
   }
@@ -696,15 +710,13 @@ describe('App variant switching uses the existing install consent', () => {
       extensions: [h.manifest('1.0.0'), { ...h.manifest('1.0.0'), id: 'other', name: 'Other' }],
       invalid: [], icons: {}, disabled: [], variants: { other: { active, variants } },
     } }));
+    await openSettings('notes');
     await render();
-    await showInstalled(dom);
-    await until('both installed Apps', () => !!doc().querySelector('[data-testid="extension-row-notes"]') && !!doc().querySelector('[data-testid="extension-row-other"]'));
+    await until('the Notes settings page', () => !!doc().querySelector('[data-testid="app-manage-page"]'));
     expect(h.api.list).toHaveBeenCalledOnce();
-    await press('[data-testid="extension-row-notes"]');
-    expect(doc().querySelector('[data-testid="app-manage-page"]')).not.toBeNull();
     expect(doc().querySelector('[data-testid="app-variants"]')).toBeNull();
-    await press('[data-testid="app-manage-back"]');
-    await press('[data-testid="extension-row-other"]');
+    await openSettings('other');
+    await until('the Other settings page', () => doc().querySelector('[data-testid="app-manage-page"]')?.getAttribute('data-extension-id') === 'other');
     expect(doc().querySelector('[data-testid="app-variants"]')).not.toBeNull();
   });
 

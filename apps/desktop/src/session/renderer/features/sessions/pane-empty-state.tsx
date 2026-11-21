@@ -4,7 +4,6 @@ import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
-import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
   useSessionViewContext,
@@ -24,6 +23,7 @@ import { directToolsUnavailableText } from '@renderer/features/remote-hosts/work
 
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
+import { openAppsLocation } from '@renderer/features/apps/apps-location';
 
 /**
  * @@@sessionpage layout — workspace-pane empty state. The actions and
@@ -212,7 +212,6 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
   entries: WorkspacePanelAction[];
 }) {
   const { translate } = useSessionMessages();
-  const { navigate } = useNavigate();
 
   const builtins = entries.filter((entry) => entry.section !== 'extensions');
   const extensions = entries.filter((entry) => entry.section === 'extensions');
@@ -223,7 +222,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
     (index) => enabledEntries[index]?.onClick()
   );
 
-  const openExtensionsSettings = () => navigate('apps');
+  const openExtensionsSettings = () => openAppsLocation({ tab: 'market' });
 
   const renderAction = (entry: WorkspacePanelAction, className?: string) => {
     const enabledIndex = enabledEntries.indexOf(entry);

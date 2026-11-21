@@ -20,16 +20,28 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   private readonly _guards = new Map<ViewId, (params: unknown) => GuardResult>();
   private readonly _registeredViewIds = new Set<ViewId>();
   private readonly _transientParamKeys = new Map<ViewId, readonly string[]>();
+  private readonly _placeParamKeys = new Map<ViewId, readonly string[]>();
 
   constructor() {
     makeAutoObservable(this);
   }
 
-  registerView(viewId: ViewId, options?: { transientParams?: readonly string[] }): void {
+  registerView(viewId: ViewId, options?: { transientParams?: readonly string[]; placeParams?: readonly string[] }): void {
     this._registeredViewIds.add(viewId);
     if (options?.transientParams?.length) {
       this._transientParamKeys.set(viewId, options.transientParams);
     }
+    if (options?.placeParams?.length) {
+      this._placeParamKeys.set(viewId, options.placeParams);
+    }
+  }
+
+  /** Which place inside the view these params are at (view-registry `placeParams`); undefined for views without places. */
+  private _placeOf(viewId: ViewId, params: unknown): string | undefined {
+    const keys = this._placeParamKeys.get(viewId);
+    if (!keys) return undefined;
+    const record = (params ?? {}) as Record<string, unknown>;
+    return JSON.stringify(keys.map((key) => record[key] ?? null));
   }
 
   isRegisteredViewId(value: unknown): value is ViewId {
@@ -92,6 +104,7 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
         kind: 'view',
         viewId,
         params: this._withoutTransientKeys(viewId, recorded),
+        place: this._placeOf(viewId, recorded),
       });
     }
     this._applyNavigation(viewId, params);
@@ -137,6 +150,9 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     const current = (this.viewParamsStore[viewId] ?? {}) as WrapParams<TId>;
     const next = typeof update === 'function' ? update(current) : { ...current, ...update };
     this.viewParamsStore = { ...this.viewParamsStore, [viewId]: next };
+    if (viewId === this.currentViewId && this._placeParamKeys.has(viewId)) {
+      appState.history.replaceCurrent({ kind: 'view', viewId, params: this._withoutTransientKeys(viewId, next), place: this._placeOf(viewId, next) });
+    }
   }
 
   get snapshot(): NavigationSnapshot {

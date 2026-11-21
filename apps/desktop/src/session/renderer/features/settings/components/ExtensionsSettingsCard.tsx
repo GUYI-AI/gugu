@@ -2,12 +2,13 @@ import { AppIcon } from '@renderer/lib/components/app-icon';
 import type { InstalledItem } from '@renderer/features/extensions/installed/installed-item';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useAppDetailRequest } from '@renderer/features/apps/use-app-detail-request';
-import type { ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import { currentAppsLocation, moveAppsLocation, openAppsLocation, previousAppsLocation, type AppsLocation, type AppsTab } from '@renderer/features/apps/apps-location';
+import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { messageForUser } from '@/lib/userFacingError';
-import { Archive, CircleAlert, LayoutGrid, Plug, SquareTerminal, Trash2Icon } from '@/lib/icons';
+import { Archive, CircleAlert, LayoutGrid, Plug, SquareTerminal } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
@@ -47,19 +48,10 @@ import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-pa
 import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/extensions/panel/app-product-page';
 import { AppPromptsSection } from '@renderer/features/library/prompts/prompt-library-view';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
-import { InstalledAppRow } from '@renderer/features/extensions/panel/app-rows';
-import { InstalledAgentRows, useInstalledAgentRows } from '@renderer/features/extensions/panel/installed-agent-rows';
-import {
-  InstalledRowNoticeLine,
-  programFailureText,
-  type InstalledRowNotice,
-} from '@renderer/features/extensions/panel/installed-extension-row';
+import type { InstalledRowNotice } from '@renderer/features/extensions/panel/installed-extension-row';
 import type { ExtensionPendingAction } from '@renderer/features/extensions/panel/extension-pending';
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram';
-import {
-  InstalledRowsSkeleton,
-  ShelfSkeleton,
-} from '@renderer/features/extensions/panel/extension-skeletons';
+import { ShelfSkeleton } from '@renderer/features/extensions/panel/extension-skeletons';
 import '@renderer/features/extensions/panel/extensions-panel.css';
 import '@renderer/features/extensions/panel/app-store.css';
 import { Button } from '@renderer/lib/ui/button';
@@ -67,13 +59,9 @@ import { SearchInput } from '@renderer/lib/ui/search-input';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import {
-  declaredPermissions,
-  INSTALLED_GROUP_ORDER,
-  installedGroupOf,
   localizedManifestText,
   marketCategoryOf,
   matchesExtensionQuery,
-  type InstalledUpdateFlag,
   type MarketCategory,
 } from '@shared/extensions/catalog';
 import type {
@@ -139,19 +127,16 @@ function marketStaleTime(iso: string, locale: string): string {
 
 
 /** Which page of an App is open, and the one the back button returns to. */
-export type AppDetail =
-  | { page: 'market'; subject: Omit<ExtensionDetailSubject, 'installedVersion'>; from?: AppDetail }
-  | { page: 'manage'; extensionId: string; from?: AppDetail; fromApp?: boolean };
+export type MarketSubject = Omit<ExtensionDetailSubject, 'installedVersion'>;
+/** The App page drawn, from the location's `detail` once settled (use-app-detail-request). */
+type AppDetail =
+  | { page: 'market'; subject: MarketSubject }
+  | { page: 'manage'; extensionId: string; fromApp?: boolean };
 
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
-export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ detailLink, onOpenAgentDetail, marketPage, onMarketPageChange, onCloseDetailLink, openInstalled, renderInstalledApps, onOpenInstalledApp }: {
-  detailLink?: ExtensionAppDetailLink;
-  onCloseDetailLink?: () => void;
-  marketPage?: MarketplaceTab;
-  onMarketPageChange?: (page: MarketplaceTab) => void;
+export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ onOpenAgentDetail, renderInstalledApps, onOpenInstalledApp }: {
   onOpenAgentDetail?: (agentId: string) => void;
-  openInstalled?: () => void;
   renderInstalledApps?: (items: readonly InstalledItem[], state: { loading?: boolean; error?: boolean }) => ReactNode;
   onOpenInstalledApp?: (extensionId: string) => void;
 }) {
@@ -176,10 +161,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   );
   const showConfirm = useShowModal('confirmActionModal');
   const { navigate } = useNavigate();
-  const [tab, setTab] = useState<MarketplaceTab | 'installed'>(marketPage ?? 'agents');
-  useEffect(() => {
-    if (marketPage) setTab(marketPage);
-  }, [marketPage]);
+  // Where on the Apps page (apps-location): the tab, the open App page; changes go through apps-location.
+  const location = currentAppsLocation();
+  const tab = location.tab;
+  const setTab = (next: AppsTab) => moveAppsLocation((place) => ({ ...place, tab: next, detail: undefined, scroll: undefined }));
   const [agentCategory, setAgentCategory] = useState<AgentMarketFilter>('all');
   const [chip, setChip] = useState<'all' | MarketCategory>('all');
   const [agentDetailId, setAgentDetailId] = useState<string | null>(null);
@@ -196,7 +181,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     getCommands: () => !searchRef.current?.isConnected ? [] : [{ id: 'app.find', hideFromPalette: true, execute: () => searchRef.current?.focus() }],
   });
 
-  const listScroll = useRef(0);
   const scroller = () => {
     let node = rootRef.current?.parentElement ?? null;
     // 这一页所在那扇窗自己的 getComputedStyle(单独成窗时不是主窗那一个)。
@@ -204,7 +188,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     return node;
   };
   const [query, setQuery] = useState('');
-  const installedAgents = useInstalledAgentRows(query);
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
   const debouncedQuery = useDebounce(tab === 'market' ? query.trim() : '', 250);
   const [shelf, setShelf] = useState<ShelfState>(() => shelfOf(host.key) ?? { status: 'loading' });
@@ -214,9 +197,29 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const [marketStale, setMarketStale] = useState<string | null>(null);
   // 页面画着的那份目录是哪一刻的:同一刻的「变了」(推送和 marketRefresh 的回答各报一次)只重读一回。
   const shelfFetchedAt = useRef<string | null>(null);
-  const [detail, setDetail] = useState<AppDetail | null>(null);
-  const detailRef = useRef(detail);
-  detailRef.current = detail;
+  // Market pages' subjects read for Apps the list has not got (a link, a page of the list not read yet), by id.
+  const [subjects, setSubjects] = useState<Record<string, MarketSubject>>({});
+  const subjectOf = (extensionId: string): MarketSubject | undefined => {
+    const listed = shelf.status === 'ready' ? shelf.items.find((row) => row.manifest.id === extensionId) : undefined;
+    return listed ? { manifest: listed.manifest, cloud: listed.cloud, installRef: listed.ref } : subjects[extensionId];
+  };
+  const keepSubject = (subject: MarketSubject) => setSubjects((known) => ({ ...known, [subject.manifest.id]: subject }));
+  const page = location.detail;
+  const marketSubject = page?.page === 'market' ? subjectOf(page.extensionId) : undefined;
+  const detail: AppDetail | null = page?.page === 'manage' ? { page: 'manage', extensionId: page.extensionId, fromApp: page.fromApp }
+    : marketSubject ? { page: 'market', subject: marketSubject } : null;
+  // An App page is a step of the back stack (apps-location): leaving the list records how far down it was.
+  const openPage = (next: NonNullable<AppsLocation['detail']>) => {
+    if (!location.detail) moveAppsLocation((here) => ({ ...here, scroll: scroller()?.scrollTop ?? 0 }));
+    openAppsLocation({ ...currentAppsLocation(), detail: next });
+  };
+  const replacePage = (next: NonNullable<AppsLocation['detail']>) => moveAppsLocation((here) => ({ ...here, detail: next }));
+  const clearPage = () => moveAppsLocation((here) => ({ ...here, detail: undefined }));
+  // Its back button: the step it was opened from; a page that was the first step (a link, a restart) returns to `home`.
+  const closePage = (home: AppsLocation) => {
+    if (previousAppsLocation()) navigateBack(true);
+    else moveAppsLocation(() => home);
+  };
   // Boot may have filled the store already; then the page opens on that copy and
   // re-reads behind it (stale-while-revalidate) rather than flashing a skeleton
   // over rows it could show.
@@ -449,11 +452,13 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const detailId = detail ? `${detail.page}:${appDetailId(detail)}` : null;
   // An App opened from the market list: its page beside the list (Obsidian's plugin browser); from its settings page it is
   // the whole page, its back button returns there.
-  const browsing = detail?.page === 'market' && !detail.from && tab === 'market' ? detail : null;
+  const fromSettings = previousAppsLocation()?.detail?.page === 'manage';
+  const browsing = detail?.page === 'market' && !fromSettings && tab === 'market' ? detail : null;
+  // An App's page opens at its top; the list comes back as far down as it was left.
   useLayoutEffect(() => {
-    const page = scroller();
-    if (page) page.scrollTop = detailId ? 0 : listScroll.current;
-  }, [detailId]);
+    const scrolled = scroller();
+    if (scrolled) scrolled.scrollTop = detailId ? 0 : location.scroll ?? 0;
+  }, [detailId, tab]);
   useBrowseList(rootRef, scroller, browsing?.subject.manifest.id, shelf.status === 'ready' ? shelf.items.length : 0);
 
   /**
@@ -815,7 +820,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
 
   // #6646 The chat's own forward page sends it (ExtensionForwardHost); exporting to a file is a row there.
   const forwardExtension = (manifest: ExtensionManifest) => {
-    setDetail(null);
     window.dispatchEvent(new CustomEvent(UI_EVENTS.forwardExtension, { detail: { extensionId: manifest.id, name: localizedManifestText(manifest, locale).name, version: manifest.version } }));
   };
 
@@ -849,14 +853,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       await refresh();
       void store.checkUpdates();
       // 它的设置页随它一起没了:回到进来的地方(市场页还在,按钮回到「安装」);从别处直接进来的回「已安装」。
-      const leaving = detailRef.current;
-      if (leaving?.page === 'manage' && leaving.extensionId === app.id) {
-        if (!leaving.from) {
-          onCloseDetailLink?.();
-          if (openInstalled) openInstalled();
-          else setTab('installed');
-        }
-        setDetail(leaving.from ?? null);
+      const here = currentAppsLocation();
+      if (here.detail?.page === 'manage' && here.detail.extensionId === app.id) {
+        closePage({ ...here, detail: undefined, installed: { section: 'apps', deviceId: here.deviceId } });
       }
       setJustInstalled((current) => (current === app.id ? null : current));
       // Uninstall is the one irreversible action here. When the bundle is on the
@@ -892,16 +891,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     [store.manifests]
   );
 
-  // 云端那口对这一个 id 要说的话,三选一(#5410);yanked/deprecated 比「有新版」急,
-  // 与 installedGroupOf 的优先级一致。
-  const updateFlagOf = (extensionId: string): InstalledUpdateFlag => {
-    const updates = store.updates;
-    if (!updates) return null;
-    if (updates.yanked[extensionId]) return 'yanked';
-    if (updates.deprecated[extensionId]) return 'deprecated';
-    if (updates.updates[extensionId]) return 'update';
-    return null;
-  };
   const noticeOf = (manifest: ExtensionManifest): InstalledRowNotice | undefined => {
     const updates = store.updates;
     if (!updates) return undefined;
@@ -945,10 +934,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     // 更新:没新增权限直接换(按「更新」本身就是同意,spec「装与卸」);新增了的照旧问那几项。
     else if (state.kind === 'update') void installFromShelf({ extensionId, version: state.version }, extensionId);
     else if (state.kind === 'enable' && installed) void switchExtension(installed, true);
-    else if (state.kind === 'open') {
-      setDetail(null);
-      openApp(extensionId);
-    }
+    else if (state.kind === 'open') openApp(extensionId);
   };
 
   /** 「对 agent 说」点一句:新建任务那一页,这句已经填在输入框里(它读新建框那一格草稿)。只在本机。 */
@@ -964,12 +950,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     resource: resourceOf(manifest.id),
     onSettings: () => openInstalledDetail(manifest),
     onToggleDock: dockToggle(manifest),
-    onOpenInWindow: onRail(manifest)
-      ? () => {
-          setDetail(null);
-          void openAppInWindow(manifest.id);
-        }
-      : undefined,
+    onOpenInWindow: onRail(manifest) ? () => void openAppInWindow(manifest.id) : undefined,
     onForward: host.local ? () => forwardExtension(manifest) : undefined,
     autoUpdate: autoUpdateOf(manifest),
     onUninstall: store.isPreinstalled(manifest.id) ? undefined : () => confirmUninstall(manifest),
@@ -993,21 +974,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const installedRows = store.manifests
     .filter((manifest) => matchesExtensionQuery(manifest, query))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const assistant = installedRows.find((manifest) => manifest.id === ASSISTANT_APP_ID);
-  const extensionRows = installedRows.filter((manifest) => manifest.id !== ASSISTANT_APP_ID);
-  const extensionPriority = (manifest: ExtensionManifest) =>
-    INSTALLED_GROUP_ORDER.indexOf(installedGroupOf(store.isEnabled(manifest.id), updateFlagOf(manifest.id)));
-  extensionRows.sort((a, b) => extensionPriority(a) - extensionPriority(b));
-  const agentCount = installedAgents.rows.length + Number(assistant !== undefined);
-  const invalidRows =
-    query.trim() === ''
-      ? store.invalid
-      : store.invalid.filter((entry) =>
-          entry.dirName.toLowerCase().includes(query.trim().toLowerCase())
-        );
-
-  const extensionCount = extensionRows.length + invalidRows.length;
-  const installedCount = agentCount + extensionCount;
   const extensionShelf: ShelfState = shelf.status === 'ready' && shelf.query !== debouncedQuery
     ? { status: 'loading' }
     : shelf;
@@ -1015,34 +981,35 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID)
     ?? lastShelf.get(host.key)?.items.find((item) => item.manifest.id === ASSISTANT_APP_ID);
 
-  const rememberListScroll = () => {
-    listScroll.current = scroller()?.scrollTop ?? 0;
-  };
   const openInstalledDetail = (manifest: ExtensionManifest) => {
-    rememberListScroll();
     setJustInstalled(null);
-    setDetail({ page: 'manage', extensionId: manifest.id });
+    openPage({ page: 'manage', extensionId: manifest.id });
   };
   const openMarketAgentDetail = (agentId: string) => {
     if (host.local) setMarketDetail({ agentId });
     else (onOpenAgentDetail ?? setAgentDetailId)(agentId);
   };
   const openShelfDetail = (item: ShelfItem) => {
-    // Another App picked beside the list: the list stays where it is, so the way back is still to before the first.
-    if (!browsing) rememberListScroll();
     setJustInstalled(null);
-    setDetail({ page: 'market', subject: { manifest: item.manifest, installRef: item.ref, cloud: item.cloud } });
+    keepSubject({ manifest: item.manifest, installRef: item.ref, cloud: item.cloud });
+    // Another App picked beside the list: the same step, so the way back is still to before the first.
+    if (browsing) replacePage({ page: 'market', extensionId: item.manifest.id });
+    else openPage({ page: 'market', extensionId: item.manifest.id });
   };
-  // A link to an App not installed here opens its page beside the market list.
-  const openLinkedDetail = useCallback((next: SetStateAction<AppDetail | null>) => {
-    if (typeof next === 'object' && next?.page === 'market') setTab('market');
-    setDetail(next);
-  }, []);
-  useAppDetailRequest({ target: detailLink, ready: inventory === 'ready', host, setDetail: openLinkedDetail, detail, rootRef });
-  // 产品页右栏「类似 App」点一个:换到它的产品页。❌ 记清单的滚动位置 —— 此刻滚的是产品页,回清单要回到进产品页之前那里。
+  // A link names only the App: it settles on its settings or its market page (beside the market list).
+  useAppDetailRequest({
+    page: location.detail, deviceId: location.deviceId, ready: inventory === 'ready', host, rootRef,
+    hasSubject: (extensionId) => subjectOf(extensionId) !== undefined,
+    onSubject: keepSubject,
+    onPage: (settled) => moveAppsLocation((here) => here.detail
+      ? { ...here, tab: settled === 'market' ? 'market' : here.tab, detail: { ...here.detail, page: settled } }
+      : here),
+  });
+  // 产品页右栏「类似 App」点一个:换到它的产品页,同一步(返回回到进第一个产品页之前那里)。
   const openSimilar = (item: ShelfItem) => {
     setJustInstalled(null);
-    setDetail((current) => ({ page: 'market', subject: { manifest: item.manifest, installRef: item.ref, cloud: item.cloud }, from: current?.from }));
+    keepSubject({ manifest: item.manifest, installRef: item.ref, cloud: item.cloud });
+    replacePage({ page: 'market', extensionId: item.manifest.id });
   };
   /** 市场里同一类的别的 App(取到的那几页里有的),最多五个。 */
   const similarOf = (manifest: ExtensionManifest) => {
@@ -1064,13 +1031,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       });
   };
   /** 设置页上的「在市场查看」:问一次市场上的那一版,返回回到设置页。 */
-  const viewInMarket = async (manifest: ExtensionManifest, from: AppDetail) => {
+  const viewInMarket = async (manifest: ExtensionManifest) => {
     const item = await shelfItemFor(manifest.id);
     if (!item) {
       toast({ title: translate('extensions.marketUnavailable'), tier: 'error' });
       return;
     }
-    setDetail({ page: 'market', subject: { manifest: item.manifest, installRef: item.ref, cloud: item.cloud }, from });
+    keepSubject({ manifest: item.manifest, installRef: item.ref, cloud: item.cloud });
+    openPage({ page: 'market', extensionId: manifest.id });
   };
   const setTabHidden = async (manifest: ExtensionManifest, name: string, hidden: boolean) => {
     try {
@@ -1106,8 +1074,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   };
   /** 「已停止维护 · 改用 X」按钮:回市场,把搜索框填成那个替代扩展的 id。 */
   const browseReplacement = (replacementId: string) => {
-    setDetail(null);
-    setTab('market');
+    openAppsLocation({ ...location, tab: 'market', detail: undefined, scroll: undefined });
     setQuery(replacementId);
   };
 
@@ -1117,62 +1084,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     Object.keys(pendingPermissions)
       .filter((key) => key.startsWith(`${extensionId}\u0000`))
       .map((key) => key.slice(extensionId.length + 1));
-
-  /** 已安装那一行名字下面那一句:有新版 / 撤回、停维(带下一步)/ 程序没起来 / 收回了几项 / 简介。 */
-  const installedLine = (manifest: ExtensionManifest): ReactNode => {
-    const notice = noticeOf(manifest);
-    if (notice?.kind === 'update') return <span>{translate('extensions.rowHasUpdate', { version: notice.version })}</span>;
-    if (notice) {
-      return (
-        // 句子里的链接词是它自己的事,❌ 顺带开产品页;点句子别处照常开。
-        <span onClick={(event) => (event.target as HTMLElement).closest('button') && event.stopPropagation()}>
-          <InstalledRowNoticeLine
-            notice={notice}
-            installedVersion={manifest.version}
-            translate={translate}
-            onInstallVersion={(version) => void installFromShelf({ extensionId: manifest.id, version }, manifest.id)}
-            onBrowseReplacement={() => notice.kind === 'deprecated' && notice.replacedBy && browseReplacement(notice.replacedBy)}
-          />
-        </span>
-      );
-    }
-    const failure = agentStatus[manifest.id]?.lastFailure;
-    if (failure) {
-      // 程序在 stderr 上的原话可能是一整段栈,不进文案(仓规 copy-leaks-internal-detail),放在悬停里给要追的人看。
-      return (
-        <span className="is-warn" title={failure.stderrTail || undefined}>
-          {programFailureText(failure, translate)}
-        </span>
-      );
-    }
-    const declared = declaredPermissions(manifest);
-    const withdrawn = declared.filter((permission) => (revoked[manifest.id] ?? []).includes(permission.key)).length;
-    if (withdrawn > 0) return <span>{translate('extensions.rowRevoked', { count: withdrawn })}</span>;
-    const text = localizedManifestText(manifest, locale);
-    return <span>{text.subtitle}</span>;
-  };
-
-  const renderInstalledApp = (manifest: ExtensionManifest) => (
-    <InstalledAppRow
-      key={manifest.id}
-      id={manifest.id}
-      name={`${localizedManifestText(manifest, locale).name}${store.variants[manifest.id]?.active && store.variants[manifest.id]!.active !== 'upstream' ? ` ${store.variants[manifest.id]!.active}` : ''}`}
-      version={manifest.version}
-      line={installedLine(manifest)}
-      iconUrl={store.appIcons[manifest.id]}
-      enabled={store.isEnabled(manifest.id)}
-      switching={switching[manifest.id] === true}
-      lifecycle={lifecycleOf(manifest.id)}
-      pending={pending[manifest.id]}
-      pendingPercent={downloadPercent[manifest.id]}
-      docked={store.dock.includes(manifest.id)}
-      translate={translate}
-      onOpen={() => openInstalledDetail(manifest)}
-      onAction={() => runLifecycle(manifest.id)}
-      onToggleEnabled={toggleOf(manifest)}
-      menu={menuOf(manifest)}
-    />
-  );
 
   if (renderInstalledApps) {
     const items: InstalledItem[] = installedRows.map((manifest) => {
@@ -1227,8 +1138,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   if (notice && !store.isLoaded) {
     return (
       <div className="mk" data-testid="extensions-store" ref={rootRef}>
-        {header(detailLink && (
-          <Button variant="ghost" size="sm" onClick={onCloseDetailLink}>{translate('common.back')}</Button>
+        {header(location.detail && (
+          <Button variant="ghost" size="sm" onClick={() => closePage({ ...location, detail: undefined })}>{translate('common.back')}</Button>
         ))}
         <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />
       </div>
@@ -1259,15 +1170,14 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           api={api}
           readOnly={!!notice?.readOnly}
           justInstalled={justInstalled === manifest.id && Boolean(installed)}
-          backLabel={detail.from ? translate('extensions.appSettings') : undefined}
+          backLabel={fromSettings ? translate('extensions.appSettings') : undefined}
           onBack={() => {
-            if (!detail.from) onCloseDetailLink?.();
-            setDetail(detail.from ?? null);
+            closePage({ ...location, detail: undefined });
             setJustInstalled(null);
           }}
           onLifecycle={() => runLifecycle(manifest.id, item)}
           onInstallVersion={(ref) => void installFromShelf(ref, manifest.id)}
-          onManage={installed ? () => setDetail({ page: 'manage', extensionId: manifest.id, from: detail }) : undefined}
+          onManage={installed ? () => openPage({ page: 'manage', extensionId: manifest.id }) : undefined}
           onForward={installed && host.local ? () => forwardExtension(installed) : undefined}
           onAsk={askAgent}
           similar={similarOf(manifest)}
@@ -1312,7 +1222,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           machine={remote?.deviceLabel}
           api={api}
           readOnly={!!notice?.readOnly}
-          backLabel={detail.fromApp ? localizedManifestText(managed, locale).name : translate(detail.from ? 'extensions.title' : 'extensions.tabInstalled')}
+          backLabel={detail.fromApp ? localizedManifestText(managed, locale).name : translate(previousAppsLocation()?.installed ? 'extensions.tabInstalled' : 'extensions.title')}
           notice={noticeOf(managed)}
           origin={origin}
           variants={store.variants[managed.id]}
@@ -1333,14 +1243,12 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           dataBytesKey={dataCleared}
           resource={menu.resource}
           onBack={() => {
-            if (!detail.from) onCloseDetailLink?.();
             if (detail.fromApp) {
-              setDetail(null);
+              clearPage();
               openApp(managed.id);
               return;
             }
-            if (!detail.from) { if (openInstalled) openInstalled(); else setTab('installed'); }
-            setDetail(detail.from ?? null);
+            closePage({ ...location, detail: undefined, installed: { section: 'apps', deviceId: location.deviceId } });
           }}
           onLifecycle={() => runLifecycle(managed.id)}
           onInstallVersion={inMarket ? (ref) => void installFromShelf(ref, managed.id) : undefined}
@@ -1355,7 +1263,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           onDisclosureChange={(level) => void setDisclosure(managed, level)}
           onBrowseReplacement={browseReplacement}
           onClearData={builtIn ? undefined : () => clearData(managed)}
-          onViewInMarket={inMarket ? () => void viewInMarket(managed, detail) : undefined}
+          onViewInMarket={inMarket ? () => void viewInMarket(managed) : undefined}
           onOpenExternal={confirmOpenExternalLink}
           onUninstall={menu.onUninstall}
         />
@@ -1383,13 +1291,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           <ToggleGroup
             className="gap-6 overflow-visible border-none bg-transparent"
             aria-label={translate('extensions.tabMarket')}
-            value={tab === 'installed' ? [] : [tab]}
+            value={[tab]}
             onValueChange={([value]) => {
-              if (value === 'agents' || value === 'market' || value === 'connectors') {
-                if (detailLink) onCloseDetailLink?.();
-                setTab(value);
-                onMarketPageChange?.(value);
-              }
+              if (value === 'agents' || value === 'market' || value === 'connectors') setTab(value);
             }}
           >
             <ToggleGroupItem value="agents" data-testid="extensions-section-agents">
@@ -1407,8 +1311,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           </ToggleGroup>
           <div className="mk-market-actions">
             {search}
-            <Button type="button" variant="outline" size="sm" data-testid={openInstalled ? 'extensions-open-installed' : 'extensions-tab-installed'}
-              onClick={openInstalled ?? (() => setTab('installed'))}>
+            <Button type="button" variant="outline" size="sm" data-testid="extensions-open-installed"
+              onClick={() => openAppsLocation({ ...location, installed: { section: 'agents', deviceId: location.deviceId } })}>
               <Archive className="size-4" aria-hidden />
               {translate('extensions.tabInstalled')}
               {store.updateCount > 0 && <span className="mk-seg-dot" aria-hidden />}
@@ -1482,6 +1386,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                     query={extensionShelf.query}
                     category={chip}
                     onCategoryChange={setChip}
+                    sort={location.sort}
+                    onSortChange={(sort) => moveAppsLocation((here) => ({ ...here, sort }))}
                     installedIds={inventory === 'ready' ? new Set(installedById.keys()) : undefined}
                     onOpen={openShelfDetail}
                     resourceOf={resourceOf}
@@ -1495,108 +1401,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           </div>
         )}
 
-        {tab === 'installed' && (
-          <div className="pb-14" data-testid="extensions-installed-panel">
-            {inventory === 'error' && !notice && (
-              <div className="mk-status" role="alert">
-                <CircleAlert className="size-4 shrink-0" />
-                <span className="min-w-0">{translate('extensions.loadFailed')}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void refresh()}>
-                  {translate('extensions.retry')}
-                </Button>
-              </div>
-            )}
-
-            {(inventory === 'loading' || installedAgents.inventory.isLoading) && installedCount === 0 && (
-              <div className="mk-sec">
-                <InstalledRowsSkeleton label={translate('extensions.loading')} />
-              </div>
-            )}
-
-            {installedAgents.inventory.isError && !notice && (
-              <div className="mk-status" role="alert">
-                <CircleAlert className="size-4 shrink-0" />
-                <span className="min-w-0">{translate('extensions.agentInventoryFailed')}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void installedAgents.inventory.refetch()}>
-                  {translate('extensions.retry')}
-                </Button>
-              </div>
-            )}
-
-            {agentCount > 0 && (
-              <section className="mk-sec" data-testid="installed-apps-agents">
-                <h3>
-                  {translate('settings.agents')}
-                  <span className="mk-count">{agentCount}</span>
-                </h3>
-                <ul className="mk-list">
-                  {assistant && renderInstalledApp(assistant)}
-                  <InstalledAgentRows
-                    inventory={installedAgents}
-                    onOpenAgentDetail={onOpenAgentDetail ?? setAgentDetailId}
-                    readOnly={!!notice?.readOnly}
-                  />
-                </ul>
-              </section>
-            )}
-
-            {extensionCount > 0 && (
-              <section className="mk-sec" data-testid="installed-apps-extensions">
-                <h3>
-                  {translate('extensions.installedExtensions')}
-                  <span className="mk-count">{extensionCount}</span>
-                </h3>
-                <ul className="mk-list">
-                  {invalidRows.map((entry) => (
-                    <li
-                      key={entry.dirName}
-                      className="mk-row"
-                      data-testid="extension-row-unreadable"
-                      data-extension-dir={entry.dirName}
-                    >
-                      <span className="mk-icon">
-                        <ExtensionMonogram name={entry.dirName} broken />
-                      </span>
-                      <div className="mk-tx">
-                        <b>
-                          <span className="mk-name">{entry.dirName}</span>
-                          <em>{translate('extensions.unreadableShort')}</em>
-                        </b>
-                        <span className="xp-row-error" title={entry.reason}>
-                          {translate('extensions.unreadable', { name: entry.dirName, reason: entry.reason })}
-                        </span>
-                      </div>
-                      {/* Unreadable is still installed: removable here, as every other row is (L11 复核 60). */}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="hover:text-foreground-destructive"
-                        data-testid="extension-row-unreadable-uninstall"
-                        aria-label={translate('extensions.uninstallAction')}
-                        title={translate('extensions.uninstallAction')}
-                        onClick={() => confirmUninstall({ id: entry.dirName, name: entry.dirName })}
-                      >
-                        <Trash2Icon className="size-4" />
-                      </Button>
-                    </li>
-                  ))}
-                  {extensionRows.map(renderInstalledApp)}
-                </ul>
-              </section>
-            )}
-            {inventory === 'ready' && installedAgents.inventory.isSuccess && installedCount === 0 && (
-              <div className="mk-empty">
-                {query.trim() === '' ? translate('extensions.empty') : translate('extensions.noMatch', { query: query.trim() })}
-                {query.trim() === '' && (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setTab('market')}>
-                    {translate('extensions.browseMarket')}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </fieldset>
       {shown && marketDetail && (
         <MarketDetailDialog onClose={closeMarketDetail}>
