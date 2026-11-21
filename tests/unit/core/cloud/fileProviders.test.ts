@@ -246,14 +246,12 @@ describe('one cloud provider and verified raw chunk cache', () => {
       expect(fullSink).not.toHaveBeenCalled(); await preview.dispose()
     } finally { clock.mockRestore() }
   })
-  it('a project video fully opens its verified/decrypted snapshot before exposing local playback', async () => {
-    const c = cache(), a = api(), opened = vi.fn(async () => bytesFile(plain))
-    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink() })
-    const video = await cloud.preview!({ ...revision, source: 'local', content_type: 'video/mp4' }, context, opened)
-    expect(video).toBeInstanceOf(Blob); expect((video as Blob).type).toBe('video/mp4')
-    expect(digest(new Uint8Array(await (video as Blob).arrayBuffer()))).toBe(revision.sha256)
-    expect(opened).toHaveBeenCalledTimes(1); expect(a.calls).toEqual([])
-    await expect(cloud.preview!({ ...revision, source: 'local', content_type: 'video/mp4' }, context, async () => { throw Error('SHA mismatch') })).rejects.toThrow('SHA mismatch')
+  // A held video is read whole by the resolver's verified read, like any file: it has no preview, and nothing is opened for one.
+  it('a held video has no media preview and opens nothing for one', async () => {
+    const a = api(), opened = vi.fn(async () => bytesFile(plain))
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink() })
+    await expect(cloud.preview!({ ...revision, source: 'local', content_type: 'video/mp4' }, context, opened)).rejects.toThrow('Local media preview is unavailable')
+    expect(opened).not.toHaveBeenCalled(); expect(a.calls).toEqual([])
   })
   it('an empty managed file still performs an authenticated GET before publishing its empty snapshot', async () => {
     const row = { ...revision, size_bytes: 0, sha256: digest(new Uint8Array()) }, a = api(row, new Uint8Array()), c = cache(), fetcher = vi.fn(async () => new Response(new Uint8Array()))

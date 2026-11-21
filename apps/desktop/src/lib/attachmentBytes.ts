@@ -83,6 +83,9 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   const file = await resolveAttachment(source, { ...(variant === 'shown' ? { showFirst: true as const } : {}), ...(progress ? { progress } : {}) })
   if (file.status !== 'ready') return file
   onLink?.(file.revision)
+  // The read is authorized now; a copy of this very version kept here (opened or sent before) is its bytes, without moving them again.
+  const kept = await cachedAttachmentCopy(file.revision.sha256)
+  if (kept) { await file.dispose(); return { status: 'ready', blob: kept.slice(0, kept.size, file.revision.content_type), link: file.revision } }
   const key = file.revision.sha256 === null ? null : fullKey(file.reader.accountId, file.revision.sha256)
   const keep = async (blob: Blob) => {
     if (!key) return

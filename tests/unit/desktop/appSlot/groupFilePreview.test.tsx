@@ -72,7 +72,7 @@ beforeEach(() => {
     boundary.previewContents.set(url, html)
     return { ok: true, url, update: vi.fn(), release: vi.fn() }
   })
-  boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content: async () => ({ url: 'https://media.test/signed.mp4', expiresAt: Date.now() + 60_000 }), dispose: vi.fn() })
+  boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content: async () => ({ url: 'https://media.test/signed.mp4', expiresAt: Date.now() + 60_000 }), dispose: vi.fn() })
   boundary.read.mockResolvedValue({ status: 'ready', blob: { text: async () => '<h1>lane report</h1>', arrayBuffer: async () => new ArrayBuffer(4) } })
   boundary.document.mockResolvedValue({ text: '<h1>live report</h1>' })
   boundary.save.mockResolvedValue(undefined)
@@ -131,7 +131,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     let now = 1_800_000_000_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
     const content = vi.fn(async () => ({ url: `https://media.test/lease-${now}.mp4`, expiresAt: now + 60_000 })), dispose = vi.fn()
-    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content, dispose })
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content, dispose })
     await slot(detail('mp4'))
     await until('first short playback lease', () => harness.container.querySelector('video')?.src.includes(`lease-${now}`) === true)
     const video = harness.container.querySelector('video')!, play = vi.spyOn(video, 'play').mockResolvedValue()
@@ -146,22 +146,12 @@ describe('unclaimed group files use the message preview from every entry', () =>
   })
   it('a fresh video lease failure is displayed once instead of repeatedly signing or fetching the original', async () => {
     const content = vi.fn(async () => ({ url: 'https://media.test/fresh.mp4', expiresAt: Date.now() + 60_000 }))
-    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content, dispose: vi.fn() })
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content, dispose: vi.fn() })
     await slot(detail('mp4'))
     await until('player ready', () => harness.container.querySelector('video') !== null)
     await act(async () => harness.container.querySelector('video')!.dispatchEvent(new Event('error')))
     expect(harness.container.querySelector('video')).toBeNull(); expect(content).toHaveBeenCalledTimes(1)
     expect(boundary.read).not.toHaveBeenCalled()
-  })
-  it('a verified project video uses and releases a local Blob URL, without requesting a streaming cloud lease', async () => {
-    const urls = { create: vi.fn(() => 'blob:verified-project-video'), revoke: vi.fn() }, dispose = vi.fn()
-    vi.stubGlobal('URL', class extends URL { static createObjectURL = urls.create; static revokeObjectURL = urls.revoke })
-    const content = vi.fn(async () => new Blob(['verified video'], { type: 'video/mp4' }))
-    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content, dispose })
-    await slot(detail('mp4'))
-    await until('verified local playback', () => harness.container.querySelector('video')?.src === 'blob:verified-project-video')
-    expect(content).toHaveBeenCalledTimes(1); expect(boundary.read).not.toHaveBeenCalled()
-    await harness.render(null); expect(urls.revoke).toHaveBeenCalledWith('blob:verified-project-video'); expect(dispose).toHaveBeenCalledTimes(1)
   })
   it('the phone opens its chooser above the App page; cancelling keeps that page and picking preserves its Back link', async () => {
     boundary.mobile = true
@@ -222,6 +212,28 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(boundary.open).not.toHaveBeenCalled()
     const download = harness.container.querySelector('button[aria-label="下载"]')
     expect(download).not.toBeNull()
+  })
+
+  // A video kept on a machine has no signed link: it is read whole like any file, its bar moving while it comes.
+  it('reads a held MP4 whole with its progress, then plays it from its bytes', async () => {
+    const dispose = vi.fn(async () => {}), content = vi.fn()
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'local' }, content, dispose })
+    let arrive!: () => void
+    boundary.read.mockImplementation(async (_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, progress: (done: number, total: number) => void) => {
+      progress(4, 10)
+      await new Promise<void>(resolve => { arrive = resolve })
+      return { status: 'ready', blob: new Blob(['held video'], { type: 'video/mp4' }) }
+    })
+    const urls = { create: vi.fn(() => 'blob:held-video'), revoke: vi.fn() }
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = urls.create; static revokeObjectURL = urls.revoke })
+    await slot(detail('mp4'))
+    await until('the read shows how far it has come', () => harness.container.querySelector('[data-testid="message-file-preview-loading"] progress')?.getAttribute('value') === '0.4')
+    await act(async () => { arrive() })
+    await until('the held video plays', () => harness.container.querySelector('video')?.getAttribute('src') === 'blob:held-video')
+    expect(content).not.toHaveBeenCalled()
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: 'file-mp4', version: 3 }, 'shown', undefined, undefined, expect.any(Function))
+    await harness.render(null); expect(urls.revoke).toHaveBeenCalledWith('blob:held-video')
   })
 
   it('a file link and an App card resolve HTML through the same host preview', async () => {

@@ -98,7 +98,7 @@ describe('file preview missing-object actions', () => {
   it.each(['missing', 'network'] as const)('preserves %s during video URL renewal', async failure => {
     const content = vi.fn().mockResolvedValueOnce({ url: 'https://files.invalid/video', expiresAt: Date.now() - 1 })
       .mockRejectedValueOnce(failure === 'missing' ? new MissingFileObjectError() : new Error('network'))
-    io.preview.mockResolvedValue({ status: 'ready', content, dispose: vi.fn(async () => {}) })
+    io.preview.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object' }, content, dispose: vi.fn(async () => {}) })
     await render({ ...file, fileName: 'clip.webm', mimeType: 'video/webm' })
     const video = harness.container.querySelector('video')!
     expect(video).not.toBeNull()

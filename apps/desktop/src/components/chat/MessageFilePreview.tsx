@@ -18,7 +18,7 @@ import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileH
 import { messageForUser } from '../../lib/userFacingError'
 import { useToast } from '../toastContext'
 import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
-import { classifyDocumentPreview, documentPreviewNeedsFetch, type DocumentPreviewKind } from './documentPreview'
+import { classifyDocumentPreview, type DocumentPreviewKind } from './documentPreview'
 import { savedFileName } from '../../session/shared/extensions/app-runtime-protocol'
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { FileTextSelection } from '../preview/FileTextContent'
@@ -98,29 +98,25 @@ function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead 
   return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
 async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
-  // A video read whole from here (a working copy, or a file this device sent this run) plays from its own bytes.
-  const whole = documentPreviewNeedsFetch(kind) ? null : file.source.kind === 'hosted' ? await file.source.read() : file.document ? null : sentFileCopy(file.source)
-  if (whole) {
-    const videoUrl = URL.createObjectURL(whole)
-    return { content: null, videoUrl, expiresAt: Infinity, release: async () => URL.revokeObjectURL(videoUrl) }
-  }
-  if (file.source.kind !== 'hosted' && !documentPreviewNeedsFetch(kind)) {
+  // A video in the object store plays from its signed link. One kept on a machine (or already here) is read whole like any
+  // other file: with its progress, and from the copy an earlier open kept.
+  if (kind === 'video' && file.source.kind !== 'hosted' && !file.document && !sentFileCopy(file.source)) {
     const preview = await attachmentPreview(file.source)
     if (preview.status !== 'ready') throw new Error(preview.status)
-    let objectUrl: string | undefined
-    const renew = async () => {
-      const content = await preview.content()
-      if (!(content instanceof Blob)) return { videoUrl: content.url, expiresAt: content.expiresAt }
-      objectUrl ??= URL.createObjectURL(content)
-      return { videoUrl: objectUrl, expiresAt: Infinity }
+    if (preview.revision.source === 'managed-object') {
+      const renew = async () => {
+        const content = await preview.content()
+        if (content instanceof Blob) throw new Error('Expected a video link')
+        return { videoUrl: content.url, expiresAt: content.expiresAt }
+      }
+      try { return { content: null, ...await renew(), renew, release: preview.dispose } } catch (error) { await preview.dispose(); throw error }
     }
-    const release = async () => { if (objectUrl) URL.revokeObjectURL(objectUrl); await preview.dispose() }
-    try { return { content: null, ...await renew(), renew, release } } catch (error) { await release(); throw error }
+    await preview.dispose()
   }
   const { blob, acknowledged } = await previewBytes(file, { shown: true, progress })
-  if (kind === 'image') {
-    const content = URL.createObjectURL(blob)
-    return { content, acknowledged, release: async () => URL.revokeObjectURL(content) }
+  if (kind === 'image' || kind === 'video') {
+    const url = URL.createObjectURL(blob), release = async () => URL.revokeObjectURL(url)
+    return kind === 'video' ? { content: null, videoUrl: url, expiresAt: Infinity, acknowledged, release } : { content: url, acknowledged, release }
   }
   // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is shown
   // like any video this preview cannot play.

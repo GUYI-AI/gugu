@@ -282,8 +282,8 @@ export function cloudFileProviders(deps: {
         // The signer owns thumbnail eligibility; formats without one are safe image sources as original blobs.
         return snapshotBlob(await full(), revision.content_type)
       }
-      if (video) return snapshotBlob(await full(), revision.content_type)
-      if (!deps.image) throw new Error('Local image preview is unavailable')
+      // A video kept on a machine has no preview of its own: it is read whole, like the file it is.
+      if (video || !deps.image) throw new Error('Local media preview is unavailable')
       return deps.image(await full(), revision) // The original is fully verified/decrypted before generating pixels.
     },
   }
