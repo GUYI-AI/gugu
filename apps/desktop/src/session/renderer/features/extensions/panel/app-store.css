@@ -1550,3 +1550,31 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── 「应用」里点开一个 App:清单收到左边,它的市场页在右边(照 Obsidian 的插件浏览);窄了只放市场页 ── */
+.mk-browse[data-browsing] {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.mk-browse[data-browsing] > .mk-browse-list {
+  /* 清单自己一栏:卡片按这一栏的宽度排成一列(上面的容器查询),和右边的页分开滚。 */
+  container-type: inline-size;
+  position: sticky;
+  top: 0;
+  max-height: 100dvh;
+  overflow-y: auto;
+  padding: 12px 4px 24px 0;
+}
+.mk-market-card[aria-current] {
+  background: var(--selected);
+}
+@container (width < 900px) {
+  .mk-browse[data-browsing] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mk-browse[data-browsing] > .mk-browse-list {
+    display: none;
+  }
+}
