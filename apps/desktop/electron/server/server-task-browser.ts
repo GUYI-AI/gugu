@@ -85,14 +85,42 @@ export interface TaskPageContents {
   readonly navigationHistory: { getAllEntries(): { url: string }[]; getActiveIndex(): number; removeEntryAtIndex(index: number): boolean };
 }
 
+type PendingReply = {
+  method: string;
+  sessionId?: string;
+  targetId?: string;
+  slowTrace?: ReturnType<typeof setTimeout>;
+  traced?: boolean;
+  resolve(value: unknown): void;
+  reject(error: Error): void;
+};
+type LifecycleTrace = (event: string, fields: object) => void;
+const lifecycleMethods = new Set([
+  'Target.attachToTarget', 'Target.createTarget', 'Target.getTargetInfo', 'Target.closeTarget',
+  'Page.enable', 'Page.getFrameTree', 'Page.getNavigationHistory', 'Browser.close',
+]);
+// Discovery and the reply that created a target can arrive in the same pipe read as its destruction.
+const RECENT_CLOSURE_LIMIT = 128;
+
+function rememberClosure(ids: Set<string>, id: string) {
+  ids.add(id);
+  if (ids.size > RECENT_CLOSURE_LIMIT) {
+    const oldest = ids.values().next();
+    if (!oldest.done) ids.delete(oldest.value);
+  }
+}
+
 /** A pipe-connected Chromium: commands, events and one exit. */
 export class PipeConnection extends EventEmitter {
   private next = 0;
-  private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
+  private readonly pending = new Map<number, PendingReply>();
+  private readonly sessionTargets = new Map<string, string>();
+  private readonly recentlyDestroyed = new Set<string>();
+  private readonly recentlyDetached = new Set<string>();
   private buffer = '';
   closed: Error | null = null;
 
-  constructor(private readonly write: Writable, read: Readable) {
+  constructor(private readonly write: Writable, read: Readable, private readonly trace?: LifecycleTrace) {
     super();
     read.setEncoding('utf8');
     read.on('data', (chunk: string) => {
@@ -110,28 +138,111 @@ export class PipeConnection extends EventEmitter {
   private receive(message: CdpMessage) {
     if (message.id !== undefined) {
       const waiter = this.pending.get(message.id);
+      if (!waiter) return;
       this.pending.delete(message.id);
-      if (message.error) waiter?.reject(new Error(message.error.message));
-      else waiter?.resolve(message.result);
+      this.settleTrace(message.id, waiter, message.error ? 'error-reply' : 'reply');
+      if (message.error) {
+        waiter.reject(new Error(message.error.message));
+      } else {
+        if (waiter.method === 'Target.attachToTarget' && waiter.targetId) {
+          const sessionId = (message.result as { sessionId?: unknown } | undefined)?.sessionId;
+          if (typeof sessionId === 'string' && !this.recentlyDetached.has(sessionId)) this.sessionTargets.set(sessionId, waiter.targetId);
+        }
+        waiter.resolve(message.result);
+      }
       return;
     }
+    this.targetEvent(message);
     this.emit('event', message);
+  }
+
+  private targetEvent({ method, params }: CdpMessage) {
+    const info = params?.targetInfo as { targetId?: unknown } | undefined;
+    const targetId = info?.targetId;
+    if (method === 'Target.targetCreated' && typeof targetId === 'string') {
+      this.trace?.('target-created', { targetId });
+    } else if (method === 'Target.attachedToTarget' && typeof targetId === 'string' &&
+      !this.recentlyDestroyed.has(targetId) && typeof params?.sessionId === 'string') {
+      if (!this.recentlyDetached.has(params.sessionId)) this.sessionTargets.set(params.sessionId, targetId);
+    } else if (method === 'Target.detachedFromTarget' && typeof params?.sessionId === 'string') {
+      const sessionId = params.sessionId;
+      this.forgetSession(sessionId);
+      this.rejectPending(waiter => waiter.sessionId === sessionId, 'session-detached', new Error('Session with given id not found'));
+    } else if (method === 'Target.targetDestroyed' && typeof params?.targetId === 'string') {
+      const destroyed = params.targetId;
+      rememberClosure(this.recentlyDestroyed, destroyed);
+      this.trace?.('target-destroyed', { targetId: destroyed });
+      // A vanished target may never answer. Leave its sibling sessions and browser-level requests running.
+      this.rejectPending(
+        waiter => waiter.targetId === destroyed || this.targetForSession(waiter.sessionId) === destroyed,
+        'target-destroyed', new Error('No target with given id found'),
+      );
+      for (const [sessionId, target] of this.sessionTargets) if (target === destroyed) this.forgetSession(sessionId);
+    }
+  }
+
+  private forgetSession(sessionId: string) {
+    this.sessionTargets.delete(sessionId);
+    rememberClosure(this.recentlyDetached, sessionId);
+  }
+
+  private targetForSession(sessionId?: string) {
+    return sessionId === undefined ? undefined : this.sessionTargets.get(sessionId);
+  }
+
+  private rejectPending(matches: (waiter: PendingReply) => boolean, phase: string, error: Error) {
+    for (const [id, waiter] of this.pending) {
+      if (!matches(waiter)) continue;
+      this.pending.delete(id);
+      this.settleTrace(id, waiter, phase);
+      waiter.reject(error);
+    }
+  }
+
+  private traceReply(requestId: number, { method, sessionId, targetId }: PendingReply, phase: string) {
+    this.trace?.('command', { requestId, method, sessionId, targetId, phase });
+  }
+
+  private settleTrace(id: number, waiter: PendingReply, phase: string) {
+    clearTimeout(waiter.slowTrace);
+    if (waiter.traced) this.traceReply(id, waiter, phase);
   }
 
   send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<unknown> {
     if (this.closed) return Promise.reject(this.closed);
+    if (sessionId && this.recentlyDetached.has(sessionId)) return Promise.reject(new Error('Session with given id not found'));
+    const targetId = method.startsWith('Target.') && typeof params.targetId === 'string' ? params.targetId : this.targetForSession(sessionId);
+    if (targetId && this.recentlyDestroyed.has(targetId)) return Promise.reject(new Error('No target with given id found'));
     const id = ++this.next;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.write.write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
+      const waiter: PendingReply = { method, sessionId, targetId, resolve, reject };
+      this.pending.set(id, waiter);
+      if (this.trace) {
+        const notePending = () => { waiter.traced = true; this.traceReply(id, waiter, 'pending'); };
+        if (lifecycleMethods.has(method)) notePending();
+        else {
+          // Frequent input and frames only need a log if the reply stalls.
+          waiter.slowTrace = setTimeout(notePending, 1_000);
+          waiter.slowTrace.unref?.();
+        }
+      }
+      try {
+        this.write.write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
+      } catch (error) {
+        this.pending.delete(id);
+        this.settleTrace(id, waiter, 'write-error');
+        reject(error);
+      }
     });
   }
 
   fail(error: Error) {
     if (this.closed) return;
     this.closed = error;
-    for (const waiter of this.pending.values()) waiter.reject(error);
-    this.pending.clear();
+    this.rejectPending(() => true, 'pipe-closed', error);
+    this.sessionTargets.clear();
+    this.recentlyDestroyed.clear();
+    this.recentlyDetached.clear();
     this.emit('closed', error);
   }
 }
@@ -274,6 +385,10 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
       // Electron attaches synchronously; reserve the slot and resolve the session before the first command.
       this.session = 'attaching';
       this.attaching = this.connection.send('Target.attachToTarget', { targetId: this.targetId, flatten: true }).then((result) => {
+        if (this.destroyed) {
+          this.session = null;
+          throw new Error('the task page was closed');
+        }
         this.session = (result as { sessionId: string }).sessionId;
       }, (error: Error) => { this.session = null; throw error; });
       void this.attaching.catch(() => {});
@@ -514,6 +629,7 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
    */
   async adopted(): Promise<void> {
     const info = await this.connection.send('Target.getTargetInfo', { targetId: this.targetId }).catch(() => null) as { targetInfo?: { url?: string; title?: string } } | null;
+    if (this.destroyed) return;
     if (info?.targetInfo?.url) this.url = info.targetInfo.url;
     this.title = info?.targetInfo?.title ?? '';
     const ready = await this.connection.send('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true }, this.watchSession ?? undefined).catch(() => null) as { result?: { value?: unknown } } | null;
@@ -572,8 +688,10 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
   /** Watch from creation, before any lease can miss a navigation. */
   async watch(): Promise<void> {
     const { sessionId } = await this.connection.send('Target.attachToTarget', { targetId: this.targetId, flatten: true }) as { sessionId: string };
+    if (this.destroyed) throw new Error('the task page was closed');
     this.watchSession = sessionId;
     await this.connection.send('Page.enable', {}, sessionId);
+    if (this.destroyed) throw new Error('the task page was closed');
     const tree = await this.connection.send('Page.getFrameTree', {}, sessionId) as { frameTree: { frame: { id: string; url: string } } };
     this.mainFrame = tree.frameTree.frame.id;
     await this.readHistory();
@@ -726,6 +844,8 @@ export interface ServerTaskBrowser {
   dispose(): Promise<void>;
 }
 
+type RunningTaskBrowser = { process: ChildProcess; connection: PipeConnection };
+
 async function closedDuringWatch(connection: PipeConnection, target: PageTarget, error: unknown): Promise<boolean> {
   if (target.closedByPage) return true;
   if (!(error instanceof Error) || connection.closed ||
@@ -747,13 +867,19 @@ export function createServerTaskBrowser(options: {
   automationControlled?: boolean;
   /** Let the desktop keep an empty tab when its new page closes during attachment. */
   reportInitialPageClose?: boolean;
+  /** Opaque desktop profile identifier for lifecycle logs. Never a URL or profile path. */
+  traceProfile?: string;
   /** Runs once the browser is up and before any page is opened, for host-side setup such as download handling. A failure stops the browser. */
   connected?: (connection: PipeConnection) => Promise<void>;
   /** Stands in for starting Chrome, for tests that play the browser themselves. */
   spawn?: () => { process: ChildProcess; connection: PipeConnection };
   log: { info(message: string, fields?: object): void; warn(message: string, fields?: object): void };
 }): ServerTaskBrowser {
-  let starting: Promise<{ process: ChildProcess; connection: PipeConnection }> | null = null;
+  let starting: Promise<RunningTaskBrowser> | null = null;
+  let stopping: Promise<void> | null = null;
+  const trace = (event: string, fields: object) => {
+    if (options.traceProfile) options.log.info('Standalone Chromium lifecycle', { profile: options.traceProfile, event, ...fields });
+  };
   const pages = new Map<string, Promise<PageTarget>>();
   /** Windows pages opened, waiting for the tab that will adopt them (see `TaskPopups`). */
   const popups = new TaskPopups(targetId => {
@@ -771,7 +897,8 @@ export function createServerTaskBrowser(options: {
     });
     let stderr = '';
     child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-2000); });
-    const connection = new PipeConnection(child.stdio[3] as Writable, child.stdio[4] as Readable);
+    const connection = new PipeConnection(child.stdio[3] as Writable, child.stdio[4] as Readable,
+      options.traceProfile ? (event, fields) => trace(event, { pid: child.pid, ...fields }) : undefined);
     // A failed spawn or a broken pipe ends this browser, never the host process.
     onErrorEvents([child, child.stderr, child.stdio[3] as Writable, child.stdio[4] as Readable], (error) => {
       connection.fail(new Error(`the task browser failed: ${error.message}`));
@@ -779,32 +906,66 @@ export function createServerTaskBrowser(options: {
     });
     child.once('exit', (code, signal) => {
       connection.fail(new Error(`the task browser exited (${signal ?? code})`));
-      options.log.warn('Task browser exited', { code, signal, stderr: stderr.trim().slice(-500) });
+      if (options.traceProfile) trace('exit', { pid: child.pid, code, signal });
+      else options.log.warn('Task browser exited', { code, signal, stderr: stderr.trim().slice(-500) });
     });
     return { process: child, connection, userAgent };
   }
 
   async function launch() {
     const { process: child, connection, userAgent } = options.spawn ? { ...options.spawn(), userAgent: undefined } : await spawnChrome();
+    const running = { process: child, connection };
     windowPauser(connection, options.log); // Before any page asks: this is the log a held window's trouble goes to.
     connection.on('event', (message: CdpMessage) => {
       if (message.method === 'Target.targetDestroyed') popups.forget(String(message.params?.targetId));
     });
     connection.once('closed', () => {
       popups.dispose();
-      if (starting) starting = null;
+      // A pipe can break before Chrome exits. The profile remains reserved until the owned child exits.
+      void beginStop(running);
       for (const page of pages.values()) void page.then((target) => target.destroy(), () => {});
       pages.clear();
     });
-    await connection.send('Target.setDiscoverTargets', { discover: true });
-    try { await options.connected?.(connection); } catch (error) { child.kill('SIGKILL'); throw error; }
+    try {
+      await connection.send('Target.setDiscoverTargets', { discover: true });
+      await options.connected?.(connection);
+    } catch (error) {
+      void beginStop(running);
+      throw error;
+    }
     options.log.info('Task browser started', { pid: child.pid, userAgent });
-    return { process: child, connection };
+    return running;
   }
 
-  function browser() {
-    starting ??= launch().catch((error: unknown) => { starting = null; throw error; });
+  async function browser() {
+    if (stopping) await stopping;
+    starting ??= launch().catch((error: unknown) => { if (!stopping) starting = null; throw error; });
     return starting;
+  }
+
+  function beginStop(running?: RunningTaskBrowser) {
+    return stopping ??= stop(running).finally(() => { starting = null; stopping = null; });
+  }
+
+  async function stop(running?: RunningTaskBrowser) {
+    // Await even when the transport supplies its child, so stopping is set before we send another command.
+    running = await (running ?? starting?.catch(() => undefined));
+    if (!running) return;
+    const child = running.process;
+    if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+    // Chrome may exit without acknowledging Browser.close. Only the child exit releases the profile.
+    const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+    const timer = setTimeout(() => {
+      trace('exit-deadline', { pid: child.pid });
+      child.kill('SIGKILL');
+    }, 5_000);
+    try {
+      trace('exit-requested', { pid: child.pid });
+      void running.connection.send('Browser.close').catch(() => {});
+      await exited;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -872,6 +1033,7 @@ export function createServerTaskBrowser(options: {
       signal.throwIfAborted();
       if (target.isDestroyed()) {
         if (pages.get(sessionId) === page) pages.delete(sessionId);
+        if (target.closedByPage && target.adoptedWindow) throw new TaskPopupClosed(url ?? 'about:blank');
         if (options.reportInitialPageClose && target.closedByPage && !target.adoptedWindow) throw new TaskPageClosedDuringOpen();
         return this.pageFor(sessionId, url, signal, popup);
       }
@@ -900,18 +1062,8 @@ export function createServerTaskBrowser(options: {
       }
       return outcome;
     },
-    async dispose() {
-      const running = await starting?.catch(() => null);
-      starting = null;
-      if (!running) return;
-      const child = running.process;
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      // The profile stays in use until the browser has really exited.
-      const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
-      await running.connection.send('Browser.close').catch(() => {});
-      const timer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-      await exited;
-      clearTimeout(timer);
+    dispose() {
+      return beginStop();
     },
   };
 }

@@ -44,11 +44,13 @@ class StandaloneKernelService {
   private readonly profilesRoot = path.join(app.getPath('userData'), 'StandaloneBrowserProfiles');
   readonly pool = new StandaloneBrowserPool({
     profilesRoot: this.profilesRoot,
+    log,
     installation: () => this.installation(),
     create: ({ profile, executable }) => createServerTaskBrowser({
       binary: () => executable, profile, credentialStore: standaloneBrowserCredentialStore(process.env, app.isPackaged), log,
       automationControlled: false, // A person's browser: pages see navigator.webdriver === false, as in the built-in browser.
       reportInitialPageClose: true,
+      traceProfile: path.basename(profile).slice(0, 12),
       connected: connection => manageDownloads(connection, downloadSaver, tmpdir()),
     }),
   });

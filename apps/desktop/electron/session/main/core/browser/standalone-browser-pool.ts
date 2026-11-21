@@ -12,6 +12,7 @@ type Options = {
   profilesRoot: string;
   installation(): Promise<StandaloneKernelInstallation | null>;
   create(input: { profile: string; executable: string }): ServerTaskBrowser;
+  log?: { info(message: string, fields?: object): void };
   /** Clock for the recent-sites memory; tests replace it. */
   now?(): number;
 };
@@ -56,7 +57,7 @@ export class StandaloneBrowserPool {
     const partition = this.partitionsByTab.get(input.browserId);
     if (partition && partition !== input.partition) throw new Error('The browser tab belongs to another profile');
     this.partitionsByTab.set(input.browserId, input.partition);
-    return this.serial(input.partition, () => this.open(input));
+    return this.serial(input.partition, 'open-tab', () => this.open(input));
   }
 
   /** Where a profile's Chrome keeps its data. Stable per partition, never shared between profiles. */
@@ -100,8 +101,8 @@ export class StandaloneBrowserPool {
    */
   async openProfileHost(partition: string): Promise<{ command: StandaloneHostCommand; close(): Promise<void> }> {
     if (!isBrowserPartition(partition)) throw new Error('Invalid standalone browser profile');
-    const host = await this.serial(partition, () => this.openHost(partition));
-    return { command: host.command, close: () => this.serial(partition, host.close) };
+    const host = await this.serial(partition, 'open-profile-host', () => this.openHost(partition));
+    return { command: host.command, close: () => this.serial(partition, 'close-profile-host', host.close) };
   }
 
   /**
@@ -110,7 +111,7 @@ export class StandaloneBrowserPool {
    */
   async resetProfile(partition: string, steps: { clean(): Promise<void>; restore?(command: StandaloneHostCommand): Promise<void> }): Promise<void> {
     if (!isBrowserPartition(partition)) throw new Error('Invalid standalone browser profile');
-    await this.serial(partition, async () => {
+    await this.serial(partition, 'reset-profile', async () => {
       const reopen: { browserId: string; url?: string }[] = [];
       const entry = this.profiles.get(partition);
       for (const browserId of entry ? [...entry.tabs] : []) {
@@ -194,7 +195,7 @@ export class StandaloneBrowserPool {
   async closeTab(browserId: string): Promise<void> {
     const partition = this.partitionsByTab.get(browserId);
     if (!partition) return;
-    await this.serial(partition, async () => {
+    await this.serial(partition, 'close-tab', async () => {
       const binding = this.tabs.get(browserId);
       if (binding) await this.closeBound(browserId, binding);
       this.partitionsByTab.delete(browserId);
@@ -235,11 +236,21 @@ export class StandaloneBrowserPool {
     this.partitionsByTab.clear();
   }
 
-  private serial<T>(partition: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.pending.get(partition) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(operation);
+  private serial<T>(partition: string, operation: string, run: () => Promise<T>): Promise<T> {
+    const previous = this.pending.get(partition);
+    const { log } = this.options;
+    const profile = log && path.basename(this.directoryFor(partition)).slice(0, 12);
+    log?.info('Standalone profile queue', { profile, operation, phase: 'queued', behindAnotherOperation: previous !== undefined });
+    const next = (previous ?? Promise.resolve()).catch(() => undefined).then(() => {
+      log?.info('Standalone profile queue', { profile, operation, phase: 'running' });
+      return run();
+    });
     this.pending.set(partition, next);
-    void next.finally(() => { if (this.pending.get(partition) === next) this.pending.delete(partition); }).catch(() => undefined);
+    const settle = (phase: 'settled' | 'rejected') => {
+      if (this.pending.get(partition) === next) this.pending.delete(partition);
+      log?.info('Standalone profile queue', { profile, operation, phase });
+    };
+    void next.then(() => settle('settled'), () => settle('rejected'));
     return next;
   }
 }
