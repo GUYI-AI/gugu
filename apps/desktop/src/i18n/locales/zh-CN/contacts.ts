@@ -276,7 +276,9 @@ export default {
     "agents": "Agent",
     "count_one": "{{count}} 个",
     "count_other": "{{count}} 个",
-    "groups": "群"
+    "groups": "群",
+    "showLess": "收起",
+    "showMore": "展开其余 {{count}} 个"
   },
   "panel": {
     "addContact": "添加联系人",

@@ -276,7 +276,9 @@ export default {
     "agents": "Agents",
     "count_one": "{{count}} contact",
     "count_other": "{{count}} contacts",
-    "groups": "Groups"
+    "groups": "Groups",
+    "showLess": "Show less",
+    "showMore": "Show {{count}} more"
   },
   "panel": {
     "addContact": "Add contact",
