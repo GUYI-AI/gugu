@@ -58,10 +58,27 @@ describe('contacts page: groups on the left, the chosen group spread on the righ
     await render([agent('arch', '架构师'), agent('front', '前端设计'), agent('review', '代码评审'), agent('css', '样式整理'), agent('solo', '翻译助手')])
     expect(pane().querySelectorAll('[data-testid="agent-family-map"]')).toHaveLength(1)
     expect(pane().querySelectorAll('[data-testid="agent-family-map"] [data-map-edges] path')).toHaveLength(3)
-    // 家族图在前(先序:父在子前),单个 agent 在后
-    expect(shownIds()).toEqual(['arch', 'front', 'css', 'review', 'solo'])
+    // 家族图在前(一层一列:父在子前),单个 agent 在后
+    expect(shownIds()).toEqual(['arch', 'front', 'review', 'css', 'solo'])
     await clickElement(pane().querySelector('[data-contact-id="front"]') as HTMLElement)
     expect($('[data-testid="contacts-detail-drawer"] [data-slot="pane-header"]')?.textContent).toBe('前端设计')
+  })
+
+  it('folds a parent with more than five children into "…+N" and unfolds it in place', async () => {
+    const kids = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7']
+    kids.forEach((id) => parents.set(id, 'lead'))
+    await render([agent('lead', '发布协调'), ...kids.map((id) => agent(id, id))])
+    const fold = () => pane().querySelector<HTMLElement>('[data-map-fold]')!
+    const hidden = () => kids.filter((id) => pane().querySelector(`[data-contact-id="${id}"]`)!.closest('[inert]'))
+    expect(fold().textContent).toBe('…+3')
+    expect(hidden()).toEqual(['k5', 'k6', 'k7'])
+    // 收起的子节点仍在(停在「…+N」那一行、透明),展开 / 收起只是挪过去 —— 连线一条不少
+    expect(pane().querySelectorAll('[data-map-edges] path')).toHaveLength(8)
+    await clickElement(fold())
+    expect(fold().getAttribute('aria-expanded')).toBe('true')
+    expect(hidden()).toEqual([])
+    await clickElement(fold())
+    expect(hidden()).toEqual(['k5', 'k6', 'k7'])
   })
 
   it('keeps the empty-state calls to action when every group is empty', async () => {

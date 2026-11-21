@@ -232,7 +232,8 @@ function ContactsThreeSectionSidebar({
             与「添加联系人」+ 同一入口，请求视图只在详情列渲一次（不再有 sidebar 私有 overlay）。 */}
         <ListRow
           role="button"
-          tabIndex={0}
+          tabIndex={selectionMode ? -1 : 0}
+          aria-disabled={selectionMode || undefined}
           selected={newFriendsActive}
           data-testid={AUTOMATION_TEST_IDS.contactsNewFriendsNav}
           leading={
@@ -1031,10 +1032,9 @@ export const ContactsPanel = memo(function ContactsPanel({
     })
   }
 
+  // 进多选留在原处:开着的详情、选中的分组都不动;只有从「新的请求」/ 加人页进来时回到分组(那两页没有可勾的人)。
   const enterContactSelectionMode = () => {
     setSelectedNav('contacts')
-    setSelectedContactId(null)
-    setSelectedSidebarGroupId(null)
     setContactSelectionMode(true)
     setSelectedContactIds(new Set())
   }
