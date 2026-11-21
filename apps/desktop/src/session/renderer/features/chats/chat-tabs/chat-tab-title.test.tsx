@@ -19,8 +19,8 @@ vi.mock('@/lib/fileHost', () => ({ useFileHost: () => null, openFileStorageSetti
 const { chatPanelTabProvider } = await import('./chat-tab-providers');
 const { extensionSurfaceStore } = await import('@renderer/features/extensions/extension-surface-store');
 const { groupPageSlot, folderItem } = await import('./chat-panel-item');
-const { tellInstalled } = await import('@renderer/features/extensions/installed-extensions');
-beforeEach(() => tellInstalled('local', { extensions: [
+const { installedExtensions } = await import('@renderer/features/extensions/installed-extensions');
+beforeEach(() => installedExtensions.set(['local'], { extensions: [
   { id: 'workspace', name: 'Files', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'file', title: 'Files' }] } },
   { id: 'board', name: 'Board', version: '1.0.0', apiVersion: 14, defaultLocale: 'en', contributes: { tabs: [{ name: 'main', title: 'Board' }] } },
 ], invalid: [] } as never));

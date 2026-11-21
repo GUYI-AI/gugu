@@ -64,7 +64,7 @@ vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCou
 const { appView } = await import('@renderer/features/apps/apps-views');
 const { WorkspaceContentLayout } = await import('@renderer/lib/layout/workspace-layout');
 const { setAppConversationPanelCollapsed } = await import('@renderer/features/apps/app-conversation-panel');
-const { tellInstalled } = await import('@renderer/features/extensions/installed-extensions');
+const { installedExtensions } = await import('@renderer/features/extensions/installed-extensions');
 const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('@/lib/appConversationSurfaceBridge');
 const { installAssistantShellBridge, publishAssistantShell } = await import('@/lib/assistantShellBridge');
 const { installShellSlots } = await import('@/lib/shellSlots');
@@ -135,7 +135,7 @@ beforeEach(async () => {
   installShellSlots();
   installAppConversationSurfaceBridge();
   installAssistantShellBridge();
-  tellInstalled('local', {
+  installedExtensions.set(['local'], {
     extensions: [{
       id: APP, name: 'Gugu', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
       contributes: { tabs: [{ name: 'main', title: 'Gugu' }], conversationSurface: { binding: 'conversation', header: 'assistant' } },
@@ -159,7 +159,7 @@ afterEach(async () => {
   setAppConversationPanelCollapsed(APP, false);
   host.remove();
   publishAppConversationSurfaces({});
-  tellInstalled('local', { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never);
+  installedExtensions.set(['local'], { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never);
 });
 
 describe('no window drag region over an App\'s page', () => {

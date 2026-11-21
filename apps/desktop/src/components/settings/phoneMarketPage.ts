@@ -2,7 +2,7 @@ import { replica, useReplica, type Reading } from '../../lib/replica'
 import { useEffect } from 'react'
 import { marketUpdates, PHONE_HOST, type MarketUpdates } from '@/session/renderer/features/extensions/installed-extensions'
 import type { CloudMarketEntry, MarketListItem } from '@/session/shared/extensions/market'
-import { definePhoneMarket } from '@/session/renderer/features/extensions/market-replicas'
+import { definePhoneStore } from '@/session/renderer/features/extensions/extensions-api'
 import { keepShelf, keptShelfItems } from '@/session/renderer/features/extensions/panel/kept-shelf'
 import { searchApps } from '@/session/shared/extensions/app-search'
 import { marketCategoryOf, marketCategoryRank } from '@/session/shared/extensions/catalog'
@@ -24,7 +24,7 @@ export const phoneMarketCatalog = replica({
   scope: 'device',
   read: async (_owner: string, platform: AppPlatform): Promise<{ entries: CloudMarketEntry[] }> => {
     const entries = await (platform === 'phone' ? phoneApps.market.entries() : phoneApps.market.entries(false, platform))
-    keepShelf(shelfKey(platform), entries, null, null)
+    keepShelf(shelfKey(platform), entries, null)
     return { entries }
   },
   local: (_owner: string, platform: AppPlatform) => {
@@ -34,11 +34,6 @@ export const phoneMarketCatalog = replica({
   fresh: Infinity,
   watch: { start: () => phoneApps.market.onRefreshed((refreshed) => { if (refreshed.outcome === 'changed') void phoneMarketCatalog.refresh() }) },
 })
-
-export function usePhoneMarketPage(platform: AppPlatform = 'phone'): Reading<{ entries: CloudMarketEntry[] }> {
-  return useReplica(phoneMarketCatalog, [platform])
-}
-
 
 export function phoneMarketRows(entries: Awaited<ReturnType<typeof phoneApps.market.entries>>, query: string): MarketListItem[] {
   const byId = new Map(entries.map((entry) => [entry.manifest.id, entry]))
@@ -99,7 +94,7 @@ export function useOfferedVersions(): Reading<MarketUpdates> {
   return reading
 }
 
-definePhoneMarket({
+definePhoneStore({
   marketListing: phoneProductApi.marketListing,
   marketHistory: phoneProductApi.marketHistory,
   onRefreshed: (listener) => phoneApps.market.onRefreshed(listener),

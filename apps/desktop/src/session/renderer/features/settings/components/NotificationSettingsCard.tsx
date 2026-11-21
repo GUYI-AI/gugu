@@ -4,7 +4,7 @@ import { events, rpc } from '@renderer/lib/ipc';
 import { Switch } from '@/components/ui/Switch';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
-import { extensionsApiOf } from '@renderer/features/extensions/extensions-api';
+import { extensionsApiOf, INSTALLED, unwrap } from '@renderer/features/extensions/extensions-api';
 import { extensionsInventoryChangedChannel } from '@shared/extensions/marketEvents';
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { messageForUser } from '@/lib/userFacingError';
@@ -16,12 +16,9 @@ import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/
 /** Per-App permissions a host's owner took back; only this desktop's is kept. */
 export const revokedPermissions = replica({
   name: 'extensionRevokedPermissions',
+  tags: [INSTALLED],
   scope: 'device',
-  read: async (_owner: string, hostKey: string) => {
-    const result = await extensionsApiOf(hostKey).revoked();
-    if (!result.success || !result.data) throw new Error(result.error);
-    return result.data;
-  },
+  read: async (_owner: string, hostKey: string) => unwrap(await extensionsApiOf(hostKey).revoked(), 'The permissions taken back'),
   persist: { maxBytes: 1024, maxEntries: 1 },
 });
 events.on(extensionsInventoryChangedChannel, () => { void revokedPermissions.refresh(LOCAL_HOST); });

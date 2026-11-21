@@ -74,10 +74,10 @@ import { ModalRenderer } from '@renderer/lib/modal/modal-renderer'
 import { modalStore } from '@renderer/lib/modal/modal-store'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
-import { tellInstalled } from '@renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '@renderer/features/extensions/installed-extensions'
 
 // Nothing installed on this computer (the sidebar's rows name no App).
-tellInstalled('local', { extensions: [], invalid: [] } as never)
+installedExtensions.set(['local'], { extensions: [], invalid: [] } as never)
 
 let root: Root
 let host: HTMLDivElement

@@ -2,7 +2,8 @@ import { registerPlugin } from '@capacitor/core'
 import { readDisplayIdentities } from '../../lib/identityReadAdapter'
 import { rendererLogger } from '../../lib/log'
 import { redrawImage } from '../../lib/redrawImage'
-import { definePhoneInstalledList, definePhoneMarketUpdates, marketUpdates as marketUpdatesReplica, PHONE_HOST, tellInstalled, type InstalledExtensionsList } from '../../session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, marketUpdates as marketUpdatesReplica, PHONE_HOST, type InstalledExtensionsList } from '../../session/renderer/features/extensions/installed-extensions'
+import { definePhoneStore, unwrap } from '../../session/renderer/features/extensions/extensions-api'
 import { askInShell, installConsentPrompt, type InstallConsentAsk } from '../../session/renderer/features/extensions/install-consent'
 import { extensionContentSecurityPolicy } from '../../session/shared/extensions/app-csp'
 import { appDataTooLarge } from '../../session/shared/extensions/app-data'
@@ -213,7 +214,7 @@ function listed(): InstalledExtensionsList {
 let toldVersions: string | null = null
 function tell(): void {
   const list = listed()
-  tellInstalled(PHONE_HOST, list)
+  installedExtensions.set([PHONE_HOST], list)
   // An App updated by itself (owner 10-19): what the market says of it is read again.
   const versions = list.extensions.map((manifest) => `${manifest.id}@${manifest.version}`).join(' ')
   if (toldVersions !== null && versions !== toldVersions) void marketUpdatesReplica.refresh(PHONE_HOST)
@@ -1073,12 +1074,10 @@ export const phoneApps = {
 }
 
 // The replicas of what is installed here and what the market says of it read through this store (installed-extensions.ts).
-definePhoneInstalledList(async () => {
-  await ready()
-  return listed()
-})
-definePhoneMarketUpdates(async () => {
-  const result = await marketUpdates()
-  if (!result.success) throw new Error(result.error)
-  return result.data
+definePhoneStore({
+  list: async () => {
+    await ready()
+    return listed()
+  },
+  marketUpdates: async () => unwrap(await marketUpdates(), 'The update check'),
 })

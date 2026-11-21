@@ -30,7 +30,7 @@ import { rememberAssistantTaskChat } from '../../../../apps/desktop/src/lib/assi
 import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { ASSISTANT_APP_ID, installAssistantAppEntryBridge, publishAssistantAppWord } from '../../../../apps/desktop/src/lib/assistantEntry'
-import { tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { publishAppConversationSurfaces } from '../../../../apps/desktop/src/lib/appConversationSurfaceBridge'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
@@ -1470,7 +1470,7 @@ describe('MainLayout: personal assistant destinations', () => {
       await renderMainLayoutWithToast()
       await act(async () => {
         installAssistantAppEntryBridge()
-        tellInstalled('local', { extensions: [{ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'today', title: 'A' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+        installedExtensions.set(['local'], { extensions: [{ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'today', title: 'A' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
         publishAssistantShell({ ...shell, ownerId: 'user-1', chatId: PERSONAL_DM })
         publishAssistantAppWord({ ownerId: 'user-1', trusted: true })
         publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: PERSONAL_DM })
@@ -1491,7 +1491,7 @@ describe('MainLayout: personal assistant destinations', () => {
       navigate.mockRestore()
       publishAssistantAppWord(null)
       publishAppConversationSurfaces({})
-      tellInstalled('local', { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+      installedExtensions.set(['local'], { extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
     }
   })
 

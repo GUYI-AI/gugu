@@ -11,7 +11,7 @@ import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension
 import { AppProductPage } from '@renderer/features/extensions/panel/app-product-page'
 import { ShelfSkeleton } from '@renderer/features/extensions/panel/extension-skeletons'
 import { installedExtensions, useInstalledApps } from '@renderer/features/extensions/installed-extensions'
-import { refreshFailure } from '@/lib/replica'
+import { refreshFailure, useReplica } from '@/lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
@@ -26,7 +26,7 @@ import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from './SettingsPrimitives'
 import { AppsSection } from './AppsSection'
 import { PhoneAppManage } from './PhoneAppManage'
-import { PHONE_HOST, phoneMarketRows, useOfferedVersions, usePhoneMarketPage } from './phoneMarketPage'
+import { PHONE_HOST, phoneMarketCatalog, phoneMarketRows, useOfferedVersions } from './phoneMarketPage'
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
@@ -52,7 +52,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const { t } = useTranslation('main')
   const { translate, locale } = useSessionMessages()
   const platform = mode === 'installed' ? 'phone' : 'desktop'
-  const catalog = usePhoneMarketPage(platform)
+  const catalog = useReplica(phoneMarketCatalog, [platform])
   const entries = catalog.state === 'value' ? catalog.value.entries : null
   const offered = useOfferedVersions()
   const installedIds = usePhoneMarketInstalledAppIds(mode === 'market' ? devices : NO_DEVICES)

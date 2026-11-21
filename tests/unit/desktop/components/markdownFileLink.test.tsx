@@ -8,7 +8,7 @@ import { classifyFileLink, type GuguLinkTarget } from '@gugu/core/shared/ui/gugu
 import { openLinkWith } from '../../../../apps/desktop/src/session/shared/extensions/open-link'
 import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNavigation'
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
-import { putInstalled, tellInstalled } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /**
@@ -180,7 +180,7 @@ describe('Markdown local file links in chat', () => {
       ])
       // Installed here: the list's name, the whole one on hover; the words that are no file name and a web link stay.
       await act(async () => {
-        tellInstalled('local', { extensions: [drawGuess], invalid: [], disabled: [] } as never)
+        installedExtensions.set(['local'], { extensions: [drawGuess], invalid: [], disabled: [] } as never)
         // The replica tells its readers on its notify tick (a task after the write).
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
@@ -191,13 +191,13 @@ describe('Markdown local file links in chat', () => {
       ])
       // Switched off here: it reads as written again.
       await act(async () => {
-        putInstalled('local', (list) => ({ ...list, disabled: ['draw-guess'] }))
+        installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['draw-guess'] }))
         // The replica tells its readers on its notify tick (a task after the write).
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
       expect(shown()[0]).toEqual(['guess.draw-guess.json', null, link])
     } finally {
-      tellInstalled('local', { extensions: [], invalid: [], disabled: [] } as never)
+      installedExtensions.set(['local'], { extensions: [], invalid: [], disabled: [] } as never)
     }
   })
 

@@ -54,7 +54,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
   const apps = { enabledTabContributions: [], allTabContributions: [], manifests: [], manifestFor: () => undefined, appName: () => undefined, isEnabled: () => true }
   const reading = { state: 'value', value: apps, stale: false, error: null }
   return { LOCAL_HOST: 'local', PHONE_HOST: 'phone', useInstalledApps: () => reading, peekInstalledApps: () => apps, peekInstalledAppsTracked: () => apps,
-    definePhoneInstalledList: () => undefined, definePhoneMarketUpdates: () => undefined, tellInstalled: () => undefined, marketUpdates: { refresh: async () => undefined } }
+    installedExtensions: { set: () => undefined }, marketUpdates: { refresh: async () => undefined } }
 })
 vi.mock('../../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 

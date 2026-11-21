@@ -3,7 +3,7 @@ import { chatFileRpc } from './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
-import { peekInstalledApps, tellInstalled, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
+import { peekInstalledApps, installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { closeChatTab, panelTabsOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { linkShell, pill, shownItem } from './chatTabsHarness'
 import { openerChoice } from '../../../../apps/desktop/src/session/shared/extensions/file-openers'
@@ -36,7 +36,7 @@ const sharedList = () => [...sharedHere.packages.values()] as { card: { source: 
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
   ...(await original<object>()),
   chatPackageCards: async () => { if (sharedHere.fail) throw new Error('offline'); return sharedList().map((pkg) => pkg.card) },
-  readPackageSummary: async (key: string) => ({ ok: true, manifest: sharedList().find((pkg) => (pkg.card.source.kind === 'url' ? `url:${pkg.card.source.url}` : `msg:${pkg.card.messageId}`) === key)!.manifest }),
+  readPackageSummary: async (source: unknown) => ({ ok: true, manifest: sharedList().find((pkg) => JSON.stringify(pkg.card.source) === JSON.stringify(source))!.manifest }),
   newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
@@ -53,7 +53,7 @@ const slides = (version: string) => ({
 })
 const file = { chatId: 'group-1', itemId: 'item-1', name: 'deck.pptx', typedName: 'deck.pptx', file: { document: false, contentType: 'application/json', version: 1, size: 10 } }
 const install = (manifests: unknown[], origins?: InstalledExtensionsList['origins']) =>
-  act(() => tellInstalled('local', { extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
+  act(() => installedExtensions.set(['local'], { extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
 
 const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 // The chat's shared packages are an account replica: read for a signed-in account, as in the product.

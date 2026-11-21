@@ -21,7 +21,7 @@ import { openLinkTarget } from './guguLinks'
 import { notify } from './notices'
 import { platform } from '../platform'
 import { UI_EVENTS } from './uiEvents'
-import { peekInstalledApps, watchInstalled } from '../session/renderer/features/extensions/installed-extensions'
+import { installedExtensions, peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
 import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { readsWork } from '../components/appSlot/appWorkLedger'
 
@@ -146,7 +146,7 @@ function subscribeAll(listener: () => void): () => void {
   const offs = [readAssistantShellBridge(), readAppConversationSurfaceBridge(), readAssistantAppEntryBridge()]
     .map((source) => source?.subscribe(listener) ?? (() => undefined))
   // …and what is installed here (the App switched on or off, the list read for the first time).
-  offs.push(watchInstalled(LISTED_HOST, listener))
+  offs.push(installedExtensions.subscribe([LISTED_HOST], listener))
   return () => offs.forEach((off) => off())
 }
 

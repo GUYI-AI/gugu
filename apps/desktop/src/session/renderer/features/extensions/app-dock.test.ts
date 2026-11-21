@@ -17,7 +17,7 @@ const { appIsRunning, openApp, quitApp } = await import('./app-dock');
 const { appPlacementStore } = await import('./app-placement-store');
 const { appState } = await import('@renderer/lib/stores/app-state');
 const { extensionViewStore } = await import('./extension-view-store');
-const { peekInstalledApps, putInstalled, tellInstalled } = await import('./installed-extensions');
+const { peekInstalledApps, installedExtensions } = await import('./installed-extensions');
 const { screenLayout } = await import('@renderer/app/screen-layout');
 
 const app = (id: string, more: Record<string, unknown> = {}, tab: Record<string, unknown> = {}) => ({
@@ -31,7 +31,7 @@ const app = (id: string, more: Record<string, unknown> = {}, tab: Record<string,
 });
 
 function install(extensions: unknown[], disabled: string[] = []): void {
-  tellInstalled('local', { extensions, invalid: [], icons: {}, disabled, disclosure: {} } as never);
+  installedExtensions.set(['local'], { extensions, invalid: [], icons: {}, disabled, disclosure: {} } as never);
 }
 
 // The rail's dock only needs a box for the page to be placed over; nothing here lays one out.
@@ -100,9 +100,9 @@ describe('左栏「退出」(#7050)', () => {
 
   it('退出了的 App,后台不算在跑;它的页再被要(主进程说它不再是退出的)就又算', () => {
     install([app('timer', { background: { entry: 'bg.html' } })]);
-    putInstalled('local', (list) => ({ ...list, quit: ['timer'] }));
+    installedExtensions.set(['local'], (list) => list && ({ ...list, quit: ['timer'] }));
     expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(false);
-    putInstalled('local', (list) => ({ ...list, quit: [] }));
+    installedExtensions.set(['local'], (list) => list && ({ ...list, quit: [] }));
     expect(appIsRunning(peekInstalledApps('local')!, 'timer')).toBe(true);
   });
 

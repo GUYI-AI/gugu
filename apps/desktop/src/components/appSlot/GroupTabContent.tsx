@@ -14,7 +14,7 @@ import { installPackageOf, packageKey, type SharedPackage } from '../extensionBu
 import { sharedAppPackages } from '../extensionBundle/packageReplicas'
 import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
-import { useMarketOffers } from './marketOffers'
+import { marketOffers } from './marketOffers'
 import { parseExtensionTabKind, type ExtensionManifest } from '../../session/shared/extensions/manifest'
 import type { ExtensionOrigin } from '../../session/shared/extensions/upgrade'
 import { availableInstallOffers, type AppInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
@@ -140,7 +140,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   const sharedReading = useReplica(sharedAppPackages, appsHere && user?.id ? [chatId] : null)
   const shared = sharedReading.state === 'value' ? sharedReading.value : null
   const typedName = item.kind ? item.typedName ?? null : null
-  const marketReading = useMarketOffers(!!appsHere && !!typedName)
+  const marketReading = useReplica(marketOffers, appsHere && typedName ? [] : null)
   // The market unreadable (null): offered from what is shared in this chat only.
   const market = marketReading.state === 'value' ? marketReading.value : null
   const marketKnown = marketReading.state !== 'unknown'

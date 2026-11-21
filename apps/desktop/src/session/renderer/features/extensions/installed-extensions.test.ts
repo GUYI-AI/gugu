@@ -10,9 +10,7 @@ const api = vi.hoisted(() => ({
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: api }, rpcOn: () => ({ extensions: api }) }));
 vi.mock('@renderer/utils/logger', () => ({ log: { warn: vi.fn(), error: vi.fn() } }));
 
-const {
-  appsOf, installedExtensions, marketUpdates, peekInstalledApps, setDisclosure, tellInstalled, updateCountOf, writeInstalled,
-} = await import('./installed-extensions');
+const { appsOf, installedExtensions, marketUpdates, peekInstalledApps, setDisclosure, updateCountOf, writeInstalled } = await import('./installed-extensions');
 type InstalledExtensionsList = import('./installed-extensions').InstalledExtensionsList;
 type InstalledApps = import('./installed-extensions').InstalledApps;
 const { queryClient } = await import('@/lib/replica');
@@ -30,7 +28,7 @@ describe('披露档位的写入 (W-08)', () => {
   it('先按用户拨的画,落定后以主进程的回答为准', async () => {
     let settle!: (value: unknown) => void;
     api.setDisclosure.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
-    tellInstalled('local', listOf([], { disclosure: { tools: 'progressive' } }));
+    installedExtensions.set(['local'], listOf([], { disclosure: { tools: 'progressive' } }));
     const writing = setDisclosure('local', 'tools', 'full');
     expect(peekInstalledApps('local')?.disclosure.tools).toBe('full');
     settle({ success: true, data: { level: 'full' } });
@@ -42,7 +40,7 @@ describe('披露档位的写入 (W-08)', () => {
   it('写不进去就重读清单(以主进程为准),并把失败交给调用方', async () => {
     api.setDisclosure.mockResolvedValue({ success: false, error: 'not installed' });
     api.list.mockResolvedValue({ success: true, data: listOf([], { disclosure: { tools: 'progressive' } }) });
-    tellInstalled('local', listOf([], { disclosure: { tools: 'progressive' } }));
+    installedExtensions.set(['local'], listOf([], { disclosure: { tools: 'progressive' } }));
     await expect(setDisclosure('local', 'tools', 'full')).rejects.toThrow('not installed');
     await installedExtensions.fetch('local');
     await vi.waitFor(() => expect(api.list).toHaveBeenCalledTimes(1));
@@ -50,7 +48,7 @@ describe('披露档位的写入 (W-08)', () => {
   });
 
   it('不给 agent 工具的扩展没有档位可写', async () => {
-    tellInstalled('local', listOf([], { disclosure: { tools: 'progressive' } }));
+    installedExtensions.set(['local'], listOf([], { disclosure: { tools: 'progressive' } }));
     await expect(setDisclosure('local', 'plain', 'full')).rejects.toThrow('gives agents no tools');
   });
 });
@@ -59,7 +57,7 @@ describe('披露档位的写入 (W-08)', () => {
 describe('writeInstalled', () => {
   // A write without an optimistic layer: the unwritten value is never left standing as if it were true.
   it('refused, and the read that follows fails too: back to the list read before the click', async () => {
-    tellInstalled('local', listOf([], { dock: ['a'] }));
+    installedExtensions.set(['local'], listOf([], { dock: ['a'] }));
     api.list.mockRejectedValue(new Error('offline'));
     await expect(writeInstalled('local', (list) => ({ ...list, dock: ['b'] }), async () => { throw new Error('refused'); }, () => (list) => list))
       .rejects.toThrow('refused');
@@ -67,7 +65,7 @@ describe('writeInstalled', () => {
   });
 
   it('refused, and the read that follows lands: what the host says now', async () => {
-    tellInstalled('local', listOf([], { dock: ['a'] }));
+    installedExtensions.set(['local'], listOf([], { dock: ['a'] }));
     api.list.mockResolvedValue({ success: true, data: listOf([], { dock: ['c'] }) });
     await expect(writeInstalled('local', (list) => ({ ...list, dock: ['b'] }), async () => { throw new Error('refused'); }, () => (list) => list))
       .rejects.toThrow('refused');
@@ -75,7 +73,7 @@ describe('writeInstalled', () => {
   });
 
   it('puts the host\'s answer over what was drawn at once', async () => {
-    tellInstalled('local', listOf([], { dock: ['a'] }));
+    installedExtensions.set(['local'], listOf([], { dock: ['a'] }));
     await writeInstalled('local', (list) => ({ ...list, dock: ['b'] }), async () => ['c'], (dock) => (list) => ({ ...list, dock }));
     expect(peekInstalledApps('local')?.dock).toEqual(['c']);
   });

@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { noteOpenWithDefault, useInstalledApps, type InstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
-import { Unknown } from '../ui/Unknown'
-import { RefreshFailed } from '../ui/RefreshFailed'
+import { ReadingSlot } from '../ui/ReadingSlot'
 import type { AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf, openWithKey, type FileOpenerCandidate } from '../../session/shared/extensions/file-openers'
 import { Button } from '../ui/Button'
@@ -26,14 +25,7 @@ type OpenWithPickProps = {
 export function OpenWithPick(props: OpenWithPickProps) {
   const installed = useInstalledApps(HERE_HOST)
   // The kept choice is part of what is drawn (its mark, the tick): the chooser waits for the list (❌ drawn unticked first).
-  if (installed.state === 'value') return <OpenWithChoices {...props} installed={installed.value} />
-  return (
-    <div className="flex flex-col gap-3" data-testid={props.testId ?? 'group-app-open-with'}>
-      {installed.state === 'error'
-        ? <RefreshFailed reading={installed} />
-        : <Unknown className="h-24 w-full" />}
-    </div>
-  )
+  return <ReadingSlot reading={installed} placeholder="h-24 w-full">{(value) => <OpenWithChoices {...props} installed={value} />}</ReadingSlot>
 }
 
 function OpenWithChoices({ detail, onPick, onCancel, testId = 'group-app-open-with', installed }: OpenWithPickProps & { installed: InstalledApps }) {

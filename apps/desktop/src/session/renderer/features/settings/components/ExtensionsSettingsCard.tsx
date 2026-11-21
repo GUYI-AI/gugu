@@ -19,14 +19,13 @@ import {
   installedExtensions,
   marketUpdates,
   peekInstalledApps,
-  putInstalled,
   setAutoUpdate,
   setDisclosure as setDisclosureOn,
   updateCountOf,
   useInstalledApps,
   type ExtensionDisclosureLevel,
 } from '@renderer/features/extensions/installed-extensions';
-import { useReplica, type Reading, refreshFailure } from '@/lib/replica';
+import { useReplica, refreshFailure } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -169,7 +168,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // A machine that is offline is not asked; what was read of it is drawn read-only (this and the three reads below).
   const installed = useInstalledApps(host.key, { read: !machineOffline });
   const apps = installed.state === 'value' ? installed.value : null;
-  const inventory = installed.state === 'unknown' ? 'loading' : installed.state === 'error' ? 'error' : 'ready';
   const updatesReading = useReplica(marketUpdates, [host.key], { read: !machineOffline });
   const updates = updatesReading.state === 'value' ? updatesReading.value.summary ?? null : null;
   // 别的机器读清单没读到(离线 / server 太旧 / 问不通):页面上说一句人话,❌ 弹一条带原文的失败 toast。
@@ -228,15 +226,13 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const shownFailure = debouncedQuery === '' ? refreshFailure(shelfReading) : refreshFailure(searchReading);
   const shelf: ShelfState = useMemo((): ShelfState => {
     if (debouncedQuery === '') {
-      if (fullShelf) return { status: 'ready', query: '', errorKind: fullShelf.errorKind, items: fullShelf.items, invalid: fullShelf.invalid, total: fullShelf.total, page: fullShelf.page, hasMore: false, loadingMore: false };
+      if (fullShelf) return { ...fullShelf, status: 'ready', query: '', hasMore: false, loadingMore: false };
       return shelfReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
     }
     const read = searchReading.state === 'value' ? { found: searchReading.value, loadingMore: false }
       : searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: searchReading.state === 'unknown' } : null;
     if (!read) return searchReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
-    const { found } = read;
-    return { status: 'ready', query: debouncedQuery, errorKind: found.errorKind, items: found.items, invalid: found.invalid, total: found.total, page: found.page, hasMore: found.hasMore,
-      loadingMore: read.loadingMore };
+    return { ...read.found, status: 'ready', query: debouncedQuery, loadingMore: read.loadingMore };
   }, [debouncedQuery, fullShelf, shelfReading.state, searchReading, searchBefore]);
   const retryShelf = () => {
     if (debouncedQuery === '') void marketShelf.refresh(host.key);
@@ -310,16 +306,12 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // enforced a host as off.) The screen that manages this inventory reads
       // it; one list call is not worth a stale one.
       const hostKey = hostKeyRef.current;
+      // What the market says is about what is installed: read again with it (unread, the page's own read is on its way).
+      if (marketUpdates.peek(hostKey).state !== 'unknown') void marketUpdates.refresh(hostKey);
       // Not read yet: the read this page's mount began is the one (❌ a second); read already: read again now. A read that
       // fails is thrown (❌ every switch drawn on while main enforces one off).
-      const readNow = async (model: { peek(hostKey: string): Reading<unknown>; fetch(hostKey: string): Promise<unknown>; refresh(hostKey: string): Promise<void> }) => {
-        if (model.peek(hostKey).state === 'unknown') { await model.fetch(hostKey); return; }
-        await model.refresh(hostKey);
-        const read = model.peek(hostKey);
-        if (read.state === 'error') throw read.error;
-        if (read.state === 'value' && read.error) throw read.error;
-      };
-      await Promise.all([readNow(installedExtensions), readNow(revokedPermissions), readNow(extensionAgentStatus)]);
+      await Promise.all([installedExtensions, revokedPermissions, extensionAgentStatus]
+        .map((model) => (model.peek(hostKey).state === 'unknown' ? model.fetch(hostKey) : model.reread(hostKey))));
     } catch (error) {
       log.error('extension inventory unreadable:', error);
       // 别的机器:那一句话在页头(deviceScopeNotice,从读数来),不弹 toast。
@@ -421,10 +413,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (!shown || (remote && !remote.online)) return;
     if (openedAt.current !== null && Date.now() - openedAt.current < MARKET_REOPEN_MIN_MS) return;
     openedAt.current = Date.now();
+    // With it 「有什么要告诉你的」 too (spec:启动时一次、打开设置页时一次,❌ 轮询;启动时那一次是 wire-market-refresh 的)。
     void refresh();
-    // 打开设置页时也查一次「有什么要告诉你的」(spec:启动时一次、打开设置页时一次,
-    // ❌ 轮询)。embedded.tsx 已经在启动时查过一次;这里是「打开设置页时」那一次。
-    if (marketUpdates.peek(host.key).state !== 'unknown') void marketUpdates.refresh(host.key);
     if (inventoryOnly) return;
     // 这一次和下面的市场清单都先从那台机器手上的目录答(❌ 等下载站);同时让它去下载站取一趟,回来的结果走
     // onMarketRefreshed。结果用回答带回:别的机器的推送未必转得到这个窗口。比这一版旧的机器没有这一问,照旧现取。
@@ -599,9 +589,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         throw new Error(result.error ?? '');
       }
       // This window's tab providers follow the list, no restart; another machine's follow in its own window.
+      // With what is installed, its 「有新版」 (cleared, or the next one after the version just installed).
       await refresh();
-      // 装的这台机器上现在这一版,清出「有新版」的提示（或者换成刚装的这版还在跑的下一个）。
-      void marketUpdates.refresh(host.key);
       if (firstInstall) setJustInstalled(manifest.id);
       // "Did it work" and "what next" in one breath: the tab is where it went.
       // What a task's「+」lists: the App's own page, by its name in this language (installedExtensions → mainTabOf); an App
@@ -748,7 +737,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const result = await host.api.uninstall({ extensionId: app.id, lastAnywhere });
       if (!result.success) throw new Error(result.error ?? '');
       await refresh();
-      void marketUpdates.refresh(host.key);
       // 它的设置页随它一起没了:回到进来的地方(市场页还在,按钮回到「安装」);从别处直接进来的回「已安装」。
       const leaving = detailRef.current;
       if (leaving?.page === 'manage' && leaving.extensionId === app.id) {
@@ -970,7 +958,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       const result = await api.setTabHidden({ extensionId: manifest.id, tab: name, hidden });
       if (!result.success || !result.data) throw new Error(result.error ?? '');
       const hiddenTabs = result.data;
-      putInstalled(host.key, (list) => ({ ...list, hiddenTabs }));
+      installedExtensions.set([host.key], (list) => list && { ...list, hiddenTabs });
     } catch (error) {
       log.error('hidden tab refused:', error);
       toast({ title: translate('extensions.tabHiddenFailed'), description: messageForUser(error), tier: 'error' });
@@ -1113,7 +1101,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         },
       });
     }
-    return renderInstalledApps(items, { loading: inventory === 'loading', error: inventory === 'error' });
+    return renderInstalledApps(items, { loading: installed.state === 'unknown', error: installed.state === 'error' });
   }
 
   const header = (aside?: ReactNode) => (
@@ -1340,7 +1328,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 onCategoryChange={setAgentCategory}
                 onOpenAgentDetail={openMarketAgentDetail}
                 assistant={assistantMarketItem}
-                assistantInstalled={inventory === 'ready' ? installedById!.has(ASSISTANT_APP_ID) : undefined}
+                assistantInstalled={installedById ? installedById.has(ASSISTANT_APP_ID) : undefined}
                 assistantLoading={shelf.status === 'loading'}
                 onOpenAssistant={() => assistantMarketItem && openShelfDetail(assistantMarketItem)}
                 assistantResource={resourceOf(ASSISTANT_APP_ID)}
@@ -1391,7 +1379,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                   query={extensionShelf.query}
                   category={chip}
                   onCategoryChange={setChip}
-                  installedIds={inventory === 'ready' ? new Set(installedById!.keys()) : undefined}
+                  installedIds={installedById ? new Set(installedById.keys()) : undefined}
                   onOpen={openShelfDetail}
                   resourceOf={resourceOf}
                   sentinelRef={sentinelRef}
@@ -1415,7 +1403,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             {/* Which Apps have a new version (the rows' update marks, the tab's dot) could not be read again: said with a retry. */}
             {!machineOffline ? <RefreshFailed reading={updatesReading} /> : null}
 
-            {(inventory === 'loading' || installedAgents.inventory.reading.state === 'unknown') && installedCount === 0 && (
+            {(installed.state === 'unknown' || installedAgents.inventory.reading.state === 'unknown') && installedCount === 0 && (
               <div className="mk-sec">
                 <InstalledRowsSkeleton label={translate('extensions.loading')} />
               </div>
@@ -1493,7 +1481,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 </ul>
               </section>
             )}
-            {inventory === 'ready' && installedAgents.inventory.reading.state === 'value' && installedCount === 0 && (
+            {apps && installedAgents.inventory.reading.state === 'value' && installedCount === 0 && (
               <div className="mk-empty">
                 {query.trim() === '' ? translate('extensions.empty') : translate('extensions.noMatch', { query: query.trim() })}
                 {query.trim() === '' && (
@@ -1517,17 +1505,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             <MarketExtensionDetail
               item={marketItem}
               installedVersion={marketInstalled?.version}
-              icon={apps!.appIcons[marketItem.manifest.id]}
+              icon={apps?.appIcons[marketItem.manifest.id]}
               lifecycle={marketAction}
               pending={pending[marketItem.manifest.id]}
               pendingPercent={downloadPercent[marketItem.manifest.id]}
-              canChangeVersion={!apps!.isPreinstalled(marketItem.manifest.id)}
+              // What is installed unread (its read failed, the shelf read): no version is changed from here.
+              canChangeVersion={apps ? !apps.isPreinstalled(marketItem.manifest.id) : false}
               onInstall={(ref, confirm) => void installFromShelf(ref, marketItem.manifest.id, { confirm })}
               onLifecycle={() => {
                 if (marketAction?.kind === 'open') closeMarketDetail();
                 runLifecycle(marketItem.manifest.id, marketItem);
               }}
-              onUninstall={marketInstalled && !apps!.isPreinstalled(marketInstalled.id)
+              onUninstall={marketInstalled && apps && !apps.isPreinstalled(marketInstalled.id)
                 ? () => void uninstall({ id: marketInstalled.id, name: localizedManifestText(marketInstalled, locale).name })
                 : undefined}
             />

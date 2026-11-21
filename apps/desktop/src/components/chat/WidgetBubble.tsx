@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite'
 import { useContext, useMemo, useState, type ReactNode, type RefObject } from 'react'
 import { refreshFailure, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
-import { marketOffers, useMarketOffers } from '../appSlot/marketOffers'
+import { marketOffers } from '../appSlot/marketOffers'
 import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseWidgetMessage, type WidgetMessage } from '@gugu/core/shared/ui/widgetModels'
@@ -120,7 +120,7 @@ function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; 
   const canOffer = reason === 'missing' || reason === 'view'
   const asked = shown && canOffer && !!appsHere && !!user?.id
   const shared = useReplica(sharedAppPackages, asked ? [chatId] : null)
-  const marketReading = useMarketOffers(asked)
+  const marketReading = useReplica(marketOffers, asked ? [] : null)
   // The market unreadable: the offer is looked for among what is shared here only; the failure is said below.
   const offer = asked && shared.state === 'value' && marketReading.state !== 'unknown' && installed.state === 'value'
     ? widgetInstallOffer(availableInstallOffers(shared.value, marketReading.state === 'value' ? marketReading.value : null, installed.value.manifests, installed.value.origins),

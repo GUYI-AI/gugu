@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 import { createExtensionTabProvider } from './extension-tab-provider';
-import { tellInstalled } from './installed-extensions';
+import { installedExtensions } from './installed-extensions';
 
 // An App's page beside a task's conversation takes the same declared width as beside a chat (side-width.ts, owner 11-07).
 describe('an App page declares its width beside a task conversation', () => {
-  tellInstalled('local', {
+  installedExtensions.set(['local'], {
     extensions: [{ id: 'kanban', name: 'Kanban', version: '1.0.0', apiVersion: 16, defaultLocale: 'en', contributes: { tabs: [{ name: 'board', title: 'Board', sideWidth: 480 }, { name: 'settings', title: 'Settings', hostPage: 'settings' }, { name: 'peer', title: 'Peer' }] } }],
     invalid: [],
   } as never);
