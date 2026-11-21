@@ -83,10 +83,10 @@ export function InstallProgressRow({
               data-testid="install-progress-determinate"
               className={
                 compact
-                  ? 'block h-full bg-foreground transition-[width] duration-500 motion-reduce:transition-none'
-                  : 'block h-full bg-foreground-info transition-[width] duration-500 motion-reduce:transition-none'
+                  ? 'block h-full w-full origin-left bg-foreground transition-transform duration-500 motion-reduce:transition-none'
+                  : 'block h-full w-full origin-left bg-foreground-info transition-transform duration-500 motion-reduce:transition-none'
               }
-              style={{ width: `${Math.round(line.ratio * 100)}%` }}
+              style={{ transform: `scaleX(${Math.round(line.ratio * 100) / 100})` }}
             />
           ) : (
             <span

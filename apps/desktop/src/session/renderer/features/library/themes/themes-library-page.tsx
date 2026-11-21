@@ -97,7 +97,7 @@ function ThemeCard({
         onClick={onChoose}
         aria-pressed={selected}
         className={cn(
-          'flex w-full flex-col gap-2 rounded-lg border border-border bg-background-1 p-2 text-left text-foreground transition-all hover:state-hover-layer active:state-press-layer',
+          'flex w-full flex-col gap-2 rounded-lg border border-border bg-background-1 p-2 text-left text-foreground transition-colors hover:state-hover-layer active:state-press-layer',
           selected && 'border-[var(--live)] shadow-[0_0_0_1px_var(--live)]'
         )}
       >

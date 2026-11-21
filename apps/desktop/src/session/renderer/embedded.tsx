@@ -1,4 +1,5 @@
 import { installLocalRendererDiagnostics } from '@/lib/localRendererDiagnostics';
+import { MotionConfig } from 'framer-motion';
 // gugu-embedded entry: mount the session-page <App/> into a host-provided container
 // (window.__EMDASH_MOUNT__) instead of light-DOM #root, so gugu can portal it into a
 // Shadow DOM at the 会话页 tab (one build / one process / CSS-isolated, NOT a webview).
@@ -120,11 +121,14 @@ function renderSessionTree(container: HTMLElement, mountEl: HTMLElement | undefi
     // 就会出现「session-ui 的 popover 从 lib/ui 的 dialog 里弹出来,却在另一个层叠上下文里」。
     // 传 null ⇒ 两套机制在这条路径上都回到 Base UI 的 document.body 默认,同一棵树只有一个答案。
     <UiPortalContainerProvider value={mountEl ?? null}>
-      <SessionLocalizationProvider>
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-      </SessionLocalizationProvider>
+      {/* Every framer animation follows the system's reduced-motion setting (PanelTrack checks it itself). */}
+      <MotionConfig reducedMotion="user">
+        <SessionLocalizationProvider>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </SessionLocalizationProvider>
+      </MotionConfig>
       {/* @@@root-stays-put: this page's popups portal into the mount element, after the tree above. With this fixed
           sibling the page is never :last-child of the mount, so opening a popup does not re-style every table cell,
           list item and paragraph on the page (same reason as the element after #root in index.html). */}
