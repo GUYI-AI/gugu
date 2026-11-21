@@ -28,7 +28,7 @@ const windows = new WeakMap<Document, WindowVisibility>()
  * element of the document, once when the window hides and once more, in front of the user, when it comes back
  * (22k elements on an 18k-node page).
  * ❌ `animation.pause()` / `.play()`: after either, Chromium ignores `animation-play-state` for that animation, so the
- * surface and viewport pauses in animation-visibility.css would stop reaching it. The playback rate leaves that alone.
+ * surface pause in animation-visibility.css would stop reaching it. The playback rate leaves that alone.
  */
 function holdAnimations(doc: Document, state: WindowVisibility, hold: boolean): void {
   if (!hold) {
@@ -120,15 +120,16 @@ export function joinSharedBeat(element: HTMLElement): void {
   }
 }
 
-/** Pauses CSS motion inside `element` while it is off screen (animation-visibility.css also pauses retained
- *  surfaces; a hidden window holds its animations itself, see holdAnimations). It starts paused, so motion that never reaches the viewport never runs. */
-export function pauseAnimationsOffscreen(element: HTMLElement, rootMargin?: string): () => void {
-  const paused = (pause: boolean) => {
-    if (pause) { element.style.setProperty('--gugu-animation-viewport-paused', 'paused'); return }
-    element.style.removeProperty('--gugu-animation-viewport-paused')
+/** Removes CSS motion inside `element` while it is off screen or its window is unseen (animation-visibility.css,
+ *  data-animation-off; retained surfaces pause instead). It starts removed, so motion that never reaches the viewport
+ *  never exists. */
+export function stopAnimationsOffscreen(element: HTMLElement, rootMargin?: string): () => void {
+  const off = (stop: boolean) => {
+    if (stop) { element.setAttribute('data-animation-off', ''); return }
+    element.removeAttribute('data-animation-off')
     joinSharedBeat(element)
   }
-  paused(true)
-  const stop = observeAnimationViewport(element, (visible) => paused(!visible), rootMargin)
-  return () => { stop(); element.style.removeProperty('--gugu-animation-viewport-paused') }
+  off(true)
+  const stop = observeAnimationViewport(element, (visible) => off(!visible), rootMargin)
+  return () => { stop(); element.removeAttribute('data-animation-off') }
 }
