@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, Shield } from '@/lib/icons'
 import { formatAttachmentSize, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { extensionMonogram, localizedManifestText } from '@shared/extensions/catalog'
-import { cardOffer } from '@shared/extensions/app-card-state'
+import { cardOffer, newestPackageOf } from '@shared/extensions/app-card-state'
 import { compareExtensionVersions, opensInChats } from '@shared/extensions/manifest'
 import { describePermissions } from '@/session/renderer/features/extensions/extension-consent'
 import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
@@ -32,7 +32,7 @@ import { Progress } from '../ui/Progress'
 import { ConsentLines } from './ConsentDetails'
 import { installedHereLine, refusedLine } from './installedHere'
 import { installPackageOf, packageKey, type PackageCard } from './sharedPackages'
-import { extensionPackageSummary, newestShownPackage, noteKeptCopy, packageProgress, showPackage, shownPackages } from './packageReplicas'
+import { extensionPackageSummary, noteKeptCopy, packageProgress, showPackage, shownPackages } from './packageReplicas'
 import { useReplica } from '../../lib/replica'
 import { useSelect } from '../../lib/selectStore'
 import type { HandedConsent } from '@/session/shared/extensions/install-consent-flow'
@@ -261,7 +261,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   const here = hereManifest && installedHere.state === 'value' ? { version: hereManifest.version, origin: installedHere.value.origins[hereManifest.id] } : null
   const installedVersion = here ? here.version : null
   // A newer package of the same App is on screen too: this card says so, and installs that one (摩擦单 F21).
-  const newest = useSelect(shownPackages, (shown) => (manifest ? newestShownPackage(shown, manifest.id) : undefined))
+  const newest = useSelect(shownPackages, (shown) => (manifest ? newestPackageOf(shown.values(), manifest.id) : undefined))
   const newer = manifest && newest && compareExtensionVersions(newest.manifest.version, manifest.version) > 0 ? newest : null
   // What the card offers follows what is installed here, always — installed, updated, uninstalled (摩擦单 F66): the one
   // answer the desktop and the phone share (`cardOffer`).

@@ -97,5 +97,4 @@ export function useOfferedVersions(): Reading<MarketUpdates> {
 definePhoneStore({
   marketListing: phoneProductApi.marketListing,
   marketHistory: phoneProductApi.marketHistory,
-  onRefreshed: (listener) => phoneApps.market.onRefreshed(listener),
 })

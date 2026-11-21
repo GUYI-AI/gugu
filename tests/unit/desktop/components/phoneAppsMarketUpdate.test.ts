@@ -37,7 +37,7 @@ const { useOfferedVersions } = await import('../../../../apps/desktop/src/compon
 const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
 const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
-const { marketUpdates, installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
+const { marketUpdates, installedExtensions, useInstalledApps } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { definePhoneStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/extensions-api')
 
 // What is installed on this phone, as the phone's App store keeps it (phoneApps.ts `listed`), told to the replica on a change.
@@ -102,9 +102,10 @@ const page = (selector: string) => harness.container.ownerDocument.querySelector
 /** The section as the phone's App page holds it: the list, and an App's settings page over it. */
 function Apps() {
   const offered = useOfferedVersions()
+  const installed = useInstalledApps('phone')
   const [manage, setManage] = useState<string | null>(null)
   return createElement(Fragment, null,
-    createElement(AppsSection, { offered, onManage: setManage }),
+    installed.state === 'value' ? createElement(AppsSection, { installed: installed.value, offered, onManage: setManage }) : null,
     manage ? createElement(PhoneAppManage, { extensionId: manage, updateVersion: offered.state === 'value' ? offered.value.offered[manage] : undefined, gone: offered.state === 'value' && offered.value.gone.includes(manage), onClose: () => setManage(null), onViewInMarket: () => setManage(null) }) : null)
 }
 const open = async (id: string) => {
