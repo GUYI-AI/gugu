@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { harnessSupportedFloor, resolveSessionRuntimeCompatible, SessionRuntimeCompatibilityError } from './session-runtime-compatibility';
+import { harnessVersionSupported, resolveSessionRuntimeCompatible, SessionRuntimeCompatibilityError } from './session-runtime-compatibility';
 import type { IExecutionContext } from '../../exec';
 import type { SessionBundleDescriptor } from './capabilities/session-bundle';
 
@@ -384,16 +384,26 @@ describe('resolveSessionRuntimeCompatible — POSIX 上咕咕自己的 sh 启动
   });
 });
 
-describe('harnessSupportedFloor', () => {
-  it('is the highest harness floor across surfaces, ignoring interpreter floors and ranges', () => {
-    expect(harnessSupportedFloor({ runtimeCompatibility: {
-      'acp': { kind: 'semver-supported-floor', supportedFloor: '0.136.0', versionArgs: ['--version'] },
-      'app-server': [
-        { kind: 'semver-supported-floor', supportedFloor: '0.153.0', versionArgs: ['--version'] },
-        { kind: 'semver-supported-floor', supportedFloor: '99.0.0', versionArgs: ['--version'], runtime: 'node' },
-      ],
-    } })).toBe('0.153.0');
-    expect(harnessSupportedFloor({})).toBeNull();
-    expect(harnessSupportedFloor(undefined)).toBeNull();
+describe('harnessVersionSupported', () => {
+  const descriptor = { runtimeCompatibility: {
+    'acp': { kind: 'semver-supported-floor', supportedFloor: '0.136.0', versionArgs: ['--version'] },
+    'app-server': [
+      { kind: 'semver-supported-floor', supportedFloor: '0.153.0', versionArgs: ['--version'] },
+      { kind: 'semver-supported-floor', supportedFloor: '99.0.0', versionArgs: ['--version'], runtime: 'node' },
+    ],
+    'tui': { kind: 'semver-supported-ranges', supportedRanges: ['<1.0.0'], versionArgs: ['--version'] },
+  } } as const;
+  it('meets every declared harness requirement, as session start checks each surface; interpreter floors excluded', () => {
+    expect(harnessVersionSupported(descriptor, '0.160.0')).toBe(true);
+    // Meets the acp floor but not app-server's: a session on that surface would not start.
+    expect(harnessVersionSupported(descriptor, '0.145.0')).toBe(false);
+    // Over every floor but outside the tui range.
+    expect(harnessVersionSupported(descriptor, '1.2.0')).toBe(false);
+  });
+  it('is true with nothing declared and null without a readable version', () => {
+    expect(harnessVersionSupported({}, '1.0.0')).toBe(true);
+    expect(harnessVersionSupported(undefined, '1.0.0')).toBe(true);
+    expect(harnessVersionSupported(descriptor, null)).toBeNull();
+    expect(harnessVersionSupported(descriptor, 'nightly')).toBeNull();
   });
 });

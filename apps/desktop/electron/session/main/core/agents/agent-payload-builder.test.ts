@@ -55,16 +55,17 @@ describe('the declared acp injection timing reaches the renderer payload', () =>
   });
 });
 
-/** First run reuses the copy in use only when it meets the floor the session start enforces. */
-describe('the supported floor reaches the installation status', () => {
+/** First run reuses the copy in use only when session start would accept it. */
+describe('whether session start accepts the copy in use reaches the installation status', () => {
   const status = (id: string, version: string | null) =>
     toAgentInstallationStatus(id, { id, status: 'available', version } as Parameters<typeof toAgentInstallationStatus>[1], undefined);
-  it('reads the declared codex and claude floors against the copy in use', () => {
-    expect(status('codex', '0.160.0').supportedFloor).toEqual({ version: '0.153.0', met: true });
-    expect(status('codex', '0.145.0').supportedFloor).toEqual({ version: '0.153.0', met: false });
-    expect(status('codex', null).supportedFloor).toEqual({ version: '0.153.0', met: null });
-    expect(status('claude', '2.1.69').supportedFloor).toEqual({ version: '2.1.69', met: true });
-    // Negative control: a harness without a declared floor carries no reading.
-    expect(status('cursor', '1.0.0').supportedFloor).toBeUndefined();
+  it('reads the declared codex and claude requirements against the copy in use', () => {
+    expect(status('codex', '0.160.0').versionSupported).toBe(true);
+    expect(status('codex', '0.145.0').versionSupported).toBe(false);
+    expect(status('codex', null).versionSupported).toBeNull();
+    expect(status('claude', '2.1.69').versionSupported).toBe(true);
+    expect(status('claude', '2.1.0').versionSupported).toBe(false);
+    // Negative control: a harness that declares nothing is let through, as session start does.
+    expect(status('cursor', '1.0.0').versionSupported).toBe(true);
   });
 });

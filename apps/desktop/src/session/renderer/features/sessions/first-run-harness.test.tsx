@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
-describe('first-run managed background installation (#7582)', () => {
+describe('first-run agent selection (#7582)', () => {
   it('defaults to Codex, allows both, and continues without waiting for installation', async () => {
     await render();
     expect(choice('codex').checked).toBe(true); expect(choice('claude').checked).toBe(false);

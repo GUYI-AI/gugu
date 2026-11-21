@@ -65,10 +65,10 @@ describe('managed installations survive leaving the selection step (#7582)', () 
 });
 
 describe('first run uses a copy already on this computer when it is new enough', () => {
-  const copy = (status: string, version: string | null, met: boolean | null) => ({ status, version, supportedFloor: { version: '0.153.0', met },
+  const copy = (status: string, version: string | null, supported: boolean | null) => ({ status, version, versionSupported: supported,
     used: { kind: 'auto' }, installations: [{ provenance: { ours: false, kind: 'path' }, status }] });
   function One() { const queue = useFirstRunInstaller(); return <button onClick={() => queue(['codex'])}>Continue</button>; }
-  it('does not install when the local copy meets the floor', async () => {
+  it('does not install when session start would accept the local copy', async () => {
     f.status.mockResolvedValue(copy('available', '0.160.0', true));
     await act(async () => root.render(<FirstRunInstallProvider><One /></FirstRunInstallProvider>));
     await act(async () => host.querySelector('button')!.click());

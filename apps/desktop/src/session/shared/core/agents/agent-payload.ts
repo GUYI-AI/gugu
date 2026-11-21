@@ -410,10 +410,10 @@ export type AgentInstallationStatus = {
   /** Why the last lookup found no usable program; only when `reading` is not-detected or detected-but-broken. */
   lookup?: AgentLookup;
   /**
-   * The oldest version this client runs (`harnessSupportedFloor`) and whether the copy in use meets it;
-   * `met` is null when that copy's version is unknown. Absent when the harness declares no floor.
+   * Whether session start would accept the copy in use on every declared surface (`harnessVersionSupported`);
+   * null when its version is unknown or unreadable.
    */
-  supportedFloor?: { version: string; met: boolean | null };
+  versionSupported?: boolean | null;
   /**
    * 带伴随程序的家(#6335)才有:主程序在前,逐个程序的读数。此时顶层的 `reading` / `status` /
    * `updateAvailable` 是**合并**过的(任一条腿的程序没装 ⇒ 不算装好),`installations` / `used` /

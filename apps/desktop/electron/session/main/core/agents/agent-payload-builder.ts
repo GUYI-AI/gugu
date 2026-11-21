@@ -18,8 +18,7 @@ import type {
 } from '@gugu/session-core/deps/runtime';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
-import { harnessSupportedFloor } from '@gugu/session-core/agents/plugins';
-import semver from 'semver';
+import { harnessVersionSupported } from '@gugu/session-core/agents/plugins';
 import type {
   AgentIconAsset,
   AgentInstallationStatus,
@@ -124,15 +123,13 @@ async function buildOne(
     installations: hostDep?.installations ?? [],
     used,
     usedId: sourceKey(used),
-    ...floorReading(id, usedInst?.version ?? state?.version ?? null),
+    versionSupported: versionSupported(id, usedInst?.version ?? state?.version ?? null),
     ...programs,
   };
 }
 
-function floorReading(id: string, version: string | null): Pick<AgentInstallationStatus, 'supportedFloor'> {
-  const floor = harnessSupportedFloor(pluginRegistry.get(id)?.capabilities.sessionBundle);
-  if (!floor) return {};
-  return { supportedFloor: { version: floor, met: version && semver.valid(version) ? semver.gte(version, floor) : null } };
+function versionSupported(id: string, version: string | null): boolean | null {
+  return harnessVersionSupported(pluginRegistry.get(id)?.capabilities.sessionBundle, version);
 }
 
 /**
@@ -272,7 +269,7 @@ export function toAgentInstallationStatus(
     used,
     usedId: sourceKey(used),
     installOptions,
-    ...floorReading(id, state.version),
+    versionSupported: versionSupported(id, state.version),
   };
 }
 

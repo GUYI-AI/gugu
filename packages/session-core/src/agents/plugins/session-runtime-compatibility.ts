@@ -254,16 +254,18 @@ function rememberVersionReading(context: IExecutionContext, key: string, reading
 }
 
 /**
- * The oldest harness version this client runs on every declared surface (interpreter floors excluded).
- * First run reuses a copy already on the machine when it meets this; session start enforces the same floors.
+ * Would session start accept this harness version on every surface the descriptor declares? The same per-requirement
+ * check session start applies (`runtimeSatisfied`), over each harness requirement; interpreter requirements
+ * (`runtime: 'node'`) read node, not the harness, so they are not this version's to meet. Nothing declared ⇒ true, as
+ * session start lets it through. null when the version is not readable semver.
  */
-export function harnessSupportedFloor(descriptor: Pick<SessionBundleDescriptor, 'runtimeCompatibility'> | undefined): string | null {
-  let floor: string | null = null;
-  for (const entry of Object.values(descriptor?.runtimeCompatibility ?? {}).flat()) {
-    if (entry.kind !== 'semver-supported-floor' || entry.runtime === 'node') continue;
-    if (!floor || semver.gt(entry.supportedFloor, floor)) floor = entry.supportedFloor;
-  }
-  return floor;
+export function harnessVersionSupported(
+  descriptor: Pick<SessionBundleDescriptor, 'runtimeCompatibility'> | undefined,
+  version: string | null,
+): boolean | null {
+  if (!version || !semver.valid(version)) return null;
+  return Object.values(descriptor?.runtimeCompatibility ?? {}).flat()
+    .every((requirement) => requirement.runtime === 'node' || runtimeSatisfied(version, requirement));
 }
 
 /** 装新版 / 改了选择 ⇒ 之前判定兼容的版本全部作废(WeakMap 没有 clear,换一张新的)。 */

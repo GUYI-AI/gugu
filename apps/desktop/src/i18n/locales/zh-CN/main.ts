@@ -305,7 +305,7 @@ export default {
     "helpImproveFailed": "设置保存失败，请重试。",
     "harnessRecommended": "推荐",
     "harnessTitle": "选择智能体",
-    "harnessSub": "可多选，咕咕会在后台安装并管理。",
+    "harnessSub": "可多选。本机已有够新的就直接用，没有或太旧时咕咕在后台装一份。",
     "harnessInstalled": "已安装",
     "harnessLocalUsable": "用你本机的 {{version}}",
     "harnessLocalOutdated": "本机 {{version}} 太旧，咕咕会装一份",

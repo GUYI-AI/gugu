@@ -4,7 +4,7 @@ import { rpc } from '@renderer/lib/ipc'
 /**
  * What first run finds for a harness on this computer. Only `usable` is used as it is; for the other three Gugu
  * installs its own copy without asking ("no one is handed a copy that cannot run").
- * - outdated: runs, but older than the floor this client enforces at session start.
+ * - outdated: runs, but older than session start accepts on some declared surface.
  * - broken: found, but `--version` fails (probe status `error`) or reports no readable version.
  */
 export type LocalCopy =
@@ -18,7 +18,7 @@ export async function readLocalCopy(id: FirstRunHarness): Promise<LocalCopy> {
   const status = await rpc.agents.getAgentInstallationStatus(id)
   if (!status || status.status === 'missing') return { kind: 'missing' }
   if (status.status !== 'available' || !status.version) return { kind: 'broken' }
-  const met = status.supportedFloor ? status.supportedFloor.met : true
+  const met = status.versionSupported
   if (met === true) return { kind: 'usable', version: status.version }
   return met === false ? { kind: 'outdated', version: status.version } : { kind: 'broken' }
 }

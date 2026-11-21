@@ -7,7 +7,6 @@ import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCa
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-import { until } from '../../../support/awaitCondition'
 
 /**
  * A device's heartbeat changes its row every 30 s while a session runs, and each change is a device_changed revision.
@@ -48,7 +47,7 @@ async function mount() {
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(Probe)))
   // The first full read lands (the devices replica's reader is loaded on demand).
-  await until('the first full read rendered both rows', () => mocks.seen.at(-1)?.length === 2)
+  await vi.waitFor(() => expect(mocks.seen.at(-1)?.length).toBe(2))
   mocks.listDevices.mockClear(); mocks.listProjects.mockClear()
   return harness
 }
@@ -105,7 +104,7 @@ function ErrorProbe() {
 it('a failed project read keeps the last projects and marks every machine unread; the next good read clears it', async () => {
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(ErrorProbe)))
-  await until('the first full read rendered both rows', () => mocks.seen.at(-1)?.length === 2)
+  await act(async () => { await Promise.resolve() })
   expect(mocks.seen.at(-1)?.sort()).toEqual(['a:1:read', 'b:0:read'])
 
   // A revision for b's projects fails: b is marked, a keeps its own state, the error still reaches the cursor.
@@ -126,7 +125,7 @@ it('a full read whose project list fails keeps each machine\'s cached projects, 
   mocks.listProjects.mockRejectedValueOnce(new Error('column folders does not exist'))
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(ErrorProbe)))
-  await until('the failed start read marked the cached rows', () => mocks.seen.at(-1)?.some((row) => !row.endsWith(':read')) === true)
+  await act(async () => { await Promise.resolve() })
   expect(mocks.seen.at(-1)?.sort()).toEqual(['a:1:column folders does not exist', 'b:0:column folders does not exist'])
   harness.cleanup()
 })
