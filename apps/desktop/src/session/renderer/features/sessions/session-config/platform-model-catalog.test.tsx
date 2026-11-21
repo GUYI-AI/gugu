@@ -121,21 +121,6 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     expect(frames.every((frame) => frame.known && frame.models.length === 1)).toBe(true);
   });
 
-  it('a catalog restored from the snapshot (no menu details) is not taken as read: the group waits for the read', async () => {
-    let answer!: (rows: unknown) => void;
-    // Every read waits (the feed opening and the restored value each ask once): the group waits for them.
-    io.catalog.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
-    const { platformModels } = await import('@/lib/agentModelReplicas');
-    platformModels.set([], ROWS.map(({ creditMultiplier: _m, creditMultipliers: _ms, contextWindow: _c, reasoningEfforts: _r, ...kept }) => kept));
-    mount(<Probe provider="claude" />);
-    await settle();
-    expect(current).toMatchObject({ known: false, models: [] });
-    await act(async () => { answer(ROWS); });
-    await settle();
-    expect(current!.known).toBe(true);
-    expect(current!.models[0]).toMatchObject({ creditMultiplier: 0.5 });
-  });
-
   it('says the reason the machine gives for not offering the group, though the account has the models', async () => {
     mount(<Probe provider="legless" />);
     await settle();

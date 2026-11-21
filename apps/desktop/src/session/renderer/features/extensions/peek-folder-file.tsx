@@ -29,7 +29,6 @@ function Reachable({ target, tabId, chatId }: { target: FolderPeek; tabId: strin
   const held = useHeldWorkspace(target);
   const [opener, setOpener] = useState<SessionOpener | { failed: unknown } | null>(null);
   const [attempt, setAttempt] = useState(0);
-  // @@@effect-flow(command) - picks which App opens this file, asking the person in the chooser when several can
   useEffect(() => {
     let live = true;
     setOpener(null);
@@ -84,7 +83,6 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
   const project = workspaceSession(target.place) ? null : target.projectId;
   const { workspaceId } = target;
   const [held, setHeld] = useState<'ready' | string | null>(project ? null : 'ready');
-  // @@@effect-flow(lifecycle) - holds the project's workspace (acquire/release lease) while the file is shown
   useEffect(() => {
     if (!project) return undefined;
     let disposed = false;

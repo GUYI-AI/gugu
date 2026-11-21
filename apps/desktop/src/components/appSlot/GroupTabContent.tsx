@@ -224,7 +224,6 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   /** What the update without a click came to, for which package (`installed` false: refused — the bar asks the person). */
   const [held, setHeld] = useState<{ key: string; installed: boolean } | null>(null)
   const updateKey = update ? packageKey(update.card) : null
-  // @@@effect-flow(command) - asks main to update the App on screen from a newer package shared here; its outcome is whether to show the update bar
   useEffect(() => {
     if (!update || !updateKey) return undefined
     let live = true

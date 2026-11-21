@@ -20,6 +20,7 @@ import { cn } from '@renderer/utils/utils';
 import type { CommandId } from '@shared/commands';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { workspaceBackend } from './workspace-backend/workspace-backend';
 import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';

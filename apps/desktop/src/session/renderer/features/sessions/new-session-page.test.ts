@@ -123,12 +123,6 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
   }
 }));
 
-vi.mock('@renderer/features/sessions/create-session-modal/use-project-git-context', () => ({
-  useProjectGitContext: () => ({
-    repositoryWorkspaceId: null
-  })
-}));
-
 vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
   useSessionSettings: () => ({ settings: mocks.sessionSettings, reload: mocks.reloadSettings })
 }));
@@ -655,8 +649,8 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1' })));
     });
-    // 没选 = 项目根目录(这里的 git 上下文桩给的根目录是 null)。
-    expect(mocks.createSessionStateWorkspaceId).toBeNull();
+    // 没选 = 项目根目录(这里的项目桩给的根目录是项目自己的 id)。
+    expect(mocks.createSessionStateWorkspaceId).toBe('project-1');
   });
 
   it('draws the shared machine picker (compact size) in the composer tray', async () => {

@@ -18,6 +18,9 @@ const apiOf = (machine: AutomationMachine) => rpcOn(hostOf(machine)).automations
 
 type MachineEvent = { automationId: string; run?: AutomationRun };
 
+/** A machine's push-fed reading: asked even while the browser says offline, current until its feed says otherwise. */
+const ofMachine = { scope: 'account', networkMode: 'always', fresh: Infinity } as const;
+
 const CHANNELS = { changed: automationChangedChannel, run: automationRunChangedChannel } as const;
 
 /** A machine's feed: each event named reads the entries it concerns again (`refresh`). */
@@ -39,31 +42,25 @@ export type RunStatusFilter = 'done' | 'failed' | 'skipped' | 'all';
 
 export const automations = replica({
   name: 'automations',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
   read: (_owner, machine: AutomationMachine): Promise<Automation[]> => apiOf(machine).listAutomations(),
-  fresh: Infinity,
   watch: machineFeed(['changed'], (machine) => { void automations.refresh(machine); }),
 });
 
 export const automationNextRun = replica({
   name: 'automationNextRun',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
   read: (_owner, machine: AutomationMachine, automationId: string): Promise<AutomationRun | null> =>
     apiOf(machine).getNextScheduledRun(automationId),
-  fresh: Infinity,
   tags: [RUNS],
   watch: machineFeed(['changed', 'run'], (machine, { automationId }) => { void automationNextRun.refresh(machine, automationId); }),
 });
 
 export const automationLatestRun = replica({
   name: 'automationLatestRun',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
   read: (_owner, machine: AutomationMachine, automationId: string): Promise<AutomationRun | null> =>
     apiOf(machine).getLatestRun(automationId),
-  fresh: Infinity,
   tags: [RUNS],
   // The event carries the run: it is the latest one, ❌ read again.
   watch: machineFeed(['run'], (machine, { automationId, run }) => { if (run) automationLatestRun.set([machine, automationId], run); }),
@@ -72,11 +69,9 @@ export const automationLatestRun = replica({
 /** One row more than a page says whether there is a next one. */
 export const automationRunPage = replica({
   name: 'automationRunPage',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
   read: (_owner, machine: AutomationMachine, automationId: string, page: number, status: RunStatusFilter): Promise<AutomationRun[]> =>
     apiOf(machine).listAutomationRuns(automationId, RUN_PAGE_SIZE + 1, page * RUN_PAGE_SIZE, status === 'all' ? undefined : status),
-  fresh: Infinity,
   keep: 60_000,
   tags: [RUNS],
   watch: machineFeed(['run'], (machine, { automationId }) => { void automationRunPage.refresh(machine, automationId); }),
@@ -84,20 +79,16 @@ export const automationRunPage = replica({
 
 export const automationRunCounts = replica({
   name: 'automationRunCounts',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
   read: (_owner, machine: AutomationMachine, automationId: string) => apiOf(machine).countAutomationRunsByStatus(automationId),
-  fresh: Infinity,
   tags: [RUNS],
   watch: machineFeed(['run'], (machine, { automationId }) => { void automationRunCounts.refresh(machine, automationId); }),
 });
 
 export const sessionSchedules = replica({
   name: 'sessionSchedules',
-  scope: 'account',
-  networkMode: 'always',
+  ...ofMachine,
   read: (_owner, machine: AutomationMachine): Promise<SessionSchedule[]> => apiOf(machine).listSessionSchedules(),
-  fresh: Infinity,
   watch: machineFeed(['changed', 'run'], (machine) => { void sessionSchedules.refresh(machine); }),
 });
 

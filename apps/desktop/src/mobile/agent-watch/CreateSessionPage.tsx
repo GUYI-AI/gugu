@@ -404,7 +404,6 @@ function CreateOnMachine({
   const skillEditor = useRef<PromptEditorRef | null>(null)
   const skillDraft = creationSkillInput(skill => skillEditor.current?.insertMention(skill))
 
-  // @@@effect-flow(lifecycle) - acquire this editor's account-bound draft and settle its hydration/cleanup barrier.
   useEffect(() => {
     if (!draftKey) return
     const binding = bindCreationDraft(runtime.thread.composer, draftKey)

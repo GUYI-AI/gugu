@@ -23,7 +23,6 @@ vi.mock('./use-agent-auth-status', () => ({ useAgentAuthStatus: () => ({ auth: n
 
 import { followRendererSession, queryClient as client } from '@/lib/replica';
 import { useAgents } from './use-agents';
-import { agentsAnswerAwaited } from './agents-answer';
 import { useHarnessModelCatalog } from './use-harness-model-catalog';
 import { useHarnessModelCredential } from './use-harness-model-credential';
 
@@ -33,7 +32,7 @@ function Probe() {
   const catalog = useHarnessModelCatalog('claude', 'acp');
   const credential = useHarnessModelCredential('claude', 'opus');
   // What the new-task box holds a place for (initial-session-section `agentOptionsLoading`).
-  seen = { agents, awaited: agentsAnswerAwaited(agents as never, mocks.host.remote), catalog: catalog.state.kind, credential };
+  seen = { agents, awaited: agents.state !== 'error' && mocks.host.remote.online, catalog: catalog.state.kind, credential };
   return null;
 }
 

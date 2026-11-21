@@ -5,7 +5,7 @@ import type { ConnectionMetadataSnapshot } from '@/components/connections/connec
 import { chatChannels, configuredConnections, CONNECTIONS_ON_HOST, integrationsCatalog, integrationStatuses, useOwnerConnectionsReading } from '@/components/connections/connection-replicas';
 import { EMPTY_INTEGRATION_SUMMARIES,useAssistantIntegrationSummaries } from '@/components/assistant/useAssistantIntegrationSummaries';
 import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRead';
-import { refreshTag, useReplica } from '@/lib/replica';
+import { refreshFailure, refreshTag, useReplica } from '@/lib/replica';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { keepLibraryHost, useLibraryHost } from '@renderer/features/library/library-host';
 import { registerIssueMentionIcons } from '@renderer/lib/chat/chat-mention-provider';
@@ -79,7 +79,6 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   const metadata = host.connectionMetadata ?? host.assistantPanel;
   const metadataExpected = host.connectionMetadataExpected ?? host.assistantPanelExpected;
   const ownerMode = !!host.connectionMetadataExpected;
-  // @@@effect-flow(lifecycle) - holds the connection models' change feed for the provider's life (what it shows may be any of them)
   useEffect(() => chatChannels.hold(), []);
   const remote = !!host.remote;
   const [mutatingIntegrationIds, setMutatingIntegrationIds] = useState<Set<string>>(
@@ -100,7 +99,6 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
 
   const listData: IntegrationMetadata[] | null = ownerMode ? ownerView?.items ?? builtinConnectionCatalog(locale)
     : listReading.state === 'value' ? listReading.value : null;
-  // @@@reading-default(paired) - the summaries hook is called on every render; while the list is not known its answer is not drawn (`integrations` is null)
   const summaries = useAssistantIntegrationSummaries(metadata, listData ?? EMPTY_INTEGRATION_SUMMARIES, locale);
   // Includes cached/generated metadata and the first render. A saved row or
   // an older host publication must not restore an unsupported setup entry.
@@ -113,10 +111,9 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
 
   const statusData = ownerMode ? ownerView?.statuses ?? null : statusReading.state === 'value' ? statusReading.value : null;
   const configuredData = ownerMode ? ownerView?.configured ?? null : configuredReading.state === 'value' ? configuredReading.value : null;
-  const errorOf = (reading: { state: string; error?: Error | null }) => reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null;
-  const connectionReadError = ownerMode ? errorOf(ownerReading) : errorOf(statusReading);
-  const configuredConnectionsError = ownerMode ? errorOf(ownerReading) : errorOf(configuredReading);
-  const listError = ownerMode ? null : errorOf(listReading);
+  const connectionReadError = refreshFailure(ownerMode ? ownerReading : statusReading);
+  const configuredConnectionsError = refreshFailure(ownerMode ? ownerReading : configuredReading);
+  const listError = ownerMode ? null : refreshFailure(listReading);
 
   const invalidateStatuses = useCallback(() => {
     // A completed authorization invalidates both the file snapshot and all visible consumers.

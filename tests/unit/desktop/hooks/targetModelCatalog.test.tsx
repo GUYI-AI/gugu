@@ -71,18 +71,18 @@ describe('selected model native Fast capability query', () => {
   })
   it('shows a retryable notice for a failed target read without changing the default catalog', async () => {
     const defaults = { state: native('default-model'), refreshing: false, gugu: { offered: true as const } }
-    harnessModelCatalog.set(['codex', 'acp', 'device-a'], defaults)
+    harnessModelCatalog.set(['device-a', 'codex', 'acp'], defaults)
     read.mockRejectedValueOnce(new Error('target request failed'))
     await harness.render(tree('model-a'))
     await vi.waitFor(() => expect(current).toMatchObject({ kind: 'unavailable' }))
     await vi.waitFor(() => expect(document.body.textContent).toMatch(/无法获取最新内容/))
     expect(offered).toBeUndefined()
-    expect(harnessModelCatalog.peek('codex', 'acp', 'device-a')).toMatchObject({ state: 'value', value: defaults })
+    expect(harnessModelCatalog.peek('device-a', 'codex', 'acp')).toMatchObject({ state: 'value', value: defaults })
     expect(document.body.textContent).not.toContain('target request failed')
     read.mockResolvedValue(native('model-a'))
     const retry = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => /Retry|重试/.test(button.textContent ?? ''))!
     await clickElement(retry)
     await vi.waitFor(() => expect(current).toMatchObject({ kind: 'ready', selected: 'model-a' }))
-    expect(harnessModelCatalog.peek('codex', 'acp', 'device-a')).toMatchObject({ state: 'value', value: defaults })
+    expect(harnessModelCatalog.peek('device-a', 'codex', 'acp')).toMatchObject({ state: 'value', value: defaults })
   })
 })

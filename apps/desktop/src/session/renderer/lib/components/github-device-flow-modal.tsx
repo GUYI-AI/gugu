@@ -13,7 +13,7 @@ import { useLibraryHost, type LibraryHost } from '@renderer/features/library/lib
 import { rpc } from '@renderer/lib/ipc';
 import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { useOptionalGithubContext } from '@renderer/lib/providers/github-context-provider';
+import { cancelGithubConnect as cancelLocalGithubConnect } from '@renderer/lib/providers/github-context-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
   DialogContentArea,
@@ -52,13 +52,12 @@ export function GithubDeviceFlowModal({ host, ...props }: GithubDeviceFlowModalP
 function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubDeviceFlowModalProps, 'host'>) {
   const { toast } = useToast();
   const { translate } = useSessionMessages();
-  const localContext = useOptionalGithubContext();
   const library = useLibraryHost();
   const events = library.github;
   const cancelGithubConnect = useCallback(() => {
-    if (library.remote || library.connectionMetadataExpected || !localContext) void library.github.authCancel();
-    else localContext.cancelGithubConnect();
-  }, [library, localContext]);
+    if (library.remote || library.connectionMetadataExpected) void library.github.authCancel();
+    else cancelLocalGithubConnect();
+  }, [library]);
 
   // Presentational state - updated via IPC events from main process
   const [userCode, setUserCode] = useState<string>('');
@@ -153,7 +152,6 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
   }, [verificationUri]);
 
   // Subscribe to auth events from main process
-  // @@@effect-flow(command) - GitHub device-code sign-in (a flow: the code, its expiry and the poll for approval)
   useEffect(() => {
     // Device code received - display to user
     const cleanupDeviceCode = events.onEvent(githubAuthDeviceCodeChannel, (data) => {
@@ -237,7 +235,6 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
   };
 
   // Keyboard shortcuts (Escape is handled by DialogContent's onEscapeKeyDown)
-  // @@@effect-flow(input) - keyboard shortcuts of the device-code dialog (copy the code, open the page); nothing is read
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'c') {

@@ -1,7 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { useMutation, useMutationState } from '@tanstack/react-query';
-import { refreshFailure, useReplica, refreshTag } from '@/lib/replica';
+import { refreshFailure, refreshTag } from '@/lib/replica';
 import { createElement, type ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -29,6 +29,7 @@ import type {
   SelectedSource,
 } from '@shared/core/agents/agent-payload';
 import { useAgents } from './use-agents';
+import { useHostMachine, useHostReplica } from './host-replica';
 import { agentInstallationStatus, installSourceVersions, refreshAgentReadings } from './agent-replicas';
 
 function opKey(op: 'install' | 'update' | 'uninstall', hostKey: string) {
@@ -36,9 +37,7 @@ function opKey(op: 'install' | 'update' | 'uninstall', hostKey: string) {
 }
 
 export function useInstallSourceVersions(id: string, enabled: boolean) {
-  const remote = useLibraryHost().remote;
-  const reading = useReplica(installSourceVersions, enabled ? [remote?.deviceId ?? null, id] : null, { read: remote?.online !== false });
-  return reading;
+  return useHostReplica(installSourceVersions, enabled ? [id] : null);
 }
 
 /**
@@ -181,7 +180,7 @@ export function useAgentInstallProgress(
 export function useAgentInstallationStatuses() {
   const host = useLibraryHost();
   const agentsRpc = host.agents;
-  const machine = host.remote?.deviceId ?? null;
+  const { machine } = useHostMachine();
   // 装/更新的结果提示原本整条链都是硬编码英文,顶在中文界面上 —— owner 点名的就是这个。
   const { translate } = useSessionMessages();
 
@@ -195,7 +194,7 @@ export function useAgentInstallationStatuses() {
   const nameOf = (id: string) => agentNameMap.get(id) ?? id;
 
   // #6264 资源库 / 会话 / 新建框在别的机器上:问那台机器;它离线时不问,手上有上次的就照旧画。
-  const reading = useReplica(agentInstallationStatus, [machine], { read: host.remote?.online !== false });
+  const reading = useHostReplica(agentInstallationStatus, []);
 
   /**
    * 装完 / 卸完 / 重新检测之后,从安装状态派生的那一族读数一起重读。

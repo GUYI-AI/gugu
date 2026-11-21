@@ -24,14 +24,10 @@ type Plans<T> = {
   describe(value: T, target: Target): Reading
 }
 
-/** The devices by id: a model's arguments are data. */
-const devicesById = new Map<string, Device>()
-
 function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
-  for (const device of devices) devicesById.set(device.device_id, device)
   const readKey = `phone:${plans.key}`
   readOnDevicesWith(readKey, (deviceId) => {
-    const device = devicesById.get(deviceId)
+    const device = devices.find((one) => one.device_id === deviceId)
     if (!device) throw new Error(`No device ${deviceId}`)
     return plans.read({ device, host: marketDeviceHost(device) })
   })
@@ -44,7 +40,6 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
     const query = device.is_online ? readings[next++]! as ReplicaReading<T> : null
     const reading = query?.state === 'value' ? plans.describe(query.value, target) : null
     const unavailable = !query ? 'offline' : query.state === 'error' ? 'unavailable' : query.state === 'unknown' ? 'checking' : null
-    // @@@reading-default(paired) - a device not read yet is not among the ones it is installed on; its row says so by `status` ('checking')
     const present = reading?.present ?? false
     return {
       id: device.device_id,

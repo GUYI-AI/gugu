@@ -174,7 +174,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
     }, (holder) => { setBesideOffline(holder); setWaitingFor(holder) })
   }, [hostedHtml, itemId, t])
-  // @@@effect-flow(lifecycle) - reads the bytes this opening shows (each opening reads again) and releases them when it closes
   useEffect(() => {
     activeKey.current = key
     let live = true, release: PreviewRead['release']

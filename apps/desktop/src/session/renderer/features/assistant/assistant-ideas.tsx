@@ -5,8 +5,8 @@ import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { ideaGroups, type TodayIdea, type TodayRead } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
-import { RefreshFailed } from '@/components/ui/RefreshFailed';
-import { retryOf, type Reading } from '@/lib/replica';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import type { Reading } from '@/lib/replica';
 
 /**
  * #7199 「灵感」:输入框右上方一颗「灵感」胶囊,点开一块面板,一张卡 = 一件它现在就能替你做的事,
@@ -118,27 +118,16 @@ function Note({ children, action, testId }: { children: ReactNode; action?: { la
 
 function IdeasBody({ today, name, fill }: { today: Reading<TodayRead>; name: string; fill: (draft: string) => void }) {
   const { t } = useTranslation('assistant');
-  if (today.state === 'unknown')
-    return (
-      <Note>
-        <span className="inline-flex items-center gap-2">
-          <LoadingIndicator size="inline" />
-          {t('ideas.loading')}
-        </span>
-      </Note>
-    );
-  if (today.state === 'error')
-    return (
-      <Note action={{ label: t('machine.retry'), onClick: retryOf(today) }} testId="assistant-ideas-unreadable">
-        {t('ideas.unreadable')}
-      </Note>
-    );
-  // Its last refresh failed: the ideas read before stay, and the failure is said above them (❌ old ideas as if current).
   return (
-    <>
-      <RefreshFailed reading={today} />
-      <IdeasRead read={today.value} name={name} fill={fill} />
-    </>
+    <ReadingSlot reading={today}
+      placeholder={<Note><span className="inline-flex items-center gap-2"><LoadingIndicator size="inline" />{t('ideas.loading')}</span></Note>}
+      failed={(_error, retry) => (
+        <Note action={{ label: t('machine.retry'), onClick: retry }} testId="assistant-ideas-unreadable">
+          {t('ideas.unreadable')}
+        </Note>
+      )}>
+      {(value) => <IdeasRead read={value} name={name} fill={fill} />}
+    </ReadingSlot>
   );
 }
 

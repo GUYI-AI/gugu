@@ -161,7 +161,6 @@ function LocalCloseDialog({ assistantId, name, deps, onClose }: { assistantId: s
   const [closing, setClosing] = useState(false)
   const [failure, setFailure] = useState<AssistantCloseError | null>(null)
 
-  // @@@effect-flow(command) - the close preflight wakes / checks the home (a cloud computer until online), then lists its sessions once per opened dialog; the confirm closes exactly this plan
   useEffect(() => {
     let cancelled = false
     Promise.resolve(deps.check?.())

@@ -39,7 +39,6 @@ async function openAndRun(tab: ExtensionTabContributionEntry, commandId: string)
 export function createExtensionCommandProvider(): CommandProvider {
   return {
     scopeId: 'app',
-    // @@@reading-default(moment) - the command registry's computed: what is installed not known yet offers no App commands; they join when it is read
     getCommands: () => (peekInstalledAppsTracked()?.allTabContributions ?? [])
       // A file opener needs the file selected by its own menu, not a blank global App page; a card needs its message.
       .filter((tab) => tab.enabled && tab.ownPage && !tab.hidden && !tab.hostSettings)

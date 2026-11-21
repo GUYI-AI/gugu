@@ -282,7 +282,6 @@ const IntegrationsCard: React.FC<{ inSettings?: boolean; inlineDetail?: boolean;
         (await target.integrations.checkConfiguredConnections())[selectedIntegration.id] === true}
       onConnected={reloadConnections}
       onDisconnect={selectedIntegration.id === 'github' ? async () => {
-        // @@@reading-default(moment) - a click on the button drawn for a connected GitHub, whose accounts are read by then
         for (const { accountId } of sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value : []) {
           const result = await host.github.removeAccount(accountId);
           if (!result.success) throw new Error(result.error);

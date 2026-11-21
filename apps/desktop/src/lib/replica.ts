@@ -122,6 +122,9 @@ const definitions = new Map<string, Definition<unknown[], unknown>>()
  */
 const writes = new Map<string, number>()
 
+/** Entries whose last read failed (its failure already logged). */
+const failing = new Set<string>()
+
 const readFromKey = async ({ queryKey }: QueryFunctionContext) => {
   const [name, owner, ...args] = queryKey as [string, string, ...unknown[]]
   const definition = definitions.get(name)
@@ -131,10 +134,13 @@ const readFromKey = async ({ queryKey }: QueryFunctionContext) => {
   const overtaken = () => (writes.get(hash) ?? 0) !== before && queryClient.getQueryData(queryKey) !== undefined
   try {
     const value = await definition.read(owner, ...args)
+    failing.delete(hash)
     if (!overtaken()) return value
   } catch (error) {
-    // Every failed read is logged here, once, with its model (❌ a catch that logs and rethrows in each reader).
-    replicaLog.warn({ model: name, args, error: String(error) }, `${name}: read failed`)
+    // A failed read is logged here with its model, once until the entry reads again (a poll failing every 750 ms says it
+    // once): ❌ a catch that logs and rethrows in each reader.
+    if (!failing.has(hash)) replicaLog.warn({ model: name, args, error: String(error) }, `${name}: read failed`)
+    failing.add(hash)
     if (!overtaken()) throw error
   }
   return queryClient.getQueryData(queryKey)
@@ -759,7 +765,7 @@ export function readOnce<V>(read: () => Promise<V>, options: { retry?: number; r
   })
 }
 
-/** Test seam: the live session as the replica sees it. */
+/** The account the replica follows now: an action that awaited asks whether the person who started it is still signed in. */
 export function replicaAccount(): AccountState { return account }
 
 /** Whether a read of this model's entry (arguments left out match any) is on its way now: e.g. a check running. */

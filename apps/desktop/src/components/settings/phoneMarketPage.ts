@@ -87,7 +87,6 @@ export function useOfferedVersions(): Reading<MarketUpdates> {
     // 「更新到 vX」 from the index in hand at once; the download site is asked behind it, and when the index it brings is
     // another, the buttons are read again from that one (market-snapshot.ts).
     const offRefreshed = phoneApps.market.onRefreshed((refreshed) => refreshed.outcome === 'changed' && void marketUpdates.refresh(PHONE_HOST))
-    // @@@effect-flow(command) - asks the phone's store to fetch the market index; its answer arrives as the onRefreshed push above
     void phoneApps.market.refresh()
     return offRefreshed
   }, [])
@@ -97,5 +96,4 @@ export function useOfferedVersions(): Reading<MarketUpdates> {
 definePhoneStore({
   marketListing: phoneProductApi.marketListing,
   marketHistory: phoneProductApi.marketHistory,
-  onRefreshed: (listener) => phoneApps.market.onRefreshed(listener),
 })

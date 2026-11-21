@@ -10,7 +10,6 @@ import { openAgentHomeImport, readAgentHome } from './ensure-agent-home'
 const agentHome = replica({
   name: 'agentHome',
   scope: 'device',
-  fresh: 0,
   read: (_device: string, machine: string | null, providerId: string) => readAgentHome(providerId, machine),
   // While the home is being prepared for a move, it is read every second until it says it is done.
   refreshEvery: (home) => (home?.migrationPreparation ? 1000 : false),

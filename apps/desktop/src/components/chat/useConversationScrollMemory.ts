@@ -261,7 +261,6 @@ export function useConversationScrollMemory({
     setRevealRequest((n) => n + 1)
   }), [chatId, enabled, isAtBottomRef, setFollowingTail, positionKey])
 
-  // @@@effect-flow(view-state) - restores the saved scroll anchor (loads its message window, measures rows); the message window engine is its own module
   useLayoutEffect(() => {
     const scroller = scrollerRef.current
     if (!chatId || !enabled || !scroller || completedActivationRef.current === activationKey) return

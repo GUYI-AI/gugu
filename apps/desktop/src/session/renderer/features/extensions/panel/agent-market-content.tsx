@@ -40,7 +40,6 @@ export function AgentMarketContent({
   const isError = reading.state === 'error';
   const categoryLabel = (key: AgentMarketCategory) => translate(`extensions.agentCategory.${key}`);
   const search = query.trim();
-  // @@@reading-default(paired) - no agent rows until the list is read; the skeleton and the empty sentence wait on `isPending` / `isError`
   const agents = data ?? [];
   const rows = agents.map((agent) => ({
     agent,

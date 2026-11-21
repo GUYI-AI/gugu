@@ -7,7 +7,7 @@ import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store'
 import { useState } from 'react';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
-import { retryOf, type Reading } from '@/lib/replica';
+import { retryOf, type Reading, valueOf } from '@/lib/replica';
 import { messageForUser } from '@/lib/userFacingError';
 import { Unknown } from '@/components/ui/Unknown';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -76,8 +76,7 @@ const TaskAddItems = observer(function TaskAddItems() {
   const sessionView = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
   // Unknown (undefined) is not evidence the provider cannot fork: startSideSession checks again (canStartSideSession).
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
+  const agents = valueOf(useAgents());
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = terminalShown(useTerminalEnabled());
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});

@@ -13,7 +13,7 @@
 // ⚠️ 深路径,❌ 不走 `@gugu/core` 总入口:那个 barrel 会把 local/ 与 cloud/ 整棵 node 依赖树
 // (node:fs / node:child_process / node:crypto …)拖进浏览器包,web 目标当场打不出来。
 // `shared/agentModelSelection` 是纯模块,本来就是给渲染层与主进程共用的那一份。
-import type { ModelAccessProtocol } from '@gugu/core/shared/agentModelSelection';
+import { isModelAccessProtocol, type ModelAccessProtocol } from '@gugu/core/shared/agentModelSelection';
 
 export const SESSIONPAGE_PLATFORM_CATALOG_CHANNEL = 'sessionpage-platform-catalog:list';
 
@@ -102,6 +102,21 @@ export function parsePlatformReasoningEfforts(value: unknown): string[] | null {
     if (!out.includes(entry.trim())) out.push(entry.trim());
   }
   return out;
+}
+
+/**
+ * 目录里的倍率映射(`credit_multipliers`),只留下这台客户端认识的协议和真实的正数。主进程解析服务端响应、渲染层读目录
+ * 都用这一份。旧版服务端不带这个字段 → 空表 → UI 只是不显示数字。倍率缺失从来不是错误路径。
+ */
+export function parsePlatformCreditMultipliers(value: unknown): Partial<Record<ModelAccessProtocol, number>> {
+  if (!value || typeof value !== 'object') return {};
+  const parsed: Partial<Record<ModelAccessProtocol, number>> = {};
+  for (const [protocol, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!isModelAccessProtocol(protocol)) continue;
+    const ratio = Number(raw);
+    if (Number.isFinite(ratio) && ratio > 0) parsed[protocol] = ratio;
+  }
+  return parsed;
 }
 
 export interface PlatformModelCatalogRequest {

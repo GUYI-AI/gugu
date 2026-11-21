@@ -3,7 +3,7 @@ import { replica } from './replica'
 import { invokeOnMachine } from '../session/renderer/lib/ipc'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../session/shared/core/voice-notes'
 
-/** This computer's calendar. `missing` = none here (a value); `meetings` not carried; read every 30 s while shown and on focus. */
+/** This computer's calendar. `missing` = none here (a value); read every 30 s while shown and on focus. */
 export type DeviceMeetings = { status: 'ok' | 'missing'; meetings?: UpcomingMeeting[] }
 
 const MISSING = new Set(['not_granted', 'unsupported', 'os_permission'])
@@ -21,5 +21,4 @@ export const deviceMeetings = replica({
   // As fresh as its poll: a surface opening within it is no reason to read again.
   fresh: 30_000,
   refreshOnFocus: true,
-  // Only the status (`{"status":"missing"}`, ~70 B with its key): the settings row's first frame.
 })

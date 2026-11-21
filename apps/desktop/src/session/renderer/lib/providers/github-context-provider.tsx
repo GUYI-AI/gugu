@@ -1,6 +1,6 @@
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
-import React, { createContext, useCallback, useContext, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { events, rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import {
@@ -9,14 +9,8 @@ import {
   githubAuthSuccessChannel,
 } from '@shared/events/githubEvents';
 import type { GitHubUser } from '@shared/github';
-import { useToast } from '../hooks/use-toast';
+import { toast as sayToast, useToast } from '../hooks/use-toast';
 import { refreshGitHubAccountState } from '../hooks/useGithubAccounts';
-
-type GithubContextValue = {
-  cancelGithubConnect: () => void;
-};
-
-const GithubContext = createContext<GithubContextValue | null>(null);
 
 /** This machine's GitHub sign-in events: a device-flow outcome is said, and an accounts change refreshes the lists. */
 export function GithubContextProvider({ children }: { children: React.ReactNode }) {
@@ -70,24 +64,14 @@ export function GithubContextProvider({ children }: { children: React.ReactNode 
     };
   }, [handleDeviceFlowSuccess, handleDeviceFlowError]);
 
-  const cancelGithubConnect = useCallback(() => {
-    void rpc.github.authCancel();
-    toast({
-      title: 'GitHub connection unsuccessful',
-      description: 'Device flow was canceled',
-    });
-  }, [toast]);
-
-  const value: GithubContextValue = { cancelGithubConnect };
-
-  return <GithubContext.Provider value={value}>{children}</GithubContext.Provider>;
+  return <>{children}</>;
 }
 
-export function useOptionalGithubContext() { return useContext(GithubContext); }
-export function useGithubContext() {
-  const ctx = useContext(GithubContext);
-  if (!ctx) {
-    throw new Error('useGithubContext must be used inside GithubContextProvider');
-  }
-  return ctx;
+/** Cancel this machine's device flow, and say so. */
+export function cancelGithubConnect(): void {
+  void rpc.github.authCancel();
+  sayToast({
+    title: 'GitHub connection unsuccessful',
+    description: 'Device flow was canceled',
+  });
 }

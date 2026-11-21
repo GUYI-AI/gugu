@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { replica, useReplica, refreshFailure } from '@/lib/replica';
-import { catalogDetailed, followCatalogChanges, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
+import { followCatalogChanges, platformModels } from '@/lib/agentModelReplicas';
 import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { harnessModelCatalog } from '@renderer/lib/stores/agent-replicas';
@@ -208,12 +208,8 @@ export const sessionPlatformSelection = replica({
   },
 });
 
-/**
- * The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. Only for a
- * catalog as read (`catalogDetailed`): one restored from the snapshot carries no multipliers or levels.
- */
+/** The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. */
 function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
-  if (!catalogDetailed(catalog)) throw new Error('platformModelsFor needs the catalog as read (with its menu details)');
   const protocol = platformWireProtocol(providerId) as PlatformModelProtocol | null;
   if (!protocol || !PROTOCOLS.includes(protocol)) return [];
   return catalog
@@ -222,10 +218,10 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
       id: model.id,
       displayName: model.displayName,
       protocol,
-      // null: the catalog has no multiplier for this protocol, or no context window (checked above: the details were read).
-      creditMultiplier: model.creditMultipliers![protocol] ?? null,
+      // null: the catalog has no multiplier for this protocol, no context window, or says nothing of the levels.
+      creditMultiplier: model.creditMultipliers?.[protocol] ?? null,
       contextWindow: model.contextWindow ?? null,
-      reasoningEfforts: model.reasoningEfforts!,
+      reasoningEfforts: model.reasoningEfforts ?? null,
       requiresMembership: model.requiresMembership,
       hidden: model.hidden,
     }));
@@ -247,8 +243,8 @@ export function usePlatformModelCatalog(
   const hostMachine = host?.deviceId ?? null;
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
   const online = machine === null || machine !== hostMachine || host?.online !== false;
-  const catalog = useDetailedPlatformCatalog(providerId !== null);
-  const harness = useReplica(harnessModelCatalog, providerId ? [providerId, surface, machine] : null, { read: online });
+  const catalog = useReplica(platformModels, providerId !== null ? [] : null);
+  const harness = useReplica(harnessModelCatalog, providerId ? [machine, providerId, surface] : null, { read: online });
   const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
 
   // Offered or not is the machine's own gate (sessionpagePlatformGate), answered with its harness catalog. Not answered
@@ -261,7 +257,7 @@ export function usePlatformModelCatalog(
   );
   const refresh = () => {
     void platformModels.refresh();
-    if (providerId) void harnessModelCatalog.refresh(providerId, surface, machine);
+    if (providerId) void harnessModelCatalog.refresh(machine, providerId, surface);
     if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
   };
   // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).
@@ -272,7 +268,6 @@ export function usePlatformModelCatalog(
     && models.some((model) => model.id === selection.value.agentDefault!.modelId && offeredInModelPicker(model))
     ? selection.value.agentDefault : null;
   return {
-    // @@@reading-default(paired) - while `known` is false the list means nothing: every surface drawing it gates on `known`
     models: known ? models : [],
     agentDefault,
     sessionSelection: selection.state === 'value' ? selection.value.sessionSelection : undefined,

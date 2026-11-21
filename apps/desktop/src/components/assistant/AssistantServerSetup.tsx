@@ -91,7 +91,6 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
     }
   }
 
-  // @@@effect-flow(command) - resumes the persisted server-setup operation once on entry (a setup step)
   useEffect(() => {
     let active = true
     // StrictMode's discarded mount must not start and immediately cancel the persisted operation.

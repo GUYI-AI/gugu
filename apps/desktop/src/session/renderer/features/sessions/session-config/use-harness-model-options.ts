@@ -1,6 +1,7 @@
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { valueOf } from '@/lib/replica';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import { harnessCatalogToOptions } from './harness-model-field';
 
