@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { pauseAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
+import { stopAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
 import { useTranslation } from 'react-i18next'
 import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
@@ -62,7 +62,7 @@ function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: 
   // Pulses on avatars scrolled out of the message list stop; the ones on screen keep pulsing.
   const badge = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (running && badge.current) return pauseAnimationsOffscreen(badge.current)
+    if (running && badge.current) return stopAnimationsOffscreen(badge.current)
   }, [running])
   return (
     <div
