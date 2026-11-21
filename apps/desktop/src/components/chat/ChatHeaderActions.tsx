@@ -5,7 +5,6 @@ import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/t
 import { useChatStore } from '../../store/chatContext'
 import { LayoutGrid, MessageSquare, SquarePen, Users } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import type { groupAgentStatusIndicatorProps } from '../../lib/groupAgentStatus'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
@@ -36,7 +35,6 @@ interface ChatHeaderActionsProps {
     /** null until the roster is read: the count is a placeholder, ❌ 0. */
     snapshot: GroupCollabSnapshot | null
     settings: GroupChatSettings | null
-    statusIndicatorProps?: ReturnType<typeof groupAgentStatusIndicatorProps>
     onReload: () => Promise<void>
   }
   moreButtonRef: RefObject<HTMLButtonElement | null>

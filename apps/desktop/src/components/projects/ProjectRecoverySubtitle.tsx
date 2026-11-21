@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n/registerMessagingCatalog'
 import type { UnavailableProject } from '@/session/shared/projects'
 import { archiveUnavailableProjects, projectRecoveryMessage, recoverUnavailableProject, useUnavailableProjects } from '@/lib/projectRecovery'
 import { readArchivedGroups } from '@/lib/archivedGroupsRead'
@@ -11,6 +13,7 @@ import './projectRecovery.css'
 
 /** The status and its two explicit actions occupy the existing second line. */
 export function ProjectRecoverySubtitle({ project }: { project: UnavailableProject }) {
+  const { t } = useTranslation('messaging')
   const reading = useUnavailableProjects()
   const [confirmed, setConfirmed] = useState<UnavailableProject[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -27,7 +30,7 @@ export function ProjectRecoverySubtitle({ project }: { project: UnavailableProje
   const askToClean = async () => {
     setError('')
     const result = await reading.refetch()
-    if (result.error) { setError('无法核对项目状态，请稍后再试。'); return }
+    if (result.error) { setError(t('projectRecovery.checkFailed')); return }
     const projects = (result.data ?? []).filter(row => row.chatId && !readArchivedGroups().has(row.chatId))
     if (projects.length) setConfirmed(projects)
   }
@@ -42,21 +45,21 @@ export function ProjectRecoverySubtitle({ project }: { project: UnavailableProje
     finally { setBusy(false) }
   }
   return <>
-    <span className="gg-project-unavailable-status"><Chip>失效</Chip>{' '}本机找不到文件夹</span>
+    <span className="gg-project-unavailable-status"><Chip>{t('projectRecovery.unavailable')}</Chip>{' '}{t('projectRecovery.folderMissing')}</span>
     <span className="gg-project-recovery-actions" onClick={event => event.stopPropagation()}>
-      <Button size="sm" disabled={busy} onClick={() => void recover()}>恢复</Button>
-      <Button size="sm" disabled={busy || !project.chatId} onClick={() => void askToClean()}>清理</Button>
+      <Button size="sm" disabled={busy} onClick={() => void recover()}>{t('projectRecovery.restore')}</Button>
+      <Button size="sm" disabled={busy || !project.chatId} onClick={() => void askToClean()}>{t('projectRecovery.clean')}</Button>
     </span>
     {error && !confirmed && <span role="alert" className="gg-project-recovery-error">{error}</span>}
-    {confirmed && <Sheet onClose={() => { if (!busy) setConfirmed(null) }} desktopWidth="380px" ariaLabel="清理失效项目" testId="project-cleanup-confirm">
+    {confirmed && <Sheet onClose={() => { if (!busy) setConfirmed(null) }} desktopWidth="380px" ariaLabel={t('projectRecovery.cleanLabel')} testId="project-cleanup-confirm">
       <div className="flex flex-col gap-4 p-6" onClick={event => event.stopPropagation()}>
-        <h2 className="font-semibold text-[length:var(--font-title)]">清理 {confirmed.length} 个失效项目？</h2>
+        <h2 className="font-semibold text-[length:var(--font-title)]">{t('projectRecovery.cleanTitle', { count: confirmed.length })}</h2>
         <ul className="flex max-h-64 flex-col gap-3 overflow-y-auto">
           {confirmed.map(row => <li key={row.id} className="flex items-center gap-3"><Avatar variant="group" name={row.name} seed={row.chatId ?? row.id} size={28} /><span>{row.name}</span></li>)}
         </ul>
-        <p className="text-[var(--muted-fg)]">它们的群会收起，之后还能恢复。</p>
+        <p className="text-[var(--muted-fg)]">{t('projectRecovery.cleanBody')}</p>
         {error && <p role="alert" className="text-[var(--danger)]">{error}</p>}
-        <div className="flex justify-end gap-2"><Button size="sm" disabled={busy} onClick={() => setConfirmed(null)}>取消</Button><Button variant="primary" size="sm" disabled={busy} onClick={() => void clean()}>清理</Button></div>
+        <div className="flex justify-end gap-2"><Button size="sm" disabled={busy} onClick={() => setConfirmed(null)}>{t('projectRecovery.cancel')}</Button><Button variant="primary" size="sm" disabled={busy} onClick={() => void clean()}>{t('projectRecovery.clean')}</Button></div>
       </div>
     </Sheet>}
   </>

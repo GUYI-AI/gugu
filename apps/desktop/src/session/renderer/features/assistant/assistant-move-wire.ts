@@ -336,7 +336,7 @@ export async function openSource(env: MoveEnv, direction: MoveDirection, sourceH
     const prepared = await prepareLocalHome(true);
     const home: AssistantHomePlace = { kind: 'computer', deviceId: env.localDeviceId, thisDevice: true, label: null, online: true, known: true };
     const machine = await openAssistantMachine(home, prepared.workdir);
-    return sideOf(machine, '这台电脑', env.assistantId, prepared.workdir, env.localDeviceId, prepared.workdir);
+    return sideOf(machine, 'this computer', env.assistantId, prepared.workdir, env.localDeviceId, prepared.workdir);
   }
   // 搬回本机:云上的家要先醒着(管家有家就放行,会员到期也行、不计费)。
   const deviceId = sourceHome.deviceId;
@@ -344,7 +344,7 @@ export async function openSource(env: MoveEnv, direction: MoveDirection, sourceH
   await cloudDeviceReady(deviceId);
   const workdir = savedWorkdir ?? await cloudWorkdir(deviceId, env.assistantId);
   const machine = await openAssistantMachine({ kind: 'cloud', deviceId }, workdir);
-  return sideOf(machine, '云上', env.assistantId, machine.home, deviceId, workdir);
+  return sideOf(machine, 'cloud', env.assistantId, machine.home, deviceId, workdir);
 }
 
 export function buildMoveDeps(
@@ -402,7 +402,7 @@ export function buildMoveDeps(
         await cloudDeviceReady(deviceId);
         const workdir = await cloudWorkdir(deviceId, env.assistantId);
         const machine = await openAssistantMachine({ kind: 'cloud', deviceId }, workdir);
-        return sideOf(machine, '云上', env.assistantId, machine.home, deviceId, workdir);
+        return sideOf(machine, 'cloud', env.assistantId, machine.home, deviceId, workdir);
       },
       restart: () => restartAssistant(env.assistantId),
       restoreOnline: () => restoreOnlineAssistant(env.assistantId),
@@ -423,7 +423,7 @@ export function buildMoveDeps(
       const prepared = await prepareLocalHome();
       localWorkdir = prepared.workdir;
       const home: AssistantHomePlace = { kind: 'computer', deviceId: env.localDeviceId, thisDevice: true, label: null, online: true, known: true };
-      return sideOf(await openAssistantMachine(home, prepared.workdir), '这台电脑', env.assistantId, prepared.workdir, env.localDeviceId, prepared.workdir);
+      return sideOf(await openAssistantMachine(home, prepared.workdir), 'this computer', env.assistantId, prepared.workdir, env.localDeviceId, prepared.workdir);
     },
     async adopt() {
       const workdir = localWorkdir ?? (await prepareLocalHome()).workdir;

@@ -32,12 +32,11 @@ export const PAGE_OCCLUDER_SELECTOR = [
   '[data-sonner-toast]',
   '.pswp',
   '[data-pane-edge-preview]',
-  '[data-block-drop-preview]',
   '[data-occludes-browser-page]',
 ].join(', ');
 
 /** 选择器里用到的属性:它们在已有元素上被打上 / 改掉,那个元素也要进集合。 */
-const OCCLUDER_ATTRIBUTES = ['data-slot', 'role', 'data-sonner-toast', 'data-occludes-browser-page', 'data-pane-edge-preview', 'data-block-drop-preview'];
+const OCCLUDER_ATTRIBUTES = ['data-slot', 'role', 'data-sonner-toast', 'data-occludes-browser-page', 'data-pane-edge-preview'];
 
 /**
  * @@@occluder-set 文档里此刻带浮层标记的元素。❌ 每次检测都按选择器扫整个文档:页签每帧(跟随移动)和每 250ms 都要问一次,

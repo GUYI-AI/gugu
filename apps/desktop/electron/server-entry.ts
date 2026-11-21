@@ -367,7 +367,7 @@ async function runCommand(command: string | undefined, args: string[]): Promise<
       const i = args.indexOf('--account')
       const requested = i >= 0 ? args[i + 1] : undefined
       if (!account || (i >= 0 && requested !== account.userId)) {
-        stderr(account ? `当前账号是 ${account.email ?? account.userId}，与请求的账号不符。` : '这台机器上还没有配置账号。')
+        stderr(account ? `当前账号是 ${account.email ?? account.userId}，与请求的账号不符。` : '这台机器上尚未配置账号。')
         return process.exit(78)
       }
       const userId = account.userId

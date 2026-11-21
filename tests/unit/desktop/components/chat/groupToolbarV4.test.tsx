@@ -9,7 +9,6 @@ import { UI_EVENTS } from '../../../../../apps/desktop/src/lib/uiEvents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
-import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop/src/lib/groupAgentStatus'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
 import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
@@ -54,12 +53,11 @@ beforeEach(() => {
 })
 afterEach(() => { runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = [] }); harness.cleanup(); resizeCallbacks.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[]; status?: 'working' | 'needs_user' } = {}) {
+async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolean; create?: boolean; menu?: boolean; infoShown?: boolean; stripNarrow?: boolean; pinned?: boolean; muted?: boolean; topics?: ChatItem[] } = {}) {
   if (options.stripNarrow) { harness.container.className = 'session-tab-bar'; harness.container.setAttribute('data-strip-narrow', '') }
   const room = {
     snapshot: { humans: [{ id: 'human' }], agents: [{ id: 'agent-1' }, { id: 'agent-2' }] } as GroupCollabSnapshot,
     settings: { my_role: 'member', can_manage: false, allow_member_invite: false } as GroupChatSettings,
-    statusIndicatorProps: { role: 'img' as const, 'data-agent-display-status': options.status ?? 'working', 'aria-label': 'Working' } as ReturnType<typeof groupAgentStatusIndicatorProps>,
     onReload: vi.fn(async () => {}),
   }
   const chat = { id: 'chat', kind, is_pinned: options.pinned ?? false, notification_level: options.muted ? 'none' : 'all' }
@@ -108,11 +106,6 @@ describe('final group toolbar v4', () => {
     expect(members.title).toBe('成员列表')
   })
 
-  it.each(['working', 'needs_user'] as const)('[immediate] member pill omits the %s status glyph', async (status) => {
-    await header('group', { status })
-    expect(button('成员列表')?.querySelector('[data-agent-display-status]')).toBeNull()
-  })
-
   it.each([['en-US', enMessaging, 'Apps'], ['zh-CN', zhMessaging, '应用']] as const)('[immediate] %s uses the short Apps label', (_locale, catalog, label) => {
     expect(catalog.header.apps).toBe(label)
   })
@@ -127,7 +120,6 @@ describe('final group toolbar v4', () => {
     expect(button('文件')).toBeUndefined()
     expect(menuItem('搜索聊天记录')).toBeDefined()
     expect(menuItem('文件')).toBeDefined()
-    expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
   it('#2548 with the desktop inner column on this chat: only topics leave the bar (the column lists them); the members button stays', async () => {

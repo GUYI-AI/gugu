@@ -75,7 +75,7 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
     ...original,
     rpc: testRpc,
     rpcOn: () => testRpc,
-    // 「关掉并切换」的进度由测试按主进程的样子推。
+    // 「关闭并切换」的进度由测试按主进程的样子推。
     onMachineEvent: ((machine, event, cb) => {
       if (event.name !== 'subscriptions:switch-progress') return original.onMachineEvent(machine, event, cb);
       const listener = cb as (data: { providerId: string; closed: number; total: number }) => void;
@@ -173,7 +173,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     selectConnection: async ({ providerId, connectionId, stopBusySessions }: { providerId?: string; connectionId: string; stopBusySessions?: boolean }) => {
       control.stopBusySessions.push(stopBusySessions === true);
       if (stopBusySessions && control.closeHold) await control.closeHold;
-      // 「关掉并切换」= 正在工作的也关掉:宿主不再拒。
+      // 「关闭并切换」= 正在工作的也关掉:宿主不再拒。
       if (control.rejectSelect && !(stopBusySessions && control.selectBusy && !control.oldHost)) {
         return { success: false, error: { type: 'invalid-state', message: control.selectMessage, ...(control.selectBusy ? { sessionsBusy: control.selectBusy } : {}) } };
       }
@@ -603,7 +603,7 @@ it('a refusal offers one click that closes the working sessions and switches to 
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
   await until('the refusal offers to close and switch', () => row.querySelector('[data-testid="subscription-close-and-switch"]') !== null);
   const closeAndSwitch = row.querySelector('[data-testid="subscription-close-and-switch"]') as HTMLButtonElement;
-  expect(closeAndSwitch.textContent).toBe('关掉并切换');
+  expect(closeAndSwitch.textContent).toBe('关闭并切换');
   expect(control.stopBusySessions).toEqual([false]);
   expect(control.connections.find(c => c.current)?.id).toBe('native');
 
@@ -611,7 +611,7 @@ it('a refusal offers one click that closes the working sessions and switches to 
   let release!: () => void;
   control.closeHold = new Promise<void>((resolve) => (release = resolve));
   closeAndSwitch.click();
-  await until('the row says it is closing', () => row.querySelector('.subscription-switch-progress')?.textContent?.startsWith('正在关掉 Codex 会话，关完就切换') === true);
+  await until('the row says it is closing', () => row.querySelector('.subscription-switch-progress')?.textContent?.startsWith('正在关闭 Codex 会话，完成后切换') === true);
   expect(row.querySelector('[data-testid="subscription-close-and-switch"]')).toBeNull();
   expect(row.querySelector('[role="alert"]')).toBeNull();
   // 进度条读主进程报的真数:关完几个 / 一共几个;还没报时是空条、不写数。
@@ -650,7 +650,7 @@ it('a host too old to close working sessions says to update it instead of offeri
   await until('the refusal offers to close and switch', () => row.querySelector('[data-testid="subscription-close-and-switch"]') !== null);
   (row.querySelector('[data-testid="subscription-close-and-switch"]') as HTMLButtonElement).click();
   await until('the outdated host is named', () => row.querySelector('[role="alert"]') !== null);
-  expect(row.querySelector('[role="alert"]')?.textContent).toBe('那台机器上的咕咕版本太旧，关不掉正在工作的会话。更新后再切换。');
+  expect(row.querySelector('[role="alert"]')?.textContent).toBe('该设备上的咕咕版本过旧，无法关闭正在工作的会话。请更新后再切换。');
   expect(row.querySelector('[data-testid="subscription-close-and-switch"]')).toBeNull();
   expect(control.stopBusySessions).toEqual([false, true]);
   expect(control.connections.find(c => c.current)?.id).toBe('native');

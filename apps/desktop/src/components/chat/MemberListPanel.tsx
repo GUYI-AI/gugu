@@ -108,7 +108,7 @@ const agentRowEstimate = () => 58
 const MEMBER_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' }
 
 /**
- * 倾听档位。@@@5856 档位收成两档之后,这里从「一排分段按钮」改成**一枚开关**:
+ * 收听模式。@@@5856 档位收成两档之后,这里从「一排分段按钮」改成**一枚开关**:
  * 两个值的东西不需要两个按钮占一整行 —— 那条灰底三连在视觉上不协调。
  * 现在一行只留当前档位本身,点一下就翻到另一档。
  * 变更走 useListenModeEditControls 那条**现成**的 mutation(chat_members.listen_mode);
@@ -123,12 +123,11 @@ function ListenModeToggle({
   onChange?: (mode: ListenMode) => void
   busy?: boolean
 }) {
-  const { t } = useTranslation('messaging')
+  const { t } = useTranslation(['messaging', 'contacts'])
   const editable = !!onChange
   const next: ListenMode = value === 'passive' ? 'active' : 'passive'
-  const mode = value === 'passive' ? 'mentions' : 'all'
   return (
-    <Hint label={t(`group.memberList.listen.${mode}Hint`)} side="top">
+    <Hint label={t(`group.memberList.listen.${value}Hint`)} side="top">
       <Button
         variant="ghost"
         size="sm"
@@ -139,7 +138,7 @@ function ListenModeToggle({
         onClick={editable ? (event) => { event.stopPropagation(); onChange?.(next) } : undefined}
         style={listenModeToggleStyle(editable)}
       >
-        {t(`group.memberList.listen.${mode}`)}
+        {t(value === 'passive' ? 'profile.listenModes.passive' : 'profile.listenModes.proactive', { ns: 'contacts' })}
       </Button>
     </Hint>
   )

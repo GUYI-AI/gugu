@@ -183,7 +183,6 @@ export {
   // 随心跳上云的会话状态摘要:机器离线后手机只剩它可读。同上,经桥拿。
   sessionpageSessionDigest,
   // server 换版看的忙闲(activity.json)。同上,经桥拿。
-  sessionpageBusyForVersionSwitch,
   sessionpageVersionSwitchActivity,
   sessionpageBootFailures,
   onSessionpageAuthorizationActivityChange,

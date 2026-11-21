@@ -28,7 +28,7 @@ it.each([400, 900])('keeps waiting beside the attachment and leaves its cancel c
   render()
   await until('composer mounted', () => !!host!.querySelector('[data-slot="composer-bar"]'))
   const height = host.getBoundingClientRect().height
-  render('附件传完就发送…')
+  render('附件上传完成后发送…')
   await until('waiting hint mounted', () => !!host!.querySelector('[data-slot="composer-attachment-status"]'))
   const status = host.querySelector<HTMLElement>('[data-slot="composer-attachment-status"]')
   expect(status).not.toBeNull()

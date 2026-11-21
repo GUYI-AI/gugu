@@ -115,6 +115,7 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
           signInExpiredAt: device?.signInExpiredAt,
           notices: device?.notices,
           serverUpdate: device?.serverUpdate,
+          signIn: () => void remoteHostsStore.signIn(target.deviceId),
           translate,
         })
       : null,

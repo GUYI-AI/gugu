@@ -38,10 +38,10 @@ describe('scheduleRuleText / scheduleMissText', () => {
     expect(scheduleRuleText({ expr: '', at: NOW }, 'zh-CN')).toBeNull();
     expect(scheduleRuleText({ expr: '0 9 * * 1-5' }, 'zh-CN')).toMatch(/09:00/);
   });
-  it('认得的原因各一句,认不出的只说没送到 / 错过了(❌ 原因码进文案)', () => {
-    expect(scheduleMissText('missed', 'deadline_exceeded', '今天 09:00', translate)).toBe('今天 09:00 错过了：这台机器当时没开');
-    expect(scheduleMissText('failed', 'interrupted_by_restart', '今天 09:00', translate)).toBe('今天 09:00 没送到：当时咕咕重启了');
-    expect(scheduleMissText('failed', 'delivery_failed', '今天 09:00', translate)).toBe('今天 09:00 没送到');
-    expect(scheduleMissText('missed', undefined, '今天 09:00', translate)).toBe('今天 09:00 错过了');
+  it('认得的原因各一句,认不出的只说未送达 / 已错过(❌ 原因码进文案)', () => {
+    expect(scheduleMissText('missed', 'deadline_exceeded', '今天 09:00', translate)).toBe('今天 09:00 已错过：本机当时未开机');
+    expect(scheduleMissText('failed', 'interrupted_by_restart', '今天 09:00', translate)).toBe('今天 09:00 未送达：咕咕已重启');
+    expect(scheduleMissText('failed', 'delivery_failed', '今天 09:00', translate)).toBe('今天 09:00 未送达');
+    expect(scheduleMissText('missed', undefined, '今天 09:00', translate)).toBe('今天 09:00 已错过');
   });
 });

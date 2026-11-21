@@ -7,6 +7,7 @@
  * 只在咕咕开着(含「后台守着」)时活着 —— 第一版不接推送(owner 2026-10-15)。被划掉之后心跳停,2 分钟后判离线。
  * 先登记再订频道:频道的放行看「这台设备在不在这个账号名下」,行还没有就会被拒。
  */
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { useSyncExternalStore } from 'react'
 import {
   deviceRpcChannelName,
@@ -226,14 +227,14 @@ export function startPhoneDevice(options: {
     const host = await nativeAgent.hostState({ ownerId: userId })
     if (!alive) return
     publish({ host, ...(host.lastHeartbeatAt !== undefined ? { lastHeartbeatAt: host.lastHeartbeatAt } : {}), ...(host.ready ? { link: { state: 'online' as const, since: snapshot.link.state === 'online' ? snapshot.link.since : Date.now() } }
-      : host.status === 'failed' ? { link: { state: 'error' as const, message: host.error ?? '手机宿主启动失败', at: Date.now() } } : {}) })
+      : host.status === 'failed' ? { link: { state: 'error' as const, message: host.error ?? mobileWorkspaceText('phoneDevice.hostStartFailed'), at: Date.now() } } : {}) })
   }
 
   let rpcHost: ReturnType<typeof createPhoneDeviceRpcHost> | null = null
   const join: JoinDeviceTopic = (name, handlers) => new Promise((resolve, reject) => {
     let topic: ManagedRealtimeChannel | null = null
     let joined = false
-    const timer = setTimeout(() => { reject(new Error('手机设备频道订阅超时')); if (topic) unsubscribeAuthenticatedRealtimeChannel(topic) }, 12_000)
+    const timer = setTimeout(() => { reject(new Error(mobileWorkspaceText('phoneDevice.channelTimeout'))); if (topic) unsubscribeAuthenticatedRealtimeChannel(topic) }, 12_000)
     const create = () => dataClient.channel(name, { config: { private: true, broadcast: { self: false, ack: true } } })
       .on('broadcast', { event: '*' }, handlers.onMessage)
     topic = subscribeAuthenticatedRealtimeChannel(create, `phone-device-asker:${name}`, {
@@ -247,7 +248,7 @@ export function startPhoneDevice(options: {
       },
       onStatus: (status, err) => {
         if (!isSubscribeFailure(status)) return
-        const error = err ?? new Error(`手机设备频道断开:${subscribeStatusName(status)}`)
+        const error = err ?? new Error(mobileWorkspaceText('phoneDevice.channelClosed', { status: subscribeStatusName(status) }))
         if (!joined) {
           clearTimeout(timer)
           reject(error)
@@ -284,7 +285,7 @@ export function startPhoneDevice(options: {
       await withPhoneHostAuthHandoff(async () => {
         if (!alive || !deviceId || !installId || !info) return
         const currentAuth = getRendererSession()
-        if (!currentAuth || currentAuth.user.id !== userId) throw new Error('手机宿主的登录状态已改变')
+        if (!currentAuth || currentAuth.user.id !== userId) throw new Error(mobileWorkspaceText('phoneDevice.hostAuthChanged'))
         const auth = phoneHostSessionForHandoff(currentAuth)
         await nativeAgent.configure({ ownerId: userId, deviceId, installId, deviceInfo: info,
           supabaseUrl: getSupabaseUrl(), supabaseAnonKey: getSupabaseAnonKey(), accessToken: auth.access_token,
@@ -346,7 +347,7 @@ export function startPhoneDevice(options: {
       },
       onStatus: (status, err) => {
         if (!isSubscribeFailure(status)) return
-        const message = err instanceof Error ? err.message : `频道没订上:${subscribeStatusName(status)}`
+        const message = err instanceof Error ? err.message : mobileWorkspaceText('phoneDevice.channelSubscribeFailed', { status: subscribeStatusName(status) })
         joined = false
         log.warn({ status: subscribeStatusName(status), error: message }, 'phone device channel failed')
         publish({ link: { state: 'error', message, at: Date.now() } })
@@ -531,17 +532,17 @@ async function retainPhoneAgentDevice(userId: string, deviceId: string): Promise
   const host = await nativeAgent.hostState({ ownerId: userId })
   if (!host.sessions.length) return false
   if (host.ownerId !== userId || host.deviceId !== deviceId || thisPhoneDeviceId(userId) !== deviceId || getRendererSession()?.user.id !== userId) {
-    throw new Error('手机会话与当前账号或设备不一致')
+    throw new Error(mobileWorkspaceText('phoneDevice.sessionMismatch'))
   }
   const { data, error } = await identityDb.from('gugu_devices').select('capabilities').eq('user_id', userId).eq('device_id', deviceId).maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) return false
   const capabilities = data.capabilities
-  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities) || capabilities.host_kind !== 'phone') throw new Error('手机设备登记信息不一致')
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities) || capabilities.host_kind !== 'phone') throw new Error(mobileWorkspaceText('phoneDevice.registrationMismatch'))
   // A newer user action may already have enabled either endpoint again.
   const settings = readPhoneDeviceSettings(userId)
   if (settings.enabled || settings.hostEnabled) return true
-  if (getRendererSession()?.user.id !== userId) throw new Error('手机宿主的登录状态已改变')
+  if (getRendererSession()?.user.id !== userId) throw new Error(mobileWorkspaceText('phoneDevice.hostAuthChanged'))
   const updated = await identityDb.from('gugu_devices').update({ status: 'offline', updated_at: new Date().toISOString(), capabilities: { ...capabilities, runtimes: [] } }).eq('user_id', userId).eq('device_id', deviceId)
   if (updated.error) throw new Error(updated.error.message)
   return true

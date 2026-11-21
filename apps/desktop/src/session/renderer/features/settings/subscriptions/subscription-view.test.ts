@@ -61,8 +61,8 @@ describe('「订阅」页一行里的字', () => {
   });
 
   it('用了多少:有次数给次数，否则百分比', () => {
-    expect(usedText({ usedPercent: 0, used: 0, limit: 200, monthly: true }, t)).toBe('用了 0 / 200');
-    expect(usedText({ usedPercent: 84 }, t)).toBe('用了 84%');
+    expect(usedText({ usedPercent: 0, used: 0, limit: 200, monthly: true }, t)).toBe('已用 0 / 200');
+    expect(usedText({ usedPercent: 84 }, t)).toBe('已用 84%');
     expect(formatPercent(0.4)).toBe('0.4');
     expect(formatPercent(44.5)).toBe('45');
   });

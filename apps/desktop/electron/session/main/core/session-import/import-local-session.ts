@@ -45,7 +45,7 @@ function describeCreateProjectError(type: string, directory: string): string {
   switch (type) {
     case 'invalid-directory':
     case 'inspect-failed':
-      return `这条会话所在的目录已经不在了或读不到：${directory}`;
+      return `该会话所在的目录不存在或无法读取：${directory}`;
     case 'not-repository':
       return `无法把 ${directory} 作为项目打开`;
     default:
@@ -76,7 +76,7 @@ async function mountImportProject<T extends { id: string; path: string }>(projec
   const opened = await openProject(project.id);
   if (!opened.success) {
     throw new Error(
-      `打不开这条会话所在的项目：${describeOpenProjectError(opened.error, project.path)}`
+      `无法打开该会话所在的项目：${describeOpenProjectError(opened.error, project.path)}`
     );
   }
   return project;
@@ -197,7 +197,7 @@ export async function bindLocalSession(
     });
     if (!created.success) {
       // ❌ 别在这里再写一次「导入失败：」——界面已经带了这个前缀，重复一遍只是噪音。
-      throw new Error(`没能建出这条会话（${created.error.type}）`);
+      throw new Error(`无法创建该会话（${created.error.type}）`);
     }
 
     return {

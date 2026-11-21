@@ -41,6 +41,8 @@ import { customModelRefFromOption } from '@gugu/session-core/models/custom-model
 import { migrateCustomModelConnections } from './custom-models';
 import { reportAgentHomeMigrationFailure } from '../../../../error-summary-reporting-host';
 import { loginShellEnv } from '@main/utils/userEnv';
+import { nativeConfigRoot } from './native-config-root';
+export { nativeConfigRoot };
 import { nativeCodexAuthEnvironment } from './codex-native-auth-source';
 import { reconcileCodexNativeReference } from './codex-native-auth-migration';
 import { CODEX_NATIVE_AUTH_ROOT } from '@gugu/core/local/codex-native-auth.mjs';
@@ -207,12 +209,9 @@ export async function removeHarnessConnection(
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   if (target.isDefault) await selectHarnessConnection(providerId, 'native', options);
-  // 只从列表里拿掉:保管目录里的登录仍归它,用户根里要是正好是它的账号,换走时还得写回去。
-  await registry.upsertAccount({
-    providerId: namespace(providerId),
-    accountId: connectionId,
-    meta: { ...target.meta, harnessConnection: { ...target.meta!.harnessConnection!, removed: true } },
-  });
+  // 只从列表里拿掉:保管目录里的登录仍归它,用户根里要是正好是它的账号,换走时还得写回去。API Key 连接的 key 随这一步删掉。
+  await registry.retireAccount(namespace(providerId), connectionId,
+    { ...target.meta, harnessConnection: { ...target.meta!.harnessConnection!, removed: true } });
 }
 
 /**
@@ -240,12 +239,6 @@ function vaultRoot(providerId: Provider, id: string): string {
 export function connectionConfigRoot(providerId: string, connectionId: string): string | null {
   if (providerId !== 'claude' || connectionId === 'native') return null;
   return vaultRoot('claude', connectionId);
-}
-
-/** 用户自己的配置根:用户导出了 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` 就是那里,否则 `~/.claude` / `~/.codex`。 */
-export function nativeConfigRoot(providerId: Provider, env: Record<string, string | undefined> = process.env): string {
-  const home = requireNativeHome(providerId);
-  return env[home.envVar]?.trim() || join(homedir(), home.userPath);
 }
 
 export function managedConfigRoot(providerId: Provider): string {

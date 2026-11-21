@@ -13,6 +13,7 @@ import { PaneProvider } from '@renderer/features/tabs/pane-context';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context';
 import { SplitPaneHotkey, TabBarAddMenu } from '@renderer/features/sessions/tab-bar-actions';
+import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -161,9 +162,9 @@ export const ChatTabChip = observer(function ChatTabChip({
 });
 
 /** A topic is displayed in its source's slot, but its own tools and persisted layout belong to its ID. */
-export function TopicChatPanes({ chatId, title, actions, body }: {
+export function TopicChatPanes({ chatId, name, actions, body }: {
   chatId: string;
-  title: ReactNode;
+  name: string;
   actions: ReactNode;
   body: ReactNode;
 }) {
@@ -171,8 +172,8 @@ export function TopicChatPanes({ chatId, title, actions, body }: {
     chatId={chatId}
     embedded
     body={body}
-    actionsSlot={actions}
-    chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="" labelSlot={title} menu={null} focused={false} />}
+    actionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
+    chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label={name} menu={null} focused={false} />}
   />;
 }
 

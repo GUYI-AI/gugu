@@ -69,7 +69,7 @@ it('marks a topic that calls you in red and other unread with the grey dot, then
  expect(panel.querySelector('.gg-phone-composer-sheet-handle')).toBeNull()
  const called=document.querySelector('[data-topic-id="topic-0"] .gg-chip')!,news=document.querySelector('[data-topic-id="topic-1"] .gg-chip')!
  expect([called.getAttribute('data-tone'),called.textContent]).toEqual(['danger','@1'])
- expect([news.getAttribute('data-shape'),news.getAttribute('aria-label')]).toEqual(['dot','有新消息，但没有叫到你'])
+ expect([news.getAttribute('data-shape'),news.getAttribute('aria-label')]).toEqual(['dot','有新消息，未提及你'])
  expect(document.querySelector('[data-testid="phone-room-main"] .gg-chip')).toBeNull()
  await page.getByRole('radio',{name:/设计讨论/}).click()
  expect(onPick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(topics[0]!));await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
@@ -105,7 +105,7 @@ it('does not present an unread roster as an empty group',async()=>{
  await mount('dark','loading');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByRole('heading',{name:'智能体',exact:true})).toBeVisible()
  await expect.element(page.getByRole('status')).toHaveTextContent('正在读取智能体')
- expect(document.body.textContent).not.toContain('群里还没有智能体')
+ expect(document.body.textContent).not.toContain('群里暂无智能体')
 })
 
 

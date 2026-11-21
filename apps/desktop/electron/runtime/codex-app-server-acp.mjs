@@ -1865,7 +1865,7 @@ function approvalDecisionName(decision) {
     case 'acceptForSession':
       return 'Allow for this session'
     case 'acceptWithExecpolicyAmendment':
-      return "Allow and don't ask again for matching commands"
+      return 'Allow and do not ask again for matching commands'
     case 'applyNetworkPolicyAmendment':
       return decision?.applyNetworkPolicyAmendment?.network_policy_amendment?.action === 'deny'
         ? 'Block this host in the future'

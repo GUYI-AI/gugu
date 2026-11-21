@@ -534,12 +534,12 @@ export async function installServiceWith(out: Out, deps: InstallServiceDeps): Pr
       }
       case 'systemdUnreachable': {
         if (!before) {
-          out('⚠ 当前 shell 连不上 systemd 用户会话(su、docker exec 时常见)。任选其一:')
+          out('⚠ 当前 shell 无法连接 systemd 用户会话(su、docker exec 时常见)。请任选其一:')
           out(`  · 以 ${deps.user} 直接 SSH 登录后执行:gugu-server service install`)
           out(`  · 请管理员执行 sudo loginctl enable-linger ${deps.user},再重新安装`)
           return false
         }
-        out('当前 shell 连不上 systemd 用户会话,改由 systemd 以新版本重启。')
+        out('当前 shell 无法连接 systemd 用户会话,改由 systemd 以新版本重启。')
         // 旧的那个不归 systemd 管(以前兜底起的):照兜底的办法自己接上。
         if (before.supervisedBy === 'none') deps.startDetached(before.pid)
         deps.restart(before.pid)

@@ -106,7 +106,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
     })
     await expect(
       callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'hi', to_user_ids: ['user:ghost'] }, deps),
-    ).rejects.toThrow(/收件人不在本 chat/)
+    ).rejects.toThrow(/Recipients are not members of chat/)
     expect(inserted).toEqual([])
   })
 
@@ -124,7 +124,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
       restInsert: async () => { throw recipientNotMember(['ghost']) },
     })
     await expect(callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'message', to_user_ids: ['user:ghost'] }, deps))
-      .rejects.toThrow('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：ghost。')
+      .rejects.toThrow('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost.')
     expect(inserted).toEqual([])
     expect(uploads).toEqual([])
     expect(commits).toEqual([])
@@ -135,7 +135,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
   test.each([
     { who: 'a current member', to: 'member-1', refuse: null, blocks: [], expected: '"status":"sent"' },
     { who: 'a removed identity that once had a seat', to: 'removed-1', refuse: null,
-      blocks: [{ agent_user_id: 'removed-1', reason: 'identity_removed' }], expected: '对方已移除、未送达 (user:removed-1; identity_removed' },
+      blocks: [{ agent_user_id: 'removed-1', reason: 'identity_removed' }], expected: 'not delivered, recipient removed (user:removed-1; identity_removed' },
     { who: 'an id that was never a member', to: 'ghost', refuse: 'ghost', blocks: [], expected: null },
   ])('#2383 file output to $who follows the server', async ({ to, refuse, blocks, expected }) => {
     const { deps, uploads, commits, attachments } = makeDeps({
@@ -153,7 +153,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
     const send = callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'proof.txt', file_path: proofPath, mime_type: 'text/plain', to_user_ids: [`user:${to}`],
     }, deps)
-    if (refuse) await expect(send).rejects.toThrow(`收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：${refuse}。用 message_members 查有效成员后重发。`)
+    if (refuse) await expect(send).rejects.toThrow(`Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ${refuse}. Look up current members with message_members and send again.`)
     else expect(await send).toContain(expected)
     // The host may start bytes before commit; a definite refusal releases its upload duty.
     if (!refuse) expect(uploads).toEqual(['proof.txt'])
