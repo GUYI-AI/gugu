@@ -190,6 +190,6 @@ describe('#6264 导入会话按机器切换', () => {
     // 别的机器(版本够新)报同一种码:同样按词条说,❌ 当原始诊断。
     expect(
       describeImportFailure(Object.assign(new Error('project-not-found:work'), { code: 'import_failed' }), { isLocal: false }, 'd22', 'import', translate)
-    ).toBe('sessionImport.error.projectOpenFailedReason(name=work,reason=sessionImport.error.projectReasonNotFound)');
+    ).toBe('sessionImport.error.projectNotFound(name=work)');
   });
 });

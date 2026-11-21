@@ -11,10 +11,7 @@ const speak = (catalog: Record<string, string>) =>
     (catalog[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''))) as never;
 
 describe('import error copy', () => {
-  const keysOf = (code: (typeof IMPORT_ERROR_CODES)[number]): string[] => {
-    const copy: { key: string; reason?: string } = IMPORT_ERROR_COPY[code];
-    return copy.reason ? [copy.key, copy.reason] : [copy.key];
-  };
+  const keysOf = (code: (typeof IMPORT_ERROR_CODES)[number]): string[] => [IMPORT_ERROR_COPY[code]];
 
   it('has a message for every code, in both languages, with the same placeholders', () => {
     expect(Object.keys(IMPORT_ERROR_COPY).sort()).toEqual([...IMPORT_ERROR_CODES].sort());
