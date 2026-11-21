@@ -18,7 +18,7 @@ export function RequestDetailSheet({ peer, context, message, footer, onClose }: 
 }) {
   const { t } = useTranslation('contacts')
   // 桌面通讯录右边那一列抽屉(与分组页点开联系人同一列);手机整页没有抽屉,照旧是底部弹层。
-  const drawer = useDrawerPortal()
+  const drawer = useDrawerPortal(onClose)
   const body = (
     <div className="flex min-h-0 flex-col gap-4 px-5 pb-5 pt-6">
       <div className="flex items-center gap-3">
