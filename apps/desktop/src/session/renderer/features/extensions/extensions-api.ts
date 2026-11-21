@@ -35,7 +35,6 @@ export type PhoneStore = {
   marketUpdates: () => Promise<MarketUpdatesSummary>;
   marketListing: (args: { extensionId: string; version: string }) => Promise<{ success: true; data: MarketListing } | { success: false; error: string }>;
   marketHistory: (args: { extensionId: string }) => Promise<{ success: boolean; data?: MarketVersionHistoryEntry[]; error?: string }>;
-  onRefreshed: (listener: (refreshed: { outcome: string }) => void) => () => void;
 };
 
 const phone: Partial<PhoneStore> = {};

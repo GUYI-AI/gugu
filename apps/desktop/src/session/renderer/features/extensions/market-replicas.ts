@@ -1,12 +1,12 @@
 import { refreshTag, replica } from '@/lib/replica';
-import { events, onMachineEvent } from '@renderer/lib/ipc';
+import { events } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import type { AppSettings } from '@shared/extensions/app-settings';
 import type { EnablePlace } from '@shared/extensions/host-actions';
 import type { MarketListItem, MarketVersionHistoryEntry } from '@shared/extensions/market';
 import type { MarketListing } from '@shared/extensions/market-entries';
-import { extensionsInventoryChangedChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
+import { extensionsInventoryChangedChannel } from '@shared/extensions/marketEvents';
 import { extensionsApiOf, INSTALLED, LOCAL_HOST, PHONE_HOST, phoneStore, unwrap, type PhoneStore } from './extensions-api';
 import { keepShelf, keptShelfItems } from './panel/kept-shelf';
 
@@ -61,13 +61,6 @@ async function readDesktopShelf(hostKey: string): Promise<MarketShelfFull> {
   };
 }
 
-const marketFeed = {
-  group: (hostKey: string) => hostKey,
-  start: (_owner: string, hostKey: string) => onRefreshedOf(hostKey, (refreshed) => {
-    if (refreshed.outcome === 'changed') marketChanged(hostKey, (refreshed as { fetchedAt?: string }).fetchedAt ?? null);
-  }),
-};
-
 /** A computer's complete catalog (the phone's is `phoneMarketCatalog`). The last one this page drew is the first frame after a restart (`local`, kept-shelf.ts). */
 export const marketShelf = replica({
   name: 'marketShelf',
@@ -84,7 +77,6 @@ export const marketShelf = replica({
   },
   // The host's own index is cheap: opening the page reads it again.
   fresh: 0,
-  watch: marketFeed,
 });
 
 /** Recent installs per App (`chat.market_install_ranking`), for the recommended order and the featured row. */
@@ -120,7 +112,6 @@ export const marketSearch = replica({
     return found!;
   },
   keep: 60_000,
-  watch: marketFeed,
 });
 
 export const marketEntry = replica({
@@ -133,7 +124,6 @@ export const marketEntry = replica({
     return result.data ?? null;
   },
   fresh: 60_000,
-  watch: marketFeed,
 });
 
 /** `outdated`: that machine's gugu is too old to say. */
@@ -164,15 +154,13 @@ export const marketVersionHistory = replica({
   fresh: Infinity,
   // A transient failure is read again before it is said.
   retry: 3,
-  watch: marketFeed,
 });
 
 export const extensionSettings = replica({
   name: 'extensionSettings',
   scope: 'device',
-  read: async (_owner: string, hostKey: string, extensionId: string): Promise<AppSettings> => {
-    return unwrap(await extensionsApiOf(hostKey).settings({ extensionId }), 'App settings');
-  },
+  read: async (_owner: string, hostKey: string, extensionId: string): Promise<AppSettings> =>
+    unwrap(await extensionsApiOf(hostKey).settings({ extensionId }), 'App settings'),
 });
 
 /** Which agents and groups an App is given to (D-30): account scope, so an account switch never shows the last one's. */
@@ -219,11 +207,6 @@ export const extensionAgentStatus = replica({
   read: async (_owner: string, hostKey: string): Promise<Record<string, ExtensionAgentStatus>> => unwrap(await extensionsApiOf(hostKey).agentStatus(), 'agent status'),
   fresh: 60_000,
 });
-
-function onRefreshedOf(hostKey: string, listener: (refreshed: { outcome: string }) => void): () => void {
-  if (hostKey === PHONE_HOST) return phoneStore('onRefreshed')(listener);
-  return onMachineEvent(hostKey === LOCAL_HOST ? null : hostKey.slice('remote:'.length), marketRefreshedChannel, listener);
-}
 
 const changedAt = new Map<string, string | null>();
 
