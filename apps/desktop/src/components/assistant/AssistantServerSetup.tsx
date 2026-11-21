@@ -16,8 +16,7 @@ import { requestAddServerOnOpen } from '../../lib/addServerIntent'
 import { clearAssistantOnboardingNavigation } from '../../lib/assistantOnboardingNavigation'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '../ui/Button'
-import { Unknown } from '../ui/Unknown'
-import { RefreshFailed } from '../ui/RefreshFailed'
+import { ReadingSlot } from '../ui/ReadingSlot'
 import { useReplica, retryOf } from '../../lib/replica'
 import { devicesModel } from '../../store/devicesCache'
 import { assistantServerTargets } from '../../lib/assistantServerTargets'
@@ -121,11 +120,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
         <LoadingIndicator size="inline" />{cancelling ? t('setup.cancelling') : progress ? t(`server.progress.${progress.phase}`) : t('server.resuming')}
       </p> : null}
     </div> : <div className="ta-onb-field">
-      {devices.state === 'unknown' ? <Unknown className="h-10 w-full" />
-        : devices.state === 'error' || !targets ? <>
-          <p className="ta-onb-error" role="alert">{t('server.listFailed')}</p>
-          <Button onClick={retryOf(devices)}>{t('setup.retry')}</Button>
-        </> : <>
+      <ReadingSlot reading={devices} placeholder="h-10 w-full" failed={() => t('server.listFailed')}>{() => targets && <>
           {targets.length ? <div className="ta-onb-list ta-server-targets" aria-label={t('server.choose')}>
             {targets.map(target => <Button key={target.deviceId} variant="option" size="option" disabled={!target.selectable}
               aria-pressed={target.deviceId === selectedId} className="ta-server-target" onClick={() => setSelectedId(target.deviceId)} data-testid="assistant-server-target">
@@ -134,13 +129,11 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
             </Button>)}
           </div> : <p className="ta-onb-note" data-testid="assistant-server-empty">{t('server.empty')}</p>}
           <p className="ta-onb-note">{t('server.addNote')}</p>
-          {/* Read before, its read again failing (this page's 刷新 too): said by the list it left (retry = 刷新 beside it). */}
-          <RefreshFailed error={devices.error} />
           <div className="ta-onb-row">
             <Button onClick={openDevices} data-testid="assistant-server-add">{t('server.add')}</Button>
             <Button variant="ghost" onClick={retryOf(devices)}>{t('server.refresh')}</Button>
           </div>
-        </>}
+        </>}</ReadingSlot>
     </div>}
     {failure ? <p className="ta-onb-error" role="alert" data-testid="assistant-server-error">{t(`server.errors.${errorCode}`)}</p> : null}
     <div className="ta-onb-actions">
