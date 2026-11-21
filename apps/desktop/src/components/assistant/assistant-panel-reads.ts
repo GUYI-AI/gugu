@@ -78,10 +78,10 @@ export function useConnectionList(store: ConnectionMetadataStore | undefined, ow
 export const assistantIntegrationDetail = replica({
   name: 'assistantIntegrationDetail',
   scope: 'account',
-  read: async (_owner: string, storeKey: string, id: string, catalogVersion: string | null, locale: string): Promise<IntegrationMetadata> => {
+  read: async (_owner: string, storeKey: string, id: string, _catalogVersion: string | null, locale: string): Promise<IntegrationMetadata> => {
     const store = storeOf(storeKey)
     await assistantPanelBodies.ready
-    return withAssistantPanelReadDeadline(() => readAssistantPanelIntegration(store, id, locale, catalogVersion ?? undefined))
+    return withAssistantPanelReadDeadline(() => readAssistantPanelIntegration(store, id, locale))
   },
   local: (_owner: string, storeKey: string, id: string, _catalogVersion: string | null, locale: string) =>
     peekAssistantPanelIntegration(stores.get(storeKey), id, locale),
