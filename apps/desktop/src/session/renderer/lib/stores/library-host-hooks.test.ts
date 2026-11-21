@@ -29,7 +29,8 @@ vi.mock('@renderer/lib/ipc', () => ({
 }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 
-type FakeAgents = { [K in keyof LibraryAgentsRpc]: ReturnType<typeof vi.fn> };
+/** The library host's agent actions, and the readings' verbs on the same machine (`rpcOn`). */
+type FakeAgents = { [K in keyof LibraryAgentsRpc | 'listManagement' | 'listAgentInstallationStatus']: ReturnType<typeof vi.fn> };
 
 function remoteAgents(): FakeAgents {
   const fn = <T,>(value: T) => vi.fn(async () => value);
