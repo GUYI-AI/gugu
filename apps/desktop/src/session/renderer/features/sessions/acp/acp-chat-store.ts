@@ -1214,7 +1214,7 @@ export class AcpChatStore {
 
   retryPendingInput(itemId: string): void {
     if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
-      void this._messageAction(itemId, () => retryUnknownSessionInput(this.runtimeSessionId, itemId));
+      void retryUnknownSessionInput(this.runtimeSessionId, itemId);
       return;
     }
     if (this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
