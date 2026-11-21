@@ -65,7 +65,9 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file-host[data-online='false']::after { content: ''; flex: none; width: 6px; height: 6px; border-radius: 3px; background: var(--em-foreground-muted); }
 
 /* The grid (images and videos): square pictures, the name under them; sections and folders across the whole width. */
-.file-list.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--em-spacing-sm); align-content: start; }
+/* The space under a picture is its own: a folder's row and a section's heading across the grid sit as close as in the list. */
+.file-list.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0 var(--em-spacing-sm); align-content: start; }
+.file-list.as-grid > .file.cell { margin-bottom: var(--em-spacing-sm); }
 .file-list.as-grid > .list-section, .file-list.as-grid > .file:not(.cell) { grid-column: 1 / -1; }
 /* `min-height: auto`, not a row's 56px: the grid's rows are `auto`, so once there are more of them than the pane holds
    each shrinks to its cells' minimum, and a picture taller than that runs over the row below. */
@@ -158,7 +160,8 @@ img.details-picture { object-fit: contain; }
   .pick-bar { order: 1; margin: 0; left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-radius: 0; justify-content: center; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
   .details { padding-top: var(--em-spacing-sm); }
   .details::before { content: ''; align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--em-border); }
-  .file-list.as-grid { grid-template-columns: repeat(3, 1fr); gap: 3px; }
+  .file-list.as-grid { grid-template-columns: repeat(3, 1fr); gap: 0 3px; }
+  .file-list.as-grid > .file.cell { margin-bottom: 3px; }
 }
 @media (min-width: 720px) {
   .details { inset: 0 0 0 auto; width: 300px; max-height: none; border-radius: 0; box-shadow: none; border-left: 1px solid var(--em-border); }
