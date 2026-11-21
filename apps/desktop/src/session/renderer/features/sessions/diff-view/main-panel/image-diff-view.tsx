@@ -1,10 +1,9 @@
 import type { Result } from '@gugu/session-shared';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { Unknown } from '@/components/ui/Unknown';
-import { replica, useReplica, type Reading } from '@/lib/replica';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import { replica, useReplica, valueOf, type Reading } from '@/lib/replica';
 import { useWorkspace } from '@renderer/features/sessions/session-view-context';
-import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { MicroLabel } from '@renderer/lib/ui/label';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import {
@@ -152,8 +151,8 @@ export const imageDiffSide = replica({
   retryDelay: (attempt) => IMAGE_RETRY_DELAYS_MS[Math.min(attempt, IMAGE_RETRY_DELAYS_MS.length - 1)]!,
 });
 
-function ImageSidePanel({ label, reading, side, onRetry }: { label: string; reading: Reading<SideState>; side: Side; onRetry: () => void }) {
-  const state = reading.state === 'value' ? reading.value : null;
+function ImageSidePanel({ label, reading, side }: { label: string; reading: Reading<SideState>; side: Side }) {
+  const state = valueOf(reading);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-baseline gap-2 border-b border-border px-3 py-2">
@@ -166,16 +165,10 @@ function ImageSidePanel({ label, reading, side, onRetry }: { label: string; read
         )}
       </div>
       <div className="flex flex-1 items-center justify-center overflow-auto p-4">
-        {reading.state === 'unknown' ? (
-          <Unknown className="h-40 w-40" />
-        ) : reading.state === 'error' ? (
-          <ReadFailedLine
-            message={reading.error instanceof TransientImageError ? unavailableMessage('git-error') : reading.error.message}
-            onRetry={onRetry}
-          />
-        ) : (
-          <ImageSideContent state={reading.value} side={side} />
-        )}
+        <ReadingSlot reading={reading} placeholder="h-40 w-40"
+          failed={(error) => (error instanceof TransientImageError ? unavailableMessage('git-error') : error.message)}>
+          {(value) => <ImageSideContent state={value} side={side} />}
+        </ReadingSlot>
       </div>
     </div>
   );
@@ -248,13 +241,12 @@ export const ImageDiffView = observer(function ImageDiffView({
 
   const original = useReplica(imageDiffSide, [projectId, workspaceId, 'original', file, reactiveRevision]);
   const modified = useReplica(imageDiffSide, [projectId, workspaceId, 'modified', file, reactiveRevision]);
-  const retry = (side: Side) => () => void imageDiffSide.refresh(projectId, workspaceId, side, file, reactiveRevision);
 
   return (
     <div className="flex h-full min-h-0 w-full">
-      <ImageSidePanel label={translate('diff.original')} reading={original} side="original" onRetry={retry('original')} />
+      <ImageSidePanel label={translate('diff.original')} reading={original} side="original" />
       <div className="w-px shrink-0 bg-border" />
-      <ImageSidePanel label={translate('diff.modified')} reading={modified} side="modified" onRetry={retry('modified')} />
+      <ImageSidePanel label={translate('diff.modified')} reading={modified} side="modified" />
     </div>
   );
 });

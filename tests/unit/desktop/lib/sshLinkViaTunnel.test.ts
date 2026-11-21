@@ -34,19 +34,20 @@ describe('远程隧道上的设备连接:原因 ❌ 进远程 SSH 那张卡', ()
   })
   it('打开失败与断开都按主进程标的 via 分;没标的(远程 SSH)照记,与清单到没到无关', async () => {
     const { openSshLink, sshLinkProblems } = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
+    const problems = { has: (id: string) => sshLinkProblems.get().has(id), get: (id: string) => sshLinkProblems.get().get(id) }
     const closed: string[] = []
     const handlers = (id: string) => ({ onMessage: () => undefined, onClosed: (reason: SshLinkFailure) => closed.push(`${id}:${reason}`) })
 
     await expect(openSshLink('tun1', handlers('tun1')).ready).rejects.toMatchObject({ reason: 'signInRequired' })
     await expect(openSshLink('ssh1', handlers('ssh1')).ready).rejects.toMatchObject({ reason: 'signInRequired' })
-    expect(sshLinkProblems.get().has('tun1')).toBe(false)
-    expect(sshLinkProblems.get().get('ssh1')).toBe('signInRequired')
+    expect(problems.has('tun1')).toBe(false)
+    expect(problems.get('ssh1')).toBe('signInRequired')
 
     const onClosed = events.get(SSH_LINK_CHANNELS.closed)!
     onClosed({ deviceId: 'tun1', reason: 'unreachable', via: 'tunnel' })
     onClosed({ deviceId: 'ssh1', reason: 'unreachable' })
-    expect(sshLinkProblems.get().has('tun1')).toBe(false)
-    expect(sshLinkProblems.get().get('ssh1')).toBe('unreachable')
+    expect(problems.has('tun1')).toBe(false)
+    expect(problems.get('ssh1')).toBe('unreachable')
     // 断开照样告诉开着它的那一方(设备 RPC 据此重开 / 换管道)。
     expect(closed).toEqual(['tun1:unreachable', 'ssh1:unreachable'])
   })

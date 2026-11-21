@@ -1,6 +1,6 @@
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink'
 import { useEffect, useState } from 'react'
-import { createSelectStore, useSelect } from '@/lib/selectStore'
+import { createSelectStore, patch, useSelect } from '@/lib/selectStore'
 
 /**
  * A link's place in a chat file the host previews (`#page=3` in a PDF, `#intro` in an HTML page): the preview of that
@@ -14,22 +14,14 @@ type Told = { at: FilePlace; until: number }
 const places = createSelectStore<ReadonlyMap<string, Told>>(new Map())
 const WAIT_MS = 30_000
 
-function put(itemId: string, told: Told | null): void {
-  const next = new Map(places.get())
-  if (told) next.set(itemId, told)
-  else if (!next.delete(itemId)) return
-  places.publish(next)
-  places.notify()
-}
-
 export function tellFilePlace(itemId: string, at: FilePlace): void {
-  put(itemId, { at: { ...at }, until: Date.now() + WAIT_MS })
+  patch(places, itemId, { at: { ...at }, until: Date.now() + WAIT_MS })
 }
 
 /** The place last told for this chat file's preview; undefined until one is. */
 export function useFilePlace(itemId: string | null): FilePlace | undefined {
   const [opened] = useState(() => Date.now())
   const told = useSelect(places, (map) => (itemId ? map.get(itemId) : undefined), Object.is)
-  useEffect(() => (itemId ? () => put(itemId, null) : undefined), [itemId])
+  useEffect(() => (itemId ? () => patch(places, itemId, undefined) : undefined), [itemId])
   return told && told.until >= opened ? told.at : undefined
 }

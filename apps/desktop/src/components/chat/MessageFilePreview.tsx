@@ -220,7 +220,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   // preview closes) for the preview's life; state holds only its link, or why it could not be had
   useEffect(() => {
     if (!streamed || file.source.kind === 'hosted') return
-    const source = file.source, at = opening
+    const source = file.source
+    const at = opening
     let live = true, release: (() => Promise<void>) | undefined
     void attachmentPreview(source).then(async (preview) => {
       if (preview.status !== 'ready') throw new Error(preview.status)
@@ -270,7 +271,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     }, (holder) => { setBesideOffline(holder); setBesideWaiting(holder) })
   }, [hostedHtml, itemId, t])
   const renewVideo = async (video: HTMLVideoElement) => {
-    const current = read, at = opening
+    const current = read
+    const at = opening
     if (video.dataset.renewing) return
     const fail = (error?: unknown) => setNoted({ opening: at, read: { ...current, ...previewFailure(error, t) } })
     // The lease's expiry is on the backend's clock (`@@@server-clock`).

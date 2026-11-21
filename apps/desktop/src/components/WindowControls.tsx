@@ -39,7 +39,8 @@ export interface WindowChromeState {
 
 // 最大化状态与本地化按钮名在主进程:preload 同步交出首值,之后主进程推来(④,属于这扇窗口)。第一次有人读时才接上。
 type ChromeFacts = Omit<WindowChromeState, 'dw'>
-const chromeStores = new WeakMap<DesktopWindowBridge, SelectStore<ChromeFacts>>()
+// One window, one bridge: kept with the bridge it follows (a test may hand another).
+let chrome: { dw: DesktopWindowBridge; facts: SelectStore<ChromeFacts> } | null = null
 let noBridgeFacts: ChromeFacts | null = null
 const NO_BRIDGE: Readable<ChromeFacts> = {
   get: () => {
@@ -51,15 +52,13 @@ const NO_BRIDGE: Readable<ChromeFacts> = {
 
 function chromeOf(dw: DesktopWindowBridge | undefined): Readable<ChromeFacts> {
   if (!dw) return NO_BRIDGE
-  let store = chromeStores.get(dw)
-  if (!store) {
+  if (chrome?.dw !== dw) {
     const facts = createSelectStore<ChromeFacts>({ maximized: dw.isMaximizedSync(), labels: dw.getChromeLabels?.() ?? NO_BRIDGE.get().labels })
-    const update = (next: Partial<ChromeFacts>) => { facts.publish({ ...facts.get(), ...next }); facts.notify() }
-    dw.onMaximizedChange((maximized) => update({ maximized }))
-    dw.onChromeLabelsChange?.((labels) => update({ labels }))
-    chromeStores.set(dw, store = facts)
+    dw.onMaximizedChange((maximized) => facts.set({ ...facts.get(), maximized }))
+    dw.onChromeLabelsChange?.((labels) => facts.set({ ...facts.get(), labels }))
+    chrome = { dw, facts }
   }
-  return store
+  return chrome.facts
 }
 
 /** 最大化状态与本地化按钮名(主进程随宿主语言推送)。标题栏的「视图」菜单也读同一份。 */

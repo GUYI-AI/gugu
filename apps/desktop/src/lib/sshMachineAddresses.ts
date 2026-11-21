@@ -1,9 +1,6 @@
 import { replica } from './replica'
 import { SERVER_SSH_MACHINES_CHANNELS, type SshMachineSummary } from './serverSshMachines'
 import { desktopIpc } from '../platform/desktopIpc'
-import { rendererLogger } from './log'
-
-const registryLog = rendererLogger('ssh-registry')
 
 /** 这台桌面上用 SSH 装上的机器(设备 id → 地址;跟账号走),唯一的一读。主进程推 `changed`,故 `fresh: Infinity`;没有桌面主进程 ⇒ 空。 */
 export const sshMachineAddresses = replica({
@@ -13,14 +10,8 @@ export const sshMachineAddresses = replica({
   read: async (): Promise<Array<[string, string]>> => {
     const electron = desktopIpc()
     if (!electron) return []
-    let value: unknown
-    try {
-      value = await electron.invoke(SERVER_SSH_MACHINES_CHANNELS.describe)
-      if (!Array.isArray(value)) throw new Error('SSH machines: unexpected answer')
-    } catch (error) {
-      registryLog.warn({ error: error instanceof Error ? error.message : String(error) }, 'SSH machine registry read failed; the next request reads again')
-      throw error
-    }
+    const value: unknown = await electron.invoke(SERVER_SSH_MACHINES_CHANNELS.describe)
+    if (!Array.isArray(value)) throw new Error('SSH machines: unexpected answer')
     return (value as SshMachineSummary[])
       .filter((item) => item && typeof item.deviceId === 'string' && typeof item.display === 'string')
       .map((item) => [item.deviceId, item.display])

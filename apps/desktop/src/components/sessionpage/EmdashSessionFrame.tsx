@@ -230,7 +230,7 @@ function installSessionHostBridge(): SessionHostWsClient | null {
       invoke: answerSessionShellChannels(hostInvoke, createWebSessionShellAnswers(hostInvoke)),
     }
     const client = sessionHostClient
-    const publishConnection = () => { hostConnection.publish({ state: client.state(), endpoint: client.endpoint.url }); hostConnection.notify() }
+    const publishConnection = () => hostConnection.set({ state: client.state(), endpoint: client.endpoint.url })
     publishConnection()
     client.onStateChange(publishConnection)
     installSessionShellAuthHandoff({

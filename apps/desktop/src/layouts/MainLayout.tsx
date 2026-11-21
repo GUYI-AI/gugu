@@ -333,7 +333,9 @@ function InnerLayout({
     openOwnApp: (extensionId, tab) => {
       // @@@reading-default(moment) - a link followed, one moment: the list not read yet is refused like a tab not there (said by the link's caller)
       const page = peekInstalledApps(LISTED_HOST)?.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`)
-      if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
+      if (!page) throw new Error('App tab is unavailable')
+      setOpenedPhoneApp({ kind: page.kind, name: page.extensionName })
+    },
     openProject: (projectId) => { setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('project', { projectId }) },
     openChat: openChatTarget,
     openAssistant: (tasks) => {

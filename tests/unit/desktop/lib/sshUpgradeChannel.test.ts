@@ -13,24 +13,26 @@ import {
 
 describe('替它升级的每一步 → 设备连接的状况', () => {
   it('updating(带进度)→ done:问题清掉、当场重连;failed:停在「版本太旧」', () => {
+    const problems = { has: (id: string) => sshLinkProblems.get().has(id), get: (id: string) => sshLinkProblems.get().get(id) }
+    const upgrades = { has: (id: string) => sshUpgrades.get().has(id), get: (id: string) => sshUpgrades.get().get(id) }
     const reopened: string[] = []
     const offSignedIn = onSshMachineSignedIn((deviceId) => reopened.push(deviceId))
 
     applyUpgradeEvent({ deviceId: 'd22', phase: 'updating', percent: null })
-    expect(sshLinkProblems.get().get('d22')).toBe('updating')
-    expect(sshUpgrades.get().get('d22')).toBeNull()
+    expect(problems.get('d22')).toBe('updating')
+    expect(upgrades.get('d22')).toBeNull()
     applyUpgradeEvent({ deviceId: 'd22', phase: 'updating', percent: 40 })
-    expect(sshUpgrades.get().get('d22')).toBe(40)
+    expect(upgrades.get('d22')).toBe(40)
 
     applyUpgradeEvent({ deviceId: 'd22', phase: 'done' })
-    expect(sshLinkProblems.get().has('d22')).toBe(false)
-    expect(sshUpgrades.get().has('d22')).toBe(false)
+    expect(problems.has('d22')).toBe(false)
+    expect(upgrades.has('d22')).toBe(false)
     expect(reopened).toEqual(['d22'])
 
     applyUpgradeEvent({ deviceId: 'd23', phase: 'updating', percent: 10 })
     applyUpgradeEvent({ deviceId: 'd23', phase: 'failed' })
-    expect(sshLinkProblems.get().get('d23')).toBe('outdated')
-    expect(sshUpgrades.get().has('d23')).toBe(false)
+    expect(problems.get('d23')).toBe('outdated')
+    expect(upgrades.has('d23')).toBe(false)
     expect(reopened).toEqual(['d22'])
 
     offSignedIn()

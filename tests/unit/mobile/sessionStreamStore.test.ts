@@ -18,9 +18,9 @@ const key = { deviceId: 'mac', sessionId: 's1' }
 describe('session stream store', () => {
   it('tells a session not followed yet from one followed and empty', async () => {
     const { sessionStreams, sessionStreamKey, updateSessionStream } = await load()
-    expect(sessionStreams.get().get(sessionStreamKey(key))).toBeUndefined()
+    expect(sessionStreams.get()[sessionStreamKey(key)]).toBeUndefined()
     updateSessionStream(key, (current) => ({ ...current, phase: 'ready' }))
-    const followed = sessionStreams.get().get(sessionStreamKey(key))
+    const followed = sessionStreams.get()[sessionStreamKey(key)]
     expect(followed).toMatchObject({ phase: 'ready', timeline: { turns: [] } })
   })
 
@@ -32,7 +32,7 @@ describe('session stream store', () => {
       updateNativeRecordStream(key, (current) => ({ ...current, unreachable: true }))
       updateSessionpageFacts('s1', () => ({ recentActions: null, settlements: {} }))
     }
-    const sizes = () => [sessionStreams.get().size, nativeRecordStreams.get().size, sessionpageTimelineFacts.get().size]
+    const sizes = () => [sessionStreams, nativeRecordStreams, sessionpageTimelineFacts].map((store) => Object.keys(store.get()).length)
     fill()
     publishRendererSession('BOOT_RESTORING', null)
     expect(sizes()).toEqual([1, 1, 1])

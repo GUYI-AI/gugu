@@ -7,7 +7,7 @@
 // 手机与网页里没有主进程 ⇒ 清单恒为空、没有设备连接:远程 SSH 的机器在那里经咕咕云用(owner 2026-10-08 选 B)。
 
 import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from './sshMachineAddresses'
-import { createSelectStore, type Readable } from './selectStore'
+import { createSelectStore, patch, type Readable } from './selectStore'
 import { replica } from './replica'
 import { TUNNEL_MACHINES_CHANNELS, type TunnelState, type TunnelWant } from './tunnelMachines'
 import {
@@ -202,24 +202,13 @@ export function wantTunnels(wants: readonly TunnelWant[]): void {
 // ── 一台机器的设备连接 ─────────────────────────────────────────────────────────
 
 /**
- * 每台远程 SSH 机器的设备连接此刻怎样(接上了 = null;接不上 / 断了 = 原因)。全局那张「要先登录」的
+ * 每台远程 SSH 机器的设备连接此刻怎样(接上了 = 不在表里;接不上 / 断了 = 原因)。全局那张「要先登录」的
  * 浮卡(components/SshLinkSignIn.tsx)读它 —— 各个模块各自报错,「怎么修」只在一处给。
  */
 // ④ 跨组件的瞬时状态:这个渲染层自己的连接结果,属于这台设备(不随换号清:清单本身跟账号走,别人的机器不在里面)。
 const linkProblems = createSelectStore<ReadonlyMap<string, SshLinkFailure>>(new Map())
 /** For `useSelect`: each SSH machine's link problem right now. */
 export const sshLinkProblems: Readable<ReadonlyMap<string, SshLinkFailure>> = linkProblems
-
-function setLinkProblem(deviceId: string, problem: SshLinkFailure | null): void {
-  const current = linkProblems.get()
-  const before = current.get(deviceId) ?? null
-  if (before === problem) return
-  const next = new Map(current)
-  if (problem) next.set(deviceId, problem)
-  else next.delete(deviceId)
-  linkProblems.publish(next)
-  linkProblems.notify()
-}
 
 export type SshLinkHandle = {
   /** 接上了才 resolve;接不上 reject SshLinkError(带原因)。 */
@@ -245,7 +234,7 @@ function wireEvents(electron: ElectronBridge): void {
     const event = data as SshLinkClosedEvent | null
     if (!event || typeof event.deviceId !== 'string') return
     // 远程隧道上的那条:原因由远程隧道自己报(subscribeTunnelState),❌ 冒成远程 SSH 的「要先登录」卡片。
-    if (event.via !== 'tunnel') setLinkProblem(event.deviceId, event.reason)
+    if (event.via !== 'tunnel') patch(linkProblems, event.deviceId, event.reason)
     handlersByDevice.get(event.deviceId)?.onClosed(event.reason)
   })
 }
@@ -266,14 +255,14 @@ export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHa
     (result) => {
       if (!result || !result.ok) {
         const reason = result && !result.ok ? result.reason : 'unreachable'
-        if (!(result && !result.ok && result.via === 'tunnel')) setLinkProblem(deviceId, reason)
+        if (!(result && !result.ok && result.via === 'tunnel')) patch(linkProblems, deviceId, reason)
         if (result && !result.ok && result.controlOnly) return
         throw new SshLinkError(reason, deviceId)
       }
-      setLinkProblem(deviceId, null)
+      patch(linkProblems, deviceId, undefined)
     },
     () => {
-      setLinkProblem(deviceId, 'unreachable')
+      patch(linkProblems, deviceId, 'unreachable')
       throw new SshLinkError('unreachable', deviceId)
     },
   )
@@ -306,10 +295,10 @@ export async function signInSshMachine(deviceId: string): Promise<SshLinkOpenRes
     result = { ok: false, reason: 'unreachable' }
   }
   if (result.ok) {
-    setLinkProblem(deviceId, null)
+    patch(linkProblems, deviceId, undefined)
     for (const listener of [...signedInListeners]) listener(deviceId)
   } else {
-    setLinkProblem(deviceId, result.reason)
+    patch(linkProblems, deviceId, result.reason)
   }
   return result
 }
@@ -334,15 +323,6 @@ export function subscribeSshUpgradeEvents(listener: (event: SshUpgradeEvent) => 
   return () => { upgradeEventListeners.delete(listener) }
 }
 
-function setUpgrade(deviceId: string, percent: number | null | undefined): void {
-  const current = upgrades.get()
-  if (current.get(deviceId) === percent && (percent !== undefined || !current.has(deviceId))) return
-  const next = new Map(current)
-  if (percent === undefined) next.delete(deviceId)
-  else next.set(deviceId, percent)
-  upgrades.publish(next)
-  upgrades.notify()
-}
 
 /** 主进程报来的一步:在升 → 「正在更新」;升好 → 清掉问题并当场重连(与刚登上同一条路);没升成 → 停在「版本太旧」。 */
 export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
@@ -352,18 +332,18 @@ export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
   if (event.phase === 'failed' && event.reinstall) reinstallCommands.set(deviceId, event.reinstall)
   else reinstallCommands.delete(deviceId)
   if (event.phase === 'updating') {
-    setUpgrade(deviceId, typeof event.percent === 'number' ? event.percent : null)
-    setLinkProblem(deviceId, 'updating')
+    patch(upgrades, deviceId, typeof event.percent === 'number' ? event.percent : null)
+    patch(linkProblems, deviceId, 'updating')
   } else if (event.phase === 'waitingIdle') {
-    setUpgrade(deviceId, undefined)
-    setLinkProblem(deviceId, 'waitingIdle')
+    patch(upgrades, deviceId, undefined)
+    patch(linkProblems, deviceId, 'waitingIdle')
   } else if (event.phase === 'desktopTooOld' || event.phase === 'unconfirmed') {
     // 连接本身没毛病;「请更新这台电脑上的咕咕」由那台机器报的协议窗口说(serverMachineNotices)。
-    setUpgrade(deviceId, undefined)
-    setLinkProblem(deviceId, null)
+    patch(upgrades, deviceId, undefined)
+    patch(linkProblems, deviceId, undefined)
   } else {
-    setUpgrade(deviceId, undefined)
-    setLinkProblem(deviceId, event.phase === 'done' ? null : 'outdated')
+    patch(upgrades, deviceId, undefined)
+    patch(linkProblems, deviceId, event.phase === 'done' ? undefined : 'outdated')
     if (event.phase === 'done') for (const listener of [...signedInListeners]) listener(deviceId)
   }
 }
@@ -400,7 +380,7 @@ export async function requestSshServerUpgrade(deviceId: string, options?: {
   }
   // 没在升(刚失败过、还在冷却):说「版本太旧、更新没成功」,❌ 让它落回「重连中」。
   // desktopTooOld:「这台电脑太旧」那一问 —— 没发起(冷却中)不改连接状况,连接本身没毛病。
-  if (isSshMachine(deviceId) && (started || !options?.desktopTooOld)) setLinkProblem(deviceId, started ? 'updating' : 'outdated')
+  if (isSshMachine(deviceId) && (started || !options?.desktopTooOld)) patch(linkProblems, deviceId, started ? 'updating' : 'outdated')
   return started
 }
 
