@@ -45,7 +45,7 @@ describe('server package transport', () => {
       ? 'HTTP/1.0 200 OK\r\nContent-Length: 10000\r\n\r\nshort'
       : 'HTTP/1.0 200 OK\r\nContent-Length: 4\r\n\r\nokay'))
     const destination = path.join(home, 'package')
-    await expect(downloadServerPackage(url, destination)).rejects.toThrow()
+    await expect(downloadServerPackage(url, destination)).rejects.toBeInstanceOf(DownloadSiteUnreachableError)
     broken = false
     await downloadServerPackage(url, destination)
     expect(fs.readFileSync(destination, 'utf8')).toBe('okay')
@@ -56,6 +56,18 @@ describe('server package transport', () => {
     const destination = path.join(home, 'package')
     await expect(downloadServerPackage(url, destination)).rejects.toThrow('HTTP 503')
     expect(fs.existsSync(destination)).toBe(false)
+  })
+  it('reports a body which stops mid-stream as the site, not as an install failure', async () => {
+    const url = await feed(socket => socket.write('HTTP/1.1 200 OK\r\nContent-Length: 10000\r\n\r\nstart'))
+    const failure = downloadServerPackage(url, path.join(home, 'package'), 50)
+    await expect(failure).rejects.toBeInstanceOf(DownloadSiteUnreachableError)
+    await expect(failure).rejects.toThrow('stopped receiving data')
+  })
+  it('keeps a failing disk write out of the unreachable class', async () => {
+    const url = await feed(socket => socket.end('HTTP/1.0 200 OK\r\nContent-Length: 4\r\n\r\nokay'))
+    const failure = downloadServerPackage(url, path.join(home, 'missing-dir', 'package'))
+    await expect(failure).rejects.toThrow('ENOENT')
+    await expect(failure).rejects.not.toBeInstanceOf(DownloadSiteUnreachableError)
   })
   it('aborts a connection which never supplies a response', async () => {
     const url = await feed(() => {})

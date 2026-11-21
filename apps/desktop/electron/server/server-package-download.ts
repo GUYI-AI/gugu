@@ -6,7 +6,10 @@ import { egress, EgressError } from '@gugu/core/shared/egress'
 
 export class DownloadSiteUnreachableError extends Error {}
 
-/** Packages use the host's egress; an idle body still has the download caller's existing deadline. */
+/**
+ * Packages use the host's egress; an idle body still has the download caller's existing deadline. Anything the site
+ * does wrong, before or during the body, is DownloadSiteUnreachableError (the updater retries it as unreachable).
+ */
 export async function downloadServerPackage(url: string, destination: string, idleTimeoutMs = 30_000): Promise<void> {
   const abort = new AbortController()
   let response: Response
@@ -32,6 +35,11 @@ export async function downloadServerPackage(url: string, destination: string, id
   arm()
   try {
     await pipeline(stream, createWriteStream(destination))
+  } catch (error) {
+    // The body stopping (connection reset, truncated, idle) is the download site; only a failing disk write is ours.
+    if (!stream.errored) throw error
+    const cause = abort.signal.aborted ? abort.signal.reason : error
+    throw new DownloadSiteUnreachableError(cause instanceof Error ? cause.message : String(cause), { cause })
   } finally {
     clearTimeout(timer)
     abort.abort()
