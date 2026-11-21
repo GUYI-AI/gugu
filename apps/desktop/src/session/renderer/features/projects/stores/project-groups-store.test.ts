@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { observable, runInAction } from 'mobx';
 import type { ProjectGroupBinding } from '@shared/core/projects/project-groups';
 import { readProjectGroupChats, readProjectGroupMembers } from '@/lib/projectGroupChatsBridge';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { ProjectGroupsStore } from './project-groups-store';
 
 const mocks = vi.hoisted(() => ({
@@ -12,8 +13,12 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, () => void>(),
 }));
 
+vi.mock('@/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }));
 vi.mock('@renderer/lib/ipc', () => ({
-  events: { on: (channel: { name: string }, handler: () => void) => { mocks.handlers.set(channel.name, handler); return () => {}; } },
+  onMachineEvent: (machine: string | null, channel: { name: string }, handler: () => void) => {
+    mocks.handlers.set(`${machine ?? 'local'}:${channel.name}`, handler);
+    return () => {};
+  },
   rpcOn: (machine: string | null) => ({
     projects: {
       listProjectGroupBindings: () => (mocks.answers.get(machine ?? 'local') ?? (() => Promise.reject(new Error('offline'))))(),
@@ -29,6 +34,10 @@ const settle = async () => {
 
 describe('ProjectGroupsStore', () => {
   beforeEach(() => {
+    // The bindings are the replica `projectGroupBindings`, read for the account signed in (signed in first: the replica's
+    // pointer to the last account is not what the last case checks this computer keeps).
+    queryClient.clear();
+    followRendererSession('SIGNED_IN', 'tester');
     localStorage.clear();
     mocks.answers.clear();
   });

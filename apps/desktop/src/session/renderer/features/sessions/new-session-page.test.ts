@@ -202,6 +202,9 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
   const { runInAction } = await import('mobx');
   class TestAccounts extends actual.AccountProjectsStore {
     extra: AccountProject[] = [];
+    override get localDeviceId(): string | null {
+      return 'this-computer';
+    }
     override get projects(): readonly AccountProject[] {
       return [
         ...mocks.orderedProjects.map((project) => ({
@@ -219,7 +222,6 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
     connected: () => true,
   });
   runInAction(() => {
-    accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.status = 'ready';
   });
   return { ...actual, accountProjectsStore };

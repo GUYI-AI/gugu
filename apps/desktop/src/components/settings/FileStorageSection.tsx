@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { replica, useReplica } from '../../lib/replica'
+import { refreshFailure, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { FILE_RETENTIONS, IMAGE_RETENTIONS, parseFileStorage, type FileStorage } from '@gugu/core/shared/fileStorage'
 import { messageForUser } from '@/lib/userFacingError'
-import { listMyDeviceProjects } from '../../lib/deviceProjects'
 import { writeFileStorage } from '../../lib/fileStorage'
 import { ownSettings } from '../../lib/ownSettings'
+import { devicesModel } from '../../store/devicesCache'
 import { useAuth } from '../../store/auth'
 import { Button } from '../ui/Button'
 import { useSettingsDetail } from './SettingsDetailNavigation'
@@ -26,15 +26,10 @@ import { SettingsChoice } from './SettingsChoice'
  * 改一次写两格(owner 10-28)。临时文件在普通群里也生效,所以这一行人人都有。
  */
 /**
- * Which of this account's machines carry a bound project group. The file storage itself is a key of the account's own
- * settings row (ownSettings, `user`): one copy of that row, ❌ a second reading of it here.
+ * The file storage is a key of the account's own settings row (ownSettings, `user`); which of this account's machines
+ * carry a bound project group is read off the machines (the devices replica: each row carries the projects the account
+ * records for it). One copy of each, ❌ a second reading of either here.
  */
-const projectGroupMachines = replica({
-  name: 'projectGroupMachines',
-  scope: 'account',
-  read: async () => Object.entries(await listMyDeviceProjects()).filter(([, rows]) => rows.some((row) => row.chatId)).map(([deviceId]) => deviceId),
-  persist: { maxBytes: 1024, maxEntries: 1 },
-})
 
 export function FileStorageSection({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation('settings')
@@ -43,12 +38,15 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const userId = user?.id
   const row = useReplica(ownSettings, userId ? ['user'] : null)
-  const machines = useReplica(projectGroupMachines, userId ? [] : null)
-  const state = row.state === 'value' && machines.state === 'value' ? { storage: parseFileStorage(row.value), machines: machines.value } : null
-  const failure = row.state === 'error' ? row.error : machines.state === 'error' ? machines.error : null
+  const devices = useReplica(devicesModel, userId ? [] : null)
+  const machines = devices.state === 'value' ? devices.value.filter((device) => device.projects?.some((project) => project.chatId)) : null
+  // The projects of a machine not read this time are its earlier ones, marked (projects_error): said as a failed refresh.
+  const projectsError = devices.state === 'value' ? devices.value.find((device) => device.projects_error)?.projects_error : undefined
+  const state = row.state === 'value' && machines ? { storage: parseFileStorage(row.value), machines } : null
+  const failure = row.state === 'error' ? row.error : devices.state === 'error' ? devices.error : null
   const loadFailed = failure ? messageForUser(failure) : ''
   const [saveFailed, setSaveFailed] = useState('')
-  const load = () => { void ownSettings.refresh('user'); void projectGroupMachines.refresh() }
+  const load = () => { void ownSettings.refresh('user'); void devicesModel.refresh() }
 
   // A save puts the row the server kept into ownSettings: every reader of that row (this page among them) sees it.
   const update = (change: Partial<FileStorage>) => {
@@ -82,7 +80,7 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
         {storage.image_retention !== storage.temporary_retention && <SettingsNote>{t('fileStorage.keptDiffer', {
           images: t(`fileStorage.retentions.${storage.image_retention}`), temporary: t(`fileStorage.retentions.${storage.temporary_retention}`) })}</SettingsNote>}
         {saveFailed && <SettingsNote tone="danger">{saveFailed}</SettingsNote>}
-        <RefreshFailed error={(row.state === 'value' ? row.error : null) ?? (machines.state === 'value' ? machines.error : null)} onRetry={load} />
+        <RefreshFailed error={refreshFailure(row) ?? refreshFailure(devices) ?? (projectsError ? new Error(projectsError) : null)} onRetry={load} />
       </>}>
       {bound && <SettingsRow title={<label htmlFor="settings-file-mode">{t('fileStorage.files')}</label>}
         description={`${t(cloud ? 'fileStorage.filesCloudHint' : 'fileStorage.filesMachineHint')} ${t('fileStorage.machines')}`}
