@@ -1,7 +1,6 @@
 import type { HarnessModelCredentialStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentModelCatalogAnswer } from '@main/core/agents/platform-model-catalog-hook';
 import { refreshTag, replica } from '@/lib/replica';
-import { rendererLogger } from '@/lib/log';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
 import type {
@@ -87,23 +86,14 @@ export const targetModelCatalog = replica({
   refreshOnFocus: false,
 });
 
-// #4956
-const credentialLog = rendererLogger('harness-model-credential');
-
 export const harnessModelCredential = replica({
   name: 'harnessModelCredential',
   ...ofMachine,
+  // #4956 a failure is logged by the replica; its reader turns it into "cannot tell".
   read: async (_owner, machine: Machine, providerId: string, modelId: string): Promise<HarnessModelCredentialStatus> => {
-    try {
-      const runtime = await getAgentConfigRuntimeClient(machine);
-      const result = await runtime.modelCredential({ providerId, modelId });
-      if (!result.success) throw new Error(`modelCredential(${providerId}, ${modelId}) failed`, { cause: result.error });
-      return result.data;
-    } catch (error) {
-      // Said here, once per read: its reader turns a failure into "cannot tell".
-      credentialLog.warn({ providerId, modelId, machine, error: String(error) }, 'model credential could not be read');
-      throw error;
-    }
+    const result = await (await getAgentConfigRuntimeClient(machine)).modelCredential({ providerId, modelId });
+    if (!result.success) throw new Error(`modelCredential(${providerId}, ${modelId}) failed`, { cause: result.error });
+    return result.data;
   },
   fresh: 60_000,
 });

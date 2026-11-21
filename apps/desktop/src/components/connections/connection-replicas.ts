@@ -46,7 +46,6 @@ export const chatChannels = replica({
   refreshEvery: 10_000,
   // As fresh as its poll: a surface opening within it is no reason to read again.
   fresh: 10_000,
-  // A connection change (made here or heard from the owner's bus) reads it again while a surface shows it.
   // A connection change (made here, heard from the owner's bus, an assistant panel's) reads every connection model again
   // while one is shown (or held: the integrations provider). Starting reads them once: what changed while nobody listened.
   watch: {
@@ -60,7 +59,6 @@ export const chatChannels = replica({
     },
   },
 })
-
 
 function ownerRoute(epoch: string) {
   const route = connectionBridge().routing.peek()
