@@ -1,7 +1,7 @@
-import { isAssistantPanelReadRetryable } from '@gugu/core/cloud/assistantPanelRead';
+import { retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
 import { useMutation } from '@tanstack/react-query';
 import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
-import { keepLibraryHost, libraryHostOf, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
+import { keepLibraryHost, libraryHostOf, peekLibraryHost, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { rpcOn } from '@renderer/lib/ipc';
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
 import { cachedDevicesAccount } from '@/store/devicesCache';
@@ -9,26 +9,15 @@ import { CONNECTIONS } from '@/components/connections/connection-replicas';
 import { refreshTag } from '@/lib/replica';
 import type { GitHubAccountSummary } from '@shared/github';
 
-/** An assistant panel's store may still be settling right after it opened. */
-const ASSISTANT_PANEL_READ_ATTEMPTS = 3;
-
 /**
  * GitHub 账号是**这台机器上**连的(#6264 整个资源库都分机器);按机器(`host.key`)各一条。Signal tier.
  */
 export const githubAccounts = replica({
   name: 'githubAccounts',
   scope: 'device',
-  read: async (_owner, hostKey: string): Promise<GitHubAccountSummary[]> => {
-    const host = libraryHostOf(hostKey);
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await host.github.listAccounts();
-      } catch (error) {
-        if (!host.assistantPanelExpected || attempt >= ASSISTANT_PANEL_READ_ATTEMPTS || !isAssistantPanelReadRetryable(error)) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-      }
-    }
-  },
+  read: (_owner, hostKey: string): Promise<GitHubAccountSummary[]> => libraryHostOf(hostKey).github.listAccounts(),
+  // An assistant panel's store may still be settling right after it opened: its read is retried (another host's is not).
+  retry: (failures, error, hostKey) => !!peekLibraryHost(hostKey)?.assistantPanelExpected && retryAssistantPanelRead(failures, error),
   fresh: 30_000,
   refreshOnFocus: true,
 });

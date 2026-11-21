@@ -1,33 +1,22 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { rpc } from '@renderer/lib/ipc'
-import { rendererLogger } from '@/lib/log'
 import { replica, useReplica } from '@/lib/replica'
 import { Progress } from '@/components/ui/Progress'
 
-const log = rendererLogger('integrations/install-progress')
-
 export type CliDownloadProgress = Awaited<ReturnType<typeof rpc.integrations.cliLoginProgress>>
 
+/** Each source's reader, as its surface last gave it (a function is no key). */
 const readers = new Map<string, () => Promise<CliDownloadProgress>>()
-const reportedFailures = new Set<string>()
 
-/** Someone else's progress: a read, not a command. */
+/** Someone else's progress: a read, not a command. A failed read is logged by the replica. */
 const cliInstallProgress = replica({
   name: 'cliInstallProgress',
   scope: 'device',
-  read: async (_owner: string, source: string): Promise<CliDownloadProgress> => {
+  read: (_owner: string, source: string): Promise<CliDownloadProgress> => {
     const read = readers.get(source)
     if (!read) throw new Error(`no install progress reader for ${source}`)
-    try {
-      const progress = await read()
-      reportedFailures.delete(source)
-      return progress
-    } catch (error) {
-      if (!reportedFailures.has(source)) log.warn({ error: String(error) }, 'CLI install progress could not be read')
-      reportedFailures.add(source)
-      throw error
-    }
+    return read()
   },
   refreshEvery: 750,
   keep: 0,

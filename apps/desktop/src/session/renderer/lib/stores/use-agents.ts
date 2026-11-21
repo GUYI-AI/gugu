@@ -1,23 +1,14 @@
 import { useReplica, type Reading } from '@/lib/replica';
-import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { AgentIconAsset, AgentPayload } from '@shared/core/agents/agent-payload';
+import { useHostMachine, useHostReplica } from './host-replica';
 import { agentIcons, agentMetadata, agentsMetadata, managementAgent, managementAgents } from './agent-replicas';
-
-/**
- * The library host's machine (null = this computer); one not connected is not asked (its last answer stays drawn).
- */
-function useHostMachine(): { machine: string | null; online: boolean } {
-  const remote = useLibraryHost().remote;
-  return { machine: remote?.deviceId ?? null, online: remote?.online !== false };
-}
 
 /**
  * The agents offered for new tasks on the host's machine (name, description, icon, capabilities).
  * #6264 会话 / 新建框在别的机器上:名单与装没装都是那台机器的(一套工作台,同一个控制器)。
  */
 export function useAgents(): Reading<AgentPayload[]> {
-  const { machine, online } = useHostMachine();
-  return useReplica(agentsMetadata, [machine], { read: online });
+  return useHostReplica(agentsMetadata, []);
 }
 
 /**

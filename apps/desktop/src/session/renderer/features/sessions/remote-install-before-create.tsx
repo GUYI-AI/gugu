@@ -9,6 +9,7 @@ import { getAgentInstallErrorPresentation } from '@renderer/features/settings/ag
 import { installProgressLine } from '@renderer/features/settings/agents-page/install-progress-line';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import { agentInstallProgressChannel } from '@shared/events/appEvents';

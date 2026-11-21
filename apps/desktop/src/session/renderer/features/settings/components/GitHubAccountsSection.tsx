@@ -7,8 +7,7 @@ import {
 } from '@renderer/features/projects/components/github-account-select';
 import { sortGitHubAccountsByDefault } from '@renderer/features/projects/components/github-account-select-model';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import { Unknown } from '@/components/ui/Unknown';
-import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
 import { useGitHubAccounts, useRemoveGitHubAccount, useSetDefaultGitHubAccount } from '@renderer/lib/hooks/useGithubAccounts';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { rpc } from '@renderer/lib/ipc';
@@ -16,7 +15,6 @@ import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { PRODUCT_NAME } from '@shared/app-identity';
 import type { GitHubAccountSummary } from '@shared/github';
 
@@ -49,22 +47,18 @@ export function GitHubAccountsSection() {
         </TooltipProvider>
       </div>
 
-      {accounts.state === 'unknown' ? (
-        <Unknown className="h-[60px] w-full rounded-lg" />
-      ) : accounts.state === 'error' ? (
-        <ReadFailedLine className="py-3" message={translate('github.loadFailed')} onRetry={accounts.retry} />
-      ) : accounts.value.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3 dark:bg-foreground/[0.03]">
-          <div className="bg-background-2/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
-            <Github className="text-foreground-muted h-4 w-4" />
+      <ReadingSlot reading={accounts} placeholder="h-[60px] w-full rounded-lg" failed={() => translate('github.loadFailed')}>
+        {(value) => value.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3 dark:bg-foreground/[0.03]">
+            <div className="bg-background-2/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
+              <Github className="text-foreground-muted h-4 w-4" />
+            </div>
+            <p className="text-foreground-muted min-w-0 flex-1 text-sm">{translate('github.none')}</p>
           </div>
-          <p className="text-foreground-muted min-w-0 flex-1 text-sm">{translate('github.none')}</p>
-        </div>
-      ) : (
-        <GitHubAccountRows accounts={sortGitHubAccountsByDefault(accounts.value)} />
-      )}
-      {/* Read before, its re-read failed: said with a retry, the accounts read before staying (❌ shown as current). */}
-      {accounts.state === 'value' ? <RefreshFailed reading={accounts} /> : null}
+        ) : (
+          <GitHubAccountRows accounts={sortGitHubAccountsByDefault(value)} />
+        )}
+      </ReadingSlot>
     </section>
   );
 }

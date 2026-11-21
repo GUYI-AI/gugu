@@ -8,6 +8,7 @@ import { setPinnedToSidebar } from '@renderer/features/sidebar/sidebar-pin-actio
 import { rowPinOf } from '@renderer/features/sidebar/row-pin';
 import { useNavigate } from '@renderer/lib/layout/navigation-actions';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu';
 import { menuTableIcon, menuTableLabel } from '@/components/menuTablePresentation';
@@ -55,8 +56,7 @@ export const SessionActionsProvider = observer(function SessionActionsProvider({
   const { translate } = useSessionMessages();
   const { projectId, sessionId: pageSessionId } = useSessionViewContext();
   const showConfirm = useShowModal('confirmActionModal');
-  const agentsReading = useAgents();
-  const agents = agentsReading.state === 'value' ? agentsReading.value : null;
+  const agents = valueOf(useAgents()) ?? null;
   const { navigate } = useNavigate();
 
   /**

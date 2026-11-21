@@ -107,7 +107,7 @@ export function useAgentSignIn(
       refreshTag(SUBSCRIPTIONS, machine, agent.id);
       if (!touchesMain) return;
       void forceRefreshHarnessModelCatalog(agent.id);
-      void harnessModelCredential.refresh(agent.id);
+      void harnessModelCredential.refresh(undefined, agent.id);
     };
     showSignIn({
       providerId: agent.id,

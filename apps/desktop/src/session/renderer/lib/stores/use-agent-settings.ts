@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
-import { refreshFailure, useReplica } from '@/lib/replica';
+import { refreshFailure, retryOf } from '@/lib/replica';
 import { agentSettings } from './agent-replicas';
+import { useHostMachine, useHostReplica } from './host-replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 
@@ -9,10 +10,9 @@ import type { ProviderCustomConfig } from '@shared/core/app-settings';
  * the `agentSettings` reading, mutations for update and reset-to-defaults.
  */
 export function useAgentSettings(id: string) {
-  const host = useLibraryHost();
-  const agentsRpc = host.agents;
-  const machine = host.remote?.deviceId ?? null;
-  const reading = useReplica(agentSettings, [machine, id], { read: host.remote?.online !== false });
+  const agentsRpc = useLibraryHost().agents;
+  const { machine } = useHostMachine();
+  const reading = useHostReplica(agentSettings, [id]);
 
   const updateMutation = useMutation<void, Error, Partial<ProviderCustomConfig>>({
     mutationFn: (config) => agentsRpc.updateSettings(id, config),
@@ -34,7 +34,7 @@ export function useAgentSettings(id: string) {
     isLoading: reading.state === 'unknown',
     /** Not read, or read before and its re-read failed (`value` then stays what was read): a surface says it with `retry`. */
     error: refreshFailure(reading),
-    retry: () => void agentSettings.refresh(machine, id),
+    retry: retryOf(reading),
     value: data?.value,
     defaults: data?.defaults,
     overrides: data?.overrides,
