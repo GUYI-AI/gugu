@@ -24,6 +24,7 @@ import {
   EXTENSION_INSTALLED_CHANGED_METHOD,
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
+  EXTENSION_PICK_CHAT_FILES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
   EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
@@ -45,6 +46,7 @@ import {
   boxOnWindow,
   type ViewBox,
 } from '@shared/extensions/app-runtime-protocol';
+import type { FilePickAsk } from '@shared/extensions/app-file-pick-core';
 import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
 import { installedExtensionsStore } from './installed-extensions-store';
@@ -462,6 +464,11 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /** API 62 `gugu.files.pick`: the person picks chat files main listed, in the shell's sheet (FilePickSheet). */
+  [EXTENSION_PICK_CHAT_FILES_METHOD]: async (params: unknown) => {
+    const { pickChatFiles } = await import('@/components/chat/filePickAsk');
+    return pickChatFiles(params as FilePickAsk);
   },
   /** API 60 Cite or Send pressed on a page's selection menu (file-selection.ts): a draft, or the host's line at that page. */
   [EXTENSION_FILE_SELECTION_METHOD]: async (params: unknown) => {

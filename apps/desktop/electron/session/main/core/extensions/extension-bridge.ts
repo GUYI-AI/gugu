@@ -51,7 +51,7 @@ import {
   callRefusal,
   type CallRefusalCaller,
 } from '@shared/extensions/bridge-protocol';
-import type { ExtensionHostAction, ExtensionHostActionOrigin, ExtensionHostActionResult } from '@shared/extensions/host-actions';
+import { EXTENSION_PICK_CHAT_FILES_METHOD, type ExtensionHostAction, type ExtensionHostActionOrigin, type ExtensionHostActionResult } from '@shared/extensions/host-actions';
 import { EXTENSION_FILE_SELECTION_METHOD, parseSelectionAction, selectionConversationOf, selectionMenu, type FileReference, type FileSelectionAsk } from '@shared/extensions/file-selection';
 import type { AnnotationConversation } from '@shared/browser-annotation';
 import { fileSync } from '@main/core/extensions/file-sync';
@@ -60,6 +60,8 @@ import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAs
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
+import type { FilePickAsk, FilePicked } from '@shared/extensions/app-file-pick-core';
+import type { DispatchHere } from '@shared/extensions/app-send-core';
 import { coalescedReads } from '@shared/extensions/coalesced-reads';
 import { agentReport } from '@shared/extensions/agent-view';
 import { stopResourceWatches } from './app-resource-watches';
@@ -227,6 +229,7 @@ function pageCaller(binding: SurfaceBinding, webContentsId: number, gesture: boo
     pageId: webContentsId,
     extensionId: binding.extensionId,
     handed: handedFileOf(binding),
+    ...(pickedFiles.has(webContentsId) ? { picked: pickedFiles.get(webContentsId)! } : {}),
     ...(binding.personOpened ? { personOpened: true as const } : {}),
     boundChat: binding.conversation,
     ...(binding.operator.kind === 'agent' ? { asAgent: binding.operator.id.replace(/^user:/, '') } : {}),
@@ -512,6 +515,8 @@ function cloudAppOf(caller: BridgeCaller) {
 
 /** The pages that listed or read a working copy: they hold its tree's folders and the versions they read (working-copy-files.ts) until they go. */
 const workingCopyPages = new Set<number>();
+/** API 62: the chat files the person picked for a page (`files.pick`), open to it with no capability until its document goes. */
+const pickedFiles = new Map<number, Set<string>>();
 
 export function stopPageWatches(pageId: number): void {
   for (const stop of cloudWatches.get(pageId)?.values() ?? []) stop();
@@ -525,6 +530,7 @@ export function stopPageWatches(pageId: number): void {
   for (const watch of watching?.values() ?? []) watch.disk?.stop();
   pageWatches.delete(pageId);
   if (workingCopyPages.delete(pageId)) void import('@main/core/extensions/working-copy-files').then(({ releaseWorkingCopies }) => releaseWorkingCopies(pageId));
+  pickedFiles.delete(pageId);
   for (const { resource, caller } of watching?.values() ?? []) forgetUnheard(resource, caller);
 }
 
@@ -1262,6 +1268,24 @@ export async function bringSessionUp(session: { sessionId: string; projectId: st
  */
 const chatsDrawnIn = new Map<string, { chat: ExtensionChat | null; members?: ExtensionMember[] }>();
 const contextHasMembers = (binding: SurfaceBinding) => !(extensionsService().get(binding.extensionId).manifest.apiVersion >= 27);
+/**
+ * The chat a page is drawn in, for the host's sheet (`dispatch`, `pickAgent({ include })`): its members as the page's context
+ * has them, or (API 27+) read only when the sheet opens, as whoever works the page.
+ */
+function drawnChatOf(page: SurfaceBinding | null): Pick<DispatchHere, 'chat' | 'readMembers'> {
+  const drawnIn = page?.conversation ? chatsDrawnIn.get(page.conversation) : undefined;
+  if (!page || !drawnIn?.chat) return { chat: null };
+  const chat = { id: drawnIn.chat.id, name: drawnIn.chat.name };
+  if (contextHasMembers(page)) return { chat: { ...chat, members: drawnIn.members! } };
+  const { operator } = page;
+  return {
+    chat: { ...chat, members: [] },
+    readMembers: async () => {
+      const { chatMembersOf } = await import('@main/core/extensions/app-files');
+      return chatMembersOf(chat.id, { asAgent: operator.kind === 'agent' ? operator.id.replace(/^user:/, '') : null });
+    },
+  };
+}
 const chatIsRead = (binding: SurfaceBinding) => {
   const read = binding.conversation ? chatsDrawnIn.get(binding.conversation) : undefined;
   return read !== undefined && (!contextHasMembers(binding) || read.members !== undefined);
@@ -2146,17 +2170,13 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         throw Object.assign(new Error('A binding is the person\'s: a page an agent works puts no draft into it'), { code: 'denied' });
       }
       const { dispatchForApp } = await import('@main/core/extensions/extension-send');
-      const drawnIn = page?.conversation ? chatsDrawnIn.get(page.conversation) : undefined;
       const operator = page?.operator;
+      const drawnIn = page?.conversation ? chatsDrawnIn.get(page.conversation) : undefined;
       return await dispatchForApp(
         extensionId,
         args,
         {
-          chat: drawnIn?.chat ? { id: drawnIn.chat.id, name: drawnIn.chat.name, members: page && contextHasMembers(page) ? drawnIn.members! : [] } : null,
-          ...(page && drawnIn?.chat && !contextHasMembers(page) ? { readMembers: async () => {
-            const { chatMembersOf } = await import('@main/core/extensions/app-files');
-            return chatMembersOf(drawnIn.chat!.id, { asAgent: operator?.kind === 'agent' ? operator.id.replace(/^user:/, '') : null });
-          } } : {}),
+          ...drawnChatOf(page),
           session: page ? sessionOfBinding(page) : null,
           folders: drawnIn?.chat?.folders ?? [],
           ...(operator?.kind === 'agent' ? { as: operator.id.replace(/^user:/, '') } : {}),
@@ -2352,10 +2372,17 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return undefined;
 
     case 'pickAgent': {
-      const [{ pickDispatchTarget }, { pickAgentAsk, answerAgentPick }, { cloudForApp: cloud }] = await Promise.all([
+      const [{ pickDispatchTarget }, { pickAgentAsk, pickAgentInclude, answerAgentPick }, { cloudForApp: cloud }] = await Promise.all([
         import('@main/core/extensions/extension-bridge-relay'), import('@shared/extensions/app-dispatch-core'), import('@main/core/extensions/extension-send'),
       ]);
-      return await answerAgentPick(args, await pickDispatchTarget(thePage(caller).embedderId, pickAgentAsk(args)), (name, given) => cloud.write(cloudAppOf(caller), name, given));
+      // API 62 `include`: the page's chat and who is in it, as dispatch's sheet has them; the default reads none.
+      const page = caller.binding;
+      // Its chat not read yet (asked before `getContext`): read as `getContext` reads it.
+      if (pickAgentInclude(args) !== 'agents' && page?.conversation && !chatIsRead(page)) await chatRead(page.conversation, contextHasMembers(page));
+      const here = pickAgentInclude(args) === 'agents' ? { chat: null } : drawnChatOf(page);
+      const chat = here.chat && here.readMembers ? { ...here.chat, members: await here.readMembers() } : here.chat;
+      const ask = pickAgentAsk(args, chat);
+      return await answerAgentPick(args, ask, await pickDispatchTarget(thePage(caller).embedderId, ask), (name, given) => cloud.write(cloudAppOf(caller), name, given));
     }
 
     case 'chatsMembers': {
@@ -2543,6 +2570,37 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return args.folder === undefined
         ? await files.uploadAppFiles(page, place, picked, args.sourceMessageIds)
         : await files.uploadAppFiles(page, place, picked, args.sourceMessageIds, args.folder);
+    }
+
+    case 'filesPick': {
+      // API 62: the chat's files listed here, as whoever works the page (on a page an agent works the door has already
+      // answered `[]`); the window's sheet draws them and says which were picked — only ids it was handed count.
+      const [files, { filePickCallOf, pickableFiles, pickedEntries }, { invokeInEmbedder }] = await Promise.all([
+        import('@main/core/extensions/app-files'), import('@shared/extensions/app-file-pick-core'), import('@main/core/extensions/extension-bridge-relay'),
+      ]);
+      const shown = thePage(caller);
+      const call = filePickCallOf(args);
+      const page = caller.filePage(args);
+      const place = { chat: call.chat };
+      const ask: FilePickAsk = {
+        files: pickableFiles(await files.listAppFiles(page, { place }), call.suffixes),
+        multiple: call.multiple,
+        ...(call.title === undefined ? {} : { title: call.title }),
+        ...(call.action === undefined ? {} : { action: call.action }),
+        // Adding a file is an upload: only an App that may upload (`files:write`) offers it.
+        upload: call.upload && extensionsService().hasCapability(extensionId, 'files:write'),
+      };
+      const answer = await invokeInEmbedder(shown.embedderId, EXTENSION_PICK_CHAT_FILES_METHOD, ask) as FilePicked;
+      if (!answer) return [];
+      let picked: AppFileEntry[];
+      if ('upload' in answer) {
+        if (!ask.upload) return [];
+        const owner = shown.embedderId === null ? null : (webContents.fromId(shown.embedderId) ?? null);
+        const uploads = await files.pickFilesToUpload(owner);
+        picked = uploads.length === 0 ? [] : await files.uploadAppFiles(page, place, uploads);
+      } else picked = pickedEntries(ask, answer.ids);
+      if (picked.length > 0) pickedFiles.set(caller.pageId, new Set([...(pickedFiles.get(caller.pageId) ?? []), ...picked.map((entry) => entry.id)]));
+      return picked;
     }
 
     case 'filesDownload':

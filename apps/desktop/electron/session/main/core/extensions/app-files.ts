@@ -126,6 +126,8 @@ export interface DesktopFilePage {
   pageId: number;
   extensionId: string;
   handed: (AppFileRef & { id: string }) | null;
+  /** API 62: the chat files the person picked for this page (`files.pick`): as handed as `handed`. */
+  picked?: ReadonlySet<string>;
   /** Gateway-stamped versions of the cards handed to this exact call. */
   handedVersions?: readonly number[];
   /**
@@ -248,12 +250,13 @@ const local = createLocalAppFiles({
   self: files.self,
 });
 
-/** The chat side of a page: the chat file it was handed, if that is one. */
+/** The chat side of a page: the chat file it was handed, if that is one, and the ones the person picked for it. */
 function chatSurface(page: DesktopFilePage): FileSurface {
   return {
     pageId: page.pageId,
     extensionId: page.extensionId,
     itemId: page.handed && 'chat' in page.handed ? page.handed.id : null,
+    ...(page.picked ? { picked: page.picked } : {}),
     asAgent: page.asAgent ?? null,
     ...(page.callId ? { callId: page.callId } : {}),
     ...(page.signal ? { signal: page.signal } : {}),

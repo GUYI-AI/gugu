@@ -210,7 +210,7 @@ export interface DispatchAsk {
   /** Phone only: the default computer for a new agent; the person can change it in the existing machine picker. */
   spawnOn?: string | null;
   /**
-   * Not a message but a pick (`gugu.pickAgent`): only the person's own agents are offered, the App's words are what is shown,
+   * Not a message but a pick (`gugu.pickAgent`): the person's own agents (with `include`, the chat's members too), the App's words are what is shown,
    * nothing is written to anyone; what follows the pick is the App's.
    */
   pick?: AgentPickWords;
@@ -224,11 +224,25 @@ export type DispatchPicked =
   | { to: { chat: string } | { chat: string; member: string } | { agent: string } | { new: true; device?: string }; visible: boolean; text: string }
   | null;
 
-/** All of `gugu.pickAgent`'s sheet is the App's words: the host knows only that a person picks one of their agents. */
+/** All of `gugu.pickAgent`'s sheet is the App's words: the host knows only that a person picks an agent (or, with `include`, a member). */
 export interface AgentPickWords { title: string; subject: string; body: string; action: string; search: string; empty: string }
 
-/** `gugu.pickAgent({ title, subject, body, action, search, empty, preselect?, write? })`, as the sheet is asked. */
-export function pickAgentAsk(args: Record<string, unknown>): DispatchAsk {
+/**
+ * API 62 `pickAgent({ include })`: whom the sheet offers — `agents` (the default) the person's own agents; `people` the agents
+ * and people of the chat the page is drawn in; `all` both.
+ */
+export type AgentPickInclude = 'agents' | 'people' | 'all';
+export function pickAgentInclude(args: Record<string, unknown>): AgentPickInclude {
+  const include = args.include ?? 'agents';
+  if (include !== 'agents' && include !== 'people' && include !== 'all') throw Object.assign(new Error('pickAgent: include is "agents", "people" or "all"'), { code: 'invalid' as const });
+  return include;
+}
+
+/**
+ * `gugu.pickAgent({ title, subject, body, action, search, empty, preselect?, include?, write? })`, as the sheet is asked;
+ * `chat`, the page's chat with its members, for `people` and `all` (the person is among them: it is a pick, not a message).
+ */
+export function pickAgentAsk(args: Record<string, unknown>, chat: DispatchAsk['chat'] = null): DispatchAsk {
   const word = (key: keyof AgentPickWords) => {
     const value = args[key];
     if (typeof value !== 'string' || !value.trim() || value.length > 1000) throw Object.assign(new Error(`pickAgent: ${key} is text of 1 to 1000 characters`), { code: 'invalid' as const });
@@ -236,22 +250,32 @@ export function pickAgentAsk(args: Record<string, unknown>): DispatchAsk {
   };
   const pick = { title: word('title'), subject: word('subject'), body: word('body'), action: word('action'), search: word('search'), empty: word('empty') };
   const preselect = typeof args.preselect === 'string' ? personId(args.preselect.replace(/^user:/, '')) : null;
-  return { pick, draft: false, offers: ['my-agent'], text: '', pills: [], chat: null, preselect, visible: false };
+  const include = pickAgentInclude(args);
+  if (include === 'people' && !chat) throw Object.assign(new Error('pickAgent: include "people" offers the members of the chat the page is drawn in, and this page is in none'), { code: 'invalid' as const });
+  const members: DispatchOffer[] = chat && include !== 'agents' ? ['agent-in-chat', 'person-in-chat'] : [];
+  const offers: DispatchOffer[] = include === 'people' ? members : [...members, 'my-agent'];
+  return { pick, draft: false, offers, text: '', pills: [], chat: include === 'agents' ? null : chat, preselect, visible: false };
 }
 
 /**
- * What a pick answers. The person's press was in the host's sheet, not on the page, so what it is for goes with the ask:
- * `write: { name, args, agent }` is done by that press (`gugu.cloud.write`'s, the picked agent's bare id as the argument `agent` names).
+ * What a pick answers: an agent — the person's own or one in the chat — as `{ agent }`, a person in the chat as `{ member }`
+ * (`user:` ids both). The person's press was in the host's sheet, not on the page, so what it is for goes with the ask:
+ * `write: { name, args, agent }` is done by that press (`gugu.cloud.write`'s, the picked bare id as the argument `agent` names).
  */
 export async function answerAgentPick(
   args: Record<string, unknown>,
+  ask: DispatchAsk,
   picked: DispatchPicked,
   write: (name: unknown, given: Record<string, unknown>) => Promise<unknown>,
-): Promise<{ agent: string; written?: unknown } | { cancelled: true }> {
-  if (!picked || !('agent' in picked.to)) return { cancelled: true };
-  const agent = picked.to.agent;
+): Promise<({ agent: string } | { member: string }) & { written?: unknown } | { cancelled: true }> {
+  if (!picked) return { cancelled: true };
+  const { to } = picked;
+  const member = 'member' in to ? ask.chat?.members.find((one) => one.id === to.member) : undefined;
+  const id = 'agent' in to ? to.agent : member?.id;
+  if (!id) return { cancelled: true };
+  const answer = 'agent' in to || member?.kind === 'agent' ? { agent: id } : { member: id };
   const asked = args.write as { name?: unknown; args?: Record<string, unknown>; agent?: unknown } | undefined;
-  if (!asked) return { agent };
+  if (!asked) return answer;
   if (typeof asked.agent !== 'string' || !asked.agent) throw Object.assign(new Error('pickAgent: write.agent names the argument for the agent'), { code: 'invalid' as const });
-  return { agent, written: await write(asked.name, { ...asked.args, [asked.agent]: agent.replace(/^user:/, '') }) };
+  return { ...answer, written: await write(asked.name, { ...asked.args, [asked.agent]: id.replace(/^user:/, '') }) };
 }

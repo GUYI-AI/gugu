@@ -190,6 +190,8 @@ export const HOST_CALLS = {
       ...(typeof args?.folder === 'string' ? { folder: args.folder } : {}),
     }),
   },
+  /** API 62: the person picks chat files in the host's sheet — a page's, inside a gesture. */
+  'appFiles.pick': { verb: 'filesPick' },
   'appFiles.openWith': { verb: 'filesOpenWith' },
   'appFiles.download': { verb: 'filesDownload' },
   'appFiles.forward': { verb: 'filesForward' },
