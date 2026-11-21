@@ -1,20 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { effectLines, exemptionProblems, handRetryLines, literalDefaultLines, reactQueryLines, readExemptions, scanEffectFetchState, scanHandRetries, scanLiteralDefaults, scanReactQuery } from '../../../scripts/checks/effect-fetch-state.mts'
+import { effectLines, exemptionProblems, handRetryLines, literalDefaultLines, reactQueryLines } from '../../../scripts/checks/effect-fetch-state.mts'
 
 /**
- * @@@client-state-model hard rules (there is no baseline): no effect reads into component state and no reading collapsed
- * to a literal default but what effect-fetch-state-exemptions.txt lists, nothing outside lib/replica.ts reaches react-query.
- * The source is clean, and each rule still catches what it is for (the cases below are injected into it).
+ * @@@client-state-model hard rules (there is no baseline): each rule still catches what it is for (the cases below are
+ * injected into it). That the source itself is clean is `node scripts/checks/effect-fetch-state.mts`, run by `pnpm
+ * lint:source` in the Source checks job; repeating its three whole-repo AST scans here cost 60–90 s per CI run.
  */
-describe('the source', () => {
-  const rule = 'read what a surface shows through a replica (lib/replica.ts) and branch on unknown / value / error — @@@client-state-model, docs/design/client-state-model.md'
-  it('has no effect that fills component state with a read and no reading collapsed to a literal default but the listed', () => {
-    expect(exemptionProblems({ 'effect-flow': scanEffectFetchState(), 'reading-default': scanLiteralDefaults() }, readExemptions()), rule).toEqual([])
-  })
-  it('reaches react-query only through the replica', () => { expect(scanReactQuery(), rule).toEqual({}) })
-  it('hands no reading a retry written by hand', () => { expect(scanHandRetries(), rule).toEqual({}) })
-})
-
 describe('react-query past the replica (what counts)', () => {
   const lines = (code: string, path = 'apps/desktop/src/a.tsx') => reactQueryLines(path, code)
   it('anything imported from react-query but a write (whatever it is renamed to)', () => {
