@@ -3,7 +3,7 @@ const state = vi.hoisted(() => ({ summary: vi.fn(), owns: vi.fn(), open: vi.fn()
 vi.mock('@/lib/ownedAgentConversation', () => ({ isOwnedAgentPeer: state.owns, openOwnedAgentEntry: state.open }));
 vi.mock('@/lib/chatSummariesBridge', () => ({ readChatSummary: state.summary }));
 vi.mock('@renderer/lib/modal/modal-store', () => ({ modalStore: { closeModal: vi.fn() } }));
-vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() } } }));
+vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { start: vi.fn(), push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() } } }));
 import { chatView } from './view';
 import { NavigationStore } from '@renderer/lib/stores/navigation-store';
 beforeEach(() => { vi.resetAllMocks(); });

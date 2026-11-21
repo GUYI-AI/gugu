@@ -3,6 +3,7 @@ import type { GuardResult, ViewId, WrapParams } from '@renderer/app/view-registr
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import type { NavigationSnapshot } from '@shared/view-state';
 import { appState } from './app-state';
+import type { HistoryEntry } from './navigation-history-store';
 import type { Snapshottable } from './snapshottable';
 
 type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
@@ -95,19 +96,18 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   }
 
   navigate<T extends ViewId>(viewId: T, params?: WrapParams<T>): void {
+    appState.history.start(this._historyEntry(this.currentViewId, this.viewParamsStore[this.currentViewId] ?? {}));
     if (viewId !== 'session') {
-      // 后退回到的是**位置**,不是当时那次意图:历史条目会被原样重放
-      // (`applyHistoryEntry` → `_applyNavigation(viewId, entry.params)`),意图录进去就等于
-      // 给它开了一条绕过「离开即作废」的后门 —— 用户明明把抽屉关掉了,按一下后退它又回来。
-      const recorded = params ?? this.viewParamsStore[viewId] ?? ({} as WrapParams<T>);
-      appState.history.push({
-        kind: 'view',
-        viewId,
-        params: this._withoutTransientKeys(viewId, recorded),
-        place: this._placeOf(viewId, recorded),
-      });
+      appState.history.push(this._historyEntry(viewId, params ?? this.viewParamsStore[viewId] ?? ({} as WrapParams<T>)));
     }
     this._applyNavigation(viewId, params);
+  }
+
+  // 后退回到的是**位置**,不是当时那次意图:历史条目会被原样重放
+  // (`applyHistoryEntry` → `_applyNavigation(viewId, entry.params)`),意图录进去就等于
+  // 给它开了一条绕过「离开即作废」的后门 —— 用户明明把抽屉关掉了,按一下后退它又回来。
+  private _historyEntry<T extends ViewId>(viewId: T, params: WrapParams<T>): HistoryEntry {
+    return { kind: 'view', viewId, params: this._withoutTransientKeys(viewId, params), place: this._placeOf(viewId, params) };
   }
 
   /**
@@ -151,7 +151,7 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     const next = typeof update === 'function' ? update(current) : { ...current, ...update };
     this.viewParamsStore = { ...this.viewParamsStore, [viewId]: next };
     if (viewId === this.currentViewId && this._placeParamKeys.has(viewId)) {
-      appState.history.replaceCurrent({ kind: 'view', viewId, params: this._withoutTransientKeys(viewId, next), place: this._placeOf(viewId, next) });
+      appState.history.replaceCurrent(this._historyEntry(viewId, next));
     }
   }
 

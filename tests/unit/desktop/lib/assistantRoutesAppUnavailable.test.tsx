@@ -28,7 +28,7 @@ const ASSISTANT = 'assistant-agent'
 
 const session = vi.hoisted(() => ({ agentId: 'assistant-agent' }))
 vi.mock('@renderer/lib/modal/modal-store', () => ({ modalStore: { closeModal: vi.fn() } }))
-vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {}, navigate: vi.fn() } } }))
+vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { start: vi.fn(), push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {}, navigate: vi.fn() } } }))
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => ({ agentUserId: session.agentId }) } }))
 vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => 'present' }))
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionManagerStore: () => ({ listState: 'read', sessions: new Map([['task', { data: { archivedAt: null } }]]) }) }))

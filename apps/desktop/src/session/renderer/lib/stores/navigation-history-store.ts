@@ -84,6 +84,14 @@ export class NavigationHistoryStore {
     }
   }
 
+  /**
+   * Where you were before the first recorded navigation (a launch lands on a view without navigating to it). The stack
+   * starts there, so the first step after a launch has somewhere to go back to, as the shell's own history does.
+   */
+  start(entry: HistoryEntry): void {
+    if (this.index < 0) this.push(entry);
+  }
+
   /** The step you are on moved within its view (a segment switched in place): it now records where you are. */
   replaceCurrent(entry: HistoryEntry): void {
     if (this.navigating) return;
