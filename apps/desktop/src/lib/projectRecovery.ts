@@ -28,10 +28,8 @@ export function useUnavailableProjects(enabled = true) {
 }
 
 /** Read the folders again now and answer them; a failed read throws (a cleanup must not confirm from a stale list). */
-export async function readUnavailableProjects(): Promise<UnavailableProject[]> {
-  await unavailableProjects.refresh()
-  // A failed refresh leaves the entry stale: `fetch` reads once more and throws its failure.
-  return unavailableProjects.fetch()
+export function readUnavailableProjects(): Promise<UnavailableProject[]> {
+  return unavailableProjects.reread()
 }
 
 type RefusalType = ProjectRecoveryError['type'] | 'state-changed'

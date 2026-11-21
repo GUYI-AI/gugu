@@ -54,8 +54,8 @@ const preparing = (value: AssistantPanelSnapshot | null) =>
 
 function watchPanel(ownerId: string, assistantId: string): () => void {
   let settle: ReturnType<typeof setTimeout> | undefined
-  // prefetch too: the panel files may hold it with no surface subscribed (they peek the entry).
-  const readAgain = () => { void assistantPanel.refresh(assistantId); void assistantPanel.prefetch(assistantId) }
+  // Shown or not: the panel files may hold it with no surface subscribed (they peek the entry).
+  const readAgain = () => { void assistantPanel.reread(assistantId).catch(() => undefined) }
   const refresh = () => {
     clearTimeout(settle)
     const shown = assistantPanel.peek(assistantId)
