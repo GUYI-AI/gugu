@@ -307,6 +307,7 @@ export default {
     "groupCountSummary_other": "{{count}} groups total",
     "groupSectionTitle": "Groups",
     "localDeviceSectionTitle": "This device",
+    "devicesHeading": "Devices",
     "lookupGuguNumber": "Look up Gugu ID {{number}}",
     "memberCount": "{{count}} members",
     "memberCount_one": "{{count}} member",

@@ -39,6 +39,9 @@ describe('contacts page: groups on the left, the chosen group spread on the righ
     const keys = [...harness.container.querySelectorAll<HTMLElement>('[data-testid="contacts-section-nav"]')].map((row) => row.dataset.sectionKey)
     expect(keys).toEqual(['unknown', 'people', 'groups'])
     expect(harness.container.querySelector('[data-slot="collapse-panel"]')).toBeNull()
+    // 一列一种行:新的请求与各分组同是导航胶囊行
+    const column = [$(`[data-testid="${AUTOMATION_TEST_IDS.contactsNewFriendsNav}"]`)!, ...harness.container.querySelectorAll<HTMLElement>('[data-testid="contacts-section-nav"]')]
+    expect(column.map((row) => row.dataset.variant)).toEqual(['nav', 'nav', 'nav', 'nav'])
     // 设备分组 = 它的 agent + 我的 agent 在里面的群
     expect(nav('unknown').textContent).toContain('2')
     expect(nav('unknown').hasAttribute('data-selected')).toBe(true)

@@ -307,6 +307,7 @@ export default {
     "groupCountSummary_other": "共 {{count}} 个群组",
     "groupSectionTitle": "群组",
     "localDeviceSectionTitle": "本机",
+    "devicesHeading": "设备",
     "lookupGuguNumber": "用咕咕号 {{number}} 查找",
     "memberCount": "{{count}} 名成员",
     "memberCount_one": "{{count}} 名成员",
