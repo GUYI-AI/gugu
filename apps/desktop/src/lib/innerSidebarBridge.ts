@@ -4,7 +4,7 @@
 //   · 「全部话题」:哪个对话的话题此刻全部摊开。会话页的分区头「全部 › / ‹ 返回」写,壳那一格读。
 //   · 话题读数:壳 → 会话页。分区头上的总数,以及第一级收起了几条(决定要不要给「全部 ›」)。
 //   · 我的智能体读数:会话页 → 壳。每个项目群 / 用户群里住着的我的智能体有几个、几个在跑 —— 项目行、群行头像角上那个数(#2599)。
-//   · 这一列此刻挂在哪个对话上:会话页 → 壳。挂着时那个对话页头上与这一列重复的按钮(成员、话题、邀请)收起来。
+//   · 这一列在不在:会话页 → 壳。在的话群页头上与它重复的话题钮收起来 —— 按到哪一块,这一列就挂到哪一块,不聚焦那块的钮按下去只会换焦点。
 //   · 一个列表画成自己一行的我的智能体(#2574):壳 → 会话页。有子智能体的独立智能体那一列只开在这几行上 —— 「有自己一行」只有列表这一份判法。
 // 两边都只 import 这一个文件,❌ 各写一份键名。
 import { useEffect, useSyncExternalStore } from 'react'
@@ -32,8 +32,8 @@ const TOPICS_VIEW_KEY = '__GUGU_INNER_SIDEBAR_TOPICS_VIEW__'
 const TOPICS_VIEW_EVENT = 'gugu:inner-sidebar-topics-view'
 const AGENT_COUNTS_KEY = '__GUGU_MY_CHAT_AGENT_COUNTS__'
 const AGENT_COUNTS_EVENT = 'gugu:my-chat-agent-counts'
-const COLUMN_KEY = '__GUGU_INNER_SIDEBAR_CHAT__'
-const COLUMN_EVENT = 'gugu:inner-sidebar-chat'
+const COLUMN_KEY = '__GUGU_INNER_SIDEBAR_PRESENT__'
+const COLUMN_EVENT = 'gugu:inner-sidebar-present'
 const AGENT_ROWS_KEY = '__GUGU_ONE_LIST_AGENT_ROWS__'
 const AGENT_ROWS_EVENT = 'gugu:one-list-agent-rows'
 
@@ -111,15 +111,15 @@ export function useMyChatAgentCounts(chatId: string): ChatAgentCounts | null {
   )
 }
 
-/** 会话页:这一列此刻挂在哪个对话上(不画 = null)。没变不通知。 */
-export function publishInnerSidebarChat(chatId: string | null): void {
-  if (read<string>(COLUMN_KEY) === chatId) return
-  write(COLUMN_KEY, COLUMN_EVENT, chatId)
+/** 会话页:这一列在这个窗口里有没有(收起着也算有:展开钮就在)。没变不通知。 */
+export function publishInnerSidebarPresent(present: boolean): void {
+  if (read<boolean>(COLUMN_KEY) === present) return
+  write(COLUMN_KEY, COLUMN_EVENT, present)
 }
 
-/** 壳:这一列此刻挂在哪个对话上(群 / 项目,或有子智能体的独立智能体那条私聊,#2574);没有(开关关着、别的对话、手机)= null。 */
-export function useInnerSidebarChat(): string | null {
-  return useSyncExternalStore(subscribeColumn, () => read<string>(COLUMN_KEY), () => null)
+/** 壳:这个窗口有内层侧栏(焦点挪到哪个群 / 项目,它就画哪个的话题)。手机、弹出窗口、列表栏藏着 = false。 */
+export function useInnerSidebarPresent(): boolean {
+  return useSyncExternalStore(subscribeColumn, () => read<boolean>(COLUMN_KEY) === true, () => false)
 }
 
 /** #2574 一个列表里我的一个智能体自己那一行(和它的私聊),画成什么样:内层栏的头一行照着它画。 */
