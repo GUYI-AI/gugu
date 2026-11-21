@@ -376,11 +376,11 @@ class RecordTimeline implements SessionTimeline {
   /**
    * 交出此刻的存档。返回 null = 这条时间线不能存（记录源不支持续读，或此刻续读点取不到）。
    */
-  async archive(): Promise<TimelineArchive | null> {
+  async archive(maxSourceBytes = TIMELINE_ARCHIVE_MAX_SOURCE_BYTES): Promise<TimelineArchive | null> {
     if (this.disposed) return null;
     // Each source debits its already-known byte offset before copying resume
     // state. No JSON-value walk, entry limit, or native-source-count limit.
-    const budget = { remainingBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES };
+    const budget = { remainingBytes: maxSourceBytes };
     const resume = await this.source.resumePoint?.(budget);
     if (!resume || budget.remainingBytes < 0) return null;
     const { parser, images } = this.parserForArchive();
@@ -396,7 +396,7 @@ class RecordTimeline implements SessionTimeline {
     }
     return {
       version: TIMELINE_ARCHIVE_VERSION,
-      sourceBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES - budget.remainingBytes,
+      sourceBytes: maxSourceBytes - budget.remainingBytes,
       resume,
       epoch: this.epochValue,
       seq: this.seq,

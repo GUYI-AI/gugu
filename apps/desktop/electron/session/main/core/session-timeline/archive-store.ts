@@ -67,6 +67,8 @@ function fileFor(sessionId: string): string | null {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return null;
   return join(dir, `${sessionId}.json`);
 }
+/** Where a session's archive lives; the fold thread reads and writes it there too (`fold.ts`). */
+export { fileFor as timelineArchiveFile };
 
 export async function loadTimelineArchive(
   sessionId: string
