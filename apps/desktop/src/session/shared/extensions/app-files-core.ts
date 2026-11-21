@@ -30,7 +30,7 @@ import {
   type AppFileVersion,
   type AppFileVersionContent,
   type AppForwardFilesDetail,
-  type AppOpenWithDetail,
+  type AppInChat,
   type ViewedImage,
   type AppShowMessageDetail,
   type ChatPeekFile,
@@ -265,14 +265,11 @@ export function replacedSinceError(name: string, now: number, expected: number):
   return new AppFileError('content-changed', `${name} is version ${now} now, not ${expected}: someone replaced it since it was read — read it again`, { reason: 'replaced-since', name, now, expected });
 }
 
-/**
- * 摩擦单 F51: the files of a group that a tap opens with this App (their `claimedBy`), newest first — for its card's
- * 「Open」: one file opens straight away, several are listed first in the group's panel. Main's answer and the phone's.
- */
-export function filesOpenedBy(
+/** The files a tap opens with this App (their `claimedBy`), newest first: one opens straight away, several are listed. */
+function filesOpenedBy(
   entries: readonly AppFileEntry[],
   extensionId: string
-): { itemId: string; name: string; displayName: string }[] {
+): Extract<AppInChat, { files: unknown }>['files'] {
   return entries
     .filter((entry) => entry.claimedBy?.id === extensionId)
     .sort((a, b) => (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? ''))
@@ -1286,21 +1283,22 @@ export function createAppFiles(platform: FilesPlatform) {
     },
 
     /**
-     * API 14 `chatFile`: the file an App names for a chat, as a file of it opened with that App — at the top of the chat's
-     * folder, made empty for the person the first time (`{}` for JSON, a JSON file holding an object; the App fills it).
-     * Two making it at once: both open the first (`madeOnce`).
+     * An App opened in a chat other than as a page of its own: the file it names for the chat (API 14 `chatFile`), at the top
+     * of the folder, made empty for the person the first time (`{}` for JSON, a JSON file holding an object; the App fills
+     * it; two making it at once both open the first, `madeOnce`) — or else the files here it opens (摩擦单 F51).
      */
-    async appChatFile(chatId: string, manifest: ExtensionManifest | undefined): Promise<AppOpenWithDetail> {
-      const tab = manifest?.contributes.tabs.find((candidate) => candidate.chatFile !== undefined);
-      const name = tab?.chatFile;
-      if (!manifest || !tab || !name) throw new AppFileError('not-found', `${manifest?.id ?? 'That App'} names no file of a chat (chatFile)`);
+    async appInChat(chatId: string, manifest: ExtensionManifest | undefined): Promise<AppInChat> {
+      if (!manifest) throw new AppFileError('not-found', 'That App is not installed here');
+      const tab = manifest.contributes.tabs.find((candidate) => candidate.chatFile !== undefined);
+      if (!tab?.chatFile) return { files: filesOpenedBy(await groupFiles(chatId), manifest.id) };
+      const name = tab.chatFile;
       const candidate = fileOpenersFor(name, [manifest], 'chat').find((opener) => opener.tabKind === `${manifest.id}.${tab.name}`);
       if (!candidate) throw new AppFileError('invalid', `${manifest.id}.${tab.name} does not open ${name} in a chat`);
       const { token, userId } = await platform.account();
       const contentType = contentTypeOf(name);
       const row = await madeOnce(token, chatId, undefined, name, userId, () =>
         insertDocument(token, { chatId, name, contentType, content: /json/i.test(contentType) ? '{}' : '', sourceMessageIds: [], parentId: null }, userId));
-      return { ...(await this.groupFile(chatId, row.id)), choice: { kind: 'one', candidate } };
+      return { open: { ...(await this.groupFile(chatId, row.id)), choice: { kind: 'one', candidate } } };
     },
 
     /** `folder` (子文件夹): the folder it goes in, made all the way down when it is not there; not given, the top. */

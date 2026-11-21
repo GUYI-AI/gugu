@@ -14,10 +14,10 @@ vi.mock('@renderer/features/tabs/tab-bar/generic-tab-item', () => ({
     <><span data-slot="pre">{preSlot}</span><span data-slot="mark">{markSlot}</span></>
   ),
 }));
-// Office is an installed App with a page of its own (so in `openableApps`); its chat files open in `office.main`.
+// Office is an installed App with a page of its own (so in `appsIn('page')`); its chat files open in `office.main`.
 const apps = vi.hoisted(() => ({
   tabTitle: () => 'Office', isChatFile: () => false, manifestFor: () => undefined, sideWidth: () => undefined,
-  openableApps: [{ extensionId: 'office', name: 'Office', kind: 'office.main', iconDataUrl: null }],
+  appsIn: () => [{ extensionId: 'office', name: 'Office', kind: 'office.main', iconDataUrl: null }],
   // Office declared an icon for .pptx (`fileIcons`); nothing else here declares one.
   fileIcon: (kind: string, name: string) => (kind === 'office.main' && name.endsWith('.pptx') ? 'data:image/png;base64,cHB0eA==' : null),
 }));
