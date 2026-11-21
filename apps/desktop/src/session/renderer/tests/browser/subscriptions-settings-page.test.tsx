@@ -818,8 +818,10 @@ function ModelsFixture() {
   return <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>;
 }
 
-it('keeps Coding Plan accounts on one line with aligned quota, state and delete columns', async () => {
-  await setLocalePreference('zh-CN');
+// 640: the settings card at any common window size (600px rows: sign-in wraps above current/switch and delete).
+// 1100: a card wide enough for one line.
+it.each([[1100, 'zh-CN'], [640, 'zh-CN'], [640, 'en-US']] as const)('keeps Coding Plan accounts aligned, uncovered and unscrolled in a %ipx card (%s)', async (width, locale) => {
+  await setLocalePreference(locale);
   await page.viewport(1280, 1000);
   document.documentElement.dataset.theme = 'light';
   control.codex = true;
@@ -837,7 +839,7 @@ it('keeps Coding Plan accounts on one line with aligned quota, state and delete 
     'layout-claude-a': [{ windowMinutes: 300, usedPercent: 0 }, { windowMinutes: 10_080, usedPercent: 23 }],
     native: [{ windowMinutes: 10_080, usedPercent: 5 }],
   };
-  host.style.cssText = 'width:640px;background:var(--model-settings-page)';
+  host.style.cssText = `width:${width}px;background:var(--model-settings-page)`;
   try {
     root.render(<>
       <p>组件测试夹具，非真实订阅账号</p>
@@ -851,22 +853,41 @@ it('keeps Coding Plan accounts on one line with aligned quota, state and delete 
       const state = row.querySelector<HTMLElement>('[data-testid^="model-current-"], [data-testid^="model-switch-"]')!;
       const remove = row.querySelector<HTMLElement>('.gg-model-subscription-remove')!;
       const centre = (element: Element) => { const box = element.getBoundingClientRect(); return box.y + box.height / 2; };
-      for (const window of windows) expect(Math.abs(centre(window) - centre(state))).toBeLessThan(1);
+      if (width === 1100) for (const window of windows) expect(Math.abs(centre(window) - centre(state))).toBeLessThan(1);
       const range = document.createRange(); range.selectNodeContents(state);
       const textLines = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
       expect(new Set(textLines.map(rect => Math.round(rect.y))).size).toBe(1);
       expect(getComputedStyle(state).whiteSpace).toBe('nowrap');
       expect(row.scrollWidth).toBeLessThanOrEqual(Math.ceil(row.clientWidth));
+      const provider = row.closest<HTMLElement>('.gg-coding-provider')!;
+      expect(provider.scrollWidth).toBeLessThanOrEqual(provider.clientWidth);
+      // A name too long for its column ends with an ellipsis; the whole name shows on hover.
+      const name = row.querySelector<HTMLElement>('.gg-model-name')!;
+      expect(name.getAttribute('title')).toBe(name.textContent);
+      expect(getComputedStyle(name.querySelector('span')!).textOverflow).toBe('ellipsis');
+      // The quota, the sign-in button and current/switch never cover one another: side by side, or sign-in above when narrow.
+      const signIn = row.querySelector<HTMLElement>('[data-testid^="model-sign-in-"]')!.getBoundingClientRect();
+      const stateBox = state.getBoundingClientRect();
+      for (const window of windows) expect(window.getBoundingClientRect().right).toBeLessThanOrEqual(Math.min(signIn.left, stateBox.left));
+      // Each window's label, bar and value sit side by side in any language, and the 5-hour window ends before the weekly one.
+      for (const window of windows) {
+        const [label, track, value] = [...window.children].map(part => part.getBoundingClientRect());
+        expect(label.right).toBeLessThanOrEqual(track.left);
+        expect(track.right).toBeLessThanOrEqual(value.left);
+      }
+      if (windows.length === 2) expect(windows[0].getBoundingClientRect().right).toBeLessThanOrEqual(windows[1].getBoundingClientRect().left);
+      if (width === 1100) expect(signIn.right).toBeLessThanOrEqual(stateBox.left);
+      else expect(signIn.bottom).toBeLessThanOrEqual(stateBox.top);
       return { state: state.getBoundingClientRect().x, remove: remove.getBoundingClientRect().x,
         weekly: row.querySelector('[data-window-minutes="10080"]')!.getBoundingClientRect().x };
     });
     for (const column of columns) for (const key of ['state', 'remove', 'weekly'] as const) {
       expect(Math.abs(column[key] - columns[0][key])).toBeLessThan(1);
     }
-    expect(host.querySelector('[data-testid="model-current-layout-codex-b"]')?.textContent).toBe('使用中');
-    expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe('切换');
+    expect(host.querySelector('[data-testid="model-current-layout-codex-b"]')?.textContent).toBe(locale === 'zh-CN' ? '使用中' : 'In use');
+    expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe(locale === 'zh-CN' ? '切换' : 'Switch');
     expect(host.querySelector('[data-testid="model-remove-native"]')).toBeNull();
-    await page.screenshot({ element: host, path: '../../../../../../../test-results/coding-plan-single-row-zh.png' });
+    await page.screenshot({ element: host, path: `../../../../../../../test-results/coding-plan-rows-${locale}-${width}.png` });
   } finally {
     delete document.documentElement.dataset.theme;
   }
@@ -958,7 +979,8 @@ it('groups subscription rows by their real provider and keeps row icons and subt
   expect([...host.querySelectorAll('[data-coding-provider]')].map(group => group.getAttribute('data-coding-provider')))
     .toEqual(['chatgpt-subscription', 'claude-subscription']);
   expect(host.querySelectorAll('[data-subscription-model] .gg-settings-row-leading')).toHaveLength(0);
-  expect(host.querySelectorAll('[data-subscription-model] .gg-settings-row-description')).toHaveLength(0);
+  // No source subtitle: a line under a name can only be the account's own state (the CLI's sign-in, beside its quota).
+  for (const line of host.querySelectorAll('[data-subscription-model] .gg-settings-row-description')) expect(line.textContent).toBe('Signed in');
   expect(host.querySelectorAll('[data-testid="coding-plan-add"]')).toHaveLength(1);
 });
 it('renames a saved subscription with Enter and cancels a later edit with Escape', async () => {
