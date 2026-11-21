@@ -67,7 +67,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
   const installedReading = useInstalledApps(PHONE_HOST)
   const store = installedReading.state === 'value' ? installedReading.value : null
   // Unread, or read before and its read again failing (the list read stays drawn), or the phone's store unreadable: said with a retry.
-  const unreadable = installedReading.state === 'error' || refreshFailure(installedReading) !== null || store?.unreadable != null
+  const unreadable = refreshFailure(installedReading) !== null || store?.unreadable != null
   const inventoryLoaded = store !== null
   const reloadInventory = () => {
     void phoneApps.reload().then(() => installedExtensions.refresh(PHONE_HOST), (error: unknown) => {

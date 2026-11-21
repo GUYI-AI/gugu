@@ -16,7 +16,7 @@ import { PhoneMachineView, ReadFailed, ReadingNow, ReadView } from './PhoneMachi
 import { healthClock, type PhoneHealthView } from './phoneHealthView'
 import { phoneHealth } from './phoneHealthReplica'
 import type { Reading } from '@/lib/replica'
-import { RefreshFailed } from '@/components/ui/RefreshFailed'
+import { ReadingSlot } from '@/components/ui/ReadingSlot'
 import { useReplica } from '@/lib/replica'
 import './phone-memory.css'
 
@@ -51,18 +51,11 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
           </IconButton>
         }
       />
-      {health.state === 'value' ? <RefreshFailed reading={health} /> : null}
-      {health.state === 'unknown' ? (
-        <ReadingNow label={t('health.loading')} />
-      ) : health.state === 'error' ? (
-        <div className="ta-card">
-          <ReadFailed title={t('health.state.errorTitle')} error={health.error} onRetry={reload} />
-        </div>
-      ) : health.value.state === 'ok' ? (
-        <HealthBody summary={health.value.summary} t={t} />
-      ) : (
-        <ConnectCard view={health.value} onGrant={openPhonePermissions} onRetry={reload} />
-      )}
+      <ReadingSlot reading={health} placeholder={<ReadingNow label={t('health.loading')} />}
+        failed={(error) => <div className="ta-card"><ReadFailed title={t('health.state.errorTitle')} error={error} onRetry={reload} /></div>}>
+        {(value) => value.state === 'ok' ? <HealthBody summary={value.summary} t={t} />
+          : <ConnectCard view={value} onGrant={openPhonePermissions} onRetry={reload} />}
+      </ReadingSlot>
       <AssistantSection
         title={t('health.analysisTitle')}
         action={

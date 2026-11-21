@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
+import { useOnChange } from '../../hooks/useOnChange'
 import type { AssistantShellSnapshot } from '../../lib/assistantShellBridge'
 import { assistantWorkrooms, type AssistantWorkrooms } from '../../lib/assistantChatList'
 import { platform } from '../../platform'
@@ -50,12 +51,7 @@ export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, memb
   const subject = ownerId && assistantId && deviceId ? [machine] as [string | null] : null
   const reading = useReplica(assistantWorkroomSources, subject)
   // A membership change can change which bindings count: read again then (❌ on the first render).
-  const lastMembership = useRef(membershipKey)
-  useEffect(() => {
-    if (lastMembership.current === membershipKey) return
-    lastMembership.current = membershipKey
-    if (subject) void assistantWorkroomSources.refresh(machine)
-  }, [membershipKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  useOnChange(membershipKey, () => { if (subject) void assistantWorkroomSources.refresh(machine) })
   const sources = reading.state === 'value' ? reading.value : null
   return useMemo(() => (sources && assistantId && ownerId ? assistantWorkrooms(assistantId, ownerId, sources.sessions, sources.bindings) : null), [sources, assistantId, ownerId])
 }
