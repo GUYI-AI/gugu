@@ -82,14 +82,14 @@ describe('sharedAppPackages', () => {
   })
 
   it('cards scrolling in and out cost nothing', async () => {
-    const { sharedAppPackages, showPackage, shownPackages, newestShownPackage } = await load()
+    const { sharedAppPackages, showPackage, shownPackages } = await load()
     files.set('chat-1', [pkg('vote', '1.0.0')])
     await sharedAppPackages.fetch('chat-1')
     const known = pkg('vote', '1.0.0')
     for (let i = 0; i < 5; i += 1) showPackage({ manifest: { id: 'vote', version: '1.0.0' } as never, card: { source: known.source, messageId: known.messageId } })()
     expect(shownPackages.get().size).toBe(0)
     const take = showPackage({ manifest: { id: 'vote', version: '1.0.0' } as never, card: { source: known.source, messageId: known.messageId } })
-    expect(newestShownPackage(shownPackages.get(), 'vote')?.manifest.version).toBe('1.0.0')
+    expect(shownPackages.get().get(`url:${known.source.url}`)?.manifest.version).toBe('1.0.0')
     take()
     await sharedAppPackages.fetch('chat-1')
     expect(getChatFiles).toHaveBeenCalledTimes(1)

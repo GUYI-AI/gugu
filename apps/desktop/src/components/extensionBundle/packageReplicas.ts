@@ -1,7 +1,6 @@
 import { sourceKeyOf } from '../../lib/attachmentBytes'
 import { replica, replicaAccount } from '../../lib/replica'
 import { createSelectStore, patch } from '../../lib/selectStore'
-import { newestPackageOf } from '../../session/shared/extensions/app-card-state'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { chatPackageCards, newestSharedPackages, packageKey, PackageUnavailableError, readPackageSummary, type PackageCard, type SharedPackage } from './sharedPackages'
 import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
@@ -73,17 +72,8 @@ export const shownPackages = createSelectStore<ReadonlyMap<string, SharedPackage
 
 export function showPackage(pkg: SharedPackage): () => void {
   const key = packageKey(pkg.card)
-  shownPackages.publish(new Map(shownPackages.get()).set(key, pkg))
-  shownPackages.notify()
+  patch(shownPackages, key, pkg)
   return () => {
-    if (shownPackages.get().get(key) !== pkg) return
-    const next = new Map(shownPackages.get())
-    next.delete(key)
-    shownPackages.publish(next)
-    shownPackages.notify()
+    if (shownPackages.get().get(key) === pkg) patch(shownPackages, key, undefined)
   }
-}
-
-export function newestShownPackage(shown: ReadonlyMap<string, SharedPackage>, id: string): SharedPackage | undefined {
-  return newestPackageOf(shown.values(), id)
 }
