@@ -1,7 +1,7 @@
 import type { GitChange } from '@gugu/session-core/git';
 import { Plus, Undo2 } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { activeDiffResource } from '@renderer/features/sessions/diff-view/pane-selectors';
 import {
   useSessionViewContext,
@@ -91,7 +91,7 @@ export const UnstagedSection = observer(function UnstagedSection() {
         void (async () => {
           const result = await git.discardFiles(paths);
           if (!result.success) {
-            toast.error(vcsFailureText('discard', result.error, translate, 'changes.discardFailed'));
+            notify({ title: vcsFailureText('discard', result.error, translate, 'changes.discardFailed'), tier: 'error' });
             return;
           }
           changesView.removeUnstagedSelection(paths);
@@ -108,7 +108,7 @@ export const UnstagedSection = observer(function UnstagedSection() {
       onSuccess: () =>
         void git.discardAllFiles().then((result) => {
           if (!result.success) {
-            toast.error(vcsFailureText('discard', result.error, translate, 'changes.discardFailed'));
+            notify({ title: vcsFailureText('discard', result.error, translate, 'changes.discardFailed'), tier: 'error' });
           }
         }),
     });
@@ -118,7 +118,7 @@ export const UnstagedSection = observer(function UnstagedSection() {
     const paths = [...changesView.unstagedSelection];
     void git.stageFiles(paths).then((result) => {
       if (!result.success) {
-        toast.error(vcsFailureText('stage', result.error, translate, 'changes.stageFailed'));
+        notify({ title: vcsFailureText('stage', result.error, translate, 'changes.stageFailed'), tier: 'error' });
         return;
       }
       changesView.removeUnstagedSelection(paths);
@@ -128,7 +128,7 @@ export const UnstagedSection = observer(function UnstagedSection() {
   const handleStageAll = () => {
     void git.stageAllFiles().then((result) => {
       if (!result.success) {
-        toast.error(vcsFailureText('stage', result.error, translate, 'changes.stageFailed'));
+        notify({ title: vcsFailureText('stage', result.error, translate, 'changes.stageFailed'), tier: 'error' });
       }
     });
   };

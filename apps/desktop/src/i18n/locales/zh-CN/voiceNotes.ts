@@ -75,7 +75,6 @@ export default {
   "meeting": {
     "heading": "会议即将开始",
     "startRecording": "开始录音",
-    "dismiss": "关闭提醒",
     "recording": "正在录制中",
     "error": "无法开始录制，请重试。",
     "setting": "入会提醒",

@@ -75,7 +75,6 @@ export default {
   "meeting": {
     "heading": "Meeting starting soon",
     "startRecording": "Start recording",
-    "dismiss": "Dismiss",
     "recording": "Recording",
     "error": "Could not start recording. Try again.",
     "setting": "Meeting reminders",

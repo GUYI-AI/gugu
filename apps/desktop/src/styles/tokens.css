@@ -195,8 +195,7 @@
   /* rail 顶上原来那 32px 是给「窗口顶沿」留的呼吸;现在顶沿是标题栏,rail 从标题栏下沿起。 */
   --sidebar-rail-pad-top: 8px;
 }
-/* ⚠️ 选择器按结构而不是给 MainLayout 加类名:那个文件在 IM 迁移账本里,
-   有行数预算(scripts/im-architecture-migration-gate.json)。 */
+/* 选择器按结构写(壳根下的阶段容器),❌ 给 MainLayout 再加类名。 */
 :root[data-window-titlebar='row'] [data-gugu-shell-phase] {
   padding-top: var(--window-titlebar-height);
 }
@@ -489,15 +488,16 @@
   --z-pane-fullscreen-resident: 40;
   /* 全局段（fixed/portal 层）：*/
   --z-chrome: 1000;        /* 窗口 chrome：WindowControls（win/linux 自绘钮） */
+  --z-notice: 1500;        /* 常驻通知那一叠卡(NoticeHost):浮在内容和窗口 chrome 之上、在所有弹窗之下 —— 弹窗一开就盖住它(#3501) */
   --z-modal: 2000;         /* 模态层：Sheet 及 backdrop+卡片式对话框 */
   --z-menu: 2100;          /* 右键/下拉菜单——可开在 modal 之上 */
-  --z-banner: 2300;        /* 全局通知横幅/浮动状态卡（更新、余额、下载进度、发现） */
+  --z-banner: 2300;        /* 登录失效那一条通栏(SessionExpiredNotice):页面状态,不是通知;owner 11-22 定保持原样 */
   --z-popover: 2400;       /* 锚定信息浮层：资料卡、已读回执、近期动作、token 悬浮卡 */
   --z-modal-top: 2500;     /* 从 popover 内开出的次级模态（#1862 海报对话框） */
   --z-settings: 5000;      /* 设置面板：高于全部工作区弹窗、低于 overlay/toast（#1182） */
   --z-settings-modal: 5100; /* 设置内次级模态：确认弹窗等必须盖过设置面板 */
   --z-overlay: 10000;      /* 全屏遮罩：图片预览、扫码 */
-  --z-toast: 10010;        /* 最顶：toast 必须盖过图片预览遮罩（#1892③） */
+  --z-toast: 10010;        /* NoticeHost 的提示条(转瞬的,含会议提醒):盖过设置与图片预览遮罩（#1892③）;它在底边,盖不到弹窗顶上的 ✕ */
   --z-chrome-menu: 10020;  /* 窗口 chrome 弹出的菜单（Windows 标题栏的文件/编辑/视图/帮助）。页面层都铺在标题栏行下面
                               （@@@window-layer），行一直点得到，从它开出来的菜单就得开在任何页面层之上（#6699） */
 

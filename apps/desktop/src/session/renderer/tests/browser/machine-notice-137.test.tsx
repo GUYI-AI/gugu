@@ -37,7 +37,8 @@ function EmitOnMount() {
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => harness?.cleanup())
-const notices = () => [...document.querySelectorAll<HTMLElement>('[data-sonner-toast]')].map((element) => element.textContent ?? '')
+// Both positions: an offline machine is a persistent notice (the banner slot); «connected» is a toast.
+const notices = () => [...document.querySelectorAll<HTMLElement>('[data-sonner-toast], .gugu-notice-card')].map((element) => element.textContent ?? '')
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('the machine notice across page changes (#137)', () => {
@@ -52,7 +53,7 @@ describe('the machine notice across page changes (#137)', () => {
     await act(async () => showPage('project'))
     await pause(1_000)
     expect(notices().filter((text) => text.includes('Mac 1 is offline'))).toHaveLength(1)
-    const close = document.querySelector<HTMLButtonElement>('[data-sonner-toast] [data-close-button]')!
+    const close = document.querySelector<HTMLButtonElement>('.gugu-notice-card [data-notice-close]')!
     await act(async () => { await userEvent.click(close) })
     await until('the user closed it', () => notices().length === 0)
   })
