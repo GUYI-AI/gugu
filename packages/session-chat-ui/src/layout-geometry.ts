@@ -16,7 +16,7 @@ export const CHAT_CONTENT_GUTTER_PX = 16;
 /** The painted fade above a bottom composer also needs real reading clearance. */
 export const CHAT_COMPOSER_EDGE_FADE_PX = 24;
 
-/** Room below a pinned summary, inside its backdrop; source jumps keep the same reading clearance. */
+/** Room below a pinned summary before its lane ends; source jumps keep the same reading clearance. */
 export const PIN_SUMMARY_GAP = 8;
 
 /**

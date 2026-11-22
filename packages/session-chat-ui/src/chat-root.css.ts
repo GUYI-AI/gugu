@@ -157,47 +157,27 @@ export const unitRowWrapper = style({
  * the row itself and a shown summary.
  *
  * Every row wrapper is its own stacking context at z-index auto (contain: paint, will-change), so
- * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane. A user
- * lane sits above activity lanes, whose sticky headers reserve room below the user's summary.
+ * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane.
  */
 export const pinLane = style({
   zIndex: 1,
   pointerEvents: 'none',
 });
-export const pinMessageLane = style({ zIndex: 2 });
 /** Whatever the message positions or raises inside itself stays under its own summary. */
 export const pinMessageRow = style({ isolation: 'isolate', marginTop: 'calc(-1 * var(--pin-layer-h))' });
 
-/** The semantic strip reaches the scroller edges, outside the centered text column. */
-export const activityPinLane = style({ contain: 'layout style' });
-
-/** The sticking element inside a lane; its backdrop is opaque only while stuck. */
+/** The user's summary sticking inside its lane. */
 export const pinSticky = style({
   // `top` is per row (ChatRoot): the card lands on the pin line whatever the row's collapsed top gap.
   position: 'sticky',
-  pointerEvents: 'auto',
   '@media': { '(prefers-reduced-motion: reduce)': {
     selectors: { '[data-pin-leaving="true"] &': { visibility: 'hidden' } },
   } },
 });
 
-
-/** A normal bubble has no full-width card behind it. Protect the pinned row once it actually sticks. */
-export const pinBackdrop = style({
-  position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none',
-  background: vars.bg, opacity: 0,
-  // The frame scheduler supplies this state from existing lane geometry. Older
-  // Android WebViews cannot evaluate scroll-state container queries.
-  selectors: {
-    '[data-pin-stuck="true"] &': { opacity: 1 },
-  },
-  // A soft edge rather than a rule: says rows scroll beneath it without drawing a line across the page.
-  boxShadow: `0 8px 12px -10px color-mix(in srgb, ${vars.fg} 22%, transparent)`,
-});
-
 /**
  * A user message's summary (@@@pin-cover in ChatRoot): it rests behind the bubble it repeats and comes in front of
- * it once stuck, with its opaque backdrop, so the pinned strip never shows anything behind it.
+ * it once stuck. Only the bubble is drawn: rows scrolling beneath show around it.
  */
 export const pinSummaryLayer = style({
   // Takes no room: the message row after it moves up by its height (pinMessageRow). A negative margin here
@@ -207,16 +187,12 @@ export const pinSummaryLayer = style({
   paddingBottom: PIN_SUMMARY_GAP,
   zIndex: -1,
   pointerEvents: 'none',
-  selectors: { '[data-pin-stuck="true"] > &': { zIndex: 1, pointerEvents: 'auto' } },
+  selectors: { '[data-pin-stuck="true"] > &': { zIndex: 1 } },
 });
+// Only the bubble covers anything, so only the bubble takes clicks: beside it they reach the rows beneath.
+globalStyle(`[data-pin-stuck="true"] > ${pinSummaryLayer} [data-pin-summary]`, { pointerEvents: 'auto' });
 // A message without a bubble (attachments only, or being edited) has nothing to rest behind.
 globalStyle(`[data-pin-stuck="false"] > ${pinSummaryLayer} [data-pin-summary][data-pin-bare]`, { visibility: 'hidden' });
-
-/** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */
-export const activityPinBackdrop = style({
-  right: 'auto', boxShadow: 'none',
-  borderBottom: `1px solid color-mix(in srgb, ${vars.fgMuted} 16%, transparent)`,
-});
 
 /**
  * Default content centering class.
