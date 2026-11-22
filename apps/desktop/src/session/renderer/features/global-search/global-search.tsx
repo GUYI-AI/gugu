@@ -7,6 +7,7 @@ import { ListRowContent } from '@/components/ui/ListRow'
 import { SectionLabel } from '@/components/ui/SectionLabel'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { AtSign, Clock, FileText, History, Image, Link, Search, Users, X } from '@/lib/icons'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { followLink } from '@/lib/guguLinks'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -33,7 +34,7 @@ const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: Search
   const identity = useAvatarIdentity(senderId)
   return system ? <IdentityPlaceholder className="mt-1" /> : (
     <span className="mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-foreground/[0.07] text-[length:var(--font-caption)] font-medium text-foreground/55">
-      {file ? <FileText size={11} /> : senderId
+      {file ? <FileMark name={hit.kind === 'message' ? hit.fileName ?? '' : ''} size={12} /> : senderId
         ? <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={senderId} size={20} isAgent={identity?.type === 'agent'} still />
         : Array.from(name)[0]}
     </span>
