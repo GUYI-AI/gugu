@@ -28,7 +28,7 @@ export function createTreeJsonlSource(
 ): SessionRecordSource {
   return createJsonlTailSource<null>(locator, options, {
     name: format.name,
-    // 2: prompts carry their revert points (CodeBuddy, Qwen); state saved before that has none.
+    // 2: prompts carry their revert points (CodeBuddy, Qwen) and Qwen's ACP rewind forks; state saved before that has neither.
     resumeVersion: 2,
     resolve,
     initial: () => null,

@@ -140,6 +140,17 @@ describe('qwen jsonl 记录源', () => {
     expect(tools.map((tool) => tool.status)).toContain('done');
   });
 
+  it('the ACP rewind: its system/rewind line, off the line before the dropped prompt, drops that prompt and after', async () => {
+    const { root, file, id } = await stage();
+    const prompts = (await records()).filter((r) => r.type === 'user' && r.provenance === 'real_user');
+    await appendFile(file, `${JSON.stringify({ uuid: 'rewind-0001', parentUuid: prompts[1]!.parentUuid, sessionId: id,
+      timestamp: '2026-10-17T08:00:00.000Z', type: 'system', subtype: 'rewind' })}\n`);
+    const timeline = await createSessionTimeline(createQwenJsonlSource({ harness: 'qwen', providerSessionId: id, roots: [root] }), { sessionId: 's' });
+    disposers.push(() => timeline.dispose());
+    const asked = timeline.getSnapshot({ limit: 1e9 }).turns.filter((turn) => turn.items.some((item) => item.kind === 'message' && item.role === 'user'));
+    expect(asked.map((turn) => turn.id)).toEqual([`s:${prompts[0]!.uuid}`]);
+  });
+
   it('尾读：接着叶子写的只发增量;/rewind 另起一支 ⇒ 整份重来，丢掉的那一支不再出现', async () => {
     const { root, file, id } = await stage();
     const all = await records();
