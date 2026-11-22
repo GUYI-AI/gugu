@@ -21,6 +21,10 @@
 # still uninstalls the old app before extraction and cannot roll back a disk/full or lock error.
 # The assisted-directory hook preserves registered custom installation locations;
 # the stock name-appending behavior would make a GUI upgrade target its own child.
+# In-app updates (--updated) need no clicks: the assisted installer keeps the existing installation's scope instead
+# of asking (multiUserUi.nsh), shows only its progress page, and with --force-run relaunches the app and closes
+# instead of waiting on the finish page (installSection.nsh). Stock only does this for silent (/S) runs, which
+# show no progress at all. Manual installs keep the full wizard.
 diff --git a/templates/nsis/assistedInstaller.nsh b/templates/nsis/assistedInstaller.nsh
 --- a/templates/nsis/assistedInstaller.nsh
 +++ b/templates/nsis/assistedInstaller.nsh
@@ -112,7 +116,7 @@ index a5cb3fe536a9fe95a95ac796f92a27f62d9762cc..f4c9ae6d7774cf9de873d77c86210cbf
      !ifdef INSTALL_MODE_PER_ALL_USERS
        nsExec::Exec `taskkill /IM "${_FILE}" /FI "PID ne $pid"`
 diff --git a/templates/nsis/installSection.nsh b/templates/nsis/installSection.nsh
-index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..405e4b483a98045bd8b36044515e802e889f551c 100644
+index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..c0d5367 100644
 --- a/templates/nsis/installSection.nsh
 +++ b/templates/nsis/installSection.nsh
 @@ -49,6 +49,11 @@ ${if} $isTryToKeepShortcuts == "true"
@@ -147,6 +151,23 @@ index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..405e4b483a98045bd8b36044515e802e
  !macro doStartApp
    # otherwise app window will be in background
    HideWindow
+@@ -102,9 +113,13 @@ ${endIf}
+   !endif
+   !insertmacro quitSuccess
+ !else
+-  # for assisted installer run only if silent, because assisted installer has run after finish option
++  # for assisted installer run only if silent, because assisted installer has run after finish option;
++  # an in-app update (--updated) shows only its progress page, so it also relaunches here and skips the finish page
+   ${if} ${isForceRun}
+-  ${andIf} ${Silent}
+-    !insertmacro doStartApp
++    ${if} ${Silent}
++    ${orIf} ${isUpdated}
++      !insertmacro doStartApp
++      !insertmacro quitSuccess
++    ${endIf}
+   ${endIf}
+ !endif
 diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/installUtil.nsh
 --- a/templates/nsis/include/installUtil.nsh
 +++ b/templates/nsis/include/installUtil.nsh
@@ -181,3 +202,23 @@ diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/ins
    Call uninstallOldVersion
  !macroend
 +!endif
+diff --git a/templates/nsis/multiUserUi.nsh b/templates/nsis/multiUserUi.nsh
+index 52a83df..ce46000 100644
+--- a/templates/nsis/multiUserUi.nsh
++++ b/templates/nsis/multiUserUi.nsh
+@@ -42,6 +42,15 @@ Var isForceCurrentInstall
+ 		  !insertmacro customInstallMode
+ 		!endif
+ 
++    # An in-app update (--updated) keeps the scope of the installation it replaces, as read by initMultiUser.
++    ${if} ${isUpdated}
++      ${if} $installMode == "all"
++        StrCpy $isForceMachineInstall "1"
++      ${else}
++        StrCpy $isForceCurrentInstall "1"
++      ${endIf}
++    ${endIf}
++
+     ${if} $isForceMachineInstall == "1"
+     ${OrIf} ${isForAllUsers}
+       StrCpy $hasPerMachineInstallation "1"
