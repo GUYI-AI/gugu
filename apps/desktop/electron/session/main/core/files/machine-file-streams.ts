@@ -11,6 +11,8 @@
  * its cloud channel) is `linked: false`, and its readers read the way that channel goes.
  */
 
+import { FILE_CHUNK_BYTES } from '@gugu/core/shared/fileResolver';
+
 export type FileStreamBytes = { read(offset: number, length: number): Promise<Uint8Array>; dispose(): Promise<void> };
 
 /** How main streams a file over a device link (`remoteFileStreams`, projectFileSsh.ts); main sets it. */
@@ -94,3 +96,20 @@ export function changedOnItsMachine(error: unknown): boolean {
   return /changed/i.test(error instanceof Error ? error.message : String(error));
 }
 
+export type WorkspaceRange = { size: number; etag: string; offset: number; data: string };
+
+/**
+ * A range of a workspace's file on `deviceId`, of the version its reader anchored (its first chunk, `readChunk`, through
+ * the machine's channel). `place` is the workspace as that machine names it. null = a machine no device link reaches:
+ * the reader reads its chunks the way that machine's channel goes.
+ */
+export async function workspaceFileRange(deviceId: string, place: { projectId: string; workspaceId: string },
+  request: { path: string; offset: number; length: number; size: number; etag: string }): Promise<WorkspaceRange | null> {
+  const using = streams;
+  const key = `workspace\0${deviceId}\0${place.projectId}\0${place.workspaceId}\0${request.path}`;
+  if (!using || (!streamGoesOn(key, request.offset) && !(await using.linked(deviceId)))) return null;
+  const { size, etag, path } = request;
+  const length = Math.max(0, Math.min(request.length, FILE_CHUNK_BYTES));
+  const bytes = await streamedRange(key, deviceId, { size, etag }, (offset, stream) => ({ place, path, offset, etag, stream }), request.offset, length);
+  return { size, etag, offset: request.offset, data: Buffer.from(bytes).toString('base64') };
+}
