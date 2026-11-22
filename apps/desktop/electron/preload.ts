@@ -1,6 +1,6 @@
 import type { AttachmentUploadIpc } from './attachmentUploadHost'
 import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import * as ElectronNS from 'electron'
 import { installProcessMetricsResponder } from './process-metrics-responder'
 
@@ -48,6 +48,15 @@ for (const key of Object.keys(MAIN_UI_EVENTS) as (keyof typeof MAIN_UI_EVENTS)[]
 // signal; auth ownership and refresh policy remain in the renderer SessionCoordinator.
 ipcRenderer.on('app:foreground', () => {
   window.dispatchEvent(new Event('gugu:app-foreground'))
+})
+
+// @@@away-heap-release - backgroundThrottling is off, so Chromium never sees this page as hidden and never trims it.
+// Garbage from browsing chats then stays in the V8 heap for as long as Gugu sits idle in the background. A minute after
+// the person leaves Gugu (main.ts @@@app-presence), run Blink's own trim: a full GC plus a cache purge.
+let awayRelease: ReturnType<typeof setTimeout> | undefined
+ipcRenderer.on('app:presence-changed', (_event, present: boolean) => {
+  clearTimeout(awayRelease)
+  if (!present) awayRelease = setTimeout(() => webFrame.clearCache(), 60_000)
 })
 
 function sendRendererCommandResult(domain: RendererCommandDomain, reqId: string, result: unknown): void {
