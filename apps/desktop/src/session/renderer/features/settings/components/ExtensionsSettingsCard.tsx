@@ -71,7 +71,6 @@ import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import {
   localizedManifestText,
-  marketCategoryOf,
   matchesExtensionQuery,
   type MarketCategory,
 } from '@shared/extensions/catalog';
@@ -893,31 +892,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       ? { ...here, tab: settled === 'market' ? 'market' : here.tab, detail: { ...here.detail, page: settled } }
       : here),
   });
-  // 产品页右栏「类似 App」点一个:换到它的产品页,同一步(返回回到进第一个产品页之前那里)。
-  const openSimilar = (item: ShelfItem) => {
-    setJustInstalled(null);
-    keepSubject({ manifest: item.manifest, installRef: item.ref, cloud: item.cloud });
-    replacePage({ page: 'market', extensionId: item.manifest.id });
-  };
-  /** 市场里同一类的别的 App(取到的那几页里有的),最多五个。 */
-  const similarOf = (manifest: ExtensionManifest) => {
-    const category = marketCategoryOf(manifest);
-    return marketRows
-      .filter((item) => item.manifest.id !== manifest.id && item.manifest.id !== ASSISTANT_APP_ID
-        && marketCategoryOf(item.manifest) === category && !item.cloud.deprecated)
-      .slice(0, 5)
-      .map((item) => {
-        const text = localizedManifestText(item.manifest, locale);
-        return {
-          id: item.manifest.id,
-          name: text.name,
-          publisher: translate('extensions.official'),
-          line: localizedManifestText(item.manifest, locale).subtitle,
-          iconUrl: item.cloud.iconUrl,
-          onOpen: () => openSimilar(item),
-        };
-      });
-  };
   /** 设置页上的「在市场查看」:问一次市场上的那一版,返回回到设置页。 */
   const viewInMarket = async (manifest: ExtensionManifest) => {
     const item = await shelfItemFor(manifest.id);
@@ -1069,7 +1043,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         onManage={installedHere ? () => openPage({ page: 'manage', extensionId: manifest.id }) : undefined}
         onForward={installedHere && host.local ? () => forwardExtension(installedHere) : undefined}
         onAsk={askAgent}
-        similar={similarOf(manifest)}
         resource={resourceOf(manifest.id)}
         targetSummary={host.local ? <MarketDetailConfirmations><MarketExtensionDevices item={item} /></MarketDetailConfirmations> : undefined}
       />
