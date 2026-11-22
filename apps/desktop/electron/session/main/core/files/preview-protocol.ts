@@ -203,7 +203,34 @@ async function serveCloudObject(url: URL, range: string | null, signal?: AbortSi
   }
   const headers: Record<string, string> = { 'Access-Control-Allow-Origin': rendererOrigin(), 'Access-Control-Expose-Headers': 'Content-Range', 'Cache-Control': 'no-store' };
   for (const name of OBJECT_HEADERS) { const value = answer.headers.get(name); if (value !== null) headers[name] = value; }
-  return new Response(answer.body, { status: answer.status, headers });
+  return new Response(answer.body && inPieces(answer.body), { status: answer.status, headers });
+}
+
+/**
+ * The renderer gets an object's bytes in pieces of `BYTES_READ`, as it gets this machine's bytes (`serveBytes`), with a few
+ * read ahead. Electron hands every piece of a handler's body to the renderer as its own write; the network's own pieces
+ * are small, and passed on one by one a 200 MB object reached the renderer at ~28 MB/s against ~68 MB/s read in main.
+ */
+function inPieces(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const parts: Uint8Array[] = [];
+      let size = 0;
+      while (size < BYTES_READ) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value); size += value.byteLength;
+      }
+      if (!size) return controller.close();
+      if (parts.length === 1) return controller.enqueue(parts[0]!);
+      const piece = new Uint8Array(size);
+      let at = 0;
+      for (const part of parts) { piece.set(part, at); at += part.byteLength; }
+      controller.enqueue(piece);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  }, { highWaterMark: 4 });
 }
 
 export function createDocumentPreview(documentHtml: string): { url: string; previewId: string } {
