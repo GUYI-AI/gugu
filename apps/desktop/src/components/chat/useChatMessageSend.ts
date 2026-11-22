@@ -111,7 +111,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     try {
       // C1:先清空输入框、先上屏乐观气泡。会话就绪不再挡在前面(它可能要重开会话,气泡迟迟不出):
       // 文字消息把它交给 outbox 在投递前 await,失败时气泡变「未送达」可重试,❌ 退回输入框。
-      clear()
+      clear(typed)
       flush()
       clearedRevision = draft.revisionOf(chatId ?? null)
       onQuoteConsumed?.()

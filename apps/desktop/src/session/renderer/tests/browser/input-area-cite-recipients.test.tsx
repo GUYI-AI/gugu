@@ -7,8 +7,8 @@ import { useChatStore } from '@/store/chatContext'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 
-const editors = vi.hoisted(() => ({ ids: [] as string[] }))
-vi.mock('@/lib/citedFileEditors', () => ({ citedFileEditorIds: vi.fn(async () => editors.ids) }))
+const editors = vi.hoisted(() => ({ ids: [] as string[], read: Promise.resolve() }))
+vi.mock('@/lib/citedFileEditors', () => ({ citedFileEditorIds: vi.fn(async () => { await editors.read; return editors.ids }) }))
 
 const FILE = 'gugu-file://0b6f6c1e-58a4-4a39-9a37-3f1f4c7a2d10?v=2#L3'
 const members = [{ id: 'cite-agent', name: 'Cite agent', type: 'agent' as const }, { id: 'cite-peer', name: 'Cite peer', type: 'human' as const }]
@@ -31,6 +31,7 @@ async function mountWithCite() {
 }
 
 beforeEach(async () => {
+  editors.read = Promise.resolve()
   setLocalePreference('en-US')
   await page.viewport(1000, 720)
   onSend.mockClear()
@@ -69,4 +70,19 @@ it('lets an @ win over the cite', async () => {
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
   await until('sent', () => onSend.mock.calls.length === 1)
   expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-peer'])
+})
+
+it('keeps words typed while the cited files are read, and sends only what was there at send', async () => {
+  editors.ids = ['cite-agent']
+  let readDone = () => {}
+  editors.read = new Promise<void>((resolve) => { readDone = resolve })
+  const input = await mountWithCite()
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await input.click()
+  await userEvent.keyboard('{End}next thought')
+  readDone()
+  await until('sent', () => onSend.mock.calls.length === 1)
+  expect(onSend.mock.calls[0]?.[0]).not.toContain('next thought')
+  expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-agent'])
+  await until('the later words stay in the composer', () => input.element().textContent?.trim() === 'next thought')
 })
