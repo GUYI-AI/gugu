@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
 import { replica } from './replica'
@@ -18,7 +18,7 @@ import { createImageRead } from './imageRead'
 const log = rendererLogger('attachment-bytes')
 
 /** `showFirst`: the bytes before the read acknowledgement, for a reader that can take them down. `progress`: how far they have come. */
-export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: (done: number, total: number) => void } = {}) {
+export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: FileProgress } = {}) {
   const ref = attachmentFileRef(source)
   return ref ? resolveFile(ref, fileReader(), { signal: fileReadSignal(), ...options }) : { status: 'gone' as const, sha256: null }
 }
@@ -61,12 +61,12 @@ type ReadBytes = Exclude<AttachmentBytes, { status: 'unsent' }> | { status: 'fai
 
 /** Thumbnails only display; original blobs are created exclusively from a fully verified file handle. */
 /** `progress`: how far the original's bytes have come, while they are read (the file preview's bar). */
-export async function attachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown' = 'full', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<AttachmentBytes> {
+export async function attachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown' = 'full', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: FileProgress): Promise<AttachmentBytes> {
   try { const bytes = await readAttachmentBytes(source, variant, onLink, metadata, progress); return bytes.status === 'failed' ? { status: 'unsent' } : bytes }
   catch (error) { if (error instanceof MissingFileObjectError) return { status: 'missing' }; throw error }
 }
 
-async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<ReadBytes> {
+async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: FileProgress): Promise<ReadBytes> {
   if (source.kind === 'session-file') return sessionFileBytes(source)
   if (variant === 'thumb') {
     // A full copy already on this device (sent from here, or opened before) is the thumbnail: no signing, no download.

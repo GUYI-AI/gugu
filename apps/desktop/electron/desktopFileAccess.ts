@@ -9,7 +9,7 @@ import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/cor
 import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
-import { PROJECT_FILE_READ, createProjectFileReader, heldFileBlob, localProjectFileProvider } from './projectFileHost'
+import { PROJECT_FILE_READ, createProjectFileReader, createProjectFileStreamer, heldFileBlob, localProjectFileProvider } from './projectFileHost'
 import { ownSshFileProvider, type HeldFileSshLinks } from './projectFileSsh'
 import { createProjectTransferHost } from './projectFileTransferHost'
 import { findProjectFileByName, heldRevisionBySha, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
@@ -73,6 +73,8 @@ export function createDesktopFileAccess(deps: {
     return row?.status === 'ready' ? row : null
   }
   const read = createProjectFileReader({ identity, root, env: deps.env, later })
+  /** The same held versions as `read`, as one stream on a device link (`file.stream`). */
+  const stream = createProjectFileStreamer({ identity, root, env: deps.env, later })
   const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
   const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
     local: localProjectFileProvider({ identity, read, root, env: deps.env, later }),
@@ -113,7 +115,7 @@ export function createDesktopFileAccess(deps: {
     const projectRoot = revision ? await root(revision.host_project_id!) : null
     return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
   }
-  return { providers, resolve, resolveAccount, read, drain, publish, held,
+  return { providers, resolve, resolveAccount, read, stream, drain, publish, held,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

@@ -115,8 +115,12 @@ export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' | 'expired
   status: 'ready'; purpose: 'preview'; revision: FileRevision
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
-/** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: (done: number, total: number) => void }
+/**
+ * How far a read has come, from the provider that carries its bytes (a slow machine's line shows it). `stalled`: no bytes
+ * for a while — the line is stuck, and the read picks up where it stopped once they flow again; the next report clears it.
+ */
+export type FileProgress = (done: number, total: number, stalled?: true) => void
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: FileProgress }
 export interface FileProviders {
   saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string, store?: boolean): Promise<SavedFile>
   download?(revision: FileRevision, context: FileContext, sink: import('./fileCipher').FileSink): Promise<FileBytes>
