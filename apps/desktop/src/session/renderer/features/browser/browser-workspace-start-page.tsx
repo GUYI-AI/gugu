@@ -50,7 +50,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
               return <div key={item.id} className="group/recent relative min-w-0 rounded-md hover:bg-row-hover focus-within:bg-row-hover">
                 <Button variant="ghost" className="h-22 w-full flex-col gap-2 px-2 text-foreground hover:bg-transparent"
                   title={item.title} onClick={item.open}>
-                  {item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <Folder className="size-7" /> : <FileIcon filename={item.title} className="size-7" />}
+                  {item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <Folder className="size-7" /> : <FileIcon filename={item.title} size={28} className="size-7" />}
                   <span className="w-full truncate text-center text-xs">{item.title}</span>
                 </Button>
                 <Button size="icon-xs" variant="ghost" aria-label={remove} title={remove} onClick={item.remove}

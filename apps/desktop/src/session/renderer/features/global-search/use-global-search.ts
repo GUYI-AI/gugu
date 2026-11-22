@@ -25,7 +25,7 @@ export const SEARCH_LIMIT = 100
 type MessageRow = { id: string; chat_id: string; sender_user_id: string | null; sender_name: string; content_type: string; content: string | null; created_at: string; file_item_id: string | null }
 
 export type SearchHit =
-  | { kind: 'message'; id: string; group: string; chatId: string; messageId: string; senderId: string | null; sender: string | null; text: string; at: string; file: boolean }
+  | { kind: 'message'; id: string; group: string; chatId: string; messageId: string; senderId: string | null; sender: string | null; text: string; at: string; file: boolean; fileName: string | null }
   | { kind: 'task'; id: string; group: string; taskId: string; projectId: string; title: string; itemId: string; role: 'user' | 'assistant'; text: string; at: string; activity?: boolean }
 
 export interface SearchView {
@@ -202,9 +202,9 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const turnHits = (turnsApply ? valueOf(turns)?.hits : undefined) ?? []
   const messageHits: SearchHit[] = messageRows
     .filter(shownRow)
-    .map((row) => ({ kind: 'message', id: `m:${row.id}`, group: row.chat_id, chatId: row.chat_id, messageId: row.id, senderId: row.sender_user_id,
+    .map((row) => { const fileName = parseAttachmentContent(row.content)?.fileName ?? null; return { kind: 'message', id: `m:${row.id}`, group: row.chat_id, chatId: row.chat_id, messageId: row.id, senderId: row.sender_user_id,
       sender: row.sender_user_id === null ? null : localScope ? identities[row.sender_user_id]?.display_name ?? row.sender_name : row.sender_name,
-      text: excerpt(parseAttachmentContent(row.content)?.fileName ?? renderMentionTokens(row.content ?? ''), query), at: row.created_at, file: row.file_item_id !== null }))
+      text: excerpt(fileName ?? renderMentionTokens(row.content ?? ''), query), at: row.created_at, file: row.file_item_id !== null, fileName } })
   const taskHits: SearchHit[] = turnHits
     .filter((hit) => !inTask || hit.sessionId === inTask.taskId)
     .map((hit) => {
