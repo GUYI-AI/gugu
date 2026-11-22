@@ -255,7 +255,7 @@ export async function startTunnelEndpoint(input: {
     config: frpcConfig({
       relay: input.relay,
       user: input.accountUserId,
-      entry: { kind: 'proxy', name: serverName, secretKey, localPort: port },
+      entries: [{ kind: 'proxy', name: serverName, secretKey, localPort: port }],
     }),
     onState: (up) => {
       setTunnelRelayUp(up)
