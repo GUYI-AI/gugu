@@ -1,14 +1,15 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronLeft, FileText, Reply } from '@/lib/icons'
+import { ChevronLeft, FileText, MoreHorizontal, Reply } from '@/lib/icons'
 import { formatHotkeyText } from '@/session/renderer/lib/ui/shortcut-format'
 import type { RendererContentContextMenu } from '@/lib/contentContextMenu'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
-import type { ContentMenuItem } from '@/session/shared/content-context-menu'
+import { contentMenuLayout, type ContentMenuItem } from '@/session/shared/content-context-menu'
+import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { Avatar } from './Avatar'
-import { Menu, MenuItem, MenuSearch, MenuSeparator, MenuSubmenu, useMenuSearch } from './ui/Menu'
+import { Menu, MenuFold, MenuItem, MenuSearch, MenuSeparator, MenuSubmenu, useMenuSearch } from './ui/Menu'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { useOpenInApps } from '@renderer/lib/hooks/useOpenInApps'
 import { OpenInAppIcon } from '@renderer/lib/components/titlebar/open-in-app-icon'
@@ -44,17 +45,23 @@ function useRowSearch(rows: readonly ContentMenuItem[]) {
   return useMenuSearch(rows, labelOf, { placeholder: t('menu.search'), noResults: t('menu.noResults') })
 }
 
-function Rows({ items, onAction, onOpen }: RowsProps & { onOpen?: (row: Row) => void }) {
+function Rows({ items: given, onAction, onOpen }: RowsProps & { onOpen?: (row: Row) => void }) {
+  // Laid out by the host's one menu rule (@@@content-menu-layout): `fold` rows under 更多, as every object menu.
+  const { top: items, more } = contentMenuLayout(given)
   // Icons are all or none in one list: a row without one keeps the empty slot, so every label starts on one edge (「Any」 over members).
-  const slot = items.some(item => item.type !== 'separator' && (item.person || item.icon || item.program)) ? <span aria-hidden /> : undefined
+  const slot = given.some(item => item.type !== 'separator' && (item.person || item.icon || item.program)) ? <span aria-hidden /> : undefined
   const iconOf = (item: Row) => item.icon === 'quote' ? <Reply /> : item.icon === 'file' ? <FileText /> : item.program ? <ProgramIcon id={item.program} /> : slot
-  return <>{items.map((item, index) => item.type === 'separator' ? <MenuSeparator key={index} />
+  const rows = (list: readonly ContentMenuItem[]) => list.map((item, index) => item.type === 'separator' ? <MenuSeparator key={index} />
     : item.items ? onOpen ? <MenuItem key={item.id} icon={iconOf(item)} submenu closeOnClick={false} onClick={() => onOpen(item)}>{item.label}</MenuItem>
       : <Submenu key={item.id} item={item} icon={iconOf(item)} onAction={onAction} />
       : item.person ? <PersonRow key={item.id} item={item} onAction={onAction} />
         : <MenuItem key={item.id} disabled={item.enabled === false} icon={iconOf(item)} danger={item.danger} title={item.title}
           checked={item.checked} shortcut={item.hotkey ? formatHotkeyText(item.hotkey) : undefined}
-          onClick={() => onAction(item.id)}>{item.label}</MenuItem>)}</>
+          onClick={() => onAction(item.id)}>{item.label}</MenuItem>)
+  return <>
+    {rows(items)}
+    {more.length > 0 && <MenuFold icon={slot && <MoreHorizontal size={15} />} label={translateSessionMessage('common.more')}>{rows(more)}</MenuFold>}
+  </>
 }
 
 function Submenu({ item, icon, onAction }: { item: Row; icon: ReactNode; onAction: (id: string) => void }) {
