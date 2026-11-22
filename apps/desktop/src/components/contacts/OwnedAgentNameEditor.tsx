@@ -26,7 +26,7 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
 }) {
   const { t } = useTranslation('contacts')
   const { user } = useAuth()
-  const { renameAgent } = useContactsStore()
+  const { updateAgentProfile } = useContactsStore()
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -48,7 +48,7 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
     setSaving(true)
     setError(null)
     try {
-      await renameAgent(agentId, next)
+      await updateAgentProfile(agentId, { name: next })
       setDraft(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('agentName.failed'))

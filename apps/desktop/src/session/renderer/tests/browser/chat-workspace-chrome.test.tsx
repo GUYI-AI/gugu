@@ -21,14 +21,18 @@ import { i18n } from '@/i18n';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
-const provider = (kind: string) => createTabProvider({
+const provider = (kind: string, rename?: (name: string) => void) => createTabProvider({
   kind,
   conversation: kind === 'conversation',
   resourceKey: (state: { id: string }) => state.id,
   initialize: () => ({ dispose() {} }),
   dispose() {},
   TabContent: () => <div data-chat-workspace-test-body={kind}>{kind === 'conversation' ? '聊天正文' : '工具正文'}</div>,
-  TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx} label={kind === 'conversation' ? '聊天标题' : '工具页签'} />,
+  commands: kind === 'conversation' && rename ? {
+    rename: { label: 'Rename', exec: (_resource, name?: string) => { if (name) rename(name); } },
+  } : undefined,
+  TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx}
+    label={kind === 'conversation' ? '聊天标题' : '工具页签'} renameOnDoubleClick={kind === 'conversation' && !!rename} />,
   TabBarItemDragPreview: () => <GenericTabDragPreview label="工具页签" />,
 });
 
@@ -46,14 +50,14 @@ function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children
   </PaneLayoutProvider>;
 }
 
-async function mountWorkspace() {
+async function mountWorkspace(rename?: (name: string) => void) {
   // The tab labels asserted below are the zh-CN catalog's.
   await i18n.changeLanguage('zh-CN');
   await page.viewport(1220, 790);
   const view = harness = createReactHarness();
   view.container.classList.add('emlight', 'gugu-skin');
   view.container.style.cssText = 'position:fixed;left:0;top:0;width:1180px;height:580px;display:flex';
-  const workspace = layout = new PaneLayoutStore(createTabRegistry(['conversation', 'tool'].map(provider)), { viewId: 'chat-workspace-browser-test' }, undefined, {
+  const workspace = layout = new PaneLayoutStore(createTabRegistry(['conversation', 'tool'].map(kind => provider(kind, rename))), { viewId: 'chat-workspace-browser-test' }, undefined, {
     isPrimaryChatTab: (entry) => entry.kind === 'conversation',
     placementMemory: { read: () => undefined, write() {} },
   });
@@ -81,6 +85,25 @@ async function mountWorkspace() {
   const neighbour = () => inside('[data-chat-workspace-test-neighbour]')!;
   return { inside, width, mode, chat, tool, neighbour, workspace, openWindow };
 }
+
+it('renames the standalone chat title on double-click only, and cancels with Escape', async () => {
+  const rename = vi.fn();
+  const { mode, inside } = await mountWorkspace(rename);
+  await mode('empty');
+  const title = page.getByText('聊天标题');
+  const input = page.getByRole('textbox', { name: '会话名称' });
+  await userEvent.click(title);
+  expect(inside('input')).toBeNull();
+  await userEvent.dblClick(title);
+  await expect.element(input).toHaveValue('聊天标题');
+  await input.fill('放弃修改');
+  await userEvent.keyboard('{Escape}');
+  expect(rename).not.toHaveBeenCalled();
+  await userEvent.dblClick(title);
+  await input.fill('  新名字  ');
+  await userEvent.keyboard('{Enter}');
+  expect(rename).toHaveBeenCalledExactlyOnceWith('新名字');
+});
 
 it('opens the first tool into a split, hides/restores it and expands only its own block', async () => {
   const { inside, width, mode, chat, tool, neighbour, openWindow } = await mountWorkspace();

@@ -24,6 +24,7 @@ export default {
     "full": "群人数已满，请联系群主增加人数上限。"
 },
   "agentName": {
+    "editAction": "编辑 Agent 名字",
     "edit": "重命名",
     "label": "Agent 名称",
     "failed": "保存失败，请重试"

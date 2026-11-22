@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import type { StateAddress } from 'libsodium-wrappers'
-import { FILE_CHUNK_BYTES, requireFileRevision, type FileBytes, type FileRevision } from './fileResolver'
+import { FILE_CHUNK_BYTES, FileIntegrityError, requireFileRevision, type FileBytes, type FileRevision } from './fileResolver'
 
 // Versioned framing, not a cipher: libsodium supplies the nonce, authentication and stream state.
 const MAGIC = new TextEncoder().encode('GGFILE01')
@@ -65,7 +65,7 @@ export async function copyVerifiedFile(revision: FileRevision, source: FileBytes
     }
     signal?.throwIfAborted()
     const actual = hex(hash.digest())
-    if (revision.sha256 !== null && actual !== revision.sha256) throw new Error('File SHA-256 mismatch')
+    if (revision.sha256 !== null && actual !== revision.sha256) throw new FileIntegrityError()
     return await sink.commit()
   } catch (error) { await sink.abort(); throw error } finally { hash.destroy() }
 }
@@ -121,7 +121,7 @@ export async function transformFile(input: {
     }
     signal?.throwIfAborted()
     const digest = hex(cipherHash.digest())
-    if (hex(plainHash.digest()) !== revision.sha256 || input.ciphertextSha256 && digest !== input.ciphertextSha256) throw new Error('File SHA-256 mismatch')
+    if (hex(plainHash.digest()) !== revision.sha256 || input.ciphertextSha256 && digest !== input.ciphertextSha256) throw new FileIntegrityError()
     return { file: await sink.commit(), ciphertextSha256: digest }
   } catch (error) {
     await sink.abort()

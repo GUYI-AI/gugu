@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn(), path: vi.fn(), prefetch: vi.f
 vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => 'test-token' }))
 vi.mock('@renderer/lib/pty/terminal-image-paths', () => ({ mustCopyRatherThanReference: () => false, isHeicLikeFile: (file: File) => file.type === 'image/heic' }))
 vi.mock('@/lib/taskAttachmentTarget', () => ({ prefetchTaskFiles: mocks.prefetch, pushTaskFiles: mocks.push, taskAttachmentUsesSsh: () => false }))
-vi.mock('@gugu/core/cloud/attachmentsApi', async original => ({ ...await original<object>(), configuredEndpoint: () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test' }), uploadAttachmentBytes: mocks.upload, placeAttachment: mocks.place }))
+vi.mock('@gugu/core/cloud/attachmentsApi', async original => ({ ...await original<object>(), configuredEndpoint: () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test' }), withUploadedAttachment: mocks.upload, placeAttachment: mocks.place }))
 
 import { placeTaskAttachment, prepareTaskAttachment, type TaskAttachmentPlacement } from '../../../../apps/desktop/src/lib/attachmentsEndpoint'
 
@@ -30,7 +30,7 @@ it('retries destination prefetch without publishing the already-published item a
 
 it('cancels the actual OSS fetch and never places its result in the folder', async () => {
   const controller = new AbortController()
-  const { uploadAttachmentBytes } = await vi.importActual<typeof import('@gugu/core/cloud/attachmentsApi')>('@gugu/core/cloud/attachmentsApi')
+  const { withUploadedAttachment } = await vi.importActual<typeof import('@gugu/core/cloud/attachmentsApi')>('@gugu/core/cloud/attachmentsApi')
   let started!: () => void
   const uploading = new Promise<void>(resolve => { started = resolve })
   const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -38,7 +38,7 @@ it('cancels the actual OSS fetch and never places its result in the folder', asy
     started()
     return new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true }))
   })
-  mocks.upload.mockImplementation((endpoint, bytes, scope, options) => uploadAttachmentBytes({ ...endpoint, fetch }, bytes, scope, options))
+  mocks.upload.mockImplementation((endpoint, bytes, scope, use, options) => withUploadedAttachment({ ...endpoint, fetch }, bytes, scope, use, options))
   const result = placeTaskAttachment(file, null, destination, undefined, { signal: controller.signal })
   const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
   await uploading

@@ -23,7 +23,7 @@ export const readOutboxKind: OutboxKind<CloudRead> = {
     if (target.kind === 'receipt') {
       // 服务端对「消息还看不到」是 no-op,不抛;抛出来的都是真错误。
       const { error } = await chatDb.rpc('mark_message_read', { p_chat_id: target.chatId, p_message_id: target.messageId, p_agent_user_id: target.readerUserId })
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(error.message, { cause: error })
       return
     }
     const streamId = target.kind === 'thread' ? `thread:${target.chatId}:${target.rootId}` : `main:${target.chatId}`
@@ -41,7 +41,7 @@ export async function enqueueRead(target: CloudRead, answered = false): Promise<
 
 async function markStreamRead(chatId: string, streamId: string, seq: ChatSeq, threadRootId: string | null): Promise<void> {
   const { data, error } = await chatDb.rpc('mark_stream_read', { p_chat_id: chatId, p_stream_id: streamId, p_seq: seq, p_thread_root_id: threadRootId })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(error.message, { cause: error })
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null
   if (!row || row.stream_id !== streamId) throw new Error(`mark_stream_read returned no state for ${streamId}`)
 }

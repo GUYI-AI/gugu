@@ -106,7 +106,7 @@ describe('native file capabilities are scoped and never expose incomplete origin
     const f = await fixture(), { id } = await f.begin()
     if (failure === 'truncated') await f.host.stage(1, { op: 'chunk', id, bytes: bytes.slice(0, 1) })
     if (failure === 'wrong SHA') await f.host.stage(1, { op: 'chunk', id, bytes: new Uint8Array([1, 2, 3]) })
-    if (failure === 'truncated' || failure === 'wrong SHA') await expect(f.host.stage(1, { op: 'commit', id })).rejects.toThrow('SHA-256 mismatch')
+    if (failure === 'truncated' || failure === 'wrong SHA') await expect(f.host.stage(1, { op: 'commit', id })).rejects.toThrow('integrity_failed: File SHA-256 mismatch')
     else if (failure === 'invalid bytes') await expect(f.host.stage(1, { op: 'chunk', id, bytes: '文字' as unknown as Uint8Array })).rejects.toThrow('Invalid file bytes')
     else await expect(f.host.stage(1, { op: 'chunk', id, bytes: new Uint8Array(failure === 'extra bytes' ? 4 : FILE_CHUNK_BYTES + 1) })).rejects.toThrow('Invalid file range')
     expect(await readdir(f.root)).toEqual([])
