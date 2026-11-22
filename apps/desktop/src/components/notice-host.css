@@ -33,10 +33,11 @@
   clip-path: inset(-100vh -100vw -8px -100vw);
 }
 
-/* 常驻的横幅位(NoticeBannerSlot):页面最上面一行、占文档流,一次一条。外观同提示条一套 token。 */
+/* 常驻的横幅位(NoticeBannerSlot):页面最上面一行、占文档流,一次一条。外观同提示条一套 token。
+   右边给浮在内容右上角的窗口按钮让位(Linux;其它平台为 0),同页签条读的是同一个变量(main.tsx)。 */
 .gugu-notice-banner-slot {
   flex: none;
-  padding: 8px 12px 0;
+  padding: 8px calc(12px + var(--titlebar-controls-width, 0px)) 0 12px;
 }
 .gugu-notice-banner {
   display: flex;
