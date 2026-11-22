@@ -28,6 +28,7 @@ import { createDesktopWorkReportIds } from './assistant-work-report-ids'
 import { createAssistantWorkAvailabilityNotifier } from '@gugu/core/cloud/assistantWorkAvailability'
 import { registerFileViewerMenus } from './file-viewer-context-menu'
 import { registerContentContextMenus } from './content-context-menu'
+import { registerHostLayer } from './host-layer'
 import { configuredEndpoint, drawImagePreviews } from '@gugu/core/cloud/attachmentsApi'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
@@ -744,6 +745,7 @@ installDevtoolsLock((url) => {
 })
 installPageFullscreen()
 registerContentContextMenus(ipcMain)
+registerHostLayer(ipcMain)
 registerFileViewerMenus(app, () => currentHostCatalog().fileViewerMenu, (error) => {
   processGoneLogger.error({ error: String(error) }, 'Content context menu failed')
 }, (host) => isOwnPage(host.getURL(), mainWindow?.webContents.getURL() ?? ''))

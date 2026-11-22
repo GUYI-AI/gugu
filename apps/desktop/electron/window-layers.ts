@@ -28,7 +28,7 @@ import { hardenWebPreferences } from './devtools-lock'
 export type WindowLayerContent = { webContents: WebContents; webPreferences?: WebPreferences }
 
 /** 层之间谁在上:数大的在上。 */
-export const WINDOW_LAYER_RANK = { buildTag: 0 } as const
+export const WINDOW_LAYER_RANK = { buildTag: 0, hostLayer: 1 } as const
 
 type Layer = { view: WebContentsView; rank: number }
 
