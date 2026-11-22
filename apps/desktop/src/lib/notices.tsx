@@ -3,6 +3,7 @@ import { toast as sonner } from 'sonner'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { TOAST_DWELL_MS, isReadableTier, type ToastTier } from './toastTiers'
 import { rendererLogger } from './log'
+import { requestToasterId } from '@renderer/app/aux-layers'
 
 const noticeLog = rendererLogger('notice')
 
@@ -72,6 +73,7 @@ export function notify({ key, title, description, tier, variant, ongoing, waitin
   // 每个字段都显式给(没有就是 undefined):sonner 更新同 id 的提示时是 `{...旧的, ...新的}`,省略的字段会沿用上一次 ——
   // 上一次是转瞬的成功(点击穿透)的话,下一次同 key 的常驻提示就会继承它,关闭钮点不到。
   let id: string | undefined
+  const live = key !== undefined && liveIds.has(key)
   if (key !== undefined) {
     id = liveIds.get(key) ?? `${key}#${++idSeq}`
     liveIds.set(key, id)
@@ -97,6 +99,9 @@ export function notify({ key, title, description, tier, variant, ongoing, waitin
     position: presentation === 'compact' ? 'top-center' as const : presentation === 'first-install-import' ? 'top-right' as const : undefined,
     duration: ongoing ? Infinity : duration,
     closeButton: ongoing ? true : undefined,
+    // A new notice shows in the window it was asked from (aux-layers; NoticeHost draws a toaster in each pop-out). One
+    // updated in place stays where it is: sonner keeps the field it is not given.
+    ...(!live && { toasterId: requestToasterId() }),
   }
 
   // 用户读到的失败 / 告警原样落盘(只是本机日志):日志里的错误行说不清用户当时看见了哪一句。

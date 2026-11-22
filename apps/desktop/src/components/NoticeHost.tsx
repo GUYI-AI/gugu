@@ -1,6 +1,8 @@
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { Toaster } from 'sonner'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
+import { readAuxLayers, subscribeAuxLayers } from '@renderer/app/aux-layers'
 import './notice-host.css'
 import { useNoticeComposerBottom } from './notice-host-position'
 
@@ -30,6 +32,8 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
   // 晚一拍才画,同一次挂载里子组件发的提示就丢了。认领本身仍在下面的 layout effect 里做,认不到再收回。
   const [owner, setOwner] = useState(() => canClaim(document.documentElement.dataset[CLAIM], embedded))
   const composerBottom = useNoticeComposerBottom(owner)
+  // Each pop-out window has its own strip: a notice asked from there shows there (lib/notices `toasterId`, aux-layers).
+  const popOuts = useSyncExternalStore(subscribeAuxLayers, readAuxLayers, readAuxLayers)
   useLayoutEffect(() => {
     const root = document.documentElement
     const me = `${embedded ? 'embedded' : 'app'}:${++hostSeq}`
@@ -60,14 +64,19 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
     }
   }, [embedded])
   if (!owner) return null
+  const closeButtonLabel = closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined
   return (
-    <Toaster
-      className={composerBottom === undefined ? 'gugu-notices' : 'gugu-notices gugu-notices-above-composer'}
-      position="bottom-right"
-      offset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
-      mobileOffset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
-      theme={theme}
-      toastOptions={closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined}
-    />
+    <>
+      {popOuts.map(({ layer, toasterId }) => createPortal(
+        <Toaster id={toasterId} className="gugu-notices" position="bottom-right" theme={theme} toastOptions={closeButtonLabel} />, layer, toasterId))}
+      <Toaster
+        className={composerBottom === undefined ? 'gugu-notices' : 'gugu-notices gugu-notices-above-composer'}
+        position="bottom-right"
+        offset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
+        mobileOffset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
+        theme={theme}
+        toastOptions={closeButtonLabel}
+      />
+    </>
   )
 }

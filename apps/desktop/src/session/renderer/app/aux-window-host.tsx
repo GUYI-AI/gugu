@@ -95,7 +95,7 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
     };
     win.addEventListener('focus', onFocus);
     win.addEventListener('pagehide', onGone);
-    setAuxLayer(doc, layer);
+    const stopLayer = setAuxLayer(doc, layer);
     auxWindows.setHandle(id, win);
     setMounted({ win, root, layer });
     win.focus();
@@ -106,6 +106,7 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
       win.removeEventListener('pagehide', onGone);
       stopHotkeys();
       stopGuestPress();
+      stopLayer();
       skinObserver.disconnect();
       stopMirror();
       setMounted(null);

@@ -24,7 +24,7 @@ import { holderOfflineText, offlineHolder } from '../lib/fileHost'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
-import { auxWindows } from '@renderer/app/aux-windows'
+import { requestDocument } from '@renderer/app/aux-layers'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
 import { bindFileZoom, showZoomRatio, zoomForCommand } from './preview/file-content-zoom'
@@ -351,16 +351,13 @@ function windowOf(element: Element): ViewerWindow {
 }
 
 /**
- * @@@viewer-window - the viewer opens in the window the picture was asked for: a pop-out window (aux-window-host) is drawn
- * by this same renderer, but the viewer drawn into the main window's body there is behind it, and nothing happens where
- * the person clicked. The picture's thumbnail says which window; without one, the window the person is in (focused).
+ * @@@viewer-window - the viewer opens in the window the picture was asked for (aux-layers: the window a request came from).
+ * A pop-out window (aux-window-host) is drawn by this same renderer; a viewer in the main window's body is behind it, and
+ * nothing happens where the person clicked. The thumbnail says which window; without one, the window last used.
  */
 function viewerWindow(request: ImageViewerRequest): ViewerWindow {
   const thumb = request.items[request.index]?.thumb
-  if (thumb) return windowOf(thumb)
-  const focusedId = auxWindows.focusedWindowId
-  const focused = focusedId ? auxWindows.windows.get(focusedId)?.handle : undefined
-  return (focused && !focused.closed ? focused : window) as ViewerWindow
+  return thumb ? windowOf(thumb) : windowOf(requestDocument().documentElement)
 }
 
 interface OpenViewer {
