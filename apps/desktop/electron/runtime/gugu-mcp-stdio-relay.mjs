@@ -130,6 +130,9 @@ async function main() {
   downstream.onclose = () => {
     void upstream.close().finally(() => process.exit(0))
   }
+  // The stdio transport does not report the end of stdin, and the upstream's open connections keep this process alive:
+  // a client that closes stdin (MCP's normal shutdown) would otherwise wait for its kill fallback, or leave us running.
+  process.stdin.once('end', () => void downstream.close())
   await downstream.start()
 }
 

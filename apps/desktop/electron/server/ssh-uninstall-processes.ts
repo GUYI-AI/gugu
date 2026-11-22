@@ -74,19 +74,25 @@ function controls() {
 const accountDirs = () => probe.directories(home);
 function signal(pid, value) { try { process.kill(pid, value); } catch (error) { if (error.code !== 'ESRCH') throw error; } }
 function signalControls(value) {
-  for (const item of controls()) if (controlOwned(item.pid, item.kind)) signal(item.pid, value);
+  const sent = [];
+  for (const item of controls()) if (controlOwned(item.pid, item.kind)) { signal(item.pid, value); sent.push(item.pid); }
+  return sent;
 }
 function signalAccounts(value) {
-  for (const dir of accountDirs()) { const pid = probe.holder(dir); if (pid !== null && probe.holder(dir) === pid) signal(pid, value); }
+  const sent = [];
+  for (const dir of accountDirs()) { const pid = probe.holder(dir); if (pid !== null && probe.holder(dir) === pid) { signal(pid, value); sent.push(pid); } }
+  return sent;
 }
+function alive(pid) { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } }
 (async () => {
   // Validate every live candidate before changing this installation's state.
   for (const item of controls()) controlOwned(item.pid, item.kind);
   for (const dir of accountDirs()) probe.holder(dir);
   fs.mkdirSync(path.join(home, 'data'), { recursive: true });
   fs.writeFileSync(path.join(home, 'data/stopped'), new Date().toISOString());
-  signalControls('SIGTERM'); signalAccounts('SIGTERM');
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  const stopping = [...signalControls('SIGTERM'), ...signalAccounts('SIGTERM')];
+  // Up to 3 s of grace, ending as soon as every signalled process is gone.
+  for (const deadline = Date.now() + 3000; stopping.some(alive) && Date.now() < deadline;) await new Promise(resolve => setTimeout(resolve, 50));
   signalControls('SIGKILL'); signalAccounts('SIGKILL');
 })().catch(error => { console.error(String(error)); process.exitCode = 1; });
 `,
