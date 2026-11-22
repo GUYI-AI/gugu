@@ -4597,7 +4597,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 每次检测前都重读:咕咕开着时用户在别处装了 CLI / 改了 rc 或用户 PATH,启动时那份已经过期。
     emdashBridge.setUserPathRefresher(async () => {
       const read = await refreshUserPath()
-      return { from: read.from, shell: read.shell, at: read.at, ...(read.hydrated ? {} : { failed: read.reason }) }
+      return { from: read.from, shell: read.shell, at: read.at, tookMs: read.tookMs, ...(read.hydrated ? {} : { failed: read.reason, failedDetail: read.detail }) }
     })
     // #5873 同一次采样的另一半:整份登录 shell 环境。传的是**取值函数**而非当下的值 ——
     // 注入发生在 loadEmdashBridge() 那一刻,而 hydrateLoginShellPath() 可能还没跑过、
