@@ -395,7 +395,13 @@ module.exports = {
       ...fs.readdirSync(path.join(appDir, 'apps', 'desktop')).filter((name) => name !== 'dist-electron').map((name) => `apps/desktop/${name}`),
     ]
     if (stray.length > 0) throw new Error(`[packed-app] resources/app has entries outside the build output: ${stray.join(', ')}`)
-    if (context.electronPlatformName !== 'darwin') return
+    // @@@short-stage - Windows extraction has a path budget. Linux packs the same tree, so its CI build guards it too.
+    if (context.electronPlatformName !== 'darwin') {
+      const { checkWindowsStagePaths, windowsInstallDirName } = require('./scripts/build/windows-install-paths.cjs')
+      const stagePaths = checkWindowsStagePaths({ appOutDir: context.appOutDir, installDirName: windowsInstallDirName(context.packager.appInfo) })
+      console.log(`[windows-stage-path] deepest extraction path ${stagePaths.length}/${stagePaths.budget}: ${stagePaths.deepest}`)
+      return
+    }
     const fullIcns = path.join(__dirname, 'build-resources', 'icon.icns')
     const packed = path.join(
       context.appOutDir,
