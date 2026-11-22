@@ -424,13 +424,13 @@ describe('Agent owner and source-group listen-mode controls', () => {
 
 
 describe('topic participant controls project server authority', () => {
-  const renameAgent = vi.fn(async () => {})
+  const updateAgentProfile = vi.fn(async () => {})
   async function renderTopic(viewerId: string, manageable: boolean, snapshot = SNAPSHOT) {
     getSettings.mockResolvedValue({ ...authority(manageable), can_dissolve: false })
     const reload = vi.fn(async () => {})
     await renderWithAppProviders(harness, createNode(ControlledMemberListPanel, {
       chatId: 'topic-1', chatKind: 'topic', chatName: 'Topic', head, snapshot, onReload: reload,
-    }), { auth: { id: viewerId }, chat: { identitiesById: Object.fromEntries(IDENTITIES.map((identity) => [identity.id, identity])) }, contacts: { contacts: [], renameAgent } })
+    }), { auth: { id: viewerId }, chat: { identitiesById: Object.fromEntries(IDENTITIES.map((identity) => [identity.id, identity])) }, contacts: { contacts: [], updateAgentProfile } })
     return reload
   }
   it.each([false, true])('a non-admin owner can change their topic Agent listen mode and remove it on mobile=%s', async (mobile) => {
@@ -456,7 +456,7 @@ describe('topic participant controls project server authority', () => {
     expect(input).not.toBeNull()
     await typeInto(input!, 'New canonical name')
     await act(async () => { input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    expect(renameAgent).toHaveBeenCalledWith('codex', 'New canonical name')
+    expect(updateAgentProfile).toHaveBeenCalledWith('codex', { name: 'New canonical name' })
   })
   it('lets a source-group manager change a topic agent’s mode without a topic seat', async () => {
     await renderTopic('owner-1', true, { ...SNAPSHOT, humans: SNAPSHOT.humans.filter((human) => human.id !== 'owner-1') })

@@ -4,9 +4,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OwnedAgentNameEditor } from '../../../../apps/desktop/src/components/contacts/OwnedAgentNameEditor'
 
-const { renameAgent, viewer } = vi.hoisted(() => ({ renameAgent: vi.fn(), viewer: { id: 'owner' } }))
+const { updateAgentProfile, viewer } = vi.hoisted(() => ({ updateAgentProfile: vi.fn(), viewer: { id: 'owner' } }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: viewer }) }))
-vi.mock('../../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ renameAgent }) }))
+vi.mock('../../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ updateAgentProfile }) }))
 let container: HTMLDivElement
 let root: Root
 function render(overrides: Partial<Parameters<typeof OwnedAgentNameEditor>[0]> = {}) {
@@ -31,7 +31,7 @@ function type(value: string) {
 }
 async function save() { await act(async () => click('保存')) }
 beforeEach(() => {
-  renameAgent.mockReset().mockResolvedValue(undefined)
+  updateAgentProfile.mockReset().mockResolvedValue(undefined)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -55,7 +55,7 @@ describe('owner agent name editor #6021', () => {
     expect(input().value).toBe('Codex 8')
     type('  小助手  ')
     await save()
-    expect(renameAgent).toHaveBeenCalledExactlyOnceWith('stable-id', '小助手')
+    expect(updateAgentProfile).toHaveBeenCalledExactlyOnceWith('stable-id', { name: '小助手' })
     expect(container.querySelector('input')).toBeNull()
     render({ name: '小助手' })
     click('重命名')
@@ -63,7 +63,7 @@ describe('owner agent name editor #6021', () => {
   })
   it('rejects whitespace names and preserves the draft', async () => {
     render(); click('重命名'); type('  '); await save()
-    expect(renameAgent).not.toHaveBeenCalled()
+    expect(updateAgentProfile).not.toHaveBeenCalled()
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('名称不能为空')
     expect(input().value).toBe('  ')
   })
@@ -74,27 +74,27 @@ describe('owner agent name editor #6021', () => {
     const outer = vi.fn()
     container.addEventListener('keydown', outer)
     act(() => input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    expect(renameAgent).not.toHaveBeenCalled()
+    expect(updateAgentProfile).not.toHaveBeenCalled()
     expect(container.querySelector('input')).toBeNull()
     container.removeEventListener('keydown', outer)
   })
   it('keeps a failed draft and retries even when the cloud name was already published', async () => {
-    renameAgent.mockRejectedValueOnce(new Error('local roster unavailable'))
+    updateAgentProfile.mockRejectedValueOnce(new Error('local roster unavailable'))
     render(); click('重命名'); type('新名字'); await save()
     expect(input().value).toBe('新名字')
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('local roster unavailable')
     render({ name: '新名字' })
     await save()
-    expect(renameAgent).toHaveBeenCalledTimes(2)
+    expect(updateAgentProfile).toHaveBeenCalledTimes(2)
     expect(container.querySelector('input')).toBeNull()
   })
   it('prevents duplicate saves while persistence is pending', async () => {
     let finish!: () => void
-    renameAgent.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+    updateAgentProfile.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
     render(); click('重命名'); type('新名字'); await save()
     expect(input().disabled).toBe(true)
     expect([...container.querySelectorAll('button')].every((button) => button.disabled)).toBe(true)
-    expect(renameAgent).toHaveBeenCalledTimes(1)
+    expect(updateAgentProfile).toHaveBeenCalledTimes(1)
     await act(async () => finish())
   })
 })

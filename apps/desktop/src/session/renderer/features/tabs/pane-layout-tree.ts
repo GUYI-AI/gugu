@@ -5,7 +5,7 @@ import type { PaneLayoutSnapshotNode } from '@shared/view-state';
  * (spec session-page「一屏几块」:会话里面把页签拖到格子边上 = 再分格,每格一条自己的页签条)。
  *
  * 纯数据、纯函数:每次改动返回一棵新树(PaneLayoutStore 把它当一个整体换掉),所以这里的规矩能脱离 MobX 单测。
- * `horizontal` = 左右并排(一行),`vertical` = 上下叠着(一列)—— 与 react-resizable-panels 的 orientation 同名同义。
+ * `horizontal` = 左右并排(一行),`vertical` = 上下叠着(一列)。
  */
 export type PaneSplitOrientation = 'horizontal' | 'vertical';
 

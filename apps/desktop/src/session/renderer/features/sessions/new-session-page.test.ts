@@ -320,7 +320,7 @@ describe('NewSessionPage', () => {
     // setLocalePreference 会往 window 派发 CustomEvent；用 Node 全局那个会被 jsdom 的 EventTarget 拒收。
     vi.stubGlobal('CustomEvent', dom.window.CustomEvent);
     // 新建会话页的分栏:量分栏区宽度要 `ResizeObserver`、
-    // 存宽度要 `localStorage`、弹簧要 rAF;面板里的文件树分栏(react-resizable-panels)还要
+    // 存宽度要 `localStorage`、弹簧要 rAF;面板里还要
     // `DOMRect`。少一个不是断言失败,
     // 是渲染期抛异常、整棵树起不来(实撞:14 条一起红在 `localStorage is not defined`,
     // 修掉又露出 `ResizeObserver is not defined`、库内 `new DOMRect` 的 `n is not a constructor`)。
@@ -337,17 +337,12 @@ describe('NewSessionPage', () => {
     vi.stubGlobal('cancelAnimationFrame', (handle: number) =>
       clearTimeout(handle as unknown as ReturnType<typeof setTimeout>)
     );
-    // ⚠️ 装两处。react-resizable-panels 是从**元素所属的 window** 上取这个构造器的
-    // (`mountGroup.ts:38`: `group.element.ownerDocument.defaultView.ResizeObserver`),
-    // 只 `stubGlobal` 它够不着 —— 报出来是库内一句 `n is not a constructor`,与 ResizeObserver
-    // 三个字毫无关系,查了好一会儿。产品自己的代码读的是裸全局,所以两处都要。
     class ResizeObserverStub {
       observe(): void {}
       unobserve(): void {}
       disconnect(): void {}
     }
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
-    (dom.window as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
     container = dom.window.document.querySelector('#root') as HTMLDivElement;
     root = createRoot(container);
     // 语言必须显式钉住：默认偏好是 `system`，会随宿主的 navigator 语言解析，

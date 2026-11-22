@@ -65,7 +65,12 @@ const state = vi.hoisted(() => ({
   moveSessionUnder: vi.fn(),
   showDropHighlight: vi.fn(),
 }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260, useInnerSidebarCrowded: () => false }));
+// What the column reports to its slot in the workspace (folded: the slot closes to 0, the column stays mounted).
+const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({
+  useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
+  useInnerSidebarCrowded: () => false,
+}));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
 }));
@@ -465,7 +470,7 @@ describe('inner sidebar', () => {
     expect(ends.at(-2)?.matches('[data-inner-head-hover]')).toBe(true);
 
     await act(async () => fold.click());
-    expect(host.querySelector('[data-region="inner-sidebar"]'), 'folded: the column is gone, the content is the card alone').toBeNull();
+    expect(innerFrame.folded, 'folded: its slot closes, the content is the card alone').toBe(true);
     expect(innerSidebarFolded.get()).toBe(true);
     expect(innerSidebarFoldedAway.get()).toBe(true);
     expect(innerSidebarShownFor.get()).toBeNull();
@@ -481,7 +486,8 @@ describe('inner sidebar', () => {
     // Remembered globally: another group (and a project) opens folded too.
     openProject('p-shop');
     await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(host.querySelector('[data-inner-sidebar-chat="shop-chat"]'), 'mounted, its slot closed').not.toBeNull();
+    expect(innerFrame.folded).toBe(true);
     expect(restore.querySelector('button')).not.toBeNull();
     // Nothing to fold over (a direct message): no expand button, no lane.
     openChat('dm');
@@ -774,7 +780,7 @@ describe('a standalone agent with sub-agents', () => {
     await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.click());
     openSession('solo-task');
     await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerFrame.folded).toBe(true);
     expect(innerSidebarFoldedAway.get()).toBe(true);
     expect(innerSidebarChat.get(), 'still attached: the list keeps the agent lit').toEqual(solo);
     await act(async () => restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!.click());

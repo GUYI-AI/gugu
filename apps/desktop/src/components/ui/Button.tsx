@@ -28,7 +28,7 @@ const buttonVariants = cva(
     // ❌ 别改 `packages/session-ui/src/icons.tsx`:那是 `scripts/build/gen-icons.mjs` 的生成物。
     '[&_svg]:pointer-events-none',
     'rounded-[var(--radius-control)] border border-transparent',
-    'font-[inherit] text-[length:var(--font-body)] font-[var(--font-weight-medium)] leading-none',
+    'font-[inherit] text-[length:var(--font-body)] font-[var(--font-weight-medium)] leading-[var(--lh-body)]',
     controlTransition,
     disabledState,
   ),

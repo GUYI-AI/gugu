@@ -3,7 +3,7 @@ import { act, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
-import { until } from '../../../../../../../tests/support/awaitCondition';
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -21,14 +21,18 @@ import { i18n } from '@/i18n';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
-const provider = (kind: string) => createTabProvider({
+const provider = (kind: string, rename?: (name: string) => void) => createTabProvider({
   kind,
   conversation: kind === 'conversation',
   resourceKey: (state: { id: string }) => state.id,
   initialize: () => ({ dispose() {} }),
   dispose() {},
   TabContent: () => <div data-chat-workspace-test-body={kind}>{kind === 'conversation' ? '聊天正文' : '工具正文'}</div>,
-  TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx} label={kind === 'conversation' ? '聊天标题' : '工具页签'} />,
+  commands: kind === 'conversation' && rename ? {
+    rename: { label: 'Rename', exec: (_resource, name?: string) => { if (name) rename(name); } },
+  } : undefined,
+  TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx}
+    label={kind === 'conversation' ? '聊天标题' : '工具页签'} renameOnDoubleClick={kind === 'conversation' && !!rename} />,
   TabBarItemDragPreview: () => <GenericTabDragPreview label="工具页签" />,
 });
 
@@ -46,14 +50,14 @@ function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children
   </PaneLayoutProvider>;
 }
 
-async function mountWorkspace() {
+async function mountWorkspace(rename?: (name: string) => void) {
   // The tab labels asserted below are the zh-CN catalog's.
   await i18n.changeLanguage('zh-CN');
   await page.viewport(1220, 790);
   const view = harness = createReactHarness();
   view.container.classList.add('emlight', 'gugu-skin');
   view.container.style.cssText = 'position:fixed;left:0;top:0;width:1180px;height:580px;display:flex';
-  const workspace = layout = new PaneLayoutStore(createTabRegistry(['conversation', 'tool'].map(provider)), { viewId: 'chat-workspace-browser-test' }, undefined, {
+  const workspace = layout = new PaneLayoutStore(createTabRegistry(['conversation', 'tool'].map(kind => provider(kind, rename))), { viewId: 'chat-workspace-browser-test' }, undefined, {
     isPrimaryChatTab: (entry) => entry.kind === 'conversation',
     placementMemory: { read: () => undefined, write() {} },
   });
@@ -82,6 +86,25 @@ async function mountWorkspace() {
   return { inside, width, mode, chat, tool, neighbour, workspace, openWindow };
 }
 
+it('renames the standalone chat title on double-click only, and cancels with Escape', async () => {
+  const rename = vi.fn();
+  const { mode, inside } = await mountWorkspace(rename);
+  await mode('empty');
+  const title = page.getByText('聊天标题');
+  const input = page.getByRole('textbox', { name: '会话名称' });
+  await userEvent.click(title);
+  expect(inside('input')).toBeNull();
+  await userEvent.dblClick(title);
+  await expect.element(input).toHaveValue('聊天标题');
+  await input.fill('放弃修改');
+  await userEvent.keyboard('{Escape}');
+  expect(rename).not.toHaveBeenCalled();
+  await userEvent.dblClick(title);
+  await input.fill('  新名字  ');
+  await userEvent.keyboard('{Enter}');
+  expect(rename).toHaveBeenCalledExactlyOnceWith('新名字');
+});
+
 it('opens the first tool into a split, hides/restores it and expands only its own block', async () => {
   const { inside, width, mode, chat, tool, neighbour, openWindow } = await mountWorkspace();
   const neighbourBefore = neighbour().getBoundingClientRect().toJSON();
@@ -97,6 +120,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   await until('the split produces two measurable pages', () => width(chat()) > 0 && width(tool()) > 0 && width(tool()) < 800);
+  // The tool slides in on the track: the split width to restore is the one it lands on.
+  await untilStable('the split comes to rest', () => width(chat()));
   const chip = inside('[data-chat-workspace-header] [data-tab-label="工具页签"]')!;
   const hideButton = inside('button[aria-label="隐藏标签页"]')!;
   expect(chip.getBoundingClientRect().height).toBe(32);
@@ -110,6 +135,19 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const chatWidth = width(chat());
 
   await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
+  // The tool itself goes out on the track — live, in reach of nothing, ❌ blank at once or a picture of it — and the chat
+  // beside it is laid out at every width it is drawn at.
+  const toolLefts: number[] = [];
+  const chatWidths = new Set<number>();
+  for (let frame = 0; frame < 40; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    const shown = firstTool && !firstTool.closest('[inert]') && firstTool.getBoundingClientRect().width > 0;
+    toolLefts.push(shown ? Math.round(firstTool.getBoundingClientRect().left) : -1);
+    chatWidths.add(Math.round(width(chat())));
+  }
+  expect(toolLefts[0], toolLefts.join(' ')).toBeGreaterThan(0);
+  expect(new Set(toolLefts.filter((left) => left >= 0)).size, toolLefts.join(' ')).toBeGreaterThan(5);
+  expect(chatWidths.size, [...chatWidths].join(' ')).toBeGreaterThan(5);
   await mode('hidden');
   const showButton = inside('button[aria-label="显示标签页"]')!;
   expect(showButton.getAttribute('aria-pressed')).toBe('false');
@@ -117,16 +155,24 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
   expect(getComputedStyle(showButton).borderRadius).toBe('8px');
   await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
-  expect(firstTool?.closest('[inert]')).not.toBeNull();
+  // The tool goes out on the track and is out of reach once it lands.
+  await until('the hidden tool is out of reach', () => !!firstTool?.closest('[inert]'));
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
   await mode('split');
+  // Shown again, the tool comes in on the track like a new one, ❌ in one frame.
+  const shownLefts = new Set<number>();
+  for (let frame = 0; frame < 20; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    shownLefts.add(Math.round(tool()?.getBoundingClientRect().left ?? -1));
+  }
+  expect(shownLefts.size, [...shownLefts].join(' ')).toBeGreaterThan(5);
   await until('the original split width is restored', () => width(chat()), (size) => size === chatWidth);
 
   await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
   await mode('full');
   await until('the tool fills the chat block', () => width(tool()), (size) => size === 800);
   expect(tool()).toBe(firstTool);
-  expect(chat()?.closest('[inert]')).not.toBeNull();
+  await until('the chat under the full view is out of reach', () => !!chat()?.closest('[inert]'));
   expect(neighbour().getBoundingClientRect().toJSON()).toEqual(neighbourBefore);
   await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
   await mode('split');
@@ -138,10 +184,11 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await userEvent.click(page.getByRole('button', { name: /^(?:关闭工具页签标签|Close 工具页签 tab)$/ }));
   await mode('empty');
   await until('the chat fills its block after the last tool closes', () => width(chat()), (size) => size === 800);
-  expect(tool()).toBeNull();
+  // It goes out on the track, live (@@@closing-pane), and is gone once it lands.
+  await until('the closed tool is gone', () => !tool());
 });
 
-it('docks chat into the strip before a wide floating control and keeps both pages alive', async () => {
+it('docks chat into the strip, then into a header button, and keeps both pages alive', async () => {
   const { inside, workspace, chat, tool, mode, width } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
@@ -158,9 +205,8 @@ it('docks chat into the strip before a wide floating control and keeps both page
   expect(inside('[data-testid="chat-workspace-bubble"]')).toBeNull();
   await act(() => { inside('[data-chat-workspace-test-main]')!.style.width = '380px'; });
   await until('further narrowing exposes the chat bubble', () => !!inside('[data-testid="chat-workspace-bubble"]'));
-  const bubble = inside('[data-testid="chat-workspace-bubble"]')!;
-  expect(bubble.getBoundingClientRect().width).toBeGreaterThanOrEqual(44);
-  expect(bubble.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+  // The way back is in the header row, never over the tool page (a native browser page would have to step aside under it).
+  expect(inside('[data-testid="chat-workspace-bubble"]')!.closest('[data-chat-workspace-header]')).not.toBeNull();
   await userEvent.click(page.getByTestId('chat-workspace-bubble'));
   await until('the same conversation returns', () => chat()?.closest('[inert]') === null);
   expect(chat()).toBe(originalChat);
@@ -268,6 +314,8 @@ it('resizes and previews each collapse before release, and restores the split on
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   const separator = () => inside('[data-chat-tool-divider]')!.getBoundingClientRect();
+  // The tool slides in on the track: grab the divider where it lands.
+  await untilStable('the split comes to rest', () => separator().left);
   const begin = async () => {
     const rect = separator();
     const x = rect.left + rect.width / 2;

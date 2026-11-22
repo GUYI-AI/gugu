@@ -49,7 +49,8 @@ export function ChatNotificationLevelControl({
             style={{
               border: 'none',
               borderRadius: 'var(--radius-control)',
-              padding: '6px 10px',
+              // 26 px segments: 3 px above and below the Button's 20 px body line.
+              padding: '3px 10px',
               fontSize: 'var(--font-body)',
               cursor: busy ? 'default' : 'pointer',
               // @@@live-accent (Refs #6105) 「currently selected」是 live 态,归唯一 accent(--live);--accent 是品牌色不表达状态。

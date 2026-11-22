@@ -196,8 +196,8 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
     : !localScope && !online && messages.state === 'unknown' ? 'globalSearch.offline' as const : null
   const applied = [...(messagesApply ? [messages] : []), ...(turnsApply ? [turns] : [])]
   const pending = applied.some((reading) => reading.state === 'unknown')
-  // A reading held from the previous words while these words' are on their way (`keepPrevious`), or read again past `fresh`.
-  const stale = applied.some((reading) => reading.state === 'value' && reading.stale)
+  // A reading held from the previous words while these words' are on their way (`keepPrevious`).
+  const stale = applied.some((reading) => reading.state === 'value' && reading.previous)
   const messageRows = (messagesApply ? valueOf(messages) : undefined) ?? []
   const turnHits = (turnsApply ? valueOf(turns)?.hits : undefined) ?? []
   const messageHits: SearchHit[] = messageRows

@@ -136,16 +136,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const activeChatName = activeChat ? chatDisplayName(activeChat, peerIdentity?.display_name) : ''
   const shownActiveChatName = useShownAgentName({ name: activeChatName, createdAt: !isRoomChatSurface && peerIdentity?.type === 'agent' ? peerIdentity.created_at ?? undefined : undefined })
   const activeChatAvatar = isRoomChatSurface ? (activeChat?.avatar ?? null) : (peerIdentity?.avatar ?? null)
-  // #1312 — every right-side surface (settings, announcement, members, workspace, history, topic split,
-  // file preview) occupies the SAME right slot as a flex sibling that narrows the message column; the
-  // agent-settings modal rides along. If two open at once they stack and the layout collapses (the chat
-  // list gets squeezed out). So opening any one MUST close the others — mutual exclusion, mirroring
-  // the existing right-surface mutex (handleOpenWorkspacePanel).
-  // @@@1485 review-followup / #1312：右侧同槽位 surface 全互斥的**单一** close helper。各 opener 原来手枚举
-  // 其余 surface 的 setX(false)（O(n²) 漂移）——已漏掉 群公告(showAnnounce) 多路（#1497 Scale review CONFIRMED:
-  // 设置/工作区/历史/agent设置/话题分栏/成员列表 任一开时 群公告 仍可叠加）。统一在此一处关全部，
-  // opener 只 close+开自己。
-  // 群信息(成员、公告、设置)、群文件夹、App、话题是这条线页签条上的页签(chat-tabs,owner 10-26),与抽屉不争同一格:这里只关抽屉。
+  // The file preview is the one surface beside the chat; info, folder, Apps and topics are tabs of the line (chat-tabs, owner 10-26).
   const closeRightSurfaces = useCallback(() => {
     filePreviewCloseRef.current()
   }, [])
@@ -210,7 +201,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const handleOpenFolder = useCallback(() => { if (activeChatId) { closeRightSurfaces(); openPanelItem(activeChatId, folderItem()) } }, [activeChatId, closeRightSurfaces])
   // A block draws its shown tabs in the engine's slots; without a strip, one focused page covers the chat (topics too).
   const coverChat = (page: ReactNode) => mobile ? <RightPanel>{page}</RightPanel> : <div className="absolute inset-0 z-20 flex flex-col bg-[var(--bg-primary)]">{page}</div>
-  const inTabs = (topicPane: ReactNode, infoPage: () => ReactNode) => !activeChatId ? null : blockHost ? <ChatTabPortals chatId={activeChatId} panel={panelContent} topic={() => topicPane} info={infoPage} /> : <ChatTabPage chatId={activeChatId} panel={(tab) => coverChat(panelContent(tab))} topic={() => topicPane} info={() => coverChat(infoPage())} />
+  const inTabs = (topicPane: ReactNode, infoPage: () => ReactNode) => !activeChatId ? null : blockHost ? <ChatTabPortals chatId={activeChatId} panel={panelContent} topic={() => topicPane} info={infoPage} /> : <ChatTabPage chatId={activeChatId} panel={(tab) => coverChat(panelContent(tab))} topic={() => mobile ? topicPane : coverChat(topicPane)} info={() => coverChat(infoPage())} />
   const panelContent = (tab: ChatPanelTab) => activeChatId ? <GroupTabContent chatId={activeChatId} tabId={tab.tabId} item={tab.item} tabbed={Boolean(blockHost)} inWindow={tab.inWindow} mobile={mobile} visible={surfaceVisible} onForward={handleForward} onOpenWith={opener.openWith} /> : null
 
   const topicSurface = useTopicSurface({
@@ -561,8 +552,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     <div ref={surfaceElement} data-chat-surface={activeChatId}
       style={{
         flex: 1,
-        // #1312 兜底: minWidth:0 让 ChatAreaPanel 能收缩到 flex basis 以下，避免内部右侧面板(工作区/历史,
-        // flexShrink:0 的固定宽度)在异常并存时把整个 MainLayout 行撑开、反向挤压左侧会话列表。
         minWidth: 0,
         height: '100%',
         background: mobile ? 'var(--ta-panel-bg)' : 'var(--bg-primary)',
@@ -614,7 +603,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           position: 'relative',
         }}
       >
-        <ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
+        {filePreview.beside(<ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
         {opener.overlay}
         {emptyProject ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
           style={{
@@ -758,11 +747,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
 
         </div>}
-        </ChatPaneContent>
+        </ChatPaneContent>)}
 
         {inTabs(topicPane, infoPage)}
-
-        {filePreview.panel}
       </div>
       <MessageMemberProfileLayer
         card={messageProfile.card}

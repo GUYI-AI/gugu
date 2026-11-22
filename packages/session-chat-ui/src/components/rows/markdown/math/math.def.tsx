@@ -41,6 +41,8 @@ export const mathBlockDef = defineBlock<MathBlock, MathLeafLayout>({
     return { height, width: ctx.width, layout };
   },
 
+  // The typeset html is the same at every width (KaTeX does not line-break): a width change moves the frame only.
+  domFromContentOnly: true,
   Render(props: { node: Measured<MathLeafLayout> }) {
     return <Formula block={props.node.layout} />;
   },

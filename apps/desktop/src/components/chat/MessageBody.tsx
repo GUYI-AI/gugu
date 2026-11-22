@@ -5,6 +5,7 @@ import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
+import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 import { formatVoiceDuration, parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
 import { openSenderFile } from '@/lib/openMessageSender'
 import { Markdown } from '../markdown/Markdown'
@@ -25,7 +26,7 @@ import { WidgetBubble } from './WidgetBubble'
  * One kind of message has this one renderer; a new kind is added here, not in a host.
  */
 export function MessageBody({
-  message: msg, compact, isGroup, senderName, time, mention, memberProfiles, onOpenTopic, onOpenFile, onOpenWorkspaceFile,
+  message: msg, compact, isGroup, senderName, time, mention, memberProfiles, onOpenTopic, onOpenFile, onOpenWorkspaceFile, readOnly = false,
 }: {
   message: MessageItem
   /** Phone layout. */
@@ -40,13 +41,15 @@ export function MessageBody({
   onOpenFile?: (meta: ParsedAttachment, message?: MessageItem) => void
   /** A link to a file in the sender's working folder. Default: open it through the sender; a task timeline opens it in that task. */
   onOpenWorkspaceFile?: (link: Extract<ReturnType<typeof classifyFileLink>, { kind: 'workspace-file' }>) => void
+  /** History nobody acts on any more (an old private chat): a question takes no answer, a widget is its text, ❌ its live App. */
+  readOnly?: boolean
 }) {
   const { t } = useTranslation('messaging')
   const album = useMessageAlbum(msg.id)
   const card = msg.content_type === 'card' ? parseComposerCard(msg.content) : null
-  if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} mobile={compact} />
+  if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} mobile={compact} readOnly={readOnly} />
   if (card) return <ComposerCardView card={card} isMine={msg.is_mine} isGroup={isGroup} chatId={msg.chat_id} senderName={senderName} time={time} memberProfiles={memberProfiles} onOpenTopic={compact && onOpenTopic && card.type === 'task' ? () => onOpenTopic(msg.id) : undefined} onOpenFile={onOpenFile} />
-  if (msg.content_type === 'widget') return <WidgetBubble message={msg} />
+  if (msg.content_type === 'widget') return readOnly ? <p>{parseWidgetMessage(msg.content)?.text ?? t('message.widget')}</p> : <WidgetBubble message={msg} />
   if (msg.content_type === 'attachment') {
     if (album) return <MessageAlbumBubble members={album} isMine={msg.is_mine} chatId={msg.chat_id} senderName={senderName} onOpenFile={onOpenFile} />
     const voice = parseVoiceAttachmentContent(msg.content)

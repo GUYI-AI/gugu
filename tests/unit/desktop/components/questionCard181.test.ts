@@ -68,6 +68,17 @@ describe('question card in a group (gugu-dev#181 ⑨)', () => {
     expect(harness.container.textContent).toContain('该提问已结束')
   })
 
+  it('read-only history (an old private chat): even the owner gets no answer controls, no waiting line, no session read', async () => {
+    settlement = { itemId: 'agent-question:q1', state: 'pending', optionId: null }
+    await renderWithAppProviders(harness, createNode(QuestionCardView, { card: CARD, chatId: 'dm-1', messageId: 'card-msg', agentUserId: 'agent-7', time: '10:21', readOnly: true }))
+    expect(harness.container.textContent).toContain('要把初始化提前到登录之前吗？')
+    expect(options().every((button) => button.disabled)).toBe(true)
+    expect(harness.container.textContent).not.toContain('待你回答')
+    expect(reads.every((read) => !read.enabled)).toBe(true)
+    await act(async () => { options()[0]!.click() })
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('a colleague sees the question and its choices, greyed, and nobody\'s session is read', async () => {
     viewer = 'colleague-1'
     settlement = { itemId: 'agent-question:q1', state: 'pending', optionId: null }

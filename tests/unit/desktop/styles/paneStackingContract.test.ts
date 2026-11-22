@@ -5,6 +5,7 @@ const read = (path: string) => readFileSync(new URL(`../../../../${path}`, impor
 const css = read('apps/desktop/src/styles/tokens.css')
 const layer = read('apps/desktop/src/session/renderer/features/extensions/extension-view-layer.tsx')
 const tree = read('apps/desktop/src/session/renderer/features/tabs/pane-tree-view.tsx')
+const cut = read('apps/desktop/src/session/renderer/features/tabs/pane-track-cut.tsx')
 const fullscreen = read('apps/desktop/src/session/renderer/features/tabs/tab-fullscreen.ts')
 const screen = read('apps/desktop/src/session/renderer/app/screen-frame.tsx')
 const menu = read('packages/session-ui/src/react/primitives/dropdown-menu/dropdown-menu.css.ts')
@@ -33,11 +34,11 @@ describe('workspace surfaces share one stacking contract', () => {
 
   it('prevents the pane, divider and menu from choosing independent numeric levels', () => {
     expect(fullscreen).toContain("zIndex: 'var(--z-pane-fullscreen)'")
-    expect(tree).toContain("zIndex: 'var(--z-pane-divider)'")
-    const divider = tree.slice(tree.indexOf('const Cut'))
-    expect(divider).not.toMatch(/\bz-\d+\b/)
-    expect(screen).toMatch(/<ResizableHandle\s+style=\{\{ zIndex: 'var\(--z-pane-divider\)' \}\}/)
-    expect(screen).not.toMatch(/<ResizableHandle[^>]*\bz-\d+\b/)
+    // The pane tree's and the screen's dividers are both TrackCut's.
+    expect(cut).toContain("zIndex: 'var(--z-pane-divider)'")
+    expect(cut).not.toMatch(/\bz-\d+\b/)
+    expect(tree.slice(tree.indexOf('const Cut'))).toContain('<TrackCut')
+    expect(screen).toContain('<TrackCut')
     const menuLevels = [...menu.matchAll(/zIndex:\s*([^,\n]+)/g)].map((match) => match[1])
     expect(menuLevels).not.toHaveLength(0)
     expect(menuLevels.every((value) => value === "'var(--z-menu)'")).toBe(true)

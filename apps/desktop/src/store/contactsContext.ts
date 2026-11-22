@@ -43,7 +43,6 @@ export interface ContactsContextValue {
   updateContactAlias: (contactId: string, alias: string) => Promise<void>
   setAgentPublic: (agentId: string, agentPublic: boolean) => Promise<void>
   setAgentDesiredStatus: (agentId: string, desiredStatus: 'online' | 'offline') => Promise<void>
-  renameAgent: (agentId: string, name: string) => Promise<void>
   updateAgentProfile: (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => Promise<void>
   uploadAgentAvatar: (agentId: string, file: File, profile?: { name?: string; bio?: string }) => Promise<void>
   /** 存这只 agent 的形象(颜色 + 休息表情):写进它的头像字段,换掉之前的形象或照片。 */
@@ -82,7 +81,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   updateContactAlias: async () => {},
   setAgentPublic: async () => {},
   setAgentDesiredStatus: async () => {},
-  renameAgent: async () => {},
   updateAgentProfile: async () => {},
   uploadAgentAvatar: async () => {},
   setAgentLook: async () => {},

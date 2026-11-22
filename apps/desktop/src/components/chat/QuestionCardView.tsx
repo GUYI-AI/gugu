@@ -26,13 +26,15 @@ import '../../i18n/registerAssistantCatalog'
  * 主人的完整题目沿用同一宿主结算口,统一核对后提交；旧宿主没有完整题目时保留原有引用回答路径。
  * 群里的同事不读取主人的私有会话,仍只展示消息中公开的题目和选项。
  */
-export function QuestionCardView({ card, chatId, messageId, agentUserId, time, mobile = false }: {
+export function QuestionCardView({ card, chatId, messageId, agentUserId, time, mobile = false, readOnly = false }: {
   card: QuestionCard
   chatId: string
   messageId: string
   agentUserId: string
   time: ReactNode
   mobile?: boolean
+  /** History (an old private chat): the question as it was asked, ❌ answer controls, ❌ a read of the owner's session. */
+  readOnly?: boolean
 }) {
   const { t } = useTranslation('assistant')
   const { user } = useAuth()
@@ -41,7 +43,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
   const { devices } = useDevicesStore()
   const device = devices.find((row) => row.device_id === card.deviceId)
   const addressedToMe = user?.id === card.ownerUserId
-  const mine = addressedToMe && Boolean(device)
+  const mine = !readOnly && addressedToMe && Boolean(device)
   const head = addressedToMe ? t(composerCardCopy.question.head, { ns: 'messaging' }) : t('question.needsOwner', { name: ownerName })
   const read = useTimelineSession(assistantTimelineClient(device?.is_current_device === true), mobile ? 'mobile' : 'desktop', card.deviceId, card.sessionId, mine && !card.settled)
   const settlement = read.timeline.settlements[card.questionId] ?? null
@@ -77,7 +79,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
   if (card.questions?.length) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
     <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{head}</span><span>{time}</span></div>
     <ReadonlyAgentQuestions questions={card.questions} mobile={mobile} />
-    <p className="question-message-card__waiting"><span aria-hidden="true" />{t('question.waitingForOwner', { name: ownerName })}</p>
+    {!readOnly && <p className="question-message-card__waiting"><span aria-hidden="true" />{t('question.waitingForOwner', { name: ownerName })}</p>}
   </div>
   const openable = mine && device?.is_current_device === true && card.options.length === 0
   const interactiveTime = typeof time !== 'string'

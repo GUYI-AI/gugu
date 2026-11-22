@@ -167,24 +167,26 @@
   justify-content: center;
 }
 
-[data-phone-shell] :is([data-mobile-tab-page='chats'] [role='listbox'], .gg-partners-list) > .gg-list-row:has(+ .gg-list-row) > .gg-list-row-body::after {
+/* Drawn by the next row on its first pixel above itself, which is the previous row's last pixel (rows are positioned, the
+   later one paints on top): the same line as "a row followed by a row" without :has(), which WebView < 105 drops. */
+[data-phone-shell] :is([data-mobile-tab-page='chats'] [role='listbox'], .gg-partners-list) > .gg-list-row + .gg-list-row > .gg-list-row-body::before {
   content: '';
   position: absolute;
   inset-inline-start: 0;
   inset-inline-end: calc(-1 * var(--spacing-lg));
-  bottom: calc(-1 * var(--spacing-sm));
+  top: calc(-1 * var(--spacing-sm) - 1px);
   height: 1px;
   background: var(--border-subtle);
   pointer-events: none;
 }
 
 [data-phone-shell] .gg-partners-navrow { position: relative; }
-[data-phone-shell] .gg-partners-navrow:has(+ .gg-partners-navrow)::after {
+[data-phone-shell] .gg-partners-navrow + .gg-partners-navrow::before {
   content: '';
   position: absolute;
   inset-inline-start: calc(var(--spacing-sm) + var(--icon-lg) + var(--spacing-lg));
   inset-inline-end: calc(-1 * var(--spacing-sm));
-  bottom: 0;
+  top: -1px;
   height: 1px;
   background: var(--border-subtle);
   pointer-events: none;

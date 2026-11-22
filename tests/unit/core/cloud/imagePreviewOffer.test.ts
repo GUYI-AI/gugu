@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { attachmentSha256, declareAttachment, drawImagePreviews, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { attachmentSha256, declareAttachment, drawImagePreviews, withUploadedAttachment, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// The upload alone: `use` hands back its key.
+const uploadAttachmentBytes = (endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array; name: string; contentType: string }, scope: { chat_id: string | null; as: string }) =>
+  withUploadedAttachment(endpoint, file, scope, async key => key)
 
 const plan = (key: string) => new Response(JSON.stringify({ staging_key: key, url: 'https://storage.example/scoped', method: 'PUT', fields: {}, max_bytes: 1 << 20 }))
 const routes = () => {

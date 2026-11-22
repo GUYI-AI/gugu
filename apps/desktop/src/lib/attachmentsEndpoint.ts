@@ -1,5 +1,5 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
-import { commitAttachment, configuredEndpoint, declareAttachment, drawImagePreviews, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
+import { commitAttachment, configuredEndpoint, declareAttachment, drawImagePreviews, placeAttachment, withUploadedAttachment, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { beginAttachmentUpload } from './attachmentUploads'
 import { imagePreview } from './imagePreview'
 import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
@@ -133,10 +133,10 @@ export async function placeTaskAttachment(file: File, prepared: TurnFileRef | nu
   if (!placement.published) {
     const name = file.name || 'file', mimeType = resolveFileMimeType(file)
     const endpoint = await attachmentsEndpoint()
-    const staging_key = await uploadAttachmentBytes(endpoint, { bytes: file, name, contentType: mimeType }, { chat_id: to.chatId, as: to.owner },
-      { signal, onProgress: onProgress && (progress => onProgress(progress.loaded, progress.total ?? file.size)) })
-    signal?.throwIfAborted()
-    const item = await placeAttachment(endpoint, { staging_key, chat_id: to.chatId, file_name: name, as_user_id: to.owner, content_type: mimeType }) as { id: string; version: number }
+    const item = await withUploadedAttachment(endpoint, { bytes: file, name, contentType: mimeType }, { chat_id: to.chatId, as: to.owner }, staging_key => {
+      signal?.throwIfAborted()
+      return placeAttachment(endpoint, { staging_key, chat_id: to.chatId, file_name: name, as_user_id: to.owner, content_type: mimeType })
+    }, { signal, onProgress: onProgress && (progress => onProgress(progress.loaded, progress.total ?? file.size)) }) as { id: string; version: number }
     placement.published = { itemId: item.id, version: item.version, name, mimeType, sizeBytes: file.size }
   }
   signal?.throwIfAborted()

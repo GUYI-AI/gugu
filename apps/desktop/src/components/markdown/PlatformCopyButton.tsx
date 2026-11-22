@@ -32,7 +32,7 @@ export function PlatformCopyButton({ text, kind }: { text: string | (() => strin
   return <>
     <IconButton size="sm"
       title={t('actions.copy')} aria-label={t('actions.copy')}
-      className="cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+      className="cursor-pointer p-1 text-muted-foreground transition-[color,opacity] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
       data-streamdown={`${kind === 'code' ? 'code-block' : 'table'}-copy-button`} data-copied={copied || undefined}
       disabled={pending || copied} onClick={() => { void copy() }}
     ><Icon aria-hidden="true" size={14} /></IconButton>
