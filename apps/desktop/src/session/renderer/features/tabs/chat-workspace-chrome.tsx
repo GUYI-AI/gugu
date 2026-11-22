@@ -149,8 +149,9 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
           </Button>
         )}
         {full && (
-          <Button size="sm" variant="ghost" className="gap-1 text-xs" title={exit} onClick={() => layout.setChatToolLayout('split')}>
-            <Minimize2 className="size-3.5" />{exit}
+          <Button size="sm" variant="ghost" className="gap-1 text-xs" title={exit} aria-label={exit} onClick={() => layout.setChatToolLayout('split')}>
+            {/* Narrow enough for the compact way back: icon only, like the tab strip's own exit (index.css), so the page tab keeps its name. */}
+            <Minimize2 className="size-3.5" />{conversationPresentation !== 'bubble' && exit}
           </Button>
         )}
       </TabBarActionRow>
