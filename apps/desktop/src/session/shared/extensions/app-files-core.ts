@@ -1,10 +1,10 @@
 import { readDocumentText, ChatFolderReadError } from './chat-folder-text';
 import { FILE_KEEPS, type FileKeep } from '@gugu/core/shared/fileStorage';
-import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachmentBytes } from '@gugu/core/cloud/attachmentsApi';
+import { AttachmentsError, configuredEndpoint, placeAttachment, withUploadedAttachment } from '@gugu/core/cloud/attachmentsApi';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
-import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, isFileIntegrityError, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { isRenderableImage, mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
@@ -62,6 +62,9 @@ import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSetting
  */
 
 /** A refusal of `gugu.files`: `code` and `detail` are what an App branches on (bridge-protocol.ts `ErrorDetail`), the message is for people. */
+/** Bytes that do not match their pinned sha256 reach no App: the read fails with the code, nothing of it delivered. */
+const integrityRefusal = (error: unknown) => new AppFileError('failed', error instanceof Error ? `${error.message}: nothing of this file was read` : 'integrity_failed');
+
 export class AppFileError extends Error {
   constructor(
     readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
@@ -946,6 +949,7 @@ export function createAppFiles(platform: FilesPlatform) {
     } catch (error) {
       if (held.file === pending) disposeSnapshot(key, held);
       if (error instanceof MissingFileObjectError || error instanceof AppFileError && error.code === 'not-found') throw staleVersion();
+      if (isFileIntegrityError(error)) throw integrityRefusal(error);
       throw error;
     } finally {
       held.active--;
@@ -1468,10 +1472,10 @@ export function createAppFiles(platform: FilesPlatform) {
       const endpoint = configuredEndpoint(token);
       let replaced: ItemRow & { version: number; pruned_pointers: string[] | null };
       try {
-        const stagingKey = await uploadAttachmentBytes(endpoint, { bytes: new Uint8Array(file.bytes), name: row.filename, contentType }, { chat_id: row.chat_id, as: surface.asAgent ?? userId });
-        replaced = await placeAttachment(endpoint, {
-          staging_key: stagingKey, item_id: row.id, expected_version: expected, as_user_id: surface.asAgent ?? userId, content_type: contentType,
-        }) as unknown as ItemRow & { version: number; pruned_pointers: string[] | null };
+        replaced = await withUploadedAttachment(endpoint, { bytes: new Uint8Array(file.bytes), name: row.filename, contentType }, { chat_id: row.chat_id, as: surface.asAgent ?? userId },
+          stagingKey => placeAttachment(endpoint, {
+            staging_key: stagingKey, item_id: row.id, expected_version: expected, as_user_id: surface.asAgent ?? userId, content_type: contentType,
+          })) as unknown as ItemRow & { version: number; pruned_pointers: string[] | null };
       } catch (error) {
         const changed = error instanceof AttachmentsError && error.code === 'version_conflict' ? /got (\d+)/.exec(error.message) : null;
         if (changed) throw replacedSinceError(row.filename, Number(changed[1]), expected);
@@ -1523,9 +1527,9 @@ export function createAppFiles(platform: FilesPlatform) {
         try {
           const store = async () => {
             const endpoint = configuredEndpoint(token);
-            const stagingKey = await uploadAttachmentBytes(endpoint, { bytes: new Uint8Array(file.bytes), name, contentType }, { chat_id: chatId, as: actor });
-            return await placeAttachment(endpoint, { staging_key: stagingKey, chat_id: chatId, file_name: name, folder: folder ?? null,
-              as_user_id: actor, source_message_ids: sourceMessageIds, content_type: contentType, ...(keep ? { keep } : {}) }) as unknown as ItemRow;
+            return await withUploadedAttachment(endpoint, { bytes: new Uint8Array(file.bytes), name, contentType }, { chat_id: chatId, as: actor },
+              stagingKey => placeAttachment(endpoint, { staging_key: stagingKey, chat_id: chatId, file_name: name, folder: folder ?? null,
+                as_user_id: actor, source_message_ids: sourceMessageIds, content_type: contentType, ...(keep ? { keep } : {}) })) as unknown as ItemRow;
           };
           const asText = workspaceUploadKind(name, contentType, new Uint8Array(file.bytes));
           if (asText.kind === 'document') {
@@ -1661,6 +1665,7 @@ export function createAppFiles(platform: FilesPlatform) {
       } catch (error) {
         // Gone between asking and reading: as the metadata would have said. Access withdrawn meanwhile: refused.
         if (error instanceof MissingFileObjectError) return { state: 'unprepared' };
+        if (isFileIntegrityError(error)) throw integrityRefusal(error);
         if (error instanceof FileReadRevokedError) {
           if (error.reason === 'access' || error.reason === 'revision') throw new AppFileError('denied', 'Access to this file changed while it was read');
           return { state: 'missing' };

@@ -1,5 +1,6 @@
 import { rpcQuery } from '../../../../../../tests/support/rpcQuery';
 import { verifiedFileHandle } from '../../../../../../tests/support/verifiedFileHandle';
+import { forgedFileServer } from '../../../../../../tests/support/forgedFileHandle';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilesPlatform } from './app-files-core';
 import { FileReadRevokedError, type ResolvedFile } from '@gugu/core/shared/fileResolver';
@@ -140,6 +141,14 @@ describe('a bound conversation\'s file by its path (#1927)', () => {
     state.found = [row({ kind: 'file' })];
     state.resolved = async () => { throw new FileReadRevokedError('access'); };
     await expect(files.readAtPath(CHAT, 'today.json', MAX)).rejects.toMatchObject({ code: 'denied' });
+  });
+
+  it('bytes that are not their pinned sha (a forged upload claim) fail integrity_failed, nothing of them read', async () => {
+    state.found = [row({ kind: 'file', size_bytes: 2 })];
+    const server = forgedFileServer(new TextEncoder().encode('{}'), new TextEncoder().encode('[]'), { item_id: ITEM, chat_id: CHAT, version: 2, file_name: 'today.json', content_type: 'application/json' });
+    state.resolved = () => server.handle();
+    await expect(files.readAtPath(CHAT, 'today.json', MAX)).rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('integrity_failed') });
+    expect(server.delivered).toEqual([]);
   });
 
   it('refusals stay refusals: not a member, a folder, more than one file', async () => {

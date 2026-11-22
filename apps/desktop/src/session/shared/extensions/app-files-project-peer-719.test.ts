@@ -35,9 +35,9 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
 vi.mock('@gugu/core/cloud/attachmentsApi', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   configuredEndpoint: (token: string) => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token }),
-  uploadAttachmentBytes: async (_endpoint: unknown, _file: unknown, scope: Row) => {
+  withUploadedAttachment: async (_endpoint: unknown, _file: unknown, scope: Row, use: (key: string) => Promise<unknown>) => {
     uploads.push(scope);
-    return 'staging/key';
+    return use('staging/key');
   },
   placeAttachment: async () => { throw new Error('the cloud path is not taken in these cases'); },
 }));

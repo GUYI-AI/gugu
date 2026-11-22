@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { attachmentSha256, pendingAttachmentUploads } from '@gugu/core/cloud/attachmentsApi'
 import { localCopy, storeBytes, storedCopy } from '@gugu/core/local/files/fileSnapshots'
+import { fileSha256 } from '@gugu/core/shared/fileCipher'
 const hosts = vi.hoisted(() => [] as import('@gugu/core/cloud/declaredUploads').DeclaredUploadHost[])
 const queues = vi.hoisted(() => [] as { begin: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; drop: ReturnType<typeof vi.fn>; retry: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[])
 vi.mock('@gugu/core/cloud/declaredUploads', () => ({ createDeclaredUploads: (host: import('@gugu/core/cloud/declaredUploads').DeclaredUploadHost) => {
@@ -43,6 +44,21 @@ it('stores verified original bytes before declaring, resumes only from that stor
   await host.resume(); await host.retry('m'); await host.drop('m')
   expect(queues[0]!.resume).toHaveBeenCalledOnce(); expect(queues[0]!.retry).toHaveBeenCalledWith('m'); expect(queues[0]!.drop).toHaveBeenCalledWith('m')
   host.dispose(); expect(queues[0]!.dispose).toHaveBeenCalledOnce()
+})
+// One digest per send of a file on disk: the host hashes it to record where it is, and the declaration reuses that sha.
+it('hashes a declared file on disk exactly once', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'declared-upload-host-')); roots.push(home)
+  const path = join(home, 'once.bin'); await writeFile(path, 'hash me once')
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ staging_key: 'pending', url: 'https://store.test', fields: {}, max_bytes: 100 }), { status: 200 }))
+  const host = createAttachmentUploadHost({ account: async () => ({ id: 'owner', home, endpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'a', token: 't', fetch: fetcher }) }), progress: vi.fn(), warn: error => { throw error } })
+  const digests = vi.spyOn(fileSha256, 'create')
+  try {
+    const { declared } = await host.declare({ file: { name: 'once.bin', path, size: 12, contentType: 'application/octet-stream' }, chatId: 'chat', as: 'owner', messageId: 'm' })
+    expect(digests).toHaveBeenCalledOnce()
+    expect(declared.sha256).toBe(createHash('sha256').update('hash me once').digest('hex'))
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toMatchObject({ sha256: declared.sha256 })
+  } finally { digests.mockRestore() }
 })
 // A file on this disk is uploaded from where it is: nothing is copied, and an original changed before its upload finished
 // is no copy at all — the upload owing it fails with that reason, a reader just does not find it here.
