@@ -136,6 +136,7 @@ describe('a platform that reads objects at its own address', () => {
     expect(digest(sink.bytes())).toBe(row.sha256)
     expect(asked).toEqual([`app-object://${encodeURIComponent('https://files.invalid/signed?sig=1')}`])
     const video = await cloud.preview!(row, context, async () => { throw Error('a managed video is not read whole') })
-    expect(video).toMatchObject({ url: `app-object://${encodeURIComponent('https://files.invalid/signed?sig=1')}` })
+    // A <video> streams the signed address itself; only byte reads go through the mapped address.
+    expect(video).toMatchObject({ url: 'https://files.invalid/signed?sig=1' })
   })
 })

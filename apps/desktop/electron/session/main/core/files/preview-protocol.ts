@@ -182,9 +182,8 @@ function serveBytes(registration: BytesPreviewRegistration, pathname: string, ra
 }
 
 /**
- * What an object answer passes on to the renderer: the store's own status, length, range, type, validators and caching.
- * A `<video>` keeps what it has buffered across a seek only for an answer it may cache: the store's `Cache-Control`
- * (immutable) goes through as it is, not a `no-store` of our own.
+ * What an object answer passes on to the renderer: the store's own status, length, range, type, validators and caching
+ * (its `Cache-Control`, immutable for a signed object, goes through as it is, not a `no-store` of our own).
  */
 const OBJECT_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'cache-control'];
 
@@ -215,8 +214,8 @@ async function serveCloudObject(url: URL, range: string | null, signal?: AbortSi
  * The renderer gets an object's bytes in pieces of up to `BYTES_READ`, as it gets this machine's bytes (`serveBytes`), with
  * a few read ahead. Electron hands every piece of a handler's body to the renderer as its own write; the network's own
  * pieces are small, and passed on one by one a 200 MB object reached the renderer at ~28 MB/s against ~68 MB/s read in
- * main. A piece goes out as soon as the network has nothing more ready (`PIECE_WAIT_MS`): a `<video>`'s first bytes and a
- * seek's are not held back for a full piece.
+ * main. A piece goes out as soon as the network has nothing more ready (`PIECE_WAIT_MS`): a reader's first bytes are not
+ * held back for a full piece.
  */
 const PIECE_WAIT_MS = 4;
 function inPieces(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {

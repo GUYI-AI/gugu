@@ -24,8 +24,9 @@ export const PREVIEW_SCHEME = 'gugu-preview';
 
 /**
  * A cloud object's signed address, as the renderer reads it on the desktop: `gugu-preview://object/<base64url>`. Main
- * fetches the signed address itself (`cloudObjectFetch`, one connection per request) and streams the answer back,
- * `Range` and status passed through. Every desktop reader of cloud object bytes, a download or a `<video>`, uses it.
+ * fetches the signed address itself (egress, one connection per request) and streams the answer back, `Range` and status
+ * passed through. Every desktop read of cloud object bytes (a download, a preview read whole) uses it; a `<video>` is
+ * handed the signed address itself, since Chromium's media loader is the platform's reader for it.
  */
 export const CLOUD_OBJECT_HOST = 'object';
 export function cloudObjectUrl(signed: string): string {

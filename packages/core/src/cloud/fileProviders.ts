@@ -160,9 +160,10 @@ export function cloudFileProviders(deps: {
   sink(size: number, context: FileContext): Promise<FileSink>
   cache: FileChunkCache; fetch?: typeof globalThis.fetch
   /**
-   * Where this platform reads a signed object address from, when not from the address itself: the desktop renderer
-   * reads every object through main (`cloudObjectUrl`), for its bytes and for a `<video>`'s source alike. The mapped
-   * address is read with `fetch`, which such a platform gives too (main's address is not the network's).
+   * Where this platform reads a signed object's bytes from, when not from the address itself: the desktop renderer reads
+   * them through main (`cloudObjectUrl`). The mapped address is read with `fetch`, which such a platform gives too (main's
+   * address is not the network's). A `<video>` is handed the signed address itself: Chromium's media loader is the
+   * platform's reader for it, with Chromium's own proxy and certificates.
    */
   objectUrl?(signed: string): string
   downloadSession?: FileDownloadSession
@@ -340,7 +341,7 @@ export function cloudFileProviders(deps: {
         advertised(signed)
         const expiresAt = Date.parse(lease.expires_at ?? '')
         if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
-        return { url: deps.objectUrl?.(lease.url) ?? lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
+        return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
       }
       // A video kept on a machine has no preview of its own: it is read whole, like the file it is.
       if (video) throw new Error('Local media preview is unavailable')
