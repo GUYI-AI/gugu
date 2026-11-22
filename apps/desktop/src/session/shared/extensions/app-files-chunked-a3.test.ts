@@ -228,38 +228,19 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     await expect(f.files.read(surface, { ref, offset: 2, length: 2 })).rejects.toMatchObject({ code: 'denied' });
   });
 
-  it('a page torn down and mounted again in the same run keeps its one read after one resolve of its own; five idle minutes later it is read once more', async () => {
-    vi.useFakeTimers();
+  it('a page that goes away takes its read with it, at once; the next page reads for itself', async () => {
     for (const contentType of ['application/octet-stream', 'text/plain']) {
       const f = fixture(contentType);
-      await f.files.read(surface, { ref, offset: 0, length: 4 });
+      for (const offset of [0, 12, 28]) await f.files.read(surface, { ref, offset, length: 4 });
       expect(f.resolveFile).toHaveBeenCalledTimes(1);
       f.release();
-      const again = { ...surface, pageId: 8 };
-      for (const offset of [0, 12, 28]) await f.files.read(again, { ref, offset, length: 4 });
-      // One resolve of its own for the new page (a check: its handle is let go unread), then the same held read, chunk after chunk.
-      expect(f.resolveFile).toHaveBeenCalledTimes(2);
-      expect(f.files.readHandleCount()).toBe(1);
-      expect(f.dispose).toHaveBeenCalledTimes(1);
-      f.release(8);
-      await vi.advanceTimersByTimeAsync(5 * 60_000);
       expect(f.files.readHandleCount()).toBe(0);
-      await f.files.read({ ...surface, pageId: 9 }, { ref, offset: 0, length: 4 });
-      expect(f.resolveFile).toHaveBeenCalledTimes(3);
-      expect(f.files.readHandleCount()).toBe(1);
-      f.release(9);
+      await vi.waitFor(() => expect(f.dispose).toHaveBeenCalledTimes(1));
+      // A page is not torn down by leaving its chat for another (App pages stay resident): a new page is a new read.
+      await f.files.read({ ...surface, pageId: 8 }, { ref, offset: 0, length: 4 });
+      expect(f.resolveFile).toHaveBeenCalledTimes(2);
+      f.release(8);
     }
-  });
-  it('access lost while the page was gone: reading again within five minutes is refused and the held read released', async () => {
-    vi.useFakeTimers();
-    const f = fixture();
-    await f.files.read(surface, { ref, offset: 0, length: 4 });
-    f.release();
-    // Removed from the group meanwhile, with no revocation reaching this page: the service now says gone.
-    f.resolveFile.mockResolvedValue({ status: 'gone', sha256: null } as never);
-    await expect(f.files.read({ ...surface, pageId: 8 }, { ref, offset: 0, length: 4 })).rejects.toMatchObject({ code: 'stale-version' });
-    expect(f.files.readHandleCount()).toBe(0);
-    expect(f.dispose).toHaveBeenCalledTimes(1);
   });
   it('a revoked page releases at once, and a read that fails (its acknowledgement refused) is not kept', async () => {
     const f = fixture('text/plain');
@@ -282,20 +263,6 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     expect(f.resolveFile.mock.calls.some(([, actor]) => actor === '22222222-2222-4222-8222-222222222222')).toBe(true);
     expect(f.files.readHandleCount()).toBe(2);
     f.release(); f.release(8);
-  });
-  it('a page that goes away takes its check with it: remount after remount, the held read remembers only live pages', async () => {
-    vi.useFakeTimers();
-    const f = fixture();
-    await f.files.read(surface, { ref, offset: 0, length: 4 });
-    // Pages come and go faster than the idle timer, so the read is never let go; what it keeps per page must go with each page.
-    for (let pageId = 8; pageId < 40; pageId++) { await f.files.read({ ...surface, pageId }, { ref, offset: 0, length: 4 }); f.release(pageId); }
-    expect(f.files.readHandleCount()).toBe(1);
-    f.release();
-    // The same page id seen again is a page that has not resolved this version as itself: it resolves once more.
-    const resolves = f.resolveFile.mock.calls.length;
-    await f.files.read(surface, { ref, offset: 0, length: 4 });
-    expect(f.resolveFile.mock.calls.length).toBe(resolves + 1);
-    f.release();
   });
   it('a program call registers one abort listener for its read, however many ranges it reads', async () => {
     const f = fixture('application/octet-stream', 4096);

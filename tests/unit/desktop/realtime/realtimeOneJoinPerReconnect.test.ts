@@ -7,10 +7,10 @@ import { WebSocketServer } from 'ws'
 // joins of the same topic at once. One reconnect must send each channel's join exactly once.
 const fixture = vi.hoisted(() => ({ url: '' }))
 vi.mock('electron', () => ({ net: { fetch } }))
-vi.mock('@gugu/core/cloud/supabase', async () => {
-  const { createClient } = await import('@supabase/supabase-js')
-  return { createGuguSupabaseClient: (options: { accessToken: () => Promise<string | null>; realtime: { transport: unknown } }) =>
-    createClient(fixture.url, 'isolated-anon', { accessToken: options.accessToken, realtime: { transport: options.realtime.transport as never } }) }
+vi.mock('@gugu/core/cloud/supabase', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@gugu/core/cloud/supabase')>()
+  return { createGuguSupabaseClient: (options: Parameters<typeof original.createGuguSupabaseClient>[0]) =>
+    original.createGuguSupabaseClient({ ...options, url: fixture.url, anonKey: 'isolated-anon' }) }
 })
 import { bindElectronSupabaseAuth, supabase } from '../../../../apps/desktop/electron/supabase'
 import { _resetElectronRealtimeChannelRegistryForTesting, subscribeAuthenticatedElectronRealtimeChannel } from '../../../../apps/desktop/electron/realtime-channel'

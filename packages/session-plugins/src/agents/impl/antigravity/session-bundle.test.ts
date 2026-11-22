@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionCapabilityBundle } from '@gugu/session-core/agents/plugins';
-import { pluginRegistry } from '../../registry';
 import {
   ANTIGRAVITY_SESSION_TUI_ENABLED,
   antigravitySessionBundleDescriptor,
   materializeAntigravitySessionBundle,
-  withLoopbackNoProxy,
 } from './session-bundle';
 
 const ctx = { surface: 'acp' as const, lifecycle: 'fresh' as const, cwd: '/work' };
@@ -108,39 +106,5 @@ describe('antigravity session bundle (agy_acp_server 1.1.1, #6335)', () => {
     expect(() =>
       materializeAntigravitySessionBundle({ ...ctx, surface: 'app-server' as never }, bundle())
     ).toThrow(/does not support surface 'app-server'/);
-  });
-});
-
-describe('withLoopbackNoProxy', () => {
-  it('没有 NO_PROXY 时补上回环两项(大小写两份)', () => {
-    expect(withLoopbackNoProxy({})).toEqual({
-      NO_PROXY: '127.0.0.1,localhost',
-      no_proxy: '127.0.0.1,localhost',
-    });
-  });
-
-  it('合并而不是覆盖:用户自己的条目一个不丢,已有的回环项不重复', () => {
-    expect(withLoopbackNoProxy({ NO_PROXY: 'corp.internal, localhost' })).toEqual({
-      NO_PROXY: 'corp.internal,localhost,127.0.0.1',
-      no_proxy: 'corp.internal,localhost,127.0.0.1',
-    });
-    expect(withLoopbackNoProxy({ NO_PROXY: 'a.example', no_proxy: 'b.example' })).toEqual({
-      NO_PROXY: 'a.example,127.0.0.1,localhost',
-      no_proxy: 'b.example,127.0.0.1,localhost',
-    });
-  });
-
-  it('真 spawn 用的是同一份:buildSpawn 带着合并后的 NO_PROXY', () => {
-    const spawn = pluginRegistry.get('antigravity')!.behavior.acp!.buildSpawn({
-      cwd: '/work',
-      env: { NO_PROXY: 'corp.internal', GEMINI_HOME: '/managed/.gemini' },
-      cli: '/managed/agy',
-    });
-    expect(spawn.command).toBe('/managed/agy');
-    expect(spawn.args).toEqual(['acp', '--stdio', '--gemini-dir', '/managed/.gemini']);
-    expect(spawn.env).toEqual({
-      NO_PROXY: 'corp.internal,127.0.0.1,localhost',
-      no_proxy: 'corp.internal,127.0.0.1,localhost',
-    });
   });
 });

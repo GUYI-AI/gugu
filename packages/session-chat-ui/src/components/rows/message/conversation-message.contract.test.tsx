@@ -247,6 +247,26 @@ describe('agent-centered conversation bubbles', () => {
       expect(Math.abs(body.host.getBoundingClientRect().height - messageUnitDef.measure(body.item, body.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
     } finally { body.dispose(); }
   });
+  // A long agent name and a live process both want the head line. They lay out like flex items with flex-wrap: one line
+  // when both fit (600px); otherwise the name keeps its line whole and the process row moves below it (phone widths).
+  // Before, the process took its whole unwrapped width first and the name kept two or three characters.
+  it.each([[320, true], [390, true], [600, false]] as const)('keeps a long name whole at %spx next to a live process (process below: %s), at the measured height', async (width, below) => {
+    const name = 'Apps 详情页去掉右栏（审核卡片与评论入口）';
+    const head = await mount({ kind: 'message', id: 'share:head', role: 'assistant', text: '', at: 1000,
+      conversationProcess: { id: 'share:process', steps: 15, live: true, startedAt: Date.now() - 204_000 }, conversationPart: 'head' },
+    width, { conversationAgentName: () => name });
+    try {
+      const label = head.host.querySelector<HTMLElement>('span[title]')!;
+      expect(label.title).toBe(name);
+      expect(label.scrollWidth, 'the whole name is shown').toBeLessThanOrEqual(label.clientWidth);
+      const process = head.host.querySelector<HTMLElement>('[data-conversation-process]')!.getBoundingClientRect();
+      const nameBox = label.getBoundingClientRect();
+      if (below) expect(process.top).toBeGreaterThanOrEqual(nameBox.bottom - 0.5);
+      else expect(Math.abs((process.top + process.height / 2) - (nameBox.top + nameBox.height / 2))).toBeLessThanOrEqual(1);
+      expect(process.right).toBeLessThanOrEqual(head.host.getBoundingClientRect().right + 0.5);
+      expect(head.host.offsetHeight).toBe(messageUnitDef.measure(head.item, head.ctx, messageUnitDef.vars!));
+    } finally { head.dispose(); }
+  });
   it('shows the incoming sender only, without the quote, delivery chrome or avatars', async () => {
     const view = await mount({ kind: 'message', id: 'delivery', role: 'user', text: '<gugu_delivery route="chat" from="天天" from_id="user:other" chat="group" msg="msg:incoming"><reply_to msg="msg:sent" from_id="user:subject"><![CDATA[天天，你好。]]></reply_to><![CDATA[你好，我在。]]></gugu_delivery>' });
     try {
@@ -804,7 +824,7 @@ it('mounts one host source control and cleans it when the reference moves from n
   } finally { view.dispose(); }
   expect(cleanup).toHaveBeenCalledTimes(2);
 });
-it.each([188, 220, 320])('keeps a completed duration and step count on one line before truncating the sender at width %s', async width => {
+it.each([188, 220, 320])('keeps a completed duration and step count on one line below a sender that does not fit beside it, at width %s', async width => {
   const view = await mount({ kind: 'message', id: 'compact-process', role: 'assistant', text: '', conversationPart: 'head',
     conversationProcess: { id: 'compact-process:work', startedAt: 0, endedAt: 6000, steps: 1 },
     sentReplyTo: 'source', conversationReply: { itemId: 'source', text: 'Original' } }, width, { conversationAgentName: () => 'Claude 1 with a deliberately long sender name' });
@@ -812,14 +832,15 @@ it.each([188, 220, 320])('keeps a completed duration and step count on one line 
     const row = view.host.querySelector<HTMLElement>('[data-agent-conversation-message]')!, header = row.firstElementChild as HTMLElement;
     const process = header.querySelector<HTMLElement>('[data-conversation-process]')!;
     expect(process.getBoundingClientRect().height, 'time and steps are an atomic line').toBe(22);
-    expect(header.getBoundingClientRect().height).toBe(28);
+    expect(view.host.offsetHeight).toBe(messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!));
+    expect(process.getBoundingClientRect().top, 'the process line wraps below the name').toBeGreaterThanOrEqual(header.querySelector<HTMLElement>('[title]')!.getBoundingClientRect().bottom - 0.5);
     expect(process.textContent).toContain('6s, 1 step');
     expect(process.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right + 1);
     assertVisiblePrefix(header.querySelector<HTMLElement>('[title]')!, header);
   } finally { view.dispose(); }
 });
 
-it.each([390, 600])('reserves background controls beside duration before truncating a long name at width %s', async width => {
+it.each([390, 600])('keeps background controls beside the duration, on the line below a name too long to share it, at width %s', async width => {
   const view = await mount({ kind: 'message', id: 'review-background', role: 'assistant', text: '', conversationPart: 'head',
     conversationProcess: { id: 'review-background:work', startedAt: 0, endedAt: 6000, steps: 1 }, sentReplyTo: 'source', conversationReply: { itemId: 'source', text: 'Original' } },
     width, { conversationAgentName: () => 'Claude 1 with a deliberately long sender name '.repeat(3) }, undefined,
@@ -827,10 +848,10 @@ it.each([390, 600])('reserves background controls beside duration before truncat
   try {
     const process = view.host.querySelector<HTMLElement>('[data-conversation-process]')!.getBoundingClientRect();
     const bg = view.host.querySelector<HTMLElement>('[data-slot="background-tasks-pill"]')!.getBoundingClientRect();
-    expect(Math.abs((process.top + process.bottom) / 2 - (bg.top + bg.bottom) / 2), 'background metadata keeps its existing row before the sender takes remaining width').toBeLessThanOrEqual(1);
-    expect(view.host.getBoundingClientRect().height).toBe(28);
+    expect(Math.abs((process.top + process.bottom) / 2 - (bg.top + bg.bottom) / 2), 'background metadata keeps the process line').toBeLessThanOrEqual(1);
+    expect(process.top, 'the process line wraps below the name').toBeGreaterThanOrEqual(view.host.querySelector<HTMLElement>('[title]')!.getBoundingClientRect().bottom - 0.5);
     expect(bg.right).toBeLessThanOrEqual(view.host.getBoundingClientRect().right + 1);
-    expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
+    expect(view.host.offsetHeight).toBe(messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!));
   } finally { view.dispose(); }
 });
 

@@ -112,6 +112,8 @@ beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-connection-tui-'));
   state.userHome = join(state.home, 'user');
   state.codexCli = join(state.home, 'codex');
+  // 咕咕的数据根也在临时目录里:主进程启动时设 GUGU_HOME,连接解析(Codex 的受管配置根)按它算,不能读外面那份。
+  vi.stubEnv('GUGU_HOME', join(state.home, 'gugu-home'));
   await writeFile(state.codexCli, '#!/bin/sh\necho "codex-cli 0.999.0"\n');
   await chmod(state.codexCli, 0o755);
   state.fixture = await openRegistryFixture('empty');
@@ -123,6 +125,7 @@ afterEach(async () => {
   releaseCustomModelForwarders();
   state.fixture?.close();
   state.fixture = null;
+  vi.unstubAllEnvs();
   await rm(state.home, { recursive: true, force: true });
 });
 

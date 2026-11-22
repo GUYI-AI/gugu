@@ -37,7 +37,7 @@ export type FileDownloadSession = ReturnType<typeof createFileDownloadSession>
 export const fileDownloadSession = createFileDownloadSession()
 
 /** Deadline each CDN network wait, not an actively progressing transfer's total duration. */
-export function createFileDownloadTransport(target: () => ByteHop, fetcher: () => Promise<typeof fetch>,
+export function createFileDownloadTransport(target: () => ByteHop, fetcher: () => Promise<typeof globalThis.fetch>,
   session: FileDownloadSession, signal?: AbortSignal) {
   let connection: AbortController | undefined
   const failed = (hop: ByteHop, error: unknown) => {

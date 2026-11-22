@@ -1,3 +1,5 @@
+import { loopbackFetch } from './loopback.ts'
+
 /** Native OAuth stays with Codex. Only access-token projections cross the host boundary. */
 export const CODEX_NATIVE_AUTH_ENDPOINT = 'GUGU_CODEX_NATIVE_AUTH_ENDPOINT'
 export const CODEX_NATIVE_AUTH_BEARER = 'GUGU_CODEX_NATIVE_AUTH_BEARER'
@@ -115,8 +117,9 @@ export async function requestNativeCodexAccess(env, options = {}, timeoutMs = op
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.username || url.password) throw new Error('Invalid local Codex credential endpoint')
   const bearer = env[CODEX_NATIVE_AUTH_BEARER]
   if (!bearer) throw new Error('The native Codex credential route has no authorization')
-  const response = await fetch(url, {
-    method: 'POST', redirect: 'error', cache: 'no-store',
+  // The endpoint is the host's own loopback server: the local transport, never a proxy.
+  const response = await loopbackFetch(url, {
+    method: 'POST',
     headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
     body: JSON.stringify(options), signal: AbortSignal.timeout(timeoutMs),
   })

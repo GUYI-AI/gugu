@@ -6,7 +6,7 @@ const issuePlatformModelAccess = vi.fn()
 const revokePlatformModelAccess = vi.fn(async (..._args: unknown[]) => undefined)
 const fetchMock = vi.fn()
 
-vi.mock('electron', () => ({ app: { isPackaged: true }, net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
+vi.mock('electron', () => ({ app: { isPackaged: true } }))
 vi.mock('../../../../apps/desktop/electron/model-access', () => ({
   issuePlatformModelAccess: (...args: unknown[]) => issuePlatformModelAccess(...args),
   revokePlatformModelAccess: (...args: unknown[]) => revokePlatformModelAccess(...args),
@@ -16,6 +16,8 @@ vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 
+const { installEgress, createEgress } = await import('@gugu/core/shared/egress')
+installEgress(createEgress({ name: 'test', fetch: (...args: unknown[]) => fetchMock(...args) as Promise<Response>, webSocket: () => { throw new Error('no socket in this test') }, classify: () => null }))
 const { release, transcribeVoiceNoteSegment, upcomingMeetings } = await import('../../../../apps/desktop/electron/voice-notes')
 
 const auth = {} as never
@@ -26,7 +28,7 @@ function ticket(id = 'access-1') {
 }
 
 function reply(status: number, body: unknown) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body }
+  return Response.json(body, { status })
 }
 
 beforeEach(() => {
@@ -46,7 +48,7 @@ describe('转写一段', () => {
     const provider = { getAuth: async () => ({ userId: 'team-principal', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'team-principal', session_id: sessionId, app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }) }
     issuePlatformModelAccess.mockResolvedValueOnce({ ...ticket(), teamTask: { actorUserId: 'team-principal', memberIdentityId: 'team-principal', authSessionId: sessionId,
       funding: { kind: 'team', team_id: 'team-a', member_id: 'member-a', task_id: 'voice-task-a', unit_version: 2, locked_at: '2026-11-15T00:00:00Z' } } })
-    fetchMock.mockResolvedValue(reply(200, { choices: [{ message: { content: 'ok' } }] }))
+    fetchMock.mockImplementation(async () => reply(200, { choices: [{ message: { content: 'ok' } }] }))
     await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toEqual({ ok: true, text: 'ok' })
     sessionId = 'new-session'
     await expect(transcribeVoiceNoteSegment(provider, request)).resolves.toMatchObject({ ok: false })
@@ -56,7 +58,7 @@ describe('转写一段', () => {
     expect(issuePlatformModelAccess.mock.calls[1][0]).not.toHaveProperty('keepFromAccessSessionId')
   })
   it('以助理的名义签票(语音笔记那个模型),把 WAV 当 input_audio 交上去,回模型说的字', async () => {
-    fetchMock.mockResolvedValue(reply(200, { choices: [{ message: { content: '[00:01] 说话人1：你好' } }] }))
+    fetchMock.mockImplementation(async () => reply(200, { choices: [{ message: { content: '[00:01] 说话人1：你好' } }] }))
     await expect(transcribeVoiceNoteSegment(auth, request)).resolves.toEqual({ ok: true, text: '[00:01] 说话人1：你好' })
     expect(issuePlatformModelAccess).toHaveBeenCalledWith(expect.objectContaining({ agentUserId: 'assistant-1', modelId: 'gemini-3.8-flash', protocol: 'openai-chat-completions' }))
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
@@ -67,7 +69,7 @@ describe('转写一段', () => {
   })
 
   it('一条笔记的几段共用一张票;叫 release 才结', async () => {
-    fetchMock.mockResolvedValue(reply(200, { choices: [{ message: { content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] } }] }))
+    fetchMock.mockImplementation(async () => reply(200, { choices: [{ message: { content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] } }] }))
     await expect(transcribeVoiceNoteSegment(auth, request)).resolves.toEqual({ ok: true, text: 'ab' })
     await transcribeVoiceNoteSegment(auth, request)
     expect(issuePlatformModelAccess).toHaveBeenCalledTimes(1)
@@ -76,13 +78,13 @@ describe('转写一段', () => {
   })
 
   it('网关明说不给(402 / 403):那句话原样带回给人看,不重试', async () => {
-    fetchMock.mockResolvedValue(reply(402, { error: { message: '积分不足，请充值' } }))
+    fetchMock.mockImplementation(async () => reply(402, { error: { message: '积分不足，请充值' } }))
     await expect(transcribeVoiceNoteSegment(auth, request)).resolves.toEqual({ ok: false, code: 'refused', message: '积分不足，请充值' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('别的 4xx(请求太大、格式不对)是咕咕这边的事:不当成给人看的话,不重试', async () => {
-    fetchMock.mockResolvedValue(reply(413, { error: { message: 'request entity too large' } }))
+    fetchMock.mockImplementation(async () => reply(413, { error: { message: 'request entity too large' } }))
     const result = await transcribeVoiceNoteSegment(auth, request)
     expect(result).toMatchObject({ ok: false, code: 'failed' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -124,7 +126,7 @@ describe('转写一段', () => {
   })
 
   it('闲着 3 分钟票自己结掉', async () => {
-    fetchMock.mockResolvedValue(reply(200, { choices: [{ message: { content: 'ok' } }] }))
+    fetchMock.mockImplementation(async () => reply(200, { choices: [{ message: { content: 'ok' } }] }))
     await transcribeVoiceNoteSegment(auth, request)
     await vi.advanceTimersByTimeAsync(3 * 60_000)
     expect(revokePlatformModelAccess).toHaveBeenCalledWith(auth, 'access-1')

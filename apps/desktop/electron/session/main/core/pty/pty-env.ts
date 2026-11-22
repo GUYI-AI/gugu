@@ -4,7 +4,7 @@ import { agentShellEnvPassThrough } from '@gugu/session-plugins/agents';
 import type { ResolvedShellProfile } from '@main/core/terminal-shell/types';
 import { buildUserShellBaseEnv } from '@main/utils/childProcessEnv';
 import { detectSshAuthSock } from '@main/utils/shellEnv';
-import { systemProxyFill } from '@main/utils/systemProxyEnv';
+import { systemProxyFill } from '../../../../egress/harness-proxy';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { getWindowsEnvValue } from '@main/utils/windows-env';
 import { guguNodeEnv } from './gugu-node';

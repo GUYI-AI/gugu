@@ -15,6 +15,7 @@
  * #6264 机器上限:start 与 poll 都带上这台的 machine_id(与设备行同一个),云端据此判「是不是新机器、超没超上限」。
  * 超了 poll 回 machine_limit(limit / used / max):这里说成人话;桌面那条另打 `LOGIN_ERROR_MARK machine_limit {json}`。
  */
+import { egress } from '@gugu/core/shared/egress'
 import { REMOTE_TUNNEL_OPEN, SERVER_LOGIN_ACTION } from '@gugu/core/cloud/remoteTunnel'
 import os from 'node:os'
 import { app } from 'electron'
@@ -70,7 +71,7 @@ function machineInfo(machineId: string | null): Record<string, string> {
 }
 
 async function postJson(url: string, body: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
-  const response = await fetch(url, {
+  const response = await egress.fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', apikey: getSupabaseAnonKey() },
     body: JSON.stringify(body),
@@ -81,7 +82,7 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; d
 
 /** 用一次性 token_hash 向 GoTrue 换一条全新的会话(access + refresh)。 */
 async function exchangeTokenHash(tokenHash: string, type: string): Promise<{ accessToken: string; refreshToken: string }> {
-  const response = await fetch(`${getSupabaseUrl().replace(/\/$/, '')}/auth/v1/verify`, {
+  const response = await egress.fetch(`${getSupabaseUrl().replace(/\/$/, '')}/auth/v1/verify`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', apikey: getSupabaseAnonKey() },
     body: JSON.stringify({ type, token_hash: tokenHash }),

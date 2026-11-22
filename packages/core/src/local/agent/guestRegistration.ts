@@ -92,7 +92,7 @@ export async function activateGuestAgent(
     env?: NodeJS.ProcessEnv
     cwd?: string
     displayName?: string
-    fetchImpl?: typeof fetch
+    fetchImpl?: typeof globalThis.fetch
   } = {}
 ): Promise<{ name: string; agentUserId: string }> {
   const env = options.env ?? process.env
