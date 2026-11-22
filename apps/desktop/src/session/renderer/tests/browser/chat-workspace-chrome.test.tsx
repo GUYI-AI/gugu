@@ -112,6 +112,18 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const chatWidth = width(chat());
 
   await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
+  // The tool goes out on the track with its last frame, over the chat (at its full width from the start), ❌ blank at once.
+  const copyLefts: number[] = [];
+  for (let frame = 0; frame < 40; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    const copy = inside('[data-last-frame]');
+    if (copy) expect(copy.querySelector('[data-chat-workspace-test-body="tool"]')).not.toBeNull();
+    if (copy) expect(chat()!.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    copyLefts.push(copy ? Math.round(copy.getBoundingClientRect().left) : -1);
+  }
+  expect(copyLefts[0], copyLefts.join(' ')).toBeGreaterThan(0);
+  expect(new Set(copyLefts.filter((left) => left >= 0)).size, copyLefts.join(' ')).toBeGreaterThan(5);
+  expect(copyLefts.at(-1), copyLefts.join(' ')).toBe(-1);
   await mode('hidden');
   const showButton = inside('button[aria-label="显示标签页"]')!;
   expect(showButton.getAttribute('aria-pressed')).toBe('false');
@@ -119,16 +131,24 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
   expect(getComputedStyle(showButton).borderRadius).toBe('8px');
   await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
-  expect(firstTool?.closest('[inert]')).not.toBeNull();
+  // The tool goes out on the track and is out of reach once it lands.
+  await until('the hidden tool is out of reach', () => !!firstTool?.closest('[inert]'));
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
   await mode('split');
+  // Shown again, the tool comes in on the track like a new one, ❌ in one frame.
+  const toolLefts = new Set<number>();
+  for (let frame = 0; frame < 20; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    toolLefts.add(Math.round(tool()?.getBoundingClientRect().left ?? -1));
+  }
+  expect(toolLefts.size, [...toolLefts].join(' ')).toBeGreaterThan(5);
   await until('the original split width is restored', () => width(chat()), (size) => size === chatWidth);
 
   await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
   await mode('full');
   await until('the tool fills the chat block', () => width(tool()), (size) => size === 800);
   expect(tool()).toBe(firstTool);
-  expect(chat()?.closest('[inert]')).not.toBeNull();
+  await until('the chat under the full view is out of reach', () => !!chat()?.closest('[inert]'));
   expect(neighbour().getBoundingClientRect().toJSON()).toEqual(neighbourBefore);
   await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
   await mode('split');
@@ -140,7 +160,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await userEvent.click(page.getByRole('button', { name: /^(?:关闭工具页签标签|Close 工具页签 tab)$/ }));
   await mode('empty');
   await until('the chat fills its block after the last tool closes', () => width(chat()), (size) => size === 800);
-  expect(tool()).toBeNull();
+  // Its last frame goes out on the track, and is gone once it lands.
+  await until('the closed tool is gone', () => !tool());
 });
 
 it('docks chat into the strip before a wide floating control and keeps both pages alive', async () => {
