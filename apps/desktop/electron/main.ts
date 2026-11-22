@@ -1719,6 +1719,8 @@ function createWindow(loadContents = true): void {
     if (intercepted) {
       e.preventDefault()
       mainWindow?.hide()
+      // 收起的是窗,不是应用:从托盘回来该看到应用本身,开着的看图这时收掉(渲染层 @@@viewer-to-tray)。
+      mainWindow?.webContents.send('window:hidden-to-tray')
       void maybeShowCloseToTrayHint()
     } else if (!isQuitting) {
       app.quit()

@@ -253,6 +253,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     ipcRenderer.on('window:maximized-changed', handler)
     return () => ipcRenderer.removeListener('window:maximized-changed', handler)
   },
+  // 关窗被 main 拦成收进托盘的那一刻;返回取消订阅函数。
+  onHiddenToTray: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('window:hidden-to-tray', handler)
+    return () => ipcRenderer.removeListener('window:hidden-to-tray', handler)
+  },
   // @@@window-material (#7333) 窗口材质的判定在主进程(shared/window-material.ts);同步读是因为首帧前就要落属性。
   getMaterial: (): WindowMaterial => ipcRenderer.sendSync(WINDOW_MATERIAL_GET_CHANNEL),
   onMaterialChange: (callback: (material: WindowMaterial) => void): (() => void) => {

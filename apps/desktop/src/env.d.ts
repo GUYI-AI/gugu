@@ -82,6 +82,8 @@ interface Window {
       close: string
     }) => void) => () => void
     onMaximizedChange: (callback: (maximized: boolean) => void) => () => void
+    /** 关窗被收进托盘时(main 的 close 拦截)。 */
+    onHiddenToTray?: (callback: () => void) => () => void
     /** 窗口底层材质的判定(主进程读系统信号,见 shared/window-material.ts)。 */
     getMaterial?: () => import('../shared/window-material').WindowMaterial
     onMaterialChange?: (callback: (material: import('../shared/window-material').WindowMaterial) => void) => () => void

@@ -504,6 +504,12 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
   const imageBounds = useCallback(() => openPswp?.currSlide?.content.element?.getBoundingClientRect(), [openPswp])
   // 开着的查看器与 Sheet 同进一个栈:返回键 / Esc 只归栈顶,MainLayout 见 isSheetOpen() 就不动下面的页面
   const isTopLayer = useBackLayer(openPswp ? () => editing ? setEditing(null) : openPswp.close() : undefined)
+  // @@@viewer-to-tray - the viewer fills the window and its × sits right under the window's own. Closing the window only
+  // puts gugu in the tray; coming back from there must show the app, not this picture still open over it. An edit stays.
+  useEffect(() => {
+    if (!openPswp || editing) return
+    return window.desktopWindow?.onHiddenToTray?.(() => openPswp.destroy())
+  }, [openPswp, editing])
   useEffect(() => {
     if (!viewer || !editing) return
     const previous = viewer.pswp.options.arrowKeys
