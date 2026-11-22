@@ -59,7 +59,6 @@ export class ProjectGroupsStore {
         // What is held now (another reader read it), then the read: its answer lands through offAnswers.
         const reading = projectGroupBindings.peek(machine);
         if (reading.state === 'value') this.applyBindings(machine, reading.value);
-        void projectGroupBindings.prefetch(machine);
       };
       const followAll = (machines: readonly (string | null)[]) => {
         for (const [machine, release] of [...followed]) {
