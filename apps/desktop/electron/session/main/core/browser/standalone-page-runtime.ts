@@ -14,6 +14,7 @@ import { standaloneKernelService } from './standalone-kernel-service';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { connectTaskPageScreen } from './task-page-screen';
 import { watchTaskPageConnection } from './remote-task-page';
+import { showStandaloneBrowserContextMenu, type StandaloneMenuPoint } from './standalone-context-menu';
 import { wireStandalonePageDialogs, type AskPerson, type DialogPage } from './standalone-page-dialogs';
 import { wireStandalonePageFeatures, type FeatureHost, type FeaturePage } from './standalone-page-features';
 import { kernelAfterCapabilityGate, type CapabilityGateFacts } from './standalone-capability-gate';
@@ -234,14 +235,23 @@ export async function copyStandaloneScreenshot(browserId: string) {
 
 export async function watchStandalonePage(input: { browserId: string; watchId: string;
   viewport?: Omit<Extract<TaskPageControl, { action: 'resize' }>, 'action'>;
-}) {
+}, owner?: number) {
   return watchTaskPageConnection(input.watchId, async () => {
-    const page = await standaloneScreen(input.browserId);
+    const screen = await standaloneScreen(input.browserId);
+    const page = contents.get(input.browserId);
     const viewport = input.viewport && readTaskPageControl({ ...input.viewport, action: 'resize' });
-    if (viewport) await page.control(viewport);
-    return connectTaskPageScreen(`standalone:${input.browserId}`, async () => page,
+    if (viewport) await screen.control(viewport);
+    const viewer = await connectTaskPageScreen(`standalone:${input.browserId}`, async () => screen,
       packet => events.emit(browserTaskPagePacketChannel, { watchId: input.watchId, packet }),
       state => events.emit(browserTaskPageStateChannel, { watchId: input.watchId, state }), true);
+    return {
+      ...viewer,
+      async contextMenu(sender: number, point: StandaloneMenuPoint, current: () => boolean) {
+        if (!page || owner !== sender) return false;
+        return showStandaloneBrowserContextMenu(sender, point, page, screen, input.browserId,
+          () => current() && contents.get(input.browserId) === page);
+      },
+    };
   });
 }
 

@@ -14,6 +14,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   /** A host presentation can watch a thumbnail without admitting picture input. */
   interactive?: boolean;
   localTouchViewing?: boolean;
+  contextMenu?(point: { x: number; y: number; windowX: number; windowY: number }): void;
   /** Shared host pictures can display App decorations; App pages may keep their own existing chrome. */
   decorations?: boolean;
 } = {}) {
@@ -120,7 +121,11 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     const at = point(event, true);
     if (at) send({ kind: 'pointer', action: 'up', button, ...at, modifiers: modifiers(event) });
   });
-  surface.addEventListener('contextmenu', event => event.preventDefault());
+  surface.addEventListener('contextmenu', event => {
+    event.preventDefault();
+    const at = options.contextMenu && point(event);
+    if (at) options.contextMenu?.({ ...at, windowX: event.clientX, windowY: event.clientY });
+  });
   surface.addEventListener('wheel', event => {
     const at = point(event);
     if (!at) return;

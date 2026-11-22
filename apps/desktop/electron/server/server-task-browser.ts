@@ -3,9 +3,10 @@ import { type ChildProcess } from 'node:child_process';
 import { spawn, execFile } from '@gugu/core/local/childProcess';
 import { EventEmitter } from 'node:events';
 import { onErrorEvents } from '@gugu/session-shared';
+import { redactAll } from '@gugu/session-shared/logger';
 import { mkdir } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
-import { promisify } from 'node:util';
+import { promisify, stripVTControlCharacters } from 'node:util';
 import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
 import { browserPageFeedback } from '@shared/browser-page-feedback';
@@ -858,6 +859,20 @@ async function closedDuringWatch(connection: PipeConnection, target: PageTarget,
   );
 }
 
+function tracedStderrTail(stderr: string, clipped: boolean): string {
+  // The first retained line may start inside a URL, path, or credential.
+  const newline = stderr.indexOf('\n');
+  const complete = clipped ? (newline < 0 ? '' : stderr.slice(newline + 1)) : stderr;
+  return redactAll(stripVTControlCharacters(complete)
+    .replace(/(\b(?:INFO|WARNING|ERROR|FATAL):)[^\]\r\n]*[\\/][^\]\r\n]+?(?=:\d+\])/g, '$1[REDACTED_PATH]')
+    .replace(/\b(?:data|file|javascript|view-source):(?=\S)[^\r\n]*/gi, '[REDACTED_URL]')
+    .replace(/(?:\b[a-z][a-z\d+.-]*:\/\/|\b(?:about|blob|mailto):|\bwww\.)[^\s<>"'\x60]+/gi, '[REDACTED_URL]')
+    .replace(/(\b(?:set-cookie|cookie)["']?\s*[:=])[^\r\n]*/gi, '$1 [REDACTED]')
+    // Chromium can print unquoted paths with spaces. Keep the diagnostic prefix only.
+    .replace(/(^|[ \t"'=:()[\]{},;<>|])(?:[a-z]:[\\/]|~?[\\/]|[^\\/\s"'()[\]{},;<>|=:]+[\\/])[^\r\n]*/gim, '$1[REDACTED_PATH]'))
+    .trim().slice(-500);
+}
+
 export function createServerTaskBrowser(options: {
   binary: () => string | null;
   profile: string;
@@ -896,7 +911,12 @@ export function createServerTaskBrowser(options: {
       stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
     });
     let stderr = '';
-    child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-2000); });
+    let stderrClipped = false;
+    child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
+      const text = stderr + chunk;
+      if (text.length > 2000) stderrClipped = true;
+      stderr = text.slice(-2000);
+    });
     const connection = new PipeConnection(child.stdio[3] as Writable, child.stdio[4] as Readable,
       options.traceProfile ? (event, fields) => trace(event, { pid: child.pid, ...fields }) : undefined);
     // A failed spawn or a broken pipe ends this browser, never the host process.
@@ -906,7 +926,7 @@ export function createServerTaskBrowser(options: {
     });
     child.once('exit', (code, signal) => {
       connection.fail(new Error(`the task browser exited (${signal ?? code})`));
-      if (options.traceProfile) trace('exit', { pid: child.pid, code, signal });
+      if (options.traceProfile) trace('exit', { pid: child.pid, code, signal, stderr: tracedStderrTail(stderr, stderrClipped) });
       else options.log.warn('Task browser exited', { code, signal, stderr: stderr.trim().slice(-500) });
     });
     return { process: child, connection, userAgent };

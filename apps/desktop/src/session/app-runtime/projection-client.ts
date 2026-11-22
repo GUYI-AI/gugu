@@ -22,7 +22,12 @@ export async function projectionClient(host: ProjectionHost, id: string, options
   let paintEpoch = 0;
   let resetting: Promise<void> | null = null;
   let presentation = new ProjectionPresentationState(id, value => options.presentation?.(value));
-  const shown = (frame: ProjectionPicture | null) => { presentation.painted(frame); options.painted?.(frame); };
+  let visiblePicture: ProjectionPicture | null = null;
+  const shown = (frame: ProjectionPicture | null) => {
+    visiblePicture = frame;
+    presentation.painted(frame);
+    options.painted?.(frame);
+  };
   /**
    * The host admits input only on the picture it was told is shown. Input on a painted picture therefore goes out once
    * that picture's ACK is through, and the next ACK waits for input already on the wire: over a slow link (another
@@ -76,8 +81,13 @@ export async function projectionClient(host: ProjectionHost, id: string, options
       if (!current()) return false;
       epoch = ++paintEpoch;
       ready = false;
-      // Serial painting prevents an older decode from replacing a newer picture.
-      shown(null);
+      // The last acknowledged picture still takes input while another frame of the same
+      // document and geometry decodes. A changed or unproved target invalidates it immediately.
+      const next = packet.frame;
+      const previous = visiblePicture;
+      if (!previous?.target || !next.target
+        || previous.target.id !== next.target.id || previous.target.revision !== next.target.revision
+        || previous.width !== next.width || previous.height !== next.height) shown(null);
       await options.paint(packet.frame, current);
       if (!current()) return false;
       painted = packet.frame.sequence;

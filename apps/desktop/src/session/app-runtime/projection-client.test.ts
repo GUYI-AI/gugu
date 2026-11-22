@@ -78,6 +78,44 @@ describe('painted frame and reconnect input routing', () => {
     await client.close();
   });
 
+  it.each([
+    ['same target and viewport', { id: 'popup', revision: 1 }, 1, true],
+    ['different target', { id: 'other', revision: 1 }, 1, false],
+    ['different document', { id: 'popup', revision: 2 }, 1, false],
+    ['different viewport', { id: 'popup', revision: 1 }, 2, false],
+  ] as const)('routes a click during decode for %s', async (_case, target, width, acceptsOldFrame) => {
+    const h = host(), decode = Promise.withResolvers<void>(), painted = vi.fn();
+    const client = await projectionClient(h, 'source', {
+      painted,
+      paint: async next => { if (next.sequence === 2) await decode.promise; },
+    });
+    h.emit({ type: 'state', generation: 'a', state: 'connecting' });
+    h.emit({ type: 'frame', generation: 'a', frame: { ...frame, target: { id: 'popup', revision: 1 } } });
+    await flush();
+    h.emit({ type: 'frame', generation: 'a', frame: { ...frame, sequence: 2, target, width } });
+    await flush();
+
+    const click = { kind: 'pointer', action: 'down', button: 'left', x: 0.5, y: 0.5 } as const;
+    if (acceptsOldFrame) {
+      expect(painted).toHaveBeenLastCalledWith(expect.objectContaining({ sequence: 1 }));
+      await expect(client.input(click)).resolves.toEqual({ status: 'applied' });
+      expect(h.projection.send).toHaveBeenLastCalledWith(expect.objectContaining({
+        packet: expect.objectContaining({ type: 'input', frame: 1, input: click }),
+      }));
+    } else {
+      // The surface only forwards pointer input when its painted frame is available.
+      expect(painted).toHaveBeenLastCalledWith(null);
+    }
+
+    decode.resolve();
+    await flush();
+    await expect(client.input(click)).resolves.toEqual({ status: 'applied' });
+    expect(h.projection.send).toHaveBeenLastCalledWith(expect.objectContaining({
+      packet: expect.objectContaining({ type: 'input', frame: 2, input: click }),
+    }));
+    await client.close();
+  });
+
   it('ACKs only after paint and accepts one committed text event after that ACK', async () => {
     const h = host();
     let painted!: () => void;

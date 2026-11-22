@@ -4,14 +4,18 @@ import { events } from '@main/lib/events';
 import { browserAppShortcutChannel, tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
 import { BrowserWebContentsRegistry, isSamePreviewNavigation } from './browser-webcontents-registry';
+import { showStandaloneBrowserContextMenu } from './standalone-context-menu';
 
 const sessionsByPartition = new Map<string, object>();
 
 const showMenu = vi.hoisted(() => vi.fn());
-const showEditableMenu = vi.hoisted(() => vi.fn(async () => {}));
+const showEditableMenu = vi.hoisted(() => vi.fn<typeof import('../../../../editable-context-menu').showEditableContextMenu>(async () => {}));
 vi.mock('../../../../content-context-menu', () => ({ showContentContextMenu: showMenu }));
 vi.mock('../../../../editable-context-menu', () => ({ showEditableContextMenu: showEditableMenu }));
 vi.mock('electron', () => ({
+  BrowserWindow: { fromWebContents: () => PAGE_WINDOW },
+  webContents: { fromId: () => PAGE_WINDOW.webContents },
+  clipboard: { readText: vi.fn(), writeText: vi.fn(async () => {}) },
   session: {
     fromPartition: (partition: string) => {
       let value = sessionsByPartition.get(partition);
@@ -61,6 +65,7 @@ function fakeWebContents(partition: string = PROFILE_PARTITION): FakeWebContents
     getUserAgent: () => 'base-ua',
     setUserAgent: vi.fn(),
     openDevTools: vi.fn(),
+    executeJavaScript: vi.fn(async () => undefined),
     setWindowOpenHandler(handler: FakeWebContents['windowOpenHandler']) {
       fake.windowOpenHandler = handler;
     },
@@ -235,6 +240,67 @@ describe('BrowserWebContentsRegistry', () => {
     expect(showMenu.mock.calls[0]?.[1]).toEqual({ window: PAGE_WINDOW, x: 45, y: 97 });
     const items = showMenu.mock.calls[0]?.[0];
     expect(items.find((item: { id?: string }) => item.id === 'copy-link')).toMatchObject({ enabled: false });
+  });
+
+  it.each([
+    { selectionText: '', linkURL: '', srcURL: '', mediaType: 'none' },
+    { selectionText: 'selected', linkURL: 'https://example.com/link', srcURL: '', mediaType: 'none' },
+    { selectionText: '', linkURL: 'https://example.com/link', srcURL: 'https://example.com/image', mediaType: 'image' },
+    { selectionText: '', linkURL: 'file:///private/test', srcURL: '', mediaType: 'none' },
+  ])('shows the same Built-in and Standalone items for page context %j', async (context) => {
+    const registry = new BrowserWebContentsRegistry();
+    registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });
+    const builtin = fakeWebContents();
+    adopt(registry, 'browser-1', builtin);
+    showMenu.mockClear();
+    builtin.emitEvent('context-menu', { preventDefault: vi.fn() }, { x: 5, y: 7, ...context });
+    const model = (call: unknown[]) => (call[0] as Array<{ click?: unknown }>).map(({ click: _, ...entry }) => entry);
+    const builtinItems = model(showMenu.mock.calls[0]!);
+
+    const commands = vi.fn(async (method: string) => ({
+      'Page.getFrameTree': { frameTree: { frame: { id: 'frame', loaderId: 'document' } } },
+      'Page.createIsolatedWorld': { executionContextId: 17 },
+      'Runtime.evaluate': { result: { objectId: 'hit' } },
+      'Runtime.callFunctionOn': { result: { value: { ...context, editable: false } } },
+    } as Record<string, unknown>)[method]);
+    const screen = { state: () => ({ url: 'https://example.com' }), control: vi.fn(async () => {}) };
+    const opened = await showStandaloneBrowserContextMenu(1,
+      { x: 0.25, y: 0.26, windowX: 45, windowY: 97 }, { hostCommand: commands } as never, screen as never,
+      'browser-2', () => true);
+    expect(opened).toBe(true);
+    expect(model(showMenu.mock.calls[1]!)).toEqual(builtinItems);
+    expect(showMenu.mock.calls[1]?.[1]).toEqual({ window: PAGE_WINDOW, x: 45, y: 97 });
+    expect(commands).toHaveBeenCalledWith('Runtime.evaluate', expect.objectContaining({ contextId: 17 }));
+  });
+
+  it('shares the editable menu flags and items across both engines', async () => {
+    const registry = new BrowserWebContentsRegistry();
+    registry.registerSession({ browserId: 'editable', partition: PROFILE_PARTITION });
+    const builtin = fakeWebContents();
+    adopt(registry, 'editable', builtin);
+    showMenu.mockClear();
+    const real = await vi.importActual<typeof import('../../../../editable-context-menu')>('../../../../editable-context-menu');
+    showEditableMenu.mockImplementationOnce(real.showEditableContextMenu);
+    const editFlags = { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true, canSelectAll: true };
+    builtin.emitEvent('context-menu', { preventDefault: vi.fn() }, {
+      x: 5, y: 7, isEditable: true, selectionText: 'selected', editFlags,
+      frame: { executeJavaScript: async () => ({}) },
+    });
+    await vi.waitFor(() => expect(showMenu).toHaveBeenCalledTimes(1));
+    const commands = async (method: string) => ({
+      'Page.getFrameTree': { frameTree: { frame: { id: 'frame', loaderId: 'document' } } },
+      'Page.createIsolatedWorld': { executionContextId: 17 },
+      'Runtime.evaluate': { result: { objectId: 'hit' } },
+      'Runtime.callFunctionOn': { result: { value: {
+        selectionText: 'selected', editable: true, enabled: real.editingEnabled(editFlags as never),
+      } } },
+    } as Record<string, unknown>)[method];
+    await showStandaloneBrowserContextMenu(1,
+      { x: 0.25, y: 0.26, windowX: 45, windowY: 97 }, { hostCommand: commands } as never,
+      { state: () => ({ url: 'https://example.com' }) } as never, 'editable-standalone', () => true);
+    expect(showMenu).toHaveBeenCalledTimes(2);
+    const items = (call: unknown[]) => (call[0] as Array<{ click?: unknown }>).map(({ click: _, ...entry }) => entry);
+    expect(items(showMenu.mock.calls[1]!)).toEqual(items(showMenu.mock.calls[0]!));
   });
 
   it('allows OAuth popups as hardened windows and routes tab links in-app', () => {

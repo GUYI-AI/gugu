@@ -2,7 +2,6 @@ import { browserAnnotationSpaceChannel } from '@shared/events/browserEvents';
 import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
 import { showContentContextMenu } from '../../../../content-context-menu';
 import { showEditableContextMenu } from '../../../../editable-context-menu';
-import type { ContentMenuEntry } from '@shared/content-context-menu';
 import {
   clipboard,
   ClipboardItem,
@@ -34,6 +33,7 @@ import { getElectronTabNavigationDirection, resolveDefaultHotkey,  } from '@shar
 import { userAgentForBrowserUrl } from './browser-user-agent';
 import { isSupportedBrowserNavigationUrl } from './browser-navigation';
 import { decideWindowOpen, isExternalHttpUrl } from './browser-window-open';
+import { browserContextMenuItems, copyTextThenNotify } from './browser-context-menu';
 
 type RegisteredBrowserSession = {
   browserId: string;
@@ -345,55 +345,16 @@ export class BrowserWebContentsRegistry {
         void showEditableContextMenu(webContents, params, position, report).catch(report);
         return;
       }
-      const selectionText = (params.selectionText ?? '').trim();
-      if (!selectionText) {
-        clearWebviewSelection(webContents);
-      }
-
-      const target = getBrowserContextTarget(params);
-      const template: ContentMenuEntry[] = [
-        ...(selectionText
-          ? [
-              {
-                id: 'copy', label: 'Copy',
-                click: () => copyTextThenNotify(selectionText),
-              },
-              { type: 'separator' as const },
-            ]
-          : []),
-        {
-          id: 'copy-link', label: target?.kind === 'image' ? 'Copy Image URL' : 'Copy Link',
-          enabled: target !== null,
-          click: () => {
-            if (!target) return;
-            copyTextThenNotify(target.url, () =>
-              events.emit(browserLinkCopiedChannel, { kind: target.kind, url: target.url }),
-            );
-          },
+      if (!params.selectionText?.trim()) clearWebviewSelection(webContents);
+      const items = browserContextMenuItems(params, {
+        open: (url) => { void webContents.loadURL(url); },
+        openTab: (url) => {
+          const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
+          if (sourceBrowserId) events.emit(browserOpenInNewTabChannel, { sourceBrowserId, url });
         },
-        {
-          id: 'open-link', label: target?.kind === 'image' ? 'Open Image' : 'Open Link',
-          enabled: target !== null,
-          click: () => {
-            if (target) void webContents.loadURL(target.url);
-          },
-        },
-        {
-          id: 'open-tab', label: target?.kind === 'image' ? 'Open Image in New Tab' : 'Open Link in New Tab',
-          enabled: target !== null,
-          click: () => {
-            const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
-            if (sourceBrowserId && target) {
-              events.emit(browserOpenInNewTabChannel, { sourceBrowserId, url: target.url });
-            }
-          },
-        },
-        { type: 'separator' },
-        { id: 'reload', label: 'Reload', click: () => webContents.reload() },
-      ];
-
-      // 右键的坐标是网页自己的;菜单弹在网页所在的窗口上,换成窗口内容区的坐标。
-      showContentContextMenu(template, position);
+        reload: () => webContents.reload(),
+      });
+      showContentContextMenu(items, position);
     });
 
     webContents.on('did-create-window', (window) => {
@@ -436,22 +397,6 @@ async function clearPartitionBrowsingData(
       await partitionSession.clearData({ dataTypes: ['cache'] });
       return;
   }
-}
-
-/**
- * @@@electron44-clipboard (#4394) — electron 44 起 clipboard.writeText 返回 Promise。
- * 下面这些调用点都在**同步**的事件/菜单回调里,整条链改 async 代价过大;但两件事不能将就:
- *   · 顺序 —— 「已复制」的广播必须等写入真的落地再发,先 emit 会让 UI 报了成功而剪贴板还是旧内容;
- *   · rejection —— 裸调用的失败会变成 unhandled rejection,一声不响。
- * 所以统一走这里:成功才跑 onCopied,失败记 error。
- */
-function copyTextThenNotify(text: string, onCopied?: () => void): void {
-  void clipboard.writeText(text).then(
-    () => onCopied?.(),
-    (error: unknown) => {
-      log.error('clipboard.writeText failed', { error: String(error) });
-    },
-  );
 }
 
 function hardenBrowserPopupWindow(window: BrowserWindow): void {
@@ -506,16 +451,6 @@ export function isSamePreviewNavigation(currentUrl: string, targetUrl: string): 
   } catch {
     return false;
   }
-}
-
-function getBrowserContextTarget(
-  params: Electron.ContextMenuParams
-): { kind: 'link' | 'image'; url: string } | null {
-  if (params.mediaType === 'image' && isExternalHttpUrl(params.srcURL)) {
-    return { kind: 'image', url: params.srcURL };
-  }
-  if (isExternalHttpUrl(params.linkURL)) return { kind: 'link', url: params.linkURL };
-  return null;
 }
 
 type ParsedShortcut = {

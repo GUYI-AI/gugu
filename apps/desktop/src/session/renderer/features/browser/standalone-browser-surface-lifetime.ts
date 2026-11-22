@@ -77,6 +77,10 @@ export function mountStandaloneBrowserSurface(options: {
     publish({ state: 'connecting', error: null });
     void mountProjection(host, picture, `standalone:${browserId}`, {
       decorations: true,
+      contextMenu: point => {
+        const id = watchId;
+        if (active() && id) void rpc.browser.showStandaloneContextMenu({ watchId: id, point }).catch(() => {});
+      },
       state: state => { if (active()) publish({ state }); },
       painted: frame => { if (active()) publish({ frame }); },
       error: error => { if (active()) fail(error); },

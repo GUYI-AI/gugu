@@ -18,7 +18,7 @@ import {
 } from '@main/core/browser/browser-page-views';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
 import { listPersistedBrowserPartitions } from './browser-partition-cleanup';
-import { controlRemoteTaskPage, sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
+import { controlRemoteTaskPage, sendRemoteTaskPage, showWatchedBrowserContextMenu, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
 import type { TaskPageControl } from '@shared/browser-task-page';
 import { isBrowserPartition } from '@main/core/browser/webview-security';
 import { appSettingsService } from '@main/core/settings/settings-service';
@@ -30,7 +30,7 @@ import {
   isNamedBrowserProfileId,
   type BrowserDataClearKind,
 } from '@shared/browser';
-import { createRPCController } from '@shared/lib/ipc/rpc';
+import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import type { BrowserKernelAction, BrowserKernelKind } from '@shared/browser-kernel';
 import { standaloneKernelService } from './standalone-kernel-service';
 import { browserKernelBindings, copyStandaloneScreenshot, isStandalonePage, measureStandalonePage,
@@ -72,7 +72,8 @@ export const browserController = createRPCController({
    */
   mountPage: (args: { browserId: string; partition: string; url: string; windowName: string; popup?: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : mountBrowserPage(args),
   ensureAgentPage: (args: { browserId: string; partition: string; url: string }) => isStandalonePage(args.browserId) ? mountStandalonePage(args) : ensureAgentBrowserPage(args),
-  watchStandalonePage,
+  watchStandalonePage: withSender((sender, input: Parameters<typeof watchStandalonePage>[0]) => watchStandalonePage(input, sender)),
+  showStandaloneContextMenu: withSender((sender, args: Parameters<typeof showWatchedBrowserContextMenu>[1]) => showWatchedBrowserContextMenu(sender, args)),
   layoutPage: (args: Parameters<typeof layoutBrowserPage>[0]) => ({ success: isStandalonePage(args.browserId) || layoutBrowserPage(args) }),
   releasePage: (browserId: string) => {
     releaseBrowserPage(browserId);

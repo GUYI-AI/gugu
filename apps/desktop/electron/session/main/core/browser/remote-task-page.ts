@@ -5,13 +5,17 @@ import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { ProjectionInputFailure } from '../extensions/extension-projections';
 import { watchRemoteProjection } from '../extensions/projection-remote-viewer';
+import type { StandaloneMenuPoint } from './standalone-context-menu';
 
 /**
  * #1607 node 5, this computer's side: a browser tab showing a task's page that lives on another of the person's
  * computers (a Gugu server's headless Chromium). The tab watches it over this computer's device connection to that
  * machine (projection-remote-host.ts → task-page-screen.ts there) and gets its packets as `browserTaskPagePacketChannel`.
  */
-const watches = new Map<string, Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }>>();
+type TaskPageViewer = Awaited<ReturnType<typeof watchRemoteProjection>> & {
+  contextMenu?(sender: number, point: StandaloneMenuPoint, current: () => boolean): Promise<boolean>;
+};
+const watches = new Map<string, Promise<TaskPageViewer>>();
 
 export async function watchRemoteTaskPage(args: { watchId: string; deviceId: string; sessionId: string }): Promise<{ success: true }> {
   return watchTaskPageConnection(args.watchId, () => watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true, presentation: 1 },
@@ -20,7 +24,7 @@ export async function watchRemoteTaskPage(args: { watchId: string; deviceId: str
 }
 
 /** Local and remote task pages share the same acknowledged picture/input transport. */
-export async function watchTaskPageConnection(watchId: string, connect: () => ReturnType<typeof watchRemoteProjection>): Promise<{ success: true }> {
+export async function watchTaskPageConnection(watchId: string, connect: () => Promise<TaskPageViewer>): Promise<{ success: true }> {
   if (typeof watchId !== 'string' || !watchId || watchId.length > 128) throw new Error('A task page watch needs an id');
   // A reset reuses the watch id. Its last viewer drops the source synchronously in close(), so
   // finish that handoff before connect() can look up the previous (now closed) screen resource.
@@ -59,6 +63,14 @@ export async function controlRemoteTaskPage(args: { watchId: string; control: Ta
   if (!watching) throw new Error('This task page is not watched');
   const inspection = await (await watching).control(args.control);
   return { success: true, ...(inspection ? { inspection } : {}) };
+}
+
+export async function showWatchedBrowserContextMenu(sender: number, args: { watchId: string; point: StandaloneMenuPoint }): Promise<boolean> {
+  const watching = watches.get(args.watchId);
+  if (!watching) return false;
+  const current = () => watches.get(args.watchId) === watching;
+  const viewer = await watching;
+  return current() && (await viewer.contextMenu?.(sender, args.point, current) ?? false);
 }
 
 export function unwatchRemoteTaskPage(watchId: string): boolean {
