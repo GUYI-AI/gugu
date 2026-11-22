@@ -9,7 +9,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, test, vi } from 'vitest'
 import {
-  FATAL_BOOT_TITLE,
   fatalSessionpageBoot,
   reportFatalBoot,
   watchNavigations,
@@ -34,7 +33,7 @@ function rig({ visible = true, destroyed = false, noWindow = false } = {}) {
   const showMessageBox = vi.fn(() => new Promise<{ response: number; checkboxChecked: boolean }>((resolve) => { click = () => resolve({ response: 0, checkboxChecked: false }) }))
   const exit = vi.fn()
   const log = { warn: vi.fn(), error: vi.fn() }
-  const deps = { window: () => (noWindow ? null : win), dialog: { showMessageBox }, exit, log } as unknown as FatalBootDeps
+  const deps = { title: () => 'Gugu cannot start', window: () => (noWindow ? null : win), dialog: { showMessageBox }, exit, log } as unknown as FatalBootDeps
   return { win, showMessageBox, exit, log, deps, click: () => click() }
 }
 const settle = () => new Promise((r) => setTimeout(r, 0))
@@ -104,7 +103,7 @@ describe('资源真坏了:同一句话,点了才退出,不堵主线程', () => {
     const [parent, options] = r.showMessageBox.mock.calls[0] as unknown as [unknown, { type: string; message: string; detail: string }]
     // A parent window: without one Electron runs the alert modal on mac (message_box_mac.mm) and the main loop stops.
     expect(parent).toBe(r.win)
-    expect(options).toMatchObject({ type: 'error', message: FATAL_BOOT_TITLE })
+    expect(options).toMatchObject({ type: 'error', message: 'Gugu cannot start' })
     // The renderer's text as it is: no second `Error:` in front of it, no stack of this process after it.
     expect(options.detail).toBe('embedded manifest request failed (404)')
     expect(r.exit).not.toHaveBeenCalled()

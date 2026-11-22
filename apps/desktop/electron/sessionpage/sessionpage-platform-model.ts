@@ -66,7 +66,8 @@ import { agentEndpointServer, EndpointPorts, listenStable, PersistedRecords, Pri
 import { recordModelSource } from '../session/main/core/usage/model-source-recorder'
 import { guguAgentUserIdForSession } from './sessionpage-session-agent'
 import type { PlatformCredentialRuntimeObservation } from './sessionpage-platform-recovery'
-import { hostCatalog, type HostCatalog } from '../../shared/host-localization'
+import type { HostCatalog } from '../../shared/host-localization'
+import { hostCopy } from '../host-locale-store'
 import { quoteShellArg } from '../session/main/utils/shellEscape'
 import { serverNow } from '@gugu/core/shared/serverClock'
 
@@ -433,7 +434,7 @@ async function proxyPlatformRequest(
   const teamRefusal = (error: unknown) => {
     const reason = teamModelStopReason(error)
     return { code: reason ? 'credits_exhausted' : 'team_access_denied', ...(reason ? { reason_code: reason } : {}),
-      message: reason ? credentialUnavailableCopy()[reason === 'team_credits_exhausted' ? 'teamCredits' : 'teamMonthlyCap'] : credentialUnavailableCopy().serviceUnavailable }
+      message: reason ? hostCopy().sessionPlatform.credentialUnavailable[reason === 'team_credits_exhausted' ? 'teamCredits' : 'teamMonthlyCap'] : hostCopy().sessionPlatform.credentialUnavailable.serviceUnavailable }
   }
   await proxyPlatformCredentialRequest(request, response, {
     upstream: () => new URL(`${held.relayUrl.replace(/\/$/, '')}${suffix}${search}`),
@@ -887,21 +888,11 @@ export function clearPlatformIssueBackoff(sessionId: string): void {
   issueBackoffs.delete(sessionId)
 }
 
-let credentialUnavailableCopy: () => HostCatalog['sessionPlatform']['credentialUnavailable'] =
-  () => hostCatalog('zh-CN').sessionPlatform.credentialUnavailable
-
-/** 宿主启动时接上当前界面语言(测试里不接 = 中文)。 */
-export function configurePlatformCredentialCopy(
-  copy: () => HostCatalog['sessionPlatform']['credentialUnavailable'],
-): void {
-  credentialUnavailableCopy = copy
-}
-
 /** 给 agent 界面看的那一句;认不出的失败(会话已结束之类)返回 null,由调用方按内部错误处理。 */
 export function credentialUnavailableMessage(error: unknown): string | null {
   const team = teamModelStopReason(error)
-  if (team) return credentialUnavailableCopy()[team === 'team_credits_exhausted' ? 'teamCredits' : 'teamMonthlyCap']
-  return error instanceof PlatformCredentialUnavailableError ? credentialUnavailableCopy()[error.kind] : null
+  if (team) return hostCopy().sessionPlatform.credentialUnavailable[team === 'team_credits_exhausted' ? 'teamCredits' : 'teamMonthlyCap']
+  return error instanceof PlatformCredentialUnavailableError ? hostCopy().sessionPlatform.credentialUnavailable[error.kind] : null
 }
 
 /**

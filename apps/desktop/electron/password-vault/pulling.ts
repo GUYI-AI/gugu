@@ -1,4 +1,6 @@
 import type { VaultSync } from './sync'
+import { hostCopy } from '../host-locale-store'
+import { hostText } from '../../shared/host-localization'
 interface VaultPullHost { presence(): 'active' | 'idle' | 'locked'; notify(title: string, body: string): void }
 
 /** Polls the head revision every 5 seconds (3 while a code is on screen) and pulls when something was written, and every
@@ -20,7 +22,7 @@ export function createVaultPulling(sync: Pick<VaultSync, 'view' | 'poll' | 'refr
     for (const id of seen.keys()) if (!view.requests.some(request => request.deviceId === id)) seen.delete(id)
     const presence = host.presence()
     for (const request of view.requests) {
-      if (!seen.has(request.deviceId)) { seen.set(request.deviceId, Date.now()); host.notify(`「${request.label || '新设备'}」想用你的密码`, '打开咕咕，核对两台设备上的数字。') }
+      if (!seen.has(request.deviceId)) { seen.set(request.deviceId, Date.now()); host.notify(hostText(hostCopy().passwordVault.pullTitle, { device: request.label || hostCopy().passwordVault.pullNewDevice }), hostCopy().passwordVault.pullBody) }
       const waited = Date.now() - seen.get(request.deviceId)! > 8_000
       if (presence !== 'locked' && request.stage === 'new' && (presence === 'active' || waited) || presence === 'active' && request.stage === 'elsewhere')
         await sync.challenge(request.deviceId).catch(() => {})

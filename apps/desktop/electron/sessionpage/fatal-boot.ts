@@ -12,8 +12,6 @@
 //   就只靠已经打出的 FAILED 日志,直接退出。
 import type { BaseWindow, Dialog, Event, WebContents, WebContentsDidStartNavigationEventParams, WebFrameMain } from 'electron'
 
-export const FATAL_BOOT_TITLE = '咕咕无法启动:任务页启动失败'
-
 /** Pages whose main frame has started a navigation to another document that has not committed or settled yet. */
 const leaving = new WeakSet<Pick<WebContents, 'on'>>()
 
@@ -29,6 +27,8 @@ export function watchNavigations(contents: Pick<WebContents, 'on'>): void {
 }
 
 export interface FatalBootDeps {
+  /** The error box's title in the host's language (host-localization `fatalBoot.title`). */
+  title: () => string
   /** The window the error goes on (the main window); null when there is none (server mode, not created yet). */
   window: () => BaseWindow | null
   dialog: Pick<Dialog, 'showMessageBox'>
@@ -38,7 +38,7 @@ export interface FatalBootDeps {
 }
 
 /** Show that the session page cannot start, on the main window, and exit once the person has seen it. */
-export function fatalSessionpageBoot(err: unknown, { window, dialog, exit }: FatalBootDeps): void {
+export function fatalSessionpageBoot(err: unknown, { title, window, dialog, exit }: FatalBootDeps): void {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
   const win = window()
   if (!win || win.isDestroyed()) {
@@ -48,7 +48,7 @@ export function fatalSessionpageBoot(err: unknown, { window, dialog, exit }: Fat
   // A sheet needs a visible parent: on a hidden window it could never be dismissed (and without one it runs modal).
   if (!win.isVisible()) win.show()
   void Promise.resolve()
-    .then(() => dialog.showMessageBox(win, { type: 'error', message: FATAL_BOOT_TITLE, detail }))
+    .then(() => dialog.showMessageBox(win, { type: 'error', message: title(), detail }))
     // No display to show it on (headless CI): the FAILED line already said it.
     .catch(() => undefined)
     .finally(() => exit(1))
