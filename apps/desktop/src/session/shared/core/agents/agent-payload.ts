@@ -368,8 +368,12 @@ export type LookupPathSource = {
   /** The login shell that was asked; absent on Windows. */
   shell?: string;
   at: number;
+  /** How long the re-read took. */
+  tookMs: number;
   /** The re-read failed and the previous PATH was used. */
   failed?: 'probe-failed' | 'invalid-output';
+  /** What the failed read said (a timeout, the program's error) — shown to the user as is. */
+  failedDetail?: string;
 };
 
 /** What the last lookup saw, so the panel can say why nothing usable was found. */

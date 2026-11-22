@@ -1118,11 +1118,8 @@ function describePathHydration(): string {
   if (diagnosis.hydrated) {
     return `PATH 补救:已生效。当时的 PATH=${diagnosis.path}`
   }
-  const why = {
-    windows: 'Windows 无登录 shell,走 ensureWindowsNpmGlobalBinInPath()',
-    'probe-failed': '探测登录 shell 失败(shell 起不来或超时)',
-    'invalid-output': '登录 shell 的输出里取不到 PATH(多半被 rc 文件的输出污染了)',
-  }[diagnosis.reason]
+  const why = diagnosis.reason === 'windows' ? 'Windows 无登录 shell,走 ensureWindowsNpmGlobalBinInPath()'
+    : `${diagnosis.from === 'windows-registry' ? '读注册表 PATH' : '探测登录 shell'}失败(${diagnosis.reason}: ${diagnosis.detail})`
   return `PATH 补救:**未生效** —— ${why}。所以 app 用的是 GUI 的最小 PATH,找不到 codex 是这一步的后果。`
 }
 
