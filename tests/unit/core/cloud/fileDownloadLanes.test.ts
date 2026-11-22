@@ -59,9 +59,11 @@ function providers(url: string, bytes: Uint8Array, cache: FileChunkCache) {
 describe('a large cloud download reads its ranges in parallel', () => {
   it('opens three ranged GETs of one signed URL at once and verifies the assembled file', async () => {
     const ranges: (string | undefined)[] = [], held: (() => void)[] = []
-    // Nothing is answered until all three lanes have asked: a sequential reader would never finish.
+    // Nothing is answered until all three lanes have asked: a sequential reader would never finish. A later request
+    // (a lane taking part of another's share) is answered at once.
     const url = await objectStore((request, response) => {
       ranges.push(request.headers.range)
+      if (ranges.length > 3) return serveRange(request, response, big)
       held.push(() => serveRange(request, response, big))
       if (held.length === 3) for (const answer of held) answer()
     })
