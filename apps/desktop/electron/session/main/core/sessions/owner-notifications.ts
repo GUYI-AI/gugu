@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';

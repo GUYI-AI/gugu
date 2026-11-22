@@ -76,7 +76,7 @@ it('a machine no device link reaches reads its chunks through its channel, with 
   h.readChunk.mockResolvedValueOnce(chunk(700 * 1024, 512 * 1024)).mockResolvedValueOnce(chunk(700 * 1024, 188 * 1024));
   expect(new Blob(await readWorkspaceBytes('p', 'w', 'a.pdf')).size).toBe(700 * 1024);
   expect(h.readStreamed).not.toHaveBeenCalled();
-  expect(h.readChunk.mock.calls.map((call) => (call[2] as { offset: number }).offset)).toEqual([0, 512 * 1024]);
+  expect(h.readChunk.mock.calls.map((call) => (call[1] as { offset: number }).offset)).toEqual([0, 512 * 1024]);
 });
 
 it('a stream that fails fails the read; it does not go on in chunks', async () => {

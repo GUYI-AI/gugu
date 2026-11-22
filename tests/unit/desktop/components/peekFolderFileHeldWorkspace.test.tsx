@@ -9,7 +9,7 @@ import { createReactHarness } from '../../../support/testHarness'
  * logged; ❌ thrown out of the effect's cleanup into the page's error boundary.
  */
 const rpc = vi.hoisted(() => ({
-  projects: { openProject: vi.fn(), acquireProjectWorkspace: vi.fn(), releaseProjectWorkspace: vi.fn() },
+  folderRuntime: { openFolder: vi.fn(), acquireFolderWorkspace: vi.fn(), releaseFolderWorkspace: vi.fn() },
 }))
 const warn = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', async (importOriginal) => ({ ...(await importOriginal<object>()), rpc }))
@@ -25,28 +25,28 @@ let h: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   h = createReactHarness()
   warn.mockReset()
-  rpc.projects.openProject.mockReset().mockResolvedValue({ success: true })
-  rpc.projects.acquireProjectWorkspace.mockReset().mockResolvedValue({ success: true })
-  rpc.projects.releaseProjectWorkspace.mockReset().mockResolvedValue({ success: true })
+  rpc.folderRuntime.openFolder.mockReset().mockResolvedValue({ success: true })
+  rpc.folderRuntime.acquireFolderWorkspace.mockReset().mockResolvedValue({ success: true })
+  rpc.folderRuntime.releaseFolderWorkspace.mockReset().mockResolvedValue({ success: true })
 })
 afterEach(() => h.cleanup())
 
 const target = { kind: 'folder' as const, place: { workspace: 'folder:dev-b/w1' } as never, deviceId: 'dev-b', projectId: 'p1', workspaceId: 'w1', path: 'hello.txt', absolutePath: '/srv/hello.txt', name: 'hello.txt', ask: false }
 
 it('a release that fails when the file closes is logged, and the page stays', async () => {
-  rpc.projects.releaseProjectWorkspace.mockRejectedValue(new Error('the arguments point at several machines'))
+  rpc.folderRuntime.releaseFolderWorkspace.mockRejectedValue(new Error('the arguments point at several machines'))
   await h.render(<PeekFolderFile target={target} tabId="t1" />)
   await vi.waitFor(() => expect(h.container.querySelector('[data-testid="preview"]')).not.toBeNull())
   await act(async () => { await h.render(<div data-testid="closed" />) })
   expect(h.container.querySelector('[data-testid="closed"]')).not.toBeNull()
-  await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('[peek] the folder was not let go', expect.objectContaining({ project: 'p1', workspaceId: 'w1' })))
-  expect(rpc.projects.releaseProjectWorkspace).toHaveBeenCalledWith('p1', 'w1')
+  await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('[peek] the folder was not let go', expect.objectContaining({ project: 'w1', workspaceId: 'w1' })))
+  expect(rpc.folderRuntime.releaseFolderWorkspace).toHaveBeenCalledWith('w1', 'w1')
 })
 
 it('holding the folder fails: the file says why in its place', async () => {
-  rpc.projects.acquireProjectWorkspace.mockRejectedValue(new Error('that machine did not answer'))
+  rpc.folderRuntime.acquireFolderWorkspace.mockRejectedValue(new Error('that machine did not answer'))
   await h.render(<PeekFolderFile target={target} tabId="t1" />)
   await vi.waitFor(() => expect(h.container.textContent).toContain('that machine did not answer'))
   expect(h.container.querySelector('[data-testid="preview"]')).toBeNull()
-  expect(rpc.projects.releaseProjectWorkspace).not.toHaveBeenCalled()
+  expect(rpc.folderRuntime.releaseFolderWorkspace).not.toHaveBeenCalled()
 })
