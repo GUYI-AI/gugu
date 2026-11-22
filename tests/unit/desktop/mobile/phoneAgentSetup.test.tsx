@@ -54,7 +54,7 @@ const active: Array<ReturnType<typeof createReactHarness>> = []
 let ownerSequence = 0
 const byId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)
 function Product() { return createElement('div', { 'data-testid': 'main-product', 'data-owner': useContext(PhoneInstallationContext) }, '主界面') }
-async function render(component = PermissionsSection) { const h = createReactHarness(); active.push(h); await h.render(createNode(component)); return h }
+async function render(component: () => ReactNode = PermissionsSection) { const h = createReactHarness(); active.push(h); await h.render(createNode(component)); return h }
 async function renderGate(ownerId = mocks.owner) {
   const h = createReactHarness(); active.push(h)
   await h.render(createNode(PhoneAgentSetupGate, { ownerId, children: createElement(Product) }))

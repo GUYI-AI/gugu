@@ -25,7 +25,7 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
     marketOffers: vi.fn(async () => ({ success: true, data: [{ manifest: slides('1.2.0'), version: '1.2.0' }] })),
     onMarketChanged: () => () => {},
     groupFileOpener: vi.fn(),
-    groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })),
+    appInChat: vi.fn(async () => ({ success: true, data: { files: [] } })),
     setOpenWithDefault: vi.fn(),
   },
 }))

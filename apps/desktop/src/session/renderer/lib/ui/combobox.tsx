@@ -1,7 +1,7 @@
 import { Combobox as ComboboxPrimitive } from '@base-ui/react';
 import { CheckIcon, XIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer, useUiPopupZIndex } from '@gugu/session-ui/react/primitives';
+import { useUiPortalContainer, useUiPopupZIndex, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { Button } from '@renderer/lib/ui/button';
 import {
   InputGroup,
@@ -117,6 +117,7 @@ function ComboboxContent({
         className="isolate z-50"
         style={{ zIndex: useUiPopupZIndex() }}
       >
+        <OpenLayer />
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
           data-chips={!!anchor}

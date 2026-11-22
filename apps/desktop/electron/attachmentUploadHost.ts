@@ -9,7 +9,6 @@ export type AttachmentDeclareRequest = { file: SelectedProjectFile; chatId: stri
 export interface AttachmentUploadIpc {
   invoke(channel: 'attachments:declare', request: AttachmentDeclareRequest): Promise<DeclaredAttachment>
   invoke(channel: 'attachments:drop' | 'attachments:retry', request: { messageId: string }): Promise<void>
-  invoke(channel: 'attachments:resume'): Promise<void>
 }
 export type AttachmentProgressEvent = DeclaredUploadProgress & { messageId: string; done?: boolean }
 export function createAttachmentUploadHost(deps: {

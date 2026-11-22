@@ -155,7 +155,7 @@ const flushRecord = () => {
 // 台账改成 cwd 相对之后,让它在这里写就等于每跑一次往工作树丢一个 record.json。
 // 预检那次的台账本来也没人要 —— 真正那次跑起来会覆盖掉它。
 if (argv.includes('--version')) {
-  process.stdout.write('codex-cli 0.155.1\\n')
+  process.stdout.write('codex-cli 0.156.0\\n')
   process.exit(0)
 }
 flushRecord()
@@ -703,7 +703,7 @@ describe('Codex app-server Windows transport (#2808)', () => {
     const dir = makeTempDir('gugu-codex-windows-stderr')
     const codexBin = cachedFixtureExecutable(
       'codex.exe',
-      '#!/usr/bin/env node\nif (process.argv.slice(2).includes("--version")) { process.stdout.write("codex-cli 0.155.1\\n"); process.exit(0) }\nprocess.stderr.write("bind failed on Windows loopback\\n")\nprocess.exit(2)\n'
+      '#!/usr/bin/env node\nif (process.argv.slice(2).includes("--version")) { process.stdout.write("codex-cli 0.156.0\\n"); process.exit(0) }\nprocess.stderr.write("bind failed on Windows loopback\\n")\nprocess.exit(2)\n'
     )
 
     const session = new CodexAppServerSession('windows-stderr', codexBin, undefined, {
@@ -740,7 +740,7 @@ describe('Codex app-server Windows transport (#2808)', () => {
     const dir = makeTempDir('gugu-codex-catalog-old-bin')
     const codexBin = cachedFixtureExecutable(
       'codex-no-debug-models',
-      '#!/usr/bin/env node\nif (process.argv.slice(2).includes("--version")) { process.stdout.write("codex-cli 0.155.1\\n"); process.exit(0) }\nprocess.stderr.write("error: unrecognized subcommand\\n")\nprocess.exit(2)\n'
+      '#!/usr/bin/env node\nif (process.argv.slice(2).includes("--version")) { process.stdout.write("codex-cli 0.156.0\\n"); process.exit(0) }\nprocess.stderr.write("error: unrecognized subcommand\\n")\nprocess.exit(2)\n'
     )
     const session = new CodexAppServerSession('catalog-old-bin', codexBin, undefined, {
       startupTimeoutMs: NON_TIMEOUT_STARTUP_TIMEOUT_MS,
@@ -764,7 +764,7 @@ describe('Codex app-server Windows transport (#2808)', () => {
 const http = require('node:http')
 const { existsSync, renameSync, writeFileSync } = require('node:fs')
 const argv = process.argv.slice(2)
-if (argv.includes('--version')) { process.stdout.write('codex-cli 0.155.1\\n'); process.exit(0) }
+if (argv.includes('--version')) { process.stdout.write('codex-cli 0.156.0\\n'); process.exit(0) }
 // 所有落地物都写到自己的 cwd 下 —— 产品 spawn 传的 cwd 就是 session.start(dir) 的 dir。
 // ❌ 别把 dir 拼进正文:那样内容每跑一次都不同,内容寻址的缓存就白设了。
 const here = (name) => require('node:path').join(process.cwd(), name)
@@ -863,7 +863,7 @@ setInterval(() => {}, 1_000)
 const http = require('node:http')
 const { renameSync, writeFileSync } = require('node:fs')
 const argv = process.argv.slice(2)
-if (argv.includes('--version')) { process.stdout.write('codex-cli 0.155.1\\n'); process.exit(0) }
+if (argv.includes('--version')) { process.stdout.write('codex-cli 0.156.0\\n'); process.exit(0) }
 // 所有落地物都写到自己的 cwd 下 —— 产品 spawn 传的 cwd 就是 session.start(dir) 的 dir。
 // ❌ 别把 dir 拼进正文:那样内容每跑一次都不同,内容寻址的缓存就白设了。
 const here = (name) => require('node:path').join(process.cwd(), name)
@@ -929,7 +929,7 @@ process.on('SIGINT', stop)
 # @@@engine-preflight (#3685) — 这条用例要测的是【就绪期限】，而不是「引擎装没装」。
 # 宿主现在会先用 --version 证明引擎跑得起来，所以桩必须先过那一关，
 # 才能走到它真正要模拟的那一格：起来了、但端点一直不就绪。
-case " $* " in *" --version "*) printf 'codex-cli 0.155.1\\n'; exit 0;; esac
+case " $* " in *" --version "*) printf 'codex-cli 0.156.0\\n'; exit 0;; esac
 printf 'listener remained pending on Windows loopback\\n' >&2
 while :; do sleep 1; done
 `

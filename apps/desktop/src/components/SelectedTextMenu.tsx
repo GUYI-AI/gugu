@@ -1,7 +1,7 @@
 import { Popover } from '@base-ui/react/popover'
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
+import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives'
 import { cn } from '@/lib/cn'
 import type { ContentMenuItem } from '@/session/shared/content-context-menu'
 import { menuRowClassName, menuRowLabelClassName, menuSurfaceClassName } from './ui/Menu'
@@ -61,8 +61,9 @@ export function SelectedTextMenu({ range, item, onClose, onCopy }: {
     <Popover.Positioner
       anchor={anchor} positionMethod="fixed" side="top" align="start" sideOffset={selectionGap}
       collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
-      className="gg-selected-text-menu gg-menu-positioner window-no-drag-region z-[var(--z-menu)] outline-none"
+      className="gg-selected-text-menu gg-menu-positioner z-[var(--z-menu)] outline-none"
     >
+      <OpenLayer />
       <Popover.Popup ref={popup} role="menu" aria-label={item.label} initialFocus={false} finalFocus={false}
         data-occludes-browser-page className={cn(menuSurfaceClassName, 'min-w-40 p-[var(--gg-menu-padding,4px)]')}>
         <ButtonPrimitive role="menuitem" className={cn(menuRowClassName, 'p-[var(--gg-menu-item-padding,6px_10px)] [&:hover:not([data-disabled])]:bg-[var(--menu-item-hover)] [&:focus-visible:not([data-pointer-focus]):not([data-disabled])]:bg-[var(--menu-item-hover)]')}

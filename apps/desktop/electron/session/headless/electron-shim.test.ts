@@ -1,7 +1,7 @@
-import { mkdtempSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // file-logger 靠 app.setAppLogsPath 是否存在决定要不要落文件;无头替身必须提供它,否则宿主日志静默丢失。
 describe('headless electron shim: app logs path', () => {
@@ -42,5 +42,30 @@ describe('headless electron shim: nativeImage', () => {
     expect(resized.toPNG().length).toBe(0)
     expect(image.isEmpty()).toBe(false)
     expect(image.toPNG()).toEqual(Buffer.from([1, 2, 3]))
+  })
+})
+
+// The server boots on this shim: every session hook main installs must exist on it (regressed in 7dec44fdf4, where the
+// preview protocol's claim on the default session's onBeforeRequest threw and the server exited at boot).
+describe('headless electron shim: session hooks main installs', () => {
+  it('has every webRequest hook the main process uses', async () => {
+    const { session } = await import('./electron-shim')
+    const root = path.join(import.meta.dirname, '..', '..')
+    const used = new Set<string>()
+    for (const file of readdirSync(root, { recursive: true, encoding: 'utf8' })) {
+      if (!file.endsWith('.ts') || file.endsWith('.test.ts')) continue
+      for (const match of readFileSync(path.join(root, file), 'utf8').matchAll(/webRequest\.(on[A-Za-z]+)/g)) used.add(match[1])
+    }
+    expect(used.size).toBeGreaterThan(0)
+    const hooks = session.defaultSession.webRequest as Record<string, unknown>
+    expect([...used].filter((hook) => typeof hooks[hook] !== 'function')).toEqual([])
+  })
+
+  it('setupPreviewProtocol installs on the headless default session without throwing', async () => {
+    vi.resetModules()
+    vi.doMock('electron', () => import('./electron-shim'))
+    const { setupPreviewProtocol } = await import('../main/core/files/preview-protocol')
+    expect(() => setupPreviewProtocol()).not.toThrow()
+    vi.doUnmock('electron')
   })
 })

@@ -23,7 +23,7 @@ import { writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 
 if (process.argv.includes('--version')) {
-  process.stdout.write('codex-cli 0.155.1\\n')
+  process.stdout.write('codex-cli 0.156.0\\n')
   process.exit(0)
 }
 

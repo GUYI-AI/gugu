@@ -7,7 +7,6 @@ import {
   codexTuiThreadSettingsArgs,
   CodexSessionClosedError,
   codexPlainThreadStartedId,
-  codexForkStartedEvent,
 } from '../../../../apps/desktop/electron/sessionpage/codex-app-server-delivery'
 
 /**
@@ -109,10 +108,9 @@ describe('@@@6112 认领 TUI 建出来的那条 thread', () => {
     }))).toBe('tid-1')
   })
 
-  it('rewind 派生出来的分支不算(那条归 codexForkStartedEvent 管)', () => {
-    const fork = started({ id: 'child', forkedFromId: 'parent' })
-    expect(codexPlainThreadStartedId(fork)).toBeNull()
-    expect(codexForkStartedEvent(fork)?.threadId).toBe('child')
+  it('`/fork` 派生出来的分支不算(它归 fork-capture 的 rollout 扫描,建自己的会话)', () => {
+    expect(codexPlainThreadStartedId(started({ id: 'child', forkedFromId: 'parent' }))).toBeNull()
+    expect(codexPlainThreadStartedId(started({ id: 'child', forked_from_id: 'parent' }))).toBeNull()
   })
 
   it('subagent 不算 —— 它的 parentThreadId 是归属边,永远不许顶替活动 thread', () => {

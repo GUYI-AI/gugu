@@ -87,8 +87,12 @@ export const CODEX_ACP_MINIMUM_VERSION = '0.136.0' as const;
  *   · `thread/section/move` 能把**尚未落盘**的 thread 写盘 —— 0.149.0 起;更早报 `-32600 thread not found`。
  *   · `thread/read` 返回 thread 自己的 `model` —— 0.153.0 起;更早为 null,认领按 fail-loud 拒绝继续。
  * 方法本身各版本都有(不存在的 threadId 在所有版本上同样报 thread not found)⇒ 能力只能按版本判。
+ * 再往上抬到 0.156.0:TUI 里改写更早的一句(Esc-Esc)从这一版起是原地 `thread/revert`,thread id 不变
+ * (openai/codex#45845);0.155.x 还是另起一条 `forked_from_id` 指回原 thread 的新 thread
+ * (gpu 实测:0.155.0「continuing from this point in a new conversation」+ 新 thread;0.156.0「Conversation
+ * reverted」+ 同一 thread id)。一条路:更早的 codex 让用户升级,❌ 不为它留「rewind 分叉」的认领。
  */
-export const CODEX_TUI_ADOPT_MINIMUM_VERSION = '0.153.0' as const;
+export const CODEX_TUI_ADOPT_MINIMUM_VERSION = '0.156.0' as const;
 import {
   type CapabilityPackage,
   extensionSkillFolderName,
