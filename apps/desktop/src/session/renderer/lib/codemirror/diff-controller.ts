@@ -1,4 +1,4 @@
-import { goToNextChunk, goToPreviousChunk, MergeView, originalDocChangeEffect, unifiedMergeView } from '@codemirror/merge';
+import { getChunks, goToNextChunk, goToPreviousChunk, MergeView, originalDocChangeEffect, unifiedMergeView } from '@codemirror/merge';
 import { EditorSelection, type Extension } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { registerCodeEditorHistory } from '@renderer/lib/editor/activeCodeEditor';
@@ -37,7 +37,7 @@ export function createDiffController({ parent, original, modified, style, langua
   let scroll: HTMLElement;
   let destroy: () => void;
   if (style === 'split') {
-    const merge = new MergeView({ parent, a: config(original, false, false), b: config(modified, writable, true) });
+    const merge = new MergeView({ parent, a: config(original, false, false), b: config(modified, writable, true), collapseUnchanged: {} });
     left = merge.a;
     right = merge.b;
     scroll = merge.dom;
@@ -46,7 +46,7 @@ export function createDiffController({ parent, original, modified, style, langua
     destroy = () => merge.destroy();
   } else {
     right = new EditorView({ parent, doc: modified.doc, extensions: [
-      extensions(modified, writable, true), unifiedMergeView({ original: original.doc, mergeControls: false }),
+      extensions(modified, writable, true), unifiedMergeView({ original: original.doc, mergeControls: false, collapseUnchanged: {} }),
     ] });
     right.dom.style.height = '100%';
     scroll = right.scrollDOM;
@@ -73,6 +73,8 @@ export function createDiffController({ parent, original, modified, style, langua
   };
   if (left) restore(left, saved?.original);
   restore(right, saved?.modified);
+  // A fresh open lands on the first change; from the top, goToNextChunk would skip a change that starts at line 1.
+  if (!saved && getChunks(right.state)?.chunks[0]?.fromB) goToNextChunk(right);
   if (saved) right.requestMeasure({ read: () => null, write: () => {
     scroll.scrollTop = saved.scrollTop;
     right.scrollDOM.scrollLeft = saved.modified.scrollLeft;

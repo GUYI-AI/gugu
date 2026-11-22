@@ -30,18 +30,18 @@ type SideState =
 
 type Side = 'original' | 'modified';
 
-function unavailableMessage(reason: ImageUnavailableReason): string {
+function unavailableMessageKey(reason: ImageUnavailableReason) {
   switch (reason) {
     case 'ssh':
-      return 'Preview unavailable on SSH workspaces';
+      return 'diff.imageUnavailableSsh';
     case 'unsupported':
-      return 'Preview unavailable for this format';
+      return 'diff.imageUnsupported';
     case 'too-large':
-      return 'Preview unavailable — file is too large';
+      return 'diff.imageTooLarge';
     case 'lfs-pointer':
-      return 'Preview unavailable — Git LFS smudge filter not applied';
+      return 'diff.imageLfsPointer';
     case 'git-error':
-      return 'Preview unavailable';
+      return 'diff.imageUnavailable';
   }
 }
 
@@ -132,6 +132,7 @@ function sideOf(reading: Reading<WorkspaceImage | null>): Reading<SideState> {
 }
 
 function ImageSidePanel({ label, reading, side }: { label: string; reading: Reading<SideState>; side: Side }) {
+  const { translate } = useSessionMessages();
   const state = valueOf(reading);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -146,7 +147,7 @@ function ImageSidePanel({ label, reading, side }: { label: string; reading: Read
       </div>
       <div className="flex flex-1 items-center justify-center overflow-auto p-4">
         <ReadingSlot reading={reading} placeholder="h-40 w-40"
-          failed={(error) => (error instanceof TransientImageError ? unavailableMessage('git-error') : error.message)}>
+          failed={(error) => (error instanceof TransientImageError ? translate(unavailableMessageKey('git-error')) : error.message)}>
           {(value) => <ImageSideContent state={value} side={side} />}
         </ReadingSlot>
       </div>
@@ -155,16 +156,17 @@ function ImageSidePanel({ label, reading, side }: { label: string; reading: Read
 }
 
 function ImageSideContent({ state, side }: { state: SideState; side: Side }) {
+  const { translate } = useSessionMessages();
   switch (state.status) {
     case 'missing':
       return (
         <div className="text-xs text-foreground-passive">
-          {side === 'original' ? 'File added' : 'File deleted'}
+          {translate(side === 'original' ? 'diff.fileAdded' : 'diff.fileDeleted')}
         </div>
       );
     case 'unavailable':
       return (
-        <div className="text-xs text-foreground-passive">{unavailableMessage(state.reason)}</div>
+        <div className="text-xs text-foreground-passive">{translate(unavailableMessageKey(state.reason))}</div>
       );
     case 'ready':
       return <PreviewImage state={state} alt={side} />;
