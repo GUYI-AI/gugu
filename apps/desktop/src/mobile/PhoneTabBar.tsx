@@ -36,6 +36,7 @@ export function PhoneTabBar({ activeTab, onTabChange, pendingContactsCount, barR
   const { t } = useTranslation('main')
   const { t: mt } = useTranslation('messaging')
   const height = useNavHeight(viewport)
+  // Colours follow the pager position every frame (settledTab.ts): Button's colour transition would lag a swipe and fade a tap.
   const entries = {
     chats: { label: t('shell.messagesMobile'), icon: <MessageCircle />, testId: AUTOMATION_TEST_IDS.mobileMessagesNav },
     contacts: { label: t('shell.partnersMobile'), icon: <Users />, testId: AUTOMATION_TEST_IDS.mobileContactsNav },
@@ -46,7 +47,7 @@ export function PhoneTabBar({ activeTab, onTabChange, pendingContactsCount, barR
         {tabs.map((tab, index) => {
           const item = tab === 'chats' || tab === 'contacts' ? entries[tab] : null
           if (!item) return null
-          return <Button key={tab} variant="ghost" className="gg-phone-nav-item" aria-label={item.label} aria-current={tab === activeTab ? 'page' : undefined} data-testid={item.testId} onClick={() => onTabChange(tab)} style={tabItemStyle(index, tabs.indexOf(activeTab), 'var(--primary)', 'var(--phone-nav-idle)')}>
+          return <Button key={tab} variant="ghost" className="gg-phone-nav-item !transition-none" aria-label={item.label} aria-current={tab === activeTab ? 'page' : undefined} data-testid={item.testId} onClick={() => onTabChange(tab)} style={tabItemStyle(index, tabs.indexOf(activeTab), 'var(--primary)', 'var(--phone-nav-idle)')}>
             <span className="gg-phone-nav-icon">{item.icon}{tab === 'contacts' && pendingContactsCount > 0 ? <span className="gg-phone-nav-badge">{pendingContactsCount > 99 ? '99+' : pendingContactsCount}</span> : null}</span>
             <span className="gg-phone-nav-label">{item.label}</span>
           </Button>

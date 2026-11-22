@@ -140,7 +140,7 @@ it('tapping a tab switches the capsule and colours at once, with nothing animati
   for (const [to, from] of [[1, 0], [0, 1]] as const) {
     items[to]!.click()
     await until('the tapped tab is current', () => items[to]!.getAttribute('aria-current') === 'page')
-    expect(document.getAnimations().filter((a) => nav.closest('nav')!.contains((a.effect as KeyframeEffect | null)?.target ?? null)), 'nothing animates on the bar').toEqual([])
+    expect(document.getAnimations().filter((a) => nav.closest('nav')!.contains((a.effect as KeyframeEffect | null)?.target ?? null)).map((a) => `${(a as CSSTransition).transitionProperty} on ${((a.effect as KeyframeEffect).target as Element).className}`), 'nothing animates on the bar').toEqual([])
     expect(pillLeft() - restLeft).toBeCloseTo(to * items[0]!.getBoundingClientRect().width, 0)
     expect(getComputedStyle(items[to]!).color).toBe(settledColor)
     expect(getComputedStyle(items[from]!).color).not.toBe(settledColor)
