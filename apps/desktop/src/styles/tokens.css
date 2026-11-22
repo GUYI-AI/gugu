@@ -2016,6 +2016,12 @@ body.barcode-scanner-active #root {
   animation-duration: var(--mobile-motion-duration);
   animation-timing-function: var(--mobile-motion-ease);
 }
+/* The phone tab bar sits outside the page: unnamed, the opaque page group above covered it until the transition ended,
+   so it appeared late on every return to the list (owner 11-22). Its own group is drawn above the page and never animates:
+   it is there from the first frame when it arrives, and gone at once when it leaves. */
+:root[data-mobile-direction] [data-phone-tabbar] { view-transition-name: phone-tabbar; }
+::view-transition-group(phone-tabbar), ::view-transition-new(phone-tabbar) { animation: none; }
+::view-transition-old(phone-tabbar) { display: none; }
 ::view-transition-old(mobile-page) { animation-name: gg-mobile-leave; }
 ::view-transition-new(mobile-page) { animation-name: gg-mobile-enter; }
 :root[data-mobile-direction='pop'] { --mobile-motion-distance: calc(-1 * var(--spacing-xl)); }
