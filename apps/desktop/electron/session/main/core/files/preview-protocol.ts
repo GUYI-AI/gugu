@@ -215,18 +215,18 @@ async function serveCloudObject(url: URL, range: string | null, signal?: AbortSi
  * The renderer gets an object's bytes in pieces of up to `BYTES_READ`, as it gets this machine's bytes (`serveBytes`), with
  * a few read ahead. Electron hands every piece of a handler's body to the renderer as its own write; the network's own
  * pieces are small, and passed on one by one a 200 MB object reached the renderer at ~28 MB/s against ~68 MB/s read in
- * main. A response starts with a small piece that doubles up to `BYTES_READ`, and a piece goes out as soon as the network
- * has nothing more ready (`PIECE_WAIT_MS`): a `<video>`'s first bytes and a seek's are not held back for a full piece.
+ * main. A piece goes out as soon as the network has nothing more ready (`PIECE_WAIT_MS`): a `<video>`'s first bytes and a
+ * seek's are not held back for a full piece.
  */
-const PIECE_WAIT_MS = 4, FIRST_PIECE = 64 * 1024;
+const PIECE_WAIT_MS = 4;
 function inPieces(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   const reader = body.getReader();
-  let next: Promise<ReadableStreamReadResult<Uint8Array>> | undefined, limit = FIRST_PIECE;
+  let next: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       const parts: Uint8Array[] = [];
       let size = 0;
-      while (size < limit) {
+      while (size < BYTES_READ) {
         const read = next ?? reader.read();
         next = undefined;
         const ready = size ? await Promise.race([read, new Promise<null>((resolve) => setTimeout(resolve, PIECE_WAIT_MS, null))]) : await read;
@@ -235,7 +235,6 @@ function inPieces(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> 
         parts.push(ready.value); size += ready.value.byteLength;
       }
       if (!size) return controller.close();
-      limit = Math.min(limit * 2, BYTES_READ);
       if (parts.length === 1) return controller.enqueue(parts[0]!);
       const piece = new Uint8Array(size);
       let at = 0;
