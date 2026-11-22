@@ -33,11 +33,11 @@ export function GuguSubscriptionRow({ actions }: { actions?: ReactNode } = {}) {
   const { user } = useAuth();
   const freeCredits = useReplica(deviceFreeCredits, user ? [] : null);
   const deviceFull = freeCredits.state === 'value' && freeCredits.value === 'device_full';
-  const { state, power, windows, balanceError, windowsError, membership: plan } = useSpendingPower(user);
+  const { state, power, windows, membershipError, balanceError, windowsError, membership: plan } = useSpendingPower(user);
   const unknown = state === 'unknown';
   // 读到之前每个数位画同尺寸的占位;只有读到而这一项取不到时才写「—」。
   const amount = (value: string | null) => (unknown ? <Unknown className="w-12" /> : value ?? '—');
-  const accountError = balanceError || windowsError;
+  const accountError = membershipError || balanceError || windowsError;
   const date = (value: Date) =>
     new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' }).format(value);
   const period = windows ? quotaWindowViews(windows).period : null;
