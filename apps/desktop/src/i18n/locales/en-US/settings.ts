@@ -988,7 +988,6 @@ export default {
     "submitting": "Submitting...",
     "thanks": {
       "done": "Done",
-      "illustrationAlt": "Gugu hugging the report you just sent, saying thank you",
       "title": "Thank you for the report"
     },
     "title": "Report a problem",

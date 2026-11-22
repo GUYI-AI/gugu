@@ -988,7 +988,6 @@ export default {
     "submitting": "提交中…",
     "thanks": {
       "done": "完成",
-      "illustrationAlt": "咕咕抱着你刚寄出的那封反馈信，正在向你道谢",
       "title": "谢谢你的反馈"
     },
     "title": "反馈问题",

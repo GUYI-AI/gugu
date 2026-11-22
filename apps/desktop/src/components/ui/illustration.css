@@ -1,4 +1,4 @@
-/* Ink-line spot illustrations for empty pages. Each PNG carries only alpha (the ink); the colour is the text token,
+/* Ink-line spot illustrations for empty pages. Each image carries only alpha (the ink); the colour is the text token,
    so one file serves light and dark. Width comes from the caller; the height follows the drawing's own ratio. */
 .gg-illustration {
   background-color: var(--text-primary);
@@ -9,9 +9,16 @@
   -webkit-mask-position: center;
   -webkit-mask-size: contain;
   -webkit-mask-repeat: no-repeat;
+  /* One url per drawing, read by both properties: a small file inlined as a data URI is then written once, not twice. */
+  mask-image: var(--gg-illustration);
+  -webkit-mask-image: var(--gg-illustration);
 }
-.gg-illustration[data-illustration='add-contact'] { aspect-ratio: 480 / 329; mask-image: url('../../assets/illustrations/add-contact.webp'); -webkit-mask-image: url('../../assets/illustrations/add-contact.webp'); }
-.gg-illustration[data-illustration='join-group'] { aspect-ratio: 480 / 317; mask-image: url('../../assets/illustrations/join-group.webp'); -webkit-mask-image: url('../../assets/illustrations/join-group.webp'); }
-.gg-illustration[data-illustration='new-task'] { aspect-ratio: 480 / 475; mask-image: url('../../assets/illustrations/new-task.webp'); -webkit-mask-image: url('../../assets/illustrations/new-task.webp'); }
-.gg-illustration[data-illustration='no-requests'] { aspect-ratio: 480 / 597; mask-image: url('../../assets/illustrations/no-requests.webp'); -webkit-mask-image: url('../../assets/illustrations/no-requests.webp'); }
-.gg-illustration[data-illustration='no-match'] { aspect-ratio: 480 / 503; mask-image: url('../../assets/illustrations/no-match.webp'); -webkit-mask-image: url('../../assets/illustrations/no-match.webp'); }
+.gg-illustration[data-illustration='add-contact'] { aspect-ratio: 480 / 329; --gg-illustration: url('../../assets/illustrations/add-contact.webp'); }
+.gg-illustration[data-illustration='join-group'] { aspect-ratio: 480 / 317; --gg-illustration: url('../../assets/illustrations/join-group.webp'); }
+.gg-illustration[data-illustration='new-task'] { aspect-ratio: 480 / 475; --gg-illustration: url('../../assets/illustrations/new-task.webp'); }
+.gg-illustration[data-illustration='no-requests'] { aspect-ratio: 480 / 597; --gg-illustration: url('../../assets/illustrations/no-requests.webp'); }
+.gg-illustration[data-illustration='no-match'] { aspect-ratio: 480 / 503; --gg-illustration: url('../../assets/illustrations/no-match.webp'); }
+.gg-illustration[data-illustration='no-notifications'] { aspect-ratio: 208 / 267; --gg-illustration: url('../../assets/illustrations/no-notifications.png'); }
+.gg-illustration[data-illustration='no-agents'] { aspect-ratio: 256 / 242; --gg-illustration: url('../../assets/illustrations/no-agents.png'); }
+.gg-illustration[data-illustration='no-tasks'] { aspect-ratio: 312 / 186; --gg-illustration: url('../../assets/illustrations/no-tasks.png'); }
+.gg-illustration[data-illustration='feedback-thanks'] { aspect-ratio: 224 / 289; --gg-illustration: url('../../assets/illustrations/feedback-thanks.png'); }

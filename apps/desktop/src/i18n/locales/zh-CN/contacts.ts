@@ -335,6 +335,8 @@ export default {
     "newRequests": "新的请求",
     "noAgents": "暂无 Agent",
     "noAgentsYet": "暂无 Agent",
+    "noAgentsPage": "这台设备上还没有智能体",
+    "noAgentsPageHint": "智能体在这台电脑上替你干活。用一句话说出你要做的事，就能建一个。",
     "noContacts": "暂无联系人",
     "noContactsYet": "暂无联系人",
     "noGroups": "暂无群组",
