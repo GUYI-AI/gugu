@@ -241,10 +241,10 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   const installed = useInstalledApps(LOCAL_HOST)
   const updates = useReplica(marketUpdates, [LOCAL_HOST])
   const apps = installed.state === 'value' ? installed.value : null
-  const assistantApp = apps && target.kind === 'app' ? apps.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
+  const assistantApp = apps && target.kind === 'app' ? apps.appsIn('page').find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
   const docked = apps ? apps.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID)) : null
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
-  const openable = apps ? apps.openableApps : null
+  const openable = apps ? apps.appsIn('page') : null
   const updateCount = apps && updates.state === 'value' && updates.value.summary ? updateCountOf(updates.value.summary, apps) : null
   const open = (appId?: string) => {
     showSessions()

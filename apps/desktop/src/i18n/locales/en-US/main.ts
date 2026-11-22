@@ -1,8 +1,9 @@
 export default {
   "firstInstallImport": {
+    "remoteDescription": "Import memories, project rules, and work habits from {{machine}}",
     "title": "Import your data",
     "description": "Import your memories, project rules, and work habits",
-    "available": "Import your local {{name}} configuration"
+    "available": "Import the {{name}} configuration from this machine"
   },
   "usagePopover": {
     "title": "Usage",
@@ -137,6 +138,7 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "sourceUnavailable": "The terminal configuration on this machine cannot be read.",
   "nativeHistorySummary": "Previous Gugu sessions: {{removed}} moved, {{pending}} pending, {{retained}} retained; {{unowned}} belong to other profiles",
   "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
   "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
