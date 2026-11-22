@@ -822,7 +822,9 @@ export function createAppFiles(platform: FilesPlatform) {
   // @@@read-snapshot - one read of a file version per App and reader (and program call, which owns its cancellable reads),
   // not per page: a page that is torn down and mounted again (its chat left and reopened) takes the bytes it already read. A page going away hands the read to the idle timer;
   // a refusal (revoked access, a failed read or acknowledgement) releases it at once (read-contract §2.5).
-  type ReadSnapshot = { pages: Set<number>; checked: Set<number>; extensionId: string; itemId: string; needs: Grant['needs']; actor: string | null; leases: number; active: number; file?: Promise<FileHandle>; timer?: ReturnType<typeof setTimeout> };
+  // `pages` maps each page holding the read to whether it has resolved the version as itself (@@@join-recheck); a page
+  // that goes away takes its entry with it.
+  type ReadSnapshot = { pages: Map<number, boolean>; extensionId: string; itemId: string; needs: Grant['needs']; actor: string | null; leases: number; active: number; file?: Promise<FileHandle>; timer?: ReturnType<typeof setTimeout> };
   const snapshots = new Map<string, ReadSnapshot>();
   const snapshotKey = (surface: FileSurface, itemId: string, version: number) => JSON.stringify([surface.extensionId, surface.asAgent ?? null, surface.callId ?? null, itemId, version]);
   const staleVersion = () => new AppFileError('stale-version', 'This file version is no longer available. Open the file again to read its current version.');
@@ -830,7 +832,7 @@ export function createAppFiles(platform: FilesPlatform) {
     clearTimeout(entry.timer);
     const file = entry.file;
     entry.file = undefined;
-    entry.checked.clear();
+    for (const pageId of entry.pages.keys()) entry.pages.set(pageId, false);
     if (entry.leases === 0 && snapshots.get(key) === entry) snapshots.delete(key);
     return file?.then(handle => handle.dispose()).catch(error => platform.warn('File read snapshot could not be released', { error: String(error) })) ?? Promise.resolve();
   };
@@ -845,17 +847,17 @@ export function createAppFiles(platform: FilesPlatform) {
     const key = snapshotKey(surface, itemId, version);
     let entry = snapshots.get(key);
     if (!entry) {
-      entry = { pages: new Set(), checked: new Set(), extensionId: surface.extensionId, itemId, needs: null, actor: surface.asAgent ?? null, leases: 0, active: 0 };
+      entry = { pages: new Map(), extensionId: surface.extensionId, itemId, needs: null, actor: surface.asAgent ?? null, leases: 0, active: 0 };
       snapshots.set(key, entry);
+      // A program call's reads end with the call; the key carries the call, so this entry is the call's own.
+      const held = entry;
+      surface.signal?.addEventListener('abort', () => { held.leases = 0; void disposeSnapshot(key, held); }, { once: true });
     }
     if (!entry.pages.has(surface.pageId)) {
       // This registers the existing port's navigation/destruction lifecycle, not another byte transport.
       platform.sync.pageFor(surface.pageId, surface.extensionId);
-      entry.pages.add(surface.pageId);
+      entry.pages.set(surface.pageId, false);
     }
-    // A program call's reads end with the call.
-    const held = entry;
-    surface.signal?.addEventListener('abort', () => { held.leases = 0; void disposeSnapshot(key, held); }, { once: true });
     entry.needs = itemId === surface.itemId ? null : has(surface.extensionId, 'files:read') ? 'files:read' : 'files:write';
     touch(key, entry);
     return entry;
@@ -928,7 +930,7 @@ export function createAppFiles(platform: FilesPlatform) {
       await file.dispose();
       if (!was || was.revision.sha256 !== file.revision.sha256 || was.revision.size_bytes !== file.revision.size_bytes) { held.leases = 0; await disposeSnapshot(snapshotKey(surface, entry.id, entry.version), held); throw staleVersion(); }
     }
-    held.checked.add(surface.pageId);
+    held.pages.set(surface.pageId, true);
     return { entry, docName: '', access, self, chunked: true };
   };
 
@@ -945,7 +947,7 @@ export function createAppFiles(platform: FilesPlatform) {
     held.active++;
     clearTimeout(held.timer);
     if (local && held.file) await local.dispose();
-    if (held.file && !held.checked.has(surface.pageId)) {
+    if (held.file && !held.pages.get(surface.pageId)) {
       // @@@join-recheck - a page taking a read another page made resolves the version as itself first (read-contract
       // §2.1 step 1): a pure resolve, no transfer. Access lost meanwhile releases the read instead of showing its bytes.
       try {
@@ -953,7 +955,7 @@ export function createAppFiles(platform: FilesPlatform) {
         const current = await fileFor(surface, { id: ref.id, ...(ref.chat ? { chat: ref.chat } : {}) }, ref.version);
         await current?.dispose();
         if (!current || current.revision.sha256 !== was.revision.sha256 || current.revision.size_bytes !== was.revision.size_bytes) throw staleVersion();
-        held.checked.add(surface.pageId);
+        held.pages.set(surface.pageId, true);
       } catch (error) {
         held.active--;
         held.leases = 0;
@@ -962,7 +964,7 @@ export function createAppFiles(platform: FilesPlatform) {
         throw error;
       }
     }
-    if (!held.file) held.checked.add(surface.pageId);
+    if (!held.file) held.pages.set(surface.pageId, true);
     const pending = held.file ??= (local ? Promise.resolve(local) : fileFor(surface, { id: ref.id, ...(ref.chat ? { chat: ref.chat } : {}) }, ref.version)).then(async file => {
       if (!file || file.revision.version !== ref.version) { await file?.dispose(); throw staleVersion(); }
       return file;

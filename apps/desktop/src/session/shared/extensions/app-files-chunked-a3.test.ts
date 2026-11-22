@@ -283,4 +283,28 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     expect(f.files.readHandleCount()).toBe(2);
     f.release(); f.release(8);
   });
+  it('a page that goes away takes its check with it: remount after remount, the held read remembers only live pages', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    await f.files.read(surface, { ref, offset: 0, length: 4 });
+    // Pages come and go faster than the idle timer, so the read is never let go; what it keeps per page must go with each page.
+    for (let pageId = 8; pageId < 40; pageId++) { await f.files.read({ ...surface, pageId }, { ref, offset: 0, length: 4 }); f.release(pageId); }
+    expect(f.files.readHandleCount()).toBe(1);
+    f.release();
+    // The same page id seen again is a page that has not resolved this version as itself: it resolves once more.
+    const resolves = f.resolveFile.mock.calls.length;
+    await f.files.read(surface, { ref, offset: 0, length: 4 });
+    expect(f.resolveFile.mock.calls.length).toBe(resolves + 1);
+    f.release();
+  });
+  it('a program call registers one abort listener for its read, however many ranges it reads', async () => {
+    const f = fixture('application/octet-stream', 4096);
+    const call = new AbortController();
+    const listen = vi.spyOn(call.signal, 'addEventListener');
+    const program = { ...surface, callId: 'call-1', signal: call.signal };
+    for (let offset = 0; offset < 4096; offset += 64) await f.files.read(program, { ref, offset, length: 64 });
+    expect(listen.mock.calls.filter(([type]) => type === 'abort')).toHaveLength(1);
+    call.abort();
+    await vi.waitFor(() => expect(f.files.readHandleCount()).toBe(0));
+  });
 });
