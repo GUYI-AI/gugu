@@ -31,6 +31,8 @@ const uncached: FileChunkCache = { get: async () => null, put: async () => {}, c
 const DOWNLOAD_LANE_BYTES = 8 * 1024 * 1024
 // Three connections saturate the object store from one host (measured 11-22: 3 streams ≈ 11.7 MB/s, 6 add nothing).
 const DOWNLOAD_LANES = 3
+/** What a lane reads from its connection ahead of the chunk it is putting into the cache. */
+const DOWNLOAD_READ_AHEAD_BYTES = 8 * 1024 * 1024
 
 /**
  * Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback.
@@ -94,7 +96,9 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
               void response.body?.cancel().catch(() => undefined)
               return transport.refuse(Object.assign(new Error(`Invalid file range response (HTTP ${response.status})`), { status: response.status }))
             }
-            reader = response.body.getReader(); next = index
+            // The network keeps flowing while chunks are put into the cache: without this the socket waits on each put,
+            // and over a real round trip a lane ran at a third of what its connection carries.
+            reader = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>(undefined, new ByteLengthQueuingStrategy({ highWaterMark: DOWNLOAD_READ_AHEAD_BYTES }))).getReader(); next = index
           }
           if (index !== next) throw new Error('File transfer must continue from its cached prefix')
           for (let filled = 0; filled < bytes.length;) {
