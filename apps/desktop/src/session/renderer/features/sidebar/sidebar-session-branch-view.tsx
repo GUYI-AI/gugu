@@ -38,7 +38,7 @@ export function SidebarSessionBranchCount({ summary, expanded, onToggle, label: 
     <button
       type="button"
       data-session-branch-count={summary.total}
-      className={`${branchCountClass} group-hover/row:hidden hover:bg-foreground/10`}
+      className={`${branchCountClass} group-hover/row:invisible group-data-[actions-focused]/row:invisible hover:bg-foreground/10`}
       aria-label={`${translate(expanded ? 'sidebar.collapseChildSessions' : 'sidebar.expandChildSessions')}: ${label}`}
       aria-expanded={expanded}
       title={title}

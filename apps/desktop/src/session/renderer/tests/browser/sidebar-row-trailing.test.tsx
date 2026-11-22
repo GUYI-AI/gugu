@@ -1,7 +1,8 @@
 /**
  * 侧栏会话行的行尾(owner 11-05:「为啥一个数字和右边的小黄点之间没有任何的东西,平白压缩了 title 的空间」)。
  * 不变量:标题吃掉全部剩余宽度;行尾的子会话计数与状态格各按内容取宽、紧挨着贴右,中间只有固定的小间距;
- * 行内没有空着的预留区。真 Chromium、真 CSS —— 要判的是 flex 最终排出来的几何。
+ * 行内没有空着的预留区。悬浮时这套几何一个像素不动:置顶 / 归档贴右缘叠画在计数与标题尾巴上(owner 11-22 选 b),
+ * 不为它们让宽 —— 否则标题一悬浮就变短、跑马灯从头再走。真 Chromium、真 CSS —— 要判的是 flex 最终排出来的几何。
  */
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -74,6 +75,7 @@ function trailing(id: string) {
   const restContent = Array.from(rest.children).map((el) => rect(el));
   return {
     title: rect(row.querySelector('button.flex-1 > span:last-child')),
+    actions: rect(row.querySelector('[data-row-hover-actions] > :first-child')),
     count: count ? rect(count) : null,
     rest: rect(rest),
     restContentWidth: restContent.reduce((sum, box) => sum + box.width, 0),
@@ -107,6 +109,30 @@ it('keeps the count and the status side by side against the right edge, leaving 
     }
   }
   expect([...gaps]).toEqual([12]);
+});
+
+it('hovering draws the actions over the row end without moving the title, the count or the status', async () => {
+  const cases = [
+    { id: 'none-dot', presentation: asking },
+    { id: 'two-digit-dot', tree: tree(38, 0), presentation: asking },
+    { id: 'two-digit-time', tree: tree(38, 0) },
+  ];
+  await mount(cases);
+  for (const { id } of cases) {
+    const row = host.querySelector<HTMLElement>(`[data-session-id="${id}"]`)!;
+    const rest = trailing(id);
+    await userEvent.hover(row);
+    await until(`${id} hovered`, () => row.matches(':hover'));
+    const hovered = trailing(id);
+    // DOMRect keeps its fields on the prototype; compare plain values.
+    expect(hovered.title.toJSON(), id).toEqual(rest.title.toJSON());
+    expect(hovered.rest.toJSON(), id).toEqual(rest.rest.toJSON());
+    expect(hovered.count?.toJSON(), id).toEqual(rest.count?.toJSON());
+    // The actions sit against the right edge and reach over what is left of them (the count, else the title's tail).
+    expect(hovered.actions.right, id).toBeCloseTo(hovered.contentRight, 0);
+    expect(hovered.actions.left, id).toBeLessThan((hovered.count ?? hovered.title).right);
+    await userEvent.hover(park);
+  }
 });
 
 it('a child in error leaves the running parent showing its own running state', async () => {

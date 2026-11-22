@@ -26,60 +26,6 @@
   background-image: linear-gradient(var(--press), var(--press));
 }
 
-/* @@@row-mask-solid (owner 2026-09-10 实机) —— 行内的**浮层**要遮住底下的字,就得一块实色底。
-   ❌ `bg-inherit`:`background-color: inherit` 复制的是父元素的那个**值**,而行的三档状态
-   (--hover/--selected) 自 #2322 起全是半透明叠色 —— 浮层于是把同一层又在行上叠了一遍,
-   选中行右端因此浮出一块比行更深、四角是直角的补丁,嵌两层就深两档(截图里正好两块)。
-
-   实色只能自己重算,而且**画法要和行逐字一样**,否则 8 位取整会差出一档 —— 深色下那一档
-   在硬边上看得见(实测 G 差 1,深底上是可辨的 banding)。所以不是把状态色摊成两层渐变,而是:
-   元素自己画不透明的侧栏面(皮肤桥 .bg-background-tertiary → --sidebar,脱开皮肤退回会话页的
-   --background-tertiary),再由 ::before 用**和行同一组属性**(状态色走 background-color、
-   悬浮层走 background-image)盖上去 —— 于是「面 + 状态层」的合成顺序与精度与行完全同构,
-   实测三档状态、明暗两侧、渐进底色开关四种组合全部 0 级差。
-   浮层只在行 hover 时可见 ⇒ 未选中就是 --hover,选中是 --selected + 悬浮层。 */
-@utility row-mask {
-  background-color: var(--sidebar, var(--background-tertiary));
-  /* ::before 用负层级画在自身背景之上、按钮之下,这要求本元素是层叠上下文。浮层眼下带着
-     z-10 恰好满足,但那是别的需求顺带给的 —— 靠它等于把遮罩挂在一个随时可能被删的类上,
-     删掉那天遮罩会静默沉到行底色下面,只在 hover 时露出标题尾巴。这里自己钉死。 */
-  isolation: isolate;
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    /* 负层级 = 紧贴在元素自身背景之上、在按钮之前画,否则绝对定位的伪元素会盖住图标。 */
-    z-index: -1;
-    border-radius: inherit;
-    background-color: var(--hover);
-  }
-}
-@utility row-mask-selected {
-  background-color: var(--sidebar, var(--background-tertiary));
-  /* ::before 用负层级画在自身背景之上、按钮之下,这要求本元素是层叠上下文。浮层眼下带着
-     z-10 恰好满足,但那是别的需求顺带给的 —— 靠它等于把遮罩挂在一个随时可能被删的类上,
-     删掉那天遮罩会静默沉到行底色下面,只在 hover 时露出标题尾巴。这里自己钉死。 */
-  isolation: isolate;
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    /* 负层级 = 紧贴在元素自身背景之上、在按钮之前画,否则绝对定位的伪元素会盖住图标。 */
-    z-index: -1;
-    border-radius: inherit;
-    background-color: var(--selected);
-    background-image: linear-gradient(var(--hover), var(--hover));
-  }
-}
-
-/* 键盘光标行(isCursor → data-nav-cursor)在**未选中**时,行自己会额外铺一层 hover
-   (sidebar-primitives:isCursor && 'state-hover-layer'),遮罩得跟着补上同一层,否则鼠标停在
-   光标行上又差出一档 —— 同一个毛病换个状态复发。选中行不必补:那一层与
-   data-[active=true]:hover 的层是同一层,不会叠两遍。 */
-[data-nav-cursor='true']:not([data-active='true']) .row-mask::before {
-  background-image: linear-gradient(var(--hover), var(--hover));
-}
-
 /* spec session-page「拼在一屏的几块是一组」(#7097):左边列表里一组 = 一个框,组员一行一条叠在框里。
    「项目」「置顶」的会话行和壳画的「对话」那几行(对话行、没有项目的会话行,有话题子行时是连同子行的那一层)用这同一份。
    每一行画自己那一段 —— 行高不能动(项目区是虚拟滚动,一行 32px 写死),所以框是行身后的 ::before:
@@ -120,16 +66,6 @@
   box-shadow:
     0 0 0 1px color-mix(in oklab, var(--fg, currentColor) 5%, transparent),
     0 1px 2px color-mix(in oklab, var(--fg, currentColor) 6%, transparent);
-}
-/* 行尾浮出的置顶 / 归档底下那块实色遮罩(row-mask)要跟着换成框的底色,否则灰框上冒出一块白补丁。 */
-[data-join][data-join-on] .row-mask {
-  background-color: var(--tab-strip);
-}
-[data-join][data-join-on][data-active='true'] .row-mask-selected {
-  background-color: var(--tab-face);
-}
-[data-join][data-join-on][data-active='true'] .row-mask-selected::before {
-  background-color: transparent;
 }
 
 @theme inline {

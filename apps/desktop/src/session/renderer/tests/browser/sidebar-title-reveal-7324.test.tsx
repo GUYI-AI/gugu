@@ -55,7 +55,7 @@ async function mount(title = LONG_TITLE) {
   return host.querySelector<HTMLElement>('[data-session-id]')!;
 }
 
-const viewport = () => host.querySelector<HTMLElement>('[data-session-id] button span[data-overflow]')!;
+const viewport = () => host.querySelector<HTMLElement>('[data-session-id] button span[data-reveal]')!;
 const track = () => viewport().firstElementChild as HTMLElement;
 const x = () => new DOMMatrix(getComputedStyle(track()).transform).m41;
 function runningAnimation() {
@@ -68,7 +68,8 @@ it('reveals only an overflowing title, stops with the full end readable, and res
   const row = await mount();
   await until('long title measured', () => viewport() != null);
   const before = viewport().getBoundingClientRect();
-  const actions = host.querySelector<HTMLElement>('[data-row-hover-actions]')!;
+  // The actions layer itself (the slot around it is only as wide as the time/status).
+  const actions = host.querySelector<HTMLElement>('[data-row-hover-actions] > :first-child')!;
   const actionsBefore = actions.getBoundingClientRect();
   expect(before.width).toBeGreaterThan(0);
   expect(track().getBoundingClientRect().width).toBeGreaterThan(before.width);
@@ -76,10 +77,16 @@ it('reveals only an overflowing title, stops with the full end readable, and res
   expect(row.querySelector('button')?.getAttribute('aria-label')).toBe(translateSessionMessage('sidebar.openConversation', { title: LONG_TITLE }));
 
   await userEvent.hover(row);
-  await until('hover reserves only the actual action width', () => viewport().getBoundingClientRect().width < before.width);
+  await until('hover starts the reveal', () => track().getAnimations().length === 1);
+  // The actions are drawn over the title's tail (owner 11-22, b): hovering changes neither the title's lane
+  // nor where the actions sit, so nothing re-measures and the reveal runs once from the start.
   const hovered = viewport().getBoundingClientRect();
   const actionsHovered = actions.getBoundingClientRect();
-  expect(actionsHovered.width).toBeGreaterThan(actionsBefore.width);
+  expect(hovered.width).toBe(before.width);
+  expect(hovered.right).toBe(before.right);
+  expect(actionsHovered.left).toBe(actionsBefore.left);
+  expect(actionsHovered.left, 'the actions cover the title tail').toBeLessThan(hovered.right);
+  expect(getComputedStyle(viewport()).maskImage, 'the title fades out before the actions').toContain('calc(');
   const animation = runningAnimation();
   animation.pause();
   animation.currentTime = 200;
@@ -90,31 +97,56 @@ it('reveals only an overflowing title, stops with the full end readable, and res
   animation.finish();
   viewport().getAnimations().forEach((a) => a.finish());
   const end = track().getBoundingClientRect();
-  expect(end.right).toBeCloseTo(hovered.right, 0);
+  // The whole end is readable: it stops just left of the first action, not under it.
   expect(end.right).toBeLessThanOrEqual(actionsHovered.left);
+  expect(end.right).toBeGreaterThanOrEqual(actionsHovered.left - 4.5);
 
   await userEvent.hover(park);
-  await until('idle title regains the hidden action space', () => viewport().getBoundingClientRect().width === before.width);
-  expect(track().getAnimations()).toHaveLength(0);
+  await until('leaving resets the reveal', () => track().getAnimations().length === 0);
+  expect(viewport().getBoundingClientRect().width).toBe(before.width);
   expect(x()).toBe(0);
 });
 
-it('reserves action space when a quick-action button receives keyboard focus', async () => {
+it('keeps the title width when a quick-action button receives keyboard focus, fading the title before it', async () => {
   const row = await mount();
   await until('long title measured', () => viewport() != null);
   const idleWidth = viewport().getBoundingClientRect().width;
+  const idleMask = getComputedStyle(viewport()).maskImage;
   await userEvent.keyboard('{Tab}{Tab}{Tab}');
   const actions = host.querySelector<HTMLElement>('[data-row-hover-actions]')!;
   expect(actions.contains(document.activeElement)).toBe(true);
   expect(document.activeElement).toBe(actions.querySelector('button'));
-  await until('focused actions reserve their width', () => viewport().getBoundingClientRect().width < idleWidth);
+  const layer = actions.firstElementChild as HTMLElement;
+  await until('focused actions are shown', () => Number(getComputedStyle(layer).opacity) === 1);
+  expect(viewport().getBoundingClientRect().width).toBe(idleWidth);
+  // Not the resting 1em fade at the very end: the fade now ends where the actions begin.
+  expect(getComputedStyle(viewport()).maskImage).not.toBe(idleMask);
   expect(row.contains(document.activeElement)).toBe(true);
+});
+
+it('reveals a title that fits at rest but would run under the actions', async () => {
+  // Fits the lane beside the time, but its end sits where the actions are drawn.
+  const row = await mount('打开百度搜索并注册 AI 网站');
+  const lane = row.querySelector<HTMLElement>('button.flex-1 > span:last-child')!;
+  const text = () => { const r = document.createRange(); r.selectNodeContents(lane.firstElementChild!); return r.getBoundingClientRect(); };
+  const actions = host.querySelector<HTMLElement>('[data-row-hover-actions] > :first-child')!;
+  // Size the row so the lane is 8px wider than the title.
+  host.style.width = `${260 - lane.clientWidth + text().width + 8}px`;
+  await until('title fits at rest yet reaches under the actions', () =>
+    text().right <= lane.getBoundingClientRect().right && text().right > actions.getBoundingClientRect().left
+    && lane.hasAttribute('data-reveal'));
+  expect(host.querySelector('[data-overflow]'), 'no resting fade for a title that fits').toBeNull();
+  await userEvent.hover(row);
+  await until('reveal runs', () => track().getAnimations().length === 1);
+  runningAnimation().finish();
+  expect(text().right).toBeLessThanOrEqual(actions.getBoundingClientRect().left);
 });
 
 it('does not animate a short title and preserves row activation', async () => {
   const row = await mount('短标题');
   await userEvent.hover(row);
   expect(host.querySelector('[data-overflow]')).toBeNull();
+  expect(host.querySelector('[data-reveal]')).toBeNull();
   expect(row.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().fill === 'forwards')).toHaveLength(0);
   await userEvent.click(row.querySelector('button')!);
   expect(onOpen).toHaveBeenCalledTimes(1);
@@ -125,9 +157,10 @@ it('preserves a title click when its measured text is replaced while pressed', a
   await until('long title measured', () => viewport() != null);
   const idleWidth = viewport().clientWidth;
   await userEvent.hover(row);
-  await until('hover action width reserved', () => viewport().clientWidth < idleWidth);
+  await until('hover starts the reveal', () => track().getAnimations().length === 1);
   const originalTrack = track();
   const pressedWidth = viewport().clientWidth;
+  expect(pressedWidth).toBe(idleWidth);
   const rect = viewport().getBoundingClientRect();
   const point = { x: rect.left + 20, y: rect.top + rect.height / 2 };
   let pressed = false;

@@ -7,9 +7,10 @@ import { Archive, MessageSquare, Pin, PinOff } from '@/lib/icons'
 import { cn } from '@/session/renderer/utils/utils'
 import {
   SidebarMenuAction, SidebarMenuRow, sidebarRowActionsSlotClass, sidebarRowContentInsetX,
-  sidebarRowHoverActionsClass, sidebarRowRestActionsClass,
+  sidebarRowHoverActionsClass, sidebarRowRestActionsClass, useRowActionsFocus,
 } from '@/session/renderer/features/sidebar/sidebar-primitives'
 import { SidebarRowQuickAction } from '@/session/renderer/features/sidebar/sidebar-row-quick-action'
+import { SidebarSessionTitle } from '@/session/renderer/features/sidebar/sidebar-session-title'
 import { clearDraggedScreenContent, startChatDrag } from '@/session/renderer/lib/drag-screen-content'
 import { useChatStore, useChatStoreSelect, useStoreValueBy } from '../../store/chatContext'
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
@@ -98,6 +99,8 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
 }) {
   const { t } = useTranslation('messaging')
   const menu = useRowContextMenu()
+  const [actions, setActions] = useState<HTMLSpanElement | null>(null)
+  const actionsFocus = useRowActionsFocus()
   const calls = chatAttention(topic).callsYou
   const unread = calls > 0 ? <TopicCallChip count={calls} at />
     : topic.unread_count > 0 ? <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} /> : null
@@ -108,6 +111,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
         role="listitem"
         isActive={active}
         className="group/row gap-1 pr-1"
+        data-actions-focused={actionsFocus.focused || undefined}
         draggable
         onDragStart={(event) => startChatDrag(event, topic, topic.name)}
         onDragEnd={clearDraggedScreenContent}
@@ -117,10 +121,10 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
         <SidebarMenuAction allowNativeDrag data-topic-row={topic.id} data-pane-opener="" aria-label={topic.name ?? ''}
           className={cn('gap-2', sidebarRowContentInsetX)}>
           <MessageSquare className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-          <span className="truncate">{topic.name}</span>
+          <SidebarSessionTitle title={topic.name ?? ''} cover={actions} />
         </SidebarMenuAction>
-        <span className={sidebarRowActionsSlotClass} data-row-hover-actions>
-          <span className={sidebarRowHoverActionsClass}>
+        <span className={sidebarRowActionsSlotClass} data-row-hover-actions {...actionsFocus.slotProps}>
+          <span ref={setActions} className={sidebarRowHoverActionsClass}>
             <SidebarRowQuickAction label={t(topic.is_pinned ? 'chatList.unpin' : 'chatList.pin')} onClick={() => onPin(topic)}>
               {topic.is_pinned ? <PinOff /> : <Pin />}
             </SidebarRowQuickAction>

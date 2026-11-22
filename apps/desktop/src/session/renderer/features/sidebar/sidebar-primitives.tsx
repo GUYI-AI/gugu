@@ -98,20 +98,43 @@ export const sidebarRowShortcutClass =
  *
  * ⚠️ 两层必须同时改。时间那一层从前写的是 `group-focus-within/row:opacity-0` —— `group/row` 就是行本身、
  * 行又 `tabIndex=0`,所以点一下行就把时间藏掉;与上面那条一配,选中行的右端会变成「动作不画、时间也不画」
- * 的一片空。现在两层认的是同一个 `group/row-actions`(声明在 `sidebarRowActionsSlotClass` 上),
- * 一层亮的条件就是另一层灭的条件,不会再出现两层同时缺席的缝。
+ * 的一片空。现在所有层认的是同一个 `data-actions-focused`(行上的属性,由 `useRowActionsFocus` 按动作层
+ * 真实的焦点进出写),一层亮的条件就是另一层灭的条件,不会再出现两层同时缺席的缝。
+ * 为什么是行上的属性而不是 CSS 的 `:focus-within`:动作层之外的标题(淡出)与子会话计数(让位)也要认这一条,
+ * 而从它们那里读兄弟的焦点只能写 `行:has(动作:focus-within) …` —— 那是 scripts/checks/check-css-parses.mjs
+ * 拦的 has-off-subject(整行后代都进失效集)。知道这件事的组件直接给行挂属性,就没有这个代价。
  *
- * 两层都保留挂载以便键盘能到达按钮;只有此刻可见的那层参与宽度布局。
- * 静止时标题只让出时间/状态的宽度,悬浮或按钮获得焦点时才让出动作的实际宽度。
+ * 宽度只由时间/状态那一层定,任何时候都一样:动作层绝对定位,向左叠画在计数与标题尾巴上
+ * (owner 11-22 选的 b)。所以悬浮不改标题宽度,长标题的跑马灯也不会因此从头再来。
+ * 动作层不垫底色:实色补不出 macOS 窗口材质与行的半透明状态叠色,会露出一块矩形补丁;
+ * 改由标题自己在动作左缘之前淡出(SidebarSessionTitle 的 `cover`,与页签浮起的关闭钮同一个做法,
+ * 见 tab-chip 的 TITLE_FADE_UNDER_CLOSE)。动作层静止时也排着版(只是透明),它的左缘因此随时量得到。
  */
 export const sidebarRowActionsSlotClass =
-  'group/row-actions relative ml-2 flex h-6 shrink-0 items-center justify-end';
+  'relative ml-2 flex h-6 shrink-0 items-center justify-end';
 
 export const sidebarRowHoverActionsClass =
-  'pointer-events-none absolute inset-y-0 right-0 z-10 flex translate-x-1 items-center justify-end gap-1 opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:relative group-hover/row:pointer-events-auto group-hover/row:translate-x-0 group-hover/row:opacity-100 group-focus-within/row-actions:relative group-focus-within/row-actions:pointer-events-auto group-focus-within/row-actions:translate-x-0 group-focus-within/row-actions:opacity-100';
+  'pointer-events-none absolute inset-y-0 right-0 z-10 flex w-max items-center justify-end gap-1 opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:pointer-events-auto group-hover/row:opacity-100 group-data-[actions-focused]/row:pointer-events-auto group-data-[actions-focused]/row:opacity-100';
 
 export const sidebarRowRestActionsClass =
-  'pointer-events-none inset-y-0 right-0 flex shrink-0 items-center justify-end opacity-100 transition-opacity duration-[var(--dur-fast,120ms)] group-hover/row:absolute group-hover/row:opacity-0 group-focus-within/row-actions:absolute group-focus-within/row-actions:opacity-0';
+  'pointer-events-none flex shrink-0 items-center justify-end opacity-100 transition-opacity duration-[var(--dur-fast,120ms)] group-hover/row:opacity-0 group-data-[actions-focused]/row:opacity-0';
+
+/**
+ * 行尾动作层里有没有一枚钮拿着焦点(见上)。`slotProps` 挂在动作层所在的那一格上,`focused` 写成行的 `data-actions-focused`。
+ * 焦点在两枚钮之间挪动不算离开:blur 的去向还在这一格里就不改。
+ */
+export function useRowActionsFocus(): { focused: boolean; slotProps: Pick<React.HTMLAttributes<HTMLElement>, 'onFocus' | 'onBlur'> } {
+  const [focused, setFocused] = React.useState(false);
+  return {
+    focused,
+    slotProps: {
+      onFocus: () => setFocused(true),
+      onBlur: (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      },
+    },
+  };
+}
 
 export const SidebarContainer = React.forwardRef<
   HTMLDivElement,
@@ -264,6 +287,7 @@ export const SidebarMenuRow = React.forwardRef<HTMLDivElement, SidebarMenuRowPro
   ({ className, isActive, isCursor, isPendingArchive, ...props }, ref) => (
     <div
       ref={ref}
+      data-sidebar-row=""
       data-active={isActive || undefined}
       data-nav-cursor={isCursor || undefined}
       data-pending-archive={isPendingArchive || undefined}

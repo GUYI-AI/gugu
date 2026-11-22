@@ -15,6 +15,7 @@ import {
   sidebarRowActionsSlotClass,
   sidebarRowHoverActionsClass,
   sidebarRowRestActionsClass,
+  useRowActionsFocus,
 } from './sidebar-primitives';
 import { sidebarRowInsetPx } from './sidebar-row-metrics';
 import { SidebarRowQuickAction } from './sidebar-row-quick-action';
@@ -122,6 +123,9 @@ export function SessionRowShell({
   join,
 }: SessionRowShellProps) {
   const { translate } = useSessionMessages();
+  // The hover actions are drawn over the title's tail; the title measures their left edge to stop before them.
+  const [actions, setActions] = React.useState<HTMLSpanElement | null>(null);
+  const actionsFocus = useRowActionsFocus();
 
   // @@@sidebar-ink-tiers (owner 2026-09-05,以 Codex 实测为准) — Codex 是三档墨色:
   // 列表正文 #191C1F > 菜单键/项目行 #3B3E40 > 区段标题 #A8A9A9。会话标题是最深那一档,
@@ -164,6 +168,7 @@ export function SessionRowShell({
           data-join={join?.pos}
           data-join-on={join?.onScreen || undefined}
           data-agent-tone={presentation?.tone}
+          data-actions-focused={actionsFocus.focused || undefined}
           data-disabled={disabled || undefined}
           aria-disabled={disabled || undefined}
           title={disabled ? disabledReason : undefined}
@@ -207,7 +212,7 @@ export function SessionRowShell({
               </Tooltip>
             ) : leadingAvatar}
             {badges}
-            <SidebarSessionTitle title={title} className={titleClass} />
+            <SidebarSessionTitle title={title} className={titleClass} cover={quickActions ? actions : null} />
           </SidebarMenuAction>
           {treeSummary && treeSummary.total > 0 ? <SidebarSessionBranchCount summary={treeSummary} expanded={expanded} onToggle={onToggle} /> : null}
           {/* @@@5642 这两个按钮在 Tab 序里(没有 tabIndex=-1),所以「只在 hover 时显形」= 键盘用户会停在一个
@@ -216,8 +221,8 @@ export function SessionRowShell({
               ❌ 也别再把「这一行是键盘光标 / 被选中」加回判据(#5818):点一行就会把键盘光标同步过去,
               那等于让选中的那一行从此常驻两枚钮。显隐的完整配方与两层为什么必须一起改,见
               sidebar-primitives 的 sidebarRowActionsSlotClass。 */}
-          {/* Only the visible time/status or action layer reserves width; the shared title observer follows it. */}
-          <span data-row-hover-actions className={sidebarRowActionsSlotClass}>
+          {/* Only the time/status layer takes width; the actions are drawn over the count and the title's tail. */}
+          <span data-row-hover-actions className={sidebarRowActionsSlotClass} {...actionsFocus.slotProps}>
             {/* 命中区(owner 实机:「可点击区域覆盖的不对」):
               · 行高 32px 内直接容纳 24px 按钮,不再用上下 padding 把内容区压成 20px 后靠溢出显示;
               · TooltipTrigger 通过 render 复用唯一按钮,避免外层 trigger button 包住可见 button 后分裂命中区;
@@ -226,7 +231,7 @@ export function SessionRowShell({
               · 目标 20px → 24px(size-6),与项目行/任务区的同类按钮(SidebarItemMiniButton w-6 h-6)一致;
                 两个目标之间 2px → 4px,别让「置顶」和「归档」贴在一起互相抢点击。 */}
             {quickActions ? (
-              <span className={sidebarRowHoverActionsClass}>
+              <span ref={setActions} className={sidebarRowHoverActionsClass}>
                 {/* 静止时那枚钟在下面那一格(pointer-events-none、一 hover 就淡出),悬停读不到;所以 hover 层里把它接过来,
                     排在置顶 / 归档左边,是它自己的目标:指针停在它上面出 tooltip(下次时间、标题、条数),不和两枚钮抢。 */}
                 {scheduleAtRest && schedule ? <SidebarScheduleHoverMark digest={schedule} /> : null}

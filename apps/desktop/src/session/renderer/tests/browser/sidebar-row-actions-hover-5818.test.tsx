@@ -17,7 +17,7 @@ vi.mock('@renderer/lib/hooks/use-toast', async (importOriginal) => ({ ...await i
  *
  * **为什么必须真浏览器**:要判的是 `opacity-0` 与那几条 group 变体最终算出什么。Tailwind v4 对扫不到的
  * 类**静默丢掉整条 utility**,所以「类名写在 DOM 上」「typecheck 过了」都证明不了它真的生效 ——
- * `group-focus-within/row-actions` 这种带名字的变体尤其要实测。`:hover` 也不是能 dispatch 出来的
+ * `group-data-[actions-focused]/row` 这种带名字的变体尤其要实测。`:hover` 也不是能 dispatch 出来的
  * 事件状态,由引擎按指针位置判定,所以这里量到的 1 是引擎自己算的。
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -122,7 +122,7 @@ beforeEach(() => {
   // 每条用例从「主区在别的会话上」开始:上一条点过的行不算数。
   runInAction(() => { shown.navigation!.viewParamsStore.session = { projectId: 'proj-1', sessionId: 'task-1' } })
   host = document.createElement('div')
-  // 主题变量挂在 emlight/emdark 上;少了它 row-mask 那层底色算不出来。宽度取侧栏常规宽。
+  // 主题变量挂在 emlight/emdark 上。宽度取侧栏常规宽。
   host.className = 'gugu-skin emlight'
   host.style.width = '260px'
   document.body.append(host)

@@ -80,9 +80,9 @@ it('鼠标:指针进行,钟排进 hover 层置顶 / 归档的左边(不叠),停�
   expect(clock.width).toBeGreaterThan(0);
   expect(hoverMark()!.querySelector('svg')!.innerHTML).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<Clock />), 'text/html').querySelector('svg')!.innerHTML);
   expect(clock.right).toBeLessThanOrEqual(pin.left);
-  // 车道留够了三枚:hover 层不越过这一格的左边(滚到末尾的标题不被盖)。
-  const lane = host.querySelector<HTMLElement>('[data-row-hover-actions]')!.getBoundingClientRect();
-  expect(clock.left).toBeGreaterThanOrEqual(lane.left - 0.5);
+  // 三枚一起叠画在标题尾巴上(owner 11-22 选 b),不占行宽;标题停在最左那一枚(钟)之前,见 sidebar-title-reveal-7324。
+  const title = host.querySelector<HTMLElement>('[data-session-id] button > span:last-child')!.getBoundingClientRect();
+  expect(clock.left).toBeLessThan(title.right);
 
   await userEvent.hover(hoverMark()!);
   await until('tooltip', () => document.querySelector('[data-testid="session-schedule-tooltip"]') != null);
