@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   root: '', oldTasks: false, kv: new Map<string, unknown>(), markers: new Map<string, unknown>(),
-  importHome: vi.fn(), probe: vi.fn(), report: vi.fn(), prepare: undefined as undefined | ((id: string) => Promise<void>),
+  importHome: vi.fn(), diff: vi.fn(), reimport: vi.fn(), probe: vi.fn(), report: vi.fn(), prepare: undefined as undefined | ((id: string) => Promise<void>),
 }));
 vi.mock('@gugu/session-plugins/agents', () => ({
   pluginRegistry: {
@@ -26,7 +26,7 @@ vi.mock('@gugu/session-core/agents/plugins/helpers', () => ({
     marker: state.markers.get(providerId) ?? null, sourceUpdated: false,
     groups: [{ id: 'settings', count: 1 }], issues: [], mcpSecrets: [], projectMcpCount: 0,
   }),
-  importAgentHome: state.importHome,
+  importAgentHome: state.importHome, diffAgentHome: state.diff, reimportAgentHome: state.reimport,
   planAgentHomeHistory: async () => ({ paths: [], issues: [], skipped: [], sessions: 0, sessionBytes: 0 }),
   checkAgentHomeImportSpace: async () => {},
 }));
@@ -111,5 +111,16 @@ it('does not offer missing directories or homes the person has already imported'
   const api = await import('./agent-homes');
   api.initializeAgentHomeUpgrade(false);
   expect(await api.scanAgentHomes(undefined, false, true)).toEqual([]);
+  expect(state.importHome).not.toHaveBeenCalled();
+});
+
+
+it('routes an explicit repeated CLI import through revision-checked reimport instead of first-import no-op', async () => {
+  state.markers.set('codex', { importedAt: 'fixture', files: {}, groups: ['settings'] });
+  state.diff.mockResolvedValue({ entries: [{ id: 'config', path: 'config', group: 'settings', state: 'userChanged', revision: 'snapshot-revision' }], issues: [] });
+  state.reimport.mockResolvedValue({ issues: [], imported: 1 });
+  const api = await import('./agent-homes');
+  expect(await api.answerAgentHomeCall({ action: 'import', providerId: 'codex', groups: ['settings'] })).toMatchObject({ result: { providerId: 'codex', imported: 1, hasMarker: true } });
+  expect(state.reimport).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'codex' }), new Set(['config']), new Map([['config', 'snapshot-revision']]));
   expect(state.importHome).not.toHaveBeenCalled();
 });

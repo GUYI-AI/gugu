@@ -1,3 +1,4 @@
+import { reimportTerminalAgentHome } from './agent-home-cli-import';
 import { prepareManagedCodexHistory as prepareCodexHistoryAtHome } from './managed-codex-history';
 import { access, readdir } from 'node:fs/promises';
 import { startNativeCodexHistoryRelocation, nativeCodexHistoryCounts, nativeCodexHistoryPreparation } from './codex-native-history';
@@ -331,6 +332,10 @@ export async function answerAgentHomeCall(payload: unknown) {
   const home = homeFor(operation.providerId);
   if (!home) return { error: { code: 'unsupported_agent_home', message: 'This harness has no managed configuration root' } };
   const groups = operation.action === 'skip' ? [] : operation.groups ?? defaultAgentHomeGroups(home.importGroups);
+  if (operation.action === 'import') {
+    const repeated = await reimportTerminalAgentHome(home, groups);
+    if (repeated) return repeated;
+  }
   const result = await importHarnessHome(operation.providerId, groups, operation.action === 'skip');
   return { result: { providerId: operation.providerId, hasMarker: true, issues: result.issues } };
 }
