@@ -68,4 +68,12 @@ describe('whether session start accepts the copy in use reaches the installation
     // Negative control: a harness that declares nothing is let through, as session start does.
     expect(status('cursor', '1.0.0').versionSupported).toBe(true);
   });
+  it('judges the copy the person selected, not whichever is first on PATH', () => {
+    const copy = (realpath: string, version: string) => ({ id: realpath, realpath, pathEntry: realpath, isActive: false, manageable: false,
+      provenance: { kind: 'path', confidence: 'inferred' }, status: 'available', version });
+    const hostDep = { used: { kind: 'pinned', realpath: '/opt/old/codex' }, installations: [copy('/usr/bin/codex', '0.160.0'), copy('/opt/old/codex', '0.145.0')] };
+    const reading = toAgentInstallationStatus('codex', { id: 'codex', status: 'available', version: '0.160.0' } as Parameters<typeof toAgentInstallationStatus>[1],
+      hostDep as unknown as Parameters<typeof toAgentInstallationStatus>[2]);
+    expect(reading).toMatchObject({ version: '0.145.0', versionSupported: false });
+  });
 });
