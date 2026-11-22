@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { createEgress, installEgress, runtimeEgress } from '@gugu/core/shared/egress'
+import { nodeEgressBackend } from '../../../../apps/desktop/electron/egress/node'
 import { createClosureV2Http, type ClosureV2Auth, type ClosureV2Binding } from '../../../../apps/desktop/electron/account-closure/v2-http'
 const owner='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',sid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',operation='cccccccc-cccc-4ccc-8ccc-cccccccccccc',confirmation='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const token=(claims: unknown)=>'header.'+Buffer.from(JSON.stringify(claims)).toString('base64url')+'.signature'
@@ -72,5 +74,18 @@ describe('private V2 HTTP boundary',()=>{
   const source=createServer((_q,r)=>{r.writeHead(307,{location:'http://127.0.0.1:'+port+'/sink'});r.end()});source.listen(0,'127.0.0.1');await once(source,'listening')
   try{const h=createClosureV2Http({baseUrl:'http://127.0.0.1:'+(source.address() as {port:number}).port,anonKey:anon});await expect(h.post('result',binding)).rejects.toMatchObject({outcomeUnknown:true});expect(leaked).toBe(0)}
   finally{await Promise.all([new Promise<void>(resolve=>source.close(()=>resolve())),new Promise<void>(resolve=>destination.close(()=>resolve()))])}
+ })
+ it('sends an effect only once through the host egress when its response is lost',async()=>{
+  let requests=0,received=''
+  const server=createServer((request,response)=>{requests++;request.setEncoding('utf8');request.on('data',(chunk:string)=>{received+=chunk});request.on('end',()=>response.destroy())})
+  server.listen(0,'127.0.0.1');await once(server,'listening')
+  const backend=nodeEgressBackend({name:'closure-loopback',routes:async()=>null})
+  installEgress(createEgress(backend))
+  try{
+   const http=createClosureV2Http({baseUrl:'http://127.0.0.1:'+(server.address() as {port:number}).port,anonKey:anon})
+   await expect(http.post('confirm',binding,{code:'123456',acknowledge_forfeit:true,confirmation_id:binding.confirmationId},auth)).rejects.toMatchObject({code:'outcome_unknown',outcomeUnknown:true})
+   expect(requests).toBe(1)
+   expect(JSON.parse(received)).toMatchObject({local_operation_id:binding.localOperationId,receipt_token:binding.receipt,confirmation_id:binding.confirmationId})
+  }finally{installEgress(runtimeEgress());await backend.closeConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
  })
 })
