@@ -658,7 +658,7 @@ describe('设备连接上的「在用」:白名单,只认终端的输入与输�
       }),
     })
     const sent: unknown[] = []
-    const session = factory((message) => sent.push(message))
+    const session = factory((message) => sent.push(message), async () => undefined)
     if (kind === 'request') {
       session.handle(asBroadcast({ type, request_id: 'r1', user_id: 'u-1', payload: { client: 'c1234567', seq: 1, frames, ...payload } }))
     } else {

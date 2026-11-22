@@ -180,13 +180,13 @@ export const CommitCard = observer(function CommitCard({ autoStage = false }: Co
   };
 
   const actions: SplitButtonAction[] = [
-    { value: 'commit', label: 'Commit', action: () => void doCommit() },
-    { value: 'commit-push', label: 'Commit & Push', action: () => void doCommitAndPush() },
+    { value: 'commit', label: translate('changes.commit'), action: () => void doCommit() },
+    { value: 'commit-push', label: translate('changes.commitAndPush'), action: () => void doCommitAndPush() },
     ...(canCreatePr
       ? [
           {
             value: 'commit-pr',
-            label: 'Commit & Create PR',
+            label: translate('changes.commitAndCreatePr'),
             action: () => void doCommitAndCreatePr(),
           },
         ]

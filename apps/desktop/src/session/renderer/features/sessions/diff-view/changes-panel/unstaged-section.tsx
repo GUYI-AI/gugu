@@ -84,10 +84,9 @@ export const UnstagedSection = observer(function UnstagedSection() {
   const handleDiscardSelection = () => {
     const paths = [...changesView.unstagedSelection];
     showConfirmActionModal({
-      title: 'Discard Files Changes',
+      title: translate('changes.discardSelectedTitle'),
       variant: 'destructive',
-      description:
-        'Are you sure you want to discard the changes to the selected files? This can not be undone.',
+      description: translate('changes.discardSelectedConfirm'),
       onSuccess: () => {
         void (async () => {
           const result = await git.discardFiles(paths);
@@ -103,9 +102,9 @@ export const UnstagedSection = observer(function UnstagedSection() {
 
   const handleDiscardAll = () => {
     showConfirmActionModal({
-      title: 'Discard All Changes',
+      title: translate('changes.discardAllChanges'),
       variant: 'destructive',
-      description: 'Are you sure you want to discard all changes? This can not be undone.',
+      description: translate('changes.discardAllConfirm'),
       onSuccess: () =>
         void git.discardAllFiles().then((result) => {
           if (!result.success) {

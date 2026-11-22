@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, type RefObject, type CSSProperties } from 'react'
+import { useContext, useEffect, useRef, type RefObject, type CSSProperties, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { ORIGINAL_CHANGED } from '@gugu/core/cloud/declaredUploads'
@@ -14,6 +14,7 @@ import { useAuth } from '../../store/auth'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
 import { openImageFromThumb } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
+import { useToast } from '../toastContext'
 import { FileAttachmentCard } from './FileAttachmentCard'
 import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
 import { useAttachmentUploadProgress, type AttachmentUploadProgress } from '../../lib/attachmentUploadProgress'
@@ -82,6 +83,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
 
 function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachment; messageId: string; chatId?: string; isMine: boolean }) {
   const { t } = useTranslation('messaging')
+  const { toast } = useToast()
   // Observed in either state: a sending row is drawn from its local preview without ever being pending.
   const box = useRef<HTMLElement>(null)
   const onMount = useContext(SentMessageSurface)
@@ -108,7 +110,23 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
 
   if (view.status === 'gone') return <span className="contents" data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} /></span>
   if (view.status === 'missing') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />
-  if (view.status === 'expired') return <span className="contents" data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} /></span>
+  const picture = (objectUrl: string, arrived: boolean, onClick: (image: HTMLImageElement) => void, children?: ReactNode) =>
+    <Button ref={box as RefObject<HTMLButtonElement>} variant="ghost" size="icon" onClick={(e) => onClick(e.currentTarget.querySelector('img') as HTMLImageElement)} style={{ display: 'block', width: 'auto', minHeight: 0, padding: 0, border: 'none', background: arrived ? 'var(--muted)' : 'none', cursor: 'zoom-in', position: 'relative', ...imageStyle }}>
+      <img
+        ref={img}
+        data-testid={AUTOMATION_TEST_IDS.messageAttachmentImage} data-image-viewer-src={objectUrl}
+        src={objectUrl}
+        alt={meta.fileName}
+        className={arrived ? 'chat-inline-image chat-inline-image--arrived' : 'chat-inline-image'}
+        style={imageStyle ? { position: 'absolute', inset: 0, width: '100%', height: '100%' } : undefined}
+        // The sending row's own preview paints with its bubble (as before); fetched thumbnails decode off the main thread.
+        decoding={'link' in view && view.link ? 'async' : 'sync'}
+      />
+      {children}
+    </Button>
+  // The original's cloud copy expired; its preview did not. Opening it says so.
+  if (view.status === 'expired') return <span className="contents" data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine}>
+    {view.objectUrl && picture(view.objectUrl, false, () => toast(t('attachmentView.originalExpired'), 'info'))}</ExpiredAttachmentCard></span>
   if (view.status === 'unsent') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.senderUploadFailed')} />
   if (view.status === 'failed') {
     return (
@@ -119,23 +137,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
       />
     )
   }
-  if (view.status === 'ready') {
-    return (
-      <Button ref={box as RefObject<HTMLButtonElement>} variant="ghost" size="icon" onClick={(e) => openImageFromThumb(e.currentTarget.querySelector('img') as HTMLImageElement)} style={{ display: 'block', width: 'auto', minHeight: 0, padding: 0, border: 'none', background: view.arrived ? 'var(--muted)' : 'none', cursor: 'zoom-in', position: 'relative', ...imageStyle }}>
-        <img
-          ref={img}
-          data-testid={AUTOMATION_TEST_IDS.messageAttachmentImage} data-image-viewer-src={view.objectUrl}
-          src={view.objectUrl}
-          alt={meta.fileName}
-          className={view.arrived ? 'chat-inline-image chat-inline-image--arrived' : 'chat-inline-image'}
-          style={imageStyle ? { position: 'absolute', inset: 0, width: '100%', height: '100%' } : undefined}
-          // The sending row's own preview paints with its bubble (as before); fetched thumbnails decode off the main thread.
-          decoding={view.link ? 'async' : 'sync'}
-        />
-        {isMine && <AttachmentUploadOverlay messageId={messageId} />}
-      </Button>
-    )
-  }
+  if (view.status === 'ready') return picture(view.objectUrl, !!view.arrived, openImageFromThumb, isMine && <AttachmentUploadOverlay messageId={messageId} />)
   if (view.status === 'pending') return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} data-attachment-pending
     className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{failedReason(upload, t) ?? t(pendingLabel(isMine, upload))}</span></div>
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />

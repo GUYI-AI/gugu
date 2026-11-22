@@ -114,6 +114,18 @@ describe('expired attachment re-upload', () => {
     await harness.render(null)
     expect(f.releaseImage).toHaveBeenCalledOnce()
   })
+  it.each([true, false])('shows an expired image\'s preview, says the original expired when opened, and keeps re-upload for its sender (mine: %s)', async isMine => {
+    const content = formatAttachmentMetadata({ kind: 'image', fileName: 'shot.png', mimeType: 'image/png', sizeBytes: 3, url: 'https://fixture.invalid/shot' })
+    const image = { ...parseAttachmentContent(content, { id: 'message' })!, source: { kind: 'item' as const, itemId: 'file', version: 1 } }
+    f.view.mockReturnValue({ status: 'expired', objectUrl: 'blob:preview' })
+    await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: image, messageId: 'message', isMine }), { toast, chat: { sendAttachmentsToChat: f.send } })
+    const picture = harness.container.querySelector<HTMLImageElement>('img[src="blob:preview"]')!
+    expect(harness.container.textContent).not.toContain('attachmentView.fileExpired')
+    await act(async () => { picture.closest('button')!.click() })
+    expect(toast).toHaveBeenCalledExactlyOnceWith('attachmentView.originalExpired', 'info')
+    expect(f.registerImage).not.toHaveBeenCalled()
+    expect(harness.container.textContent.includes('attachmentView.reupload')).toBe(isMine)
+  })
   it('rechecks the real sender and ACL, then reuses normal send with the original private audience and thread', async () => {
     await render(); await click()
     expect(f.message).toHaveBeenCalledWith('message', 'user-1')

@@ -1,5 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
-import { AlertTriangle, CalendarClock } from '@/lib/icons';
+import { AlertTriangle, Clock } from '@/lib/icons';
 import type { SessionpageScheduleDigest } from '@gugu/session-core/session-record/contract';
 import { formatScheduleWhen } from '@renderer/features/automations/session-schedule-format';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
@@ -25,7 +25,7 @@ export function SidebarScheduleMark({ digest, emphasized }: { digest: Sessionpag
       data-session-schedule={digest.attention ? 'attention' : 'pending'}
       aria-label={lines.join(metadataSeparator())}
     >
-      {digest.attention ? <AlertTriangle className="size-3" /> : <CalendarClock className="size-3" />}
+      {digest.attention ? <AlertTriangle className="size-3" /> : <Clock className="size-3" />}
     </span>
   );
 }
@@ -48,7 +48,7 @@ export function SidebarScheduleHoverMark({ digest }: { digest: SessionpageSchedu
               digest.attention ? 'text-[var(--warn-fg)]' : 'text-foreground-tertiary-passive'
             )}
           >
-            {digest.attention ? <AlertTriangle className="size-3.5" /> : <CalendarClock className="size-3.5" />}
+            {digest.attention ? <AlertTriangle className="size-3.5" /> : <Clock className="size-3.5" />}
           </span>
         }
       />

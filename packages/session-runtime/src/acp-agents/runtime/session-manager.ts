@@ -277,6 +277,14 @@ export function sessionOpenMeta(input: AcpStartInput): { _meta?: Record<string, 
   return { _meta: meta };
 }
 
+/**
+ * The host supplied this session's credential: a Gugu platform ticket, or the person's own key from a model connection.
+ * A refusal then speaks about that credential, never about the harness's sign-in on this machine (#6264).
+ */
+export function usesHostCredentials(input: { platformAccessSessionId?: string; runContext: { customModel?: unknown } }): boolean {
+  return Boolean(input.platformAccessSessionId || input.runContext.customModel);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -2409,7 +2417,7 @@ export class SessionManager implements InboundRouter {
       providerId: input.providerId,
       acpSessionId,
       billingRoute: input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
-      ...(input.platformAccessSessionId ? { platformCredentials: true } : {}),
+      ...(usesHostCredentials(input) ? { hostCredentials: true } : {}),
       ...(provider?.capabilities.acp.liveSettings
         ? { liveSettings: provider.capabilities.acp.liveSettings }
         : {}),
@@ -2801,7 +2809,7 @@ export class SessionManager implements InboundRouter {
       emit({
         sessionId: record.input.sessionId,
         providerId: record.input.providerId,
-        platformCredentials: Boolean(record.input.platformAccessSessionId),
+        hostCredentials: usesHostCredentials(record.input),
         source,
         turn: structuredClone(turn),
       });

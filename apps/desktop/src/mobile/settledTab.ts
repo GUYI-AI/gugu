@@ -32,8 +32,7 @@ const LIT_VAR = '--gg-tab-lit'
  * 第 `index` 格的前景:亮度 = max(0, 1 - |位置 - index|),拖到两页正中两格各半亮;颜色在 idleColor(缺省 --text-tertiary)与
  * selectedColor 之间按亮度插值,图标是 currentColor,跟着文字走。
  * 位置变量还没写过(tab 栏刚挂上、分页器还没滚过)就按当前 tab 的整数位置算。|x| 写成 max(x, -x):WebView 113 没有 CSS abs()。
- * ❌ 这里不挂 transition:值本来就跟着手指走,再加过渡就拖在手指后面。点按切换的过渡由 tab 栏只在点按那一下挂上
- * (PhoneTabBar 的 data-tab-switching)。
+ * ❌ 这里不挂 transition:值本来就跟着手指走,再加过渡就拖在手指后面;点按切换也立刻到位(owner 11-22)。
  */
 export function tabItemStyle(index: number, activeIndex: number, selectedColor = 'var(--text-primary)', idleColor = 'var(--text-tertiary)'): CSSProperties {
   const position = `var(${TAB_POSITION_VAR}, ${activeIndex})`

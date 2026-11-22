@@ -1,20 +1,21 @@
 import { type ChangesListViewMode } from '@shared/core/app-settings';
 import { Unknown } from '@/components/ui/Unknown';
 import { cn } from '@renderer/utils/utils';
+import type { ChangeRow } from './changes-list-item';
 import {
   VirtualizedChangesList,
   type VirtualizedChangesListProps,
 } from './virtualized-changes-list';
 import { VirtualizedChangesTree } from './virtualized-changes-tree';
 
-interface ChangesListOrTreeProps extends VirtualizedChangesListProps {
+interface ChangesListOrTreeProps<T extends ChangeRow> extends VirtualizedChangesListProps<T> {
   /** null: not read yet. */
   viewMode: ChangesListViewMode | null;
 }
 
 const PLACEHOLDER_ROWS_MAX = 20;
 
-export function ChangesListOrTree({ viewMode, ...props }: ChangesListOrTreeProps) {
+export function ChangesListOrTree<T extends ChangeRow>({ viewMode, ...props }: ChangesListOrTreeProps<T>) {
   if (viewMode === null) {
     return (
       <div className={cn('flex h-full flex-col gap-[2px] overflow-hidden py-2 px-1', props.className)}>

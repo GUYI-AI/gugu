@@ -273,7 +273,7 @@ function claudeSlotPaths(_env?: Record<string, string | undefined>): ClaudeAuthS
 async function defaultConnectionId(providerId: Provider): Promise<string> {
   const id = await registry.getDefaultAccountId(namespace(providerId));
   const row = id ? await registry.getAccount(namespace(providerId), id) : null;
-  return row?.meta?.harnessConnection?.migratedTo ?? id ?? 'native';
+  return row?.meta?.harnessConnection?.migratedTo ? 'native' : id ?? 'native';
 }
 
 let nativeReconciliation: Promise<boolean> | undefined;
@@ -347,10 +347,10 @@ export async function resolveHarnessConnection(
   let id = forSession ? await defaultConnectionId(providerId) : input.connectionId!;
   let account = await registry.getAccount(namespace(providerId), id);
   if (account?.meta?.harnessConnection?.migratedTo) {
-    id = account.meta.harnessConnection.migratedTo;
+    id = 'native';
     account = await registry.getAccount(namespace(providerId), id);
   }
-  if (!account) throw new Error('The session’s subscription connection is unavailable');
+  if (!account) throw new Error(`The session’s subscription connection is unavailable (${namespace(providerId)}/${id})`);
   const details = account.meta?.harnessConnection ?? { kind: 'native' as const };
   const unsetEnv = providerId === 'codex' ? [...CODEX_CONNECTION_UNSET_ENV] : [...CLAUDE_CONNECTION_UNSET_ENV];
   const unset = details.kind === 'account' ? { unsetEnv } : {};

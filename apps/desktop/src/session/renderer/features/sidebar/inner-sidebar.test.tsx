@@ -65,7 +65,7 @@ const state = vi.hoisted(() => ({
   moveSessionUnder: vi.fn(),
   showDropHighlight: vi.fn(),
 }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260, useInnerSidebarCrowded: () => false }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
 }));

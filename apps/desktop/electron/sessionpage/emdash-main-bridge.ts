@@ -207,7 +207,7 @@ export {
   setExtensionHostWindowChannel,
   setUserPathRefresher,
   setLoginShellEnvProvider,
-  setPlatformCredentialsProbe,
+  setHostCredentialsProbe,
   type ExtensionHostWindowChannel,
   type EmdashRpcRouter,
   type SessionAction,

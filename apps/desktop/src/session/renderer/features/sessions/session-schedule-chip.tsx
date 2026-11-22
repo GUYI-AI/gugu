@@ -1,5 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { AlertTriangle, CalendarClock, Pencil, X } from '@/lib/icons';
+import { AlertTriangle, Clock, Pencil, X } from '@/lib/icons';
 import { useState } from 'react';
 import {
   formatScheduleWhen,
@@ -80,7 +80,7 @@ export function SessionScheduleChip({
         {anyAttention ? (
           <AlertTriangle className="size-3 shrink-0 text-[var(--warn-fg)]" />
         ) : (
-          <CalendarClock className="size-3 shrink-0" />
+          <Clock className="size-3 shrink-0" />
         )}
         {headWhen ? (
           <>
@@ -180,7 +180,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
       {attention ? (
         <AlertTriangle className="mt-1 size-3.5 text-[var(--warn-fg)]" />
       ) : (
-        <CalendarClock className="mt-1 size-3.5 text-foreground-muted" />
+        <Clock className="mt-1 size-3.5 text-foreground-muted" />
       )}
       <div className="min-w-0">
         <div className="truncate text-sm text-foreground">

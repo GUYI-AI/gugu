@@ -13,7 +13,7 @@ export type DeclaredUploadHost = {
 export const ORIGINAL_CHANGED = 'original_changed'
 /** A file-backed Blob refuses to read once its file changed (`NotReadableError`); a host's copy says so by its code. */
 const originChanged = (error: unknown) => (error as { name?: string } | null)?.name === 'NotReadableError' || (error as { code?: string } | null)?.code === ORIGINAL_CHANGED
-const FINISH_WAIT_MS = 120_000, RETRY_FIRST_MS = 5_000, RETRY_MAX_MS = 60_000
+const FINISH_WAIT_MS = 120_000, RETRY_FIRST_MS = 5_000, RETRY_MAX_MS = 600_000
 export function createDeclaredUploads(host: DeclaredUploadHost) {
   const running = new Map<string, Promise<void>>()
   const permits = new Map<string, { pendingKey: string; upload: DeclaredUploadState }>()
@@ -103,7 +103,8 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       else clearRetry()
     } catch (error) {
       if (!closed) {
-        if (retryableAttachmentError(error)) schedule()
+        // The same rule as an upload: only the service's own refusal stops asking again.
+        if (!(error instanceof AttachmentsError && !retryableAttachmentError(error))) schedule()
         host.warn?.(error)
       }
       throw error
@@ -139,10 +140,14 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       // A missing pending row is not a terminal receipt: its commit may still be in flight.
       const missing = error instanceof AttachmentsError && error.code === 'upload_not_found'
       const changed = originChanged(error)
-      const retryable = !changed && (missing || retryableAttachmentError(error))
-      const final = changed || error instanceof AttachmentsError && !retryable && error.status !== 401
+      const signIn = error instanceof AttachmentsError && error.status === 401
+      // Only a refusal from the attachment service, or an original that no longer holds these bytes, ends the upload
+      // here. Anything else (a refreshed token, a local read, a bug) waits and tries again until the server stops
+      // listing the duty: its receipt expires or the server fails it.
+      const final = changed || error instanceof AttachmentsError && !missing && !signIn && !retryableAttachmentError(error)
+      const retryable = !final && !signIn
       const reason = changed ? ORIGINAL_CHANGED : error instanceof AttachmentsError && error.status === 429 && error.code.endsWith('_full') ? error.reason : undefined
-      if (error instanceof AttachmentsError && error.status === 401) authWaiting.add(task.messageId)
+      if (signIn) authWaiting.add(task.messageId)
       if (final) { permits.delete(task.messageId); terminal.add(task.messageId); retrying.delete(task.messageId); clearRetry() }
       else if (retryable) { retrying.add(task.messageId); schedule() }
       host.progress(task.messageId, { ...progress, failed: true, final, reason })
