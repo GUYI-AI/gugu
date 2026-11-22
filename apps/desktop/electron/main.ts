@@ -2551,6 +2551,8 @@ const attachmentUploads = createAttachmentUploadHost({
   warn: error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Attachment upload failed; pending bytes remain on this device'),
 })
 const resumeDeclaredUploads = () => { void attachmentUploads.resume().catch(error => createLogger('files/attachment-uploads').warn({ error: String(error) }, 'Pending attachment uploads not read')) }
+// Main owns the desktop's pending uploads: it resumes them at start, at sign-in and when the backend comes back.
+subscribeBackendRecovered(resumeDeclaredUploads)
 const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments: attachmentUploads,
   owner: async () => (await desktopAuthProvider().getAuth())?.userId ?? null,
   alive: scope => !!webContents.fromId(scope) && !webContents.fromId(scope)!.isDestroyed(),
