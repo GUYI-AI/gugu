@@ -22,6 +22,13 @@ describe('the shared user-facing failure exit', () => {
       .toBe('The connection to the machine was lost. Try again when it reconnects.');
     expect(translate).toHaveBeenCalledExactlyOnceWith('taskError.connectionLost');
   });
+  it.each([
+    '[session] host bridge unavailable: the desktop app lacks the preload injection, the web app lacks the task page host connection',
+    "Error invoking remote method 'models': Error: [session] host bridge unavailable: missing preload\nprivate stack",
+  ])('localizes a missing session host without exposing its bridge diagnostic', diagnostic => {
+    messageForUser(new Error(diagnostic));
+    expect(translate).toHaveBeenCalledExactlyOnceWith('taskError.hostUnavailable');
+  });
   it('preserves the cause while redacting paths, tokens and subsequent lines', () => {
     expect(messageForUser(new Error('Permission denied for /Users/alice/private.txt with sk-test_secret\nprivate stack')))
       .toBe('Permission denied for [path] with [redacted token]');

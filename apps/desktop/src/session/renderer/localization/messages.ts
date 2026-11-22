@@ -33,6 +33,7 @@ export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string
 
 const enUSCoreMessages = {
   'taskError.connectionLost': 'The connection to the machine was lost. Try again when it reconnects.',
+  'taskError.hostUnavailable': 'Cannot connect to this device right now. Reopen the app and try again.',
   'terminal.createFailed': 'Could not open terminal',
   'externalLink.openFailed': 'Could not open link',
   'terminal.fileCopyFailed': 'Could not save a copy of “{name}”, so it was not added',
@@ -1414,6 +1415,7 @@ type CoreSessionMessageKey = keyof typeof enUSCoreMessages;
 
 const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'taskError.connectionLost': '与机器的连接已断开，请在重新连接后重试。',
+  'taskError.hostUnavailable': '暂时无法连接这台设备，请重新打开应用后再试。',
   'terminal.createFailed': '无法打开终端',
   'externalLink.openFailed': '无法打开链接',
   'terminal.fileCopyFailed': '无法保存「{name}」的副本，未添加',

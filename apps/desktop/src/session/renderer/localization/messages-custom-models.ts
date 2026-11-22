@@ -1,4 +1,5 @@
 export const enUSCustomModelMessages = {
+  'customModels.desktopOnly': 'Coding plans, API keys and custom models can currently only be configured on a computer.',
   'customModels.title': 'Custom models',
   'customModels.description': 'Connect third-party API keys or custom endpoints. An Anthropic-compatible address works with Claude Code.',
   'customModels.planDescription': 'Connect a plan you already subscribe to.',
@@ -79,6 +80,7 @@ export const enUSCustomModelMessages = {
 } as const;
 
 export const zhCNCustomModelMessages: Record<keyof typeof enUSCustomModelMessages, string> = {
+  'customModels.desktopOnly': 'Coding Plan、API Key 和自定义模型目前只能在电脑上设置。',
   'customModels.title': '自定义模型',
   'customModels.description': '接入第三方 API Key 或自定义接口地址。兼容 Anthropic 的地址可给 Claude Code 用。',
   'customModels.planDescription': '接入你已订阅的套餐。',
