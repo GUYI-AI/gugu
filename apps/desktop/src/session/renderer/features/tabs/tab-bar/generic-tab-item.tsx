@@ -41,6 +41,8 @@ export interface GenericTabItemProps {
   renameValue?: string;
   /** Max character length enforced on the rename input. */
   renameMaxLength?: number;
+  /** Clicking the standalone conversation title starts inline rename. */
+  renameOnTitleClick?: boolean;
   closeDisabled?: boolean;
 }
 
@@ -69,6 +71,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   kindCommands,
   renameValue,
   renameMaxLength,
+  renameOnTitleClick,
   closeDisabled,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
@@ -137,6 +140,7 @@ export const GenericTabItem = observer(function GenericTabItem({
           el?.focus();
           el?.select();
         }}
+        aria-label={translate('task.renameNameLabel')}
         defaultValue={renameValue ?? label}
         maxLength={renameMaxLength}
         className="h-6 max-w-30 min-w-0 rounded bg-background-1 px-1.5 text-sm text-foreground ring-1 ring-foreground/20 outline-none"
@@ -145,8 +149,12 @@ export const GenericTabItem = observer(function GenericTabItem({
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === 'Enter') commit(e.currentTarget.value);
-          else if (e.key === 'Escape') {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit(e.currentTarget.value);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
             committedRef.current = true;
             setIsEditing(false);
           }
@@ -158,8 +166,18 @@ export const GenericTabItem = observer(function GenericTabItem({
     return (
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
         <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="">
-          {preSlot}
-          {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
+          {renameOnTitleClick && !isEditing ? (
+            <button
+              type="button"
+              className="flex min-w-0 cursor-text items-center gap-2 rounded text-left hover:bg-row-hover"
+              aria-label={`${translate('task.rename')}: ${label}`}
+              title={`${translate('task.rename')}: ${label}`}
+              onClick={(event) => { event.stopPropagation(); startRename(); }}
+            >
+              {preSlot}
+              <span className="truncate">{label}</span>
+            </button>
+          ) : <>{preSlot}{editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}</>}
           {statusSlot}
         </div>
       </TabContextMenu>

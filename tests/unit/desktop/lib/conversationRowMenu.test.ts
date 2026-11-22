@@ -17,6 +17,14 @@ describe('conversation row actions', () => {
     expect(personalConversationMenu({ canDelete: true, hasUnread: false, agent: true, canArchive: true }).find((item) => item.id === 'archive')?.label).toEqual({ ns: 'session', key: 'task.archiveTaskTitle' })
   })
 
+  it('only offers the Agent name action for an editable owned Agent', () => {
+    const state = { canDelete: true, hasUnread: false, agent: true }
+    expect(ids(personalConversationMenu(state))).not.toContain('rename-agent')
+    expect(personalConversationMenu({ ...state, canRenameAgent: true })).toContainEqual({
+      id: 'rename-agent', label: { ns: 'contacts', key: 'agentName.editAction' }, icon: 'rename',
+    })
+  })
+
   // Rule 4 of @@@menu-order: rare, irreversible and felt by every member — on the settings page, in no menu.
   it('never offers dissolving a group or deleting a topic, whoever opens the menu', () => {
     for (const kind of ['group', 'topic', 'dm'] as const) {

@@ -24,6 +24,7 @@ export default {
     "full": "This group is full. Ask the group owner to increase the member limit."
 },
   "agentName": {
+    "editAction": "Edit Agent name",
     "edit": "Rename",
     "label": "Agent name",
     "failed": "Could not save. Try again."
