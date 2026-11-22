@@ -481,13 +481,13 @@
   --z-chrome: 1000;        /* 窗口 chrome：WindowControls（win/linux 自绘钮） */
   --z-modal: 2000;         /* 模态层：Sheet 及 backdrop+卡片式对话框 */
   --z-menu: 2100;          /* 右键/下拉菜单——可开在 modal 之上 */
-  --z-banner: 2300;        /* 全局通知横幅/浮动状态卡（更新、余额、下载进度、发现） */
+  --z-banner: 2300;        /* 页内常驻状态条（登录失效）。浮层通知不在这一档：只有 NoticeHost 一处，用 --z-toast */
   --z-popover: 2400;       /* 锚定信息浮层：资料卡、已读回执、近期动作、token 悬浮卡 */
   --z-modal-top: 2500;     /* 从 popover 内开出的次级模态（#1862 海报对话框） */
   --z-settings: 5000;      /* 设置面板：高于全部工作区弹窗、低于 overlay/toast（#1182） */
   --z-settings-modal: 5100; /* 设置内次级模态：确认弹窗等必须盖过设置面板 */
   --z-overlay: 10000;      /* 全屏遮罩：图片预览、扫码 */
-  --z-toast: 10010;        /* 最顶：toast 必须盖过图片预览遮罩（#1892③） */
+  --z-toast: 10010;        /* NoticeHost 那一个提示栈：盖过图片预览遮罩（#1892③）；位置只在底边，见 notice-host-position.ts */
   --z-chrome-menu: 10020;  /* 窗口 chrome 弹出的菜单（Windows 标题栏的文件/编辑/视图/帮助）。页面层都铺在标题栏行下面
                               （@@@window-layer），行一直点得到，从它开出来的菜单就得开在任何页面层之上（#6699） */
 

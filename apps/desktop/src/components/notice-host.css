@@ -9,6 +9,8 @@
   --normal-border: transparent;
   --border-radius: var(--radius-surface);
   font-family: inherit;
+  /* The one notice layer sits on the product's z ladder (tokens.css), not on sonner's own 999999999. */
+  z-index: var(--z-toast);
 }
 
 .gugu-notices [data-sonner-toast][data-styled='true'] {
