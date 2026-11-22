@@ -62,7 +62,9 @@ it.each(['light', 'dark'])('actual assistant content distinguishes identity, edi
   expect(title.textContent).toBe('小咕');
   expect(harness.container.querySelector('[data-testid="assistant-name-edit"] svg')!.getBoundingClientRect().width).toBe(16);
   const memory = harness.container.querySelector<HTMLElement>('[data-testid="settings-assistant-open-memory"]')!;
-  expect(getComputedStyle(memory).borderRadius).toBe('8px');
+  // A navigation row is an ordinary row of its card (no pill of its own); the card carries the surface.
+  expect(getComputedStyle(memory).borderRadius).toBe('0px');
+  expect(getComputedStyle(memory.closest<HTMLElement>('.gg-settings-card')!).boxShadow).not.toBe('none');
   expect(memory.querySelector('.gg-settings-row-leading svg')!.getBoundingClientRect().width).toBe(16);
   const resting = getComputedStyle(memory).backgroundColor;
   await userEvent.hover(memory);
@@ -93,11 +95,18 @@ it.each([800, 480])('actual account editors stay together at %ipx and retain exp
   expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().right);
   const label = harness.container.querySelector<HTMLElement>('label[for="settings-account-name"]')!;
   expect(label.getBoundingClientRect().bottom).toBeLessThan(name.getBoundingClientRect().top);
-  expect(bio.getBoundingClientRect().top).toBeGreaterThan(name.getBoundingClientRect().top);
   const occupation = harness.container.querySelector<HTMLElement>('#settings-account-occupation')!;
-  if (width === 800) expect(bio.getBoundingClientRect().top).toBeCloseTo(occupation.getBoundingClientRect().top, 0);
-  const privacy = occupation.closest<HTMLElement>('.gg-settings-row')!.querySelector<HTMLElement>('.gg-settings-row-description')!;
-  expect(privacy.getBoundingClientRect().top).toBeGreaterThanOrEqual(occupation.getBoundingClientRect().bottom);
+  // Name | Occupation on the first row, Bio across the card below them; one column when narrow.
+  if (width === 800) {
+    expect(occupation.getBoundingClientRect().top).toBeCloseTo(name.getBoundingClientRect().top, 0);
+    expect(bio.getBoundingClientRect().width).toBeGreaterThan(name.getBoundingClientRect().width * 1.8);
+  } else {
+    expect(occupation.getBoundingClientRect().top).toBeGreaterThan(name.getBoundingClientRect().top);
+  }
+  expect(bio.getBoundingClientRect().top).toBeGreaterThan(occupation.getBoundingClientRect().bottom);
+  expect(occupation.closest<HTMLElement>('.gg-settings-row')!.querySelector('.gg-settings-row-description')).toBeNull();
+  // Save is the form's last row, inside the editor card.
+  expect(editor.contains(page.getByRole('button', { name: '保存', exact: true }).element())).toBe(true);
   await userEvent.fill(name, '新名字');
   expect(nicknameUpdate).not.toHaveBeenCalled();
   await page.getByRole('button', { name: '保存', exact: true }).click();
@@ -105,7 +114,7 @@ it.each([800, 480])('actual account editors stay together at %ipx and retain exp
   expect(update).toHaveBeenCalledTimes(1);
   const danger = harness.container.querySelector<HTMLElement>('[data-settings-group="danger"]')!;
   expect(danger.getBoundingClientRect().top).toBeGreaterThan(editor.getBoundingClientRect().bottom);
-  expect(getComputedStyle(danger).borderTopWidth).toBe('1px');
+  expect(getComputedStyle(danger.querySelector<HTMLElement>('.gg-settings-card')!).boxShadow).not.toBe('none');
 });
 
 it('the phone occupation sheet preserves the custom identity draft and explicit save', async () => {

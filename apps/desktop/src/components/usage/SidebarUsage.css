@@ -11,8 +11,9 @@
 .gg-usage-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 10px; border-bottom:1px solid var(--border); font-weight:600; }
 .gg-usage-header h2 { margin:0; font-size:var(--font-body); font-weight:600; }
 .gg-usage-content { max-height:min(700px, calc(100dvh - 160px)); overflow:auto; }
-.gg-usage-section { padding:14px 16px 13px; }
-.gg-usage-section + .gg-usage-section { border-top:1px solid var(--border); }
+/* Scoped to the popover: the settings Usage page has its own .gg-usage-section (usage.css) and must not inherit these. */
+.gg-usage-popover .gg-usage-section { padding:14px 16px 13px; }
+.gg-usage-popover .gg-usage-section + .gg-usage-section { border-top:1px solid var(--border); }
 .gg-usage-provider { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:12px; }
 .gg-usage-provider strong { font-weight:600; }
 .gg-usage-provider > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--font-caption); }

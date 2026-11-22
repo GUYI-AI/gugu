@@ -793,7 +793,7 @@ it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { 
     await page.viewport(1200, 900);
     document.documentElement.dataset.theme = 'light';
     control.connectionsByProvider.codex = [];
-    host.style.cssText = 'width: 940px; padding: 24px; background: var(--model-settings-page);';
+    host.style.cssText = 'width: 940px; padding: 24px; background: var(--sidebar);';
   }
   root.render(<>
     {capture && <p style={{ marginBottom: 20, fontSize: 14 }}>组件测试夹具，非真实账号</p>}
@@ -839,7 +839,7 @@ it.each([[1100, 'zh-CN'], [640, 'zh-CN'], [640, 'en-US']] as const)('keeps Codin
     'layout-claude-a': [{ windowMinutes: 300, usedPercent: 0 }, { windowMinutes: 10_080, usedPercent: 23 }],
     native: [{ windowMinutes: 10_080, usedPercent: 5 }],
   };
-  host.style.cssText = `width:${width}px;background:var(--model-settings-page)`;
+  host.style.cssText = `width:${width}px;background:var(--sidebar)`;
   try {
     root.render(<>
       <p>组件测试夹具，非真实订阅账号</p>
