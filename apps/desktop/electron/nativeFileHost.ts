@@ -69,7 +69,7 @@ export function createNativeFileHost(deps: {
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
     /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
     async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string },
-      report?: (progress: { id: string; done: number; total: number }) => void) {
+      report?: (progress: { id: string; done: number; total: number; stalled?: true }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
       /** This machine's bytes, verified: kept for this reader at an address until it disposes them. */
@@ -87,7 +87,7 @@ export function createNativeFileHost(deps: {
       }
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
         const named = request.progress
-        if (typeof named === 'string' && report) context = { ...context, progress: (done, total) => report({ id: named, done, total }) }
+        if (typeof named === 'string' && report) context = { ...context, progress: (done, total, stalled) => report({ id: named, done, total, ...(stalled ? { stalled } : {}) }) }
         const local = request.op === 'ssh' ? null : await deps.local(context)
         await check(scope, owner, epoch)
         if (request.op === 'local') return local?.revision ?? null

@@ -30,6 +30,7 @@ import { configuredEndpoint, drawImagePreviews } from '@gugu/core/cloud/attachme
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
+import { PROJECT_FILE_STREAM } from './projectFileHost'
 import { nativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
@@ -6560,6 +6561,7 @@ app.whenReady().then(async () => {
             warn: (message) => createLogger('server/link').warn({}, message),
             // #7199 心跳随行报「隧道最近一次有流量」(会话页宿主的心跳不算):云电脑的管家据此判闲置。
             onActivity: () => noteTunnelActivity(),
+            streams: { [PROJECT_FILE_STREAM]: desktopFiles.stream },
           })
           await emdash.startSessionPtyAttachServer(app.getPath('userData'), { link, serverUpdate: callServerUpdate,
             timeZone: context => applyOwnerTimeZoneContext(context), resume: since => {

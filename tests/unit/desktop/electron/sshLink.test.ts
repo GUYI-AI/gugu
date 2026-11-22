@@ -288,7 +288,7 @@ describe('账号进程里:设备连接用与咕咕云同一张处理表', () => 
       }),
     })
     const sent: unknown[] = []
-    const session = factory((message) => sent.push(message))
+    const session = factory((message) => sent.push(message), async () => undefined)
     session.handle(asBroadcast({ type: 'demo.echo', request_id: 'r1', user_id: 'someone-else', payload: { type: 'inner', a: 1 } }))
     await flush()
     // 请求自己的 payload 里带 type 也不会被当成信封读(外壳就是为此)。
@@ -304,7 +304,7 @@ describe('账号进程里:设备连接用与咕咕云同一张处理表', () => 
 
   it('还没登录的账号不接', () => {
     const factory = createDeviceLinkHost({ userId: () => null, createHandlers: () => ({ handlers: {}, dispose: () => undefined }) })
-    expect(() => factory(() => undefined)).toThrow()
+    expect(() => factory(() => undefined, async () => undefined)).toThrow()
   })
 })
 
