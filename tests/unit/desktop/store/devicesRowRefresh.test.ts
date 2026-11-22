@@ -22,7 +22,9 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
-vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: mocks.listProjects }))
+// DevicesProvider also starts the account projects store, which reads listMyAccountProjects through a dynamic import.
+// Without it in the mock, that read rejected whenever the import settled before the test ended (seen under load).
+vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: mocks.listProjects, listMyAccountProjects: async () => [] }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: (_event: string, listener: (operations: readonly unknown[]) => void) => { mocks.listener = listener; return () => undefined } }),
 }))
