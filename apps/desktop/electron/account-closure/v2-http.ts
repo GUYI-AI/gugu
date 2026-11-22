@@ -1,3 +1,4 @@
+import { egress, type Egress } from '@gugu/core/shared/egress'
 import { isAccountClosureV2ErrorCode, type AccountClosureV2ErrorCode, type AccountClosureV2Policy, type AccountClosureV2ServerState } from '../../src/platform/accountClosureV2'
 
 export interface ClosureV2Auth { ownerId: string; sessionId: string; accessToken: string }
@@ -87,7 +88,7 @@ const fields: Record<ClosureV2Route, readonly string[]> = {
   result: [], cancel: ['native_generation', 'server_generation'],
 }
 /** Fixed build target only. No renderer URL, redirects, retries or legacy route. */
-export function createClosureV2Http(input: { baseUrl: string; anonKey: string; fetch?: typeof fetch }) {
+export function createClosureV2Http(input: { baseUrl: string; anonKey: string; fetch?: Egress['fetch'] }) {
   let base: URL
   try { base = new URL(input.baseUrl) } catch { throw new ClosureV2HttpFailure('closure_unavailable') }
   if ((base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname)))
@@ -96,7 +97,7 @@ export function createClosureV2Http(input: { baseUrl: string; anonKey: string; f
     try { if (JSON.parse(Buffer.from(input.anonKey.split('.')[1] ?? '', 'base64url').toString('utf8')).role !== 'anon') throw Error() }
     catch { throw new ClosureV2HttpFailure('closure_unavailable') }
   }
-  const request = input.fetch ?? fetch
+  const request = input.fetch ?? egress.fetch
   const endpoint = (route: string) => new URL('/functions/v1/account-deletion/v2/' + route, base).href
   const authHeaders = (auth: ClosureV2Auth) => {
     if (!uuid(auth.ownerId) || !uuid(auth.sessionId) || !auth.accessToken || auth.accessToken.length > 8192 || /\s/.test(auth.accessToken)) throw new ClosureV2HttpFailure('unauthorized')
