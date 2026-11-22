@@ -89,6 +89,23 @@ describe('chatOutbox 状态机', () => {
     expect(h.row('a')?.lastError).toContain('messages_client_dedup')
   })
 
+  it('服务端拒绝(私聊未成好友 42501):一次即 failed,带原因;重启不再重投', async () => {
+    let calls = 0
+    const refusal = { code: '42501', message: 'dm_friendship_required', hint: 'dm_friendship_required' }
+    const h = chatHarness(async () => { calls += 1; throw new Error(refusal.message, { cause: refusal }) })
+    await h.outbox.enqueue(makeRecord('a'))
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(calls).toBe(1)
+    expect(h.row('a')).toMatchObject({ state: 'failed', attempts: 1, lastError: 'dm_friendship_required' })
+    expect(h.storage.rows.get(`${ACCOUNT}/a`)?.failure?.reason).toBe('rejected')
+    h.outbox.dispose(); h.box.dispose()
+    const again = chatHarness(async () => { calls += 1 }, {}, { storage: h.storage })
+    await again.box.loaded()
+    await flush()
+    expect(calls).toBe(1)
+    expect(again.row('a')?.state).toBe('failed')
+  })
+
   it('瞬断恢复:第 2 次尝试成功 → sent', async () => {
     let calls = 0
     const h = chatHarness(async () => { calls += 1; if (calls === 1) throw new Error('transient') })

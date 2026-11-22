@@ -48,6 +48,28 @@ export class OutboxRejected extends Error {
   constructor(message: string, readonly reason: Exclude<OutboxFailureReason, 'unreachable'> = 'rejected', readonly code?: string) { super(message) }
 }
 
+/**
+ * The server answered and refused this write: the same write gets the same answer, so it is not sent again on its own.
+ * Judged from what the server said, not its wording: a Postgres SQLSTATE (PostgREST passes the database's own through)
+ * refuses unless its class is transient (connection 08, rollback 40, resources 53, operator 57, system 58, internal XX,
+ * lock not available 55P03); an HTTP status refuses when it is a 4xx other than 401, 408, 425 or 429. No answer, a 5xx or
+ * PostgREST's own PGRST codes (its connection and credential failures) may differ next time. Looks through `cause`.
+ */
+export function refusedByServer(error: unknown): boolean {
+  for (let value = error, depth = 0; value && typeof value === 'object' && depth < 4; value = (value as { cause?: unknown }).cause, depth += 1) {
+    const { code, status } = value as { code?: unknown; status?: unknown }
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return !/^(08|40|53|57|58|XX)/.test(code) && code !== '55P03'
+    if (typeof status === 'number' && status >= 400 && status < 500) return ![401, 408, 425, 429].includes(status)
+  }
+  return false
+}
+
+/** What a failed attempt says: refused (OutboxRejected, or the server's own refusal) or unreachable. */
+export function failureOf(error: unknown): OutboxFailure {
+  if (error instanceof OutboxRejected) return { reason: error.reason, message: error.message, ...(error.code ? { code: error.code } : {}) }
+  return { reason: refusedByServer(error) ? 'rejected' : 'unreachable', message: error instanceof Error ? error.message : String(error) }
+}
+
 export class OutboxTimeout extends Error {
   constructor(seconds: number) { super(`No answer within ${seconds} s`) }
 }
@@ -69,7 +91,7 @@ export interface OutboxKind<P = unknown, R = unknown> {
   blocked?(item: OutboxItem<P>, dependency: OutboxItem): string
   /** The target cannot take writes now (its host is offline): the lane waits for kick(kind) without spending an attempt. */
   ready?(item: OutboxItem<P>): boolean
-  /** Failure for an error the send threw; default: OutboxRejected is refused, anything else unreachable. */
+  /** Failure for an error the send threw; default: failureOf. */
   failure?(error: unknown): OutboxFailure
   /** Durable completion before the row is removed (writing the confirmed message where it is read). */
   complete?(item: OutboxItem<P>, result: R): Promise<R>
@@ -342,9 +364,7 @@ export function createOutbox(deps: {
       pump() // what waited for it, in other lanes
       return
     }
-    const failure = kind.failure ? kind.failure(error) : error instanceof OutboxRejected
-      ? { reason: error.reason, message: error.message, ...(error.code ? { code: error.code } : {}) }
-      : { reason: 'unreachable' as const, message: error instanceof Error ? error.message : String(error) }
+    const failure = kind.failure ? kind.failure(error) : failureOf(error)
     const attempts = live.attempts + 1
     log.warn({ kind: item.kind, id: item.id, attempts, reason: failure.reason, error: failure.message }, 'outbox write not confirmed')
     if (failure.reason !== 'unreachable' || background || attempts >= OUTBOX_MAX_ATTEMPTS) {

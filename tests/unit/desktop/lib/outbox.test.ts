@@ -184,6 +184,38 @@ describe('outbox core', () => {
     expect(second.get('refused')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
   })
 
+  it('fails what the server itself refused at once, and never sends it again on later starts', async () => {
+    const storage = memoryStorage()
+    const first = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+    const note = kind('note', { timeoutMs: null })
+    first.register(note.definition)
+    await first.loaded()
+    await first.enqueue('note', { text: 'dm', lane: 'a' }, { id: 'denied' })
+    await first.enqueue('note', { text: 'busy', lane: 'b' }, { id: 'rollback' })
+    await first.enqueue('note', { text: 'down', lane: 'c' }, { id: 'gateway' })
+    await flush()
+    // As the chat writer throws a PostgREST error: its words, the database's SQLSTATE in `cause`.
+    note.calls.find((call) => call.item.id === 'denied')!.reject(new Error('dm_friendship_required', { cause: { code: '42501', hint: 'dm_friendship_required' } }))
+    note.calls.find((call) => call.item.id === 'rollback')!.reject(Object.assign(new Error('could not serialize access'), { code: '40001' }))
+    note.calls.find((call) => call.item.id === 'gateway')!.reject(Object.assign(new Error('bad gateway'), { status: 502 }))
+    await flush()
+    expect(storage.rows.get('u1/denied')).toMatchObject({ state: 'failed', attempts: 1, failure: { reason: 'rejected', message: 'dm_friendship_required' } })
+    expect(storage.rows.get('u1/rollback')).toMatchObject({ state: 'waiting', failure: { reason: 'unreachable' } })
+    expect(storage.rows.get('u1/gateway')).toMatchObject({ state: 'waiting', failure: { reason: 'unreachable' } })
+    first.dispose()
+
+    for (let start = 0; start < 2; start += 1) {
+      const next = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+      const again = kind('note', { timeoutMs: null })
+      next.register(again.definition)
+      await next.loaded()
+      await flush()
+      expect(again.calls.map((call) => call.item.id)).not.toContain('denied')
+      expect(next.get('denied')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
+      next.dispose()
+    }
+  })
+
   it('merges at enqueue and confirms the newest payload, not the one in flight', async () => {
     const box = createOutbox({ storage: memoryStorage(), account: account('u1'), online: () => () => {} })
     const read = kind('read', { merge: (previous, next) => Number(previous.text) > Number(next.text) ? previous : next })
