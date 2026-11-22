@@ -19,7 +19,7 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 }
 .file-title { display: flex; align-items: center; gap: var(--em-spacing-xs); min-width: 0; }
 .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-mark { width: 16px; height: 16px; flex: none; object-fit: contain; color: var(--em-foreground-muted); }
+.file-mark { width: 16px; height: 16px; flex: none; object-fit: contain; }
 .file-meta {
   display: flex; justify-content: flex-end; gap: var(--em-spacing-md); min-width: 0; white-space: nowrap; font-variant-numeric: tabular-nums;
   font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-passive, var(--em-foreground-muted));
@@ -29,8 +29,8 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 /* Narrow, a file's size waits for its column; a folder's count is its one value. */
 .file-cell[data-cell='size'] { display: none; }
 .file[data-folder] .file-cell[data-cell='size'] { display: block; }
-/* In a list row the type is a muted glyph, as the folders are; the tile (and its colour) stays for the grid. */
-.file:not(.cell) .file-mark::part(tile) { background: none; color: inherit; }
+/* In a list row a file is its icon in its colour, without the tile's wash; the wash (the tile) stays for the grid. */
+.file:not(.cell) .file-mark::part(tile) { background: none; }
 .file:not(.cell) .file-mark::part(glyph) { width: 100%; height: 100%; }
 .file:not(.cell) .file-mark.has-thumb { border-radius: 3px; }
 .file-marks { flex: none; display: flex; align-items: center; gap: var(--em-spacing-xs); max-width: 35%; min-width: 0; }

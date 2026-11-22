@@ -87,7 +87,7 @@ it.each(['Enter', 'button'])('keeps the draft, file chip and visible update erro
   expect(container.textContent).toContain('brief.txt');
   expect(mocks.create).not.toHaveBeenCalled();
   await page.getByRole('button', { name: translateSessionMessage('composer.removeAttachment', { name: 'brief.txt' }), exact: true }).click();
-  await until('editing the attachments clears the obsolete refusal', () => document.querySelector('[data-sonner-toast]') === null);
+  await until('editing the attachments clears the obsolete refusal', () => document.querySelector('[data-notice-key]') === null);
   await page.getByTestId('prompt-editor').click();
   await userEvent.keyboard('{Enter}');
   await until('the retained caption creates one task', () => mocks.navigate.mock.calls.length === 1 && text() === '');

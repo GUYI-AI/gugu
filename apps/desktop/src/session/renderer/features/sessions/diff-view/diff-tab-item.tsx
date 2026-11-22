@@ -6,7 +6,7 @@ import {
 } from '@renderer/features/tabs/tab-bar/generic-tab-item';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName } from '@renderer/features/sessions/stores/workspace-path';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark } from '@gugu/session-ui/file-mark';
 import { GitChangeStatusIcon } from './changes-panel/components/changes-list-item';
 import type { DiffTabResource } from './stores/diff-tab-resource';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -51,7 +51,7 @@ export const DiffTabBarItem = observer(function DiffTabBarItem({
       tooltip={translate('diff.tabTooltip', { path: resource.path, suffix })}
       preSlot={
         <span className="shrink-0 [&>svg]:h-3 [&>svg]:w-3">
-          <FileIcon filename={fileName} />
+          <FileMark name={fileName} size={12} />
         </span>
       }
       statusSlot={
@@ -70,7 +70,7 @@ export function DiffTabBarItemDragPreview({ tab }: { tab: ResolvedTab<DiffTabRes
     <GenericTabDragPreview
       preSlot={
         <span className="shrink-0 [&>svg]:h-3 [&>svg]:w-3">
-          <FileIcon filename={fileName} />
+          <FileMark name={fileName} size={12} />
         </span>
       }
       label={translate('diff.tabDragLabel', { fileName, suffix })}

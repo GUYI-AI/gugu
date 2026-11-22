@@ -473,7 +473,6 @@ it.each([true, false])('reconciles a real native file after timeout with receive
     const row = r.owner.enqueue({ sessionId: 's', messageId: 'host-timeout-input', text, kind: 'session-direct' });
     await vi.waitFor(() => expect(lifeStore.row('s', row.seq)).toMatchObject(received
       ? { state: 'accepted' } : { state: 'unknown', failure: { code: 'native_input_absent' } }));
-    expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_turns WHERE session_id = 's'").get()).toEqual({ n: 0 });
     expect(r.dispatch).toHaveBeenCalledTimes(1);
     expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id = 's'").get()).toEqual({ n: 1 });
   } finally { await r.owner.signOut(); await rm(directory, { recursive: true, force: true }); }

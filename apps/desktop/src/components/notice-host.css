@@ -9,6 +9,8 @@
   --normal-border: transparent;
   --border-radius: var(--radius-surface);
   font-family: inherit;
+  /* The one notice layer sits on the product's z ladder (tokens.css), not on sonner's own 999999999. */
+  z-index: var(--z-toast);
 }
 
 .gugu-notices [data-sonner-toast][data-styled='true'] {
@@ -30,95 +32,114 @@
 .gugu-notices-above-composer[data-sonner-toaster][data-y-position='bottom'] {
   clip-path: inset(-100vh -100vw -8px -100vw);
 }
-
-/* Copy confirmation stays above the conversation, away from the input/keyboard. */
-.gugu-notices[data-sonner-toaster][data-y-position='top'] {
-  top: calc(env(safe-area-inset-top, 0px) + 64px);
-}
-.gugu-notices [data-sonner-toast][data-styled='true'].gugu-notice-compact {
-  width: fit-content;
-  max-width: calc(100vw - 32px);
-  min-height: 0;
-  margin-inline: auto;
-  padding: 8px 12px;
-  border-radius: var(--radius-control);
-  font-size: var(--font-caption);
+/* Centred on the composer it sits above (notice-host-position.ts), not on the window: the sidebar is not under it.
+ * At sonner's phone width (≤600px) the strip already spans the composer's width, i.e. the same centre line. */
+@media (min-width: 601px) {
+  .gugu-notices-above-composer[data-sonner-toaster][data-x-position='center'] {
+    left: var(--gugu-notice-center, 50%);
+  }
 }
 
-/* First-install import, approved v2: a persistent card in the existing host. */
-.gugu-notices[data-sonner-toaster]:has(.gugu-notice-first-install-import) {
-  top: calc(env(safe-area-inset-top, 0px) + 60px);
-  right: 20px;
-  width: min(360px, calc(100vw - 40px));
-  transition: none;
+/* 常驻的那一叠卡(NoticeDeck):右上角、窗口按钮那条车道下面(--titlebar-actions-lane,window-chrome.ts 的浮层规则;
+   Windows 的标题栏行已经算在里面),浮在内容上、在所有弹窗之下(--z-notice),一次露一张。手机上贴在安全区下面。 */
+.gugu-notice-deck {
+  position: fixed;
+  top: calc(var(--titlebar-actions-lane) + 8px);
+  right: 16px;
+  z-index: var(--z-notice);
+  width: min(360px, calc(100vw - 32px));
 }
-.gugu-notices [data-sonner-toast][data-styled='true'].gugu-notice-first-install-import {
-  width: 100%;
-  padding: 20px;
-  border: 0;
+@media (max-width: 600px) {
+  .gugu-notice-deck {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+}
+/* 后面还有:底下露出一张(或两张)卡的边。 */
+.gugu-notice-deck-peek,
+.gugu-notice-deck-peek::before {
+  position: absolute;
+  inset: 8px 10px -8px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-surface);
+  background: var(--surface-white);
+}
+.gugu-notice-deck-peek[data-depth='2']::before {
+  content: '';
+  z-index: -1;
+  opacity: 0.6;
+}
+.gugu-notice-card {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  opacity: 1;
-  transform: none;
-  animation: none;
-  transition: none;
-}
-.gugu-notices [data-sonner-toast].gugu-notice-first-install-import[data-removed='true'] {
-  display: none;
-}
-.gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-content] {
-  gap: 8px;
-}
-.gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-title] {
-  padding-right: 20px;
-}
-.gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-description] {
-  color: var(--text-secondary);
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface-white);
+  color: var(--text-primary);
   font-size: var(--font-body);
   line-height: var(--lh-body);
 }
-.gugu-notices [data-sonner-toast][data-styled='true'].gugu-notice-first-install-import [data-button] {
-  align-self: flex-end;
-  height: var(--control-h-md);
-  margin: 12px 0 0;
-  padding: 0 15px;
-  border-radius: var(--radius-document);
-  background: var(--primary);
-  color: var(--primary-fg);
-  font: inherit;
-  font-weight: var(--font-weight-medium);
-  transition: none;
+.gugu-notice-deck .gugu-notice-card {
+  box-shadow: var(--shadow-toast-card);
+  animation: gugu-notice-card-in var(--dur-med) var(--ease);
 }
-.gugu-notices [data-sonner-toast][data-styled='true'].gugu-notice-first-install-import [data-close-button] {
-  top: 20px;
-  right: 20px;
-  left: auto;
-  width: 24px;
-  height: 24px;
-  border: 0;
+@keyframes gugu-notice-card-in {
+  from { opacity: 0; transform: translateY(-8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gugu-notice-deck .gugu-notice-card { animation: none; }
+}
+.gugu-notice-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
-  transform: none;
-  transition: none;
-}
-.gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-close-button]:hover {
-  background: var(--hover);
-}
-
-.gugu-notices [data-sonner-toast].gugu-notice-first-install-import [data-close-button] svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 1.75;
+  background: var(--muted);
   color: var(--text-secondary);
 }
-
-/* #3450 模态开着时,常驻的首装导入卡片让位:设置 Sheet 的 ✕ 也在右上,卡片既不该盖着它,也不能替它接点击。
-   Base UI 给弹窗外的整棵子树打上 data-base-ui-inert(sonner 宿主也在其中);层一收,卡片原样回来,
-   ❌ 不动 z 序 —— --z-toast 最顶是刻意的(#1892③:提示要盖过全屏遮罩)。 */
-[data-base-ui-inert] .gugu-notices [data-sonner-toast].gugu-notice-first-install-import {
-  visibility: hidden;
+.gugu-notice-card[data-tier='error'] .gugu-notice-card-icon,
+.gugu-notice-card[data-tier='warning'] .gugu-notice-card-icon {
+  color: var(--danger-fg);
+}
+.gugu-notice-card-body {
+  flex: 1;
+  min-width: 0;
+  padding-right: 20px;
+}
+.gugu-notice-card-title {
+  font-weight: var(--font-weight-medium);
+}
+.gugu-notice-card-description {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.gugu-notice-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.gugu-notice-card-spacer {
+  flex: 1;
+}
+.gugu-notice-card-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.gugu-notice-pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -6px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
 }

@@ -107,10 +107,6 @@ export class AcpRuntime {
     return this.manager.turnEnvelope(sessionId);
   }
 
-  windowActiveReference(sessionId: string, referenceId: string): boolean {
-    return this.manager.windowActiveReference(sessionId, referenceId);
-  }
-
   sendPrompt(
     sessionId: string,
     prompt: PromptInput,

@@ -10,7 +10,6 @@ import type {
   SessionLiveReply,
   TurnPatch,
 } from '@gugu/session-core/session-record/contract'
-import { mergeTimelineWindowFields, type TimelineWindowState } from './timeline-window-fields'
 import { settlementFromWire } from '@gugu/session-core/session-record/contract'
 import type { ToolImage, ToolNode, TranscriptItem, TranscriptTurn } from '@gugu/session-core/acp/client'
 
@@ -26,7 +25,7 @@ import type { ToolImage, ToolNode, TranscriptItem, TranscriptTurn } from '@gugu/
  *              + 合并 settlements
  *   ok:false → 整份重载(拿它带来的快照替换全部)
  */
-export type AgentWatchTimeline = TimelineWindowState & {
+export type AgentWatchTimeline = {
   /** 手里这份读到哪了。null = 还没收到过任何快照。 */
   cursor: RecordCursor | null
   /** 按 seq 升序;同 seq 按 id 稳定排序(seq 本该唯一,并列时不许每次渲染换位置)。 */
@@ -91,7 +90,7 @@ function indexSettlements(settlements: readonly Settlement[]): Record<string, Se
  * 抢到了、投递却失败(`releaseSettlement`)—— 这时不收,卡上就一直写着「已在手机端回答」,
  * 而其实什么都没答上(#6739)。重放的旧批与 RPC 带回的那条仍受上面那道保护。
  */
-function mergeSettlements(
+export function mergeSettlements(
   current: Readonly<Record<string, Settlement>>,
   incoming: readonly Settlement[],
   reopen = false,
@@ -164,7 +163,6 @@ export function applySnapshot(
     turns: sortTurns(turns),
     settlements: indexSettlements(snapshot.settlements),
     hasOlder: snapshot.hasOlder,
-    ...mergeTimelineWindowFields({}, snapshot, 'snapshot', turns),
     recentActions: snapshot.recentActions ?? [],
     lastActionAt: snapshot.lastActionAt ?? null,
     queuedPrompts: snapshot.queuedPrompts ?? [],
@@ -197,7 +195,6 @@ export function prependOlder(
     ...state,
     turns,
     hasOlder: older.hasOlder,
-    ...mergeTimelineWindowFields(state, older, 'older', turns),
   }
 }
 
@@ -221,6 +218,22 @@ function mergeTurnPatch(existing: TranscriptTurn | undefined, patch: TurnPatch):
 }
 
 /**
+ * 这一批接不接得上手里读到 `cursor` 的那一份;接不上 ⇒ 原因(要重拉快照),接得上 ⇒ null。
+ * 每个跟着时间线的读者(本文件的 `applyBatch`、`follow-timeline`)都按这一条判,❌ 各写一份。
+ *
+ * - 世代变了:手里这份与它不是同一条时间线,拼起来就是「少了中间的那一份」。新会话的替身
+ *   (stand-in-timeline)在真记录出现时推的那一批就是这种,推完再不说话(#3588)。
+ * - 断层:这一批声明自己从 `from` 接上,而手里的游标还没走到那儿 ⇒ 中间有一批没到。
+ *   推送是「发出去不管有没有到」的广播,丢批不会报错,只会安静地少一段。
+ * `from < 游标` 是重放旧批,无害(按条目替换 + 游标只前进),照常合并。还没有游标 = 还没读过,什么都接得上。
+ */
+export function batchDiscontinuity(cursor: RecordCursor | null, batch: TimelineBatch): 'epoch_changed' | 'gap' | null {
+  if (!cursor) return null
+  if (cursor.epoch !== batch.cursor.epoch) return 'epoch_changed'
+  return batch.from > cursor.seq ? 'gap' : null
+}
+
+/**
  * 应用一批增量。
  *
  * 每轮带的是变过的条目 + 完整的条目顺序 ⇒ 按条目 id 替换,所以同一批应用两次结果一样。
@@ -228,18 +241,8 @@ function mergeTurnPatch(existing: TranscriptTurn | undefined, patch: TurnPatch):
  * 补出来的又是同一批,自己把自己送进循环)。
  */
 export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): AgentWatchTimeline {
-  if (state.cursor && state.cursor.epoch !== batch.cursor.epoch) {
-    // 世代变了:手里这份与它不是同一条时间线,拼起来就是「少了中间的那一份」。
-    return { ...state, needsSnapshot: 'epoch_changed' }
-  }
-
-  // 断层:这一批声明自己从 `from` 接上,而手里的游标还没走到那儿 ⇒ 中间有一批没到。
-  // 推送是「发出去不管有没有到」的广播,丢批不会报错,只会安静地少一段。
-  // ❌ 不许合并 —— 合并出来的正是 spec 明令禁止的「少了中间的那一份」。
-  // `from < 游标` 是重放旧批,无害(按条目替换 + 游标只前进),照常合并。
-  if (state.cursor && batch.from > state.cursor.seq) {
-    return { ...state, needsSnapshot: 'gap' }
-  }
+  const broken = batchDiscontinuity(state.cursor, batch)
+  if (broken) return { ...state, needsSnapshot: broken }
 
   const byId = new Map<string, TranscriptTurn>()
   for (const turn of state.turns) byId.set(turn.id, turn)
@@ -267,10 +270,6 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
     turns,
     settlements: mergeSettlements(state.settlements, batch.settlements, !state.cursor || batch.cursor.seq > state.cursor.seq),
     hasOlder: state.hasOlder,
-    ...mergeTimelineWindowFields(state, current ? batch : {}, 'batch', turns),
-    // After describes the tail; it must not rewind an older-page cursor.
-    olderCursor: state.olderCursor,
-    moreBefore: state.moreBefore,
     recentActions: batch.recentActions !== undefined ? batch.recentActions : state.recentActions,
     lastActionAt: batch.lastActionAt !== undefined ? batch.lastActionAt : state.lastActionAt,
     queuedPrompts: batch.queuedPrompts !== undefined && current ? batch.queuedPrompts : state.queuedPrompts,

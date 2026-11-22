@@ -15,12 +15,13 @@ vi.mock('@main/db/client', () => ({
 }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
+vi.mock('../activity/signals', () => ({ activitySignal: vi.fn() }));
 vi.mock('@main/core/agent-status/agent-status-writer', () => ({ agentStatusWriter: { on: () => () => {} } }));
 
 const { recordLiveModelSwitch } = await import('./live-model-switch');
 const { settleSwitchedModelMemory } = await import('./switched-model-memory');
 const { SettingsStore } = await import('@main/core/settings/settings-service');
-const { persistCommittedTurn } = await import('./session-turn-store');
+const { observeCommittedTurn } = await import('./committed-turn-observer');
 const { newSessionMemoryChangedChannel } = await import('@shared/core/sessions/sessionEvents');
 
 const OWN_MODEL = 'custom:conn-1:beta-context-echo';
@@ -69,13 +70,13 @@ describe('switched model memory', () => {
     expect(mocks.emit).toHaveBeenCalledWith(newSessionMemoryChangedChannel, {});
   });
 
-  it('the live turn writer settles it: a reply persisted after the switch updates the memory', async () => {
+  it('the committed-turn observer settles it: a live reply after the switch updates the memory', async () => {
     await recordLiveModelSwitch({ sessionId: 'conv-1', modelId: 'gpt-6-luna', source: 'platform' });
     const reply = { id: 'conv-1:turn:0', seq: 0, initiator: 'user', startedAt: 1, endedAt: 2, outcome: { kind: 'done', reason: 'end_turn' },
       items: [{ kind: 'message', id: 'conv-1:turn:0:in', seq: 0, role: 'user', text: 'hi' },
         { kind: 'message', id: 'conv-1:turn:0:out', seq: 1, role: 'assistant', text: 'hello' }] } as TranscriptTurn;
 
-    await persistCommittedTurn({ sessionId: 'conv-1', source: 'live', turn: reply });
+    await observeCommittedTurn({ sessionId: 'conv-1', source: 'live', turn: reply });
 
     await vi.waitFor(async () => expect((await memory()).lastStarted?.platformModel).toBe('gpt-6-luna'));
   });

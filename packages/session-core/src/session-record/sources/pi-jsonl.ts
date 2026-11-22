@@ -28,6 +28,9 @@ export function createPiJsonlSource(locator: SessionRecordLocator, options?: Ses
       raw.type === 'session' || typeof raw.id !== 'string'
         ? null
         : { id: raw.id, parentId: typeof raw.parentId === 'string' ? raw.parentId : null, raw },
+    // A person's message opens a turn; `/tree` navigation writes a branch summary at the point it moved to.
+    kind: (node) => node.raw.type === 'branch_summary' ? 'rewind'
+      : node.raw.type === 'message' && asRecord(node.raw.message)?.role === 'user' ? 'prompt' : 'line',
     decode
   });
 }

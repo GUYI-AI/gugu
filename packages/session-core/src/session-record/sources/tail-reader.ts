@@ -286,7 +286,11 @@ export class TailReader {
       // A reader stopped while it read hands nothing over: whoever stopped it reads those lines again.
       if (this.stopped) return;
       if (restart) this.events.onRestart(restart);
-      for (const [lines, offsets] of pending) this.events.onLines(lines, offsets);
+      // A batch can stop the reader (a fork read again from the start): the batches after it are read again too.
+      for (const [lines, offsets] of pending) {
+        if (this.stopped) return;
+        this.events.onLines(lines, offsets);
+      }
     } catch (error) {
       // 读一次失败不等于这份记录没了（EMFILE、临时 EACCES 都会这样）：报出来，下个节拍再试。
       this.warn('尾读失败，将在下个轮询节拍重试', {

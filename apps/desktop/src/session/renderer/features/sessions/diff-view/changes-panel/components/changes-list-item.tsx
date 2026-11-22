@@ -2,7 +2,7 @@ import type { GitChange, GitChangeStatus } from '@gugu/session-core/git';
 import { SquareArrowRight, SquareDot, SquareMinus, SquarePlus, SquareX } from '@/lib/icons'
 import { forwardRef, useMemo, type ButtonHTMLAttributes } from 'react';
 import { splitPath } from '@renderer/features/sessions/utils';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark } from '@gugu/session-ui/file-mark';
 import { Checkbox } from '@renderer/lib/ui/checkbox';
 import { formatDiffLineCount } from '@renderer/utils/format-diff-line-count';
 import { cn } from '@renderer/utils/utils';
@@ -53,7 +53,7 @@ export const ChangesListItem = forwardRef<HTMLButtonElement, ChangesListItemProp
         {...props}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <FileIcon filename={filename} size={12} />
+          <FileMark name={filename} size={16} className="shrink-0" />
           <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
             <span className="max-w-full shrink-0 truncate text-sm">{filename}</span>
             {directory && (

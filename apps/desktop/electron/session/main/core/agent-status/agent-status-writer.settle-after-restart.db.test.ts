@@ -105,8 +105,6 @@ describe('settling after a restart leaves sessions whose engine survived in tmux
   });
 
   it.each(['restart', 'update', 'unclean'] as const)('settles %s interruptions as plain idle, retaining the reason until the next actual start', async reason => {
-    const turnCount = () => fixture.sqlite.prepare('SELECT count(*) AS count FROM session_turns').get();
-    const historyBefore = turnCount();
     await agentStatusWriter.settleAfterRestart(new Set(), reason);
 
     const seen = fixture.sqlite.prepare(`SELECT agent_status_seen AS seen FROM sessions WHERE id = 'acp'`).get() as { seen: number };
@@ -115,7 +113,6 @@ describe('settling after a restart leaves sessions whose engine survived in tmux
     expect(readInterruptedTurn('idle')).toBeNull();
     const row = await fixture.db.query.sessions.findFirst({ where: (t, { eq }) => eq(t.id, 'acp') });
     expect(mapSessionRowToSession(row!)).toMatchObject({ agentStatus: 'idle', agentStatusDetail: 'plain', interruptedBy: reason });
-    expect(turnCount()).toEqual(historyBefore);
 
     await agentStatusWriter.restart({ sessionId: 'acp', projectId: 'p1' });
     expect(status('acp').status).toBe('working');

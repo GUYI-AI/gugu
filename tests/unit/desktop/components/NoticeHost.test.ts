@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs'
-import postcss from 'postcss'
 import { createElement, Fragment } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -72,25 +70,9 @@ describe('提示条的宿主:同一个文档里一次只有一个在画(#137)', 
   })
 })
 
-// #3450 首装导入卡片是常驻的、钉在右上;设置 Sheet 的 ✕ 也在右上 —— 模态开着时它要让位(不盖、不接点击)。
-describe('模态开着时首装导入卡片让位(#3450)', () => {
-  const declared = (prop: string): string[] => {
-    const values: string[] = []
-    postcss.parse(readFileSync('apps/desktop/src/components/notice-host.css', 'utf8')).walkRules((rule) => {
-      if (rule.selector.includes('[data-base-ui-inert]') && rule.selector.includes('gugu-notice-first-install-import')) {
-        rule.walkDecls(prop, (decl) => { values.push(decl.value) })
-      }
-    })
-    return values
-  }
-  it('the persistent card is hidden inside the subtree Base UI marks inert, and returns when the layer closes', () => {
-    expect(declared('visibility'), 'an open modal marks the notice host inert; the card must not paint over or intercept its controls').toContain('hidden')
-  })
-})
-
-// A pop-out window (aux-window-host) is another document: a notice asked from there shows there, in its own strip.
-describe('notices in a pop-out window', () => {
-  it('draws a strip in each pop-out; a new notice goes to the window last pressed, an update in place stays put', async () => {
+// A pop-out window (aux-window-host) is another document: a toast asked from there shows there, in its own strip.
+describe('toasts in a pop-out window', () => {
+  it('draws a strip in each pop-out; a new toast goes to the window last pressed, an update in place stays put', async () => {
     const frame = document.createElement('iframe')
     document.body.append(frame)
     const popOut = frame.contentDocument!

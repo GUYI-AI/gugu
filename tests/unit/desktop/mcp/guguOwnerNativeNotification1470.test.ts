@@ -7,7 +7,7 @@ const agent = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const dm = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 const stranger = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const token = `x.${Buffer.from(JSON.stringify({ sub: owner })).toString('base64url')}.x`
-const host = () => vi.fn(async (input: Record<string, unknown>) => ({ status: 'sent', message_id: input.request_id, session_id: 'native-session', seq: 3,
+const host = () => vi.fn(async (input: Record<string, unknown>) => ({ status: 'sent', message_id: input.request_id, session_id: 'native-session',
   ...(input.file ? { file_name: (input.file as { name: string }).name } : {}) }))
 function setup() {
   const runHostAction = host()
@@ -26,7 +26,7 @@ describe('owner sends commit into the bound native session', () => {
     const { context, deps, runHostAction } = setup()
     const receipt = JSON.parse(await callTool(context, 'message_send', { chat_id: chatId, text: 'Review the result' }, deps))
     expect(runHostAction).toHaveBeenCalledExactlyOnceWith({ action: 'owner-notify', request_id: expect.any(String), agent_user_id: agent, text: 'Review the result' })
-    expect(receipt).toMatchObject({ status: 'sent', delivery: 'owner-native', session_id: 'native-session', seq: 3 })
+    expect(receipt).toMatchObject({ status: 'sent', delivery: 'owner-native', session_id: 'native-session' })
     expect(deps.restRpc).not.toHaveBeenCalledWith('open_dm', expect.anything())
     expect(deps.restInsert).not.toHaveBeenCalled()
   })
@@ -47,7 +47,7 @@ describe('owner sends commit into the bound native session', () => {
   it('refuses a missing host, a receipt for another request, and a foreign recipient', async () => {
     const { context, deps } = setup()
     await expect(callTool({ ...context, runHostAction: undefined }, 'message_send', { chat_id: `user:${owner}`, text: 'notify' }, deps)).rejects.toThrow('host is unavailable')
-    await expect(callTool({ ...context, runHostAction: async () => ({ status: 'sent', message_id: 'other', session_id: 's', seq: 0 }) }, 'message_send', { chat_id: dm, text: 'notify' }, deps)).rejects.toThrow('did not confirm')
+    await expect(callTool({ ...context, runHostAction: async () => ({ status: 'sent', message_id: 'other', session_id: 's' }) }, 'message_send', { chat_id: dm, text: 'notify' }, deps)).rejects.toThrow('did not confirm')
     await expect(callTool(context, 'message_send', { chat_id: dm, text: 'notify', to_user_ids: [`user:${stranger}`] }, deps)).rejects.toThrow('only your owner')
     expect(deps.restInsert).not.toHaveBeenCalled()
   })

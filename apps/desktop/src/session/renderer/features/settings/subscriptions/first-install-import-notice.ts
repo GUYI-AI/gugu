@@ -34,7 +34,7 @@ export function showFirstInstallImportNotice(homes: readonly AgentHomeScan[], ma
   const t = i18n.getFixedT(null, 'main')
   notify({
     key: noticeKey, title: t('firstInstallImport.title'), description: machine ? t('firstInstallImport.remoteDescription', { machine: machineLabel(machine) }) : t('firstInstallImport.description'),
-    ongoing: true, presentation: 'first-install-import', onDismiss: handled,
+    ongoing: true, onDismiss: handled,
     action: { label: t('settings.dataImport.action'), onClick: () => {
       openAgentHomeImportPage(machine)
       handled()

@@ -49,9 +49,6 @@ export function createAcpProcedures(runtime: AcpRuntime) {
   const promptError = (error: AcpSendPromptError): Error => 'cause' in error && error.cause?.name === 'AcpPromptCancelled' && error.cause.code === 'CANCELLED'
     ? new WireError('CANCELLED', errorMessage(error), { cause: error.cause }) : new Error(errorMessage(error));
   return {
-    activeMessagePreview(input: { sessionId: string; historyFloor: string | null }) {
-      return runtime.manager.activeMessagePreview(input.sessionId, input.historyFloor);
-    },
     startSession(input: {
       input: StartSessionInput;
     }): Promise<Result<{ providerSessionId: string }, AcpStartSessionError>> {
@@ -185,9 +182,6 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       sessionId: string;
     }): { connectionKey: string; pid: number | null; closing?: true } | null {
       return runtime.adapterProvenance(input.sessionId);
-    },
-    windowActiveReference(input: { sessionId: string; referenceId: string }): boolean {
-      return runtime.windowActiveReference(input.sessionId, input.referenceId);
     },
     setIdleCompaction(input: { enabled: boolean }): Record<string, never> {
       runtime.setIdleCompaction(input.enabled);

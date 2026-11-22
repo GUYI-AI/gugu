@@ -183,6 +183,7 @@ SKIP only when another provider is being worked on (overrides all triggers): Ope
       "source": "provider-command",
     },
   ],
+  "canRevert": false,
   "efforts": {
     "available": [
       {

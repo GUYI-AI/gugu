@@ -1,47 +1,43 @@
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { Toaster } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
 import { readAuxLayers, subscribeAuxLayers } from '@renderer/app/aux-layers'
+import { persistentNotices, type PersistentNotice } from '@/lib/notices'
+import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Info, X } from '@/lib/icons'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import './notice-host.css'
-import { useNoticeComposerBottom } from './notice-host-position'
+import { useNoticeComposerAnchor } from './notice-host-position'
 
-const CLAIM = 'noticeHost'
 const CHANGED = 'gugu:notice-host-changed'
 let hostSeq = 0
 
 /**
- * 全 app 唯一的提示条(#137):右下角,所有提示(主 app 的、会话页的、同 key 原地更新的)都画在这一处。
- *
- * sonner 的状态是全窗口一份,挂两个就会每条画两遍 ——「谁来画」是这里认领的:同一个文档里一次只有一个在画,
- * 认领记在 `<html>` 上而不是模块变量里,因为两个入口各是各的 bundle,模块变量不跨入口。
- *  · 先到先得;画的那个卸载了,留着的接着认领(不然提示条凭空消失)。
+ * 「谁来画」(#137):同一个文档里通知宿主只有一个在画。认领记在 `<html>` 上而不是模块变量里,
+ * 因为主 app 与会话页两个入口各是各的 bundle,模块变量不跨入口。
+ *  · 先到先得;画的那个卸载了,留着的接着认领(不然提示凭空消失)。
  *  · 主 app 的比会话页的优先:会话页是主 app 里的一块(平时隐藏在别的页面后面),主 app 重挂(登录 / 登出换了一棵树)时
- *    会话页会先接手,主 app 的新宿主一挂上就从它手里接回来,❌ 让提示条留在一个看不见的宿主里。
+ *    会话页会先接手,主 app 的新宿主一挂上就从它手里接回来,❌ 让提示留在一个看不见的宿主里。
  *  · 会话页单独成一个文档(没有主 app)时,由它自己画。
  */
-/** 空着就能认领;主 app 的还能从会话页的手里接过来。 */
 function canClaim(holder: string | undefined, embedded: boolean): boolean {
   return !holder || (!embedded && holder.startsWith('embedded:'))
 }
-
-export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: string; /** 会话页里的那一份(见上)。 */ embedded?: boolean }) {
-  // 主题真值读全局订阅,❌ 读 React 上下文:会话页是另一棵根,拿不到主 app 的 ThemeContext。
-  const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
+function useDocumentClaim(claim: 'noticeHost', embedded: boolean): boolean {
   // 能认领就在第一次渲染里就画出来:sonner 的提示条只认它挂上之后发的提示(之前发的不补),
   // 晚一拍才画,同一次挂载里子组件发的提示就丢了。认领本身仍在下面的 layout effect 里做,认不到再收回。
-  const [owner, setOwner] = useState(() => canClaim(document.documentElement.dataset[CLAIM], embedded))
-  const composerBottom = useNoticeComposerBottom(owner)
-  // Each pop-out window has its own strip: a notice asked from there shows there (lib/notices `toasterId`, aux-layers).
-  const popOuts = useSyncExternalStore(subscribeAuxLayers, readAuxLayers, readAuxLayers)
+  const [owner, setOwner] = useState(() => canClaim(document.documentElement.dataset[claim], embedded))
   useLayoutEffect(() => {
     const root = document.documentElement
     const me = `${embedded ? 'embedded' : 'app'}:${++hostSeq}`
     let owned = false
     const settle = () => {
-      const holder = root.dataset[CLAIM]
+      const holder = root.dataset[claim]
       if (owned) {
-        // 被主 app 的宿主接走了:放手。
+        // 被主 app 的接走了:放手。
         if (holder !== me) {
           owned = false
           setOwner(false)
@@ -49,7 +45,7 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
         return
       }
       if (!canClaim(holder, embedded)) return setOwner(false)
-      root.dataset[CLAIM] = me
+      root.dataset[claim] = me
       owned = true
       setOwner(true)
       document.dispatchEvent(new Event(CHANGED))
@@ -58,25 +54,106 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
     document.addEventListener(CHANGED, settle)
     return () => {
       document.removeEventListener(CHANGED, settle)
-      if (!owned || root.dataset[CLAIM] !== me) return
-      delete root.dataset[CLAIM]
+      if (!owned || root.dataset[claim] !== me) return
+      delete root.dataset[claim]
       document.dispatchEvent(new Event(CHANGED))
     }
-  }, [embedded])
+  }, [claim, embedded])
+  return owner
+}
+
+/**
+ * 全 app 唯一的通知宿主(lib/notices 的两个位置都画在这里):
+ *  · 转瞬的提示条:composer 上方居中(看得见 composer / 手机 tab 栏时贴其上沿 8px,以它为中线),一次一条。
+ *  · 常驻的那一叠卡:右上角、窗口按钮车道下面,在所有弹窗之下(--z-notice),一次露一张。
+ */
+export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: string; /** 会话页里的那一份(见上)。 */ embedded?: boolean }) {
+  // 主题真值读全局订阅,❌ 读 React 上下文:会话页是另一棵根,拿不到主 app 的 ThemeContext。
+  const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
+  const owner = useDocumentClaim('noticeHost', embedded)
+  const anchor = useNoticeComposerAnchor(owner)
+  // Each pop-out window has its own strip: a toast asked from there shows there (lib/notices `toasterId`, aux-layers).
+  const popOuts = useSyncExternalStore(subscribeAuxLayers, readAuxLayers, readAuxLayers)
   if (!owner) return null
-  const closeButtonLabel = closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined
+  const toastOptions = closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined
+  // One position rule, desktop and phone: centred on the composer (or phone bar), 8px above it; none showing → bottom centre.
+  const offset = anchor && { bottom: anchor.bottom }
   return (
     <>
-      {popOuts.map(({ layer, toasterId }) => createPortal(
-        <Toaster id={toasterId} className="gugu-notices" position="bottom-right" theme={theme} toastOptions={closeButtonLabel} />, layer, toasterId))}
       <Toaster
-        className={composerBottom === undefined ? 'gugu-notices' : 'gugu-notices gugu-notices-above-composer'}
-        position="bottom-right"
-        offset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
-        mobileOffset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
+        className={anchor ? 'gugu-notices gugu-notices-above-composer' : 'gugu-notices'}
+        style={anchor && ({ '--gugu-notice-center': `${anchor.center}px` } as React.CSSProperties)}
+        position="bottom-center"
+        visibleToasts={1}
+        offset={offset}
+        mobileOffset={offset}
         theme={theme}
-        toastOptions={closeButtonLabel}
+        toastOptions={toastOptions}
       />
+      {popOuts.map(({ layer, toasterId }) => createPortal(
+        <Toaster id={toasterId} className="gugu-notices" position="bottom-center" visibleToasts={1} theme={theme} toastOptions={toastOptions} />, layer, toasterId))}
+      <NoticeDeck />
     </>
+  )
+}
+
+const TIER_ICON = { error: AlertTriangle, warning: AlertTriangle, success: CheckCircle2, info: Info } as const
+
+/** 右上角那一叠:还在卡片上的常驻通知(没收进铃铛的),露最新的一张,「‹ 1/N ›」翻其余,后面的卡从底下露出边来。 */
+function NoticeDeck() {
+  const { t } = useTranslation('common')
+  const all = useSyncExternalStore(persistentNotices.subscribe, persistentNotices.read, persistentNotices.read)
+  const list = all.filter((notice) => !notice.deferred)
+  const [pick, setPick] = useState<string>()
+  if (list.length === 0) return null
+  // 停在用户翻到的那一张;它没了(或还没翻过)就露最新进来的那张。
+  const index = Math.max(0, pick === undefined ? list.length - 1 : list.findIndex((notice) => notice.key === pick))
+  const step = (by: number) => setPick(list[(index + by + list.length) % list.length].key)
+  const pager = list.length > 1 && (
+    <div className="gugu-notice-pager" aria-label={t('notice.position', { index: index + 1, total: list.length })}>
+      <IconButton size="sm" aria-label={t('notice.previous')} onClick={() => step(-1)}><ChevronLeft size={14} /></IconButton>
+      <span>{index + 1}/{list.length}</span>
+      <IconButton size="sm" aria-label={t('notice.next')} onClick={() => step(1)}><ChevronRight size={14} /></IconButton>
+    </div>
+  )
+  return (
+    <div className="gugu-notice-deck" data-testid="notice-deck" data-count={list.length}>
+      {list.length > 1 && <div className="gugu-notice-deck-peek" data-depth={list.length > 2 ? 2 : 1} aria-hidden />}
+      <NoticeCard notice={list[index]} pager={pager} onLater={() => persistentNotices.defer(list[index].key)} />
+    </div>
+  )
+}
+
+/**
+ * 一张常驻通知卡:卡片叠和铃铛列表画的是同一个组件。卡片叠里「以后再说」= 收进铃铛;铃铛里「清除」= 关掉(onDismiss)。
+ */
+export function NoticeCard({ notice, pager, onLater, onClear }: {
+  notice: PersistentNotice; pager?: React.ReactNode; onLater?: () => void; onClear?: () => void
+}) {
+  const { t } = useTranslation('common')
+  const TierIcon = notice.tier ? TIER_ICON[notice.tier] : undefined
+  const icon = notice.waiting ? <LoadingIndicator size="inline" /> : notice.icon ?? (TierIcon && <TierIcon size={16} />)
+  const closable = notice.dismissible !== false
+  const close = onClear ?? onLater
+  return (
+    <section className="gugu-notice-card" data-tier={notice.tier} data-notice-key={notice.key}
+      role={notice.tier === 'error' || notice.tier === 'warning' ? 'alert' : 'status'}>
+      {icon && <div className="gugu-notice-card-icon">{icon}</div>}
+      <div className="gugu-notice-card-body">
+        {notice.title && <div className="gugu-notice-card-title">{notice.title}</div>}
+        {notice.description && <div className="gugu-notice-card-description">{notice.description}</div>}
+        {(pager || notice.action || (closable && onLater && !onClear)) && (
+          <div className="gugu-notice-card-actions">
+            {pager}
+            <span className="gugu-notice-card-spacer" />
+            {closable && onLater && !onClear && notice.action && <Button size="sm" variant="ghost" onClick={onLater}>{t('notice.later')}</Button>}
+            {notice.action && <Button size="sm" variant="primary" onClick={notice.action.onClick}>{notice.action.label}</Button>}
+          </div>
+        )}
+      </div>
+      {closable && close && (
+        <IconButton size="sm" className="gugu-notice-card-close" aria-label={onClear ? t('notice.clear') : t('notice.later')} data-notice-close="" onClick={close}><X size={14} /></IconButton>
+      )}
+    </section>
   )
 }

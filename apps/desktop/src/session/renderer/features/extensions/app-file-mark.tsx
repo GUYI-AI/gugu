@@ -13,5 +13,5 @@ export const AppFileMark = observer(function AppFileMark({ kind, fileName, conte
   const icon = kind ? peekInstalledAppsTracked()?.fileIcon(kind, fileName, context) ?? null : null;
   return icon
     ? <img src={icon} alt="" aria-hidden="true" className="shrink-0" style={{ width: size, height: size }} />
-    : <FileMark name={fileName} size={size} className="shrink-0 text-foreground-muted" />;
+    : <FileMark name={fileName} size={size} className="shrink-0" />;
 });

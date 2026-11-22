@@ -12,7 +12,6 @@ import { displayIdentity } from '../../../../../../../tests/support/testHarness'
 import { dicebearAvatarDataUri } from '@/lib/dicebearAvatar'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { until } from '../../../../../../../tests/support/awaitCondition'
-import { FILE_MARKS } from '@gugu/session-shared/file-marks'
 import '@/i18n/registerMessagingCatalog'
 import '@/styles/tokens.css'
 
@@ -155,9 +154,7 @@ describe('participant mention presentation', () => {
     await option.click()
     await until('file pill is inserted', () => input.element().querySelector('[data-mention-id="/w/notes/report.pdf"]') !== null)
     const pill = input.element().querySelector('[data-mention-id="/w/notes/report.pdf"]')!
-    const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    glyph.innerHTML = FILE_MARKS.pdf.glyph
-    expect(pill.querySelector('svg')?.innerHTML).toBe(glyph.innerHTML)
+    expect(pill.querySelector('svg')?.getAttribute('data-file-icon')).toBe('pdf')
     expect([...pill.querySelectorAll('span')].map(span => span.textContent)).toContain(' (Lines 3–4)')
   })
 })

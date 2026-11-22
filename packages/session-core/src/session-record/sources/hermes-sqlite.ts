@@ -29,7 +29,8 @@ type MessageRow = {
 const VISIBLE = 'session_id = ? and (active = 1 or compacted = 1) and _compressed_summary = 0';
 const COLUMNS = 'id, role, content, tool_call_id, tool_calls, tool_name, timestamp, finish_reason, reasoning, reasoning_content, display_kind';
 const READ_PAGE_ROWS = 500;
-const HERMES_RESUME_VERSION = 1;
+// 2: times are whole milliseconds; state saved before that carries fractions.
+const HERMES_RESUME_VERSION = 2;
 
 /** Hermes 自己替人塞进对话的用户行(`tui_gateway/server.py` 的显示投影同样不把它们画成用户说的话)。 */
 const SYNTHETIC_USER_KINDS = new Set(['hidden', 'model_switch', 'auto_continue', 'async_delegation_complete']);
@@ -141,7 +142,7 @@ class HermesSqliteSource extends SqlitePollSource<SessionRecordLocator> {
       const session = this.db!.prepare('select ended_at from sessions where id = ?').get(this.locator.providerSessionId) as
         | { ended_at: number | null }
         | undefined;
-      if (session?.ended_at != null) entries.push(this.close(this.openTurn, session.ended_at * 1000));
+      if (session?.ended_at != null) entries.push(this.close(this.openTurn, millis(session.ended_at)));
     }
     if (entries.length > 0) this.events!.onEntries(entries);
   }
@@ -154,7 +155,7 @@ class HermesSqliteSource extends SqlitePollSource<SessionRecordLocator> {
   }
 
   private decode(row: MessageRow): RecordEntry[] {
-    const at = row.timestamp * 1000;
+    const at = millis(row.timestamp);
     const key = (index: number) => `hermes:${row.id}#${index}`;
     const out: RecordEntry[] = [];
     const push = (event: NormalizedEvent) => out.push({ key: key(out.length), at, position: row.id - 1, event });
@@ -260,3 +261,8 @@ function toolCallsOf(raw: string | null): NormalizedEvent[] {
 
 /** Hermes 内置工具名 → ACP ToolKind。名单外一律 'other'。 */
 const hermesToolKind = toolKindTable({ execute: ['terminal'], read: ['read_file'], edit: ['write_file', 'patch'], search: ['search_files'], fetch: ['web_extract', 'web_search'] });
+
+/** Hermes keeps times as float seconds; record times are whole milliseconds (a history-clear floor turns them into BigInt). */
+function millis(seconds: number): number {
+  return Math.round(seconds * 1000);
+}

@@ -24,6 +24,9 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
 }))
 const { AboutSection } = await import('../../../../apps/desktop/src/components/settings/AboutSection')
 const { UpdateBanner } = await import('../../../../apps/desktop/src/components/UpdateBanner')
+const { NoticeHost } = await import('../../../../apps/desktop/src/components/NoticeHost')
+// The phone card is a persistent notice: it draws in the one banner slot.
+const floating = () => createElement('div', {}, createElement(NoticeHost), createElement(UpdateBanner))
 
 let hostRevision = 0
 let harness: ReturnType<typeof createReactHarness>
@@ -119,7 +122,7 @@ describe('关于页说得出「下载新版本中… N%」', () => {
 
 describe('@@@5576 横幅不为用户没要求的下载弹出来', () => {
   it('收到 downloading 状态(带进度),横幅仍不出现;下好了才出现', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, downloading(50))
     expect(harness.container.textContent).toBe('')
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded' })
@@ -131,7 +134,7 @@ describe('@@@5576 横幅不为用户没要求的下载弹出来', () => {
 // 按下「重启更新」时宿主先查 feed,有更新的一版就先下它(downloading),下好了接着装。界面要跟着走。
 describe('按下重启更新后宿主先去下更新的一版', () => {
   it('横幅跟随真实下载进度,只在宿主开始安装时显示重启', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded' })
     const install = [...harness.container.querySelectorAll('button')].find((b) => b.textContent === '立即重启更新')!
     await act(async () => { install.click() })
@@ -161,7 +164,7 @@ describe('按下重启更新:宿主查 feed 那段时间横幅照实说在检查
   it('安装请求回来仍不假报重启,宿主交接后才显示重启', async () => {
     let finish!: () => void
     installUpdate.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded' })
     const install = [...harness.container.querySelectorAll('button')].find((b) => b.textContent === '立即重启更新')!
     await act(async () => { install.click() })
@@ -174,7 +177,7 @@ describe('按下重启更新:宿主查 feed 那段时间横幅照实说在检查
   })
 
   it('按下后那次下载失败 → 「更新失败 + 重试」,重试下好后按钮是「立即重启更新」,❌ 卡在「正在重启…」', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded' })
     const install = [...harness.container.querySelectorAll('button')].find((b) => b.textContent === '立即重启更新')!
     await act(async () => { install.click() })

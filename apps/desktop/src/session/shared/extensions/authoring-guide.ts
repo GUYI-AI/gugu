@@ -475,7 +475,7 @@ picture below this text is every piece, each captioned with the markup that draw
 - \`<ul class="list">\` rows: \`<li><gugu-avatar user="…"></gugu-avatar><div><strong>Title</strong><span>subtitle</span></div><gugu-time datetime="…"></gugu-time></li>\`. A row is clickable as a \`button\` / \`a\` / \`label\` or with \`tabindex\`; \`aria-selected="true"\` marks the selected one. A plain \`ul\` / \`ol\` is a list in text.
 - \`table\` (\`thead\`, a \`tfoot\` total), \`details\` + \`summary\`, \`progress\` (a vote's bar), \`meter\`.
 - Tabs: \`div[role=tablist]\` of \`button[role=tab]\`, \`aria-selected="true"\` on the open one; \`role="status"\` a quiet note, \`role="alert"\` an error; a \`<dialog>\` (opened with its showModal) to confirm.
-- Classes: \`.card\` a block, \`.row\` side by side (wraps), \`.stack\` a column, \`.muted\` secondary text, \`.primary\`, \`.danger\`. Nothing else is needed.
+- Classes: \`.card\` a block, \`.row\` side by side (wraps), \`.stack\` a column, \`.muted\` secondary text, \`.primary\`, \`.danger\`.
 
 ## The host's elements
 
@@ -483,7 +483,7 @@ picture below this text is every piece, each captioned with the markup that draw
 - \`<gugu-avatar user="user:…">\` (\`size="xs|sm|md|lg"\`, \`name\` to show the name): a member of this chat, with their face. From API 27, declare \`chat:read\`; the elements share one member read per chat. Someone not in it: \`label="their name"\`.
 - \`<gugu-time datetime="…">\` (ISO or ms): 刚刚 / 3 分钟前 / 08:20 / 昨天 14:20 / 10月3日, kept current, in the person's language.
 - \`<gugu-empty icon="checklist"><strong>No votes yet</strong><small>Start one</small></gugu-empty>\`, with a \`button.primary\` last in it when there is something to do.
-- \`<gugu-file-mark name="a.pdf" tile>\` (API 56): a file as gugu draws it.
+- \`<gugu-file-mark name="a.pdf" tile>\` (API 56): a file as gugu draws it; \`folder\` (API 63): a folder.
 
 ## Markdown
 

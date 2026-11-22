@@ -629,8 +629,30 @@ describe('claude jsonl 记录源', () => {
       ]);
     });
 
+    it('a resume after a failed turn: the meta line Claude Code sends itself and its synthetic answer are not conversation', async () => {
+      const at = (second: number) => `2026-11-21T15:36:4${second}.000Z`;
+      const row = (uuid: string, second: number, body: Record<string, unknown>) =>
+        JSON.stringify({ parentUuid: null, isSidechain: false, uuid, timestamp: at(second), sessionId: SESSION_ID, ...body });
+      const ask = (uuid: string, second: number, text: string) => row(uuid, second, { type: 'user', message: { role: 'user', content: text } });
+      // Shapes from a claude 2.1.267 record (mac1 2026-11-21), texts as written.
+      const lines = [
+        ask('u-1', 1, 'first'),
+        row('a-1', 2, { type: 'assistant', isApiErrorMessage: true, error: 'unknown',
+          message: { id: 'a-1-m', model: '<synthetic>', role: 'assistant', stop_reason: 'stop_sequence', content: [{ type: 'text', text: 'API Error: 400' }] } }),
+        row('u-meta', 3, { type: 'user', isMeta: true, message: { role: 'user', content: [{ type: 'text', text: 'Continue from where you left off.' }] } }),
+        row('a-meta', 4, { type: 'assistant', isApiErrorMessage: false,
+          message: { id: 'a-meta-m', model: '<synthetic>', role: 'assistant', stop_reason: 'stop_sequence', content: [{ type: 'text', text: 'No response requested.' }] } }),
+        ask('u-2', 5, 'second'),
+        row('a-2', 6, { type: 'assistant', message: { id: 'msg_a2', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'done' }] } })
+      ];
+      const { timeline } = await build(lines);
+      const turns = timeline.getSnapshot().turns;
+      expect(turns.map((turn) => turn.outcome?.kind)).toEqual(['error', 'done']);
+      expect(collectItems(turns).map((item) => (item as { text?: string }).text)).not.toContain('No response requested.');
+    });
+
     it('拆除时存档:archive() 之后紧接着 dispose(),存档照样写得出来', async () => {
-      // 宿主就是这个顺序(session-timeline 的 archiveBeforeDispose → dispose)。
+      // 折叠线程就是这个顺序(session-timeline 的 fold.ts:archive() 之后 dispose())。
       const { timeline } = await build();
       const archived = timeline.archive?.();
       timeline.dispose();

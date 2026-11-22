@@ -5,7 +5,6 @@ import {
   MESSAGE_PREVIEW_RPC,
   messagePreviewTopic,
   projectMessagePreview,
-  mergeMessagePreviews,
   type MessagePreviewPayload,
   type MessagePreviewProjection,
 } from '@gugu/session-core/session-record/message-preview';
@@ -39,14 +38,6 @@ export async function readSessionPreview(
   sessionId: string,
   turnLimit = 4,
 ): Promise<service.SessionTimelineResult<MessagePreviewProjection>> {
-  if (service.readSessionRow(sessionId)?.runtime === 'acp') {
-    // 原生聊天已提交的回合可能尚未进入 harness 文件(如准入期间取消),与聊天正文读同一份库尾。
-    const record = await service.compactNativeRecord({ conversationId: sessionId, limit: turnLimit });
-    if (!record.ok) return record;
-    // 库内 seq 与活回合的运行时 seq 各自计数;原生读口给出的顺序才是这里的先后。
-    const archive = projectMessagePreview(record.value.turns, activityPreviewSources);
-    return { ok: true, value: record.value.activePreview ? mergeMessagePreviews(archive, record.value.activePreview) : archive };
-  }
   const snapshot = await service.snapshot({ conversationId: sessionId, limit: turnLimit });
   return snapshot.ok ? { ok: true, value: projectMessagePreview(snapshot.value.turns, activityPreviewSources) } : snapshot;
 }

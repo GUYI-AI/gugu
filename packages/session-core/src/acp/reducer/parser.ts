@@ -81,7 +81,7 @@ export class AcpTranscriptParser {
    * Native rows can finish individual parts of the same assistant message. The last boundary names
    * that message even when its row carried no visible content (an empty final thinking fragment).
    */
-  pushRecordEvent(event: NormalizedEvent, at: number, boundaryMessageId: string | null): void {
+  pushRecordEvent(event: NormalizedEvent, at: number, boundaryMessageId: string | null, turn?: { key: string; opens: boolean }): void {
     const { committed, active } = this.state.transcript;
     const last = committed.at(-1);
     const messageId = event.kind === 'thinking' || (event.kind === 'message' && event.role === 'assistant')
@@ -90,7 +90,7 @@ export class AcpTranscriptParser {
       // Preserve the turn/item identities; its next native boundary supplies the final outcome/time.
       this.state = { ...this.state, transcript: { committed: committed.slice(0, -1), active: last } };
     }
-    this.pushEvent(event, at);
+    this.state = reduce(this.state, { kind: 'event', event, at, ...(turn ? { turnKey: turn.key, opens: turn.opens } : {}) }, this.deps);
   }
 
   hasEntity(event: NormalizedEvent): boolean {

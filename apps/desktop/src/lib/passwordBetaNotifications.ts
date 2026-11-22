@@ -48,9 +48,9 @@ export const passwordNotifications = (snapshot: PasswordSnapshot | undefined): P
   snapshot ? [...snapshot.approvals, ...snapshot.saves] : []
 
 /** The device prompt can be put aside; the notification list brings it back. */
-const promptListeners = new Set<(deviceId: string | null) => void>()
-export function openPasswordDevicePrompt(deviceId: string | null): void { for (const listener of promptListeners) listener(deviceId) }
-export function useOpenPasswordDevicePrompt(listener: (deviceId: string | null) => void): void {
+const promptListeners = new Set<(deviceId: string) => void>()
+export function openPasswordDevicePrompt(deviceId: string): void { for (const listener of promptListeners) listener(deviceId) }
+export function useOpenPasswordDevicePrompt(listener: (deviceId: string) => void): void {
   useEffect(() => { promptListeners.add(listener); return () => { promptListeners.delete(listener) } }, [listener])
 }
 

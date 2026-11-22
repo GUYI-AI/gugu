@@ -314,10 +314,13 @@ function defaultRunSync(args: string[]): void {
   spawnSync('ssh', args, { stdio: 'ignore', timeout: 2_000 })
 }
 
-/** 启动时那一次:不挡主进程(退出时才用同步的那一份,进程马上要走了)。 */
-export function runSshInBackground(args: string[]): void {
+/** 启动时那一次:不挡主进程(退出时才用同步的那一份,进程马上要走了);它结束时兑现。 */
+export function runSshInBackground(args: string[]): Promise<void> {
   const child = spawn('ssh', args, { stdio: 'ignore' })
-  child.on('error', () => undefined)
+  return new Promise((resolve) => {
+    child.on('error', () => resolve())
+    child.on('close', () => resolve())
+  })
 }
 
 /**

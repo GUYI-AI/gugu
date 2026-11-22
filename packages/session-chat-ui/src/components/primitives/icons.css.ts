@@ -1,8 +1,6 @@
 import { style } from '@vanilla-extract/css';
-import { vars } from '@session-chat/styles/theme.css';
 
-/** A small `FileMark` (diff header, resource link): muted color, no flex shrink. */
+/** A small `FileMark` (diff header, resource link): no flex shrink. Its colour is the file icon's own. */
 export const genericFileIcon = style({
-  color: vars.fgMuted,
   flexShrink: 0,
 });
