@@ -8,7 +8,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Info, X } from 
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import './notice-host.css'
-import { useNoticeComposerBottom } from './notice-host-position'
+import { useNoticeComposerAnchor } from './notice-host-position'
 
 const CHANGED = 'gugu:notice-host-changed'
 let hostSeq = 0
@@ -60,20 +60,23 @@ function useDocumentClaim(claim: 'noticeHost' | 'noticeBanner', embedded: boolea
   return owner
 }
 
-/** 转瞬的提示条:composer 上方(看得见 composer / 手机 tab 栏时贴其上沿 8px),一次一条。 */
+/** 转瞬的提示条:composer 上方居中(看得见 composer / 手机 tab 栏时贴其上沿 8px,以它为中线),一次一条。 */
 export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: string; /** 会话页里的那一份(见上)。 */ embedded?: boolean }) {
   // 主题真值读全局订阅,❌ 读 React 上下文:会话页是另一棵根,拿不到主 app 的 ThemeContext。
   const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
   const owner = useDocumentClaim('noticeHost', embedded)
-  const composerBottom = useNoticeComposerBottom(owner)
+  const anchor = useNoticeComposerAnchor(owner)
   if (!owner) return null
+  // One position rule, desktop and phone: centred on the composer (or phone bar), 8px above it; none showing → bottom centre.
+  const offset = anchor && { bottom: anchor.bottom }
   return (
     <Toaster
-      className={composerBottom === undefined ? 'gugu-notices' : 'gugu-notices gugu-notices-above-composer'}
-      position="bottom-right"
+      className={anchor ? 'gugu-notices gugu-notices-above-composer' : 'gugu-notices'}
+      style={anchor && ({ '--gugu-notice-center': `${anchor.center}px` } as React.CSSProperties)}
+      position="bottom-center"
       visibleToasts={1}
-      offset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
-      mobileOffset={composerBottom === undefined ? undefined : { bottom: composerBottom }}
+      offset={offset}
+      mobileOffset={offset}
       theme={theme}
       toastOptions={closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined}
     />

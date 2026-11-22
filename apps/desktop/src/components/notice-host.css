@@ -32,6 +32,13 @@
 .gugu-notices-above-composer[data-sonner-toaster][data-y-position='bottom'] {
   clip-path: inset(-100vh -100vw -8px -100vw);
 }
+/* Centred on the composer it sits above (notice-host-position.ts), not on the window: the sidebar is not under it.
+ * At sonner's phone width (≤600px) the strip already spans the composer's width, i.e. the same centre line. */
+@media (min-width: 601px) {
+  .gugu-notices-above-composer[data-sonner-toaster][data-x-position='center'] {
+    left: var(--gugu-notice-center, 50%);
+  }
+}
 
 /* 常驻的横幅位(NoticeBannerSlot):页面最上面一行、占文档流,一次一条。外观同提示条一套 token。
    右边给浮在内容右上角的窗口按钮让位(Linux;其它平台为 0),同页签条读的是同一个变量(main.tsx)。 */

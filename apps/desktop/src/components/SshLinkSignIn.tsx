@@ -22,6 +22,7 @@ import { Button } from './ui/Button'
 import { InlineAction } from './settings/addServer/InlineAction'
 import { CommandBlock } from './settings/addServer/CommandBlock'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { Server } from '@/lib/icons'
 import { useToast } from './toastContext'
 import { useNotice, type Notice } from '@/lib/notices'
 import { messageForUser } from '@/lib/userFacingError'
@@ -136,12 +137,12 @@ export function SshLinkSignIn() {
     else if (signingIn) setSigningIn(null)
     else dismiss()
   }
-  return { ongoing: true, onDismiss: close, description: (
+  // 机器名是这条横幅的标题(带服务器图标),下面平铺那一句和按钮 —— ❌ 横幅里再套一张卡。
+  return { ongoing: true, onDismiss: close, title: shown.name, icon: <Server size={16} />, description: (
       <div data-testid="ssh-link-sign-in">
         {shown.reason === 'waitingIdle' && !activePrompt ? (
           // 版本对不上、那台机器在等 agent 空闲:与 SSH 提问同一副卡(机器名一行 + 一句 + 底行按钮),「现在」先当面确认一次。
           <SshPromptFrame
-            context={{ name: shown.name }}
             testId={confirmRestart?.deviceId === shown.deviceId ? 'ssh-link-update-confirm' : 'ssh-link-update-ask'}
             actions={
               confirmRestart?.deviceId === shown.deviceId ? (
@@ -170,7 +171,6 @@ export function SshLinkSignIn() {
             prompt={activePrompt}
             pending={answered}
             variant="floating"
-            context={{ name: shown.name }}
             cancellable
             onAnswer={(value, extra) => {
               if (value !== null) setAnswered(true)
