@@ -93,6 +93,22 @@ describe('machine routing (one workbench seam)', () => {
     expect(() => r.route('tasks.x', [P, LOCAL_P])).toThrow(MachineRoutingConflictError);
   });
 
+  // 同一台 server 两条设备行(换了设备 id,旧行还挂着):旧行的账号副本 / App 给的旧行 / 发过去的参数都只给没主的 id 定主,
+  // 项目与它的工作区留在答过话的那台,一次调用的 id 不被分到两台机器上。
+  it('lets only what a machine answered move an id; what the account recalls fills unowned ids only', () => {
+    const r = new MachineRegistry();
+    const W = '22222222-aaaa-4bbb-8ccc-000000000002';
+    r.propose('stale-row', [P]);
+    expect(r.machineOf(P), 'nobody had answered for it yet').toBe('stale-row');
+    r.register('live-row', [P, W]);
+    expect(r.route('projects.releaseProjectWorkspace', [P, W])).toBe('live-row');
+    r.propose('stale-row', [P, W]);
+    expect(r.route('projects.releaseProjectWorkspace', [P, W]), 'the stale row’s copy does not take them back').toBe('live-row');
+    r.forgetMachine('live-row');
+    r.propose('stale-row', [P]);
+    expect(r.machineOf(P), 'once the live row is gone, its copy may name it again').toBe('stale-row');
+  });
+
   // #581 这台电脑的 id 永远是本机的:别的机器的清单、应答、推送都认领不走;已经被认领的,本机一认领就撤回来。
   it('keeps this computer’s ids local whatever another machine lists or answers', () => {
     const r = registry();

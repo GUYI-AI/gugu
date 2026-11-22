@@ -14,6 +14,9 @@ import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@shared/core/projects/session-
 /** 一次调用里认出的机器:null = 本机。 */
 export type RoutedMachine = string | null;
 
+/** 一份清单是谁说的:那台机器自己答的(定主,register),还是账号上记着的那份(只给没主的定主,propose)。 */
+export type MachineListSource = 'machine' | 'account';
+
 export class MachineRoutingConflictError extends Error {
   constructor(channel: string, machines: readonly string[]) {
     super(`[machine-routing] the arguments of ${channel} point at several machines: ${machines.join(', ')}`);
@@ -79,13 +82,25 @@ export class MachineRegistry {
   /** 每台机器都有、id 写死的实体(见文件末尾的换名);它们本身永不登记。 */
   constructor(readonly fixedIds: readonly string[] = []) {
     // 一次登记 / 忘掉是一次变化:读的人在它做完之后才重算一遍,❌ 每个 id 一遍。
-    makeObservable(this, { register: action, forgetMachine: action, claimLocal: action });
+    makeObservable(this, { register: action, propose: action, forgetMachine: action, claimLocal: action });
   }
 
-  /** 记下这些 id 属于那台机器(这台电脑自己的除外,见 claimLocal)。 */
+  /** 那台机器自己说的(连着时读到的它的清单、它的应答与推送):这些 id 是它的(这台电脑自己的除外,见 claimLocal)。 */
   register(deviceId: string, ids: Iterable<string>): void {
     for (const id of ids) {
       if (looksLikeEntityId(id) && !this.fixedIds.includes(id) && !this.local.has(id)) this.owner.set(id, deviceId);
+    }
+  }
+
+  /**
+   * 别人转述的(那台没连着时账号上记着的那份、App 交来的文件夹所在机器、发到那台机器去的参数):只给还没主的 id 定主。
+   * 同一台机器可能挂着两条设备行(重装 / 换了设备 id,旧行还在),旧行的账号副本照样写着那批 id —— 让它改主,
+   * 每次设备列表一刷新,项目就被旧行抢走、它的工作区和会话却还在活的那台名下,一次调用里的 id 分到两台机器上。
+   * 主只由那台机器自己的回答改(register),与侧栏「连着的那台优先于离线的旧行」(groupRowOrder)同一条。
+   */
+  propose(deviceId: string, ids: Iterable<string>): void {
+    for (const id of ids) {
+      if (looksLikeEntityId(id) && !this.fixedIds.includes(id) && !this.local.has(id) && !this.owner.has(id)) this.owner.set(id, deviceId);
     }
   }
 

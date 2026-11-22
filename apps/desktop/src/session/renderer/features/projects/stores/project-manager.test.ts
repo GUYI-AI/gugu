@@ -823,6 +823,20 @@ describe('#581 这台电脑的项目不被别的机器认领', () => {
     expect(store.projects.has(mine.id)).toBe(true);
   });
 
+  it('同一台 server 两条设备行:旧行的账号副本抢不走活的那台答过的项目,也不因它的清单变了拿掉', async () => {
+    const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const theirs = localProject({ id: 'server-project-two-rows', name: 'srv' });
+    const store = new ProjectManagerStore();
+    vi.spyOn(store, 'mountProject').mockResolvedValue(undefined);
+    store.syncMachineProjects('live-row', [theirs]);
+    store.syncMachineProjects('stale-row', [theirs], [], 'account');
+    expect(machineRegistry.machineOf(theirs.id)).toBe('live-row');
+    store.syncMachineProjects('stale-row', [], [], 'account');
+    expect(store.projects.has(theirs.id), '旧行的清单空了,活的那台的项目还在').toBe(true);
+    store.dropMachine('stale-row'); store.dropMachine('live-row');
+    machineRegistry.forgetMachine('stale-row'); machineRegistry.forgetMachine('live-row');
+  });
+
   it('本机清单先到:别的机器的清单(账号副本)再写着它也认领不走,那台的清单变了 / 被移除都拿不掉它', async () => {
     const { machineRegistry } = await import('@renderer/lib/machine-routing');
     const mine = localProject({ id: 'keep-me-local-first', name: 'keep-me' });
