@@ -13,7 +13,8 @@ import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
-import { ConnectionModelPicker, useConnectionModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import { ConnectionModelPicker, useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { retryOf, valueOf } from '@/lib/replica';
@@ -61,7 +62,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const list = useConnectionModelList(machine, source);
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
   const keyProblem = list.kind === 'unlisted' && list.reason !== 'no-list'
-    ? translate(list.reason === 'unauthorized' ? 'customModels.refused' : 'customModels.unreachable') : '';
+    ? translate(connectionProbeMessageKey(list.reason)) : '';
   const setAddress = (baseUrl: string) => {
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
@@ -81,7 +82,10 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           const probe = await client.detectCustomModelProtocols({ apiKey, baseUrl: typedAddress, modelId: models[0] });
           if (!probe.success) throw new Error(errorText(probe.error));
           saved = probe.data.endpoints;
-          if (!saved.length) throw new Error(translate(probe.data.failures.some(({ reason }) => reason === 'unauthorized') ? 'customModels.refused' : 'customModels.unreachable'));
+          if (!saved.length) {
+            const reading = probeModelList(probe.data);
+            throw new Error(translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable')));
+          }
         }
       }
       const result = await client.saveCustomModel({

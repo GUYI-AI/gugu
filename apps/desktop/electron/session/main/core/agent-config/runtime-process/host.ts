@@ -24,8 +24,7 @@ import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context
 import { getPlugin, listPlugins } from '@main/core/agents/plugin-registry';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { harnessWorkerHost } from '@main/harness-worker-host';
-import { systemProxyFill } from '@main/utils/systemProxyEnv';
-import { loginShellEnv } from '@main/utils/userEnv';
+import { connectionProbeProxyEnv } from '@main/core/agents/connection-endpoint-env';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
@@ -49,9 +48,9 @@ const agentConfigWorker = lazyWorker(
     // 桌面上一台机器一份数据目录,仍放那里。
     env: {
       ...process.env,
-      // #6892 harness 的登录态 / 模型目录探针在这个 worker 里起(agy models 要连外网);它在另一个进程,
-      // 用不了 buildAgentEnv(那份依赖主进程里的登录 shell 快照),所以在给它环境的这一处补。
-      ...systemProxyFill(process.env, loginShellEnv()),
+      // The worker cannot read the host's login-shell snapshot. Resolve proxy values here,
+      // with the same shell/process/system precedence as the agents it configures.
+      ...connectionProbeProxyEnv(),
       GUGU_AGENT_AUTH_EXPIRY_FILE: join(
         process.env.GUGU_SERVER_MODE === '1' && process.env.GUGU_SERVER_HOME ? process.env.GUGU_SERVER_HOME : app.getPath('userData'),
         'agent-auth-expiry.json'
