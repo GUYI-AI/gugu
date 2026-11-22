@@ -146,6 +146,16 @@ describe('the reader acknowledges, resumes from what it has, and verifies nothin
     await expect(source.read(0, 400_000)).rejects.toThrow('changed')
     expect(line.sent.filter(m => m.type === 'file.stream')).toHaveLength(1)
   })
+
+  it('a machine refusing the read is said at once with its reason, never retried as a dropped line', async () => {
+    const line = fakeLinks()
+    const source = await openProjectFileStream(revision, read, { links: line.links as never, deviceId: 'dev', accountId: 'owner' })
+    await flush()
+    const request = line.sent.find(m => m.type === 'file.stream')!
+    line.reply(request.request_id, { error: { code: 'stream_failed', message: 'No workspace w in project p' } })
+    await expect(source.read(0, 400_000)).rejects.toThrow('No workspace w in project p')
+    expect(line.sent.filter(m => m.type === 'file.stream')).toHaveLength(1)
+  })
 })
 
 describe('a read in main holds the window\'s link', () => {

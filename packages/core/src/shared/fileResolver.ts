@@ -66,6 +66,18 @@ export class MissingFileObjectError extends Error {
 export class FileReadRevokedError extends Error {
   constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
 }
+/**
+ * A file's sha256 is its uploader's claim (the server names the object after it and never hashes it). Bytes that do not
+ * match the pinned sha are refused whole: nothing is delivered, saved or shown.
+ */
+export class FileIntegrityError extends Error {
+  readonly code = 'integrity_failed'
+  constructor(what = 'File') { super(`integrity_failed: ${what} SHA-256 mismatch`) }
+}
+/** Across a process or native boundary (Electron invoke, a Capacitor plugin) only the message arrives: it carries the code. */
+export function isFileIntegrityError(error: unknown): boolean {
+  return error instanceof FileIntegrityError || error instanceof Error && error.message.includes('integrity_failed')
+}
 /** How long an agent's read waits for bytes their sender is still uploading before saying so. */
 export const ATTACHMENT_PENDING_WAIT_MS = 8_000
 const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])

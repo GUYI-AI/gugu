@@ -59,7 +59,7 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
   const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
   expect(shell).not.toBeNull();
-  expect(shell.querySelector('aside')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
+  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
   expect(surface).not.toBeNull();
   const rect = surface.getBoundingClientRect();
   expect(rect.width).toBeGreaterThan(700);
@@ -70,13 +70,13 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   expect(style.borderRadius).toBe('12px');
   expect(style.backgroundColor).toBe('rgb(255, 255, 255)');
   expect(style.boxShadow).not.toBe('none');
-  expect(shell.querySelector('aside > .bg-border'), 'no full-height line may protrude into the rounded frame gutter').toBeNull();
+  expect(shell.querySelector('[data-workspace-left-panel] > .bg-border'), 'no full-height line may protrude into the rounded frame gutter').toBeNull();
   const local = harness.container.querySelector<HTMLElement>('[aria-label="project menu"]')!;
   const center = (element: HTMLElement) => { const box = element.getBoundingClientRect(); return box.top + box.height / 2; };
   const localCenter = center(local);
   const draft = harness.container.querySelector<HTMLInputElement>('[aria-label="retained draft"]')!;
   await userEvent.click([...harness.container.querySelectorAll('button')].find((button) => button.textContent === 'toggle list')!);
-  await until('the real list collapses to its rail', () => shell.querySelector('aside')!.getBoundingClientRect().width === SIDEBAR_RAIL_PX);
+  await until('the real list collapses to its rail', () => shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width === SIDEBAR_RAIL_PX);
   expect(harness.container.querySelector('[aria-label="retained draft"]')).toBe(draft);
   expect(draft.value).toBe('keep this draft');
   expect(mounted).toHaveBeenCalledTimes(1);
@@ -145,7 +145,7 @@ it('a saved user sidebar width takes precedence over the unified navigation defa
       <WorkspaceLayout leftSidebar={<div>project list</div>} mainContent={<div>content</div>} />
     </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
   </div>);
-  const aside = harness.container.querySelector('aside')!;
+  const aside = harness.container.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
   expect(aside.getBoundingClientRect().width).toBe(320);
   expect(readInterface('gugu.taskpage.sidebarWidth')).toBe(320);
   writeInterface('gugu.taskpage.sidebarWidth', undefined);
@@ -176,5 +176,5 @@ it('a place without the task list hides the sidebar as a retained surface: same 
   expect(harness.container.querySelector('[data-list]'), 'coming back shows the same list, not a rebuilt one').toBe(list);
   expect(list.checkVisibility()).toBe(true);
   expect(listMounted).toHaveBeenCalledTimes(1);
-  expect(shell.querySelector('aside')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
+  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
 });

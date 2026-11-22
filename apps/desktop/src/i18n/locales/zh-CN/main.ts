@@ -996,7 +996,6 @@ export default {
     "newAgent": "创建智能体",
     "newTask": "新建任务",
     "usage": "用量",
-    "resizeChatList": "调整聊天列表宽度",
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",
       "title": "无法连接服务器"

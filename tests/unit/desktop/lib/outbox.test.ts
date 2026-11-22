@@ -7,7 +7,7 @@
  * - bound to the account it was enqueued under; another person stops the drain and aborts what is in flight.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createOutbox, OutboxRejected, type OutboxAccount, type OutboxItem, type OutboxKind, type OutboxStorage } from '../../../../apps/desktop/src/lib/outbox/core'
+import { createOutbox, OutboxRejected, isServerRefusal, type OutboxAccount, type OutboxItem, type OutboxKind, type OutboxStorage } from '../../../../apps/desktop/src/lib/outbox/core'
 import { noteBackendAnswer } from '@gugu/core/cloud/backendReachability'
 
 function memoryStorage(): OutboxStorage & { rows: Map<string, OutboxItem> } {
@@ -182,6 +182,46 @@ describe('outbox core', () => {
     await flush()
     expect(second.get('lost')).toBeUndefined()
     expect(second.get('refused')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
+  })
+
+  it('fails a write the server refused once, never sends it again on recovery or restart; a transient failure waits (#3578)', async () => {
+    const storage = memoryStorage()
+    const first = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+    const note = kind('note', { timeoutMs: null })
+    first.register(note.definition)
+    await first.loaded()
+    await first.enqueue('note', { text: 'dm', lane: 'a' }, { id: 'dm' })
+    await first.enqueue('note', { text: 'busy', lane: 'b' }, { id: 'lock' })
+    await flush()
+    // As the chat writer throws send_message_with_overlays' dm_friendship_required: its words, the SQLSTATE in `cause`.
+    note.calls.find((call) => call.item.id === 'dm')!.reject(new Error('dm_friendship_required', { cause: { code: '42501', message: 'dm_friendship_required' } }))
+    note.calls.find((call) => call.item.id === 'lock')!.reject(Object.assign(new Error('could not obtain lock'), { code: '55P03' }))
+    await flush()
+    expect(storage.rows.get('u1/dm')).toMatchObject({ state: 'failed', attempts: 1, failure: { reason: 'rejected', message: 'dm_friendship_required' } })
+    expect(storage.rows.get('u1/lock')).toMatchObject({ state: 'waiting', failure: { reason: 'unreachable' } })
+    noteBackendAnswer(false)
+    noteBackendAnswer(true)
+    await flush()
+    expect(note.calls.filter((call) => call.item.id === 'dm')).toHaveLength(1)
+    first.dispose()
+
+    const second = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+    const again = kind('note', { timeoutMs: null })
+    second.register(again.definition)
+    await second.loaded()
+    await flush()
+    expect(again.calls.map((call) => call.item.id)).not.toContain('dm')
+    expect(second.get('dm')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
+  })
+
+  it('reads a refusal from the SQLSTATE or HTTP status on the error or its cause (isServerRefusal)', () => {
+    for (const refused of [{ code: '42501' }, { code: '23505' }, { code: '55000' }, new Error('wrapped', { cause: { code: '22023' } }), { status: 403 }, { status: 409 }]) {
+      expect(isServerRefusal(refused)).toBe(true)
+    }
+    // Transient classes, PostgREST's own codes (PGRST202: RPC not in its schema cache yet), credentials, 5xx, no answer.
+    for (const transient of [{ code: '08006' }, { code: '40001' }, { code: '55P03' }, { code: '57014' }, { code: 'XX000' }, { code: 'PGRST202' }, { status: 401 }, { status: 429 }, { status: 502 }, new Error('offline')]) {
+      expect(isServerRefusal(transient)).toBe(false)
+    }
   })
 
   it('merges at enqueue and confirms the newest payload, not the one in flight', async () => {

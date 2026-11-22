@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from 'react'
+import { isElementVisible } from '@/lib/elementVisibility'
 
 // The phone bar's actual box includes its token height, lower gap and safe area.
 const ANCHORS = '[data-slot="composer"], [data-phone-shell] [data-phone-tabbar]'
@@ -14,7 +15,7 @@ export function readNoticeComposerAnchor(anchors: Iterable<Element> = document.q
   let center: number | undefined
   for (const composer of anchors) {
     // Retained task/chat surfaces keep their layout while content-visibility hides them.
-    if (!composer.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue
+    if (!isElementVisible(composer, { opacity: true })) continue
     const rect = composer.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.left >= window.innerWidth || rect.bottom <= 0 || rect.top >= window.innerHeight) continue
     if (center !== undefined && rect.top >= top) continue
@@ -45,7 +46,17 @@ export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefin
       const value = readNoticeComposerAnchor(anchors)
       setAnchor((previous) => previous?.bottom === value?.bottom && previous?.center === value?.center ? previous : value)
     }
-    const resize = new ResizeObserver(read)
+    // Only a height can move the composer's top: a pane narrowing or widening (every frame of a panel's move) is no reason
+    // to read, ❌ a forced layout per frame. A box that rewraps changes its own height, and is observed too.
+    const heights = new WeakMap<Element, number>()
+    const resize = new ResizeObserver((entries) => {
+      let moved = false
+      for (const { target, contentRect } of entries) {
+        if (heights.get(target) !== contentRect.height) moved = true
+        heights.set(target, contentRect.height)
+      }
+      if (moved) read()
+    })
     const scan = () => {
       anchors = [...document.querySelectorAll(ANCHORS)]
       const next = new Set<Element>()
@@ -59,6 +70,8 @@ export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefin
     const schedule = (again: boolean) => { rescan ||= again; if (!frame) frame = requestAnimationFrame(() => { frame = 0; const scanNow = rescan; rescan = false; if (scanNow) scan(); else read() }) }
     const reread = () => schedule(false)
     const containsComposer = (node: Node) => node instanceof Element && (node.matches(ANCHORS) || node.querySelector(ANCHORS) !== null)
+    // A scroll moves the composer only if the box scrolled holds it (❌ the transcript beside it, which scrolls as it rewraps).
+    const scrolled = (event: Event) => { if (event.target === document || (event.target instanceof Node && containsComposer(event.target))) reread() }
     const mutations = new MutationObserver((records) => {
       // Streaming transcript rows and Sonner's own style updates do not change the anchor.
       if (records.some((record) => record.type === 'attributes'
@@ -67,14 +80,14 @@ export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefin
     })
     mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'data-state'] })
     window.addEventListener('resize', reread)
-    document.addEventListener('scroll', reread, true)
+    document.addEventListener('scroll', scrolled, true)
     scan()
     return () => {
       if (frame) cancelAnimationFrame(frame)
       resize.disconnect()
       mutations.disconnect()
       window.removeEventListener('resize', reread)
-      document.removeEventListener('scroll', reread, true)
+      document.removeEventListener('scroll', scrolled, true)
     }
   }, [active])
   return anchor

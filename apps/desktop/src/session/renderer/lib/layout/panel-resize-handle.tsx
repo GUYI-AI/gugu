@@ -1,27 +1,25 @@
 import { motion, type MotionValue } from 'framer-motion';
 import { useRef } from 'react';
 import { cn } from '@renderer/utils/utils';
-import { PANEL_SNAP_RATIO } from './panel-motion';
 
-/** 键盘调宽的步长 —— 与 react-resizable-panels 的方向键行为同档,别让改造把纯键盘用户丢下。 */
-const KEYBOARD_STEP_PX = 16;
+/**
+ * 拖分隔条到目标宽度的一半以下就判定为"收起"(Codex 同款:它的 `min * 0.5`)。
+ * 比"拖到 0 才算收起"好用得多 —— 手不用拖到底,而且松手位置离阈值远,不会误判。
+ */
+export const PANEL_SNAP_RATIO = 0.5;
+
+/** 键盘调宽的步长:会话页的边与分栏的分界线(TrackCut)同一档,纯键盘用户也调得动。 */
+export const KEYBOARD_STEP_PX = 16;
 /** 命中带宽度(px)。视觉上的那条发丝线由面板自己的边框画,这一条只负责"抓得住"。 */
 const HIT_STRIP_PX = 4;
 
-/** 骑在边界上:把手中线对准面板边缘,两侧各分一半命中带。把手和它的拖拽守卫共用这一份几何。 */
-function stripStyle(edge: 'start' | 'end', offset: MotionValue<number>) {
-  return {
-    width: HIT_STRIP_PX,
-    ...(edge === 'end'
-      ? // Moved by transform: ❌ left, which lays the strip out again in every frame of a fold.
-        { left: 0, x: offset, marginLeft: -HIT_STRIP_PX / 2 }
-      : { right: offset, marginRight: -HIT_STRIP_PX / 2 }),
-  };
+/** 骑在面板右边界上:把手中线对准面板边缘,两侧各分一半命中带。把手和它的拖拽守卫共用这一份几何。 */
+function stripStyle(offset: MotionValue<number>) {
+  // Moved by transform: ❌ left, which lays the strip out again in every frame of a fold.
+  return { width: HIT_STRIP_PX, left: 0, x: offset, marginLeft: -HIT_STRIP_PX / 2 };
 }
 
 interface PanelResizeHandleProps {
-  /** 把手长在面板的哪一边:侧栏(面板在左)= 'end',工作区面板(面板在右)= 'start'。 */
-  edge: 'start' | 'end';
   /** 面板此刻的**占位**宽 —— 把手骑在这条边界上,所以它和面板是一起动的。 */
   offset: MotionValue<number>;
   /** 面板当前的目标宽(px)。拖拽以它为基准,而不是读 DOM —— 读 DOM 会读到动画中的中间值。 */
@@ -30,12 +28,7 @@ interface PanelResizeHandleProps {
   maxSize: () => number;
   /** 拖拽过程中每一帧的新宽度(已 clamp)。 */
   onSize: (size: number) => void;
-  /**
-   * 拖到收起阈值以下:调用方负责把面板收起。不给 = 这块面板拖拽里不收起,拖到 minSize 就停住
-   * (GUYI-AI/gugu#2642 内层栏:它有自己的收起钮,❌ 在拖拽里再造一个半路收起)。
-   */
-  onCollapse?: () => void;
-  /** 松手。落在阈值以上(不收起的面板:总是)时给出最终宽度,调用方负责持久化。 */
+  /** 松手:最终宽度,调用方负责持久化。拖不收起,拖到 minSize 就停住(收起有各自的钮,或 `follow`)。 */
   onSizeCommit: (size: number) => void;
   onDraggingChange?: (dragging: boolean) => void;
   /**
@@ -51,27 +44,20 @@ interface PanelResizeHandleProps {
 /**
  * 侧栏 / 工作区面板的拖拽分隔条。
  *
- * 为什么不继续用 react-resizable-panels:它把面板宽度记在自己的 flex 布局里,程序性 collapse 是
- * **瞬间**改 flex-grow —— 没有可插入过渡的量(product spec「尺寸变化必须过渡,
- * 面板展开/收缩不允许瞬跳」在会话页一直是破的)。想让它动起来只能每帧调 `resize()`,但那会一路撞上
- * 它自己的收起阈值(动画中途宽度必然低于 minSize,面板会在半路被判成收起而吸走)和它每次布局提交
- * 都落 localStorage 的行为。所以宽度改由 motion value 持有,分隔条只负责把指针位移翻译成宽度。
+ * 分隔条只负责把指针位移翻译成宽度;宽度在屏上怎么走归 PanelTrack(panel-track.ts)。
  *
  * **它是脱离文档流的**(绝对定位骑在边界上),这一点是动效的一部分而不是写法偏好:留在流里的话,
  * 面板一开始收起它就整条消失,主区会先横跳一个把手宽再开始滑 —— 那一下正是"发虚"。
  * 写法是 `group absolute … cursor-col-resize`,可见的线只在 hover 时才出现。
  *
- * 收起判据用 `PANEL_SNAP_RATIO`:拖到目标宽一半以下就收起,不必拖到 0。
- * 收起成一列(#2548,`follow`)的面板不用这条:拖的时候整块跟手,松手才由调用方吸到近的那一态。
+ * 收起成一列(#2548,`follow`)的面板:拖的时候整块跟手,松手才由调用方吸到近的那一态。
  */
 export function PanelResizeHandle({
-  edge,
   offset,
   getSize,
   minSize,
   maxSize,
   onSize,
-  onCollapse,
   onSizeCommit,
   onDraggingChange,
   follow,
@@ -80,20 +66,10 @@ export function PanelResizeHandle({
 }: PanelResizeHandleProps) {
   const dragRef = useRef<{ pointerId: number; startX: number; startSize: number } | null>(null);
 
-  // 面板在左时,指针右移 = 变宽;面板在右时,指针右移 = 变窄。
-  const direction = edge === 'end' ? 1 : -1;
-
   const clampSize = (size: number) => Math.max(minSize, Math.min(maxSize(), size));
 
   const applyDelta = (deltaPx: number, startSize: number) => {
-    const raw = startSize + deltaPx * direction;
-    // 收起阈值判在 clamp **之前**:clamp 会把小于 minSize 的值抬回 minSize,
-    // 收起意图就再也读不出来了。
-    if (onCollapse && raw < minSize * PANEL_SNAP_RATIO) {
-      onCollapse();
-      return null;
-    }
-    const next = clampSize(raw);
+    const next = clampSize(startSize + deltaPx);
     onSize(next);
     return next;
   };
@@ -108,8 +84,7 @@ export function PanelResizeHandle({
       follow.onRelease();
       return;
     }
-    const raw = drag.startSize + (event.clientX - drag.startX) * direction;
-    if (!onCollapse || raw >= minSize * PANEL_SNAP_RATIO) onSizeCommit(clampSize(raw));
+    onSizeCommit(clampSize(drag.startSize + event.clientX - drag.startX));
   };
 
   return (
@@ -125,7 +100,7 @@ export function PanelResizeHandle({
         'absolute inset-y-0 z-40 cursor-col-resize outline-none transition-colors hover:bg-border/60',
         className
       )}
-      style={stripStyle(edge, offset)}
+      style={stripStyle(offset)}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();
@@ -141,7 +116,7 @@ export function PanelResizeHandle({
         const drag = dragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
         if (follow) {
-          follow.onMove(drag.startSize + (event.clientX - drag.startX) * direction);
+          follow.onMove(drag.startSize + event.clientX - drag.startX);
           return;
         }
         applyDelta(event.clientX - drag.startX, drag.startSize);
@@ -153,12 +128,11 @@ export function PanelResizeHandle({
         event.preventDefault();
         const delta = event.key === 'ArrowRight' ? KEYBOARD_STEP_PX : -KEYBOARD_STEP_PX;
         if (follow) {
-          follow.onMove(getSize() + delta * direction);
+          follow.onMove(getSize() + delta);
           follow.onRelease();
           return;
         }
-        const next = applyDelta(delta, getSize());
-        if (next != null) onSizeCommit(next);
+        onSizeCommit(applyDelta(delta, getSize()));
       }}
     />
   );
@@ -172,13 +146,13 @@ export function PanelResizeHandle({
  * 它的 no-drag 压得住。它只管拖拽区:不可点(pointer-events:none,指针照旧落在把手上)、不进焦点和读屏顺序,
  * ❌ 把把手本身挪到面板后面(那样 Tab 和读屏会在整个主区之后才走到分隔条)。
  */
-export function PanelResizeDragGuard({ edge, offset }: { edge: 'start' | 'end'; offset: MotionValue<number> }) {
+export function PanelResizeDragGuard({ offset }: { offset: MotionValue<number> }) {
   return (
     <motion.div
       aria-hidden
       data-panel-resize-drag-guard=""
       className="pointer-events-none absolute inset-y-0 [-webkit-app-region:no-drag]"
-      style={stripStyle(edge, offset)}
+      style={stripStyle(offset)}
     />
   );
 }

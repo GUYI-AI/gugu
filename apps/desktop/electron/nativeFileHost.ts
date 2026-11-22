@@ -7,7 +7,7 @@ import { createFileSink } from './fileSnapshot'
 import type { AttachmentDeclareRequest, createAttachmentUploadHost } from './attachmentUploadHost'
 import type { SelectedProjectFile, ProjectFileMessage } from './projectFilePublication'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
-import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileProviders, type FileRevision, type FileStageCommand } from '@gugu/core/shared/fileResolver'
+import { FileIntegrityError, fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileProviders, type FileRevision, type FileStageCommand } from '@gugu/core/shared/fileResolver'
 
 /** Opaque capabilities stay within the issuing renderer and account. Bytes use the existing invoke bus and FileSink. */
 export function createNativeFileHost(deps: {
@@ -131,7 +131,7 @@ export function createNativeFileHost(deps: {
           await entry.sink.write(command.bytes); entry.hash!.update(command.bytes); entry.written! += command.bytes.length; return
         }
         if (command.op !== 'commit') throw new Error('Unknown file stage operation')
-        if (entry.written !== entry.size || entry.hash!.digest('hex') !== entry.sha) throw new Error('File SHA-256 mismatch')
+        if (entry.written !== entry.size || entry.hash!.digest('hex') !== entry.sha) throw new FileIntegrityError()
         await entry.sink.commit(); await check(scope, entry.owner, entry.epoch)
         const directory = join(deps.root, `open-${entry.sha}`), path = join(directory, entry.name!)
         const existing = await stat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error })

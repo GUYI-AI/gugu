@@ -9,6 +9,13 @@ export const composerRoot = style({
   flexDirection: 'column',
   minWidth: 0,
   containerType: 'inline-size',
+  // @@@composer-layout-containment - on WebView < 105 (no container-type) the phone dock's full-height backdrop
+  // (phone-look.css, composer-bar::before) is scrollable overflow, and focusing the editor scrolled the whole dock up.
+  // Chrome 105, which introduced container-type, also applied layout containment with it, which kept that backdrop
+  // ink overflow; give exactly those older engines that containment. Newer engines dropped it from container-type, and
+  // a stacking context here would put the composer over the jump-to-latest button. releasePhoneEditorContainingBlocks
+  // lifts it while the editor is expanded.
+  '@supports': { 'not (container-type: inline-size)': { contain: 'layout' } },
 });
 
 /**

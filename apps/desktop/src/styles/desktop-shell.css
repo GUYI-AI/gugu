@@ -22,7 +22,7 @@
 }
 
 /* #2548 群 / 项目的内层栏归列表那一层(整列通高、无卡片);只让出正文卡片的上缝,头一行与正文页头对齐。 */
-.gugu-skin [data-workspace-shell] > [data-region='inner-sidebar'] {
+.gugu-skin [data-workspace-shell] > [data-panel-slot='inner'] [data-region='inner-sidebar'] {
   padding-top: var(--desktop-surface-inset);
 }
 
@@ -78,7 +78,7 @@
 
 /* 材质只透出最左图标栏;列表与外框之间不重复叠半透明色。 */
 :root[data-window-material] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
-:root[data-window-material] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
+:root[data-window-material] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']) {
   background-color: transparent;
 }
 

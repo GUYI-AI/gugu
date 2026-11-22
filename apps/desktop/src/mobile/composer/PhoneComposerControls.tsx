@@ -18,6 +18,7 @@ function ComposerControlRow({ children }: { children: ReactNode }) {
   const row = useRef<HTMLDivElement>(null)
   const [editorFocused, setEditorFocused] = useState(false)
   const [hasDraft, setHasDraft] = useState(false)
+  const [empty, setEmpty] = useState(false)
   const keyboardVisible = useContext(PhoneViewportContext)?.keyboardVisible
   const editing = keyboardVisible ?? editorFocused
   useLayoutEffect(() => {
@@ -39,7 +40,12 @@ function ComposerControlRow({ children }: { children: ReactNode }) {
     observer.observe(scope, { childList: true, characterData: true, subtree: true })
     return () => { observer.disconnect(); scope.removeEventListener('input', update); scope.removeEventListener('focusin', update); scope.removeEventListener('focusout', afterBlur) }
   }, [])
-  const hidden = editing || hasDraft
+  // A row whose controls all render nothing collapses (phone-composer-controls.css has no :has() for it).
+  useLayoutEffect(() => {
+    const next = !row.current?.querySelector('.gg-phone-composer-controls-items > *')
+    if (next !== empty) setEmpty(next)
+  }, [children, empty])
+  const hidden = editing || hasDraft || empty
   // A shown, non-empty row is the top band of the composer stack: jump-to-latest stands above it (thread-scroll-to-bottom).
   return <div ref={row} className="gg-phone-composer-controls" data-phone-composer-controls="" data-editing={editing || undefined}
     hidden={hidden}>

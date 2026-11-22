@@ -65,7 +65,6 @@ const NewSessionComposerReady = observer(function NewSessionComposerReady({
   isContextPending,
   birthChatId,
   taskChatId,
-  openAfterCreate,
   onSessionCreated,
   machine = null,
   draftKey,
@@ -88,10 +87,8 @@ const NewSessionComposerReady = observer(function NewSessionComposerReady({
   isContextPending?: boolean;
   /** 建出来的 agent 一出生就进这个群(对话里派任务、选了「进群」)。 */
   birthChatId?: string;
-  /** gugu-dev#181 派任务:首句落成这个对话里的一张任务卡(见 useCreateSessionCallback)。 */
+  /** gugu-dev#181 派任务:首句落成这个对话里的一张任务卡,人留在原处;没有 = 建完打开它(见 useCreateSessionCallback)。 */
   taskChatId?: string;
-  /** false = 建完人留在原处、当场起它(见 useCreateSessionCallback);缺省 = 导航过去。 */
-  openAfterCreate?: boolean;
   onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
   /**
    * #6264 所选机器是另一台(一套工作台:项目就是那台机器上的项目,建会话走同一条路);
@@ -165,7 +162,6 @@ const NewSessionComposerReady = observer(function NewSessionComposerReady({
     },
     birthChatId,
     taskChatId,
-    openAfterCreate,
     beforeCreate: remoteInstall.beforeCreate,
   });
   // 「这一轮带了内容」把附件一并算上:只有附件、没有文字也是一条真首轮(#4325)。

@@ -430,7 +430,7 @@ export function forgetInMemoryTimelines(): void {
   memory.clear()
   nativeMemory.clear()
   nativeStored.clear()
-  for (const store of [streams, nativeStreams, sessionpageFacts]) {
+  for (const store of [streams, nativeStreams]) {
     if (Object.keys(store.get()).length > 0) store.set({})
   }
 }
@@ -506,17 +506,4 @@ export function initialNativeRecordStream(key: TimelineCacheKey, enabled: boolea
 
 export function updateNativeRecordStream(key: TimelineCacheKey, fields: StreamWrite<NativeRecordStreamState>, enabled = true): void {
   writeStream(nativeStreams, sessionStreamKey(key), () => initialNativeRecordStream(key, enabled), fields)
-}
-
-type SessionpageTimelineFacts = {
-  recentActions: { actions: string[]; lastActionAt: string | null } | null
-  settlements: Readonly<Record<string, Settlement>>
-}
-
-/** Desktop task sessions' timeline facts (useSessionpageSessionTimeline), keyed by session, owned like `sessionStreams`. */
-const sessionpageFacts = createSelectStore<Readonly<Record<string, SessionpageTimelineFacts>>>({})
-export const sessionpageTimelineFacts: Readable<Readonly<Record<string, SessionpageTimelineFacts>>> = sessionpageFacts
-
-export function updateSessionpageFacts(sessionId: string, change: (current: SessionpageTimelineFacts | undefined) => SessionpageTimelineFacts | undefined): void {
-  patch(sessionpageFacts, sessionId, change(sessionpageFacts.get()[sessionId]))
 }

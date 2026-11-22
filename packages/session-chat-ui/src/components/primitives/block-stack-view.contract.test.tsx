@@ -61,4 +61,39 @@ describe('BlockStackView streaming (F47)', () => {
       host.remove();
     }
   });
+
+  it('keeps prose, a formula and a diagram mounted across a width change', () => {
+    const theme = buildChatTheme(DEFAULT_CONFIG, { preset: 'single', userGutter: 0 });
+    const caches = createChatCaches();
+    const ctxAt = (width: number): MeasureCtx => ({ theme, width, isCollapsed: () => false, expanded: () => false, caches, expandedId: null });
+    const blocks = caches.parseBlocksStreaming('w', 'prose\n\n$$\n\\int_0^1 x^2\\,dx\n$$\n\n```mermaid\ngraph LR\n  A --> B\n```\n');
+    const [node, setNode] = createSignal(layoutBlockStack(blocks, ctxAt(640)));
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const dispose = render(
+      () => (
+        <ThemeContext.Provider value={() => theme}>
+          <CachesContext.Provider value={caches}>
+            <CommandsContext.Provider value={() => ({})}>
+              <BlockStackView node={node()} />
+            </CommandsContext.Provider>
+          </CachesContext.Provider>
+        </ThemeContext.Provider>
+      ),
+      host
+    );
+
+    try {
+      const before = [...host.querySelectorAll('[data-block-id]')];
+      expect(before.map((el) => el.querySelector('.katex') !== null)).toContain(true);
+      expect(before).toHaveLength(3);
+      setNode(layoutBlockStack(blocks, ctxAt(420)));
+      const after = [...host.querySelectorAll('[data-block-id]')];
+      expect(after.map((el, i) => el === before[i])).toEqual([true, true, true]);
+    } finally {
+      dispose();
+      host.remove();
+    }
+  });
 });

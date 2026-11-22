@@ -20,6 +20,7 @@ import { messageForUser } from '../../lib/userFacingError'
 import { MoreHorizontal } from '@/lib/icons'
 import { Menu, MenuFold, MenuItem, MenuSeparator } from '../ui/Menu'
 import { menuTableIcon, menuTableLabel } from '../menuTablePresentation'
+import { showModal } from '@renderer/lib/modal/modal-provider'
 
 const log = rendererLogger('chat/row-menu')
 
@@ -38,18 +39,19 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   const { chats, identitiesById, clearConversation, undoConversationHide } = useChatStore('chats', 'identitiesById', 'clearConversation', 'undoConversationHide')
   const nativeRows = directoryRows(useDirectoryDevices(), useLiveDeviceSessions())
   const { user } = useAuth()
-  const { removeOwnedAgent } = useContactsStore()
+  const { removeOwnedAgent, updateAgentProfile } = useContactsStore()
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const markRead = useMarkChatsRead()
   const peer = identitiesById[chat.peer_user_id ?? '']
   const agent = (chat.kind === 'dm' || chat.kind === 'ai') && peer?.type === 'agent'
-  const archivable = agent && user && peer.owner_user_id === user.id && !peer.removed_at && !peer.session_archived_at ? peer : undefined
+  const ownedAgent = agent && user && peer.owner_user_id === user.id && !peer.removed_at ? peer : undefined
+  const archivable = ownedAgent && !ownedAgent.session_archived_at ? ownedAgent : undefined
   const name = chatDisplayName(chat, peer?.display_name)
   const scope = chatsInReadScope(chats, chat.id)
   return <PersonalConversationContextMenu {...menu} state={{
     canDelete: conversationCanHide(chat.kind), pinned: chat.is_pinned, pinnedToSidebar: onUnpinFromSidebar !== undefined,
-    notificationsMuted: chat.notification_level === 'none', agent, canArchive: archivable !== undefined,
+    notificationsMuted: chat.notification_level === 'none', agent, canRenameAgent: ownedAgent !== undefined, canArchive: archivable !== undefined,
     hasUnread: hasUnreadInRows(scope) || nativeUnreadTargets(nativeRows, scope, false).length > 0 }}
     onAction={(action) => {
       if (action === 'mark-read') markRead(chat.id)
@@ -63,6 +65,15 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
             undo: () => undoConversationHide(chat.id, receipt.operation_id) })
         }).catch((error: unknown) => toast(t('chatList.hideFailed'), 'error', messageForUser(error)))
       }
+      else if (action === 'rename-agent' && ownedAgent) showModal('renameSessionModal', {
+        sessionId: '',
+        currentTitle: ownedAgent.display_name,
+        rename: (name) => updateAgentProfile(ownedAgent.id, { name }),
+        labels: {
+          title: t('agentName.editAction', { ns: 'contacts' }),
+          field: t('agentName.label', { ns: 'contacts' }),
+        },
+      })
       // My agent's archive, through the one agent archive confirmation (lib/archiveOwnedAgent), as contacts and its settings.
       else if (action === 'archive') {
         if (closeIfMyAssistant(user?.id, archivable!.id)) return // #7350 咕咕自己:换成关闭咕咕那一份确认

@@ -6,7 +6,7 @@ import { createContext, createElement, useContext, type CSSProperties, type Reac
 //   后代也改不回来。它不继承 ⇒ 切换时不重算子树样式。
 // ❌ visibility:hidden / inert 这类可继承的开关:每切一次整面每个元素重算样式(联系人页 7482 个元素一次 12.7–16.3 ms,
 //   会话页 1000 行会话 158–168 ms);visibility 还能被后代写 visible 改回,在藏起来的面里照画。
-// ❌ display:none —— 它会销毁布局盒:消息列表的滚动位置清零、ResizablePane 的可用宽量成 0、
+// ❌ display:none —— 它会销毁布局盒:消息列表的滚动位置清零、量出来的可用宽成 0、
 //   每个 ResizeObserver 都抖一遍,切回时等于半次重挂。
 // absolute + inset:0:不占同级 flex 位置,尺寸仍与可见时一致(父容器要 position:relative 当 containing block)。
 //   已经自己定位的层(分栏格子、预览层)把自己的位置铺在它后面:`{ ...RETAINED_SURFACE_HIDDEN_STYLE, ...placement }`。

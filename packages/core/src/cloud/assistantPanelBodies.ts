@@ -1,7 +1,7 @@
 import { egress } from '../shared/egress'
 import { withBoundedOperation } from './boundedOperation'
 import { createGuguSupabaseClient } from './supabase'
-import { configuredEndpoint, placeAttachment, uploadAttachmentBytes } from './attachmentsApi'
+import { configuredEndpoint, placeAttachment, withUploadedAttachment } from './attachmentsApi'
 import { cloudFileProviders } from './fileProviders'
 import { createCachedFileSink, type FileChunkCache } from '../shared/fileCache'
 import { createFileResolver } from '../shared/fileResolver'
@@ -44,13 +44,14 @@ export async function uploadAssistantPanelBody(input: AssistantPanelBodyAccess &
   const endpoint = panelEndpoint(input.token,input.signal)
   const digest = await sha256(input.bytes)
   const name = panelBodyFileName(input.label)
-  const staging = await uploadAttachmentBytes(endpoint,{
-    bytes: input.bytes,name,contentType: PANEL_BODY_CONTENT_TYPE,
-  },{ chat_id: input.chatId,as: input.ownerId })
-  await assertOwner(input)
-  const item = await placeAttachment(endpoint,{
-    staging_key: staging,chat_id: input.chatId,file_name: name,content_type: PANEL_BODY_CONTENT_TYPE,
-    as_user_id: input.ownerId,folder: '.assistant-panel',
+  const item = await withUploadedAttachment(endpoint,{
+    bytes: input.bytes,name,contentType: PANEL_BODY_CONTENT_TYPE,sha256: digest,
+  },{ chat_id: input.chatId,as: input.ownerId },async staging => {
+    await assertOwner(input)
+    return placeAttachment(endpoint,{
+      staging_key: staging,chat_id: input.chatId,file_name: name,content_type: PANEL_BODY_CONTENT_TYPE,
+      as_user_id: input.ownerId,folder: '.assistant-panel',
+    })
   })
   await assertOwner(input)
   if (typeof item.id !== 'string' || item.kind !== 'file') throw new AssistantPanelError('invalid-body','Assistant panel file upload did not return a stored file')

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState } from 'react'
 import { TOUR_STEPS, type TourStepId } from '../../lib/productTour'
 import { readPanelToggle } from '../../lib/panelToggles'
+import { isElementVisible } from '@/lib/elementVisibility'
 
 /**
  * 每一步指着的真实入口。有示例项目时,也可以点开它继续;「下一步」始终可用。
@@ -11,7 +12,7 @@ const visible = (el: Element | null): el is HTMLElement => {
   if (!(el instanceof HTMLElement)) return false
   const box = el.getBoundingClientRect()
   return box.width > 0 && box.height > 0 && box.right > 0 && box.bottom > 0 && box.left < window.innerWidth && box.top < window.innerHeight
-    && (typeof el.checkVisibility !== 'function' || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+    && isElementVisible(el, { opacity: true })
 }
 /** The task page's one-list sidebar (left-sidebar). */
 const SIDEBAR = '[data-region="left-sidebar"]'

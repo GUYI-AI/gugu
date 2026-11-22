@@ -395,6 +395,7 @@ export default {
     "usageUnavailable": "File storage usage is unavailable right now.",
 
     "fileUnavailable": "File unavailable right now",
+    "fileIntegrity": "This file failed verification: its bytes don't match its checksum, so it wasn't opened",
     "fileNoAccess": "You no longer have access to this file",
     "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
@@ -975,8 +976,7 @@ export default {
       "collapseSplit": "Collapse split view",
       "collapseSplitHint": "Collapse the split view; the topic stays open",
       "composerPlaceholder": "Write a message…",
-      "empty": "No messages in this topic yet",
-      "resize": "Drag to resize the topic pane"
+      "empty": "No messages in this topic yet"
     }
   },
   "resources": {

@@ -149,10 +149,10 @@ vi.mock('@gugu/core/cloud/attachmentsApi', async (importOriginal) => {
   return {
     ...real,
     configuredEndpoint: (token: string) => ({ supabaseUrl: 'http://attachments.invalid', anonKey: 'anon', token }),
-    uploadAttachmentBytes: async (_endpoint: unknown, file: { bytes: Uint8Array }) => {
+    withUploadedAttachment: async (_endpoint: unknown, file: { bytes: Uint8Array }, _scope: unknown, use: (key: string) => Promise<unknown>) => {
       const key = `staging/${current!.owner}/${randomUUID()}`
       staged.set(key, new Uint8Array(file.bytes))
-      return key
+      return use(key)
     },
     placeAttachment: async (_endpoint: unknown, args: Record<string, unknown>) => {
       const key = String(args.staging_key)
