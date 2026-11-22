@@ -27,6 +27,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
 import { wireReadingZoom } from './preview/image-reading-zoom'
+import { pinchZoom } from '@/session/shared/preview/pinch-zoom'
 import { usesPhoneFlight, wirePhoneFlight } from './preview/image-viewer-phone-flight'
 import {
   decodedSizeOf,
@@ -269,10 +270,18 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   pswp.on('initialZoomPan', ({ slide }) => {
     if (isLongSlide(slide)) slide.pan.y = slide.bounds.min.y
   })
+  // A pinch (ctrl wheel) follows the fingers 1:1 and a Ctrl+wheel notch is one 1.2× step, as every other view's pinch
+  // (`pinchZoom`). PhotoSwipe's own rate (2^(-deltaY·0.002)) is a seventh of that: a pinch barely moved the picture.
   pswp.on('wheel', (event) => {
     const slide = pswp.currSlide
     const wheel = event.originalEvent
-    if (!slide || wheel.ctrlKey || !slide.isPannable() || !isLongSlide(slide)) return
+    if (!slide) return
+    if (wheel.ctrlKey) {
+      event.preventDefault()
+      if (slide.isZoomable()) slide.zoomTo(pinchZoom(slide.currZoomLevel, wheel.deltaY, slide.zoomLevels.min, slide.zoomLevels.max), { x: wheel.clientX, y: wheel.clientY })
+      return
+    }
+    if (!slide.isPannable() || !isLongSlide(slide)) return
     event.preventDefault()
     slide.panTo(slide.pan.x - wheel.deltaX, slide.pan.y - wheel.deltaY)
   })
