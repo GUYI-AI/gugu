@@ -24,7 +24,7 @@ describe('actual publisher with canonical idle group commit',()=>{
   let fixture:Awaited<ReturnType<typeof openFixture>>,directory:string,publisher:ReturnType<typeof createWindowPackPublisher>|undefined;
   const receipts:WindowCommitReceipt[]=[];
   beforeEach(async()=>{
-    fixture=await openFixture('empty');state.db=fixture.db;state.sqlite=fixture.sqlite;fixture.sqlite.pragma('synchronous=FULL');
+    fixture=await openFixture('empty');state.db=fixture.db;state.sqlite=fixture.sqlite;
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     directory=await mkdtemp(join(tmpdir(),'window-pack-publisher-'));receipts.length=0;
     for(let i=0;i<2;i++){

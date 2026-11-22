@@ -36,7 +36,6 @@ describe('actual canonical writer capture', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>, root: string;
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
-    fixture.sqlite.pragma('synchronous=FULL');
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     root = await mkdtemp(join(tmpdir(), 'canonical-source-'));
   });
