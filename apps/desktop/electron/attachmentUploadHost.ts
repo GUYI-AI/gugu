@@ -67,10 +67,9 @@ export function createAttachmentUploadHost(deps: {
       if (account?.id !== host.id) throw new Error('Attachment upload account changed')
       // These very bytes go up: a file-backed Blob refuses to read once its file changes (`ORIGINAL_CHANGED`).
       const copy = bytes
-      const declared = await declareAttachment(await account.endpoint(), { bytes: copy, contentType: file.contentType },
+      const declared = await declareAttachment(await account.endpoint(), { bytes: copy, contentType: file.contentType, sha256 },
         { chat_id: request.chatId, as: request.as, request_id: request.messageId })
       if (current !== host) throw new Error('Attachment upload account changed')
-      if (declared.sha256 !== sha256) throw new Error('Attachment stored bytes changed')
       const uploaded = host.queue.begin({ messageId: request.messageId, chatId: request.chatId, as: request.as, pendingKey: declared.staging_key, sha256,
         name: file.name, contentType: file.contentType, size: file.size }, copy, declared.plan ?? null)
       // A caller may fail its commit before awaiting this attempt; the queue still owns its retries.

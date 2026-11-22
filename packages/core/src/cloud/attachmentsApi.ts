@@ -352,11 +352,12 @@ export async function attachmentSha256(bytes: Uint8Array | Blob): Promise<string
  * for the message's commit. The message is complete with them; its bytes follow it (`finishDeclaredAttachment`).
  */
 export type DeclaredAttachment = { staging_key: string; sha256: string; size_bytes: number; plan?: AttachmentUploadPlan }
-export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; contentType: string },
+export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; contentType: string; sha256?: string },
   scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<DeclaredAttachment> {
   const size = file.bytes instanceof Uint8Array ? file.bytes.byteLength : file.bytes.size
   const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
-  const sha256 = await attachmentSha256(file.bytes)
+  // A host that already hashed these bytes (to keep them locally under their sha) passes it: one hash per send.
+  const sha256 = file.sha256 ?? await attachmentSha256(file.bytes)
   const plan = await readManagedUploadPlan(endpoint, { size, contentType: file.contentType, sha256 }, scope, upload, signal)
   if (plan.status !== 'stored') requireUploadSize(size, plan.max_bytes)
   return { staging_key: plan.staging_key, sha256, size_bytes: size, plan }
