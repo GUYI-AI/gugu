@@ -3,15 +3,17 @@ import type { ChildProcess } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { setImmediate as turn } from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
-import { createServerTaskBrowser, PipeConnection } from '../../../../server/server-task-browser';
+import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
+import { createServerTaskBrowser, PageTarget, PipeConnection } from '../../../../server/server-task-browser';
 import { TaskPageClosedDuringOpen, TaskPopupClosed } from '../../../../server/task-popups';
+import { connectTaskPageScreen } from './task-page-screen';
 import { StandaloneBrowserPool } from './standalone-browser-pool';
 
 vi.mock('@gugu/core/local/state/agentFileBoundary', () => ({ requireAgentFileTreeAccess: async () => {} }));
 
 type Command = { id: number; method: string; params: Record<string, unknown>; sessionId?: string };
 
-function fakeChrome(hold: (command: Command) => boolean) {
+function fakeChrome(hold: (command: Command) => boolean, respond?: (command: Command) => object | undefined) {
   const write = new PassThrough();
   const read = new PassThrough();
   const connection = new PipeConnection(write, read);
@@ -31,7 +33,7 @@ function fakeChrome(hold: (command: Command) => boolean) {
     if (command.method === 'Target.attachToTarget') result = { sessionId: `watch-${command.params.targetId}` };
     if (command.method === 'Page.getFrameTree') result = { frameTree: { frame: { id: 'main', url: 'about:blank' } } };
     if (command.method === 'Page.getNavigationHistory') result = { currentIndex: 0, entries: [{ id: 1, url: 'about:blank' }] };
-    queueMicrotask(() => reply(command, result));
+    queueMicrotask(() => reply(command, respond?.(command) ?? result));
   });
   return {
     child, commands, deliver, reply, connection,
@@ -71,6 +73,94 @@ function observe(operation: Promise<unknown>) {
   const done = operation.then(result => { value = result; }, error => { value = error; }).then(() => { settled = true; });
   return { done, value: () => value, settled: () => settled };
 }
+
+describe('Standalone page projection over the real pipe adapter', () => {
+  it.each([
+    { recovery: 'navigation', stalledMethod: 'Page.captureScreenshot', late: true },
+    { recovery: 'a missing screenshot reply', stalledMethod: 'Page.captureScreenshot', late: false },
+    { recovery: 'a late screenshot reply', stalledMethod: 'Page.captureScreenshot', late: true },
+    { recovery: 'a missing layout reply', stalledMethod: 'Page.getLayoutMetrics', late: false },
+  ])('publishes a fresh frame after $recovery', async ({ recovery, stalledMethod, late }) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let loaderId = 'first', image = 'b2xk';
+    let blocked: Command | undefined;
+    let blockNextCommand = false;
+    const chrome = fakeChrome(command => {
+      if (command.sessionId === 'watch-other') return command.method === 'Page.captureScreenshot';
+      if (!blockNextCommand || command.method !== stalledMethod) return false;
+      blockNextCommand = false;
+      blocked = command;
+      return true;
+    }, command => {
+      switch (command.method) {
+        case 'Page.getFrameTree': return { frameTree: { frame: { id: 'main', loaderId, url: 'https://fixture.test/' } } };
+        case 'Page.getLayoutMetrics': return { cssVisualViewport: { clientWidth: 360, clientHeight: 795, pageX: 0, pageY: 0, scale: 1 } };
+        case 'Page.captureScreenshot': return { data: image };
+        default: return undefined;
+      }
+    });
+    let viewer: Awaited<ReturnType<typeof connectTaskPageScreen>> | undefined;
+    try {
+      const page = new PageTarget(chrome.connection, 'projected');
+      const otherPage = new PageTarget(chrome.connection, 'other');
+      const timeout = vi.fn();
+      page.on('capture-timeout', timeout);
+      await Promise.all([page.watch(), otherPage.watch()]);
+      const frames: Extract<ProjectionHostPacket, { type: 'frame' }>[] = [];
+      viewer = await connectTaskPageScreen('standalone-projection-recovery', async () => page, packet => {
+        if (packet.type === 'frame') frames.push(packet);
+      });
+      await turn();
+      expect(frames.map(packet => packet.frame.data)).toEqual(['b2xk']);
+      const first = frames[0]!;
+      await viewer.receive({ type: 'ack', generation: first.generation, frame: first.frame.sequence });
+
+      blockNextCommand = true;
+      await vi.advanceTimersByTimeAsync(250);
+      expect(blocked).toBeDefined();
+      image = 'bmV3';
+      if (recovery === 'navigation') {
+        const other = observe(otherPage.hostCommand('Page.captureScreenshot', {}));
+        await turn();
+        chrome.deliver({ method: 'Page.frameNavigated', sessionId: 'watch-projected', params: {
+          frame: { id: 'subframe', parentId: 'main', loaderId: 'iframe', url: 'https://fixture.test/embed' },
+        } });
+        await turn();
+        expect(frames.map(packet => packet.frame.data)).toEqual(['b2xk']);
+        loaderId = 'second';
+        chrome.deliver({ method: 'Page.frameNavigated', sessionId: 'watch-projected', params: {
+          frame: { id: 'main', loaderId, url: 'https://fixture.test/next' },
+        } });
+        await turn();
+        expect(other.settled()).toBe(false);
+        const otherRequest = chrome.commands.find(command => command.method === 'Page.captureScreenshot' && command.sessionId === 'watch-other')!;
+        chrome.reply(otherRequest, { data: 'c2libGluZw==' });
+        await other.done;
+        expect(other.value()).toEqual({ data: 'c2libGluZw==' });
+        expect(timeout).not.toHaveBeenCalled();
+      } else {
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(frames.map(packet => packet.frame.data)).toEqual(['b2xk']);
+        expect(timeout).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2);
+        expect(timeout).toHaveBeenCalledExactlyOnceWith({ tabTargetId: 'projected', documentId: 'first',
+          method: stalledMethod, requestId: blocked!.id, timeoutMs: 5_000 });
+      }
+      expect(frames.map(packet => packet.frame.data)).toEqual(['b2xk', 'bmV3']);
+      const fresh = frames[1]!;
+      await viewer.receive({ type: 'ack', generation: fresh.generation, frame: fresh.frame.sequence });
+      if (late) {
+        chrome.reply(blocked!, { data: 'bGF0ZQ==' });
+        await turn();
+        expect(frames.map(packet => packet.frame.data)).toEqual(['b2xk', 'bmV3']);
+      }
+    } finally {
+      chrome.exit();
+      await viewer?.close();
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('Standalone Chrome lifecycle over the real pipe adapter', () => {
   it.each([

@@ -1,12 +1,20 @@
 import { browserFrameFeedback, type BrowserPageFeedback } from '@shared/browser-page-feedback';
 import type { TaskPageScreenFrame } from './server-task-browser';
 
-type Send = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+export type CaptureDocument = { id: string; controller: AbortController };
+type CaptureCommand = (method: string, params: Record<string, unknown> | undefined, document: CaptureDocument) => Promise<unknown>;
+
+export class CaptureReplyTimeout extends Error {
+  constructor(method: string, readonly requestId: number, readonly timeoutMs: number) {
+    super(`${method} did not reply within ${timeoutMs} ms`);
+  }
+}
+
 type Viewport = { frame: string; loader: string; width: number; height: number; x: number; y: number; scale: number };
 
-async function viewport(send: Send): Promise<Viewport> {
-  const tree = await send('Page.getFrameTree') as { frameTree: { frame: { id: string; loaderId: string } } };
-  const metrics = await send('Page.getLayoutMetrics') as {
+async function viewport(send: CaptureCommand, document: CaptureDocument): Promise<Viewport> {
+  const tree = await send('Page.getFrameTree', undefined, document) as { frameTree: { frame: { id: string; loaderId: string } } };
+  const metrics = await send('Page.getLayoutMetrics', undefined, document) as {
     cssVisualViewport: { clientWidth: number; clientHeight: number; pageX: number; pageY: number; scale: number };
   };
   const view = metrics.cssVisualViewport;
@@ -28,7 +36,8 @@ export class TaskPageCapture {
   private tail: Promise<void> = Promise.resolve();
   private captureFailed = false;
 
-  constructor(private readonly send: Send, private readonly feedback: BrowserPageFeedback,
+  constructor(private readonly send: CaptureCommand, private readonly currentDocument: () => CaptureDocument,
+    private readonly feedback: BrowserPageFeedback,
     private readonly available: () => boolean, private readonly failed: (error: unknown) => void) {}
 
   async start(publish: (frame: TaskPageScreenFrame) => void): Promise<void> {
@@ -37,25 +46,31 @@ export class TaskPageCapture {
     const live = () => generation === this.generation && this.available();
     const capture = async () => {
       if (!live()) return;
+      const document = this.currentDocument();
+      const signal = document.controller.signal;
+      let delay = 250;
       try {
         const before = this.feedback.snapshot();
-        const first = await viewport(this.send);
+        const first = await viewport(this.send, document);
         if (!live()) return;
         const picture = await this.send('Page.captureScreenshot', { format: 'jpeg', quality: 70, fromSurface: true,
           captureBeyondViewport: false, clip: { x: first.x, y: first.y, width: first.width, height: first.height,
-            scale: Math.min(1, 1600 / Math.max(first.width, first.height)) } }) as { data: string };
-        const last = await viewport(this.send);
-        if (!live() || JSON.stringify(first) !== JSON.stringify(last)) return;
+            scale: Math.min(1, 1600 / Math.max(first.width, first.height)) } }, document) as { data: string };
+        const last = await viewport(this.send, document);
+        if (!live() || signal.aborted || JSON.stringify(first) !== JSON.stringify(last)) return;
         const width = Math.round(first.width), height = Math.round(first.height);
         const feedback = browserFrameFeedback(before, this.feedback.snapshot(), width, height);
         if (feedback && first.scale !== 1) delete feedback.cursor;
         publish({ data: picture.data, width, height, ...(feedback ? { feedback } : {}) });
         this.captureFailed = false;
       } catch (error) {
-        if (live() && !this.captureFailed) { this.captureFailed = true; this.failed(error); }
+        if (error instanceof CaptureReplyTimeout) {
+          // The expired request has already been logged and removed from the pipe's pending replies.
+          delay = 0;
+        } else if (live() && !signal.aborted && !this.captureFailed) { this.captureFailed = true; this.failed(error); }
       } finally {
         if (live()) {
-          this.timer = setTimeout(() => { this.tail = this.tail.then(capture); }, 250);
+          this.timer = setTimeout(() => { this.tail = this.tail.then(capture); }, delay);
           this.timer.unref?.();
         }
       }

@@ -19,7 +19,8 @@ function fixture() {
     return { data: '/9g=' };
   });
   const failed = vi.fn();
-  const capture = new TaskPageCapture(send, model, () => state.live, failed);
+  const document = { id: state.loader, controller: new AbortController() };
+  const capture = new TaskPageCapture(send, () => document, model, () => state.live, failed);
   return { model, state, frames, send, failed, capture, publish: (frame: TaskPageScreenFrame) => frames.push(frame),
     during(work: () => Promise<void>) { duringCapture = work; } };
 }
@@ -61,7 +62,7 @@ describe('requested task page pictures', () => {
     const f = fixture(), pending = Promise.withResolvers<void>();
     f.during(() => pending.promise);
     const old = f.capture.start(f.publish);
-    await vi.waitFor(() => expect(f.send).toHaveBeenCalledWith('Page.captureScreenshot', expect.any(Object)));
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledWith('Page.captureScreenshot', expect.any(Object), expect.objectContaining({ id: 'one' })));
     f.capture.stop();
     const next = f.capture.start(f.publish);
     pending.resolve();

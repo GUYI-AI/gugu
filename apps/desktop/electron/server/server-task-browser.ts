@@ -11,7 +11,7 @@ import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@sha
 import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
 import { browserPageFeedback } from '@shared/browser-page-feedback';
 import { FALLBACK_LOCALE } from '@/i18n/locale';
-import { TaskPageCapture } from './server-task-page-capture';
+import { CaptureReplyTimeout, TaskPageCapture, type CaptureDocument } from './server-task-page-capture';
 import { TaskPageViewport } from './task-page-viewport';
 import { CHROME_ERROR_PAGE_URL, READ_CHROME_ERROR_SCRIPT, taskPageLoadFailure } from './task-page-load-error';
 import { READ_FAVICONS_SCRIPT } from './task-page-favicons';
@@ -91,6 +91,7 @@ type PendingReply = {
   sessionId?: string;
   targetId?: string;
   slowTrace?: ReturnType<typeof setTimeout>;
+  stopWaiting?(): void;
   traced?: boolean;
   resolve(value: unknown): void;
   reject(error: Error): void;
@@ -141,7 +142,7 @@ export class PipeConnection extends EventEmitter {
       const waiter = this.pending.get(message.id);
       if (!waiter) return;
       this.pending.delete(message.id);
-      this.settleTrace(message.id, waiter, message.error ? 'error-reply' : 'reply');
+      this.settleReply(message.id, waiter, message.error ? 'error-reply' : 'reply');
       if (message.error) {
         waiter.reject(new Error(message.error.message));
       } else {
@@ -195,7 +196,7 @@ export class PipeConnection extends EventEmitter {
     for (const [id, waiter] of this.pending) {
       if (!matches(waiter)) continue;
       this.pending.delete(id);
-      this.settleTrace(id, waiter, phase);
+      this.settleReply(id, waiter, phase);
       waiter.reject(error);
     }
   }
@@ -204,12 +205,16 @@ export class PipeConnection extends EventEmitter {
     this.trace?.('command', { requestId, method, sessionId, targetId, phase });
   }
 
-  private settleTrace(id: number, waiter: PendingReply, phase: string) {
+  private settleReply(id: number, waiter: PendingReply, phase: string) {
+    waiter.stopWaiting?.();
     clearTimeout(waiter.slowTrace);
     if (waiter.traced) this.traceReply(id, waiter, phase);
   }
 
-  send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<unknown> {
+  send(method: string, params: Record<string, unknown> = {}, sessionId?: string,
+    wait?: { signal: AbortSignal; timeoutMs: number; onTimeout(error: CaptureReplyTimeout): void },
+  ): Promise<unknown> {
+    if (wait?.signal.aborted) return Promise.reject(wait.signal.reason);
     if (this.closed) return Promise.reject(this.closed);
     if (sessionId && this.recentlyDetached.has(sessionId)) return Promise.reject(new Error('Session with given id not found'));
     const targetId = method.startsWith('Target.') && typeof params.targetId === 'string' ? params.targetId : this.targetForSession(sessionId);
@@ -227,11 +232,30 @@ export class PipeConnection extends EventEmitter {
           waiter.slowTrace.unref?.();
         }
       }
+      if (wait) {
+        const abandon = (phase: string, error: Error) => {
+          if (!this.pending.delete(id)) return;
+          this.settleReply(id, waiter, phase);
+          reject(error);
+        };
+        const abort = () => abandon('document-changed', wait.signal.reason);
+        const timer = setTimeout(() => {
+          const error = new CaptureReplyTimeout(method, id, wait.timeoutMs);
+          abandon('timed-out', error);
+          wait.onTimeout(error);
+        }, wait.timeoutMs);
+        timer.unref?.();
+        wait.signal.addEventListener('abort', abort, { once: true });
+        waiter.stopWaiting = () => {
+          clearTimeout(timer);
+          wait.signal.removeEventListener('abort', abort);
+        };
+      }
       try {
         this.write.write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
       } catch (error) {
         this.pending.delete(id);
-        this.settleTrace(id, waiter, 'write-error');
+        this.settleReply(id, waiter, 'write-error');
         reject(error);
       }
     });
@@ -252,6 +276,8 @@ export class PipeConnection extends EventEmitter {
 const WINDOW_PAGE_WAIT_MS = 1_000;
 /** A window Chrome never held (holding is off, or it was made before holding began) is closed this long after Gugu decided against it. */
 const WINDOW_NOT_HELD_MS = 300;
+/** Keep the capture queue moving when Chrome does not answer for a disappearing or hidden surface. */
+const PAGE_CAPTURE_REPLY_TIMEOUT_MS = 5_000;
 /** A window that opens empty may be pointed somewhere later by the page that opened it. */
 const windowAddress = (url: string | undefined) => url ? url : 'about:blank';
 
@@ -269,11 +295,18 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
     if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
     return this.connection.send(method, params, this.watchSession);
   });
-  private captureScreenshot(params: Record<string, unknown> = {}): Promise<unknown> {
-    return this.viewport.withStableLayout(() => {
-      if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
-      return this.connection.send('Page.captureScreenshot', params, this.watchSession);
+  private captureDocument: CaptureDocument = { id: 'uncommitted', controller: new AbortController() };
+  private captureCommand(method: string, params: Record<string, unknown> | undefined, document: CaptureDocument): Promise<unknown> {
+    if (!this.watchSession || this.destroyed) throw new Error('The task browser page closed');
+    return this.connection.send(method, params, this.watchSession, {
+      signal: document.controller.signal, timeoutMs: PAGE_CAPTURE_REPLY_TIMEOUT_MS,
+      onTimeout: ({ requestId, timeoutMs }) => this.emit('capture-timeout', {
+        tabTargetId: this.targetId, documentId: document.id, method, requestId, timeoutMs,
+      }),
     });
+  }
+  private captureScreenshot(params: Record<string, unknown> = {}, document = this.captureDocument): Promise<unknown> {
+    return this.viewport.withStableLayout(() => this.captureCommand('Page.captureScreenshot', params, document));
   }
   setZoomFactor(factor: number): Promise<void> { return this.viewport.zoom(factor); }
   /** Resolves when Gugu has given the page the size of its pane; rejects if the page closes first. */
@@ -323,12 +356,13 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
   private history: { entries: { url: string }[]; ids: number[]; index: number } = { entries: [], ids: [], index: -1 };
   title = '';
   url = 'about:blank';
-  private readonly capture = new TaskPageCapture((method, params) => {
-    if (method === 'Page.captureScreenshot') return this.captureScreenshot(params);
-    if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
-    return this.connection.send(method, params, this.watchSession);
-  }, this.feedback, () => !this.destroyed && !!this.watchSession,
-  error => this.emit('screen-error', error));
+  private readonly capture = new TaskPageCapture(
+    (method, params, document) => method === 'Page.captureScreenshot'
+      ? this.captureScreenshot(params, document)
+      : this.captureCommand(method, params, document),
+    () => this.captureDocument, this.feedback,
+    () => !this.destroyed && !!this.watchSession, error => this.emit('screen-error', error),
+  );
 
   constructor(private readonly connection: PipeConnection, readonly targetId: string) {
     super();
@@ -442,13 +476,16 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
         this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); void this.readFavicons();
         break;
       case 'Page.frameNavigated': {
-        const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string; unreachableUrl?: string } | undefined;
+        const frame = params.frame as { id?: string; parentId?: string; loaderId?: string; url?: string; urlFragment?: string; unreachableUrl?: string } | undefined;
         if (!frame || frame.parentId || !main(frame.id)) break;
         // Chrome's error page stands in for a page that did not load; the address stays what was asked for.
         const failed = frame.url === CHROME_ERROR_PAGE_URL;
         this.errorPage = failed;
         this.url = failed ? frame.unreachableUrl ?? this.url : `${frame.url ?? ''}${frame.urlFragment ?? ''}`;
         this.favicons = []; // A new document declares its own.
+        const previousDocument = this.captureDocument;
+        this.captureDocument = { id: frame.loaderId || 'uncommitted', controller: new AbortController() };
+        previousDocument.controller.abort(new Error('The page navigated before capture completed'));
         this.feedback.invalidate();
         this.emit('did-navigate', {}, this.url);
         void this.readHistory();
@@ -693,8 +730,10 @@ export class PageTarget extends EventEmitter implements TaskPageContents, Window
     this.watchSession = sessionId;
     await this.connection.send('Page.enable', {}, sessionId);
     if (this.destroyed) throw new Error('the task page was closed');
-    const tree = await this.connection.send('Page.getFrameTree', {}, sessionId) as { frameTree: { frame: { id: string; url: string } } };
-    this.mainFrame = tree.frameTree.frame.id;
+    const tree = await this.connection.send('Page.getFrameTree', {}, sessionId) as { frameTree: { frame: { id: string; loaderId?: string; url: string } } };
+    const frame = tree.frameTree.frame;
+    this.mainFrame = frame.id;
+    this.captureDocument.id = frame.loaderId || 'uncommitted';
     await this.readHistory();
   }
 
@@ -1032,6 +1071,7 @@ export function createServerTaskBrowser(options: {
     }
     const opened = target;
     opened.on('screen-error', error => options.log.warn('Could not capture the task browser page', { error: String(error) }));
+    opened.on('capture-timeout', details => options.log.warn('Task browser frame capture timed out', details));
     // Registered before anything can ask for a new tab, so the window is waiting by the time the tab looks for it.
     opened.on('window-open', (window: { url: string; popup?: string }) => { if (window.popup) popups.hold(window.popup); });
     opened.once('destroyed', () => {
