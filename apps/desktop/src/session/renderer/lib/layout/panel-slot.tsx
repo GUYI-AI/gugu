@@ -49,7 +49,7 @@ export function PanelSlot({
       <div
         {...windowProps}
         ref={ref('window')}
-        className={cn('absolute top-0 left-0 overflow-hidden', fill ? 'size-full' : axis === 'x' ? 'h-full' : 'w-full', windowProps?.className)}
+        className={cn('absolute top-0 left-0 overflow-clip', fill ? 'size-full' : axis === 'x' ? 'h-full' : 'w-full', windowProps?.className)}
       >
         <div ref={ref('content')} className={cn('absolute top-0 left-0', fill ? 'size-full' : axis === 'x' ? 'h-full' : 'w-full')}>
           {children}

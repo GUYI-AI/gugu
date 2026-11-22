@@ -119,6 +119,27 @@ it('the side page comes in on the track: it slides in from the end, and the page
   expect(Math.abs([...keptWidths][0] - 500), [...keptWidths].join(' ')).toBeLessThan(2);
 });
 
+it('focus coming into a child still sliding in scrolls nothing: the page beside it stays where it is', async () => {
+  await page.viewport(1100, 800);
+  harness = createReactHarness();
+  harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
+  const cut = (side: boolean) => <TrackCut axis="x" animate onShares={() => {}} onEqualize={() => {}} shares={side ? [60, 40] : [100]}
+    items={[{ id: 'main', min: 0, node: <div data-testid="main" style={{ height: '100%' }} /> }, ...(side ? [{ id: 'side', min: 0, node: <input aria-label="address" /> }] : [])]} />;
+  await act(() => harness.render(cut(false)));
+  await act(() => harness.render(cut(true)));
+  const lefts = new Set<number>();
+  const start = performance.now();
+  for (let frame = 0; performance.now() - start < 700; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    // A page that takes focus once it is up (the browser's address bar), while it is still off the edge.
+    if (frame === 3) harness.container.querySelector<HTMLInputElement>('[aria-label="address"]')!.focus();
+    lefts.add(Math.round(harness.container.querySelector('[data-testid="main"]')!.getBoundingClientRect().left));
+  }
+  expect(document.activeElement?.getAttribute('aria-label')).toBe('address');
+  // Control: with the cut's boxes overflow hidden, focus scrolled them and the main page jumped left by the side's offset.
+  expect([...lefts]).toEqual([0]);
+});
+
 it('with exit, a last child that goes away is drawn until it is off, moving out over frames', async () => {
   await page.viewport(1100, 800);
   harness = createReactHarness();

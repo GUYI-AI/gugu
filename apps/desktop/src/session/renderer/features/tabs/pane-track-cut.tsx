@@ -192,7 +192,7 @@ export function TrackCut({
   };
 
   return (
-    <div ref={rootRef} className={cn('relative flex h-full w-full min-h-0 min-w-0 overflow-hidden', axis === 'y' && 'flex-col')} data-track-cut={axis}>
+    <div ref={rootRef} className={cn('relative flex h-full w-full min-h-0 min-w-0 overflow-clip', axis === 'y' && 'flex-col')} data-track-cut={axis}>
       {drawnItems.map((item, at) => {
         const fill = at === drawnItems.length - 1;
         return (

@@ -83,7 +83,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   return (
     <div
       ref={workspaceRootRef}
-      className="relative flex h-full w-full overflow-hidden"
+      className="relative flex h-full w-full overflow-clip"
       data-workspace-shell=""
       // #2548 the content is a card stacked on the one list only while the list is beside it (desktop-shell.css).
       data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}

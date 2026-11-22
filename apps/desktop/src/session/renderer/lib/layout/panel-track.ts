@@ -82,7 +82,8 @@ function paintSlot(slot: SlotGeometry, shift: number): SlotPaint {
 export interface PanelSlotNodes {
   /** In the flow: the slot's place in the layout. */
   place: HTMLElement;
-  /** Absolutely placed in `place`, against its outer edge: clips the content (overflow hidden). */
+  /** Absolutely placed in `place`, against its outer edge: clips the content (overflow clip, ❌ hidden: a hidden box can be
+   *  scrolled, and focus coming into a page still off the edge scrolls it, moving everything beside it). */
   window: HTMLElement;
   /** The content, laid out at the slot's content size. */
   content: HTMLElement;
