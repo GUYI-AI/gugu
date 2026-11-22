@@ -10,10 +10,15 @@ import { AgentHomeSkippedFiles } from './AgentHomeSkippedFiles'
 import { SettingsGroup, SettingsRow } from '../SettingsPrimitives'
 import type { AgentHomeDiff, AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 
-export function AgentConfigImport({ providerId }: { providerId: string }) {
+export function AgentConfigImport({ providerId, machine = null }: { providerId: string; machine?: string | null }) {
+  // A changed target owns a fresh form: selections, errors and an open diff never cross machines.
+  return <AgentConfigImportForm key={`${machine ?? 'local'}:${providerId}`} providerId={providerId} machine={machine} />
+}
+
+function AgentConfigImportForm({ providerId, machine }: { providerId: string; machine: string | null }) {
   const { t } = useTranslation('main')
   const titleId = useId()
-  const reading = useReplica(agentHome, [null, providerId])
+  const reading = useReplica(agentHome, [machine, providerId])
   const preparing = reading.state === 'value' && Boolean(reading.value?.migrationPreparation)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -34,14 +39,14 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
     setFailed(false)
     try {
       if (!home.needsImport) {
-        setDiff(await readAgentHomeDiff(home.providerId, null))
+        setDiff(await readAgentHomeDiff(home.providerId, machine))
         return
       }
-      const client = await getAgentConfigRuntimeClient()
+      const client = await getAgentConfigRuntimeClient(machine)
       const result = await client.importAgentHome({ providerId: home.providerId, groups: groupIds })
-      if (!result.success) throw new Error('Could not import local configuration')
+      if (!result.success) throw new Error('Could not import terminal configuration')
       setIssues(result.data.issues)
-      await agentHome.refresh(null, providerId)
+      await agentHome.refresh(machine, providerId)
     } catch {
       setFailed(true)
     } finally {
@@ -51,7 +56,7 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
 
   function finishReimport() {
     setDiff(null)
-    void agentHome.refresh(null, providerId).catch(() => setFailed(true))
+    void agentHome.refresh(machine, providerId).catch(() => setFailed(true))
   }
 
   return <SettingsGroup title={t('agentHome.local')} data-testid={`${providerId}-config-import`}>
@@ -78,7 +83,7 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
     </form>
     {diff && <Sheet onClose={() => setDiff(null)} titleId={titleId} desktopWidth="min(672px, 100%)"
       desktopMaxHeight="calc(100dvh - 32px)" dimNested zIndex="var(--z-settings-modal)">
-      <ReimportDialog providerId={home.providerId} machine={null} diff={diff} titleId={titleId}
+      <ReimportDialog providerId={home.providerId} machine={machine} diff={diff} titleId={titleId}
         onClose={() => setDiff(null)} onSuccess={finishReimport} />
     </Sheet>}
   </SettingsGroup>
