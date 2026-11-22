@@ -91,7 +91,7 @@ const dispatchForApp = vi.fn(async (_id: string, args: { to?: unknown }) => ({ t
 const messagesHistory = vi.fn(async () => ({ messages: [], next: null }));
 vi.mock('@main/core/extensions/extension-send', () => ({ dispatchForApp, messagesForApp: { history: messagesHistory, search: vi.fn() } }));
 
-const { attachProgramSurface } = await import('./extension-program-surface');
+const { attachProgramSurface, endCallsIn } = await import('./extension-program-surface');
 const { notifyGroupWorkspaceChanged, setExtensionBridgeHost } = await import('./extension-bridge');
 const { APP_FRAME_MARKER } = await import('@shared/extensions/app-runtime-protocol');
 
@@ -182,13 +182,10 @@ describe('an App program as a caller of its App (F16)', () => {
       expect(files.readHandleCount()).toBe(0);
       await readBoth();
       expect(files.readHandleCount()).toBe(2);
-      // A page that is merely gone is not a refusal: its reads wait out the idle timer for the next page of the same reader.
-      vi.useFakeTimers();
+      // The page went away: its reads go with it.
       relay.pageGone(program.pageId);
-      expect(files.readHandleCount()).toBe(2);
-      await vi.advanceTimersByTimeAsync(5 * 60_000);
       expect(files.readHandleCount()).toBe(0);
-    } finally { vi.useRealTimers(); relay.pageGone(program.pageId); await program.close(); }
+    } finally { relay.pageGone(program.pageId); await program.close(); }
   });
 
   it('a person\'s stamped page call keeps person membership for files, chats and messages', async () => {
@@ -343,6 +340,21 @@ describe('an App program as a caller of its App (F16)', () => {
     expect(which({ itemId: 'item-board', needs: null, asAgent: 'agent-1' })).toBe(true);
     expect(which({ itemId: 'item-board', needs: 'files:read' }), 'one the App\'s own page opened with a capability stays').toBe(false);
     expect(which({ itemId: 'other', needs: null, asAgent: 'agent-1' })).toBe(false);
+  });
+
+  it('an agent taken out of a chat: its calls handed that chat lose it, with the reason; another agent\'s, or another chat, keep theirs', async () => {
+    const child = fakeChild();
+    const surface = attachProgramSurface('board', child as unknown as ChildProcess);
+    const releases = [
+      surface.hand('call-1', 'agent-1', [HANDED]),
+      surface.hand('call-2', 'agent-2', [{ ...HANDED, agentUserId: 'agent-2' }]),
+    ];
+    endCallsIn(BOARD_CHAT, 'agent-1');
+    endCallsIn(FOLDER_CHAT, 'agent-2');
+    expect(await call(child, 1, 'filesOpen', { ref: { id: 'item-board' } }, 'call-1'))
+      .toMatchObject({ t: 'result', id: 1, ok: false, message: expect.stringContaining('removed-from-group') });
+    expect(await call(child, 2, 'filesOpen', { ref: { id: 'item-board' } }, 'call-2')).toMatchObject({ t: 'result', id: 2, ok: true });
+    await Promise.all(releases.map((release) => release()));
   });
 
   // ws-batch (owner 11-05): the folder App's delete with item_ids asks for all of them at once, as the agent that handed them.

@@ -1,7 +1,8 @@
-import { Agent, ProxyAgent, type Dispatcher } from 'undici';
 import { isIP } from 'node:net';
+import { fetchWithEnv, type EgressFetchInit } from '@gugu/core/shared/egress';
+import { installerEnvironment } from '../../../../egress/installer';
 
-export type InstallFetch = (url: string, init?: RequestInit) => Promise<Response>;
+export type InstallFetch = (url: string, init?: EgressFetchInit) => Promise<Response>;
 
 /** Do not measure a different route when the transport cannot reproduce mise's environment. */
 export class UnmeasurableInstallTransport extends Error {}
@@ -38,29 +39,16 @@ export function installProxyRoute(env: NodeJS.ProcessEnv, url: string): string |
   return proxy.href;
 }
 
-/** Per-operation agents; never consult process.env or change the global dispatcher. */
-export function createInstallTransport(env: NodeJS.ProcessEnv): { fetch: InstallFetch; close(): Promise<void> } {
-  const agents = new Map<string, Dispatcher>();
+/**
+ * A sample takes the route mise gets for the artifact's origin (installerEnvironment); never consults process.env.
+ * Redirects keep the first request's route, as every egress request does.
+ */
+export function createInstallTransport(env: NodeJS.ProcessEnv): { fetch: InstallFetch } {
   const fetcher: InstallFetch = async (url, init = {}) => {
-    let next = url;
-    for (let redirect = 0; redirect <= 5; redirect += 1) {
-      init.signal?.throwIfAborted();
-      const proxy = installProxyRoute(env, next);
-      const key = proxy ?? 'direct';
-      let dispatcher = agents.get(key);
-      if (!dispatcher) {
-        dispatcher = proxy ? new ProxyAgent(proxy) : new Agent();
-        agents.set(key, dispatcher);
-      }
-      // Node's fetch accepts a local Undici dispatcher. The same env is passed to mise unchanged.
-      const response = await fetch(next, { ...init, redirect: 'manual', dispatcher } as RequestInit & { dispatcher: Dispatcher });
-      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-      await response.body?.cancel();
-      const location = response.headers.get('location');
-      if (!location || redirect === 5) throw new UnmeasurableInstallTransport('invalid-redirect');
-      next = new URL(location, next).href;
-    }
-    throw new UnmeasurableInstallTransport('invalid-redirect');
+    const installerEnv = await installerEnvironment(url, env);
+    // Refuse inputs mise would read differently; the route itself comes from the egress.
+    installProxyRoute(installerEnv, url);
+    return fetchWithEnv(installerEnv, url, init);
   };
-  return { fetch: fetcher, async close() { await Promise.all([...agents.values()].map((agent) => agent.destroy())); } };
+  return { fetch: fetcher };
 }

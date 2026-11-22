@@ -1,3 +1,4 @@
+import { egress } from '../shared/egress'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
 // Signed-URL expiries are on the backend's clock (`@@@server-clock`).
@@ -35,7 +36,7 @@ const DOWNLOAD_LANES = 3
  * first lane streams to the reader; the others run ahead into the chunk cache, which is where every chunk already goes,
  * and the reader takes theirs from it in order. The whole-file digest is still checked by the reader, in order.
  */
-function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress'], lanes = 1) {
+function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof globalThis.fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress'], lanes = 1) {
   const count = Math.max(1, Math.ceil(size / FILE_CHUNK_BYTES))
   const width = Math.max(1, Math.min(lanes, Math.ceil(size / DOWNLOAD_LANE_BYTES)))
   const stop = new AbortController(), stopping = anySignal([signal, stop.signal])
@@ -157,7 +158,7 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
 export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
-  cache: FileChunkCache; fetch?: typeof fetch
+  cache: FileChunkCache; fetch?: typeof globalThis.fetch
   /**
    * Where this platform reads a signed object address from, when not from the address itself: the desktop renderer
    * reads every object through main (`cloudObjectUrl`), for its bytes and for a `<video>`'s source alike.
@@ -189,10 +190,10 @@ export function cloudFileProviders(deps: {
   }
   const objectTransport = async (context: FileContext) => {
     context.signal?.throwIfAborted()
-    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch
+    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? egress.fetch
     context.signal?.throwIfAborted()
     const objectUrl = deps.objectUrl
-    return objectUrl ? ((input: RequestInfo | URL, init?: RequestInit) => fetcher(objectUrl(String(input)), init)) as typeof fetch : fetcher
+    return objectUrl ? ((input: RequestInfo | URL, init?: RequestInit) => fetcher(objectUrl(String(input)), init)) as typeof globalThis.fetch : fetcher
   }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref

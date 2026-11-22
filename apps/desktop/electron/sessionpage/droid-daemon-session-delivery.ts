@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto'
-import WebSocket from 'ws'
+import type WebSocket from 'ws'
+import { loopbackWebSocket } from '@gugu/core/local/loopback'
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context'
 import { spawnOwnedChild, type OwnedChild } from '@gugu/session-core/exec'
 import { onErrorEvent } from '@gugu/session-shared'
@@ -291,7 +292,7 @@ export class DroidDaemonSessionDelivery implements SessionpageDeliveryTarget {
       const deadline = Date.now() + 10_000
       let lastError: unknown
       const attempt = () => {
-        const socket = new WebSocket(url)
+        const socket = loopbackWebSocket(url)
         // 这一条 attempt 是否已经定局(open / 超时 / 错误)。下面的终身 'error' 出口靠它分岔。
         let settled = false
         const timer = setTimeout(() => {

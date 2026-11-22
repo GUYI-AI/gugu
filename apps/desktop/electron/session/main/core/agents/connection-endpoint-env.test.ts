@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { buildAgentEnv } from '../pty/pty-env';
-import { resolveSystemProxy } from '@main/utils/systemProxyEnv';
+import { resolveSystemProxy } from '../../../../egress/harness-proxy';
 import { connectionProbeEnv, connectionProbeProxyEnv } from './connection-endpoint-env';
 
 const state = vi.hoisted(() => ({ shell: {} as NodeJS.ProcessEnv }));

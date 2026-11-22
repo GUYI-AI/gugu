@@ -33,7 +33,9 @@
   display: grid;
   grid-template-columns: var(--session-header-side-width) minmax(0, 1fr) var(--session-header-side-width);
 }
-.gg-pane-header[data-centered]:has(> .gg-pane-actions > :nth-child(2)) {
+/* 两侧槽按真实动作个数定宽。菜单开着时 Base UI 在触发钮前后插两个隐藏的 focus guard span:不占位,❌ 算进个数 ——
+   算进去,⋯ 一打开两侧就各宽一格,居中的标题跟着重新截断。 */
+.gg-pane-header[data-centered]:has(> .gg-pane-actions > :nth-child(2 of :not([data-base-ui-focus-guard]))) {
   --session-header-side-width: calc(var(--control-h-touch) * 2 + 2px);
 }
 .gg-pane-header[data-centered] > .gg-pane-heading {

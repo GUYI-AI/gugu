@@ -7,12 +7,10 @@ import { createGuguSupabaseClient } from './supabase'
  */
 export async function listAgentNameSerialsViaSupabase(input: {
   accessToken: string
-  fetch?: typeof fetch
 }): Promise<Map<string, number>> {
   const client = createGuguSupabaseClient({
     schema: 'identity',
     headers: { Authorization: `Bearer ${input.accessToken}` },
-    fetch: input.fetch
   })
   const { data, error } = await client.from('agent_name_serials').select('base, high_water')
   if (error) throw new Error(error.message)

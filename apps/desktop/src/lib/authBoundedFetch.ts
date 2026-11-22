@@ -1,6 +1,7 @@
 import { currentAuthSessionSignal } from './authSessionLoss'
 import { chatSendTimings } from './chatSendTiming'
 import { anySignal } from '@gugu/core/shared/anySignal'
+import { egress } from '@gugu/core/shared/egress'
 import { observeLoginOtpFetch } from './loginOtpTransport'
 
 // @@@clock-skew-guard-removed (#4935, owner 2026-09-04) — 这里曾有 #2755 的时钟偏移守卫:拿「响应被处理的时刻」减
@@ -32,6 +33,7 @@ async function fetchWithSignals(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   signals: AbortSignal[],
+  next: typeof globalThis.fetch,
 ): Promise<Response> {
   if (requestPath(input) === '/rest/v1/rpc/send_message_with_overlays' && typeof init?.body === 'string') {
     try { const timing = chatSendTimings.get(JSON.parse(init.body).p_message_id); if (timing) timing.http ??= performance.now() } catch { /* Diagnostics must not change request validation. */ }
@@ -40,7 +42,7 @@ async function fetchWithSignals(
   const complete = async (response: Response): Promise<Response> => requestPath(input).startsWith('/rest/v1/') && response.body
     ? response.clone().arrayBuffer().then(() => response)
     : response
-  return fetch(input, { ...init, signal: anySignal(signals) }).then(complete)
+  return next(input, { ...init, signal: anySignal(signals) }).then(complete)
 }
 
 // @@@rejected-token-recovery (#6338) — 服务端不认这张登录通行证时(换了签名章、被提前作废),数据面请求
@@ -97,12 +99,12 @@ async function withLocalClockExpiry(response: Response): Promise<Response> {
   return new Response(JSON.stringify(localized), { status: response.status, statusText: response.statusText, headers })
 }
 
-export async function authBoundedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export async function authBoundedFetch(input: RequestInfo | URL, init?: RequestInit, transport: typeof globalThis.fetch = egress.fetch): Promise<Response> {
   const path = requestPath(input)
   if (path.startsWith('/auth/v1/')) {
     const timeout = AbortSignal.timeout(AUTH_NETWORK_TIMEOUT_MS)
     return observeLoginOtpFetch(input, init, () =>
-      fetchWithSignals(input, init, init?.signal ? [init.signal, timeout] : [timeout]).catch((error: unknown) => {
+      fetchWithSignals(input, init, init?.signal ? [init.signal, timeout] : [timeout], transport).catch((error: unknown) => {
         throw timeout.aborted && !init?.signal?.aborted
           ? Object.assign(new Error('Auth request timed out'), { name: 'TimeoutError' }) : error
       }).then(withLocalClockExpiry))
@@ -116,7 +118,7 @@ export async function authBoundedFetch(input: RequestInfo | URL, init?: RequestI
   // 读重试(1/2/4s 退避 3 次)再叠三个 30s,见 restDeadlineError。storage 上传下载可以合法地很久,不在此列。
   const deadline = path.startsWith('/rest/v1/') ? AbortSignal.timeout(REST_NETWORK_TIMEOUT_MS) : null
   const send = (requestInit: RequestInit | undefined, sessionBoundary: AbortSignal) =>
-    fetchWithSignals(input, requestInit, [...(callerSignal ? [callerSignal] : []), sessionBoundary, ...(deadline ? [deadline] : [])])
+    fetchWithSignals(input, requestInit, [...(callerSignal ? [callerSignal] : []), sessionBoundary, ...(deadline ? [deadline] : [])], transport)
       // 按「哪个 signal 触发了」认超时,不按 fetch 抛出的错误对象认:WebView <116 的 fetch 不管 signal.reason,
       // 一律抛「The user aborted a request.」的 AbortError(mac1 WebView 113 实测),超时会被当成生命周期取消悄悄吞掉。
       .catch((error: unknown) => {

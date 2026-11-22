@@ -43,7 +43,7 @@ export function createDesktopFileAccess(deps: {
   auth(): Promise<RuntimeAuth | null>; root(projectId: string): Promise<string | null>
   /** This device's project bound to a chat, as the account records it. */
   project(chatId: string): Promise<string | undefined>
-  links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
+  links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof globalThis.fetch; env?: NodeJS.ProcessEnv
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string

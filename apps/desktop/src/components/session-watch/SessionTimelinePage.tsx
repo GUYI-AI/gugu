@@ -12,7 +12,7 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../../mobile/local-agent/PhoneTaskSkillsButton'
@@ -36,8 +36,7 @@ import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { deriveAttention } from './agent-watch-store'
 import { useShownAgentStatus } from '@/components/chat/useAgentsOnCloudComputer'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
-import { agentStatusText } from '@/lib/agentStatusText'
-import { agentStatusColorVar, presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
+import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import { useAgentWatchSession } from './useAgentWatchSession'
 import { DropdownMenu } from '@/components/ui/Menu'
 import { type SessionMenuTarget, SessionActions, SessionMenuButton } from './SessionsPage'
@@ -201,8 +200,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // only when the device is; while connecting the avatar claims nothing.
   const presentation = !answering ? (agentUserId && connection === 'device_offline' ? presentAgentStatus({ reading: null, reachability: 'offline' }) : null)
     : shownStatus.presentation(agentUserId, sessionPresentation(session, true, agentUserId))
-  const statusColor = presentation ? agentStatusColorVar(presentation.tone) : null
-  const statusStyle: CSSProperties | undefined = statusColor ? { color: statusColor } : undefined
   // The task's one name is its agent's name: the header says it once.
   const entryGroupId = innerSidebarEntry?.startsWith('chat:') ? innerSidebarEntry.slice(5) : null
   const sourceGroup = chatSummaries.get(entryGroupId ?? sidebar.source ?? session.bornInChatId ?? '')
@@ -221,12 +218,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         detail={wakeFailed && wakeIssue ? tc(`cloudComputer.reason.${wakeIssue.kind}`) : null}
         testId="agent-watch-connection-status"
       />
-    ) : presentation ? (
-      <span className="gg-aw-head-status">
-        <span className="gg-aw-head-state" data-testid="agent-watch-session-status" data-tone={presentation.tone} data-emphasis={presentation.emphasis ? 'true' : undefined} style={statusStyle}>
-          {agentStatusText(presentation.label)}
-        </span>
-      </span>
     ) : undefined,
     headerTestId: 'agent-watch-hero',
   }
@@ -346,7 +337,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           startupPrompt={recovery.pendingPrompt}
           sending={sending}
           agentWorking={foregroundWorking}
-          headerRunning={presentation?.tone === 'running'}
           onStop={cancel}
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}

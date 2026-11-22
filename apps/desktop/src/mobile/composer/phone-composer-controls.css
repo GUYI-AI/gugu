@@ -9,7 +9,8 @@
 .gg-phone-composer-control[data-active] { color: var(--live-light); }
 .gg-phone-composer-control[data-active]::before { border-color: var(--live-light); }
 .gg-phone-composer-control > svg { width: 16px; height: 16px; }
-.gg-phone-composer-control-label { max-width: 156px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Clip only sideways: the Button's line-height is 1, so a clipped line box cuts the descenders (g, p) of every label. */
+.gg-phone-composer-control-label { max-width: 156px; overflow-x: clip; text-overflow: ellipsis; white-space: nowrap; }
 .gg-phone-composer-control-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint-fg); }
 .gg-phone-composer-control-dot[data-tone='call'] { background: var(--danger-solid); }
 .gg-phone-composer-shade { position: fixed; z-index: var(--z-modal); background: var(--bg-overlay-soft); left: var(--phone-control-left, 0px); top: var(--phone-control-top, 0px); width: var(--phone-control-width, 100dvw); height: var(--phone-control-height, 100dvh); }
