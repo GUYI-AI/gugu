@@ -335,6 +335,8 @@ export default {
     "newRequests": "New requests",
     "noAgents": "No Agents",
     "noAgentsYet": "No Agents yet",
+    "noAgentsPage": "No agents on this device yet",
+    "noAgentsPageHint": "An agent works on this computer for you. Describe what you need in one sentence to create one.",
     "noContacts": "No contacts",
     "noContactsYet": "No contacts yet",
     "noGroups": "No groups",
