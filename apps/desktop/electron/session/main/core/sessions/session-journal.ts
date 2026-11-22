@@ -152,15 +152,16 @@ export function mergeIntoJournal(sessionId: string, incoming: readonly JournalLi
 
 /**
  * A turn the runtime committed, kept here when its agent keeps no record gugu reads. With a record, the record has
- * the turn, but not a failure only the runtime saw (the engine died mid-turn, a prompt never delivered; a revision
- * when the exit comes after): that turn is kept as `recorded`, for its outcome. A replay is history the runtime read
- * back, already here.
+ * the turn, but not always how it ended when that was not a plain finish: a failure only the runtime saw (the engine
+ * died mid-turn, a prompt never delivered; a revision when the exit comes after), or a stop the agent wrote no end
+ * for (Qwen answers a kill with a cancelled turn and leaves its record open). Such a turn is kept as `recorded`, for
+ * its outcome. A replay is history the runtime read back, already here.
  */
 export function journalCommittedTurn(event: { sessionId: string; providerId?: string; source: string; turn: TranscriptTurn }): void {
   if (event.source === 'replay') return;
   const provider = event.providerId ?? db.select({ provider: sessions.provider }).from(sessions).where(eq(sessions.id, event.sessionId)).get()?.provider;
   const recorded = sessionRecordHarnessForProvider(provider) !== null;
-  if (recorded && event.turn.outcome?.kind !== 'error') return;
+  if (recorded && event.turn.outcome?.kind !== 'error' && event.turn.outcome?.kind !== 'cancelled') return;
   void appendJournalTurn(event.sessionId, event.turn, recorded).catch((error: unknown) => {
     log.warn('sessionJournal: a committed turn was not written', { sessionId: event.sessionId, error: String(error) });
   });

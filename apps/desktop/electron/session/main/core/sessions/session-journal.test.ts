@@ -68,12 +68,14 @@ describe('session journal', () => {
     expect((await lines()).map((line) => line.id)).toEqual(['S1:turn:1@10', 'S1:turn:5@50']);
   });
 
-  it('keeps a committed turn of an agent with a record only when it failed, marked as recorded', async () => {
+  it("keeps a committed turn of an agent with a record only when it failed or stopped, marked as recorded", async () => {
     const failed = { ...turn('S1:turn:1', 20, 'two'), outcome: { kind: 'error', reason: 'process_closed', detail: 'signal=SIGKILL' } } as TranscriptTurn;
+    const stopped = { ...turn('S1:turn:3', 40, 'four'), outcome: { kind: 'cancelled', reason: 'cancelled' } } as TranscriptTurn;
     journalCommittedTurn({ sessionId: 'S1', providerId: 'claude', source: 'live', turn: turn('S1:turn:0', 10, 'one') });
     journalCommittedTurn({ sessionId: 'S1', providerId: 'claude', source: 'revision', turn: failed });
     journalCommittedTurn({ sessionId: 'S1', providerId: 'opencode', source: 'live', turn: turn('S1:turn:2', 30, 'three') });
-    await vi.waitFor(async () => expect((await lines()).map((line) => [line.id, line.recorded ?? false])).toEqual([['S1:turn:1@20', true], ['S1:turn:2@30', false]]));
+    journalCommittedTurn({ sessionId: 'S1', providerId: 'claude', source: 'live', turn: stopped });
+    await vi.waitFor(async () => expect((await lines()).map((line) => [line.id, line.recorded ?? false])).toEqual([['S1:turn:1@20', true], ['S1:turn:2@30', false], ['S1:turn:3@40', true]]));
   });
 
   it('a revert does not count a recorded turn, nor mark one', async () => {
