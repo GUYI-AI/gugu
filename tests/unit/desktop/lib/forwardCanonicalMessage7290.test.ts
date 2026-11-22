@@ -131,8 +131,11 @@ it('keeps the same card and file UUID through lost responses and retries without
   commit.mockRejectedValueOnce(new TypeError('file response lost'))
   await f.wiring.forward(task(), 'destination', 'me')
   const ids = f.rows().map(row => row.id)
-  const delivered = f.wiring.outbox.delivered(ids[1])
-  await vi.advanceTimersByTimeAsync(4_000)
+  let settled = false
+  const delivered = f.wiring.outbox.delivered(ids[1]).finally(() => { settled = true })
+  // Each acknowledgement also lands in the message store (IndexedDB steps off the faked clock): step the retry clock
+  // until the second item is delivered rather than one fixed jump.
+  for (let step = 0; step < 40 && !settled; step++) await vi.advanceTimersByTimeAsync(500)
   await delivered
   expect(send.mock.calls.map(args => args[3])).toEqual([ids[0], ids[0]])
   expect(commit.mock.calls.map(([, args]) => args.message_id)).toEqual([ids[1], ids[1]])

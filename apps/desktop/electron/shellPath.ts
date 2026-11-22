@@ -1,10 +1,16 @@
-import { execFileSync } from '@gugu/core/local/childProcess'
+import { execFile, execFileSync } from '@gugu/core/local/childProcess'
 import { win32 as winPath } from 'node:path'
+import { promisify } from 'node:util'
 import {
   buildExternalToolEnv,
   SHELL_ENV_CAPTURE_GUARD,
 } from './session/main/utils/childProcessEnv'
-import { getWindowsEnvValue, prependWindowsPathEntry } from './session/main/utils/windows-env'
+import {
+  getWindowsEnvValue,
+  getWindowsPathEnvKey,
+  mergeWindowsPath,
+  prependWindowsPathEntry,
+} from './session/main/utils/windows-env'
 
 const FIELD_DELIMITER = '\x1f'
 const ENV_RECORD_DELIMITER = '\x1e'
@@ -52,6 +58,12 @@ export type ShellPathProbe = (
   env: NodeJS.ProcessEnv,
 ) => string
 
+export type AsyncShellPathProbe = (
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+) => Promise<string>
+
 const probeLoginShellPath: ShellPathProbe = (shell, args, env) =>
   execFileSync(shell, args, {
     encoding: 'utf8',
@@ -59,9 +71,22 @@ const probeLoginShellPath: ShellPathProbe = (shell, args, env) =>
     env,
   })
 
-export type LoginShellPathResult =
-  | { hydrated: true; path: string }
-  | { hydrated: false; reason: 'windows' | 'probe-failed' | 'invalid-output' }
+const execFileAsync = promisify(execFile)
+const probeAsync: AsyncShellPathProbe = async (command, args, env) =>
+  (await execFileAsync(command, args, { encoding: 'utf8', timeout: SHELL_TIMEOUT_MS, env, windowsHide: true })).stdout
+
+/**
+ * 一次 PATH 读取:从哪读的(macOS/Linux 是登录 shell,Windows 是注册表)、什么时候读的、读没读成。
+ * 读不成时 PATH 保持上一次的值 —— 「检测为什么没找到」要把这一格原样告诉用户。
+ */
+export type UserPathRead = {
+  from: 'login-shell' | 'windows-registry'
+  /** 问的是哪个登录 shell;Windows 上没有。 */
+  shell?: string
+  at: number
+} & ({ hydrated: true; path: string } | { hydrated: false; reason: 'probe-failed' | 'invalid-output' })
+
+export type LoginShellPathResult = UserPathRead | { hydrated: false; reason: 'windows' }
 
 /**
  * 最近一次采样到的**整份**登录 shell 环境(#5873)。
@@ -78,7 +103,7 @@ let lastLoginShellEnv: Record<string, string> | null = null
  * 最近一次采样到的登录 shell 环境;从未采到(Windows / 采样失败 / 没有 awk)则 null。
  *
  * 宿主把它注入给会话页(`setLoginShellEnvProvider`)—— ❌ 会话页不要相对 import 本模块:
- * 这里有模块级状态,跨 bundle 只会拿到读不到的复制品。同 `setLoginShellPathRehydrator`。
+ * 这里有模块级状态,跨 bundle 只会拿到读不到的复制品。同 `setUserPathRefresher`。
  */
 export function loginShellEnvSnapshot(): Record<string, string> | null {
   return lastLoginShellEnv
@@ -133,7 +158,7 @@ function mergePath(loginPath: string, currentPath: string): string {
  */
 let lastLoginShellPath: LoginShellPathResult | null = null;
 
-function recordLoginShellPath(result: LoginShellPathResult): LoginShellPathResult {
+function recordLoginShellPath<T extends LoginShellPathResult>(result: T): T {
   lastLoginShellPath = result
   return result
 }
@@ -190,30 +215,95 @@ export function hydrateLoginShellPath({
     return recordLoginShellPath({ hydrated: false, reason: 'windows' })
   }
 
-  const shell = env.SHELL?.trim() || (platform === 'darwin' ? '/bin/zsh' : '/bin/bash')
-  // ❌ 不能把本进程的 env 原样交给探测 shell。见函数注释的 AppImage 一节。
-  const probeEnv = { ...buildExternalToolEnv(env), ...SHELL_ENV_CAPTURE_GUARD }
+  const shell = loginShellOf(platform, env)
   let output: string
   try {
-    output = probe(shell, loginShellProbeArgs(shell), probeEnv)
+    output = probe(shell, loginShellProbeArgs(shell), loginShellProbeEnv(env))
   } catch {
-    return recordLoginShellPath({ hydrated: false, reason: 'probe-failed' })
+    return recordLoginShellPath({ from: 'login-shell', shell, at: Date.now(), hydrated: false, reason: 'probe-failed' })
   }
+  return recordLoginShellPath(applyLoginShellOutput(shell, output, env))
+}
 
+function loginShellOf(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string {
+  return env.SHELL?.trim() || (platform === 'darwin' ? '/bin/zsh' : '/bin/bash')
+}
+
+// ❌ 不能把本进程的 env 原样交给探测 shell。见 hydrateLoginShellPath 注释的 AppImage 一节。
+function loginShellProbeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...buildExternalToolEnv(env), ...SHELL_ENV_CAPTURE_GUARD }
+}
+
+function applyLoginShellOutput(shell: string, output: string, env: NodeJS.ProcessEnv): UserPathRead {
   const fields = output.split(FIELD_DELIMITER)
   const loginPath = fields[1]
-  // 整份环境:采到就记下,采不到(没有 awk)就保持上一次 —— ❌ 不清空,那会让「装完重采一次」
+  // 整份环境:采到就记下,采不到(没有 awk)就保持上一次 —— ❌ 不清空,那会让「重采一次」
   // 在一台没有 awk 的机器上把已有的快照抹掉。
   const capturedEnv = parseCapturedEnv(fields[2] ?? '')
   if (Object.keys(capturedEnv).length > 0) lastLoginShellEnv = capturedEnv
 
   if (!loginPath || !loginPath.includes('/')) {
-    return recordLoginShellPath({ hydrated: false, reason: 'invalid-output' })
+    return { from: 'login-shell', shell, at: Date.now(), hydrated: false, reason: 'invalid-output' }
   }
 
   const merged = mergePath(loginPath, env.PATH ?? '')
   env.PATH = merged
-  return recordLoginShellPath({ hydrated: true, path: merged })
+  return { from: 'login-shell', shell, at: Date.now(), hydrated: true, path: merged }
+}
+
+/**
+ * Windows 上用户与系统 PATH 的**当前**值,按系统的顺序(系统在前、用户在后)。走 PowerShell 而不是
+ * `reg query`:`reg` 的输出是控制台代码页(中文系统 GBK),非 ASCII 路径会读成乱码;`GetEnvironmentVariable`
+ * 顺带把 `%USERPROFILE%` 一类的 REG_EXPAND_SZ 展开。两段之间用 0x1F 隔开(用户 PATH 可能不存在)。
+ */
+const WINDOWS_PATH_SCRIPT =
+  "[Console]::OutputEncoding=[Text.Encoding]::UTF8;" +
+  "$m=[Environment]::GetEnvironmentVariable('Path','Machine');" +
+  "$u=[Environment]::GetEnvironmentVariable('Path','User');" +
+  "[Console]::Out.Write([string]$m+[char]31+[string]$u)"
+
+/**
+ * 重新取一次用户**当前**的 PATH,合并进本进程(登录/注册表那份在前,已有的条目补在后、去重),返回这次读取。
+ *
+ * 为什么每次检测都要:咕咕开着时用户在别的终端里装 CLI(`npm i -g`,或者改了 rc / Windows 用户 PATH 的
+ * 安装器),新目录只在**此刻**的登录 shell / 注册表里;启动时那份快照永远看不见它,只能重启咕咕。
+ * 异步:它跑在界面活着的时候,`execFileSync` 会把主进程卡住一个 shell 的时长。启动那一次仍是上面的同步版本。
+ */
+export async function refreshUserPath({
+  platform = process.platform,
+  env = process.env,
+  probe = probeAsync,
+}: {
+  platform?: NodeJS.Platform
+  env?: NodeJS.ProcessEnv
+  probe?: AsyncShellPathProbe
+} = {}): Promise<UserPathRead> {
+  if (platform === 'win32') {
+    let output: string
+    try {
+      output = await probe('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_PATH_SCRIPT], buildExternalToolEnv(env))
+    } catch {
+      return recordLoginShellPath({ from: 'windows-registry', at: Date.now(), hydrated: false, reason: 'probe-failed' })
+    }
+    const [machine = '', user = ''] = output.split(FIELD_DELIMITER)
+    const read = [machine, user].join(winPath.delimiter)
+    if (!read.includes('\\')) {
+      return recordLoginShellPath({ from: 'windows-registry', at: Date.now(), hydrated: false, reason: 'invalid-output' })
+    }
+    const pathKey = getWindowsPathEnvKey(env)
+    const merged = mergeWindowsPath(read, env[pathKey] ?? '')
+    env[pathKey] = merged
+    return recordLoginShellPath({ from: 'windows-registry', at: Date.now(), hydrated: true, path: merged })
+  }
+
+  const shell = loginShellOf(platform, env)
+  let output: string
+  try {
+    output = await probe(shell, loginShellProbeArgs(shell), loginShellProbeEnv(env))
+  } catch {
+    return recordLoginShellPath({ from: 'login-shell', shell, at: Date.now(), hydrated: false, reason: 'probe-failed' })
+  }
+  return recordLoginShellPath(applyLoginShellOutput(shell, output, env))
 }
 
 /**

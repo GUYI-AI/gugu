@@ -37,6 +37,7 @@ import { VersionHistorySection } from './app-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 import { AppUnreadBindingSection, type UnreadBindingApi } from './app-unread-binding-section';
+import { AppCredentialRows } from './app-credential-rows';
 import { InstalledRowNoticeLine, programFailureText, type InstalledRowNotice } from './installed-extension-row';
 
 export type ManagePageApi = Partial<UnreadBindingApi> & { marketHistory: (args: { extensionId: string }) => Promise<{ success: boolean; data?: MarketVersionHistoryEntry[]; error?: string }> } &
@@ -353,7 +354,10 @@ export function AppManagePage({
     ? translate('extensions.permissionsWithdrawnNote', { count: permissions.length, revoked: withdrawn })
     : translate(permissions.length === 0 ? 'extensions.permissionsNoteNone' : onTogglePermission ? 'extensions.permissionsNoteAsked' : 'extensions.permissionsNoteInstall')), body: permissions.length === 0
     ? <Row title={translate('extensions.permissionsNone')} />
-    : <fieldset disabled={readOnly} className="contents">{permissions.map(permissionRow)}</fieldset> });
+    : <fieldset disabled={readOnly} className="contents">{permissions.map(permissionRow)}
+      {/* API 61: this computer's vault; another machine's App page does not reach it. */}
+      {manifest.permissions?.credentials?.length && onTogglePermission && !machine ?
+        <AppCredentialRows extensionId={manifest.id} hosts={manifest.permissions.network ?? []} translate={translate} disabled={readOnly || !enabled} /> : null}</fieldset> });
   if (api.appData && onClearData) {
     sections.push({ id: 'data', label: translate('extensions.manageData'), body: (
       <Row title={translate('extensions.manageDataRow')} note={translate('extensions.manageDataNote')} testId="app-manage-data">

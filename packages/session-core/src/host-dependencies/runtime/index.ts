@@ -31,7 +31,6 @@ export {
   type DependencyId,
   type DependencyInstallError,
   type DependencyInstallResult,
-  type DependencyProbeOptions,
   type DependencyState,
   type DependencyStatus,
   type DependencyStatusMap,
@@ -67,7 +66,8 @@ export {
   resolveCommandPath,
   resolveRealpath,
   runVersionProbe,
-  versionLineOf,
+  versionProbeArgs,
+  versionTextOf,
   withProbeSwitches,
 } from './probe';
 export {

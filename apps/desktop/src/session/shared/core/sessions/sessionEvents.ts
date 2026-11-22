@@ -108,6 +108,11 @@ export type AgentStatusChange = {
   providerBlocker: ProviderBlocker | null;
   /** 声明了的状态来源读不出时的一句原因(spec hook-status-derivation「打断边:会话在场文件」);`null` = 正常。 */
   statusSourceFault: string | null;
+  /**
+   * 这一笔是会话的一次动静(开工、停下、等人、出错)时:动静的时刻(毫秒,与会话行 lastInteractedAt 同一笔写下)。
+   * 快照里是会话行上记着的最后一次;已读之类不是动静的变化不带。
+   */
+  activityAt?: number;
 };
 
 /** 哪些会话不在了(删除、归档、随项目一起走):按会话或项目圈定。 */

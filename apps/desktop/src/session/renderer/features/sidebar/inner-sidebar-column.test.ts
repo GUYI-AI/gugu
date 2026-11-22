@@ -4,10 +4,10 @@ import { columnAgents, standaloneAgentAnchor } from './inner-sidebar-column';
 import { followInnerSidebar, viewAnchor, type InnerSidebarAnchor, type InnerSidebarView } from './inner-sidebar-anchor';
 
 const agents: ChatAgentEntry[] = [
-  { id:'room-task', projectId:'loose', agentUserId:'mine', bornInChatId:'room', time:1, isPinned:false },
-  { id:'solo', projectId:'loose', agentUserId:'solo-agent', time:1, isPinned:false },
-  { id:'child', projectId:'loose', agentUserId:'child-agent', parentSessionId:'solo', time:1, isPinned:false },
-  { id:'unrelated', projectId:'loose', agentUserId:'other-agent', time:1, isPinned:false },
+  { id:'room-task', projectId:'loose', agentUserId:'mine', bornInChatId:'room', time:1 },
+  { id:'solo', projectId:'loose', agentUserId:'solo-agent', time:1 },
+  { id:'child', projectId:'loose', agentUserId:'child-agent', parentSessionId:'solo', time:1 },
+  { id:'unrelated', projectId:'loose', agentUserId:'other-agent', time:1 },
 ];
 const families=agentFamilies(agents);
 const rows=new Map([['solo-agent',{chatId:'solo-chat',name:'Standalone',avatar:null,createdAt:null}]]);

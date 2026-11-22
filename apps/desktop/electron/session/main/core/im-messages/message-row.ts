@@ -27,16 +27,6 @@ export type StoredMessage = { rowid: number; id: string; chat_id: string; thread
   content: string | null; is_whisper: number; to_user_ids: string; file_item_id: string | null; rest: string }
 const columns = ['id', 'chat_id', 'thread_root_id', 'seq', 'sender_user_id', 'created_at',
   'content_type', 'content', 'is_whisper', 'to_user_ids', 'file_item_id'] as const
-export const decimal = /^(0|[1-9]\d*)$/
-
-export function requireId(id: string): void {
-  if (typeof id !== 'string' || !id.trim()) throw new Error('Persistent messages require a scoped identity')
-}
-
-export function requireLimit(limit: number): void {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('Invalid persistent message page limit')
-}
-
 /** Everything that is not a query column, minus renderer-only fields; absent columns stay absent on restore. */
 export function encodeRest(message: MessageItem): string {
   const rest = { ...message } as Record<string, unknown>
@@ -61,8 +51,4 @@ export function restore(row: StoredMessage): MessageItem {
 export function dropMessages(connection: MessageSqlDatabase, where: string, ...args: unknown[]): void {
   connection.prepare(`DELETE FROM im_messages_text WHERE rowid IN (SELECT rowid FROM im_messages WHERE ${where})`).run(...args)
   connection.prepare(`DELETE FROM im_messages WHERE ${where}`).run(...args)
-}
-
-export function dropRanges(connection: MessageSqlDatabase, accountId: string, chatId: string): void {
-  connection.prepare('DELETE FROM im_message_ranges WHERE account_id=? AND chat_id=?').run(accountId, chatId)
 }

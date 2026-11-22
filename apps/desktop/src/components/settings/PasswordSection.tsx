@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { passwordSaveDraft, passwordVault } from '@/lib/passwordBetaNotifications'
 import { refreshFailure, useReplica, type Reading, retryOf } from '@/lib/replica'
@@ -57,10 +56,9 @@ const secretMark = (t: TFunction<'settings'>, label: string, secret: boolean, ch
     title={t(secret ? 'passwords.secretOnHint' : 'passwords.secretOffHint')}>{secret ? <Lock /> : <LockOpen />}</IconButton>
 
 export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLElement | null } = {}) {
-  const vault = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
+  const vault = useReplica(passwordVault, [])
   const snapshot = vault.state === 'value' ? vault.value : undefined
   const { busy, error, run, clear } = usePasswordCommand()
-  if (!PASSWORD_BETA_ENABLED) return null
   return <PasswordUnlockGate sync={snapshot?.sync} busy={busy} error={error} run={run} clearError={clear}>
     <PasswordContent vault={vault} snapshot={snapshot} busy={busy} error={error} run={run} clear={clear} actionsHost={actionsHost} />
   </PasswordUnlockGate>
@@ -75,7 +73,6 @@ function PasswordContent({ vault, snapshot, busy, error, run, clear, actionsHost
   const [query, setQuery] = useState('')
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
   useEffect(() => {
-    if (!PASSWORD_BETA_ENABLED) return
     const open = () => {
       const requestId = takePasswordFill()
       if (requestId) { clear(); setView({ kind: 'request', requestId }) }

@@ -161,11 +161,14 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
 // `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
 // Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
-// 61: `showContextMenu` rows say `fold` (rare: the host lays it under 更多 by its one menu rule, menu-table.ts
+// 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
+// `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
+// App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
+// 62: `showContextMenu` rows say `fold` (rare: the host lays it under 更多 by its one menu rule, menu-table.ts
 // @@@menu-order, the destructive last), `alone` (its name when its submenu holds only it and is shown in its place) and
 // `hotkey` (the key drawn at the row's end, as host menus do: 'F2', 'Mod+Click'). The host orders and folds; the App only
 // says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
-export const EXTENSION_API_VERSION = 61;
+export const EXTENSION_API_VERSION = 62;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1037,6 +1040,14 @@ export const BRIDGE_VERBS = {
   promptsDelete: { needs: 'prompts' },
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
+  /**
+   * `gugu.credentials` (61, app-credentials.ts): a request the host sends for the page with the credential the person
+   * picked for that website; the value never reaches the page. Gated by `permissions.credentials`, `permissions.network`
+   * and that pick, not a capability word. A page an agent works never uses the person's credential: a read there answers
+   * `unavailable`, a write is handed to the agent.
+   */
+  credentialsRead: { needs: null, only: 'page' },
+  credentialsWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
   cloudSubscribe: { needs: null, only: 'page' },
   cloudUnsubscribe: { needs: null, only: 'page' },

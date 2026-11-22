@@ -37,7 +37,6 @@ describe('the main-process commit host and actual canonical writer', () => {
   beforeEach(async () => {
     pair = memoryTransportPair(); connection = connect(pair.left);
     fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
-    fixture.sqlite.pragma('synchronous=FULL');
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     state.root = await mkdtemp(join(tmpdir(), 'commit-host-'));
   });

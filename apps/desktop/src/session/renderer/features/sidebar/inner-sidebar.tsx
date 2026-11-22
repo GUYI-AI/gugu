@@ -496,7 +496,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
 
 /**
  * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
- * 是哪一档只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
+ * 按最近的动静排,状态只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
  */
 const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarAnchor; agents: readonly ChatAgentEntry[] }) {
   const { translate } = useSessionMessages();

@@ -292,6 +292,7 @@ const STRINGS = {
     openIn: 'Open in',
     symlink: 'Symbolic link',
     savedSkipped: 'Saved {name}; {n} links left out: {names}',
+    savedSkipped_one: 'Saved {name}; {n} link left out: {names}',
     forwardTooLarge: "{name} wasn't forwarded: at most 512 MB go at once. Download it instead.",
     forwardChanging: "{name} wasn't forwarded: it is being changed. Forward it once it settles.",
     confirmRemoveCopy: 'Permanently delete "{name}"?',
@@ -312,7 +313,9 @@ const STRINGS = {
     here: '(here now)',
     cancel: 'Cancel',
     items: '{n} items',
+    items_one: '{n} item',
     confirmRemoveFolder: 'Delete it and its {n} items',
+    confirmRemoveFolder_one: 'Delete it and its {n} item',
     confirmRemoveFolderAll: 'Delete it and everything in it',
     nameTaken: '“{name}” is already in this folder',
     alreadyThere: '“{name}” was already here: the new one is “{new}”.',
@@ -511,6 +514,7 @@ const STRINGS = {
     pickPrev: 'Previous',
     pickNext: 'Next',
     savedFiles: '{n} files saved.',
+    savedFiles_one: '{n} file saved.',
     keptFiles: '{n} changed.',
     skippedNotMine: '{n} not uploaded by you, left as they are.',
     skippedNoCopy: '{n} without a cloud copy, left as they are.',
@@ -538,6 +542,7 @@ const state = {
   openSections: new Set(), // the time sections shown in full, past their first SECTION_ROWS
   selecting: false, // the phone's explicit selection mode, including an empty selection
   pickFrom: null, // the file pressed last, where a Shift press's range starts
+  opened: null, // the file opened last from this list: its row stays marked (aria-current) under the viewer and after it
   order: [], // the files on screen, in their order: what a range runs along
   locating: null, // 「在聊天中定位」 for a selection: { ids: message ids oldest first, at }
   showAppData: false,
@@ -586,6 +591,8 @@ function remember(key, value) {
 }
 
 const fmt = (template, values) => template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''))
+// A count's words: the key's `_one` form when there is one of it (English "1 item"; Chinese has no such form).
+const counted = (key, values) => fmt((values.n === 1 && state.t[`${key}_one`]) || state.t[key], values)
 
 function isZh(locale) {
   return String(locale || '').toLowerCase().startsWith('zh')
@@ -1842,14 +1849,17 @@ function fileMark(entry) {
   mark.toggleAttribute('tile', true)
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
-  if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
+  if (thumbHere(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
   return mark
 }
 
 // ─── thumbnails ─────────────────────────────────────────────────────────────
 // An image is read as any image file is (files.open read-only, its blob), drawn small once, and kept for this page by
 // its id and version; only the ones scrolled into view are read, a few at a time. A file kept on a machine is never
-// read for its picture (that would upload it): it keeps its suffix.
+// read for its picture (that would upload it), nor one of a working copy on another machine (`wantsThumb`'s `far`): it
+// keeps its suffix.
+const farCopy = () => !!copyOf()?.deviceId || copyOf()?.thisMachine === false
+const thumbHere = (entry) => wantsThumb(entry, inCopy(entry) && farCopy())
 
 const thumbs = new Map() // `${id}:${version}` → Promise<object URL | null>
 const thumbWaiting = []
@@ -2003,7 +2013,6 @@ function whenOf(iso, now) {
 
 // Narrow rows show the modified time; the same rows add a size column where wide. Activity stays in hover and Details.
 function metaOf(entry, now) {
-  const t = state.t
   const cells = []
   if (isFolder(entry)) {
     // A chat folder already read counts what it holds here, kept current by its changes; one not entered yet says the
@@ -2012,7 +2021,7 @@ function metaOf(entry, now) {
     // The list counts up to 1000: 1000 there means 1000 or more.
     const n = inCopy(entry) ? undefined : state.listed.has(entry.id) ? inside(entry.id).filter(visibleEntry).length
       : entry.childCount >= 1000 ? '999+' : entry.childCount
-    if (n !== undefined) cells.push(['size', fmt(t.items, { n })])
+    if (n !== undefined) cells.push(['size', counted('items', { n })])
   } else {
     const when = whenOf(changedAt(entry), now)
     if (when) cells.push(['when', when])
@@ -2042,6 +2051,7 @@ function listItem(entry, now = new Date(Date.now())) {
   li.dataset.id = entry.id
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', String(state.current?.entry.id === entry.id))
+  markOpened(li)
   if (entry.gitStatus) li.dataset.git = entry.gitStatus
   const open = document.createElement('button')
   open.type = 'button'
@@ -2131,6 +2141,7 @@ function gridItem(entry, now) {
   li.dataset.id = entry.id
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', 'false')
+  markOpened(li)
   if (offline(entry)) li.dataset.offline = ''
   if (fileUnavailable(entry)) li.dataset.expired = ''
   const open = document.createElement('button')
@@ -2241,7 +2252,7 @@ function removeItem(entry) {
   const t = state.t
   const folder = isFolder(entry)
   return { text: t.remove, run: () => removeFile(entry), ask: inCopy(entry) ? fmt(t.confirmRemoveCopy, { name: entry.name })
-    : folder && !knownBelow(entry.id) ? t.confirmRemoveFolderAll : folder && under(entry.id).length ? fmt(t.confirmRemoveFolder, { n: under(entry.id).length }) : t.confirmRemove }
+    : folder && !knownBelow(entry.id) ? t.confirmRemoveFolderAll : folder && under(entry.id).length ? counted('confirmRemoveFolder', { n: under(entry.id).length }) : t.confirmRemove }
 }
 
 // 「用 VS Code、访达、终端打开」: this computer's programs, each drawn with its icon (the row's `program`). A file or folder
@@ -2390,7 +2401,7 @@ async function downloadEntry(entry) {
   const row = inCopy(entry) ? transferRow(state.t.downloading, entry.name) : null
   try {
     const saved = await (row ? gugu.files.download(entry, { onProgress: row.progress, signal: row.signal }) : gugu.files.download(entry)) // false: the person cancelled the save dialog, nothing to say
-    if (saved?.skipped) showBanner(fmt(state.t.savedSkipped, { name: entry.name, n: saved.skipped.length, names: saved.skipped.join(', ') }), 'info')
+    if (saved?.skipped) showBanner(counted('savedSkipped', { name: entry.name, n: saved.skipped.length, names: saved.skipped.join(', ') }), 'info')
     else if (row && saved) showBanner(fmt(state.t.saved, { name: entry.name }), 'info')
   } catch (error) {
     if (!row?.signal.aborted) showBanner(failureText(error), 'error')
@@ -4248,11 +4259,25 @@ function pickable(li, entry) {
 
 // Explicit open gestures win; Shift selects a range and an unmodified press toggles while selection is active.
 function pressFile(entry, event) {
-  if (event?.altKey || event?.ctrlKey || event?.metaKey || event?.button === 1) return openFile(entry, event.altKey ? 'beside' : 'newTab')
+  if (event?.altKey || event?.ctrlKey || event?.metaKey || event?.button === 1) return openFile(opened(entry), event.altKey ? 'beside' : 'newTab')
   if (event?.shiftKey) return pick(entry.id, 'range')
   if (state.picked.size || state.selecting) return pick(entry.id, 'toggle')
   state.pickFrom = entry.id
-  return openFile(entry, event?.altKey ? 'beside' : event?.ctrlKey || event?.metaKey || event?.button === 1 ? 'newTab' : 'navigate')
+  return openFile(opened(entry), event?.altKey ? 'beside' : event?.ctrlKey || event?.metaKey || event?.button === 1 ? 'newTab' : 'navigate')
+}
+
+// @@@opened-row - the row a file was opened from keeps one background, the selected one, under the host's viewer and
+// after it closes. Otherwise its fill is only hover and press: the viewer taking the pointer fades it out under the
+// opening picture, and it comes back only when the pointer moves again — the row seen to flash while an image opens.
+function opened(entry) {
+  state.opened = entry.id
+  for (const li of $('file-list').querySelectorAll('li[data-id]')) markOpened(li)
+  return entry
+}
+
+function markOpened(li) {
+  if (state.opened === li.dataset.id) li.setAttribute('aria-current', 'true')
+  else li.removeAttribute('aria-current')
 }
 
 function pick(id, how) {
@@ -4331,7 +4356,7 @@ async function downloadPicked() {
   hideBanner()
   try {
     const saved = await gugu.files.download(entries)
-    if (typeof saved === 'number' && saved > 0) showBanner(fmt(state.t.savedFiles, { n: saved }), 'info')
+    if (typeof saved === 'number' && saved > 0) showBanner(counted('savedFiles', { n: saved }), 'info')
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
@@ -4426,11 +4451,11 @@ function showDetails(entry) {
   head.append(Object.assign(document.createElement('h2'), { className: 'details-title', textContent: shownName(entry), title: entry.name }), close)
   const picture = fileMark(entry)
   picture.classList.add('details-picture')
-  if (!wantsThumb(entry)) picture.classList.add('details-badge')
+  if (!thumbHere(entry)) picture.classList.add('details-badge')
   const actions = document.createElement('div')
   actions.className = 'details-actions'
   const act = (text, run) => Object.assign(document.createElement('button'), { type: 'button', textContent: text, onclick: run })
-  actions.append(act(t.open, () => openFile(entry)), act(t.download, () => downloadEntry(entry)))
+  actions.append(Object.assign(act(t.open, () => openFile(entry)), { className: 'primary' }), act(t.download, () => downloadEntry(entry)))
   if (entry.sourceMessageIds?.length) actions.append(act(t.showInChat, () => showSource(entry.sourceMessageIds[entry.sourceMessageIds.length - 1])))
   const facts = document.createElement('dl')
   facts.className = 'details-facts'

@@ -24,7 +24,6 @@ describe('recoverable committed structural projection publication', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>, directory: string;
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
-    fixture.sqlite.pragma('synchronous=FULL');
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     directory = await mkdtemp(join(tmpdir(), 'commit-projection-'));
   });

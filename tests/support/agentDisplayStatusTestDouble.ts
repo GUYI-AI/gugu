@@ -15,6 +15,7 @@ const fakePayload: AgentPresencePayload = {
   agentType: 'claude-code',
   recentActions: [],
   lastActionAt: null,
+  lastInteractedAt: null,
   windowTitle: null,
   pid: null,
   deviceId: null,

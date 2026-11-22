@@ -10,7 +10,7 @@ import { pageSessions } from '@renderer/features/sessions/stores/session-selecto
 import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
 import { sidebarFolds, type SidebarFold } from './sidebar-folds';
-import type { SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
+import type { SidebarSnapshot } from '@shared/view-state';
 import type { JoinedGroup } from '@/lib/sidebarJoinedGroups';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { isAssistantAgent, isAssistantSession, launchedByAssistant } from '@renderer/features/assistant/assistant-lineage';
@@ -21,10 +21,6 @@ import { sessionPresentation } from '@/lib/agent-wait/watch-status';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { accountProjectsStore, type AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sidebarStateGroup, type SidebarStateGroup } from './session-groups';
-
-function parseSidebarSessionSortBy(value: unknown): SidebarSessionSortBy | undefined {
-  return value === 'created-at' || value === 'updated-at' ? value : undefined;
-}
 
 /**
  * behavior session-page「键盘导航」: a station of the keyboard navigation — the New task entry, a project row (= that
@@ -110,7 +106,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    * ❌ 不在每一行里各调一次设置 hook(侧栏是几十行的场面)。
    */
   agentNameOnHoverEnabled = true;
-  sessionSortBy: SidebarSessionSortBy = 'created-at';
   /**
    * #6264 项目在哪台机器、那台机器叫什么、主目录在哪。由机器那边注入(remoteHostsStore.start),
    * 排版逻辑因此能脱离桥单测。搜索时机器名也算项目名的一部分。
@@ -478,7 +473,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       folds: [...sidebarFolds],
       projectOrder: [...this.projectOrder],
       sessionOrderByProject: { ...this.sessionOrderByProject },
-      sessionSortBy: this.sessionSortBy,
     };
   }
 
@@ -501,12 +495,9 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     if (snapshot.sessionOrderByProject !== undefined) {
       this.sessionOrderByProject = { ...snapshot.sessionOrderByProject };
     }
-    if (snapshot.sessionSortBy !== undefined) {
-      const v = parseSidebarSessionSortBy(snapshot.sessionSortBy);
-      if (v !== undefined) this.sessionSortBy = v;
-    }
     // Blobs written by the old desktop sidebar still carry its section folds and 项目 | 对话 layout (pinnedCollapsed,
-    // projectsCollapsed, sessionsCollapsed, chatsCollapsed, listLayout, listPage): nothing reads them any more.
+    // projectsCollapsed, sessionsCollapsed, chatsCollapsed, listLayout, listPage) and a sessionSortBy no list ever
+    // read: nothing reads them any more.
   }
 
   ensureProjectExpanded(projectId: string): void {

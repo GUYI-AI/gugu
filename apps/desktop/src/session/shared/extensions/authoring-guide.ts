@@ -157,7 +157,7 @@ Free:
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
 - \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
-- \`showContextMenu({ x, y, items: [{ id, label, enabled?, checked?, danger?, title?, person?, fold?, alone?, hotkey?, items? }, { type: "separator" }] })\` (API 18/38/61, page) → id | null. \`fold\`: under More; \`alone\`: its label in place of a one-row submenu.
+- \`showContextMenu({ x, y, items: [{ id, label, enabled?, checked?, danger?, title?, person?, fold?, alone?, hotkey?, items? }, { type: "separator" }] })\` (API 18/38/62, page) → id | null. \`fold\`: under More; \`alone\`: its label in place of a one-row submenu.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
 - \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
 - \`openBrowserTab(url)\` → http(s) only: a session's browser tab, else the system browser (phone: a new window).

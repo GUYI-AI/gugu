@@ -1,7 +1,6 @@
 import type { InstallMethod } from '@gugu/session-core/deps';
 import type {
   DependencyId,
-  DependencyProbeOptions,
   HostDependencySelection,
   InstallOverride,
 } from '@gugu/session-core/deps/runtime';
@@ -385,9 +384,9 @@ export const agentsController = createRPCController({
     return mgr.probeOverride(id, selection);
   },
 
-  probeAll: async (options?: DependencyProbeOptions) => {
+  probeAll: async () => {
     const mgr = await getDependencyManager();
-    return mgr.probeAll(options);
+    return mgr.probeAll();
   },
 
   /**

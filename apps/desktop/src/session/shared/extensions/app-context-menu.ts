@@ -3,7 +3,7 @@ import type { ContentMenuItem } from '../content-context-menu';
 
 /** App labels/actions cross the bridge; the shared host keeps presentation and selection. An item with `items` opens
  * them beside it (the host's submenu); ids are unique across the whole menu, and only leaves are picked. `checked`, `danger`,
- * `title`, `person` (API 38), `program` (API 51), `fold`, `alone` and `hotkey` (API 61) only say how a row looks or where
+ * `title`, `person` (API 38), `program` (API 51), `fold`, `alone` and `hotkey` (API 62) only say how a row looks or where
  * the host's menu rule places it (content-context-menu.ts contentMenuLayout): a wrong one is left out, the row stays. */
 /** A key the host can name on a row's end: modifiers, then one key or 'Click' ('Mod+Click', 'F2', 'Delete'). */
 const HOTKEY = /^((Mod|Control|Alt|Shift|Meta)\+)*[A-Za-z0-9]+$/;

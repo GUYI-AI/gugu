@@ -1,6 +1,5 @@
 import type { PasswordBetaUi, PasswordRequestView, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { createPasswordCardKey, openPasswordCard, PASSWORD_SAVE_CARD_RPC, sealPasswordCard } from '@gugu/core/shared/passwordCardCipher'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { callDeviceRpc } from './deviceRpc'
 
 type Call = (deviceId: string, payload: { requestId: string; sealed: string }) => Promise<{ sealed: string }>
@@ -31,8 +30,11 @@ export function remotePasswordSaveCard(request: PasswordRequestView, local: Pass
 }
 
 declare global { interface Window { passwordSaveCards?: { forRequest(request: PasswordRequestView): PasswordBetaUi | undefined } } }
-if (PASSWORD_BETA_ENABLED) window.passwordSaveCards = { forRequest: request => remotePasswordSaveCard(request, window.passwordVaultBeta, async (deviceId, payload) => {
-  const reply = await callDeviceRpc<{ sealed: string }>(deviceId, PASSWORD_SAVE_CARD_RPC, payload, { timeoutMs: 15000 })
-  if (!reply.result?.sealed || reply.error) throw new Error('password_card_unavailable')
-  return reply.result
-}) }
+/** The renderer's entry installs the remote save card once (main.tsx). */
+export function installPasswordSaveCards(): void {
+  window.passwordSaveCards = { forRequest: request => remotePasswordSaveCard(request, window.passwordVaultBeta, async (deviceId, payload) => {
+    const reply = await callDeviceRpc<{ sealed: string }>(deviceId, PASSWORD_SAVE_CARD_RPC, payload, { timeoutMs: 15000 })
+    if (!reply.result?.sealed || reply.error) throw new Error('password_card_unavailable')
+    return reply.result
+  }) }
+}

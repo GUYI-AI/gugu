@@ -1,4 +1,3 @@
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import type { SaveProposal } from './beta-save'
 import type { CredentialSearch } from './beta-agent-view'
@@ -19,11 +18,11 @@ export interface PasswordAgentPort {
 let port: PasswordAgentPort | undefined
 /** Main binds exactly one implementation per process. */
 export function bindPasswordBetaAgent(value: PasswordAgentPort): void {
-  if (!PASSWORD_BETA_ENABLED || port) return
+  if (port) return
   port = Object.freeze({ list: value.list.bind(value), request: value.request.bind(value),
     start: value.start.bind(value), status: value.status.bind(value), save: value.save.bind(value), saveStatus: value.saveStatus.bind(value) })
 }
 export function passwordBetaAgentPort(): PasswordAgentPort {
-  if (!PASSWORD_BETA_ENABLED || !port) throw new Error('password_beta_unavailable')
+  if (!port) throw new Error('password_beta_unavailable')
   return port
 }

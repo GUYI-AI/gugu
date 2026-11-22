@@ -82,8 +82,18 @@ export function useAgentDisplayStatuses(
 // @@@group-recent-activity (#518/#437) - per-agent recent-action data for the avatar pop-out (group bar +
 export interface AgentRecentActivity {
   actions: string[]
+  /** Newest tool call (the running card's「近 5 分钟」). */
   lastActiveAt: string | null
+  /** When its session last started, stopped, waited or failed: what lists order agents by (compareByRecentActivity). */
+  lastInteractedAt: string | null
 }
+
+type PresencePayload = NonNullable<ReturnType<typeof getAgentPresenceSnapshot>>['payload']
+const activityOf = (payload: PresencePayload | null | undefined): AgentRecentActivity => ({
+  actions: payload?.recentActions ?? [],
+  lastActiveAt: payload?.lastActionAt ?? null,
+  lastInteractedAt: payload?.lastInteractedAt ?? null,
+})
 
 export function useAgentRecentActivity(
   agentUserIds: readonly string[],
@@ -97,7 +107,7 @@ export function useAgentRecentActivity(
     const initial: Record<string, AgentRecentActivity> = {}
     for (const id of stableIds) {
       const payload = getAgentPresenceSnapshot(id)?.payload
-      initial[id] = { actions: payload?.recentActions ?? [], lastActiveAt: payload?.lastActionAt ?? null }
+      initial[id] = activityOf(payload)
     }
     return initial
   })
@@ -111,18 +121,13 @@ export function useAgentRecentActivity(
       const next: Record<string, AgentRecentActivity> = {}
       for (const id of stableIds) {
         const payload = getAgentPresenceSnapshot(id)?.payload
-        next[id] = payload
-          ? { actions: payload.recentActions ?? [], lastActiveAt: payload.lastActionAt ?? null }
-          : prev[id] ?? { actions: [], lastActiveAt: null }
+        next[id] = payload ? activityOf(payload) : prev[id] ?? activityOf(null)
       }
       return next
     })
     const unsubs = stableIds.map((id) =>
       subscribeAgentPresence(id, (state) => {
-        const next: AgentRecentActivity = {
-          actions: state.payload?.recentActions ?? [],
-          lastActiveAt: state.payload?.lastActionAt ?? null,
-        }
+        const next = activityOf(state.payload)
         setActivity((prev) => (sameActivity(prev[id], next) ? prev : { ...prev, [id]: next }))
       }),
     )
@@ -135,7 +140,7 @@ export function useAgentRecentActivity(
 }
 
 function sameActivity(a: AgentRecentActivity | undefined, b: AgentRecentActivity): boolean {
-  if (!a || a.lastActiveAt !== b.lastActiveAt) return false
+  if (!a || a.lastActiveAt !== b.lastActiveAt || a.lastInteractedAt !== b.lastInteractedAt) return false
   return sameSeq(a.actions, b.actions)
 }
 

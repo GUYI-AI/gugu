@@ -13,7 +13,8 @@ vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', ()
   onLinkChange: () => () => {},
 }))
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { vi.useFakeTimers(); harness = createReactHarness() })
+// Polling, not the local cache: no IndexedDB, so the record cache hydrates empty at once.
+beforeEach(() => { vi.stubGlobal('indexedDB', undefined); vi.useFakeTimers(); harness = createReactHarness() })
 afterEach(() => { harness.cleanup(); rpc.read.mockReset(); vi.useRealTimers() })
 
 const turn = (seq: number): TranscriptTurn => ({

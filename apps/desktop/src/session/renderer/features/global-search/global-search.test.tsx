@@ -40,10 +40,6 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: remote.messages, from: (table:
 } } }))
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => remote.desktop
   ? { invoke: remote.local, eventOn: () => () => {} } : null }))
-vi.mock('@/platform', async importOriginal => {
-  const original = await importOriginal<typeof import('@/platform')>()
-  return { ...original, platform: { ...original.platform, get localMessages() { return remote.desktop ? 'sqlite' : 'window' } } }
-})
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string, params?: object) => params ? `${key} ${JSON.stringify(params)}` : key }) }))
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver

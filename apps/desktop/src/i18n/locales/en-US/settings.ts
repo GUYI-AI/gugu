@@ -1068,7 +1068,7 @@ export default {
     "expiresOn_one": "Valid through {{date}} ({{days}} day left)",
     "expiresOn_other": "Valid through {{date}} ({{days}} days left)",
     "invalidNumber": "The membership data is invalid. Refresh and try again.",
-    "invalidTier": "The membership tier is not recognized. Refresh and try again.",
+    "invalidTier": "Could not read membership information. Update the app and try again.",
     "noDiscountNote": "Quarterly and yearly prices are calculated from the monthly price without a discount.",
     "nonExpiringBalance_one": "{{credits}} non-expiring credit",
     "nonExpiringBalance_other": "{{credits}} non-expiring credits",

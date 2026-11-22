@@ -1,9 +1,10 @@
+import { noopLogger, type Logger } from '@gugu/session-shared/logger';
 import { CONPTY_SPAWN_OPTIONS, releaseConoutWorkerOnExit } from './conpty';
 import {
   normalizeSignal,
   PosixPtyTerminator,
-  type PtyExitInfo,
   type PtyProcess,
+  type PtySignal,
   type PtySpawner,
   type PtySpawnSpec,
 } from '../index';
@@ -33,7 +34,7 @@ type NodePtyLike = {
   kill(): void;
   onData(handler: (data: string) => void): void;
   onExit(
-    handler: (event: { exitCode: number | null; signal?: number | string | null }) => void
+    handler: (event: { exitCode: number; signal?: number | string | null }) => void
   ): void;
   on?: (event: 'error', handler: (error: NodeJS.ErrnoException) => void) => void;
 };
@@ -41,37 +42,49 @@ type NodePtyLike = {
 let nodePtyPromise: Promise<NodePtyModule> | null = null;
 
 export class NodePtySpawner implements PtySpawner {
-  async spawn(spec: PtySpawnSpec): Promise<PtyProcess> {
-    try {
-      const nodePty = await loadNodePty();
-      const proc = nodePty.spawn(spec.command, spec.args, {
-        name: 'xterm-256color',
-        cols: spec.cols,
-        rows: spec.rows,
-        cwd: spec.cwd,
-        env: spec.env,
-        ...CONPTY_SPAWN_OPTIONS,
-      });
-      suppressExpectedNodePtyErrors(proc);
-      releaseConoutWorkerOnExit(proc);
-      return new NodePtyProcess(proc);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new Error(`Failed to spawn PTY: ${message}`);
-    }
+  async spawn(spec: PtySpawnSpec): Promise<NodePtyProcess> {
+    return spawnNodePty(await loadNodePty(), spec);
   }
 }
 
-class NodePtyProcess implements PtyProcess {
+/**
+ * The one place a local pty is started. Synchronous, so a caller that subscribes right after it sees the
+ * first byte. node-pty ≥ 1.2 marks every inherited fd close-on-exec in the forked child before exec, so the
+ * pty's program gets only its own terminal (Windows: ConPTY's CreateProcessW passes bInheritHandles=false).
+ */
+export function spawnNodePty(
+  nodePty: NodePtyModule,
+  spec: PtySpawnSpec,
+  logger: Logger = noopLogger
+): NodePtyProcess {
+  try {
+    const proc = nodePty.spawn(spec.command, spec.args, {
+      name: 'xterm-256color',
+      cols: spec.cols,
+      rows: spec.rows,
+      cwd: spec.cwd,
+      env: spec.env,
+      ...CONPTY_SPAWN_OPTIONS,
+    });
+    suppressExpectedNodePtyErrors(proc, logger);
+    releaseConoutWorkerOnExit(proc);
+    return new NodePtyProcess(proc, new PosixPtyTerminator(logger), logger);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`Failed to spawn PTY: ${message}`);
+  }
+}
+
+export class NodePtyProcess implements PtyProcess {
   private killed = false;
 
   constructor(
     private readonly proc: NodePtyLike,
-    private readonly posixTerminator: Pick<
-      PosixPtyTerminator,
-      'kill' | 'markExited'
-    > = new PosixPtyTerminator()
-  ) {}
+    private readonly posixTerminator: Pick<PosixPtyTerminator, 'kill' | 'markExited'>,
+    private readonly logger: Logger = noopLogger
+  ) {
+    this.proc.onExit(() => this.posixTerminator.markExited());
+  }
 
   write(data: string): void {
     this.proc.write(data);
@@ -85,7 +98,7 @@ class NodePtyProcess implements PtyProcess {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (/EBADF|ENOTTY|ioctl\(2\) failed|not open|Napi::Error/.test(message)) return;
-      process.stderr.write(`NodePtyProcess: resize failed: ${message}\n`);
+      this.logger.error('NodePtyProcess: resize failed', { cols: c, rows: r, error: message });
     }
   }
 
@@ -106,11 +119,9 @@ class NodePtyProcess implements PtyProcess {
     this.proc.onData(handler);
   }
 
-  onExit(handler: (info: PtyExitInfo) => void): void {
-    this.proc.onExit(({ exitCode, signal }) => {
-      this.posixTerminator.markExited();
-      handler({ exitCode, signal: normalizeSignal(signal) ?? null });
-    });
+  /** node-pty always has a code; the signal is left out when there was none (what desktop `Pty` expects). */
+  onExit(handler: (info: { exitCode: number; signal?: PtySignal }) => void): void {
+    this.proc.onExit(({ exitCode, signal }) => handler({ exitCode, signal: normalizeSignal(signal) }));
   }
 
   getPid(): number {
@@ -131,11 +142,12 @@ async function loadNodePty(): Promise<NodePtyModule> {
 
 function suppressExpectedNodePtyErrors(
   proc: NodePtyLike,
+  logger: Logger,
   platform: NodeJS.Platform = process.platform
 ): void {
   if (platform !== 'win32') return;
   proc.on?.('error', (error) => {
     if (error.code === 'EPIPE' || error.code === 'EIO') return;
-    process.stderr.write(`node-pty: unexpected PTY error: ${error.message}\n`);
+    logger.warn('node-pty: unexpected PTY error', { code: error.code, message: error.message });
   });
 }

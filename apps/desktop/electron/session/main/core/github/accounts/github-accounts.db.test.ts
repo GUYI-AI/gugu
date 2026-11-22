@@ -1,6 +1,11 @@
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GITHUB_PROVIDER_ID, toGitHubAccount, upsertGitHubAccount } from './github-accounts';
+import {
+  GITHUB_PROVIDER_ID,
+  moveGitHubTokensIntoVault,
+  toGitHubAccount,
+  upsertGitHubAccount,
+} from './github-accounts';
 
 describe('github account helpers', () => {
   let fixture: RegistryFixture;
@@ -24,7 +29,7 @@ describe('github account helpers', () => {
         login,
         avatarUrl: `https://avatars.githubusercontent.com/u/${providerAccountId}`,
       },
-    });
+    }, fixture.vault);
   }
 
   it('stores identity metadata in the row and the token behind the credentialRef', async () => {
@@ -42,6 +47,48 @@ describe('github account helpers', () => {
     await expect(fixture.registry.resolveSecret(GITHUB_PROVIDER_ID, 'github.com:42')).resolves.toBe(
       'gho_monalisa'
     );
+  });
+
+  it('keeps the token in the password vault, one credential per account', async () => {
+    await upsert('monalisa', '42');
+    await upsert('mona', '42');
+
+    const row = await fixture.registry.getAccount(GITHUB_PROVIDER_ID, 'github.com:42');
+    expect(row?.credentialRef).toBe('vault:cred-1');
+    expect([...fixture.vault.saved]).toEqual([
+      ['cred-1', { origin: 'https://github.com', name: 'GitHub', account: 'mona' }],
+    ]);
+  });
+
+  it('moves tokens the app store kept into the vault, leaving gh accounts, ids and the default alone', async () => {
+    const legacy = (accountId: string, credentialSource: string, secret?: string) =>
+      fixture.registry.upsertAccount({
+        providerId: GITHUB_PROVIDER_ID,
+        accountId,
+        credentialRef: `github-account-token:${accountId}`,
+        ...(secret ? { secret } : {}),
+        meta: { providerAccountId: accountId.split(':')[1], host: 'github.com', login: accountId, avatarUrl: '', credentialSource },
+      });
+    await legacy('github.com:7', 'device_flow', 'gho_old');
+    await legacy('github.com:8', 'cli');
+    await legacy('github.com:9', 'device_flow');
+    await fixture.registry.setDefaultAccount(GITHUB_PROVIDER_ID, 'github.com:7');
+
+    await expect(moveGitHubTokensIntoVault(fixture.registry, fixture.vault)).resolves.toBe(1);
+
+    const rows = await fixture.registry.listAccounts(GITHUB_PROVIDER_ID);
+    expect(rows.map((row) => [row.accountId, row.credentialRef])).toEqual(
+      expect.arrayContaining([
+        ['github.com:7', 'vault:cred-1'],
+        ['github.com:8', 'github-account-token:github.com:8'],
+        ['github.com:9', 'github-account-token:github.com:9'],
+      ])
+    );
+    await expect(fixture.registry.resolveSecret(GITHUB_PROVIDER_ID, 'github.com:7')).resolves.toBe('gho_old');
+    expect(fixture.secretStore.secrets.has('github-account-token:github.com:7')).toBe(false);
+    await expect(fixture.registry.getDefaultAccountId(GITHUB_PROVIDER_ID)).resolves.toBe('github.com:7');
+    // A second run finds nothing left to move.
+    await expect(moveGitHubTokensIntoVault(fixture.registry, fixture.vault)).resolves.toBe(0);
   });
 
   it('updates an existing account instead of duplicating it', async () => {

@@ -71,7 +71,7 @@ function inPlace(item: ContentMenuItem): ContentMenuItem {
 }
 
 /**
- * @@@content-menu-layout - How the host lays out a content menu, an App's included (API 61): by the one rule every object
+ * @@@content-menu-layout - How the host lays out a content menu, an App's included (API 62): by the one rule every object
  * menu follows (menu-table.ts @@@menu-order, `menuLayout`). Rows that say `fold` go under 更多 (`more`), the destructive
  * last; a menu of at most SHORT_MENU rows stays flat, destructive last. A menu with no `fold` row is drawn as given.
  * Renderers draw `more` as a MenuFold (in place when it holds one row; flat on a phone, as every host menu).

@@ -130,7 +130,7 @@ function ImportRow({ label, job, children }: { label: ReactNode; job?: ImportJob
 
 export function LocalImportSources({ providers, ownerId, jobs }: RowsProps) {
   const { t } = useTranslation('main')
-  const [open, setOpen] = useState<string | null>('codex')
+  const [open, setOpen] = useState<string | null>(null)
   const sources = useSources(providers, null, true)
   const groups = groupImportProviders(providers)
   return (

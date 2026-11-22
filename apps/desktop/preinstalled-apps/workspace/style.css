@@ -1,43 +1,38 @@
 /* ui.css supplies the host's typography, controls, lists and palette; only this App's layout lives here. */
 html, body { height: 100%; }
-:root { --em-icon-xl: 36px; }
 body { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; overflow: hidden; }
 body.no-list .files, body.show-doc .files { display: none; }
 body.reading > * { visibility: hidden; }
 body:not(.show-doc):not(.no-list) .doc { display: none; }
 
-/* One two-line list at every width. */
+/* One line per entry at every width: its mark, its name, and at the end one value — a file's time, a folder's count; from
+   560px wide, Size and Modified as columns under a head (owner 11-21). The phone keeps its taller two-line rows (below). */
 .files { display: flex; flex-direction: column; min-height: 0; }
 .files-head { flex-wrap: nowrap; padding: var(--em-spacing-lg); flex: none; }
 .select-files { display: none; }
 .files.has-picks .files-head { display: none; }
-.file-list { margin: 0; padding: 0 var(--em-spacing-md) var(--em-spacing-md); gap: var(--em-spacing-xs); overflow: auto; flex: 1; min-height: 0; }
+.file-list { margin: 0; padding: 0 var(--em-spacing-sm) var(--em-spacing-sm); gap: 0; overflow: auto; flex: 1; min-height: 0; }
+.file { position: relative; min-height: 30px; padding: 0 var(--em-spacing-sm); border-radius: 6px; }
 .file-open {
-  flex: 1; min-width: 0; min-height: var(--em-control-h-md); display: grid;
-  grid-template-columns: var(--em-icon-md) minmax(0, 1fr); column-gap: var(--em-spacing-md); row-gap: 2px; align-items: center;
-  padding: var(--em-spacing-xs) 0; border: 0; background: none; text-align: start; font-weight: 400;
+  flex: 1; min-width: 0; min-height: 30px; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: var(--em-spacing-sm);
+  align-items: center; padding: 0; border: 0; background: none; text-align: start; font-weight: 400;
 }
-.file-title { display: flex; align-items: center; gap: var(--em-spacing-xs); grid-column: 2; min-width: 0; }
-.file-name { flex: 1; min-width: 0; font-size: var(--em-font-title); line-height: var(--em-lh-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.file-mark { grid-row: span 2; width: var(--em-icon-md); height: var(--em-icon-md); flex: none; object-fit: contain; color: var(--em-foreground-muted); }
-.file-meta { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-muted); }
-.file-meta { display: flex; gap: 0; min-width: 0; }
+.file-title { display: flex; align-items: center; gap: var(--em-spacing-xs); min-width: 0; }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-mark { width: 16px; height: 16px; flex: none; object-fit: contain; color: var(--em-foreground-muted); }
+.file-meta {
+  display: flex; justify-content: flex-end; gap: var(--em-spacing-md); min-width: 0; white-space: nowrap; font-variant-numeric: tabular-nums;
+  font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-passive, var(--em-foreground-muted));
+}
 .file-cell { flex: none; }
-.file-cell + .file-cell { margin-inline-start: 10px; }
-.file-cell:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.file-meta > .file-path { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-inline-end: 8px; }
-
-/* The row keeps its time; activity, size and host names stay in hover and Details. */
-.file-list { gap: 2px; }
-.file { position: relative; padding-block: calc(var(--em-row-pad) - var(--em-spacing-xs)); min-height: 56px; }
-.file .file-open { padding-block: 0; padding-inline-end: var(--em-spacing-xs); grid-template-columns: var(--em-icon-xl) minmax(0, 1fr); align-content: center; }
-.file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
-.file[data-folder] .file-mark { width: 28px; height: 28px; justify-self: center; }
-/* A folder not read yet has no count under its name: one line, not a two-line row's height. `auto`, not 0: the list is a
-   flex column, and a row allowed down to 0 is squeezed under its own line once the rows outgrow the pane. */
-.file[data-folder]:not(:has(.file-cell)) { min-height: auto; }
+.file-meta > .file-path { flex: 0 1 auto; min-width: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
+/* Narrow, a file's size waits for its column; a folder's count is its one value. */
 .file-cell[data-cell='size'] { display: none; }
 .file[data-folder] .file-cell[data-cell='size'] { display: block; }
+/* In a list row the type is a muted glyph, as the folders are; the tile (and its colour) stays for the grid. */
+.file:not(.cell) .file-mark::part(tile) { background: none; color: inherit; }
+.file:not(.cell) .file-mark::part(glyph) { width: 100%; height: 100%; }
+.file:not(.cell) .file-mark.has-thumb { border-radius: 3px; }
 .file-marks { flex: none; display: flex; align-items: center; gap: var(--em-spacing-xs); max-width: 35%; min-width: 0; }
 .file-keep, .file-host { font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-passive, var(--em-foreground-muted)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-keep[data-soon] { color: var(--em-foreground-muted); }
@@ -68,7 +63,9 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file-host[data-online='false']::after { content: ''; flex: none; width: 6px; height: 6px; border-radius: 3px; background: var(--em-foreground-muted); }
 
 /* The grid (images and videos): square pictures, the name under them; sections and folders across the whole width. */
-.file-list.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--em-spacing-sm); align-content: start; }
+/* The space under a picture is its own: a folder's row and a section's heading across the grid sit as close as in the list. */
+.file-list.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0 var(--em-spacing-sm); align-content: start; }
+.file-list.as-grid > .file.cell { margin-bottom: var(--em-spacing-sm); }
 .file-list.as-grid > .list-section, .file-list.as-grid > .file:not(.cell) { grid-column: 1 / -1; }
 /* `min-height: auto`, not a row's 56px: the grid's rows are `auto`, so once there are more of them than the pane holds
    each shrinks to its cells' minimum, and a picture taller than that runs over the row below. */
@@ -87,6 +84,8 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .pick-all[aria-checked='true']::after, .file-pick[aria-checked='true']::after { content: ''; position: absolute; left: 8px; top: 5px; width: 4px; height: 8px; border: solid var(--em-background); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .pick-all[aria-checked='mixed']::after { content: ''; position: absolute; inset: 10px 6px; background: var(--em-foreground); }
 .file.picked { background: var(--em-selected); }
+/* The row a file was opened from keeps one fill whether the pointer rests on it or the image viewer takes it away; a press still shows. */
+.file[aria-current]:not(:active) { background-image: none; }
 .file-open:focus-visible { outline: none; }
 .file:has(.file-open:focus-visible) { outline: 2px solid var(--em-focus-ring); outline-offset: -2px; }
 .pick-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; margin: var(--em-spacing-lg); padding: 4px var(--em-spacing-sm); border-radius: var(--em-radius-control); background: var(--em-selected); color: var(--em-foreground); font-size: var(--em-font-caption); }
@@ -103,9 +102,13 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 /* A file's details: over the list (narrow), beside it (wide). */
 .details { position: fixed; z-index: 15; inset: auto 0 0 0; max-height: 80vh; overflow: auto; display: flex; flex-direction: column; gap: var(--em-spacing-sm); padding: var(--em-spacing-lg); border-radius: var(--em-radius-card, 12px) var(--em-radius-card, 12px) 0 0; box-shadow: var(--em-shadow-dialog); }
 .details-head { display: flex; align-items: center; gap: var(--em-spacing-sm); }
-.details-title { flex: 1; min-width: 0; margin: 0; font-size: var(--em-font-title); line-height: var(--em-lh-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.details-close { border: 0; background: none; }
+/* The list's language: the name at body size, controls at the bar's height, the picture whole on the muted fill. */
+.details-title { flex: 1; min-width: 0; margin: 0; font-size: var(--em-font-body); line-height: var(--em-lh-body); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.details-close { display: inline-flex; align-items: center; justify-content: center; width: var(--em-control-h-sm); height: var(--em-control-h-sm); min-height: 0; padding: 0; border: 0; background: none; }
+.details-close gugu-icon { width: 16px; height: 16px; }
 .details .details-picture { width: 100%; height: 160px; border-radius: var(--em-radius-control); }
+.details .details-picture.has-thumb { background-size: contain; background-repeat: no-repeat; background-color: var(--em-background-3); }
+.details-actions button { min-height: var(--em-control-h-sm); padding-block: 0; padding-inline: 12px; }
 img.details-picture { object-fit: contain; }
 .details .details-picture.details-badge { width: 56px; height: 56px; }
 .details-actions { display: flex; flex-wrap: wrap; gap: var(--em-spacing-xs); }
@@ -121,30 +124,38 @@ img.details-picture { object-fit: contain; }
 
 /* Wide (an expanded tab): the rows line up as a table, and the details sit beside the list. */
 .files { container-type: inline-size; }
-@container (min-width: 720px) {
-  .table-head { display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) 130px 80px; column-gap: var(--em-spacing-md); align-items: center; padding: 0 8px 4px 4px; font-size: var(--em-font-caption); color: var(--em-foreground-muted); border-bottom: 1px solid var(--em-border); }
-  .table-head > [data-cell='name'] { grid-column: 3; }
-  .table-head > [data-cell='size'] { justify-self: start; margin: 0; }
-  .table-head > button:not(.pick-all) { border: 0; background: none; padding: 0; min-height: 0; text-align: start; font: inherit; color: inherit; }
+@container (min-width: 560px) {
+  .table-head {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) 72px 96px; column-gap: var(--em-spacing-sm); align-items: center; height: 26px;
+    margin-bottom: 4px; padding: 0 var(--em-spacing-sm); font-size: var(--em-font-caption); color: var(--em-foreground-muted); border-bottom: 1px solid var(--em-border);
+  }
+  .table-head > .pick-all { justify-self: center; margin-inline: -3px; }
+  .table-head > [data-cell='name'] { grid-column: 2; text-align: start; }
+  .table-head > [data-cell='size'] { grid-column: 3; grid-row: 1; text-align: end; }
+  .table-head > [data-cell='when'] { grid-column: 4; grid-row: 1; text-align: end; }
+  .table-head > button:not(.pick-all) { border: 0; background: none; padding: 0; min-height: 0; font: inherit; color: inherit; }
   .table-head > [aria-current='true'] { color: var(--em-foreground); font-weight: 600; }
-  .file:not(.cell) { padding-block: 4px; padding-inline-start: 38px; min-height: var(--em-control-h-touch); }
-  .file:not(.cell) .file-open { grid-template-columns: 24px minmax(0, 1fr) 130px 80px; align-items: center; padding-inline-end: 0; }
-  .file:not(.cell) .file-name { font-size: var(--em-font-body); line-height: var(--em-lh-body); }
-  .file:not(.cell) .file-mark { width: 24px; height: 24px; grid-row: auto; }
+  .file:not(.cell) .file-open { grid-template-columns: 16px minmax(0, 1fr) 72px 96px; }
   .file:not(.cell) .file-meta { display: contents; }
-  .file:not(.cell) .file-cell::before { content: none; }
-  .file:not(.cell) .file-cell { display: block; grid-row: 1; font-size: var(--em-font-caption); color: var(--em-foreground-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file:not(.cell) .file-cell[data-cell='when'] { grid-column: 3; }
-  .file:not(.cell) .file-cell[data-cell='size'] { grid-column: 4; }
-  .file:not(.cell) .file-meta > .file-path { grid-column: 2; grid-row: 2; }
+  .file:not(.cell) .file-cell { display: block; grid-row: 1; text-align: end; overflow: hidden; text-overflow: ellipsis; }
+  .file:not(.cell) .file-cell[data-cell='size'] { grid-column: 3; }
+  .file:not(.cell) .file-cell[data-cell='when'] { grid-column: 4; }
+  .file:not(.cell) .file-meta > .file-path { grid-column: 2; grid-row: 2; text-align: start; }
 }
 /* The phone (a narrow pane): taller rows, the kinds and filters scroll sideways, the bar spans the bottom, the details are
    a sheet that slides away. */
 @media (hover: none) and (pointer: coarse) {
-  :root { --em-icon-xl: 40px; }
+
   .select-files { display: inline-block; font-size: var(--em-font-caption); }
   .files.has-picks .files-head { display: flex; }
-  .file:not(.cell) { min-height: 64px; padding-block: var(--em-row-pad); }
+  .file:not(.cell) { min-height: 56px; padding-block: var(--em-row-pad); }
+  .file:not(.cell) .file-open { grid-template-columns: 32px minmax(0, 1fr); column-gap: var(--em-spacing-md); row-gap: 2px; }
+  .file:not(.cell) .file-mark { grid-row: span 2; width: 24px; height: 24px; justify-self: center; }
+  .file:not(.cell) .file-mark.has-thumb { width: 32px; height: 32px; border-radius: 4px; }
+  /* A folder not read yet has no count under its name: one line's height (`auto`, not 0, or the flex column squeezes it). */
+  .file[data-folder]:not(.cell):not(:has(.file-cell)) { min-height: auto; }
+  .file:not(.cell) .file-title, .file:not(.cell) .file-meta { grid-column: 2; justify-content: flex-start; }
+  .file:not(.cell) .file-name { font-size: var(--em-font-title); line-height: var(--em-lh-title); font-weight: 400; }
   .selecting .file { display: flex; align-items: center; gap: var(--em-spacing-sm); }
   .selecting .file-pick { display: inline-block; width: 44px; height: 44px; }
   .file-pick::before { inset: 11px; border-radius: 50%; }
@@ -154,13 +165,18 @@ img.details-picture { object-fit: contain; }
   .pick-bar { order: 1; margin: 0; left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-radius: 0; justify-content: center; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
   .details { padding-top: var(--em-spacing-sm); }
   .details::before { content: ''; align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--em-border); }
-  .file-list.as-grid { grid-template-columns: repeat(3, 1fr); gap: 3px; }
+  .file-list.as-grid { grid-template-columns: repeat(3, 1fr); gap: 0 3px; }
+  .file-list.as-grid > .file.cell { margin-bottom: 3px; }
+}
+/* With a mouse the details are a side panel at any width: over the list's end in a narrow pane, beside it from 720px. */
+@media (hover: hover), (pointer: fine) {
+  .details { inset: 0 0 0 auto; width: min(300px, 85vw); max-height: none; border-radius: 0; border-left: 1px solid var(--em-border); }
 }
 @media (min-width: 720px) {
   .details { inset: 0 0 0 auto; width: 300px; max-height: none; border-radius: 0; box-shadow: none; border-left: 1px solid var(--em-border); }
   body.has-details .files { margin-inline-end: 300px; }
 }
-.list-section { list-style: none; padding: var(--em-spacing-sm) var(--em-spacing-sm) 2px; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); font-weight: 600; color: var(--em-foreground-muted); }
+.list-section { list-style: none; padding: var(--em-spacing-sm) var(--em-spacing-sm) 2px; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); font-weight: 500; color: var(--em-foreground-muted); }
 .list-section:first-child { padding-top: 0; }
 /* A time section's heading folds it (owner 11-06): the same caption line, the whole of it a button, its count after the name. */
 .list-section-toggle, .list-more { padding: 0; }
@@ -362,6 +378,10 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 .files-toolbar > #search-toggle gugu-icon { width: 16px; height: 16px; }
 .files-toolbar > .sort { margin-inline-start: 0; }
 .files-toolbar > button { flex: none; min-height: 28px; padding: 2px 5px; }
+/* New is a square of the bar's control height, as 🔍 is. */
+.files-toolbar > #new-doc { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-height: 0; padding: 0; }
+.files-toolbar > #new-doc[hidden] { display: none; }
+.files-toolbar > #new-doc gugu-icon { width: 16px; height: 16px; margin: 0; }
 /* fitTools (app.js): the place switch by its icons where its words do not fit; then the order's words end in an ellipsis. */
 .files-toolbar.places-icons .place-switch button > span { display: none; }
 .files-toolbar.places-icons .place-switch gugu-icon { margin-inline-end: 0; }

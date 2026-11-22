@@ -11,13 +11,15 @@ const fault = vi.hoisted(() => ({
   closeFailures: new Map<string, unknown>(),
   syncs: new Map<string, number>(), events: [] as string[], opened: 0, closed: 0,
 }));
-// Real directory handles and actual fsync remain in the path; only the chosen
-// barrier reports EIO. This models a failed durability ACK, not a power-off test.
+// Real directory handles and actual fsync remain in the path: fsync on the descriptor, since the
+// project setup elides FileHandle flushes (vitest-file-flush.ts); only the chosen barrier reports EIO.
+// This models a failed durability ACK, not a power-off test.
 vi.mock('node:fs/promises', async importOriginal => {
   const native = await importOriginal<typeof import('node:fs/promises')>();
+  const fsync = (await import('node:util')).promisify((await import('node:fs')).fsync);
   return { ...native, open: async (...args: Parameters<typeof native.open>) => {
     const handle = await native.open(...args), path = String(args[0]);
-    const sync = handle.sync.bind(handle), close = handle.close.bind(handle);
+    const close = handle.close.bind(handle);
     fault.opened += 1;
     handle.sync = async () => {
       const count = (fault.syncs.get(path) ?? 0) + 1; fault.syncs.set(path, count);
@@ -25,7 +27,7 @@ vi.mock('node:fs/promises', async importOriginal => {
       if (fault.fail?.path === path && fault.fail.occurrence === count) {
         throw Object.assign(new Error('directory barrier failed'), { code: 'EIO' });
       }
-      await sync();
+      await fsync(handle.fd);
     };
     handle.close = async () => {
       try { await close(); } finally { fault.closed += 1; }

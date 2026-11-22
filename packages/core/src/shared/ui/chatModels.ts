@@ -243,12 +243,26 @@ export function isSunkTopic(
   return now - last >= TOPIC_SINK_AFTER_DAYS * 24 * 60 * 60 * 1000
 }
 
+/** 一样东西「最近动静」的时刻(毫秒):最后一次活动,没有就是创建那一刻(同 chatActivityAt);都没有 = 0,排最后。 */
+export function activityMs(lastAt: string | null | undefined, createdAt: string | null | undefined): number {
+  return Date.parse(lastAt ?? createdAt ?? '') || 0
+}
+
+/**
+ * 「按最近动静排」的唯一次序:会话列表、话题、群 / 项目里的智能体都读它。动静新的在前,同一刻按 id,次序稳定。
+ * ❌ 掺状态、置顶:状态只是行上的记号,置顶各列表自己在外面另排。
+ */
+export function compareByRecentActivity(a: { id: string; activityMs: number }, b: { id: string; activityMs: number }): number {
+  return b.activityMs - a.activityMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
 // 解析比较(非字典序):服务端时间戳带 +00:00 后缀、客户端 toISOString 带 Z,字符串序会错判。
 export function compareChatsByActivityDesc(
-  a: Pick<ChatItem, 'last_message_at' | 'created_at'>,
-  b: Pick<ChatItem, 'last_message_at' | 'created_at'>,
+  a: Pick<ChatItem, 'id' | 'last_message_at' | 'created_at'>,
+  b: Pick<ChatItem, 'id' | 'last_message_at' | 'created_at'>,
 ): number {
-  return new Date(chatActivityAt(b)).getTime() - new Date(chatActivityAt(a)).getTime()
+  const stamp = (chat: typeof a) => ({ id: chat.id, activityMs: activityMs(chat.last_message_at, chat.created_at) })
+  return compareByRecentActivity(stamp(a), stamp(b))
 }
 
 export function upsertChatRow(chats: ChatItem[], chat: ChatItem): ChatItem[] {
