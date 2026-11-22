@@ -23,7 +23,9 @@ import { log } from '@main/lib/logger';
 import { previewHolderOfflineChannel, remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
 import { answerBesideDocument, byteRange, chatFolderPreviewCsp, unavailableAnswer, type ChatFolderPreviewCopy, type PreviewAnswer } from '@shared/preview/chat-folder-preview';
 import {
+  CLOUD_OBJECT_HOST,
   PREVIEW_SCHEME,
+  signedUrlOfCloudObject,
   previewRootFor,
   previewUrl,
   resolvePreviewRequest,
@@ -32,6 +34,7 @@ import {
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { resolveWorkspace } from '../projects/utils';
+import { egress, EgressError } from '@gugu/core/shared/egress';
 import { changedOnItsMachine, workspaceFileRange } from './machine-file-streams';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
@@ -176,6 +179,69 @@ function serveBytes(registration: BytesPreviewRegistration, pathname: string, ra
       ...(wanted ? { 'Content-Range': `bytes ${start}-${end}/${file.size}` } : {}),
     },
   });
+}
+
+/**
+ * What an object answer passes on to the renderer: the store's own status, length, range, type, validators and caching
+ * (its `Cache-Control`, immutable for a signed object, goes through as it is, not a `no-store` of our own).
+ */
+const OBJECT_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'cache-control'];
+
+/**
+ * A cloud object for the renderer (`cloudObjectUrl`): main fetches the signed address through its egress (Node's HTTP/1.1,
+ * a connection per concurrent request, the route and roots Chromium would use) and streams
+ * the answer back as it is, `Range` passed through, so the renderer's reader sees exactly what the store said (a 206 and
+ * its range, an expired signature's 403). A transport failure is said as one, never as some other file.
+ */
+async function serveCloudObject(url: URL, range: string | null, signal?: AbortSignal): Promise<Response> {
+  const signed = signedUrlOfCloudObject(url);
+  if (!signed) return notFound('not a cloud object address');
+  let answer: Response;
+  try {
+    answer = await egress.fetch(signed, { headers: range ? { Range: range } : {}, signal });
+  } catch (error) {
+    // No answer at all (the proxy refused, the route is one egress cannot take, TLS, no connection): said as that.
+    const kind = error instanceof EgressError ? error.kind : 'error';
+    log.warn('Cloud object request failed', { host: new URL(signed).host, kind });
+    return new Response(null, { status: 502, headers: { 'X-Gugu-Object-Failure': kind, 'Access-Control-Allow-Origin': rendererOrigin() } });
+  }
+  const headers: Record<string, string> = { 'Access-Control-Allow-Origin': rendererOrigin(), 'Access-Control-Expose-Headers': 'Content-Range' };
+  for (const name of OBJECT_HEADERS) { const value = answer.headers.get(name); if (value !== null) headers[name] = value; }
+  return new Response(answer.body && inPieces(answer.body), { status: answer.status, headers });
+}
+
+/**
+ * The renderer gets an object's bytes in pieces of up to `BYTES_READ`, as it gets this machine's bytes (`serveBytes`), with
+ * a few read ahead. Electron hands every piece of a handler's body to the renderer as its own write; the network's own
+ * pieces are small, and passed on one by one a 200 MB object reached the renderer at ~28 MB/s against ~68 MB/s read in
+ * main. A piece goes out as soon as the network has nothing more ready (`PIECE_WAIT_MS`): a reader's first bytes are not
+ * held back for a full piece.
+ */
+const PIECE_WAIT_MS = 4;
+function inPieces(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let next: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const parts: Uint8Array[] = [];
+      let size = 0;
+      while (size < BYTES_READ) {
+        const read = next ?? reader.read();
+        next = undefined;
+        const ready = size ? await Promise.race([read, new Promise<null>((resolve) => setTimeout(resolve, PIECE_WAIT_MS, null))]) : await read;
+        if (ready === null) { next = read; void read.catch(() => undefined); break; }
+        if (ready.done) break;
+        parts.push(ready.value); size += ready.value.byteLength;
+      }
+      if (!size) return controller.close();
+      if (parts.length === 1) return controller.enqueue(parts[0]!);
+      const piece = new Uint8Array(size);
+      let at = 0;
+      for (const part of parts) { piece.set(part, at); at += part.byteLength; }
+      controller.enqueue(piece);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  }, { highWaterMark: 4 });
 }
 
 export function createDocumentPreview(documentHtml: string): { url: string; previewId: string } {
@@ -377,7 +443,9 @@ export function setupPreviewProtocol(): void {
  */
 export function bytesRequestRefused(url: string, frameOrigin: string | undefined): boolean {
   if (!url.startsWith(`${PREVIEW_SCHEME}://`)) return false;
-  const registration = registry.get(new URL(url).hostname);
+  const host = new URL(url).hostname;
+  if (host === CLOUD_OBJECT_HOST) return frameOrigin !== rendererOrigin();
+  const registration = registry.get(host);
   return !!registration && 'file' in registration && frameOrigin !== rendererOrigin();
 }
 
@@ -401,7 +469,7 @@ export async function handlePreviewRequest(request: Request, surface: PreviewSur
   try {
     const parsed = new URL(request.url);
     url = parsed;
-    response = await withDeadline(servePreviewRequest(parsed, surface, request.headers.get('range')), PREVIEW_REQUEST_DEADLINE_MS, () =>
+    response = await withDeadline(servePreviewRequest(parsed, surface, request.headers.get('range'), request.signal), PREVIEW_REQUEST_DEADLINE_MS, () =>
       failurePage(registry.get(parsed.hostname)?.failureCopy, 'unavailable', 504, 'timeout')
     );
   } catch (error) {
@@ -485,7 +553,8 @@ function failurePage(
   );
 }
 
-async function servePreviewRequest(url: URL, surface: PreviewSurface, range: string | null = null): Promise<Response> {
+async function servePreviewRequest(url: URL, surface: PreviewSurface, range: string | null = null, signal?: AbortSignal): Promise<Response> {
+  if (url.hostname === CLOUD_OBJECT_HOST && surface === 'pane') return serveCloudObject(url, range, signal);
   const registration = registry.get(url.hostname);
   if (!registration || registration.surface !== surface) {
     return failurePage(undefined, 'unavailable', 404, 'unknown_preview');
