@@ -36,8 +36,11 @@ async function open(readers: Member[], unreaders: Member[]) {
     createElement(Popover.Trigger, { handle, payload: 'msg-1', render: createElement('button', { 'data-testid': 'ring', style: { margin: 40 } }) }),
     createElement(ReadReceiptPopover, { handle, receiptOf: () => ({ readers, unreaders }), testId: 'receipt' })));
   document.querySelector<HTMLElement>('[data-testid="ring"]')!.click();
-  await until('receipt list painted', () => !!panel() && names().length > 0);
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  // The window first mounts the lines in view, then grows by idle slices (@@@growing-list): counted at a fixed frame, the
+  // count depends on whether a slice already ran (CI: 166 vs 102). Counted once every preview line (20 a group) is mounted,
+  // two receipts compare in the same state, and the count is the whole collapsed list's.
+  const lines = Math.min(readers.length, 20) + Math.min(unreaders.length, 20);
+  await until('receipt list grown', () => !!panel() && names().length === lines);
   return { nodes: panel()!.querySelectorAll('*').length };
 }
 
@@ -76,14 +79,19 @@ describe('read receipt list', () => {
     const big = await open(range(1, 1000), range(1001, 1000));
     expect(big.nodes).toBe(mid.nodes);
     // 每组先 20 位,其余收进「还有 N 位」:滚到底就看到未读那组的开头。
-    const more = () => [...panel()!.querySelectorAll('button')].map((b) => b.textContent);
+    // In view, not mounted: once grown the window also holds the read group's 「还有 980 位」, scrolled out above.
+    const shown = () => {
+      const box = scroller().getBoundingClientRect();
+      return [...panel()!.querySelectorAll<HTMLButtonElement>('button')].filter((b) => { const r = b.getBoundingClientRect(); return r.bottom > box.top && r.top < box.bottom; });
+    };
+    const more = () => shown().map((b) => b.textContent);
     scroller().scrollTop = 1e6;
     await until('collapsed unread head in view', () => more().includes('还有 980 位') && names().includes('成员 1020'));
     expect(more()).toEqual(['还有 980 位']);
     expect(heads().at(-1)).toBe('未读1000');
 
     // 展开以后不会把 1000 位全挂上(每组空闲时最多长到 GROW_CAP 行);滚到底,吸在顶上的是「未读」。
-    panel()!.querySelector<HTMLButtonElement>('button')!.click();
+    shown()[0]!.click();
     await until('unread group expanded', () => !more().includes('还有 980 位'));
     scroller().scrollTop = 1e6;
     await until('last unread member mounted', () => names().includes('成员 2000'));

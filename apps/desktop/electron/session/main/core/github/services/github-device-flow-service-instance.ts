@@ -1,6 +1,7 @@
 import { integrationPluginRegistry } from '@gugu/session-plugins/integrations';
 import { providerAccountRegistry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { events } from '@main/lib/events';
+import { githubTokenVault } from '../accounts/github-token-vault-instance';
 import {
   defaultGitHubDeviceAuthFactory,
   GitHubDeviceFlowService,
@@ -21,6 +22,7 @@ function resolveDeviceFlowConfig(): GitHubDeviceFlowConfig {
 
 export const githubDeviceFlowService = new GitHubDeviceFlowService({
   accountStore: providerAccountRegistry,
+  tokens: githubTokenVault,
   identityClient: githubIdentityClient,
   events,
   createDeviceAuth: defaultGitHubDeviceAuthFactory,

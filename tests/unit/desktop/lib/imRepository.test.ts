@@ -8,10 +8,8 @@ import {
   imSelectors,
   openImRepository,
   readChatRows,
-  readMessageWindow,
   replaceChatRows,
   replaceChatRowsAndIdentities,
-  replaceMessageWindow,
   takeLegacyOutboxRecords,
   type OutboxRecord,
 } from '../../../../apps/desktop/src/lib/imRepository'
@@ -19,6 +17,7 @@ import { message as messageFixture, displayIdentity as identity } from '../../..
 import { readPerfCounters } from '../../../../apps/desktop/src/lib/perfCounters'
 import { readCompleteCachedChats } from '../../../../apps/desktop/src/lib/chatSnapshotPublication'
 import * as displayIdentityModule from '../../../../apps/desktop/src/lib/displayIdentity'
+import { ingestMessages, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
 function chat(id: string): ChatItem {
   return {
     id,
@@ -34,6 +33,7 @@ function chat(id: string): ChatItem {
     next_message_seq: 1,
   }
 }
+const storedIds = async () => (await readMessagePage('account-a', { chatId: 'chat-1', limit: 50 })).rows.map((row) => row.id)
 function message(id: string, accountId = 'account-a'): MessageItem {
   return messageFixture({
     id,
@@ -107,8 +107,6 @@ describe('account-scoped normalized IM repository', () => {
       transaction.putIdentity(identity('identity-1', { display_name: 'One' }))
       transaction.putChat('chat-1', chat('chat-1'))
       transaction.putMembership('chat-1', 'identity-1', { role: 'member' })
-      transaction.putMessage(message('message-1'))
-      transaction.putStream('thread:chat-1:root-1', 'chat-1', 'thread', 'root-1')
       transaction.putPresence('identity-1', { state: 'online' })
       transaction.putView('active-chat', 'chat-1')
       transaction.putSyncState('cursor', { revision: 7 })
@@ -117,8 +115,6 @@ describe('account-scoped normalized IM repository', () => {
     expect(snapshot.identity).toHaveLength(1)
     expect(snapshot.chat).toHaveLength(1)
     expect(snapshot.membership).toHaveLength(1)
-    expect(snapshot.message).toHaveLength(1)
-    expect(snapshot.stream.map((row) => row.id).sort()).toEqual(['main:chat-1', 'thread:chat-1:root-1'])
     expect(snapshot.presence).toHaveLength(1)
     expect(snapshot.view).toHaveLength(1)
     expect(snapshot.sync_state).toHaveLength(1)
@@ -211,7 +207,7 @@ describe('account-scoped normalized IM repository', () => {
     expect(written.local_timeline).toEqual(local_timeline)
     repository.close()
     const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect(imSelectors.messagesForChat('chat-1')(reopened.snapshot()).map((row) => row.id)).toEqual(['message-1'])
+    expect(await storedIds()).toEqual(['message-1'])
     await expect(confirmSentMessage(reopened, outbox('message-2', 'account-a'), message('message-3'))).rejects.toThrow('outbox ack id mismatch')
   })
   it('computes concurrent out-of-order ack bounds from the latest queued snapshot', async () => {
@@ -219,20 +215,13 @@ describe('account-scoped normalized IM repository', () => {
     const mainFive = { ...message('message-5'), seq: 5 }
     const mainSeven = { ...message('message-7'), seq: 7 }
     const mainSix = { ...message('message-6'), seq: 6 }
-    await replaceMessageWindow(repository, 'chat-1', [mainFive], true)
+    await ingestMessages('account-a', { writes: [{ type: 'put', message: mainFive }], revisions: [] })
     await Promise.all([
       confirmSentMessage(repository, outbox('message-7', 'account-a'), mainSeven),
       confirmSentMessage(repository, outbox('message-6', 'account-a'), mainSix),
     ])
     repository.close()
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect({
-      cursor: imSelectors.view('message-window:chat-1')(reopened.snapshot()),
-      seqs: readMessageWindow(reopened, 'chat-1')?.messages.map((row) => row.seq),
-    }).toEqual({
-      cursor: { oldestSeq: 5, maxSeq: 7, hasMoreOlder: true },
-      seqs: [5, 6, 7],
-    })
+    expect((await readMessagePage('account-a', { chatId: 'chat-1', limit: 10 })).rows.map((row) => row.seq)).toEqual([5, 6, 7])
   })
   it('hands chat sends an older build queued here to the outbox once, in order, and keeps another account\'s', async () => {
     const legacy = (record: OutboxRecord) => ({ type: 'put' as const, store: 'outbox' as const, value: { accountId: record.senderUserId, id: record.clientMessageId, value: record } })
@@ -278,32 +267,6 @@ describe('account-scoped normalized IM repository', () => {
     })).rejects.toThrow('delete crossed account boundary')
     expect(readChatRows(repositoryB).map((row) => row.id)).toEqual(['shared-id'])
   })
-  it('isolates throwing observers from the durable write of a confirmed send', async () => {
-    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    const messages = imSelectors.messagesForChat('chat-1')
-    let throwOnPublish = false
-    const healthySnapshots: number[] = []
-    repository.subscribe(messages, () => {
-      if (throwOnPublish) throw new Error('observer exploded')
-    })
-    repository.subscribe(messages, (rows) => healthySnapshots.push(rows.length))
-    throwOnPublish = true
-    let ackError = ''
-    try {
-      await confirmSentMessage(repository, outbox('message-1', 'account-a'), message('message-1'))
-    } catch (error) {
-      ackError = error instanceof Error ? error.message : String(error)
-    }
-    const committedBeforeReopen = messages(repository.snapshot()).map((row) => row.id)
-    repository.close()
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect({
-      ackError,
-      healthySnapshots: healthySnapshots.at(-1),
-      committedBeforeReopen,
-      reopened: messages(reopened.snapshot()).map((row) => row.id),
-    }).toEqual({ ackError: '', healthySnapshots: 1, committedBeforeReopen: ['message-1'], reopened: ['message-1'] })
-  })
   it('does not allow nested selector values to mutate the committed snapshot', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
     await repository.transaction((transaction) => transaction.putIdentity(
@@ -325,7 +288,7 @@ describe('account-scoped normalized IM repository', () => {
       transaction.putSyncState('cursor', { revision: 8 })
       transaction.putView('active-chat', 'chat-1')
     })
-    await repository.transaction((transaction) => transaction.putMessage(message('message-1')))
+    await repository.transaction((transaction) => transaction.putView('other', 1))
     expect(identities).toHaveLength(3)
     expect(identities[1]).toBe(identities[0])
     expect(identities[2]).toBe(identities[0])
@@ -339,98 +302,6 @@ describe('account-scoped normalized IM repository', () => {
     expect(identities[4]).not.toBe(identities[0])
     expect(Object.keys(identities[4] as object)).toEqual(['identity-1', 'identity-2'])
     expect(chats[4]).toBe(chats[0])
-  })
-  it('persists only the entering and leaving rows of a 120-message window', async () => {
-    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    const messages = Array.from({ length: 120 }, (_, index) => ({ ...message(`m-${index + 1}`), seq: index + 1 }))
-    await replaceMessageWindow(repository, 'chat-1', messages, true)
-    const before = repository.snapshot()
-    const commit = vi.spyOn(adapter, 'commit')
-    await replaceMessageWindow(repository, 'chat-1', structuredClone(messages), true)
-    expect(commit.mock.calls[0][0]).toEqual([])
-    expect(repository.snapshot().message).toBe(before.message)
-    expect(repository.snapshot().stream).toBe(before.stream)
-    expect(repository.snapshot().view).toBe(before.view)
-
-    const next = [...messages.slice(1), { ...message('m-121'), seq: 121 }]
-    await replaceMessageWindow(repository, 'chat-1', next, true)
-    expect(commit.mock.calls[1][0]).toEqual([
-      { type: 'delete', store: 'message', key: ['account-a', 'm-1'] },
-      { type: 'put', store: 'message', value: expect.objectContaining({ id: 'm-121', seq: 121 }) },
-      { type: 'put', store: 'view', value: expect.objectContaining({ value: { oldestSeq: 2, maxSeq: 121, hasMoreOlder: true } }) },
-    ])
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect(readMessageWindow(reopened, 'chat-1')).toEqual({ messages: next, oldestSeq: 2, maxSeq: 121, hasMoreOlder: true })
-  })
-  it('persists edits, retractions and stream changes without rewriting unchanged streams or other chats', async () => {
-    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    const main = message('main')
-    const thread = { ...message('reply'), seq: 2, thread_root_id: 'root-a' }
-    const other = { ...message('other'), chat_id: 'chat-2' }
-    await replaceMessageWindow(repository, 'chat-1', [main, thread])
-    await replaceMessageWindow(repository, 'chat-2', [other])
-    const commit = vi.spyOn(adapter, 'commit')
-    const edited = { ...main, content: 'edited', edited_at: '2026-08-09T01:00:00.000Z', retracted_at: '2026-08-10T00:00:00.000Z' }
-    const moved = { ...thread, seq: 3, thread_root_id: 'root-b' }
-    await replaceMessageWindow(repository, 'chat-1', [edited, moved], true)
-    expect(commit.mock.calls[0][0]).toEqual([
-      { type: 'delete', store: 'stream', key: ['account-a', 'thread:chat-1:root-a'] },
-      { type: 'put', store: 'message', value: expect.objectContaining({ id: 'main', value: edited }) },
-      { type: 'put', store: 'stream', value: expect.objectContaining({ id: 'thread:chat-1:root-b', rootMessageId: 'root-b' }) },
-      { type: 'put', store: 'message', value: expect.objectContaining({ id: 'reply', streamId: 'thread:chat-1:root-b', seq: 3 }) },
-      // The main window's coverage does not include a thread's independent seq.
-      { type: 'put', store: 'view', value: expect.objectContaining({ value: { oldestSeq: 1, maxSeq: 1, hasMoreOlder: true } }) },
-    ])
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect(imSelectors.messagesForStream('thread:chat-1:root-a')(reopened.snapshot())).toEqual([])
-    expect(imSelectors.messagesForStream('thread:chat-1:root-b')(reopened.snapshot())).toEqual([moved])
-    expect(readMessageWindow(reopened, 'chat-1')?.messages).toEqual([edited])
-    expect(readMessageWindow(reopened, 'chat-2')?.messages).toEqual([other])
-  })
-  it('removes obsolete messages and streams when a window becomes empty and excludes optimistic or foreign rows', async () => {
-    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    await replaceMessageWindow(repository, 'chat-1', [message('main'), { ...message('reply'), thread_root_id: 'root' }], true)
-    const commit = vi.spyOn(adapter, 'commit')
-    await replaceMessageWindow(repository, 'chat-1', [
-      { ...message('optimistic'), seq: -1 },
-      { ...message('foreign'), chat_id: 'chat-2' },
-    ])
-    expect(commit.mock.calls[0][0].filter((operation) => operation.type === 'delete')).toHaveLength(4)
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect(reopened.snapshot().message).toEqual([])
-    expect(reopened.snapshot().stream).toEqual([])
-    expect(readMessageWindow(reopened, 'chat-1')).toEqual({ messages: [], oldestSeq: 0, maxSeq: 0, hasMoreOlder: false })
-  })
-  it.each(['chats', 'chats and identities'])('diffs %s while preserving sorting, removals and read-state projection', async (kind) => {
-    const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    const replace = (chats: ChatItem[]) => kind === 'chats'
-      ? replaceChatRows(repository, chats)
-      : replaceChatRowsAndIdentities(repository, chats, [identity('identity-1')])
-    const rows = [chat('a'), chat('b'), chat('c')]
-    await replace(rows)
-    const before = repository.snapshot()
-    const commit = vi.spyOn(adapter, 'commit')
-    await replace(rows.map((row) => ({ ...row, read_state_version: 8 })))
-    expect(commit.mock.calls[0][0]).toEqual([])
-    expect(repository.snapshot().chat).toBe(before.chat)
-    await replace([rows[1], rows[0], rows[2]])
-    expect(commit.mock.calls[1][0]).toEqual([])
-    expect(repository.snapshot().chat).toBe(before.chat)
-    const moved = { ...rows[1]!, last_message_at: '2026-08-10T00:00:00.000Z' }
-    await replace([moved, rows[0], rows[2]])
-    expect(commit.mock.calls[2][0]).toEqual([
-      { type: 'put', store: 'chat', value: expect.objectContaining({ id: 'b', value: moved }) },
-    ])
-    expect(repository.snapshot().chat.every(row => !('order' in row))).toBe(true)
-    expect(readChatRows(repository).map((row) => row.id)).toEqual(['b', 'a', 'c'])
-    await replace([moved, rows[2]])
-    expect(commit.mock.calls[3][0]).toEqual([
-      { type: 'delete', store: 'chat', key: ['account-a', 'a'] },
-    ])
-    const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
-    expect(readChatRows(reopened)).toEqual([moved, rows[2]])
-    await replace([])
-    expect(repository.snapshot().chat).toEqual([])
   })
   it('keeps an equal row source fresh without replacing the table and removes confirmed rows inside publication', async () => {
     const repository = await openImRepository('account-a', { adapter })

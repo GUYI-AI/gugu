@@ -13,7 +13,7 @@ type GitHubIdentityClient = {
   getAuthenticatedUser(token: string, host?: string): Promise<GitHubUser | null>;
 };
 
-type CliAccountStore = Pick<GitHubAccountStore, 'upsertAccount' | 'getAccount' | 'clearSecret'>;
+type CliAccountStore = Pick<GitHubAccountStore, 'upsertAccount' | 'getAccount' | 'clearSecret' | 'relocateSecret'>;
 
 /**
  * Registers the accounts `gh` is logged into, **identity only**.

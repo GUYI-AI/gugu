@@ -17,7 +17,7 @@ vi.mock('./host-dependency-ledger', () => ({
 }));
 vi.mock('./install-runner', () => ({ createLocalInstallCommandRunner: vi.fn() }));
 vi.mock('./mise-installer', () => ({ readManagedLauncherRelease: vi.fn() }));
-vi.mock('@main/utils/userEnv', () => ({ ensureUserBinDirsInPath: vi.fn() }));
+vi.mock('@main/utils/userEnv', () => ({ ensureUserBinDirsInPath: vi.fn(), refreshUserPath: vi.fn(async () => {}) }));
 
 afterEach(() => {
   vi.restoreAllMocks();

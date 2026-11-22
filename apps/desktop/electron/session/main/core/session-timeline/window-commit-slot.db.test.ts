@@ -27,7 +27,6 @@ describe('durable exact canonical body slot pages', () => {
   const text = 'actual 中文😀 \\ "\n'.repeat(10000);
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
-    fixture.sqlite.pragma('synchronous=FULL');
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     directory = await mkdtemp(join(tmpdir(), 'commit-slot-'));
   });

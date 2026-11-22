@@ -9,7 +9,8 @@ const scope = vi.hoisted(() => ({ read: vi.fn(), online: true, link: (_open: boo
 vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: { sessionNativeRecord: scope.read } }),
   onLinkChange: (_id: string, listener: typeof scope.link) => { scope.link = listener; return () => {} } }))
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness() })
+// Reads, not the local cache: no IndexedDB, so the record cache lives in memory only.
+beforeEach(() => { vi.stubGlobal('indexedDB', undefined); harness = createReactHarness() })
 afterEach(() => { harness.cleanup(); scope.read.mockReset(); vi.useRealTimers() })
 const record = (start: number, count: number, hasNewer = false): NativeSessionRecord => ({
   latestStoredSeq: hasNewer ? start + count + 60 : start + count - 1,

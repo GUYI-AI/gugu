@@ -12,6 +12,7 @@ import { agentMarketCategoryOf } from '@shared/extensions/catalog';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { InstallSection, type AgentInstallationHeader } from '@renderer/features/settings/agents-page/InstallSection';
 import { useAgentUninstallConfirmation } from '@renderer/features/settings/agents-page/agent-uninstall-confirmation';
+import { AgentLookupLine } from '@renderer/features/settings/agents-page/agent-lookup-line';
 import { SettingsGroup } from '@/components/settings/SettingsPrimitives';
 import { AgentHomeRow } from '@renderer/features/settings/subscriptions/AgentHomeRow';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -69,7 +70,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
   const { translate, locale } = useSessionMessages();
   const host = useLibraryHost();
   const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
-  const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source, failure } = installation;
+  const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source, failure, check } = installation;
   const terminalConfiguration = agent.id === 'claude' || agent.id === 'codex';
 
   const actions = installing || updating || uninstalling ? (
@@ -116,7 +117,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
           { label: translate('extensions.infoCategory'), value: translate(agentMarketCategoryOf(agent.id) === 'general' ? 'agentsPage.detailGeneral' : 'agentsPage.detailCoding') },
         ]}
         subtitle={marketAgentDescription(agent, locale)}
-        notice={<>{notice}{failureNote}</>}
+        notice={<>{notice}{failureNote}{!failure && !busy && !runnable && agent.lookup && <AgentLookupLine lookup={agent.lookup} onCheck={check} />}</>}
         onUninstall={uninstall && !busy ? () => requestUninstall(agent.name, uninstall) : undefined}
       >
         {installed && (terminalConfiguration || installation.managedVersions) && <SettingsGroup>

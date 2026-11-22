@@ -394,11 +394,8 @@ export const chatService = {
   /** @@@msg-cache-incremental (#621) - overlay-only refresh of already-cached message ids (no body
    *  re-fetch). Revalidates reactions / delivery state for the visible window so dropping the per-open
    *  full load doesn't let mutable overlays (which have no realtime for reactions/retract) go stale. */
-  async fetchMessageOverlays(
-    messageIds: string[],
-    userId: string
-  ): Promise<Map<string, MessageOverlay>> {
-    return loadMessageOverlays(messageIds, userId)
+  async fetchMessageOverlays(messages: readonly Pick<MessageItem, 'id' | 'chat_id'>[], userId: string): Promise<Map<string, MessageOverlay>> {
+    return loadMessageOverlays(messages, userId)
   },
 
   /** @@@msg-cache (#621/P2/#947) - bounded reopen revalidation over the cached window's ids: reactions +

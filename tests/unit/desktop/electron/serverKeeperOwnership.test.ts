@@ -7,6 +7,7 @@ import { expect, it } from 'vitest'
 import { awaitExit, awaitFact } from '../../../support/awaitFact'
 import { defaultEngineTreeOps, signalProcessDescendantsSync } from '../../../../packages/session-core/src/acp/engine-tree'
 import { isProcessAlive } from '../../../../apps/desktop/electron/server/process-alive'
+import { keeperPidFile } from '../../../../apps/desktop/electron/server/server-keeper'
 
 it.runIf(process.platform !== 'win32').each([75, 1])('a manually adopted keeper survives host cleanup and restarts after exit %s', async code => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-keeper-owner-'))
@@ -34,7 +35,8 @@ it.runIf(process.platform !== 'win32').each([75, 1])('a manually adopted keeper 
   } })
   let keeper: number | undefined
   try {
-    keeper = await awaitFact('keeper publishes its actual pid', () => fs.existsSync(record) ? Number(fs.readFileSync(record, 'utf8')) : undefined, { producer: host })
+    // The record can exist before its pid is written: only a whole pid counts.
+    keeper = await awaitFact('keeper publishes its actual pid', () => fs.existsSync(record) ? Number(fs.readFileSync(record, 'utf8')) || undefined : undefined, { producer: host })
     const row = defaultEngineTreeOps().snapshotSync().find(p => p.pid === keeper)
     console.info('Manual host and keeper:', { host: host.pid, keeper, ppid: row?.ppid, pgid: row?.pgid })
     expect(row?.ppid).not.toBe(host.pid)
@@ -49,6 +51,9 @@ it.runIf(process.platform !== 'win32').each([75, 1])('a manually adopted keeper 
       return undefined
     })
   } finally {
+    // A step above can fail before the keeper's pid reached the test; its own pid file still names it, and it must not
+    // outlive the fixture (its test `sleep` would wait forever for a release file inside the deleted home).
+    keeper ||= fs.existsSync(keeperPidFile(home)) ? Number(fs.readFileSync(keeperPidFile(home), 'utf8').trim()) || undefined : undefined
     for (const pid of [host.pid, keeper]) if (pid) {
       signalProcessDescendantsSync([pid], 'SIGKILL')
       try { process.kill(pid, 'SIGKILL') } catch { /* already stopped */ }

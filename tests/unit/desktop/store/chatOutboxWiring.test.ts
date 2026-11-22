@@ -168,7 +168,8 @@ describe('message-owned send failure notices', () => {
     send.mockResolvedValue(row)
     h.wiring.retrySend(row.id)
     await vi.advanceTimersByTimeAsync(100)
-    expect(h.messages()[0]).toMatchObject({ id: row.id, seq: 42, local_send_state: null })
+    // The acknowledgement settles the row after its message-store write lands.
+    await vi.waitFor(() => expect(h.messages()[0]).toMatchObject({ id: row.id, seq: 42, local_send_state: null }))
     expect(notices.visible.size, 'the acknowledged message still has its old failure notice').toBe(0)
     h.wiring.dispose()
   })
@@ -214,7 +215,7 @@ describe('message-owned send failure notices', () => {
     send.mockResolvedValue(persistedMessage('first'))
     h.wiring.retrySend('first')
     await vi.advanceTimersByTimeAsync(100)
-    expect(notices.visible.size, 'success must retire only the matching message').toBe(1)
+    await vi.waitFor(() => expect(notices.visible.size, 'success must retire only the matching message').toBe(1))
     h.wiring.dispose()
   })
 })
@@ -395,7 +396,7 @@ describe('投递前置:乐观行先上屏,就绪/对端解析在投递阶段 (C1
     await vi.advanceTimersByTimeAsync(100)
     expect(beforeDeliver).toHaveBeenCalledTimes(5)
     expect(send).toHaveBeenCalledTimes(1)
-    expect(harness.messages()[0]).toMatchObject({ seq: 42, local_send_state: null })
+    await vi.waitFor(() => expect(harness.messages()[0]).toMatchObject({ seq: 42, local_send_state: null }))
   })
 
   it.each(['zh-CN', 'en-US'] as const)('names the original conversation in an off-screen failure (%s)', async (locale) => {
@@ -492,9 +493,10 @@ it('publishes a native file in its chat lane with no request deadline; what was 
   expect(box.get('native-slow')?.state).toBe('sending')
   publication.resolve({ ...persistedMessage(native.id), content_type: 'attachment' })
   await vi.advanceTimersByTimeAsync(10)
-  expect(f.messages().find(row => row.id === native.id)?.seq).toBe(42)
+  // The acknowledgement settles the row after its message-store write lands.
+  await vi.waitFor(() => expect(f.messages().find(row => row.id === native.id)?.seq).toBe(42))
   expect(send).toHaveBeenCalledOnce()
-  expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([]) // the read position a send advances is its own write
+  await vi.waitFor(() => expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([])) // the read position a send advances is its own write
   f.wiring.dispose()
 })
 
@@ -531,7 +533,7 @@ it('sends a failed row again when the backend recovers, not while it kept answer
   noteBackendAnswer(true)
   await vi.advanceTimersByTimeAsync(10)
   expect(send).toHaveBeenCalledTimes(5)
-  expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([]) // the read position a send advances is its own write
+  await vi.waitFor(() => expect(box.items().filter((item) => item.kind === 'chatMessage')).toEqual([])) // the read position a send advances is its own write
   f.wiring.dispose()
 })
 
@@ -609,7 +611,7 @@ it('a native publication that keeps failing is shown failed and resent from its 
   f.wiring.retrySend(native.id)
   await vi.advanceTimersByTimeAsync(10)
   expect(publish).toHaveBeenCalledTimes(5)
-  expect(f.messages().find(m => m.id === native.id)?.seq).toBe(42)
+  await vi.waitFor(() => expect(f.messages().find(m => m.id === native.id)?.seq).toBe(42))
   f.wiring.dispose()
 })
 

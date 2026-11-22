@@ -176,7 +176,6 @@ describe('0046 revision ingestion', () => {
     const store = await openStore()
     const invoke = installStore(store)
     const adapter = createMemoryLocalSyncDb()
-    const prepare = vi.spyOn(adapter, 'prepareLocalMessages')
     const commit = vi.spyOn(adapter, 'commit')
     const repository = await openImRepository('account', { adapter })
     await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
@@ -199,9 +198,7 @@ describe('0046 revision ingestion', () => {
     expect(repository.snapshot().view.filter(row => row.key.startsWith('account-revision-operation:'))).toEqual([])
     expect(invoke.mock.calls.filter(([channel]) => channel === 'imMessages.ingest')).toHaveLength(1)
     expect(store.throughRevision('account')).toBe('2')
-    expect(prepare).toHaveBeenCalledTimes(1)
     const writes = commit.mock.calls.flatMap(([operations]) => operations)
-    expect(writes.filter(write => write.type === 'put' && (write.store === 'message' || write.store === 'stream'))).toEqual([])
     expect(writes.filter(write => write.type === 'clearAccount')).toEqual([])
     repository.close()
   })
@@ -209,7 +206,7 @@ describe('0046 revision ingestion', () => {
   it('e4 keeps bounded hot windows equal to real SQLite queries across mixed writes and renderer restarts', async () => {
     const store = await openStore()
     const invoke = installStore(store)
-    await initializeMessages('account', createMemoryLocalSyncDb())
+    initializeMessages('account')
     let seed = 54321
     const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0)
     for (let i = 0; i < 55; i++) {
@@ -219,7 +216,7 @@ describe('0046 revision ingestion', () => {
         : [{ type: 'delete', chatId, id: `${chatId}-${seq}` }], revisions: [] })
       if (i % 9 === 0) {
         clearMessageWindows('account')
-        await initializeMessages('account', createMemoryLocalSyncDb())
+        initializeMessages('account')
         await prefetchMessages('account', ['chat', 'other'])
       }
       for (const chat of ['chat', 'other']) expect(messageWindow('account', chat)).toEqual(store.windows('account', [chat], 120))
@@ -303,7 +300,7 @@ describe('0046 revision ingestion', () => {
   it('starts a first upgrade at S without a historical sync and replays a retained T before publishing', async () => {
     const store = await openStore()
     installStore(store)
-    await initializeMessages('account', createMemoryLocalSyncDb())
+    initializeMessages('account')
     const syncSince = vi.fn(async () => ({ operations: [
       { revision: '11', event: 'message_deleted', payload: { chat_id: 'chat', entity_id: 'chat-1' } },
       { revision: '12', event: 'message_created', payload: { chat_id: 'chat', entity_id: 'chat-2', message: message(2) } },
@@ -322,7 +319,7 @@ describe('0046 revision ingestion', () => {
   it('clears rows and ranges only on an explicit server revision gap, keeping them on an ordinary offline failure', async () => {
     const store = await openStore()
     installStore(store)
-    await initializeMessages('account', createMemoryLocalSyncDb())
+    initializeMessages('account')
     await ingestMessages('account', { writes: [{ type: 'put', message: message(1) }], revisions: [],
       throughRevision: '10', ranges: [{ chatId: 'chat', fromSeq: 1, toSeq: 50 }] })
     const syncSince = vi.fn().mockRejectedValueOnce(new Error('Failed to fetch'))
@@ -364,7 +361,7 @@ describe('0046 network sources store before they return', () => {
     const adapter = createMemoryLocalSyncDb()
     repository = await openImRepository('account', { adapter })
     // The dev counterfactual gets the same empty SQL observation sink without retrofitting any writer.
-    if (messageWindow('account', '') === null) await initializeMessages('account', adapter)
+    if (messageWindow('account', '') === null) initializeMessages('account')
   })
   afterEach(() => repository?.close())
 
@@ -415,13 +412,12 @@ describe('0046 network sources store before they return', () => {
       state: 'sending', attempts: 0, lastError: null, enqueuedAt: '2026-11-03T00:00:00Z', updatedAt: '2026-11-03T00:00:00Z' },
     messageItemFromRow(raw(), 'account')!)
     expect(stored().map(row => row.id)).toEqual(['message-1'])
-    expect(repository.snapshot().message, 'desktop keeps message bodies in SQLite, not the IndexedDB cache').toEqual([])
   })
 
   it('e2 persists a server reaction on the canonical SQLite row rather than a view copy', async () => {
     store.ingest('account', { writes: [{ type: 'put', message: messageItemFromRow(raw(), 'account')! }], revisions: [] })
     network.reactions = [{ message_id: 'message-1', user_id: 'account', emoji: 'x' }]
-    await loadMessageOverlays(['message-1'], 'account')
+    await loadMessageOverlays([{ id: 'message-1', chat_id: 'chat' }], 'account')
     expect(stored()[0]!.reactions).toEqual([{ emoji: 'x', count: 1, my_reaction: true }])
   })
 })

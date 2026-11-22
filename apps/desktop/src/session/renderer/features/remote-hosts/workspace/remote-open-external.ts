@@ -1,4 +1,4 @@
-// #6264 那台机器上的程序要「打开网页」($BROWSER / xdg-open,如 `gh auth login --web`、`vite --open`、codex 的登录页):
+// #6264 那台机器上会话里的程序要「打开网页」($BROWSER,如 `gh auth login --web`、`vite --open`、codex 的登录页):
 // 照 VS Code 远端的 openExternal,在人这一侧打开。落在哪:
 //  · 网址本身是那台机器的 localhost ⇒ 这条会话的浏览器格(页签自己经 SSH 转端口);只经云端连着的机器开不了,如实说;
 //  · 别的网址 ⇒ 这条会话的工作区里开着浏览器页签就开在那里,否则这台电脑的系统浏览器(人平时的登录都在那儿);

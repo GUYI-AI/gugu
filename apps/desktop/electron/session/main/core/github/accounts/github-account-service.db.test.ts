@@ -38,7 +38,7 @@ describe('GitHubAccountService', () => {
           login,
           avatarUrl: `https://${host}/avatars/${providerAccountId}`,
         },
-      })
+      }, fixture.vault)
     ).account;
   }
 
