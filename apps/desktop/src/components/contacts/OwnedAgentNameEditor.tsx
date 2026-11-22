@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn'
 import { nameClampClass } from './contactsPanelStyles'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
+import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Hint } from '../ui/Tooltip'
 
@@ -59,11 +60,17 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
     }
   }
   if (clickName && canRename && draft === null) return (
-    <button type="button" className={cn('flex min-w-0 cursor-text items-center gap-1 rounded text-left hover:bg-row-hover', className)}
+    <Button
+      variant="ghost"
+      className={cn(
+        'flex min-h-0 min-w-0 cursor-text gap-1 rounded border-0 p-0 text-left max-[719px]:min-h-0',
+        'text-[color:inherit] text-[length:inherit] font-[inherit] leading-[inherit] [&:hover:not([data-disabled])]:bg-row-hover',
+        className,
+      )}
       aria-label={`${t('agentName.editAction')}: ${name}`} title={t('agentName.editAction')}
       onClick={(event) => { event.stopPropagation(); setDraft(name) }}>
       {children}
-    </button>
+    </Button>
   )
   if (draft === null || !canRename) return (
     <div className={cn('flex min-w-0 items-center gap-1', className)}>
