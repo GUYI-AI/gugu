@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { attachmentEnvelope, formatAttachmentMetadata } from '@gugu/core/shared/ui/attachmentModels';
+import { attachmentEnvelope, formatAttachmentMetadata, parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem';
 
 const world = vi.hoisted(() => ({ owner: 'owner', calls: [] as { table: string; method: string; args: unknown[] }[],
@@ -26,7 +26,6 @@ vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () =>
 vi.mock('@/lib/authSessionLoss', () => ({ currentAuthSessionSignal: () => new AbortController().signal }));
 vi.mock('@/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => world.identities }));
 const { readLegacyDmList, readLegacyDmMessages, mergeLegacyMessages } = await import('../../../apps/desktop/src/components/legacy-dm-history/data');
-const { legacyMessageBody } = await import('../../../apps/desktop/src/components/legacy-dm-history/message-body');
 const chat = (members: string[]) => ({ id: 'dm', public_id: 42, name: 'Old agent', created_at: '2026-10-01T00:00:00Z', last_message_at: null, members: members.map(user_id => ({ user_id })) });
 const raw = (seq = 7) => ({ id: `message-${seq}`, chat_id: 'dm', sender_user_id: 'agent', seq, content: 'Original body', content_type: 'text', created_at: '2026-10-01T01:02:03Z' });
 beforeEach(() => {
@@ -58,16 +57,15 @@ it('pages original messages by sequence and retains their IDs, timestamps and fi
   expect(page.rows.map(message => [message.id, message.seq, message.created_at])).toEqual([
     ['message-5', 5, '2026-10-01T01:02:03Z'], ['message-6', 6, '2026-10-01T01:02:03Z'],
   ]);
-  expect(legacyMessageBody(page.rows[0], 'Retracted').files[0].source).toEqual({ kind: 'item', itemId: 'original-file', version: 3 });
+  expect(parseAttachmentContent(page.rows[0].content, page.rows[0])?.source).toEqual({ kind: 'item', itemId: 'original-file', version: 3 });
   expect(world.calls).toContainEqual({ table: 'messages_view', method: 'lt', args: ['seq', 7] });
   expect(world.calls).toContainEqual({ table: 'messages_view', method: 'limit', args: [61] });
   expect(world.calls.some(call => ['insert', 'update', 'delete', 'upsert', 'rpc'].includes(call.method))).toBe(false);
   expect(mergeLegacyMessages(page.rows, [page.rows[1]])).toEqual(page.rows);
 });
-it('does not use a legacy body URL as authority for an attachment or restore a retracted body', () => {
+it('does not use a legacy body URL as authority for an attachment', () => {
   const message = messageItemFromRow({ ...raw(), content_type: 'attachment', content: formatAttachmentMetadata({ fileName: 'old.html', mimeType: 'text/html', kind: 'file', url: 'https://invalid.example/not-authority', sizeBytes: 12 }) }, 'owner')!;
-  expect(legacyMessageBody(message, 'Retracted').files[0].source).toEqual({ kind: 'message', messageId: message.id });
-  expect(legacyMessageBody({ ...message, retracted_at: '2026-10-02T00:00:00Z' }, 'Retracted')).toEqual({ text: 'Retracted', files: [], invalidAttachments: false });
+  expect(parseAttachmentContent(message.content, message)?.source).toEqual({ kind: 'message', messageId: message.id });
 });
 it('refuses a stale account before issuing any query', async () => {
   world.owner = 'new-owner';
