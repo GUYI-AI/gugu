@@ -5,6 +5,8 @@ import { observeLocalDiagnosticRoot } from './localRendererDiagnostics'
 import './no-animation-iteration-listeners'
 // Focus rings follow keyboard navigation only, for every entry (@@@focus-modality).
 import './focus-modality'
+// A press inside an App or file page closes host menus like any other press outside them (@@@guest-press).
+import './guest-press'
 
 /**
  * 渲染入口**唯一**的挂载口。两个入口(`main.tsx` 的 `#root`、会话页 `embedded.tsx` 的
