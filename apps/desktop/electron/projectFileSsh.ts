@@ -56,25 +56,75 @@ export function ownSshFileProvider(links: HeldFileSshLinks, tempRoot: string) {
   }
 }
 
+/**
+ * A stream of a file on a machine this desktop reaches over a device link, for a reader in main that is not the file
+ * resolver (a working copy's file: `files.stream`). It holds the link while it is read; disposing lets go. Whether the
+ * machine is reached over a link (`reaches`) is the same rule the requester's pipe uses (main.ts `linkReaches`), so a
+ * read never picks a path from how the link is doing: on a linked machine it streams or fails loudly. Not linked =
+ * `linked` is false, and that machine is read the way its channel goes (`@@@cloud-only-pieces` in app-files.ts).
+ */
+export function remoteFileStreams(links: () => HeldFileSshLinks | null, account: () => Promise<string>,
+  reaches: (deviceId: string) => Promise<boolean>) {
+  const linkOf = () => {
+    const held = links()
+    if (!held) throw new Error('The SSH connection to this machine is not available (no device links yet)')
+    return held
+  }
+  return {
+    /**
+     * A linked machine whose server streams (protocol 19+); it opens the link to ask, as the read will use it. A server
+     * below 19 is false: it still has the per-piece reader, over the same link (deleted at protocol 20).
+     */
+    async linked(deviceId: string): Promise<boolean> {
+      if (!await reaches(deviceId)) return false
+      const held = linkOf()
+      await openLink(held, deviceId)
+      const protocol = held.protocol(deviceId)
+      if (protocol === null) throw new Error('The SSH connection to this machine closed while it was opened')
+      return protocol >= FILE_STREAM_PROTOCOL
+    },
+    async open(deviceId: string, type: string, request: (offset: number, stream: string) => Record<string, unknown>, size: number, from: number, signal?: AbortSignal): Promise<FileBytes> {
+      const accountId = await account(), held = linkOf()
+      const release = held.hold(deviceId)
+      try {
+        await openLink(held, deviceId)
+        const source = openLinkStream({ links: held, deviceId, accountId, signal }, type, request, size, undefined, from)
+        return { ...source, async dispose() { try { await source.dispose() } finally { release() } } }
+      } catch (error) { release(); throw error }
+    },
+  }
+}
+
 async function openLink(links: Pick<HeldFileSshLinks, 'open'>, deviceId: string) {
   const opened = await links.open(deviceId)
   if (!opened.ok && !opened.controlOnly) throw new Error(`The SSH connection to this machine is not available (${opened.reason})`)
 }
 
 /**
- * @@@file-stream - a held version as one stream of raw bytes over the device link (`file.stream`, protocol 19): the server
- * pushes it as fast as the line takes it, inside the window this reader acknowledges (`@@@stream-credit` in
- * device-link-host.ts), so the connection stays full the way scp keeps it. Anchored to the etag `file.read` gives; a link
- * that drops, or a stream that stalls, starts again from the bytes already here. Sequential reads only, as its consumers do.
+ * @@@file-stream - a held version as one stream of raw bytes over the device link (`file.stream`, protocol 19), anchored
+ * to the etag `file.read` gives. The stream itself is `openLinkStream`.
  */
 export async function openProjectFileStream(revision: FileRevision, read: ProjectFileReader,
-  line: { links: HeldFileSshLinks; deviceId: string; accountId: string; signal?: AbortSignal }, progress?: FileContext['progress']): Promise<FileBytes> {
+  line: StreamLine, progress?: FileContext['progress']): Promise<FileBytes> {
   requireFileRevision(revision)
   const ref = { item_id: revision.item_id!, version: revision.version! }
   const { etag } = await read({ ref, offset: 0, length: 0 })
-  const size = revision.size_bytes
+  return openLinkStream(line, PROJECT_FILE_STREAM, (offset, stream) => ({ ref, offset, etag, stream }), revision.size_bytes, progress)
+}
+
+export type StreamLine = { links: HeldFileSshLinks; deviceId: string; accountId: string; signal?: AbortSignal }
+
+/**
+ * A file on another machine as one stream of raw bytes over its device link, from `from` to `size`: the server pushes it
+ * as fast as the line takes it, inside the window this reader acknowledges (`@@@stream-credit` in device-link-host.ts), so
+ * the connection stays full the way scp keeps it. `request` names the file and the version the stream must be of (the
+ * server refuses a file that changed); a link that drops, or a stream that stalls, starts again from the bytes already
+ * here. Sequential reads only, as its consumers do.
+ */
+export function openLinkStream(line: StreamLine, type: string, request: (offset: number, stream: string) => Record<string, unknown>,
+  size: number, progress?: FileContext['progress'], from = 0): FileBytes {
   const pieces: Buffer[] = []
-  let buffered = 0, received = 0, consumed = 0, failure: Error | null = null, finished = size === 0, stalled = false
+  let buffered = 0, received = from, consumed = from, failure: Error | null = null, finished = from >= size, stalled = false
   const stuck = () => { if (!stalled) { stalled = true; progress?.(received, size, true) } }
   let wake: (() => void) | null = null
   const notify = () => { const w = wake; wake = null; w?.() }
@@ -101,7 +151,7 @@ export async function openProjectFileStream(revision: FileRevision, read: Projec
             progress?.(received, size); notify()
             const elapsed = Date.now() - rateFrom.at
             if (elapsed >= 500) { window = Math.max(MIN_WINDOW, Math.min(MAX_WINDOW, Math.round((received - rateFrom.bytes) / elapsed * WINDOW_MS))); rateFrom = { at: Date.now(), bytes: received } }
-            if (received - ackedAt >= ACK_EVERY_BYTES || received === size) { ackedAt = received; send(`${PROJECT_FILE_STREAM}.ack`, { stream, received, window }) }
+            if (received - ackedAt >= ACK_EVERY_BYTES || received === size) { ackedAt = received; send(`${type}.ack`, { stream, received, window }) }
           },
           onMessage(message) {
             const reply = parseDeviceRpcReply(message)
@@ -118,11 +168,11 @@ export async function openProjectFileStream(revision: FileRevision, read: Projec
         line.signal?.addEventListener('abort', abort, { once: true })
         function finish(result: 'done' | 'again' | Error) {
           clearInterval(stall); untap(); line.signal?.removeEventListener('abort', abort)
-          if (result !== 'done') send(`${PROJECT_FILE_STREAM}.cancel`, { stream })
+          if (result !== 'done') send(`${type}.cancel`, { stream })
           if (result instanceof Error) reject(result); else resolve(result)
         }
         const sent = line.links.send(line.deviceId, { type: 'broadcast', event: 'broadcast',
-          payload: createDeviceRpcRequestEnvelope(PROJECT_FILE_STREAM, requestId, line.accountId, { ref, offset: received, etag, stream }) })
+          payload: createDeviceRpcRequestEnvelope(type, requestId, line.accountId, request(received, stream)) })
         if (!sent) finish('again')
       })
       if (outcome === 'done') break
