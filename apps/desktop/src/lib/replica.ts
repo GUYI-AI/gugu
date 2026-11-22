@@ -25,8 +25,12 @@ import { rendererLogger } from './log'
 
 export type Reading<V> =
   | { state: 'unknown' }
-  /** `stale`: a newer answer may be on its way (snapshot, or past `fresh`). `error`: the last refresh (or retried one) failed. */
-  | { state: 'value'; value: V; stale: boolean; error: Error | null; retry?: Retry }
+  /**
+   * `stale`: past `fresh` (or a snapshot): a read may replace it, whether or not one is on its way.
+   * `previous`: the previously asked arguments' value (`keepPrevious`), shown while these arguments' first read is on its way.
+   * `error`: the last refresh (or retried one) failed.
+   */
+  | { state: 'value'; value: V; stale: boolean; previous?: boolean; error: Error | null; retry?: Retry }
   | { state: 'error'; error: Error; retry?: Retry }
 
 /**
@@ -745,21 +749,21 @@ function retryPolicyOf<A extends unknown[]>(retry: (failures: number, error: Err
   return (failures: number, error: Error) => retry(failures, error, ...(key.slice(2) as A))
 }
 
-function readingOfState(state: { data: unknown; error: Error | null } | undefined, stale: boolean, key: QueryKey): Reading<never> {
+function readingOfState(state: { data: unknown; error: Error | null } | undefined, stale: boolean, key: QueryKey, previous = false): Reading<never> {
   if (!state) return UNKNOWN
   // A failed refresh being retried is not said yet: a transient failure recovers silently; it is said once the retries are spent.
-  if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, error: state.error, retry: retryOfKey(key) }
+  if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, previous, error: state.error, retry: retryOfKey(key) }
   const error = state.error ?? lastFailure.get(hashKey(key))
   return error ? { state: 'error', error, retry: retryOfKey(key) } : UNKNOWN
 }
 
-const readingOf = <V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> => readingOfState(result, result.isStale || result.isPlaceholderData, key)
+const readingOf = <V>(result: UseQueryResult<V>, key: QueryKey): Reading<V> => readingOfState(result, result.isStale, key, result.isPlaceholderData)
 
 const IDLE_KEY = ['read-model:idle'] as const
 
 /**
  * The reading for these arguments; `null` = no subject (`unknown`, nothing requested). Account models read only while the session is live.
- * `keepPrevious`: while the new arguments' first read is on its way, show the previous arguments' value, stale (a search typed on).
+ * `keepPrevious`: while the new arguments' first read is on its way, show the previous arguments' value, `previous` (a search typed on).
  */
 export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean; keepPrevious?: boolean } = {}): Reading<V> {
   const current = useSyncExternalStore(subscribeAccount, accountSnapshot)

@@ -9,6 +9,7 @@ import './lib/insecure-context-shims'
 import './lib/legacy-webview-shims'
 import { installPasswordSaveCards } from './lib/passwordSaveCards'
 import React from 'react'
+import { MotionConfig } from 'framer-motion'
 import App from './App'
 import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
@@ -97,14 +98,17 @@ renderEntryRoot(
   'desktop',
   document.getElementById('root') as HTMLElement,
   <React.StrictMode>
-    <StartupMotionBoundary>
-      <AndroidStartupFrame />
-      <AppErrorBoundary>
-        <LocalizationProvider>
-          <App />
-          <BuildTagBadge />
-        </LocalizationProvider>
-      </AppErrorBoundary>
-    </StartupMotionBoundary>
+    {/* Every framer animation follows the system's reduced-motion setting (PanelTrack checks it itself). */}
+    <MotionConfig reducedMotion="user">
+      <StartupMotionBoundary>
+        <AndroidStartupFrame />
+        <AppErrorBoundary>
+          <LocalizationProvider>
+            <App />
+            <BuildTagBadge />
+          </LocalizationProvider>
+        </AppErrorBoundary>
+      </StartupMotionBoundary>
+    </MotionConfig>
   </React.StrictMode>
 )

@@ -37,7 +37,7 @@ const { TopicSplitPane } = await import('../../../apps/desktop/src/components/ch
 const { UI_EVENTS } = await import('../../../apps/desktop/src/lib/uiEvents')
 const { commandRegistry } = await import('../../../apps/desktop/src/session/renderer/lib/commands/registry')
 const { resetSearchSession, useSearchSession } = await import('../../../apps/desktop/src/session/renderer/features/global-search/search-session')
-const { quotePrefixOf, canSourceTopic, maxTopicSplitWidthForAvailableWidth, TOPIC_SPLIT_MIN_WIDTH, TOPIC_SPLIT_MAX_WIDTH } = await import('../../../apps/desktop/src/components/chat/topicSplitModels')
+const { quotePrefixOf, canSourceTopic } = await import('../../../apps/desktop/src/components/chat/topicSplitModels')
 const { chatDisplayName } = await import('@gugu/core/shared/ui/chatModels')
 const receiptHeads = () => [...document.querySelectorAll('[data-testid="message-read-receipt-panel"] [data-slot="section-label"]')].map((head) => head.textContent)
 const { withSourceLineCandidates } = await import('../../../apps/desktop/src/lib/mention')
@@ -223,20 +223,6 @@ describe('锚点是那条消息的附件,所以跟它的气泡同一侧', () => 
       }),
     )
     expect(harness.container.querySelector('[data-testid="topic-anchor-lead"]')?.textContent).toBe('某条话题')
-  })
-})
-
-// @@@5856 owner 2026-09-19 实测:「这条线也拖不动啊」。
-describe('分栏那条分割线得真能拖', () => {
-  it('常见窗口宽度下,上限必须**高于**下限 —— 相等就等于一格都拖不动', () => {
-    // 1280 宽的窗口上聊天区实宽约 980。上一版给主聊天区留的是 740(那是 useMessageColumnMinWidth
-    // 注释里「中栏 380 + 右栏 360」的**和**,不是中栏的保留额),算出来上限 280 = 下限:
-    // 拖拽照常开始(data-dragging 翻 true)、宽度纹丝不动。
-    expect(maxTopicSplitWidthForAvailableWidth(980)).toBeGreaterThan(TOPIC_SPLIT_MIN_WIDTH)
-    // 窗口再宽也不超过它自己的天花板。
-    expect(maxTopicSplitWidthForAvailableWidth(4000)).toBe(TOPIC_SPLIT_MAX_WIDTH)
-    // 阴控:窗口真的窄到留不下主聊天区时,才退回「只剩下限」这一档。
-    expect(maxTopicSplitWidthForAvailableWidth(600)).toBe(TOPIC_SPLIT_MIN_WIDTH)
   })
 })
 
@@ -667,14 +653,10 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     await clickElement(close)
     expect(onClose).toHaveBeenCalledTimes(1)
 
-    // @@@5856 owner 2026-09-19:「不应该有这个按钮,你只要保证分割线可分割就行了」。
-    // 这两条断言成对:没有那颗键 **且** 真有一条能拖的分割线 ——
-    // 只断言前一条的话,把宽度焊死也能过,而那时「想看大一点」就没有任何出口了。
+    // @@@5856 owner 2026-09-19:「不应该有这个按钮,你只要保证分割线可分割就行了」。分割线是话题所在侧页那一刀的
+    // (TrackCut,tab-pane-tree-v3 拖它),这一栏自己不画第二根。
     expect(harness.container.querySelector('[data-testid="topic-split-open-full"]')).toBeNull()
-    const handle = harness.container.querySelector('[data-testid="topic-split-resize-handle"]')
-    expect(handle).not.toBeNull()
-    expect(handle?.getAttribute('role')).toBe('separator')
-    expect(handle?.getAttribute('aria-label')).toBe('拖动改变话题分栏的宽度')
+    expect(harness.container.querySelector('[role="separator"]')).toBeNull()
   })
 
   it('手机上放不下两栏:话题是来源页的一枚页签,没有自己的页头,返回键回到来源那一枚', async () => {
@@ -682,8 +664,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     // currentUserId 置空:附件子视图不去拉文件,这一格只判导航。
     await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onClose, currentUserId: null, mobile: true }))
     // 与上一格(桌面)同一份 props:手机上 ❌ 分割线、❌ 收起键,❌ 挤进一条与来源线并排的栏。
-    expect(harness.container.querySelector('[data-testid="topic-split-resizable"]')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-split-resize-handle"]')).toBeNull()
+    expect(harness.container.querySelector('[role="separator"]')).toBeNull()
     expect(harness.container.querySelector('[data-testid="topic-split-close"]')).toBeNull()
     await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
     expect(onClose).toHaveBeenCalledTimes(1)

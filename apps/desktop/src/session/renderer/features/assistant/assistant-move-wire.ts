@@ -11,6 +11,7 @@ import { cancelProvisionOperation, completedSingleProvisionSession, completeProv
 import { readAgentModelSelection, setAgentModelSelection, platformProtocolForAgentType } from '@/lib/agentModelSelection';
 import type { AgentModelSelection } from '@gugu/core/shared/agentModelSelection';
 import { cloudMoveModel, moveModelSelection, sameMoveModel } from './assistant-move-model';
+import { machineFileReader } from '@renderer/features/sessions/workspace-backend/machine-file-reader';
 import { knownCloudDeviceId, provisionCloudComputer, readCloudSnapshotNow, wakeCloudComputer } from '@/lib/cloudComputer';
 import { contactsService } from '@/lib/contacts';
 import { myAssistant } from '@/lib/myAssistant';
@@ -102,15 +103,19 @@ function mtimeOf(entry: { modifiedAt?: unknown }): number | null {
 export function machineFs(machine: AssistantMachine): HomeFs {
   if (!machine.rpc) throw new Error('The explicit move requires its native source and destination')
   const files = machine.rpc.workspace.files;
+  // The machine's file reader (`@@@machine-file-reader`): streamed over its device link when one reaches it.
+  const reader = machineFileReader(machine.target ?? null, machine.projectId, machine.workspaceId, async (path, offset, length) => {
+    const result = await files.readChunk(machine.projectId, machine.workspaceId, { path, offset, length });
+    if (!result.success) throw rpcError(result.error as { type?: string; message?: string });
+    return { size: result.data.size, etag: result.data.etag, bytes: fromBase64(result.data.data) };
+  });
   const fs: HomeFs = {
     async list(dir) {
       return (await listDirectory(machine, dir)).map((entry) => ({ name: entry.name, type: entry.type, size: entry.size, mtime: mtimeOf(entry) }));
     },
     async readChunk(path, offset, length) {
       if (length === 0) return new Uint8Array(0);
-      const result = await files.readChunk(machine.projectId, machine.workspaceId, { path, offset, length });
-      if (!result.success) throw rpcError(result.error as { type?: string; message?: string });
-      return fromBase64(result.data.data);
+      return (await reader.read(path, offset, length)).bytes;
     },
     async revision(path) {
       const result = await files.readChunk(machine.projectId, machine.workspaceId, { path, offset: 0, length: 0 });

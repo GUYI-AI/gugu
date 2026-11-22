@@ -46,7 +46,7 @@ function BackChevron() {
 //   · 输入法拼写(composition)期间不发、Enter 不提交;拼写结束(compositionend)那一刻才算一次输入。
 //   · 旧请求:userSearch 按查询串各占一格(replica 键),晚到的旧答案只落进自己那一格,永远画不到当前框上 ——
 //     不用自己记序号,也不用 AbortController。同一串再搜直接命中那一格的缓存。
-//   · 加载态:请求超过 200 ms 才出骨架行(快的回答不闪);换词时上一批结果留在原地变淡(replica keepPrevious)。
+//   · 加载态:请求超过 200 ms 才出骨架行(快的回答不闪);换词时上一批结果留在原地变淡(自己留着上一次的答案,❌ replica keepPrevious,原因见下)。
 const DEBOUNCE_MS = 300
 const PENDING_SHOW_MS = 200
 const HAN = /\p{Script=Han}/u

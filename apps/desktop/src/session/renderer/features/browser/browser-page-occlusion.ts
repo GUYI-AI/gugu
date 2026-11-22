@@ -1,3 +1,4 @@
+import { isElementVisible } from '@/lib/elementVisibility'
 /**
  * #7274 页签里的网页是画在界面**之上**的独立 view(browser-page-views.ts):咕咕自己的菜单、弹窗、提示、拖拽落点
  * 压到网页那一块上时,z-index 再高也盖不住它。所以页签每隔一会儿看一眼「网页那一块上面有没有别的东西」,
@@ -108,7 +109,7 @@ export function isBrowserPageOccluded(placeholder: HTMLElement, rect: PageRect):
     if (placeholder.contains(element) || element.contains(placeholder)) continue;
     const box = element.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0 || !rectsOverlap(rect, box)) continue;
-    if (!element.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    if (!isElementVisible(element, { opacity: true })) continue;
     return true;
   }
   return false;

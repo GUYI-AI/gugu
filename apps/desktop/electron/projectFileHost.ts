@@ -2,8 +2,7 @@ import { openAsBlob } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { copyVerifiedFile } from '@gugu/core/shared/fileCipher'
 import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
-import { open } from 'node:fs/promises'
-import { etagOf, inWorkspace, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
+import { inWorkspace, readWorkspaceChunk, streamFileRange } from './session/main/core/files/workspace-transfer'
 import { readProjectFile, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import { createFileSink } from './fileSnapshot'
 import { nextPartBytes, SMALLEST_PART_BYTES } from '@shared/extensions/working-copy-upload'
@@ -44,8 +43,6 @@ export function createProjectFileReader(deps: HeldFileDeps) {
   }
 }
 
-/** One piece of a stream: the reader sees bytes (and its bar moves) a piece at a time, and a message on the link waits one piece at most. */
-export const FILE_STREAM_PIECE_BYTES = 64 * 1024
 type StreamRequest = { ref: FileRef; offset: number; etag: string; stream: string }
 
 /**
@@ -58,23 +55,8 @@ export function createProjectFileStreamer(deps: HeldFileDeps) {
     const request = payload as StreamRequest
     if (!request || Object.keys(request).some(key => !['ref', 'offset', 'etag', 'stream'].includes(key)) || typeof request.etag !== 'string') throw new Error('Invalid file stream request')
     const { revision, root, stillBound } = await heldVersion(deps, request.ref, context.userId)
-    requireFileRange(revision.size_bytes, request.offset, 0)
-    const file = await inWorkspace(root, revision.relative_path!, true)
-    const handle = await open(file, 'r')
-    try {
-      const changed = async () => { const info = await handle.stat({ bigint: true }); return Number(info.size) !== revision.size_bytes || etagOf(info) !== request.etag }
-      if (await changed()) throw new Error('Local file changed during read')
-      for (let offset = request.offset; offset < revision.size_bytes;) {
-        context.signal.throwIfAborted()
-        const bytes = Buffer.alloc(Math.min(FILE_STREAM_PIECE_BYTES, revision.size_bytes - offset))
-        const { bytesRead } = await handle.read(bytes, 0, bytes.length, offset)
-        if (bytesRead === 0) throw new Error('Local file changed during read')
-        await context.write(offset, bytes.subarray(0, bytesRead))
-        offset += bytesRead
-      }
-      if (await changed() || !await stillBound()) throw new Error('Local file changed during read')
-      return { size: revision.size_bytes, etag: request.etag }
-    } finally { await handle.close().catch(() => undefined) }
+    await streamFileRange(await inWorkspace(root, revision.relative_path!, true), { size: revision.size_bytes, etag: request.etag }, request.offset, context, stillBound)
+    return { size: revision.size_bytes, etag: request.etag }
   }
 }
 

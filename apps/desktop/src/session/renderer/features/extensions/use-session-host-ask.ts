@@ -41,49 +41,48 @@ export function useSessionHostAsk(
         ? latestAgentQuestion(Object.fromEntries([...settlements].filter(([, item]) => item.origin && sources.includes(item.origin.source))))
         : pendingHostAsk(settlements, sources));
     };
-    const subscriptionId = crypto.randomUUID();
     const there = rpcOn(machineRegistry.machineOf(sessionId));
-    let cursor: RecordCursor | null = null;
-    let follows = 0;
-    const warn = (error: unknown) =>
-      log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) });
-    /**
-     * A new session's timeline first opens as a stand-in (no record yet); when the real record appears the
-     * stand-in sends one batch on another epoch — 「整份重读」 — and delivers nothing again (#3588). Any batch
-     * that is not a continuation of the snapshot we hold (another epoch, or a skipped `seq`, the rule the
-     * timeline view applies in `applyBatch`) means this subscription is detached: snapshot + subscribe again.
-     * Re-subscribing with the same id replaces the dead one server-side.
-     */
-    const follow = async () => {
-      const mine = ++follows;
-      const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
-      if (!alive || !snapshot.ok || mine !== follows) return;
-      settlements.clear();
-      cursor = snapshot.value.cursor;
-      take(snapshot.value.settlements);
-      await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
-    };
-    // Listen first: an ask between the snapshot and the subscription must not slip past.
-    const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
-      const result = event.result as TimelineAfterResult;
-      if (!result.ok) {
+    let close = () => undefined as void;
+    // @@@host-ask-reread - one snapshot + subscription per timeline generation. A batch from another epoch (a new session's
+    // stand-in replaced by its real record) or one that skips seqs does not continue what is held: read it again, the same
+    // rule as the session page's own timeline (agent-watch-store `applyBatch`).
+    const open = () => {
+      close();
+      const subscriptionId = crypto.randomUUID();
+      let cursor: RecordCursor | null = null;
+      // Listen first: an ask between the snapshot and the subscription must not slip past.
+      const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
+        const result = event.result as TimelineAfterResult;
+        if (!result.ok) {
+          cursor = result.snapshot.cursor;
+          settlements.clear();
+          take(result.snapshot.settlements);
+        } else if (cursor && (result.batch.cursor.epoch !== cursor.epoch || result.batch.from > cursor.seq)) open();
+        else {
+          cursor = result.batch.cursor;
+          take(result.batch.settlements);
+        }
+      }, subscriptionId);
+      close = () => {
+        off();
+        void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
+      };
+      void (async () => {
+        const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
+        if (!alive) return;
+        if (!snapshot.ok) throw new Error(`${snapshot.error.code}: ${snapshot.error.message}`);
+        cursor = snapshot.value.cursor;
         settlements.clear();
-        cursor = result.snapshot.cursor;
-        take(result.snapshot.settlements);
-        return;
-      }
-      if (cursor && (cursor.epoch !== result.batch.cursor.epoch || result.batch.from > cursor.seq)) {
-        void follow().catch(warn);
-        return;
-      }
-      if (!cursor || result.batch.cursor.seq >= cursor.seq) cursor = result.batch.cursor;
-      take(result.batch.settlements);
-    }, subscriptionId);
-    void follow().catch(warn);
+        take(snapshot.value.settlements);
+        await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
+      })().catch((error: unknown) =>
+        log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) })
+      );
+    };
+    open();
     return () => {
       alive = false;
-      off();
-      void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
+      close();
     };
   }, [sessionId, sources, includeDiscussion]);
   return ask;

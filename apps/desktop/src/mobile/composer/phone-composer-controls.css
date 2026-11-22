@@ -1,7 +1,8 @@
 /* Reference 05: 90/943 button height, 20/943 gaps. Reference 07: 28/943 side insets. */
 .gg-phone-composer-controls { min-width: 0; padding-block: 2px; margin-bottom: var(--phone-composer-row-input-gap, 4px); }
 .gg-phone-composer-controls-items { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.gg-phone-composer-controls[hidden], .gg-phone-composer-controls:has(> .gg-phone-composer-controls-items:empty) { display: none; }
+/* ComposerControlRow marks the row hidden while editing, with a draft, or with no controls (no :has(): WebView < 105 drops it). */
+.gg-phone-composer-controls[hidden] { display: none; }
 .gg-phone-composer-control { flex: 0 0 auto; position: relative; min-height: 44px; height: 44px; padding: 0 12px; gap: 4px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font-size: var(--font-body); }
 /* The row floats over the messages (ChatBottomDock): like every floating card, the visible box draws its own background. */
 .gg-phone-composer-control { isolation: isolate; }

@@ -1,3 +1,23 @@
+/**
+ * Whether an element is drawn: it has a box all the way up (no display:none, no content-visibility:hidden ancestor), its
+ * visibility is not hidden, and with `opacity` its opacity is not 0 either.
+ *
+ * Element.checkVisibility() does exactly this, but Android System WebView before 105 has none, and 105–120 know only the
+ * older option names (checkVisibilityCSS / checkOpacity), so both spellings are passed. Without it, the same rule is read
+ * from computed styles up the chain (only on those engines; checkVisibility itself avoids that walk).
+ */
+export function isElementVisible(element: Element, { opacity = false }: { opacity?: boolean } = {}): boolean {
+  if (typeof element.checkVisibility === 'function') {
+    return element.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true, checkOpacity: opacity, opacityProperty: opacity })
+  }
+  for (let node: Element | null = element; node; node = node.parentElement) {
+    const style = getComputedStyle(node)
+    if (style.display === 'none' || (node !== element && style.contentVisibility === 'hidden')) return false
+    if (opacity && style.opacity === '0') return false
+  }
+  return getComputedStyle(element).visibility !== 'hidden'
+}
+
 export interface ElementBox { left: number; top: number; width: number; height: number }
 
 export function elementBox(element: Element): ElementBox {
