@@ -1,4 +1,4 @@
-import { Archive, History, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpToLine, ChevronDown, ChevronUp, ExternalLink, FileDiff, Files, FolderOpen, FolderPlus, Globe, Library, MessageSquare, MessageSquarePlus, MessageSquareShare, Palette, Pin, RefreshCw, Settings, SquareTerminal, Terminal, TextCursorInput, UserPlus, Users, Zap, type IconComponent , CalendarClock} from '@/lib/icons'
+import { Archive, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpToLine, ChevronDown, ChevronUp, ExternalLink, FileDiff, Files, FolderOpen, FolderPlus, Globe, Library, MessageSquare, MessageSquarePlus, MessageSquareShare, Palette, Pin, RefreshCw, Settings, SquareTerminal, Terminal, TextCursorInput, UserPlus, Users, Zap, Clock, type IconComponent } from '@/lib/icons'
 import { Columns2, GitPullRequest, PanelBottom, PanelRight } from '@/lib/icons'
 
 /**
@@ -9,7 +9,7 @@ import { Columns2, GitPullRequest, PanelBottom, PanelRight } from '@/lib/icons'
 export const COMMAND_ICONS = {
   settings: Settings,
   'folder-plus': FolderPlus,
-  history: History,
+  history: Archive,
   'folder-open': FolderOpen,
   library: Library,
   bolt: Zap,
@@ -39,7 +39,7 @@ export const COMMAND_ICONS = {
   'chevron-up': ChevronUp,
   users: Users,
   'user-plus': UserPlus,
-  clock: CalendarClock,
+  clock: Clock,
 } satisfies Record<string, IconComponent>;
 
 export type CommandIconKey = keyof typeof COMMAND_ICONS;
