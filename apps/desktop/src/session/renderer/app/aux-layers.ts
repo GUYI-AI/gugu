@@ -51,19 +51,24 @@ export function auxLayerOf(doc: Document): HTMLElement | null {
   return layers.get(doc)?.layer ?? null;
 }
 
-/** The document a request with no element of its own came from: the open pop-out last pressed or typed in, else the main window's. */
+/** The open pop-out a request with no element of its own came from: the one last pressed or typed in, if any. */
+function requestPopOut(): AuxLayer | undefined {
+  return lastInput ? layers.get(lastInput) : undefined;
+}
+
+/** The document a request with no element of its own came from: that pop-out's, else the main window's. */
 export function requestDocument(): Document {
-  return lastInput && layers.has(lastInput) ? lastInput : document;
+  return requestPopOut()?.doc ?? document;
 }
 
 /** Where a popup opened now for such a request goes: that pop-out's layer, or null for the main window. */
 export function requestLayer(): HTMLElement | null {
-  return auxLayerOf(requestDocument());
+  return requestPopOut()?.layer ?? null;
 }
 
 /** The notices toaster of the window a request came from (NoticeHost draws one per pop-out); undefined = the main window's. */
 export function requestToasterId(): string | undefined {
-  return layers.get(requestDocument())?.toasterId;
+  return requestPopOut()?.toasterId;
 }
 
 /** Open pop-outs, for hosts that draw something in each (NoticeHost). */
