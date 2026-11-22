@@ -67,7 +67,10 @@ const state = vi.hoisted(() => ({
 }));
 // What the column reports to its slot in the workspace (folded: the slot closes to 0, the column stays mounted).
 const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; } }));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({
+  useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
+  useInnerSidebarCrowded: () => false,
+}));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
 }));

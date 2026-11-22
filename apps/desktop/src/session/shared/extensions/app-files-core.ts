@@ -816,18 +816,17 @@ async function versionPointers(token: string, row: ItemRow, actor: string): Prom
 
 
 export function createAppFiles(platform: FilesPlatform) {
-  // @@@read-snapshot - one read of a file version per App and reader (and program call, which owns its cancellable reads),
-  // not per page: a page that is torn down and mounted again (its chat left and reopened) takes the bytes it already read. A page going away hands the read to the idle timer;
-  // a refusal (revoked access, a failed read or acknowledgement) releases it at once (read-contract §2.5).
-  type ReadSnapshot = { pages: Set<number>; checked: Set<number>; extensionId: string; itemId: string; needs: Grant['needs']; actor: string | null; leases: number; active: number; file?: Promise<FileHandle>; timer?: ReturnType<typeof setTimeout> };
+  // @@@read-snapshot - one read of a file version per page (and program call, which owns its cancellable reads): the page
+  // that made it owns it, and it goes with the page — gone, closed or revoked (taken out of the group: read-contract §2.5).
+  // A page is not torn down by leaving its chat for another (App pages stay resident), so nothing waits for a next page.
+  type ReadSnapshot = { pageId: number; extensionId: string; itemId: string; needs: Grant['needs']; actor: string | null; leases: number; active: number; file?: Promise<FileHandle>; timer?: ReturnType<typeof setTimeout> };
   const snapshots = new Map<string, ReadSnapshot>();
-  const snapshotKey = (surface: FileSurface, itemId: string, version: number) => JSON.stringify([surface.extensionId, surface.asAgent ?? null, surface.callId ?? null, itemId, version]);
+  const snapshotKey = (surface: FileSurface, itemId: string, version: number) => JSON.stringify([surface.pageId, surface.extensionId, surface.asAgent ?? null, surface.callId ?? null, itemId, version]);
   const staleVersion = () => new AppFileError('stale-version', 'This file version is no longer available. Open the file again to read its current version.');
   const disposeSnapshot = (key: string, entry: ReadSnapshot): Promise<void> => {
     clearTimeout(entry.timer);
     const file = entry.file;
     entry.file = undefined;
-    entry.checked.clear();
     if (entry.leases === 0 && snapshots.get(key) === entry) snapshots.delete(key);
     return file?.then(handle => handle.dispose()).catch(error => platform.warn('File read snapshot could not be released', { error: String(error) })) ?? Promise.resolve();
   };
@@ -842,35 +841,24 @@ export function createAppFiles(platform: FilesPlatform) {
     const key = snapshotKey(surface, itemId, version);
     let entry = snapshots.get(key);
     if (!entry) {
-      entry = { pages: new Set(), checked: new Set(), extensionId: surface.extensionId, itemId, needs: null, actor: surface.asAgent ?? null, leases: 0, active: 0 };
-      snapshots.set(key, entry);
-    }
-    if (!entry.pages.has(surface.pageId)) {
       // This registers the existing port's navigation/destruction lifecycle, not another byte transport.
       platform.sync.pageFor(surface.pageId, surface.extensionId);
-      entry.pages.add(surface.pageId);
+      entry = { pageId: surface.pageId, extensionId: surface.extensionId, itemId, needs: null, actor: surface.asAgent ?? null, leases: 0, active: 0 };
+      snapshots.set(key, entry);
+      // A program call's reads end with the call; the key carries the call, so this entry is the call's own.
+      const held = entry;
+      surface.signal?.addEventListener('abort', () => { held.leases = 0; void disposeSnapshot(key, held); }, { once: true });
     }
-    // A program call's reads end with the call.
-    const held = entry;
-    surface.signal?.addEventListener('abort', () => { held.leases = 0; void disposeSnapshot(key, held); }, { once: true });
     entry.needs = itemId === surface.itemId ? null : has(surface.extensionId, 'files:read') ? 'files:read' : 'files:write';
     touch(key, entry);
     return entry;
   };
   const releasePage = (pageId: number, docNames?: (grant: Grant) => boolean): void => {
     for (const [key, entry] of snapshots) {
-      if (!entry.pages.has(pageId)) continue;
-      if (docNames) {
-        // Revoked: what was read for this page is not kept for anyone.
-        if (!docNames({ docName: '', itemId: entry.itemId, access: 'ro', needs: entry.needs, ...(entry.actor ? { asAgent: entry.actor } : {}) })) continue;
-        entry.leases = 0;
-        disposeSnapshot(key, entry);
-        continue;
-      }
-      // The page went away: the read stays for the next page of this App and reader until the idle timer.
-      entry.pages.delete(pageId);
-      if (!entry.pages.size) entry.leases = 0;
-      touch(key, entry);
+      if (entry.pageId !== pageId) continue;
+      if (docNames && !docNames({ docName: '', itemId: entry.itemId, access: 'ro', needs: entry.needs, ...(entry.actor ? { asAgent: entry.actor } : {}) })) continue;
+      entry.leases = 0;
+      disposeSnapshot(key, entry);
     }
   };
   platform.sync.onPageRelease?.(releasePage);
@@ -919,13 +907,7 @@ export function createAppFiles(platform: FilesPlatform) {
     catch (error) { await file.dispose(); throw error; }
     held.leases++;
     if (!held.file) held.file = Promise.resolve(file);
-    else {
-      // This open's own resolve is this page's check of a read another page made: the same bytes, or none of it.
-      const was = await held.file.catch(() => null);
-      await file.dispose();
-      if (!was || was.revision.sha256 !== file.revision.sha256 || was.revision.size_bytes !== file.revision.size_bytes) { held.leases = 0; await disposeSnapshot(snapshotKey(surface, entry.id, entry.version), held); throw staleVersion(); }
-    }
-    held.checked.add(surface.pageId);
+    else await file.dispose();
     return { entry, docName: '', access, self, chunked: true };
   };
 
@@ -942,24 +924,6 @@ export function createAppFiles(platform: FilesPlatform) {
     held.active++;
     clearTimeout(held.timer);
     if (local && held.file) await local.dispose();
-    if (held.file && !held.checked.has(surface.pageId)) {
-      // @@@join-recheck - a page taking a read another page made resolves the version as itself first (read-contract
-      // §2.1 step 1): a pure resolve, no transfer. Access lost meanwhile releases the read instead of showing its bytes.
-      try {
-        const was = await held.file;
-        const current = await fileFor(surface, { id: ref.id, ...(ref.chat ? { chat: ref.chat } : {}) }, ref.version);
-        await current?.dispose();
-        if (!current || current.revision.sha256 !== was.revision.sha256 || current.revision.size_bytes !== was.revision.size_bytes) throw staleVersion();
-        held.checked.add(surface.pageId);
-      } catch (error) {
-        held.active--;
-        held.leases = 0;
-        await disposeSnapshot(key, held);
-        if (error instanceof MissingFileObjectError || error instanceof AppFileError && error.code === 'not-found') throw staleVersion();
-        throw error;
-      }
-    }
-    if (!held.file) held.checked.add(surface.pageId);
     const pending = held.file ??= (local ? Promise.resolve(local) : fileFor(surface, { id: ref.id, ...(ref.chat ? { chat: ref.chat } : {}) }, ref.version)).then(async file => {
       if (!file || file.revision.version !== ref.version) { await file?.dispose(); throw staleVersion(); }
       return file;

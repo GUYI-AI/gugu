@@ -73,3 +73,27 @@ export const TRANSPORT_ENV_VARS = [
   'REQUESTS_CA_BUNDLE',
   'CURL_CA_BUNDLE',
 ] as const;
+
+/**
+ * 咕咕自己的服务都在本机回环上:推理网关(平台模型中转)、咕咕 MCP、集成转发口、扩展网关、hook。
+ * agent 发给它们的请求**永远不能交给代理**。
+ *
+ * 实测(2026-11-16 mbp,Clash Verge Rev 全局模式,用户 ~/.zshrc 里有 Clash「复制环境变量」那一套、没有 NO_PROXY):
+ * claude 把发往 127.0.0.1 推理网关的请求交给了 Clash(Clash 日志 44 条 `--> 127.0.0.1:51570 using GLOBAL`),
+ * Clash 把它送去远端节点,每一轮都是 502。规则模式下 Clash 恰好把 127/8 判成直连,问题被盖住了。
+ *
+ * 所以**无条件**并进去,不看这份环境里有没有代理变量:有的 harness 不读环境变量,
+ * 读的是系统代理(macOS 的 scutil、Windows 的 Internet 设置),环境里一个代理变量都没有也照样会走代理。
+ * 多带一条回环豁免没有代价;少带一条,会话在某些用户的机器上就跑不通。
+ * 合并而不是覆盖:用户自己的条目一条不丢;大小写两份写成同一个值,各家读哪一份都一样。
+ */
+export const LOOPBACK_NO_PROXY_HOSTS = ['localhost', '127.0.0.1', '::1'] as const;
+
+export function withLoopbackNoProxy<T extends Record<string, string | undefined>>(env: T): T & { NO_PROXY: string; no_proxy: string } {
+  const entries = [env.NO_PROXY, env.no_proxy]
+    .flatMap((value) => (value ?? '').split(','))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const value = [...new Set([...entries, ...LOOPBACK_NO_PROXY_HOSTS])].join(',');
+  return { ...env, NO_PROXY: value, no_proxy: value };
+}

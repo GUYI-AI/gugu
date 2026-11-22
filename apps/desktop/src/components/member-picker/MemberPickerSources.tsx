@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 import { Button } from '../ui/Button'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
+import './member-picker.css'
 
 type Source = { key: string; label: string; count: number; picked: number }
 
@@ -22,7 +23,7 @@ export function MemberPickerSources({ items, value, onChange, mobile, underline,
 }) {
   const { t } = useTranslation('contacts')
   if (mobile && underline) {
-    return <div className="shrink-0 overflow-x-auto whitespace-nowrap !px-3">
+    return <div className="gg-picker-sources-strip shrink-0 overflow-x-auto whitespace-nowrap !px-3">
       <div className="w-max min-w-full [&_.gg-segtab]:min-h-[var(--control-h-touch)]">
         <SegmentedTabs variant="underline" ariaLabel={t('memberPicker.sources')} value={value} onChange={onChange}
           items={items.map(({ key, label, count, picked }) => ({
@@ -41,6 +42,6 @@ export function MemberPickerSources({ items, value, onChange, mobile, underline,
     </Button>
   ))
   return mobile
-    ? <div role="radiogroup" className="flex shrink-0 gap-2 overflow-x-auto !px-3 !pb-2">{buttons}</div>
+    ? <div role="radiogroup" className="gg-picker-sources-strip flex shrink-0 gap-2 overflow-x-auto !px-3 !pb-2">{buttons}</div>
     : <nav role="radiogroup" className="flex w-[178px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-[var(--border-subtle)] !p-2">{buttons}</nav>
 }

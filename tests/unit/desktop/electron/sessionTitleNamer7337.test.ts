@@ -7,7 +7,6 @@ const revokePlatformModelAccess = vi.fn(async (..._args: unknown[]) => undefined
 const fetchMock = vi.fn()
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 
-vi.mock('electron', () => ({ net: { fetch: (...args: unknown[]) => fetchMock(...args) } }))
 vi.mock('../../../../apps/desktop/electron/model-access', () => ({
   issuePlatformModelAccess: (...args: unknown[]) => issuePlatformModelAccess(...args),
   revokePlatformModelAccess: (...args: unknown[]) => revokePlatformModelAccess(...args),
@@ -17,6 +16,8 @@ vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
   createLogger: () => log,
 }))
 
+const { installEgress, createEgress } = await import('@gugu/core/shared/egress')
+installEgress(createEgress({ name: 'test', fetch: (...args: unknown[]) => fetchMock(...args) as Promise<Response>, webSocket: () => { throw new Error('no socket in this test') }, classify: () => null }))
 const { createSessionTitleNamer } = await import('../../../../apps/desktop/electron/session-title-namer')
 
 const LONG = '帮我看看为什么登录之后又跳回首页了，应该是 auth.ts 里 verifyLoginOtp 那块的问题'
@@ -26,7 +27,7 @@ function ticket(overrides: Record<string, unknown> = {}) {
 }
 
 function reply(status: number, body: unknown) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body }
+  return Response.json(body, { status })
 }
 
 let clock = Date.parse('2026-10-16T19:00:00Z')
@@ -59,7 +60,7 @@ beforeEach(() => {
   awaitAgentIdentity.mockReset().mockResolvedValue(undefined)
   issuePlatformModelAccess.mockReset().mockResolvedValue(ticket())
   revokePlatformModelAccess.mockClear()
-  fetchMock.mockReset().mockResolvedValue(reply(200, { choices: [{ message: { content: '{"title": "verifyLoginOtp 登录后跳回首页"}' } }] }))
+  fetchMock.mockReset().mockImplementation(async () => reply(200, { choices: [{ message: { content: '{"title": "verifyLoginOtp 登录后跳回首页"}' } }] }))
 })
 afterEach(() => {
   vi.useRealTimers()

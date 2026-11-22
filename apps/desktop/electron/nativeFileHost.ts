@@ -48,12 +48,12 @@ export function createNativeFileHost(deps: {
     await check(scope, entry.owner, entry.epoch); return entry
   }
   return { drop,
-    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string } | { op: 'resume' }) {
+    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string }) {
       const epoch = epochOf(scope), owner = await deps.owner()
       if (!owner || !deps.attachments) throw new Error('Attachment uploader is unavailable')
       await check(scope, owner, epoch)
       const result = request.op === 'declare' ? (await deps.attachments.declare(request)).declared
-        : request.op === 'resume' ? await deps.attachments.resume() : await deps.attachments[request.op](request.messageId)
+        : await deps.attachments[request.op](request.messageId)
       await check(scope, owner, epoch)
       return result
     },
@@ -69,7 +69,7 @@ export function createNativeFileHost(deps: {
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
     /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
     async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string },
-      report?: (progress: { id: string; done: number; total: number }) => void) {
+      report?: (progress: { id: string; done: number; total: number; stalled?: true }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
       /** This machine's bytes, verified: kept for this reader at an address until it disposes them. */
@@ -87,7 +87,7 @@ export function createNativeFileHost(deps: {
       }
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
         const named = request.progress
-        if (typeof named === 'string' && report) context = { ...context, progress: (done, total) => report({ id: named, done, total }) }
+        if (typeof named === 'string' && report) context = { ...context, progress: (done, total, stalled) => report({ id: named, done, total, ...(stalled ? { stalled } : {}) }) }
         const local = request.op === 'ssh' ? null : await deps.local(context)
         await check(scope, owner, epoch)
         if (request.op === 'local') return local?.revision ?? null
@@ -175,7 +175,6 @@ export function registerNativeFileIpc(ipc: IpcMain, host: ReturnType<typeof crea
   ipc.handle('attachments:declare', (event, row: AttachmentDeclareRequest) => host.attachment(scope(event), { ...row, op: 'declare' }))
   ipc.handle('attachments:drop', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'drop' }))
   ipc.handle('attachments:retry', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'retry' }))
-  ipc.handle('attachments:resume', event => host.attachment(scope(event), { op: 'resume' }))
   ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row,
     (progress) => { if (!event.sender.isDestroyed()) event.sender.send('files:read-progress', progress) }))
   ipc.handle('files:stage', (event, row: FileStageCommand) => host.stage(scope(event), row))

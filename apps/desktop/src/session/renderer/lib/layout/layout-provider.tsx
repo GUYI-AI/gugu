@@ -34,6 +34,8 @@ export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
 /** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
 export const INNER_SIDEBAR_MAX_SHARE = 0.4;
 export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';
+/** 内层栏旁边的正文少于这个宽(窄窗口)时,这一列自己收起(useInnerSidebarCrowded)。 */
+export const INNER_SIDEBAR_BODY_MIN_PX = 480;
 const INNER_SIDEBAR_PANE = definePaneWidth({ id: INNER_SIDEBAR_WIDTH_STORAGE_KEY, initial: INNER_SIDEBAR_DEFAULT_WIDTH_PX, min: INNER_SIDEBAR_MIN_WIDTH_PX, max: INNER_SIDEBAR_MAX_WIDTH_PX });
 
 export const clampInnerSidebarWidth = (width: number): number => clampPaneWidth(INNER_SIDEBAR_PANE, width);
@@ -142,6 +144,11 @@ export interface WorkspaceLayoutContextValue {
   innerWidth: MotionValue<number>;
   /** #2642 内层栏此刻该画的宽:选定的宽夹进这张卡片此刻放得下的范围(innerSidebarShownWidth)。 */
   innerShownWidth: () => number;
+  /**
+   * 内层栏此刻挤不下:卡片宽减去这一列该画的宽,剩给正文的不到 INNER_SIDEBAR_BODY_MIN_PX(由目标推出,❌ 读此刻画到哪)。
+   * 还没量到会话页宽时不算挤。
+   */
+  innerCrowded: MotionValue<boolean>;
   /** #2642 内层栏此刻的卡片宽(会话页宽 − 列表该占的宽);null = 还没量到。 */
   innerCardWidth: () => number | null;
   setInnerWidth: (width: number, options?: { persist?: boolean }) => void;
@@ -197,8 +204,19 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
   const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 } }]));
-  const move = useCallback(() => track.to(targets()), [track]);
-  const jump = useCallback(() => track.jump(targets()), [track]);
+  const innerCrowded = useMotionValue(false);
+  const crowded = () => {
+    const card = innerCardWidth();
+    return card !== null && card - innerShownWidth() < INNER_SIDEBAR_BODY_MIN_PX;
+  };
+  const move = useCallback(() => {
+    innerCrowded.set(crowded());
+    track.to(targets());
+  }, [track, innerCrowded]);
+  const jump = useCallback(() => {
+    innerCrowded.set(crowded());
+    track.jump(targets());
+  }, [track, innerCrowded]);
 
   const leftAnimatedWidth = useMotionValue(track.drawn('list'));
   const leftProgress = useMotionValue(listProgress(track.drawn('list'), leftWidth.get()));
@@ -359,6 +377,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     releaseLeftEdge,
     innerWidth,
     innerShownWidth,
+    innerCrowded,
     innerCardWidth,
     setInnerWidth,
     innerSidebarShown,
@@ -378,6 +397,14 @@ export function useInnerSidebarFrame(folded = false): void {
   // Folded first: a column that mounts folded is placed folded, ❌ placed open and then folded.
   useLayoutEffect(() => setInnerFolded(folded), [folded, setInnerFolded]);
   useLayoutEffect(registerInnerSidebarFrame, [registerInnerSidebarFrame]);
+}
+
+/** Whether the body beside the inner column has too little room (innerCrowded). Re-renders only when it flips. */
+export function useInnerSidebarCrowded(): boolean {
+  const { innerCrowded } = useWorkspaceLayoutContext();
+  const [crowded, setCrowded] = useState(() => innerCrowded.get());
+  useMotionValueEvent(innerCrowded, 'change', setCrowded);
+  return crowded;
 }
 
 /** #2548 whether the rows are laid out as the rail right now (leftRailLayout). Re-renders only when it flips. */

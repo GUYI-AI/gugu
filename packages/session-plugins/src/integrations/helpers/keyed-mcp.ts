@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { IntegrationKeyedMcp, VerifyResult } from '../capabilities/auth';
@@ -60,7 +61,7 @@ export function amapKeyInvalidText(text: string): boolean {
 }
 
 /** 高德这类服务对坏 key 不回 HTTP 错误,而是回 200 + `{status:"0",info,infocode}`:先认出它,❌ 让 MCP 客户端报一句看不懂的解析错。 */
-export async function readKeyRejection(url: string, fetchImpl: typeof fetch = fetch): Promise<KeyRefusal | null> {
+export async function readKeyRejection(url: string, fetchImpl: typeof globalThis.fetch = egress.fetch): Promise<KeyRefusal | null> {
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
@@ -79,7 +80,7 @@ export async function verifyKeyedMcpCredentials(
   name: string,
   mcp: IntegrationKeyedMcp,
   credentials: IntegrationCredentials,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof globalThis.fetch = egress.fetch
 ): Promise<VerifyResult> {
   let url: string;
   try {

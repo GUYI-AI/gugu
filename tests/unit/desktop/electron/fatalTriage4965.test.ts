@@ -1,3 +1,4 @@
+import { EgressError } from '@gugu/core/shared/egress'
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +14,8 @@ describe('classifyFatal — 环境故障', () => {
   it.each<readonly [string, () => unknown]>([
     ['Chromium net::ERR', () => new Error('net::ERR_NETWORK_IO_SUSPENDED')],
     ['Chromium wrapped ERR', () => new Error('request failed: net::ERR_CONNECTION_RESET')],
+    ['egress connect', () => new EgressError('connect', 'example.test')],
+    ['egress proxy authentication', () => new EgressError('proxy-auth', 'example.test')],
     ['libuv ECONNRESET', () => withCode('read ECONNRESET', 'ECONNRESET')],
     ['libuv EAI_AGAIN', () => withCode('getaddrinfo EAI_AGAIN db.example', 'EAI_AGAIN')],
     ['AbortSignal timeout', () => Object.assign(new Error('signal timed out'), { name: 'TimeoutError' })],

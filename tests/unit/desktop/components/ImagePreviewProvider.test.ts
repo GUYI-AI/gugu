@@ -16,7 +16,8 @@ import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
 import * as platformMock from '../../../support/capacitorPlatformTestDouble'
 import { anchorDownload } from '../../../../apps/desktop/src/platform/anchorDownload'
-import { readFileZoom, writeFileZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
+import { readFileZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
+import { fileZoomScript } from '../../../../apps/desktop/src/session/shared/preview/file-zoom'
 import * as fileHost from '../../../../apps/desktop/src/lib/fileHost'
 import {
   clickElement,
@@ -111,8 +112,7 @@ describe('ImagePreviewProvider', () => {
     return instances
   }
 
-  async function openAt(preference: number, motion: boolean) {
-    writeFileZoom('image', preference)
+  async function openAt(motion: boolean) {
     if (motion) vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }))
     vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
     const { default: PhotoSwipeCtor } = await import('photoswipe')
@@ -132,40 +132,30 @@ describe('ImagePreviewProvider', () => {
     return { pswp: instances[0], thumb, levelAfterInit }
   }
 
-  it('opens from the thumbnail to the reading zoom, and opening does not write the preference', async () => {
-    const { pswp, thumb, levelAfterInit } = await openAt(1.4, true)
+  it('opens from the thumbnail to the whole image over a ratio stored earlier; a zoom key steps from what is shown and stores nothing', async () => {
+    // A ratio left by an earlier build (images remembered their zoom then): no image opens at it any more.
+    localStorage.setItem('gugu.file-content-zoom.image', '1.4')
+    const { pswp, thumb, levelAfterInit } = await openAt(true)
     const slide = pswp.currSlide!
     // init ends with the slide still at the thumbnail: that is what the opening zoom animates from.
     expect(levelAfterInit).toBeCloseTo(100 / 400)
-    // Input during the opening neither zooms nor writes the preference.
+    // Input during the opening does not zoom.
     const toggleZoom = vi.spyOn(slide, 'toggleZoom')
     slide.container.querySelector('.pswp__img')!.dispatchEvent(new PointerEvent('click', { bubbles: true, detail: 2, pointerType: 'mouse' }))
     expect(toggleZoom).not.toHaveBeenCalled()
     await act(async () => {
       await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
     })
-    expect(slide.currZoomLevel).toBeCloseTo(1.4)
-    expect(slide.zoomLevels.initial).toBe(1)
-    expect(readFileZoom('image')).toBe(1.4)
-    await act(async () => pswp.destroy())
-    thumb.remove()
-    writeFileZoom('image', 1)
-  })
-
-  it('the phone keeps no reading zoom: an image opens whole over a ratio stored earlier, which zooming leaves alone', async () => {
-    localStorage.setItem('gugu.file-content-zoom.image', '2')
-    platformMock.platform.kind = 'capacitor'
-    platformMock.platform.capabilities.readingZoomMemory = false
-    // Where memory exists this writes 2 again; here it stores nothing and the earlier 2 stays.
-    const { pswp, thumb } = await openAt(2, true)
-    const slide = pswp.currSlide!
-    await act(async () => {
-      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
-    })
     expect(slide.zoomLevels.initial).toBe(1)
     expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
-    await act(async () => slide.zoomTo(1.5, undefined, 0))
-    expect(localStorage.getItem('gugu.file-content-zoom.image')).toBe('2')
+    expect(readFileZoom('image')).toBe(1)
+    // Cmd+ from the focused viewer: one 1.2x step from what is shown; the stored ratio is neither read nor written.
+    // jsdom has no checkVisibility; the viewer is shown.
+    pswp.element!.checkVisibility = () => true
+    pswp.element!.focus()
+    expect(Function('document', 'CustomEvent', `return ${fileZoomScript('zoomIn')}`)(document, CustomEvent)).toBe(true)
+    expect(slide.currZoomLevel).toBeCloseTo(1.2)
+    expect(localStorage.getItem('gugu.file-content-zoom.image')).toBe('1.4')
     await act(async () => pswp.destroy())
     thumb.remove()
     localStorage.removeItem('gugu.file-content-zoom.image')
@@ -174,7 +164,6 @@ describe('ImagePreviewProvider', () => {
   it('waits for the opening zoom before fetching the original, which lands in the box its recorded size already set', async () => {
     let finish!: (url: string) => void
     const full = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
-    writeFileZoom('image', 1)
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }))
     vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
     const instances = await capturePhotoSwipe()
@@ -243,8 +232,9 @@ describe('ImagePreviewProvider', () => {
   })
 
   it('a mouse double click goes from a zoomed image to the whole image and on to the second level; a touch one is left to PhotoSwipe', async () => {
-    const { pswp, thumb } = await openAt(1.4, false)
+    const { pswp, thumb } = await openAt(false)
     const slide = pswp.currSlide!
+    await act(async () => slide.zoomTo(1.4, undefined, 0))
     const image = slide.container.querySelector('.pswp__img')!
     const click = (pointerType: string) => act(async () => {
       image.dispatchEvent(new PointerEvent('click', { bubbles: true, detail: 2, pointerType, clientX: 200, clientY: 200 }))
@@ -257,21 +247,17 @@ describe('ImagePreviewProvider', () => {
     expect(slide.currZoomLevel).toBeCloseTo(1)
     await click('mouse')
     expect(slide.currZoomLevel).toBeCloseTo(2)
-    // The second level is a peek: the next image does not open there.
-    expect(readFileZoom('image')).toBe(1)
     thumb.remove()
-    writeFileZoom('image', 1)
   })
 
-  it('a slide paged to follows the preference changed on the one before it', async () => {
-    const { pswp, thumb } = await openAt(1, false)
+  it('a slide paged to opens whole after the one before it was zoomed, and nothing is stored', async () => {
+    const { pswp, thumb } = await openAt(false)
     await act(async () => pswp.currSlide!.zoomTo(1.5, undefined, 0))
-    expect(readFileZoom('image')).toBe(1.5)
     await act(async () => pswp.next())
     expect(pswp.currIndex).toBe(1)
-    expect(pswp.currSlide!.currZoomLevel).toBeCloseTo(1.5)
+    expect(pswp.currSlide!.currZoomLevel).toBe(pswp.currSlide!.zoomLevels.initial)
+    expect(readFileZoom('image')).toBe(1)
     thumb.remove()
-    writeFileZoom('image', 1)
   })
 
   it('a click on an image without pixels yet counts as the background; one on a shown image does nothing', async () => {

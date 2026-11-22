@@ -7,6 +7,7 @@
 //   place  → only put in the chat's folder (a new file, or a new version of one) — no message;
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
+import { egress } from '../shared/egress'
 import { FileDownloadFailure, isDownloadConnectionError, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
 import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } from './attachmentDeadline'
 import { serverNow } from '../shared/serverClock'
@@ -25,7 +26,7 @@ export interface AttachmentsEndpoint {
   token: string
   /** An account host rechecks its account and current credentials for every service request. */
   getAccessToken?(): Promise<string>
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   upload?: AttachmentUploadTransport
   /**
    * This host can send a server-signed PUT straight to the object store, so it asks for multipart uploads. A main process
@@ -41,7 +42,7 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
 }
 
 /** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
-export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof fetch = fetch): Promise<AttachmentsEndpoint> {
+export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof globalThis.fetch = egress.fetch): Promise<AttachmentsEndpoint> {
   return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
 }
 
@@ -57,11 +58,12 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
   signal?.throwIfAborted()
   const url = `${endpoint.supabaseUrl.replace(/\/+$/, '')}/functions/v1/attachments/${route}`
   const request = async () => {
-    const response = await (endpoint.fetch ?? fetch)(url, {
+    const response = await (endpoint.fetch ?? egress.fetch)(url, {
       method: 'POST',
       headers: { apikey: endpoint.anonKey, Authorization: `Bearer ${endpoint.getAccessToken ? await endpoint.getAccessToken() : endpoint.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
+      timeoutMs: route.startsWith('upload-') ? 0 : undefined,
     })
     const text = await response.text()
     let json: unknown = null
@@ -101,6 +103,15 @@ export async function uploadAttachmentBytes(
   scope: { chat_id: string | null; as: string; request_id?: string },
   options?: { onPlan?: (plan: AttachmentUploadPlan) => void; retry?: boolean; onProgress?: (progress: AttachmentByteProgress) => void; signal?: AbortSignal },
 ): Promise<string> {
+  const staging_key = await storeBytes(endpoint, file, scope, options)
+  if (previews && file.contentType.startsWith('image/')) {
+    void attachmentSha256(file.bytes).then(sha256 => offerImagePreviewOf(endpoint, file.bytes, file.contentType, sha256, scope.as), previews.warn)
+  }
+  return staging_key
+}
+
+async function storeBytes(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; name: string; contentType: string },
+  scope: { chat_id: string | null; as: string; request_id?: string }, options?: Parameters<typeof uploadAttachmentBytes>[3]): Promise<string> {
   const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
   const plan = await storeManagedAttachment(endpoint, upload, file, scope, {
     signal: options?.signal, onPlan: options?.onPlan, onProgress: options?.onProgress,
@@ -110,10 +121,27 @@ export async function uploadAttachmentBytes(
   return plan.staging_key
 }
 
-/** An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`). */
-export async function offerImagePreview(endpoint: AttachmentsEndpoint, preview: Blob, sha256: string, as: string, signal?: AbortSignal): Promise<void> {
-  const staging_key = await uploadAttachmentBytes(endpoint, { bytes: preview, name: 'preview', contentType: preview.type }, { chat_id: null, as }, { signal })
-  await call(endpoint, 'file-preview', { staging_key, sha256 }, signal)
+/** This process's image decoder: an image's preview (560 px wide at most), or null for a format it cannot decode. */
+export type ImagePreviewDrawer = { draw(original: Blob, contentType: string): Promise<Blob | null>; warn(error: unknown): void }
+let previews: ImagePreviewDrawer | null = null
+/**
+ * Every image this process uploads or declares offers a preview drawn here, whichever entry sent it (composer, agent,
+ * App). A process that registers none uploads images without one, and readers show the original.
+ */
+export function drawImagePreviews(drawer: ImagePreviewDrawer): void { previews = drawer }
+
+/**
+ * An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`), so
+ * any version of those bytes shows it. The upload never waits for it; a failure is warned, never thrown.
+ */
+export function offerImagePreviewOf(endpoint: AttachmentsEndpoint, original: Uint8Array | Blob, contentType: string, sha256: string, as: string): void {
+  if (!previews || !contentType.startsWith('image/')) return
+  const { draw, warn } = previews
+  void draw(original instanceof Blob ? original : new Blob([original as Uint8Array<ArrayBuffer>], { type: contentType }), contentType).then(async preview => {
+    if (!preview) return
+    const staging_key = await storeBytes(endpoint, { bytes: preview, name: 'preview', contentType: preview.type }, { chat_id: null, as })
+    await call(endpoint, 'file-preview', { staging_key, sha256 })
+  }).catch(warn)
 }
 
 /** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
@@ -225,7 +253,7 @@ async function sendAttachmentRequest(endpoint: AttachmentsEndpoint, url: string,
   size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number }> {
   const upload = endpoint.upload
   if (!upload) {
-    const response = await (endpoint.fetch ?? fetch)(url, init)
+    const response = await (endpoint.fetch ?? egress.fetch)(url, init)
     await response.body?.cancel()
     return response
   }
@@ -306,6 +334,7 @@ export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { b
   const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
   const [sha256, plan] = await Promise.all([attachmentSha256(file.bytes), readManagedUploadPlan(endpoint, { size, contentType: file.contentType }, scope, upload, signal)])
   requireUploadSize(size, plan.max_bytes)
+  offerImagePreviewOf(endpoint, file.bytes, file.contentType, sha256, scope.as)
   return { staging_key: plan.staging_key, sha256, size_bytes: size, plan }
 }
 

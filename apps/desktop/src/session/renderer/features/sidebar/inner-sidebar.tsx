@@ -35,7 +35,7 @@ import { accountProjectsStore } from '@renderer/features/projects/stores/account
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
-import { useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
+import { useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
@@ -56,7 +56,7 @@ import {
   type InnerSidebarRoomAnchor,
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
-import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded } from './inner-sidebar-fold';
+import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
 import { chatScope, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
@@ -170,6 +170,8 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const sampleOwnerId = next === null && sample.shown && sampleProjectInView() ? sample.owner?.id : undefined;
   const attachedTo = next?.chatId ?? (sampleOwnerId ? 'sample' : null);
   // 收起着:这一列照旧挂着(收起是它的格子合到 0,@@@panel-track),挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮),正文左上角浮出展开钮。
+  const crowded = useInnerSidebarCrowded();
+  useLayoutEffect(() => setInnerSidebarCrowded(crowded), [crowded]);
   const folded = innerSidebarFolded.get();
   const shownFor = folded ? null : attachedTo;
   const foldedAway = folded && attachedTo !== null;

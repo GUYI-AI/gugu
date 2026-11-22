@@ -25,6 +25,8 @@ export const FRAME = {
   reply: 0x41, // 'A'
   link: 0x4c, // 'L'
   message: 0x4d, // 'M'
+  /** A stream's raw bytes on a device link (`file.stream`): `[id length 1 byte][id utf8][offset 8 bytes BE][bytes]`. */
+  data: 0x44, // 'D'
 } as const;
 
 export type FrameType = (typeof FRAME)[keyof typeof FRAME];
@@ -46,6 +48,27 @@ export function encodeFrame(type: FrameType, payload: Buffer | string = Buffer.a
 
 export function encodeJsonFrame(type: FrameType, value: unknown): Buffer {
   return encodeFrame(type, JSON.stringify(value));
+}
+
+/** One piece of a stream, no base64: the bytes go on the line as they are. */
+export function encodeDataFrame(stream: string, offset: number, bytes: Uint8Array): Buffer {
+  const id = Buffer.from(stream, 'utf8');
+  if (id.length === 0 || id.length > 255) throw new Error('stream id must be 1..255 bytes');
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('stream offset must be a non-negative integer');
+  const head = Buffer.alloc(1 + id.length + 8);
+  head.writeUInt8(id.length, 0);
+  id.copy(head, 1);
+  head.writeBigUInt64BE(BigInt(offset), 1 + id.length);
+  return encodeFrame(FRAME.data, Buffer.concat([head, bytes]));
+}
+
+export function parseDataFrame(payload: Buffer): { stream: string; offset: number; bytes: Buffer } | null {
+  if (payload.length < 1) return null;
+  const idLength = payload.readUInt8(0);
+  if (idLength === 0 || payload.length < 1 + idLength + 8) return null;
+  const offset = payload.readBigUInt64BE(1 + idLength);
+  if (offset > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return { stream: payload.subarray(1, 1 + idLength).toString('utf8'), offset: Number(offset), bytes: payload.subarray(1 + idLength + 8) };
 }
 
 /** 流式拆帧:TCP/unix 流不保证一次 data 正好一帧,半帧留着等下一块。 */

@@ -330,7 +330,7 @@ export default defineConfig({
           name: 'session-main-db',
           environment: 'node',
           // @@@file-flush — see vitest-file-flush.ts: ~8.5k physical flushes per run, the mac CI's main stall.
-          setupFiles: [resolve(__dirname, 'apps/desktop/session-tooling/vitest-file-flush.ts')],
+          setupFiles: [resolve(__dirname, 'apps/desktop/session-tooling/vitest-file-flush.ts'), resolve(__dirname, 'apps/desktop/session-tooling/vitest-egress-setup.ts')],
           include: [
             'apps/desktop/electron/session/main/core/**/*.db.test.ts',
             'apps/desktop/electron/session/main/db/*.db.test.ts',

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { SessionpageScheduleDigest } from '@gugu/session-core/session-record/contract'
-import { AlertTriangle, CalendarClock } from '@/lib/icons'
+import { AlertTriangle, Clock } from '@/lib/icons'
 import { getLocaleSnapshot } from '@/i18n/runtime'
 import { differenceInCalendarDays, formatCalendarDate, formatClock } from '@/i18n/format'
 
@@ -22,7 +22,7 @@ export function ScheduleMetaPart({ schedule, now = Date.now() }: { schedule: Ses
       aria-label={label}
       data-testid="agent-watch-session-schedule"
     >
-      {schedule.attention ? <AlertTriangle aria-hidden /> : <CalendarClock aria-hidden />}
+      {schedule.attention ? <AlertTriangle aria-hidden /> : <Clock aria-hidden />}
       {schedule.attention
         ? t(schedule.attention.kind === 'missed' ? 'agentWatch.sessions.scheduleMissed' : 'agentWatch.sessions.scheduleFailed')
         : when}

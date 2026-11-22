@@ -3,6 +3,8 @@
 // 绝不把「加载中/加载失败」伪装成「没有对象」。桌面三段侧栏与移动壳共用同一套判定。
 import type React from 'react'
 import { Button } from '../ui/Button'
+import { Illustration } from '../ui/Illustration'
+import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { useContactsStore, type ContactsLoadStatus } from '../../store/contactsContext'
 import { useChatStore } from '../../store/chatContext'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
@@ -48,9 +50,18 @@ export interface ContactsSectionCta {
   onAction: () => void
   testId?: string
   actionTestId?: string
+  /** A whole page with nothing in it (not a section in a column): drawing + title + one sentence + the action. */
+  art?: React.ReactNode
+  hint?: string
 }
 
-export function ContactsSectionEmpty({ caption, actionLabel, onAction, testId, actionTestId, align = 'start' }: ContactsSectionCta & { align?: 'start' | 'center' }) {
+export function ContactsSectionEmpty({ caption, actionLabel, onAction, testId, actionTestId, art, hint, align = 'start' }: ContactsSectionCta & { align?: 'start' | 'center' }) {
+  if (art) return (
+    <div data-testid={testId} className="px-4 pb-8 pt-16">
+      <PaneEmptyState art={art} caption={caption} hint={hint}
+        action={<Button variant="secondary" size="sm" data-testid={actionTestId} onClick={onAction}>{actionLabel}</Button>} />
+    </div>
+  )
   return (
     <StateWrap align={align} row>
       <span data-testid={testId} style={captionStyle}>{caption}</span>
@@ -127,10 +138,12 @@ export function ContactsPersonSectionState({ isEmpty, onAddContact, align = 'sta
 // Agent 分区。与个人分区同源(agentContacts 是 contacts 里 type==='agent' 的子集)→ 复用 contactsStatus。
 // 补这个分区的理由:改之前它空着时**什么都不渲染** —— 另外两个分区都有「还没有 X + 下一步」,
 // 唯独 Agent 留一片白。用户看不出是「还没建」还是「没加载出来」,而 Agent 恰恰是这个产品的主角。
-export function ContactsAgentSectionState({ isEmpty, onCreateAgent, align = 'start' }: {
+export function ContactsAgentSectionState({ isEmpty, onCreateAgent, align = 'start', page = false }: {
   isEmpty: boolean
   onCreateAgent?: () => void
   align?: 'start' | 'center'
+  /** The device page itself is empty: draw it as a page, not as one line in a column. */
+  page?: boolean
 }) {
   const { t } = useTranslation('contacts')
   const { contactsStatus, refreshContacts } = useContactsStore()
@@ -141,7 +154,8 @@ export function ContactsAgentSectionState({ isEmpty, onCreateAgent, align = 'sta
       onRetry={() => { void refreshContacts() }}
       align={align}
       emptyLabel={t('panel.noAgents')}
-      cta={onCreateAgent ? { caption: t('panel.noAgentsYet'), actionLabel: t('panel.createAgent'), onAction: onCreateAgent, testId: AUTOMATION_TEST_IDS.contactsAgentEmpty, actionTestId: AUTOMATION_TEST_IDS.contactsAgentEmptyAction } : null}
+      cta={onCreateAgent ? { caption: t(page ? 'panel.noAgentsPage' : 'panel.noAgentsYet'), actionLabel: t('panel.createAgent'), onAction: onCreateAgent, testId: AUTOMATION_TEST_IDS.contactsAgentEmpty, actionTestId: AUTOMATION_TEST_IDS.contactsAgentEmptyAction,
+        ...(page ? { art: <Illustration name="no-agents" className="w-[128px]" />, hint: t('panel.noAgentsPageHint') } : {}) } : null}
     />
   )
 }

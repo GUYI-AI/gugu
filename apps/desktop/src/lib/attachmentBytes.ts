@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
 import { replica } from './replica'
@@ -18,7 +18,7 @@ import { createImageRead } from './imageRead'
 const log = rendererLogger('attachment-bytes')
 
 /** `showFirst`: the bytes before the read acknowledgement, for a reader that can take them down. `progress`: how far they have come. */
-export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: (done: number, total: number) => void } = {}) {
+export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: FileProgress } = {}) {
   const ref = attachmentFileRef(source)
   return ref ? resolveFile(ref, fileReader(), { signal: fileReadSignal(), ...options }) : { status: 'gone' as const, sha256: null }
 }
@@ -36,9 +36,7 @@ export async function attachmentPreview(source: AttachmentSource, metadata?: Fil
 async function sessionFileBytes(source: Extract<AttachmentSource, { kind: 'session-file' }>): Promise<AttachmentBytes> {
   const read = sessionFileReader(source.sessionId)
   if (!read) throw new Error('This file is kept in its task on another view; open it from that task')
-  const dataUrl = await read(source.path)
-  if (!dataUrl) throw new Error('Could not read the file from its session host')
-  const blob = await (await fetch(dataUrl)).blob()
+  const blob = await read(source.path)
   return { status: 'ready', blob, link: sessionFileRevision(source, blob.type, blob.size) }
 }
 function sessionFileRevision(source: Extract<AttachmentSource, { kind: 'session-file' }>, contentType: string, size: number): FileRevision {
@@ -55,23 +53,25 @@ export function sourceKeyOf(source: AttachmentSource): string {
 
 /** `acknowledged`: only for 'shown' — the bytes came before the server acknowledged the read; rejecting means take them down. */
 /** `pending`: its message declared it and its sender's upload is still on its way; `unsent`: that upload did not complete. */
-export type AttachmentBytes = { status: 'ready'; blob: Blob; link: FileRevision; acknowledged?: Promise<void> } | { status: 'gone' | 'expired' | 'missing' | 'pending' | 'unsent' }
+/** `expired` with `thumb`: a thumbnail read of an image whose original expired, its sender's preview. */
+export type AttachmentBytes = { status: 'ready'; blob: Blob; link: FileRevision; acknowledged?: Promise<void> } | { status: 'gone' | 'missing' | 'pending' | 'unsent' } | { status: 'expired'; thumb?: Blob }
 type ReadBytes = Exclude<AttachmentBytes, { status: 'unsent' }> | { status: 'failed' }
 
 /** Thumbnails only display; original blobs are created exclusively from a fully verified file handle. */
 /** `progress`: how far the original's bytes have come, while they are read (the file preview's bar). */
-export async function attachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown' = 'full', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<AttachmentBytes> {
+export async function attachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown' = 'full', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: FileProgress): Promise<AttachmentBytes> {
   try { const bytes = await readAttachmentBytes(source, variant, onLink, metadata, progress); return bytes.status === 'failed' ? { status: 'unsent' } : bytes }
   catch (error) { if (error instanceof MissingFileObjectError) return { status: 'missing' }; throw error }
 }
 
-async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<ReadBytes> {
+async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: FileProgress): Promise<ReadBytes> {
   if (source.kind === 'session-file') return sessionFileBytes(source)
   if (variant === 'thumb') {
     // A full copy already on this device (sent from here, or opened before) is the thumbnail: no signing, no download.
     const local = metadata?.status === 'ready' ? await localAttachmentCopy(metadata.revision.sha256, metadata.revision.content_type) : null
     if (local && metadata?.status === 'ready') return { status: 'ready', blob: local, link: metadata.revision }
     const preview = await attachmentPreview(source, metadata)
+    if (preview.status === 'expired') return preview.content ? { status: 'expired', thumb: await preview.content() } : { status: 'expired' }
     if (preview.status !== 'ready') return preview
     try {
       onLink?.(preview.revision)
@@ -111,7 +111,8 @@ export type AttachmentView =
   /** arrived: the bytes came while the bubble was waiting for its sender's upload (it fades them in). */
   | { status: 'ready'; objectUrl: string; link?: FileRevision; arrived?: true }
   | { status: 'gone' }
-  | { status: 'expired' }
+  /** objectUrl: its preview, which outlived the original. */
+  | { status: 'expired'; objectUrl?: string }
   | { status: 'missing' }
   | { status: 'failed'; holder: OfflineHolder | null }
   /** Its sender's upload is still on its way (the bubble keeps looking); unsent: it did not complete. */
@@ -199,6 +200,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
         awaited.current = true
         return show({ status: 'pending' })
       }
+      if (bytes.status === 'expired' && bytes.thumb) { const objectUrl = URL.createObjectURL(bytes.thumb); return show({ status: 'expired', objectUrl }, objectUrl) }
       if (bytes.status !== 'ready') return show({ status: bytes.status })
       const objectUrl = URL.createObjectURL(bytes.blob)
       // Pixels already on screen are swapped only once the new ones are decoded: the <img> never paints empty between them.
@@ -206,7 +208,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
       if (!alive) return URL.revokeObjectURL(objectUrl)
       show({ status: 'ready', objectUrl, link: bytes.link, ...(awaited.current ? { arrived: true } : {}) }, objectUrl)
     }
-    if (variant === 'thumb' && metadata && metadata.status !== 'ready') {
+    if (variant === 'thumb' && metadata && metadata.status !== 'ready' && metadata.status !== 'expired') {
       if (metadata.status === 'pending') void showBytes({ status: 'pending' }, false)
       else show({ status: metadata.status === 'failed' ? 'unsent' : metadata.status })
       return () => { alive = false }
