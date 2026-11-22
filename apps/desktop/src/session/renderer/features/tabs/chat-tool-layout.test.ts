@@ -33,7 +33,7 @@ function makeLayout(owner?: string) {
 afterEach(() => layouts.splice(0).forEach((layout) => layout.dispose()));
 
 describe('chat and tool layout', () => {
-  it('keeps the same conversation as a tab before the floating control and switches without restoring a split', () => {
+  it('keeps the same conversation as a tab before the compact header button and switches without restoring a split', () => {
     const layout = makeLayout('owner');
     const owner = layout.open('chat', { id: 'owner' }, newTab)!;
     const tool = layout.open('tool', { id: 'one' }, newTab)!;
