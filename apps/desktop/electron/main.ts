@@ -38,7 +38,7 @@ import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/
 import { remoteFileStreams } from './projectFileSsh'
 import { nativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
-import { localCopy } from '@gugu/core/local/files/fileSnapshots'
+import { localCopy, storeFileBytes } from '@gugu/core/local/files/fileSnapshots'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
@@ -97,7 +97,7 @@ import { registerErrorSummaryReporting } from './error-summary-reporting-host'
 import { registerErrorSummaryConsent } from './error-summary-consent-host'
 import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, openAsBlob, readFileSync, renameSync, writeFileSync } from 'fs'
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -2540,7 +2540,7 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   fetch: egress.fetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
-  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
+  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient, home: resolveGuguHome(process.env),
 })
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
@@ -2579,7 +2579,23 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
     return { url, release: () => releasePreview(previewId) }
   },
   cloud: {
-    read: (revision, context) => revision.source === 'managed-object' ? desktopFiles.providers.managed(revision, context) : desktopFiles.providers.temporary(revision, context),
+    // What this desktop reads over the network it keeps in its file store, so the next open or download reads it here: a
+    // managed object goes straight into the store; a relay copy, which may be shown before its read is acknowledged, once
+    // it is. A historical object without a sha is only read.
+    async read(revision, context) {
+      if (revision.source === 'managed-object') {
+        const stored = await desktopFiles.keep(revision, context)
+        if (!stored) return desktopFiles.providers.managed(revision, context)
+        const blob = await openAsBlob(stored)
+        return { size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} }
+      }
+      const file = await desktopFiles.providers.temporary(revision, context)
+      // Keeping it only saves a later read: failing to never takes down what was read.
+      const kept = () => storeFileBytes(resolveGuguHome(process.env), revision.sha256!, revision.file_name, revision.content_type, file)
+        .catch((error: unknown) => createLogger('file-store').warn({ error }, 'relay copy not kept'))
+      if (!file.acknowledged) { await kept(); return { ...file, here: true as const } }
+      return { ...file, here: true as const, acknowledged: file.acknowledged.then(kept) }
+    },
     // An image without a preview of its own is shown from the file, which the renderer reads like any file.
     async preview(revision, context) {
       const shown = await desktopFiles.providers.preview!(revision, context, async () => { throw new Error('File preview is the file itself') })
@@ -2587,6 +2603,13 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
     },
     expiredPreview: async (preview, context) => new Uint8Array(await (await desktopFiles.providers.expiredPreview!(preview, context)).arrayBuffer()),
   },
+  // The save sheet a download in the window always had: the file's name, in the Downloads folder.
+  download: (scope, context, name) => desktopFiles.download(context.ref, context.actor, name, async (fileName) => {
+    const owner = webContents.fromId(scope), window = owner ? BrowserWindow.fromWebContents(owner) : null
+    const options = { defaultPath: join(app.getPath('downloads'), fileName) }
+    const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options)
+    return picked.canceled || !picked.filePath ? null : picked.filePath
+  }, context.signal),
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same

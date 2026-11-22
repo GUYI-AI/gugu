@@ -35,6 +35,8 @@ export function createNativeFileHost(deps: {
     preview(revision: FileRevision, context: FileContext): Promise<{ url: string; expiresAt: number } | Uint8Array>
     expiredPreview(preview: FilePreview, context: FileContext): Promise<Uint8Array>
   }
+  /** A file saved where the person picks, from this machine's copy (`desktopFileAccess.download`); the scope's window asks. */
+  download?(scope: number, context: FileContext, name: string): Promise<{ saved: boolean } | { status: string }>
 }) {
   type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; release?: () => void; url?: string; context?: string; name?: string; size?: number; sha?: string;
     sink?: Awaited<ReturnType<typeof createFileSink>>; hash?: ReturnType<typeof createHash>; written?: number; path?: string; busy?: boolean }
@@ -80,7 +82,7 @@ export function createNativeFileHost(deps: {
     },
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
     /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
-    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string; read?: string; preview?: FilePreview },
+    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string; read?: string; preview?: FilePreview; name?: string },
       report?: (progress: { id: string; done: number; total: number; stalled?: true }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
@@ -106,10 +108,16 @@ export function createNativeFileHost(deps: {
           if (request.op === 'cloud-preview') { const shown = await cloud.preview(revision, reading); await check(scope, owner, epoch); return shown instanceof Uint8Array ? { bytes: shown } : shown }
           const file = await cloud.read(revision, reading)
           // The verified snapshot, at its address; a historical object without a sha is read over this channel instead.
-          if (revision.sha256) return { ...await served(revision.sha256, revision.content_type, file), ...(file.acknowledged ? { ack: true } : {}) }
+          const flags = { ...(file.acknowledged ? { ack: true } : {}), ...(file.here ? { here: true } : {}) }
+          if (revision.sha256) return { ...await served(revision.sha256, revision.content_type, file), ...flags }
           try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
-          const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file }); return { id, size: file.size, ...(file.acknowledged ? { ack: true } : {}) }
+          const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file }); return { id, size: file.size, ...flags }
         } catch (error) { return { failed: fileReadFailure(error) } } finally { running.delete(name) }
+      }
+      if (request.op === 'download') {
+        if (!deps.download || typeof request.name !== 'string' || !request.name) throw new Error('File download is unavailable')
+        try { const done = await deps.download(scope, context, request.name); await check(scope, owner, epoch); return done }
+        catch (error) { return { failed: fileReadFailure(error) } }
       }
       if (request.op === 'cancel') {
         const read = typeof request.read === 'string' ? running.get(request.read) : undefined

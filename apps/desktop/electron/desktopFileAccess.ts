@@ -1,12 +1,14 @@
 import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
-import { mkdir } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { chmod, copyFile, mkdir, rename, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
 import { attachmentRequest, configuredEndpoint, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
-import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileChunkCache, createFileSink, createFileSaver, fileStoreDirectory, storedCopyPath, writeFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import { DEVICE_STORE, createFileResolver, type FileActor, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { PROJECT_FILE_READ, createProjectFileReader, createProjectFileStreamer, heldFileBlob, localProjectFileProvider } from './projectFileHost'
@@ -46,6 +48,8 @@ export function createDesktopFileAccess(deps: {
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
+  /** This device's Gugu home: its file store (`fileStoreDirectory`) keeps what the desktop read over the network. */
+  home: string
   /** The identity schema, as the signed-in account: its own settings and projects. */
   identityDb(accessToken: string): ReturnType<typeof makeIdentityClient>
 }) {
@@ -82,7 +86,37 @@ export function createDesktopFileAccess(deps: {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null
     },
   }
-  const resolve = createFileResolver({ ...providers, saveTo: createFileSaver(providers) })
+  const saveTo = createFileSaver(providers)
+  const resolve = createFileResolver({ ...providers, saveTo })
+  /**
+   * A cloud file this desktop reads, as its file store's verified copy: read over the network only when the store does
+   * not hold it yet, then kept there for every later open, download and agent read (`saveToFileStore` keeps the same).
+   * A historical object without a sha has no place in the store: `null`.
+   */
+  const keep = async (revision: FileRevision, context: FileContext): Promise<string | null> => {
+    if (!revision.sha256) return null
+    return await storedCopyPath(deps.home, revision.sha256) ?? (await saveTo(revision, context, fileStoreDirectory(deps.home), revision.file_name, true)).file_path
+  }
+  /**
+   * A file saved where the person picks (`pick`: the save dialog, given the file's name; `null` saves nothing). Its bytes
+   * come from this machine: its own file where it is kept, else the store's copy, read into the store first when missing.
+   */
+  const download = async (ref: FileRef, actor: FileActor, name: string, pick: (name: string) => Promise<string | null>, signal?: AbortSignal) => {
+    const file = await resolve(ref, actor, signal ? { signal } : {})
+    if (file.status !== 'ready') return { status: file.status }
+    try {
+      const context: FileContext = { ref, actor, ...(signal ? { signal } : {}) }
+      const stored = await providers.local(context) ? null : await keep(file.revision, context)
+      const target = await pick(name)
+      if (!target) return { saved: false }
+      if (!stored) { await writeFileHandle(file, target); return { saved: true } }
+      // The store's copy is read-only and already verified: cloned where the filesystem can, a file the person owns.
+      const partial = `${target}.${randomUUID()}.part`
+      try { await copyFile(stored, partial, constants.COPYFILE_FICLONE); await chmod(partial, 0o644); await rename(partial, target) }
+      catch (error) { await rm(partial, { force: true }); throw error }
+      return { saved: true }
+    } finally { await file.dispose() }
+  }
   const drain = createProjectTransferHost({ identity, endpoint, read: async request => read(request, (await identity()).accountId), tempRoot: deps.tempRoot, env: deps.env, later })
   const resolveAccount: Parameters<typeof setAccountFileResolver>[0] = async (ref, actor, options) => {
     const { accountId, deviceId } = await identity()
@@ -115,7 +149,7 @@ export function createDesktopFileAccess(deps: {
     const projectRoot = revision ? await root(revision.host_project_id!) : null
     return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
   }
-  return { providers, resolve, resolveAccount, read, stream, drain, publish, held,
+  return { providers, resolve, resolveAccount, read, stream, drain, publish, held, keep, download,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

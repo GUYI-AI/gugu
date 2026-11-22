@@ -15,7 +15,7 @@ beforeEach(() => { resolve.mockClear() })
 const access = () => createDesktopFileAccess({
   auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }),
   root: async () => null, project: async () => undefined, links: () => null, tempRoot: '/unused',
-  deviceStore: '/unused', fetch: vi.fn() as never, rpc: vi.fn(), identityDb: vi.fn() as never,
+  deviceStore: '/unused', home: '/unused', fetch: vi.fn() as never, rpc: vi.fn(), identityDb: vi.fn() as never,
 })
 
 describe('R3 program file cancellation at the account resolver', () => {

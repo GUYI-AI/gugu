@@ -102,8 +102,9 @@ function mainCloudProviders(): CloudProviders {
     } finally { context.signal?.removeEventListener('abort', cancel) }
   }
   const read = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
-    const file = await cloudRead('cloud', context, { revision }) as { id: string; size: number; url?: string; ack?: true }
-    const bytes = file.url ? servedBytes(context, file as ServedFile) : nativeBytes(context, file)
+    const file = await cloudRead('cloud', context, { revision }) as { id: string; size: number; url?: string; ack?: true; here?: true }
+    // `here`: main keeps it in this machine's file store, so nothing here keeps another copy of it.
+    const bytes = { ...(file.url ? servedBytes(context, file as ServedFile) : nativeBytes(context, file)), ...(file.here ? { here: true as const } : {}) }
     if (!file.ack) return bytes
     const acknowledged = (native('ack', context, { id: file.id }) as Promise<{ failed?: FileReadFailure } | null>).then(answer => { if (answer?.failed) throw fileReadError(answer.failed) })
     acknowledged.catch(() => undefined)
@@ -164,6 +165,17 @@ export async function nativeLocalBytes(sha256: string, contentType = ''): Promis
     async blob() { const blob = await (await fetchServed(file.url, { signal: context.signal })).blob(); return contentType ? blob.slice(0, blob.size, contentType) : blob },
     async release() { await native('dispose', context, { id: file.id }) },
   }
+}
+
+/**
+ * On the desktop a file is saved by main (`files:read` op `download`): the save sheet asks where, and the bytes come from
+ * this machine's copy, read once into its file store when missing. Null where the page saves (web, phone).
+ */
+export async function nativeDownload(ref: FileContext['ref'], fileName: string): Promise<{ saved: boolean } | { status: string } | null> {
+  if (!globalThis.window?.electronAPI) return null
+  const answer = await native('download', { ref, actor: fileReader() }, { name: fileName }) as { saved: boolean } | { status: string } | { failed: FileReadFailure }
+  if ('failed' in answer) throw fileReadError(answer.failed)
+  return answer
 }
 
 /** Where a chat file's bytes are kept, from the same metadata batch the resolver reads: no bytes, no transfer. */

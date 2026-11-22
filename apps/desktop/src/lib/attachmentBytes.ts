@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
+import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes, nativeDownload } from './fileAccess'
 import { replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
@@ -329,6 +329,10 @@ export function workingCopyImageItem(name: string, read: () => Promise<Blob>): I
 
 /** 下载一个附件(同一份缓存);条目删了就抛。 */
 export async function downloadAttachment(source: AttachmentSource, fileName: string): Promise<void> {
+  const ref = source.kind === 'session-file' ? null : attachmentFileRef(source)
+  const saved = ref ? await nativeDownload(ref, fileName).catch((error: unknown) => { if (error instanceof MissingFileObjectError) throw new Error('missing'); throw error }) : null
+  if (saved && 'status' in saved) throw new Error(saved.status === 'failed' ? 'unsent' : saved.status)
+  if (saved) return
   const bytes = await attachmentBytes(source)
   if (bytes.status !== 'ready') throw new Error(bytes.status)
   const { downloadBlob } = await import('./download')

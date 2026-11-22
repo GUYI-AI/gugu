@@ -8,7 +8,7 @@ import type { FileChunkCache } from '../../shared/fileCache'
 import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
 import { cloudFileProviders } from '../../cloud/fileProviders'
-import { createFileResolver, openFileBytes, type FileProviders, type FileContext, type FileHandle, type SavedFile } from '../../shared/fileResolver'
+import { createFileResolver, openFileBytes, type FileBytes, type FileProviders, type FileContext, type FileHandle, type SavedFile } from '../../shared/fileResolver'
 import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
@@ -281,19 +281,24 @@ export async function writeFileHandle(file: FileHandle, path: string) {
   finally { await file.dispose() }
 }
 
-/** A verified original already held by this device; partial or changed files cannot resume an upload. */
-export async function storedCopy(guguHome: string, sha256: string): Promise<Blob | null> {
+/** Where this device's store holds a verified original of `sha256`; partial or changed files cannot resume an upload. */
+export async function storedCopyPath(guguHome: string, sha256: string): Promise<string | null> {
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
   const directory = await requireAgentFileAccess(join(fileStoreDirectory(guguHome), sha256))
   for (const name of await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })) {
     if (name.endsWith('.part')) continue
     const path = await requireAgentFileAccess(join(directory, name))
     if (!(await stat(path)).isFile()) continue
-    const blob = await openAsBlob(path), hash = createHash('sha256')
-    for await (const chunk of blob.stream()) hash.update(chunk)
-    if (hash.digest('hex') === sha256) return blob
+    const hash = createHash('sha256')
+    for await (const chunk of createReadStream(path)) hash.update(chunk)
+    if (hash.digest('hex') === sha256) return path
   }
   return null
+}
+/** A verified original already held by this device (`storedCopyPath`). */
+export async function storedCopy(guguHome: string, sha256: string): Promise<Blob | null> {
+  const path = await storedCopyPath(guguHome, sha256)
+  return path ? openAsBlob(path) : null
 }
 
 /**
@@ -331,9 +336,13 @@ export async function localCopy(guguHome: string, sha256: string, strict = false
 
 /** Keep outgoing bytes through the same verified, atomic, read-only store used for downloaded originals. */
 export async function storeBytes(guguHome: string, sha256: string, name: string, bytes: Blob): Promise<void> {
-  if (await storedCopy(guguHome, sha256)) return
-  const revision = { source: 'managed-object' as const, file_name: name, content_type: bytes.type || 'application/octet-stream', size_bytes: bytes.size, sha256 }
-  const source = async () => ({ size: bytes.size, read: async (offset: number, length: number) => new Uint8Array(await bytes.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+  await storeFileBytes(guguHome, sha256, name, bytes.type, { size: bytes.size, read: async (offset, length) => new Uint8Array(await bytes.slice(offset, offset + length).arrayBuffer()) })
+}
+/** The same, from bytes already verified elsewhere (a read's snapshot): the store checks them against the sha again. */
+export async function storeFileBytes(guguHome: string, sha256: string, name: string, contentType: string, bytes: Pick<FileBytes, 'size' | 'read'>): Promise<void> {
+  if (await storedCopyPath(guguHome, sha256)) return
+  const revision = { source: 'managed-object' as const, file_name: name, content_type: contentType || 'application/octet-stream', size_bytes: bytes.size, sha256 }
+  const source = async () => ({ size: bytes.size, read: bytes.read, dispose: async () => {} })
   const save = createFileSaver({ local: async () => null, metadata: async () => ({ status: 'ready', revision }), managed: source, ssh: async () => null, temporary: source })
   // The saver consumes these local bytes; its ref is a placeholder, never a cloud read or authorization.
   await save(revision, { ref: { message_id: sha256 }, actor: { accountId: 'local', actorId: 'local' } }, fileStoreDirectory(guguHome), name, true)

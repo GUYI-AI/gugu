@@ -442,7 +442,7 @@ describe('the database\'s version record decides what this device holds', () => 
   it('finds a held version by its sha, read in place, and not once the file no longer holds it', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: never as typeof fetch, rpc: never as never, env, deviceStore: join(home, 'project-files'), identityDb: never as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: never as typeof fetch, rpc: never as never, env, home, deviceStore: join(home, 'project-files'), identityDb: never as never })
     expect(digest(new Uint8Array(await (await access.held(revision.sha256!))!.arrayBuffer()))).toBe(revision.sha256)
     expect(await access.held('f'.repeat(64))).toBeNull()
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
@@ -456,7 +456,7 @@ describe('the database\'s version record decides what this device holds', () => 
       expect(JSON.parse(String(init?.body))).toEqual({ ref: { item_id: 'item', version: 2 }, as: 'owner' })
       return Response.json({ ...renamed(), status: 'ready' })
     })
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: network as never, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: network as never, env, home, deviceStore: join(home, 'project-files'), identityDb: network as never })
     const file = await access.resolveAccount({ id: 'item' }, null, { version: 2, localOnly: true })
     if (file?.status !== 'ready') throw Error('ready expected')
     expect(file.revision.file_name).toBe('renamed.bin')
@@ -495,7 +495,7 @@ describe('local read fence and verified snapshot', () => {
     })
     const network = vi.fn(async () => { throw new Error('Unexpected network request') })
     const links = vi.fn(() => null)
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: accountId, accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links, tempRoot, fetch: current as typeof fetch, rpc: network, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: accountId, accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links, tempRoot, fetch: current as typeof fetch, rpc: network, env, home, deviceStore: join(home, 'project-files'), identityDb: network as never })
     expect(access.handlers('realtime')).toEqual({})
     expect(Object.keys(access.handlers('ssh'))).toEqual(['file.read'])
     for (const named of [{ id: 'item' }, { chat: 'group', name: 'file.bin' }]) {

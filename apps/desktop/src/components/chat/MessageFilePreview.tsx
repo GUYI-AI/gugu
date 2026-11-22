@@ -10,7 +10,7 @@ import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attac
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
-import { attachmentBytes, attachmentPreview, localAttachmentUrl, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
+import { attachmentBytes, attachmentPreview, downloadAttachment, localAttachmentUrl, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { FileReadRevokedError, isFileIntegrityError, type FileProgress } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
@@ -248,7 +248,9 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const download = () => {
     if (missing) return
     if (file.source.kind === 'hosted' && file.source.download) { file.source.download(); return }
-    void previewBytes(file).then(({ blob }) => downloadBlob(blob, savedName)).catch((error) => {
+    // A chat's file is saved the one way a message's Download saves it (main, from this machine's copy, on the desktop);
+    // what is only here (a copy this device is sending, a folder document's text) is saved from the page.
+    void (file.source.kind === 'hosted' || file.document || sentFileCopy(file.source) ? previewBytes(file).then(({ blob }) => downloadBlob(blob, savedName)) : downloadAttachment(file.source, savedName)).catch((error) => {
       if (rememberMissing(error)) return
       fileOpenLog.error({ error }, 'preview file download failed'); toast(t('chatArea.downloadFailed'), 'error', messageForUser(error))
     })
