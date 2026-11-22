@@ -18,6 +18,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { IFileSystem } from '@gugu/session-core/files';
 import { REMOTE_WORKSPACE_MAX_FILE_BYTES } from '@gugu/session-core/session-record/contract';
 import { events } from '@main/lib/events';
+import { claimBeforeRequest } from '@main/core/shared/before-request';
 import { log } from '@main/lib/logger';
 import { previewHolderOfflineChannel, remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
 import { answerBesideDocument, byteRange, chatFolderPreviewCsp, unavailableAnswer, type ChatFolderPreviewCopy, type PreviewAnswer } from '@shared/preview/chat-folder-preview';
@@ -359,8 +360,7 @@ function assetHash(bytes: Uint8Array): string {
 export function setupPreviewProtocol(): void {
   if (protocol.isProtocolHandled(PREVIEW_SCHEME)) return;
   protocol.handle(PREVIEW_SCHEME, (request) => handlePreviewRequest(request, 'pane'));
-  // Electron keeps only the last listener: anything else on the default session that must see requests joins this one.
-  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+  claimBeforeRequest(session.defaultSession, 'preview-protocol (sha addresses)', (details, callback) => {
     callback(bytesRequestRefused(details.url, details.frame?.origin) ? { cancel: true } : {});
   });
 }
