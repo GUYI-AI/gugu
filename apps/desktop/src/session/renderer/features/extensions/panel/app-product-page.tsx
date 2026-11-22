@@ -12,7 +12,6 @@ import {
   Moon,
   Pencil,
   Share2,
-  ShieldCheck,
   Terminal,
   Users,
   Wrench,
@@ -75,9 +74,9 @@ export type ProductPageApi = Pick<typeof rpc.extensions, 'marketListing' | 'mark
 
 /**
  * 一个 App 的市场页(#7059):在「App」那一栏里整页铺开,左上「‹ App」回到清单。只回答「要不要装」,所以页上没有开关;管装着的那一份在
- * App 设置页(app-manage-page.tsx)。版面照 Google Play 的应用页(owner 10-10「这个是我想要的」):头上大字名字、副标题、发布方、一排
- * 要点、大按钮,右边大图标;下面左栏截图轮播 → 关于 → 新功能和版本历史 → 它带来了什么 → 权限(它能看 / 它能做)→ 信息;右栏审核那张
- * 卡、链接、类似 App。名字、副标题、关于、示例句跟界面语言走;它还写了别的语言,「关于」旁边给一个切换。
+ * App 设置页(app-manage-page.tsx)。版面照 Google Play 的应用页(owner 10-10「这个是我想要的」):左边大图标,旁边大字名字、副标题、
+ * 发布方(后面跟「查看源码」和主页、仓库链接),下面一排要点、大按钮;再下面只有一栏:截图轮播 → 关于 → 新功能和版本历史 → 它带来了
+ * 什么 → 权限(它能看 / 它能做)→ 信息。名字、副标题、关于、示例句跟界面语言走;它还写了别的语言,「关于」旁边给一个切换。
  */
 export function AppProductPage({
   subject,
@@ -102,7 +101,6 @@ export function AppProductPage({
   onOpenExternal = confirmOpenExternalLink,
   backgroundSupported = true,
   phoneAgentCapabilities = [],
-  similar = [],
   resource,
 }: {
   subject: ExtensionDetailSubject;
@@ -139,8 +137,6 @@ export function AppProductPage({
   backgroundSupported?: boolean;
   /** Agent capabilities declared by the App, before the phone removes them from its permission list. */
   phoneAgentCapabilities?: readonly ExtensionCapability[];
-  /** 右栏「类似 App」:市场里同一类的别的 App(照 Google Play),点一个 = 换到它的产品页。 */
-  similar?: { id: string; name: string; publisher: string; line: string; iconUrl?: string | null; onOpen: () => void }[];
   resource?: ResourceContext;
 }) {
   const { manifest, cloud, installedVersion } = subject;
@@ -418,62 +414,13 @@ export function AppProductPage({
     </section>
   );
 
-  // ── 右边一栏:审核那张卡(照 Google Play 的「内容分级」卡)、链接、类似 App ──
+  // ── 发布方后面的链接:出包的那份代码、主页、仓库 ──
   const links = [
+    // 市场记下的出包来源(仓 @ 提交 @ 目录,App 市场方案 10-07):打出这份字节的那份代码。早于这条记录的版本没有。
+    cloud.source && { label: translate('extensions.viewSource'), href: marketSourceUrl(cloud.source), title: marketSourceLabel(cloud.source) },
     manifest.homepage && { label: translate('extensions.linkHomepage'), href: manifest.homepage },
     manifest.repository && { label: translate('extensions.linkRepository'), href: manifest.repository },
-  ].filter((entry): entry is { label: string; href: string } => Boolean(entry));
-  const sourceButton =
-    cloud.source ? (
-      // 市场记下的出包来源(仓 @ 提交 @ 目录,App 市场方案 10-07):打出这份字节的那份代码。早于这条记录的版本没有。
-      <button type="button" className="mk-ext" title={marketSourceLabel(cloud.source)} onClick={() => cloud.source && onOpenExternal(marketSourceUrl(cloud.source))}>
-        {translate('extensions.viewSource')}
-        <ExternalLink className="size-3" />
-      </button>
-    ) : null;
-  const side = (
-    <aside className="mk-dside">
-      <div className="mk-card mk-review" data-testid="app-product-review">
-        <ShieldCheck className="size-6" />
-        <div>
-          <b>{translate('extensions.infoReviewed', { version: cloud.version })}</b>
-          <span className="mk-review-k">{sourceButton ?? publisher}</span>
-        </div>
-      </div>
-      {links.length > 0 ? (
-        <section className="mk-dsec is-side">
-          <h3>{translate('extensions.detailLinks')}</h3>
-          <div className="mk-side-links">
-            {links.map((link) => (
-              <button type="button" className="mk-ext" key={link.href} onClick={() => onOpenExternal(link.href)}>
-                {link.label}
-                <ExternalLink className="size-3" />
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {similar.length > 0 ? (
-        <section className="mk-dsec is-side" data-testid="app-product-similar">
-          <h3>{translate('extensions.similarApps')}</h3>
-          <div className="mk-similar">
-            {similar.map((app) => (
-              <button type="button" className="mk-similar-row" key={app.id} onClick={app.onOpen} data-testid={`app-product-similar-${app.id}`}>
-                <span className="mk-icon is-56">
-                  <ExtensionMonogram name={app.name} iconDataUrl={app.iconUrl} />
-                </span>
-                <span className="mk-similar-tx">
-                  <b>{app.name}</b>
-                  <span>{app.publisher}</span>
-                  <i>{app.line}</i>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </aside>
-  );
+  ].filter((entry): entry is { label: string; href: string; title?: string } => Boolean(entry));
 
   // ── 头上一排要点:数在上、名目在下,格子之间一根短竖线(照 Google Play)──
   const size = formatSize(cloud.bundleBytes);
@@ -506,7 +453,7 @@ export function AppProductPage({
 
   return (
     <div className="mk" data-testid="app-product-page" data-extension-id={manifest.id}>
-      {/* 那台机器离线 / server 太旧(#6264):照旧能看(翻截图、看简介、点类似 App),装、卸、收回、装某一版一起灰。 */}
+      {/* 那台机器离线 / server 太旧(#6264):照旧能看(翻截图、看简介),装、卸、收回、装某一版一起灰。 */}
       <AppProductBack label={backLabel ?? translate('extensions.title')} onBack={onBack} testId="app-product-back" />
       <ResourceMenu resource={resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}>
         <header className="mk-dh">
@@ -515,6 +462,12 @@ export function AppProductPage({
             subtitle={text.subtitle}
             publisher={publisher}
             deprecated={Boolean(deprecated)}
+            links={links.map((link) => (
+              <button type="button" className="mk-ext" key={link.href} title={link.title} onClick={() => onOpenExternal(link.href)}>
+                {link.label}
+                <ExternalLink className="size-3" />
+              </button>
+            ))}
             facts={facts}
             factsTestId="app-product-strip"
             icon={<span className="mk-icon is-hero"><ExtensionMonogram name={text.name} iconDataUrl={cloud.iconUrl ?? iconDataUrl} /></span>}
@@ -580,25 +533,22 @@ export function AppProductPage({
       ) : null}
 
       <div className="mk-dbody">
-        <div className="mk-dmain">
-          {screenshots}
-          {about}
-          {news}
-          {addsSection}
-          {permissionsSection}
-          <section className="mk-dsec" data-testid="app-product-info">
-            <h3>{translate('extensions.info')}</h3>
-            <dl className="mk-info-grid">
-              {info.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        </div>
-        {side}
+        {screenshots}
+        {about}
+        {news}
+        {addsSection}
+        {permissionsSection}
+        <section className="mk-dsec" data-testid="app-product-info">
+          <h3>{translate('extensions.info')}</h3>
+          <dl className="mk-info-grid">
+            {info.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       </div>
 
     </div>

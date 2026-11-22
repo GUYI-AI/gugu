@@ -154,12 +154,12 @@ describe('App 的产品页 (#7059)', () => {
     expect((await render({})).text).toContain('node mcp/server.mjs');
   });
 
-  it('市场有来源时显示「查看源码」,仓、提交和目录只在悬停提示里;没有来源记录的旧版本不写', async () => {
+  it('市场有来源时发布方后面跟「查看源码」,仓、提交和目录只在悬停提示里;没有来源记录的旧版本不写', async () => {
     const source = { repo: 'shuxueshuxue/promo-skills', path: '.', commit: '6f46446' + 'a'.repeat(33) };
     const subject = (cloud: unknown) => ({ subject: { manifest: pomodoro, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud } });
     for (const path of ['.', 'app']) {
       const page = await render(subject({ source: { ...source, path } }), async (document) => {
-        const button = document.querySelector('[data-testid="app-product-review"] button')!;
+        const button = document.querySelector('.mk-dh-by button')!;
         expect(button.textContent).toBe('extensions.viewSource');
         expect(button.getAttribute('title')).toBe(`shuxueshuxue/promo-skills @ 6f46446${path === '.' ? '' : ': app'}`);
         expect(button.classList.contains('mk-mono')).toBe(false);

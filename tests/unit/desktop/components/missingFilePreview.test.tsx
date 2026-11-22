@@ -9,7 +9,7 @@ import { createReactHarness, renderWithAppProviders } from '../../../support/tes
 import { queryClient } from '@/lib/replica'
 
 const io = vi.hoisted(() => ({ bytes: vi.fn(), preview: vi.fn(), image: vi.fn(), external: vi.fn(), download: vi.fn() }))
-vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
+vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, localAttachmentUrl: async () => null, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
 vi.mock('@/lib/download', () => ({ downloadBlob: io.download }))
 
 const file: PreviewFile = { kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, source: { kind: 'message', messageId: 'missing-preview' } }
@@ -98,7 +98,7 @@ describe('file preview missing-object actions', () => {
   it.each(['missing', 'network'] as const)('preserves %s during video URL renewal', async failure => {
     const content = vi.fn().mockResolvedValueOnce({ url: 'https://files.invalid/video', expiresAt: Date.now() - 1 })
       .mockRejectedValueOnce(failure === 'missing' ? new MissingFileObjectError() : new Error('network'))
-    io.preview.mockResolvedValue({ status: 'ready', content, dispose: vi.fn(async () => {}) })
+    io.preview.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object' }, content, dispose: vi.fn(async () => {}) })
     await render({ ...file, fileName: 'clip.webm', mimeType: 'video/webm' })
     const video = harness.container.querySelector('video')!
     expect(video).not.toBeNull()

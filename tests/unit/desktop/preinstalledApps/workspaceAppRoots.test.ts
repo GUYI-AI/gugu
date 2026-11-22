@@ -140,7 +140,8 @@ describe('a session\'s tab: one folder, two roots', () => {
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     await until('the menu open', () => menu.isOpen())
     expect(menu.labels()).not.toContain('复制链接')
-    expect(menu.labels()).toContain('复制相对路径')
+    // A working copy's paths are under 复制 › (@@@file-menu).
+    expect(menu.labels('复制')).toContain('复制相对路径')
     await menu.dismiss()
   })
 
@@ -316,8 +317,8 @@ describe('a session\'s tab: one folder, two roots', () => {
     const row = document.querySelector('[data-id="README.md"]') as HTMLElement
     expect(row.draggable).toBe(false)
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    const labels = menu.labels()
-    for (const desktop of ['在新页签打开', '在旁边打开', '在文件管理器中显示', '改名', '删除']) expect(labels).not.toContain(desktop)
+    const labels = [...menu.labels(), ...(menu.labels().includes('更多') ? menu.labels('更多') : []), ...(menu.labels().includes('打开方式') ? menu.labels('打开方式') : [])]
+    for (const desktop of ['打开方式', '新页签', '在旁边', '在文件管理器中显示', '改名', '删除']) expect(labels).not.toContain(desktop)
     switchRoot('chat')
     await until('phone chat files shown again', () => names().includes('plan.md'))
     expect(($('new-doc') as HTMLButtonElement).hidden, '「+」, upload in it').toBe(false)

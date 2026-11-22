@@ -285,12 +285,6 @@ export type Session = {
   /** Native provider control endpoint recorded by a host-owned session-TUI transport. */
   providerSessionEndpoint?: string;
   /**
-   * spec session-runtime-switch:`sessionId` 里那个 id 是引擎自己铸的(而不是咕咕在 spawn 时
-   * 用 `--session-id` 交给它的)。今天唯一的来源是「通用模式换到编程模式」那一次搬迁。
-   * 续跑时据此决定用哪个 id —— 见 `resolveAgentSessionCommandArgs`。
-   */
-  providerMintedSessionId?: boolean;
-  /**
    * spec session-resume:咕咕记着的那句首轮。引擎侧没有这条会话时,它决定了还有没有出路 ——
    * 有它就能照它重来,没有它(存量空壳)就只剩删掉。界面靠它决定摆哪个动作,
    * ❌ 不摆一个点下去才发现不行的按钮。

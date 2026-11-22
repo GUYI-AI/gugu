@@ -1,5 +1,5 @@
 /** An image's preview, drawn where the sender has a canvas (the phone, the web): 560 px wide at most. */
-export async function imagePreview(file: Blob): Promise<Blob> {
+export async function imagePreview(file: Blob): Promise<Blob | null> {
   const bitmap = await createImageBitmap(file)
   try {
     const canvas = document.createElement('canvas'), scale = Math.min(1, 560 / bitmap.width)

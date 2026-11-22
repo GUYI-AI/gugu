@@ -280,11 +280,12 @@ export const plugin = definePlugin(
     hooks: {
       kind: 'config',
       scope: 'workspace',
-      supportedEvents: ['start', 'notification', 'stop', 'error', 'wait', 'wait_resolved'],
+      supportedEvents: ['start', 'notification', 'stop', 'error', 'wait', 'wait_resolved', 'session'],
       // hooks 不报打断(Esc):从这个版本起读 claude 自己的会话在场文件补这一条边(presence.ts)。
       presence: { sinceVersion: CLAUDE_PRESENCE_SINCE },
     },
     // `versionLine`:`--version` 里它自己那一行,实测原样「2.1.212 (Claude Code)」(包装器的 banner 在它前面)。
+    // 认不出这一行就是没读到版本;reclaude 只打它自己的版本,探针改问 `cli --version`(`versionProbeArgs`)。
     hostDependency: { ...miseDependency({
       id: 'claude',
       package: '@anthropic-ai/claude-code',

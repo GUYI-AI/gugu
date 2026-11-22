@@ -62,6 +62,7 @@ import { log } from '@main/lib/logger';
 import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
+import { harnessWorkerHost } from '@main/harness-worker-host';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
 import { withSessionBrowserEnv } from '../../pty/server-browser-env';
 import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
@@ -247,6 +248,7 @@ const acpWorker = lazyWorker(
       name: 'acp',
       contract: acpRuntimeApiContract,
       entry: desktopWorkerPath('acp'),
+      host: harnessWorkerHost,
       scope: acpRuntimeScope,
       env: {
         ...process.env,
@@ -777,7 +779,7 @@ export async function callSessionStart<T extends { success: boolean }>(
 ): Promise<T> {
   try {
     const result = await start();
-    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, platformCredentials: credentialInjected,
+    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, hostCredentials: credentialInjected,
       failure: 'error' in result ? result.error : undefined }, authExpiryWriter);
     if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);

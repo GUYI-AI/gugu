@@ -18,6 +18,7 @@ import type {
 } from '@gugu/session-core/deps/runtime';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
+import { harnessVersionSupported } from '@gugu/session-core/agents/plugins';
 import type {
   AgentIconAsset,
   AgentInstallationStatus,
@@ -122,8 +123,13 @@ async function buildOne(
     installations: hostDep?.installations ?? [],
     used,
     usedId: sourceKey(used),
+    versionSupported: versionSupported(id, usedInst?.version ?? state?.version ?? null),
     ...programs,
   };
+}
+
+function versionSupported(id: string, version: string | null): boolean | null {
+  return harnessVersionSupported(pluginRegistry.get(id)?.capabilities.sessionBundle, version);
 }
 
 /**
@@ -250,12 +256,15 @@ export function toAgentInstallationStatus(
   const usedInst = hostDep ? resolveActiveInstallation(hostDep.installations, used) : undefined;
   // 四态读数与 status 一起出门(#6101):判据只有一份,在 `readHostDependency`。
   const reading = hostDep ? readHostDependency(hostDep) : readingFromStatus(state.status);
+  // The copy in use under the person's selection, like every other field here and `buildOne`; `state.version` is
+  // whichever copy is first on PATH.
+  const version = usedInst?.version ?? state.version;
   return {
     id,
     status: hostDep ? deriveHostDependencyStatus(hostDep) : state.status,
     reading,
     lookup: lookupOf(id, state, reading),
-    version: state.version,
+    version,
     latestVersion: usedInst?.latestVersion ?? state.latestVersion ?? null,
     updateAvailable: usedInst?.updateAvailable ?? state.updateAvailable ?? false,
     command: usedInst?.pathEntry ?? state.path,
@@ -263,6 +272,7 @@ export function toAgentInstallationStatus(
     used,
     usedId: sourceKey(used),
     installOptions,
+    versionSupported: versionSupported(id, version),
   };
 }
 

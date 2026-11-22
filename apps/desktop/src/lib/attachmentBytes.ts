@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
+import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
 import { replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
@@ -18,7 +18,7 @@ import { createImageRead } from './imageRead'
 const log = rendererLogger('attachment-bytes')
 
 /** `showFirst`: the bytes before the read acknowledgement, for a reader that can take them down. `progress`: how far they have come. */
-export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: (done: number, total: number) => void } = {}) {
+export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: FileProgress } = {}) {
   const ref = attachmentFileRef(source)
   return ref ? resolveFile(ref, fileReader(), { signal: fileReadSignal(), ...options }) : { status: 'gone' as const, sha256: null }
 }
@@ -36,9 +36,7 @@ export async function attachmentPreview(source: AttachmentSource, metadata?: Fil
 async function sessionFileBytes(source: Extract<AttachmentSource, { kind: 'session-file' }>): Promise<AttachmentBytes> {
   const read = sessionFileReader(source.sessionId)
   if (!read) throw new Error('This file is kept in its task on another view; open it from that task')
-  const dataUrl = await read(source.path)
-  if (!dataUrl) throw new Error('Could not read the file from its session host')
-  const blob = await (await fetch(dataUrl)).blob()
+  const blob = await read(source.path)
   return { status: 'ready', blob, link: sessionFileRevision(source, blob.type, blob.size) }
 }
 function sessionFileRevision(source: Extract<AttachmentSource, { kind: 'session-file' }>, contentType: string, size: number): FileRevision {
@@ -55,23 +53,25 @@ export function sourceKeyOf(source: AttachmentSource): string {
 
 /** `acknowledged`: only for 'shown' — the bytes came before the server acknowledged the read; rejecting means take them down. */
 /** `pending`: its message declared it and its sender's upload is still on its way; `unsent`: that upload did not complete. */
-export type AttachmentBytes = { status: 'ready'; blob: Blob; link: FileRevision; acknowledged?: Promise<void> } | { status: 'gone' | 'expired' | 'missing' | 'pending' | 'unsent' }
+/** `expired` with `thumb`: a thumbnail read of an image whose original expired, its sender's preview. */
+export type AttachmentBytes = { status: 'ready'; blob: Blob; link: FileRevision; acknowledged?: Promise<void> } | { status: 'gone' | 'missing' | 'pending' | 'unsent' } | { status: 'expired'; thumb?: Blob }
 type ReadBytes = Exclude<AttachmentBytes, { status: 'unsent' }> | { status: 'failed' }
 
 /** Thumbnails only display; original blobs are created exclusively from a fully verified file handle. */
 /** `progress`: how far the original's bytes have come, while they are read (the file preview's bar). */
-export async function attachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown' = 'full', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<AttachmentBytes> {
+export async function attachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown' = 'full', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: FileProgress): Promise<AttachmentBytes> {
   try { const bytes = await readAttachmentBytes(source, variant, onLink, metadata, progress); return bytes.status === 'failed' ? { status: 'unsent' } : bytes }
   catch (error) { if (error instanceof MissingFileObjectError) return { status: 'missing' }; throw error }
 }
 
-async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<ReadBytes> {
+async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: FileProgress): Promise<ReadBytes> {
   if (source.kind === 'session-file') return sessionFileBytes(source)
   if (variant === 'thumb') {
     // A full copy already on this device (sent from here, or opened before) is the thumbnail: no signing, no download.
-    const local = metadata?.status === 'ready' && metadata.revision.content_type.startsWith('image/') ? await cachedAttachmentCopy(metadata.revision.sha256) : null
+    const local = metadata?.status === 'ready' ? await localAttachmentCopy(metadata.revision.sha256, metadata.revision.content_type) : null
     if (local && metadata?.status === 'ready') return { status: 'ready', blob: local, link: metadata.revision }
     const preview = await attachmentPreview(source, metadata)
+    if (preview.status === 'expired') return preview.content ? { status: 'expired', thumb: await preview.content() } : { status: 'expired' }
     if (preview.status !== 'ready') return preview
     try {
       onLink?.(preview.revision)
@@ -83,9 +83,13 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   const file = await resolveAttachment(source, { ...(variant === 'shown' ? { showFirst: true as const } : {}), ...(progress ? { progress } : {}) })
   if (file.status !== 'ready') return file
   onLink?.(file.revision)
+  // The read is authorized now; a copy of this very version kept here (opened or sent before) is its bytes, without moving them again.
+  const kept = await localAttachmentCopy(file.revision.sha256, file.revision.content_type)
+  if (kept) { await file.dispose(); return { status: 'ready', blob: kept, link: file.revision } }
   const key = file.revision.sha256 === null ? null : fullKey(file.reader.accountId, file.revision.sha256)
+  // Only bytes that came over the network are kept: one read from this machine's own disk is already here.
   const keep = async (blob: Blob) => {
-    if (!key) return
+    if (!key || await file.fromDisk?.()) return
     try { await putAttachment(key, blob) }
     catch (error) { log.warn({ error }, 'authorized copy not kept') }
   }
@@ -107,7 +111,8 @@ export type AttachmentView =
   /** arrived: the bytes came while the bubble was waiting for its sender's upload (it fades them in). */
   | { status: 'ready'; objectUrl: string; link?: FileRevision; arrived?: true }
   | { status: 'gone' }
-  | { status: 'expired' }
+  /** objectUrl: its preview, which outlived the original. */
+  | { status: 'expired'; objectUrl?: string }
   | { status: 'missing' }
   | { status: 'failed'; holder: OfflineHolder | null }
   /** Its sender's upload is still on its way (the bubble keeps looking); unsent: it did not complete. */
@@ -195,6 +200,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
         awaited.current = true
         return show({ status: 'pending' })
       }
+      if (bytes.status === 'expired' && bytes.thumb) { const objectUrl = URL.createObjectURL(bytes.thumb); return show({ status: 'expired', objectUrl }, objectUrl) }
       if (bytes.status !== 'ready') return show({ status: bytes.status })
       const objectUrl = URL.createObjectURL(bytes.blob)
       // Pixels already on screen are swapped only once the new ones are decoded: the <img> never paints empty between them.
@@ -202,7 +208,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
       if (!alive) return URL.revokeObjectURL(objectUrl)
       show({ status: 'ready', objectUrl, link: bytes.link, ...(awaited.current ? { arrived: true } : {}) }, objectUrl)
     }
-    if (variant === 'thumb' && metadata && metadata.status !== 'ready') {
+    if (variant === 'thumb' && metadata && metadata.status !== 'ready' && metadata.status !== 'expired') {
       if (metadata.status === 'pending') void showBytes({ status: 'pending' }, false)
       else show({ status: metadata.status === 'failed' ? 'unsent' : metadata.status })
       return () => { alive = false }
@@ -338,16 +344,37 @@ export async function openAttachmentInSystemApp(source: AttachmentSource, fileNa
 }
 export const openFileHandle = (file: FileHandle, fileName: string) => platform.openRemoteFile(file, fileName)
 
-/** Reads only an existing full-size local copy; never signs or downloads. ACL is checked by the caller. */
-export async function cachedAttachmentCopy(sha256: string | null): Promise<Blob | null> {
+/**
+ * The one way to this machine's bytes of a sha: what the desktop holds on disk (its file store, or an original it sent,
+ * checked against the sha), else what this renderer kept of bytes it read over the network. Never signs or downloads; ACL
+ * is checked by the caller.
+ */
+export async function localAttachmentCopy(sha256: string | null, contentType = ''): Promise<Blob | null> {
   if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
+  const native = await nativeLocalBytes(sha256, contentType)
+  if (native) try { return await native.blob() } finally { await native.release() }
+  return keptAttachmentCopy(sha256, contentType)
+}
+
+/** The same bytes as an address a `<video>` reads in ranges: main's own, or a URL of what this renderer kept. */
+export async function localAttachmentUrl(sha256: string | null, contentType = ''): Promise<{ url: string; release(): Promise<void> } | null> {
+  if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
+  const native = await nativeLocalBytes(sha256, contentType)
+  if (native) return native
+  const kept = await keptAttachmentCopy(sha256, contentType)
+  if (!kept) return null
+  const url = URL.createObjectURL(kept)
+  return { url, release: async () => URL.revokeObjectURL(url) }
+}
+
+async function keptAttachmentCopy(sha256: string, contentType: string): Promise<Blob | null> {
   const hit = await (await attachmentCache()).match(fullKey(fileReader().accountId, sha256))
   if (!hit) return null
   const blob = await hit.blob()
-  return await blobSha256(blob) === sha256 ? blob : null
+  return await blobSha256(blob) === sha256 ? blob.slice(0, blob.size, contentType || blob.type) : null
 }
 
-/** A file this device sends is a full local copy of what it commits: kept by its sha256, read back by cachedAttachmentCopy. */
+/** Where there is no main process (the phone, the web), the bytes a device sends are kept here, read back by localAttachmentCopy. */
 export async function keepSentAttachment(file: Blob, sha256?: string): Promise<void> {
   await putAttachment(fullKey(fileReader().accountId, sha256 ?? await blobSha256(file)), file)
 }

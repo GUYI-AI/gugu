@@ -99,6 +99,9 @@ export function registerSshLinkIpc(options: {
       send(SSH_LINK_CHANNELS.message, { deviceId, message })
       for (const tap of [...(taps.get(deviceId) ?? [])]) tap.onMessage(message)
     },
+    onData: (deviceId, piece) => {
+      for (const tap of [...(taps.get(deviceId) ?? [])]) tap.onData?.(piece)
+    },
     onClosed: (deviceId, failure) => {
       const viaTunnel = !!options.tunnels?.linkMachine(deviceId)
       send(SSH_LINK_CHANNELS.closed, { deviceId, reason: failure.reason, ...(viaTunnel ? { via: 'tunnel' } : {}) })
@@ -111,8 +114,28 @@ export function registerSshLinkIpc(options: {
   // 主动收掉不报 onClosed(ssh-link.ts):窗口那头关、机器被移除时,挂着的那几位(主进程)由这里告诉,否则它们一直以为线还在。
   const rawClose = links.close
   const close = (deviceId: string) => {
+    holds.delete(deviceId); deferred.delete(deviceId)
     rawClose(deviceId)
     for (const tap of [...(taps.get(deviceId) ?? [])]) tap.onClosed('closed')
+  }
+  // A file read in main holds the link (`hold`): the window letting go of its own use (its pipe reset, nobody listening)
+  // waits for the read, which would otherwise die mid-file. Removing the machine or quitting still closes at once (`close`).
+  const holds = new Map<string, number>(), deferred = new Set<string>()
+  const hold = (deviceId: string) => {
+    holds.set(deviceId, (holds.get(deviceId) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const left = (holds.get(deviceId) ?? 1) - 1
+      if (left > 0) return void holds.set(deviceId, left)
+      holds.delete(deviceId)
+      if (deferred.delete(deviceId)) close(deviceId)
+    }
+  }
+  const windowClose = (deviceId: string) => {
+    if (holds.has(deviceId)) return void deferred.add(deviceId)
+    close(deviceId)
   }
   const tap: SharedSshLinks['tap'] = (deviceId, handlers) => {
     const set = taps.get(deviceId) ?? new Set()
@@ -153,6 +176,8 @@ export function registerSshLinkIpc(options: {
 
   options.ipcMain.handle(SSH_LINK_CHANNELS.open, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
     if (typeof deviceId !== 'string' || !ID.test(deviceId)) return { ok: false, reason: 'unmapped' }
+    // The window uses the link again: a close it asked for while a read held it no longer stands.
+    deferred.delete(deviceId)
     // 正在替它升级:这时开出去只会撞上还没换下来的旧版本,❌ 再起一个 ssh。
     const updating = upgrader?.upgrading(deviceId) === true
     if (updating && !links.isOpen(deviceId)) return { ok: false, reason: 'updating' }
@@ -176,7 +201,7 @@ export function registerSshLinkIpc(options: {
     return links.send(request.deviceId, request.message)
   })
   options.ipcMain.handle(SSH_LINK_CHANNELS.close, (_event, deviceId: unknown) => {
-    if (typeof deviceId === 'string') close(deviceId)
+    if (typeof deviceId === 'string') windowClose(deviceId)
   })
 
   // ── 登录(人点的那一下)──────────────────────────────────────────────────────
@@ -250,7 +275,7 @@ export function registerSshLinkIpc(options: {
     for (const deviceId of links.openDeviceIds()) if (!known.has(deviceId)) close(deviceId)
   })
   // closeAll 经 this.close 收,也走上面那一层。
-  return Object.assign(links, { close, tap, async ownedOpen(deviceId: string, accountId: string) {
-    return (await options.currentUserId()) === accountId && !!findSshMachine(options.store.list(), deviceId, accountId) && links.isOpen(deviceId)
+  return Object.assign(links, { close, tap, hold, async owned(deviceId: string, accountId: string) {
+    return (await options.currentUserId()) === accountId && !!findSshMachine(options.store.list(), deviceId, accountId)
   } })
 }

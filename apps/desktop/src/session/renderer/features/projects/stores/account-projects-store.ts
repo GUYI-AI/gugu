@@ -91,9 +91,8 @@ export class AccountProjectsStore {
     if (this.accountId !== null && this.accountId !== accountId) this.clear();
     this.restore(accountId);
     void this.refresh();
-    // Which machine this is: the replica reads it, and hears it again when this computer is identified (its feed held here).
-    void thisDeviceId.prefetch();
     const offs = [
+      // Which machine this is: held as a surface would, so it is read, and read again when this computer is identified.
       thisDeviceId.hold(),
       subscribeRevision('device_changed', (operations) => {
         if (operations.some((operation) => {

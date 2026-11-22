@@ -431,12 +431,23 @@ describe('the database\'s version record decides what this device holds', () => 
     // No version named: the current one, which only the database knows.
     expect(await readProjectFile({ item_id: 'item' }, 'owner', 'host-device', env, later)).toEqual(renamed())
     expect(later).toHaveBeenCalledWith({ item_id: 'item' })
-    const provider = localProjectFileProvider({ identity, read: createProjectFileReader({ identity, root: async () => root, env, later }), tempRoot, env, later })
+    const provider = localProjectFileProvider({ identity, read: createProjectFileReader({ identity, root: async () => root, env, later }), root: async () => root, env, later })
     const file = await createFileResolver({ local: provider, metadata: later as never, managed: later as never, ssh: later as never, temporary: later as never })({ ...ref, version: 2 }, actor)
     if (file.status !== 'ready') throw Error('ready expected')
     expect(file.revision).toMatchObject({ version: 2, file_name: 'renamed.bin' })
     expect(await file.read(500_000, 2)).toEqual(new Uint8Array([83, 83]))
     await file.dispose()
+  })
+  // The machine's bytes of a sha include a version it holds: found by its record, read where it is, and only while it still holds that sha.
+  it('finds a held version by its sha, read in place, and not once the file no longer holds it', async () => {
+    await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
+    const never = vi.fn(async () => { throw Error('Network must remain unused') })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: never as typeof fetch, rpc: never as never, env, deviceStore: join(home, 'project-files'), identityDb: never as never })
+    expect(digest(new Uint8Array(await (await access.held(revision.sha256!))!.arrayBuffer()))).toBe(revision.sha256)
+    expect(await access.held('f'.repeat(64))).toBeNull()
+    await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
+    expect(await access.held(revision.sha256!)).toBeNull()
+    expect(never).not.toHaveBeenCalled()
   })
   it('the composition root asks the database for that version as the owner', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
@@ -520,31 +531,37 @@ describe('local read fence and verified snapshot', () => {
   it('an agent reading by message gets the file on this disk, with no temporary transfer through the cloud', async () => {
     const read = createProjectFileReader({ identity, root: async () => root, env, later: noRecord })
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env, later: noRecord }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, root: async () => root, env, later: noRecord }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
     const file = await createFileResolver(providers)({ message_id: 'message' }, { accountId, actorId: 'agent' })
     if (file.status !== 'ready') throw Error('ready expected')
     expect(await file.read(0, 2)).toEqual(new Uint8Array([83, 83]))
     await file.dispose()
     expect(never).not.toHaveBeenCalled()
   })
-  it('resolves locally before cloud lookup, is lazy, and exposes immutable bytes without paths or writes', async () => {
+  // A held version is read where it is: checked once against its sha, no copy staged; changed after that, it reads no more.
+  it('resolves locally before cloud lookup, is lazy, reads the file in place, and refuses bytes of a changed file', async () => {
     const read = vi.fn(reader())
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never }
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, root: async () => root, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never }
     const file = await createFileResolver(providers)(ref, actor)
     expect(file.status).toBe('ready'); expect(read).not.toHaveBeenCalled(); expect(never).not.toHaveBeenCalled()
     if (file.status !== 'ready') throw Error('ready expected')
     expect(await file.read(500_000, 100)).toEqual(new Uint8Array(bytes.subarray(500_000, 500_100)))
+    expect(await readdir(tempRoot).catch(() => []), 'no copy is staged').toEqual([])
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 0))
-    const all: Uint8Array[] = []
-    for await (const chunk of file.stream()) all.push(chunk)
-    expect(digest(Buffer.concat(all))).toBe(revision.sha256)
+    await expect(file.read(0, 100)).rejects.toMatchObject({ name: 'NotReadableError' })
     expect('path' in file).toBe(false); expect('write' in file).toBe(false); expect(never).not.toHaveBeenCalled()
     await file.dispose()
-    expect(await readdir(tempRoot)).toEqual([])
+  })
+  it('a held file that no longer holds its sha is not opened', async () => {
+    await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
+    const never = vi.fn(async () => { throw Error('Network must remain unused') })
+    const file = await createFileResolver({ local: localProjectFileProvider({ identity, read: reader(), root: async () => root, env, later: noRecord }), metadata: never, managed: never, ssh: never, temporary: never })(ref, actor)
+    if (file.status !== 'ready') throw Error('ready expected')
+    await expect(file.read(0, 1)).rejects.toThrow('Local file changed')
   })
   it('requires cloud ACL for an agent rather than borrowing the person’s local permission', async () => {
-    const provider = localProjectFileProvider({ identity, read: reader(), tempRoot, env, later: noRecord })
+    const provider = localProjectFileProvider({ identity, read: reader(), root: async () => root, env, later: noRecord })
     expect(await provider({ ref, actor: { ...actor, actorId: 'agent' } })).toBeNull()
     accountId = 'other'
     expect(await provider({ ref, actor })).toBeNull()
@@ -561,7 +578,7 @@ describe('local read fence and verified snapshot', () => {
   })
   it('rejects same-size SHA changes before exposing a snapshot and removes staging', async () => {
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    await expect(snapshotProjectFile(revision, request => reader()(request, 'owner'), tempRoot)).rejects.toThrow('SHA-256 mismatch')
+    await expect(snapshotProjectFile(revision, await openProjectFileSource(revision, request => reader()(request, 'owner')), tempRoot)).rejects.toThrow('SHA-256 mismatch')
     expect(await readdir(tempRoot)).toEqual([])
   })
   it('anchors current metadata, then detects modification, unbinding and account changes', async () => {
@@ -584,17 +601,17 @@ describe('local read fence and verified snapshot', () => {
     expect((await stat(join(tempRoot, dir!))).mode & 0o777).toBe(0o700)
     await sink.abort(); expect(await readdir(tempRoot)).toEqual([])
     const signal = AbortSignal.abort(new Error('cancelled'))
-    await expect(snapshotProjectFile(revision, request => reader()(request, 'owner'), tempRoot, signal)).rejects.toThrow('cancelled')
+    await expect(snapshotProjectFile(revision, await openProjectFileSource(revision, request => reader()(request, 'owner')), tempRoot, signal)).rejects.toThrow('cancelled')
     expect(await readdir(tempRoot)).toEqual([])
   })
 })
 
 describe('the owner’s already-held SSH link', () => {
-  it('uses the real requester envelope and host read core, without opening or closing the window connection', async () => {
+  it('uses the real requester envelope and host read core, reusing the window connection without closing it', async () => {
     let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
-    const untap = vi.fn(), open = vi.fn(), close = vi.fn(), asked: number[] = [], spans: [number, number][] = []
+    const untap = vi.fn(), open = vi.fn(async () => ({ ok: true as const })), close = vi.fn(), asked: number[] = [], spans: [number, number][] = []
     let pending = 0, most = 0
-    const links = { ownedOpen: vi.fn(async () => true), open, close, tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return untap }), send: vi.fn((_device: string, message: unknown) => {
+    const links = { owned: vi.fn(async () => true), protocol: () => 18, hold: () => vi.fn(), open, close, tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return untap }), send: vi.fn((_device: string, message: unknown) => {
       const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
       asked.push(envelope.payload.length); spans.push([envelope.payload.offset, envelope.payload.offset + envelope.payload.length]); most = Math.max(most, ++pending)
       void reader()(envelope.payload, envelope.user_id).then(result => { pending--; tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } }) })
@@ -609,7 +626,7 @@ describe('the owner’s already-held SSH link', () => {
     expect(most).toBe(2)
     // The parts run ahead of the 512 KB reads that verify the file: one is asked across the first read's end.
     expect(spans.some(([from, to]) => from < 524_288 && to > 524_288)).toBe(true)
-    expect(open).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled(); expect(untap).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(1); expect(close).not.toHaveBeenCalled(); expect(untap).toHaveBeenCalledTimes(1)
     await file!.dispose()
   })
   it('reads a few-MB HTML over a slow link in parts that stay short, saying how far it has come', async () => {
@@ -625,7 +642,7 @@ describe('the owner’s already-held SSH link', () => {
     const asked: number[] = []
     let open = 0, most = 0
     let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
-    const links = { ownedOpen: vi.fn(async () => true), tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return vi.fn() }), send: vi.fn((_device: string, message: unknown) => {
+    const links = { owned: vi.fn(async () => true), open: async () => ({ ok: true as const }), protocol: () => 18, hold: () => vi.fn(), tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return vi.fn() }), send: vi.fn((_device: string, message: unknown) => {
       const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
       asked.push(envelope.payload.length); most = Math.max(most, ++open)
       const arrives = lineFree = Math.max(lineFree, now) + 2_000, reply = reader()(envelope.payload, envelope.user_id)
@@ -652,10 +669,10 @@ describe('the owner’s already-held SSH link', () => {
     expect(seen.every(([done], index) => index === 0 || done > seen[index - 1]![0])).toBe(true)
   })
   it.each(['absent', 'other-account', 'agent'])('does not attach when %s', async kind => {
-    const links = { ownedOpen: vi.fn(async () => kind !== 'absent'), tap: vi.fn(), send: vi.fn() }
+    const links = { owned: vi.fn(async () => kind !== 'absent'), open: vi.fn(), protocol: () => 18, hold: vi.fn(), tap: vi.fn(), send: vi.fn() }
     const who = kind === 'other-account' ? { accountId: 'other', actorId: 'other' } : kind === 'agent' ? { ...actor, actorId: 'agent' } : actor
     expect(await ownSshFileProvider(links, tempRoot)(revision, { ref, actor: who })).toBeNull()
-    expect(links.tap).not.toHaveBeenCalled(); expect(links.send).not.toHaveBeenCalled()
+    expect(links.tap).not.toHaveBeenCalled(); expect(links.send).not.toHaveBeenCalled(); expect(links.open).not.toHaveBeenCalled()
   })
 })
 

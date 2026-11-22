@@ -12,6 +12,7 @@ import { useGitActions } from '@renderer/features/sessions/use-git-actions';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { getBranchTooltipText, getPublishTooltipText } from './git-status-tooltips';
 
 export const GitStatusSection = observer(function GitStatusSection() {
@@ -48,6 +49,7 @@ const RepositoryActions = observer(function RepositoryActions({
   headDisplay: string | null;
   headKind: 'branch' | 'detached' | 'unborn';
 }) {
+  const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
   const workspaceId = getSessionPageStore(projectId, sessionId)?.workspaceId;
   const isDetached = headKind === 'detached';
@@ -102,7 +104,7 @@ const RepositoryActions = observer(function RepositoryActions({
                       <RefreshCcw className="size-3" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{isFetching ? 'Fetching...' : 'Fetch changes'}</TooltipContent>
+                  <TooltipContent>{translate(isFetching ? 'git.fetching' : 'git.fetch')}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger render={
@@ -120,11 +122,7 @@ const RepositoryActions = observer(function RepositoryActions({
                     </Button>
                   } />
                   <TooltipContent>
-                    {isPulling
-                      ? 'Pulling...'
-                      : behindCount === 0
-                        ? 'Nothing to pull'
-                        : 'Pull changes'}
+                    {translate(isPulling ? 'git.pulling' : behindCount === 0 ? 'git.nothingToPull' : 'git.pull')}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -143,11 +141,7 @@ const RepositoryActions = observer(function RepositoryActions({
                     </Button>
                   } />
                   <TooltipContent>
-                    {isPushing
-                      ? 'Pushing...'
-                      : aheadCount === 0
-                        ? 'Nothing to push'
-                        : 'Push changes'}
+                    {translate(isPushing ? 'git.pushing' : aheadCount === 0 ? 'git.nothingToPush' : 'git.push')}
                   </TooltipContent>
                 </Tooltip>
               </>
@@ -163,11 +157,7 @@ const RepositoryActions = observer(function RepositoryActions({
                       onClick={handlePublishClick}
                     >
                       <ArrowUp className="size-3" />
-                      {isPublishing
-                        ? 'Publishing...'
-                        : shouldOfferAddRemote
-                          ? 'Add Remote'
-                          : 'Publish'}
+                      {translate(isPublishing ? 'git.publishing' : shouldOfferAddRemote ? 'remote.addRemote' : 'git.publish')}
                     </Button>
                   } />
                   <TooltipContent>

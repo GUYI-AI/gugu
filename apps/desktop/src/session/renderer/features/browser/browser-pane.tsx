@@ -136,7 +136,7 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
     { id: 'files', label: translate('workspace.files'), icon: <TabKindMark kind={WORKSPACE_APP_KIND} />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
     // What is installed here not read yet: only the host's own actions (the Apps appear when it is read).
-    ...(peekInstalledAppsTracked()?.openableApps ?? []).map((app): WorkspacePanelAction => ({
+    ...(peekInstalledAppsTracked()?.appsIn('page') ?? []).map((app): WorkspacePanelAction => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,
       section: 'extensions',
       onClick: () => openApp(app.extensionId, chatId, tabId),

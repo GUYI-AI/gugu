@@ -12,7 +12,9 @@ import { useChatsWhile } from '../../store/chatContext'
 import { ListRow } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
 import { SectionLabel } from '../ui/SectionLabel'
+import { Illustration } from '../ui/Illustration'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
+import { Button } from '../ui/Button'
 import type { ContactsSection } from './contactsSections'
 import { buildAgentForest, flattenForest, useAgentParents, type AgentTreeNode } from './contactsAgentTree'
 import { SearchHitRow, SearchMap, type Hit } from './ContactsSearchHits'
@@ -25,7 +27,7 @@ import { ContactsGrid } from './ContactsGrid'
 // 回车打开;点开 = 切到那一组、选中、开抽屉(由调用方 onOpen* 做)。
 // ⌘F 在通讯录上就是这个框(同自动化页 / 会话历史:「当前视图内查找」= 聚焦自己的搜索框),❌ 第二套页内查找。
 
-export function useDesktopContactSearch({ enabled, query, onQuery, sections, people, agents, groups, pick, onOpenContact, onOpenGroup, onLookupNumber }: {
+export function useDesktopContactSearch({ enabled, query, onQuery, sections, people, agents, groups, pick, onOpenContact, onOpenGroup, onSearchEveryone }: {
   /** 只有桌面:手机首页的框是 ContactSearch(HeaderSearch),❌ 在这里再挂一个 ⌘F。 */
   enabled: boolean
   query: string
@@ -38,7 +40,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   pick?: { ids: ReadonlySet<string>; can: (contact: ContactUser) => boolean; onToggle: (contact: ContactUser) => void }
   onOpenContact: (contact: ContactUser, sectionKey: string) => void
   onOpenGroup: (group: ContactGroupChat, sectionKey: string) => void
-  onLookupNumber: (number: string) => void
+  onSearchEveryone: (number: string) => void
 }): { field: ReactNode; pane: ReactNode | null } {
   const { t } = useTranslation('contacts')
   const onScreen = useShellTabIs('contacts')
@@ -86,7 +88,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return
     if (event.key === 'Escape' && searching) { event.preventDefault(); onQuery(''); return }
-    if (lookup && event.key === 'Enter') { event.preventDefault(); onLookupNumber(lookup); return }
+    if (lookup && event.key === 'Enter') { event.preventDefault(); onSearchEveryone(lookup); return }
     if (rows.length === 0) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
@@ -107,6 +109,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   const field = (
     <div className="shrink-0 !px-3 !pb-2">
       <SearchField
+        variant="nav"
         ref={input}
         data-testid={AUTOMATION_TEST_IDS.contactsSearchInput}
         value={query}
@@ -138,13 +141,15 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
       {rows.length === 0 ? (
         lookup ? (
           <ContactsGrid className="!mt-4">
-            <ListRow role="button" tabIndex={0} selected onClick={() => onLookupNumber(lookup)}
+            <ListRow role="button" tabIndex={0} selected onClick={() => onSearchEveryone(lookup)}
               leading={<div className="grid size-[var(--avatar-sm)] shrink-0 place-items-center text-[var(--muted-fg)]"><Search size={16} /></div>}
               title={t('panel.lookupGuguNumber', { number: lookup })} />
           </ContactsGrid>
         ) : (
-          <div className="grid min-h-[50%] place-items-center">
-            <PaneEmptyState icon={<Search size={26} color="var(--text-tertiary)" />} caption={t('searchPane.empty', { query: query.trim() })} />
+          <div className="grid min-h-[60%] place-items-center">
+            <PaneEmptyState art={<Illustration name="no-match" className="w-[96px]" />} caption={t('searchPane.empty', { query: query.trim() })}
+              hint={t('searchPane.emptyHint')}
+              action={<Button variant="secondary" size="sm" data-testid="contacts-search-everyone" onClick={() => onSearchEveryone(query.trim())}><Search size={15} aria-hidden />{t('searchPane.searchEveryone')}</Button>} />
           </div>
         )
       ) : null}

@@ -60,13 +60,30 @@ export interface ProgramSurface {
 }
 
 let lastPageId = 0;
+type RunningCall = { agent: string | null; files: readonly ExtensionHandedFile[]; chats: readonly ExtensionHandedChat[]; sessionId?: string; callerKind: 'agent' | 'person'; controller: AbortController; signal: AbortSignal; interruption?: AbortSignal };
+/** Every program's calls running now (each program's own map, while it is attached). */
+const programCalls = new Set<Map<string, RunningCall>>();
+
+/**
+ * An agent left a chat: its running calls handed that chat (a file of it, or the chat) lose it now, as a page does
+ * (`removed-from-group`) — what they opened goes, and what they ask for after is refused with that reason. The
+ * program's call itself runs on to its own answer.
+ */
+export function endCallsIn(chatId: string, agent: string): void {
+  for (const calls of programCalls) for (const call of calls.values()) {
+    if (call.agent === agent && [...call.files, ...call.chats].some((given) => given.chatId === chatId)) {
+      call.controller.abort(new Error('the chat\'s files were taken back (removed-from-group)'));
+    }
+  }
+}
 
 export function attachProgramSurface(extensionId: string, child: ChildProcess): ProgramSurface {
   const pageId = --lastPageId;
   /** Each call running now, by its id: whose it is, and what it handed. */
   let closing: Promise<void> | undefined;
   let withdrawn = false;
-  const calls = new Map<string, { agent: string | null; files: readonly ExtensionHandedFile[]; chats: readonly ExtensionHandedChat[]; sessionId?: string; callerKind: 'agent' | 'person'; controller: AbortController; signal: AbortSignal; interruption?: AbortSignal }>();
+  const calls = new Map<string, RunningCall>();
+  programCalls.add(calls);
   const post = (frame: HostToFrame) => {
     if (child.connected) child.send(frame);
   };
@@ -181,6 +198,7 @@ export function attachProgramSurface(extensionId: string, child: ChildProcess): 
       withdrawn = true;
       for (const call of calls.values()) call.controller.abort();
       calls.clear();
+      programCalls.delete(calls);
       fileSync.pageGone(pageId);
       void import('./extension-bridge').then(({ stopPageWatches }) => stopPageWatches(pageId));
       closing = (async () => {

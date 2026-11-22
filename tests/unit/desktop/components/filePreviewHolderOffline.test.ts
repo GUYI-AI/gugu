@@ -15,7 +15,7 @@ const { readBytes, metadata, devices } = vi.hoisted(() => ({
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('@/lib/attachmentBytes', () => ({
-  attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
+  attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), localAttachmentUrl: async () => null, openAttachmentInSystemApp: vi.fn(),
 }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: metadata }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: devices.rows }) }))

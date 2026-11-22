@@ -9,26 +9,26 @@ import {
 } from '@renderer/features/sessions/file-tree/tree-utils';
 import { FileIcon } from '@renderer/lib/editor/file-icon';
 import { cn } from '@renderer/utils/utils';
-import { ChangeStatusAffordance } from './changes-list-item';
+import { ChangeStatusAffordance, type ChangeRow } from './changes-list-item';
 import { buildChangesTree } from './changes-tree-utils';
 
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
 
-export interface VirtualizedChangesTreeProps {
-  changes: GitChange[];
+export interface VirtualizedChangesTreeProps<T extends ChangeRow = GitChange> {
+  changes: T[];
   rootPath?: string;
-  onSelectChange?: (change: GitChange) => void;
-  onDoubleClickChange?: (change: GitChange) => void;
+  onSelectChange?: (change: T) => void;
+  onDoubleClickChange?: (change: T) => void;
   isSelected?: (path: string) => boolean;
   onToggleSelect?: (path: string) => void;
-  onPrefetch?: (change: GitChange) => void;
+  onPrefetch?: (change: T) => void;
   activePath?: string;
   className?: string;
 }
 
 const ITEM_HEIGHT = 28;
 
-export function VirtualizedChangesTree({
+export function VirtualizedChangesTree<T extends ChangeRow>({
   changes,
   rootPath,
   onSelectChange,
@@ -38,7 +38,7 @@ export function VirtualizedChangesTree({
   onPrefetch,
   activePath,
   className,
-}: VirtualizedChangesTreeProps) {
+}: VirtualizedChangesTreeProps<T>) {
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
 
   const tree = useMemo(() => buildChangesTree(changes, rootPath), [changes, rootPath]);
@@ -160,7 +160,7 @@ function FileRow({
   style,
 }: {
   row: TreeRow;
-  change: GitChange;
+  change: ChangeRow;
   isSelected: boolean;
   isActive: boolean;
   onToggleSelect?: (path: string) => void;

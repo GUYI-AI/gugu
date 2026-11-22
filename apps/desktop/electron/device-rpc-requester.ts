@@ -20,8 +20,8 @@ import {
 export type SharedSshLinks = {
   open(deviceId: string): Promise<{ ok: true } | { ok: false; reason: string; detail: string; controlOnly?: true }>
   send(deviceId: string, message: unknown): boolean
-  /** 这台机器的连接上收到的、断了的,也告诉这一位;返回取消。 */
-  tap(deviceId: string, handlers: { onMessage(message: unknown): void; onClosed(reason: string): void }): () => void
+  /** 这台机器的连接上收到的、断了的,也告诉这一位;返回取消。`onData`: a stream's raw pieces (`file.stream`). */
+  tap(deviceId: string, handlers: { onMessage(message: unknown): void; onClosed(reason: string): void; onData?(piece: { stream: string; offset: number; bytes: Buffer }): void }): () => void
 }
 
 /**

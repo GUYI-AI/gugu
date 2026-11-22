@@ -6,7 +6,7 @@ import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { composerCardCopy } from '../../lib/composerCardCopy'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
-import { CalendarClock, Check, Sparkles } from '@/lib/icons'
+import { Check, Clock, Sparkles } from '@/lib/icons'
 import { AgentHarnessIcon, EngineIcon } from '../AgentHarnessIdentity'
 import { Avatar } from '../Avatar'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
@@ -26,7 +26,7 @@ import { AgentStatusGlyph } from '../../session/renderer/lib/components/agent-st
  * 不知道是哪个 agent(引用块里引卡的是人)时画一枚通用的星。
  */
 function ComposerCardMark({ type, agentUserId, size }: { type: ComposerCard['type']; agentUserId: string | null; size: number }) {
-  if (type === 'schedule') return <CalendarClock size={size} />
+  if (type === 'schedule') return <Clock size={size} />
   return agentUserId ? <AgentHarnessIcon agentId={agentUserId} size={size} /> : <Sparkles size={size} />
 }
 
@@ -83,7 +83,7 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
     <ComposerCardFrame
       cardType={card.type}
       // 卡上记着接手的是哪种 agent(贴卡时写下的),谁看都画这一枚;没记的老卡画通用的星 —— ❌ 去查这个 agent 现在看不看得到。
-      mark={task ? (task.agentType ? <EngineIcon engine={task.agentType} size={13} /> : <Sparkles size={13} />) : <CalendarClock size={13} />}
+      mark={task ? (task.agentType ? <EngineIcon engine={task.agentType} size={13} /> : <Sparkles size={13} />) : <Clock size={13} />}
       title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')}: ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
       time={time}
       text={card.text}

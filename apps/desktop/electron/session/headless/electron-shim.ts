@@ -4,7 +4,7 @@
  * 进程仍以 ELECTRON_RUN_AS_NODE=1 跑 Electron 二进制,原生模块因此保持 Electron 的 ABI。
  * ipcMain / MessageChannelMain 故意抛错:无头模式的 IPC 必须走注入的 getHostIpc() 抽象。
  */
-import { spawn } from '@gugu/core/local/childProcess'
+import { fork, spawn } from '@gugu/core/local/childProcess'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
@@ -273,8 +273,12 @@ function createSessionStub() {
     setPermissionRequestHandler: (_handler: unknown): void => {},
     setPermissionCheckHandler: (_handler: unknown): void => {},
     webRequest: {
+      // No web page loads headless, so these hooks never fire; main still installs them (the preview protocol at boot).
+      onBeforeRequest: (_filterOrListener?: unknown, _listener?: unknown): void => {},
       onBeforeSendHeaders: (_filterOrListener?: unknown, _listener?: unknown): void => {},
-      onHeadersReceived: (_filterOrListener?: unknown, _listener?: unknown): void => {}
+      onHeadersReceived: (_filterOrListener?: unknown, _listener?: unknown): void => {},
+      onCompleted: (_filterOrListener?: unknown, _listener?: unknown): void => {},
+      onErrorOccurred: (_filterOrListener?: unknown, _listener?: unknown): void => {}
     },
     getAllExtensions: (): never[] => [],
     loadExtension: async (_path: string, _options?: unknown): Promise<never> => {
@@ -375,8 +379,17 @@ export class ClipboardItem {
   }
 }
 
+/** A plain Node host holds no Chromium descriptors, so its workers stay ordinary forks behind the same API. */
+export const utilityProcess = {
+  fork(entry: string, args: string[] = [], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
+    const child = fork(entry, args, { ...options, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], serialization: 'advanced' })
+    return Object.assign(child, { postMessage: (message: unknown) => child.send(message as never) })
+  },
+}
+
 const shim = {
   app,
+  utilityProcess,
   shell,
   clipboard,
   dialog,

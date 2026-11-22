@@ -80,8 +80,11 @@ designed.
 
 ## Process Hosting
 
-Desktop-local ACP and workspace-server ACP both use plain Node child processes via
-`spawnWorker()`. The child process entry calls
+Desktop-local ACP and workspace-server ACP both start their worker via
+`spawnWorker()`. Desktop passes `harnessWorkerHost`, an Electron utility process
+(`utilityProcess.fork`), so the worker and every harness it starts inherit none of
+the browser process's descriptors; workspace-server and the headless host use plain
+Node child processes. The child process entry calls
 `bootAcpRuntimeProcess()` from `@gugu/session-runtime/acp-agents/node`, which constructs
 `AcpRuntime`, a machine-scoped `AgentPluginHost`, `ChildAcpProcessHost`,
 `LocalAttachmentStore`, and `NodePtySpawner`. The `AgentPluginHost` owns the
@@ -97,11 +100,12 @@ The concrete plugin registry is injected by each host entry (the desktop app and
 from depending back on `@gugu/session-plugins` while still letting plugin resolution be
 owned by the runtime composition root.
 
-Desktop relies on Electron's `child_process.fork` behavior, which runs children
-with `ELECTRON_RUN_AS_NODE`. The packaged app must keep the `RunAsNode` fuse
-enabled while this fork model is used. If the app later disables that fuse for
-macOS hardening, the wire package still has the `utilityProcessHost` seam for an
-Electron utility-process implementation.
+Worker output backpressure counts the parent's acknowledgements (one per turn of
+the parent's event loop), so the same mechanism works over a Node IPC channel and a
+utility `parentPort`.
+
+The headless server and the import-scan workers still run the Electron binary with
+`ELECTRON_RUN_AS_NODE`, so the packaged app keeps the `RunAsNode` fuse enabled.
 
 ## Models and Protocol Versioning
 

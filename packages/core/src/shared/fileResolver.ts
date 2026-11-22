@@ -36,7 +36,7 @@ export interface FileRevision {
   width?: number | null
   height?: number | null
   /** An image's small copy, uploaded by its sender and kept in the cloud for as long as the version is. */
-  preview?: { sha256: string; size_bytes: number; content_type: string }
+  preview?: FilePreview
   /** The device that keeps this version: the one that sent it. */
   host_device_id?: string
   host_project_id?: string
@@ -53,7 +53,10 @@ export interface FileRevision {
  * `pending`: the message declared this file and its bytes are still on their way from the sender (`failed`: they did not
  * come, or were not the declared file). Its state is the file's alone; the message was delivered with its index.
  */
-export type FileMetadata = { status: 'ready'; revision: FileRevision } | { status: 'gone' | 'expired' | 'missing' | 'failed'; sha256: string | null }
+export type FilePreview = { sha256: string; size_bytes: number; content_type: string }
+/** `expired`: its cloud copy is gone; an image's preview outlives it. */
+export type FileMetadata = { status: 'ready'; revision: FileRevision } | { status: 'gone' | 'missing' | 'failed'; sha256: string | null }
+  | { status: 'expired'; sha256: string | null; preview?: FilePreview }
   | { status: 'pending'; sha256: null; width?: number; height?: number }
 /** The authenticated server explicitly identified a physically missing object. */
 export class MissingFileObjectError extends Error {
@@ -85,6 +88,8 @@ export interface FileBytes {
   dispose(): Promise<void>
   /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
   readonly acknowledged?: Promise<void>
+  /** Read from this machine's own disk: they are already here, so nothing keeps another copy of them. */
+  readonly here?: true
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'
@@ -95,6 +100,8 @@ export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   stream(): AsyncIterable<Uint8Array>
   /** Opened with `showFirst`: rejects (FileReadRevokedError) when what was read must be taken down. Otherwise already settled by the first read. */
   acknowledgement?(): Promise<void>
+  /** Once read: whether its bytes came from this machine's own disk (`FileBytes.here`). */
+  fromDisk?(): Promise<boolean>
   dispose(): Promise<void>
   /** `store`: into the shared file store (`fileStoreDirectory`): read-only, one sha once. */
   saveTo?(directory: string, name: string, store?: boolean): Promise<SavedFile>
@@ -103,12 +110,17 @@ export type SavedFile = { file_path: string; file_name: string; size_bytes: numb
 /** Display-only pixels/playback never confer a capability to download, open or re-upload the original. */
 export type FileHandle = Extract<ResolvedFile, { status: 'ready' }>
 export type FilePreviewContent = Blob | { url: string; expiresAt: number }
-export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' }> | {
+/** An expired image's `content`: the preview its sender uploaded with it, which outlives the original's cloud copy. */
+export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' | 'expired' }> | { status: 'expired'; sha256: string | null; content?(): Promise<Blob> } | {
   status: 'ready'; purpose: 'preview'; revision: FileRevision
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
-/** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: (done: number, total: number) => void }
+/**
+ * How far a read has come, from the provider that carries its bytes (a slow machine's line shows it). `stalled`: no bytes
+ * for a while — the line is stuck, and the read picks up where it stopped once they flow again; the next report clears it.
+ */
+export type FileProgress = (done: number, total: number, stalled?: true) => void
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: FileProgress }
 export interface FileProviders {
   saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string, store?: boolean): Promise<SavedFile>
   download?(revision: FileRevision, context: FileContext, sink: import('./fileCipher').FileSink): Promise<FileBytes>
@@ -120,6 +132,8 @@ export interface FileProviders {
   ssh(revision: FileRevision, context: FileContext): Promise<FileBytes | null>
   temporary(revision: FileRevision, context: FileContext): Promise<FileBytes>
   preview?(revision: FileRevision, context: FileContext, full: () => Promise<FileBytes>): Promise<FilePreviewContent>
+  /** The preview of a version whose original expired, signed through the same reference. */
+  expiredPreview?(preview: FilePreview, context: FileContext): Promise<Blob>
 }
 
 export function requireFileRange(size: number, offset: number, length: number): void {
@@ -147,7 +161,8 @@ export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
   if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'pending') return { status: 'pending', sha256: null, ...(row.width! > 0 && row.height! > 0 ? { width: row.width!, height: row.height! } : {}) }
   if (row.status === 'missing' && row.code === 'object_not_found' && row.upload === 'failed') return { status: 'failed', sha256: null }
   if (row.status === 'missing' && row.code === 'object_not_found') return { status: 'missing', sha256: row.sha256 ?? null }
-  if (row.status === 'gone' || row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null }
+  if (row.status === 'gone') return { status: row.status, sha256: row.sha256 ?? null }
+  if (row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null, ...(row.preview ? { preview: row.preview } : {}) }
   if (row.status !== 'ready') throw new Error('Invalid file metadata')
   const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, preview, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer } = row
   const revision = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, preview, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer }
@@ -202,12 +217,15 @@ export function createFileResolver(providers: FileProviders) {
     if (options.localOnly && !local) return null
     if (local && (local.revision.source !== 'local' || local.revision.host_account_id !== context.actor.accountId)) throw new Error('Local file is not owned by this account')
     // A message supplies display metadata only. Full-file reads always re-resolve authorization.
-    const projected = options.purpose === 'preview' ? options.metadata : undefined
-    if (projected && projected.status !== 'ready') return projected
+    // An expired row without a preview may be one a client before previews parsed and stored: it is asked again.
+    const projected = options.purpose === 'preview' && !(options.metadata?.status === 'expired' && !options.metadata.preview) ? options.metadata : undefined
+    const unavailable = (file: Exclude<FileMetadata, { status: 'ready' }>) => options.purpose === 'preview' && file.status === 'expired' && file.preview && providers.expiredPreview
+      ? { status: file.status, sha256: file.sha256, content: () => providers.expiredPreview!(file.preview!, context) } : file
+    if (projected && projected.status !== 'ready') return unavailable(projected)
     if (projected?.status === 'ready' && 'item_id' in ref && (projected.revision.item_id !== ref.item_id ||
       ref.version !== undefined && projected.revision.version !== ref.version)) throw new Error('File preview reference changed')
     const metadata = local ? { status: 'ready' as const, revision: local.revision } : projected ?? await providers.metadata(context)
-    if (metadata.status !== 'ready') return metadata
+    if (metadata.status !== 'ready') return unavailable(metadata)
     const revision = Object.freeze({ ...metadata.revision })
     requireFileRevision(revision)
     if (revision.legacy_object && (!('message_id' in context.ref) || context.ref.message_id !== revision.legacy_object.message_id)) throw new Error('Historical file reference changed')
@@ -254,6 +272,7 @@ export function createFileResolver(providers: FileProviders) {
       } }
     }
     return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose, acknowledgement: async () => { await (await get()).acknowledged },
+      fromDisk: async () => (await opened?.catch(() => undefined))?.here === true,
       ...(providers.saveTo ? { saveTo: async (directory: string, name: string, store?: boolean) => {
         check()
         try { return await providers.saveTo!(revision, context, directory, name, store) }

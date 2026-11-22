@@ -5,15 +5,14 @@ import { agentHomeUpgradeResults } from '@renderer/features/settings/subscriptio
 import { AgentHomeMigrationResultList } from './AgentHomeMigrationResultList'
 import { DataImportSection } from './DataImportSection'
 import { AgentConfigImport } from './AgentConfigImport'
-import { firstInstallImportHomes } from '@renderer/features/settings/subscriptions/first-install-import-notice'
-import { QwenConfigImport } from './QwenConfigImport'
+import { agentConfigImportHomes } from '@renderer/features/settings/subscriptions/ensure-agent-home'
 import { useExternalImportProviders } from './use-external-import-providers'
 
 export function DesktopDataImportSection({ onClose }: { onClose: () => void }) {
   const { providers, historyDialog } = useExternalImportProviders()
   return (
     <>
-      <DataImportSection onClose={onClose} extraProviders={providers} localDetails={<><QwenConfigImport /><FirstInstallConfigImports /><AgentHomeMigrationResults /></>} />
+      <DataImportSection onClose={onClose} extraProviders={providers} localDetails={<><TerminalConfigImports machine={null} /><AgentHomeMigrationResults /></>} machineDetails={(machine) => <TerminalConfigImports key={machine} machine={machine} />} />
       {historyDialog}
     </>
   )
@@ -36,11 +35,11 @@ export function AgentHomeMigrationResults() {
   return <AgentHomeMigrationResultList homes={reading.value} />
 }
 
-function FirstInstallConfigImports() {
+export function TerminalConfigImports({ machine }: { machine: string | null }) {
   const { t } = useTranslation('main')
-  const reading = useReplica(firstInstallImportHomes, [])
+  const reading = useReplica(agentConfigImportHomes, [machine])
   if (reading.state === 'error') return <p role="status" className="gg-import-meta">{t('agentHome.migrationReadFailed')}</p>
   if (reading.state !== 'value') return null
-  return reading.value.filter(({ providerId }) => providerId !== 'qwen').map(({ providerId }) =>
-    <AgentConfigImport key={providerId} providerId={providerId} />)
+  return reading.value.map(({ providerId }) =>
+    <AgentConfigImport key={`${machine ?? 'local'}:${providerId}`} providerId={providerId} machine={machine} />)
 }

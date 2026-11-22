@@ -128,7 +128,7 @@ export default {
     "backToList": "返回对话列表",
     "conversationProfile": "查看对话资料",
     "downloadFailed": "无法下载文件",
-    "filePreview": { "readAgain": "重新读取", "close": "关闭文件预览", "download": "下载", "openExternal": "外部打开", "loading": "读取文件中…", "rendering": "正在生成预览…", "renderFailed": "无法渲染此文件", "sheetTruncated": "表格过大，仅显示部分内容。请使用 Office 软件查看完整内容。", "openInOffice": "用 Office 软件打开", "previewLimits": "此文档过大或结构过于复杂，无法安全预览。", "unsupported": "此文件类型暂不支持内置预览，请下载或使用外部打开。", "readFailed": "读取文件失败（{{status}}）", "pdfControls": "PDF 控制", "previousPage": "上一页", "nextPage": "下一页", "zoomOut": "缩小", "zoomIn": "放大", "zoom": "缩放", "zoomReset": "恢复 100%", "pageNumber": "页码", "outline": "目录", "fitWidth": "适应宽度", "fitPage": "适应整页", "find": "查找", "findPrevious": "上一个", "findNext": "下一个", "closeFind": "关闭查找" },
+    "filePreview": { "readAgain": "重新读取", "close": "关闭文件预览", "download": "下载", "openExternal": "外部打开", "loading": "读取文件中…", "stalled": "连接卡住了，恢复后从断点接着读…", "rendering": "正在生成预览…", "renderFailed": "无法渲染此文件", "sheetTruncated": "表格过大，仅显示部分内容。请使用 Office 软件查看完整内容。", "openInOffice": "用 Office 软件打开", "previewLimits": "此文档过大或结构过于复杂，无法安全预览。", "unsupported": "此文件类型暂不支持内置预览，请下载或使用外部打开。", "readFailed": "读取文件失败（{{status}}）", "pdfControls": "PDF 控制", "previousPage": "上一页", "nextPage": "下一页", "zoomOut": "缩小", "zoomIn": "放大", "zoom": "缩放", "zoomReset": "恢复 100%", "pageNumber": "页码", "outline": "目录", "fitWidth": "适应宽度", "fitPage": "适应整页", "find": "查找", "findPrevious": "上一个", "findNext": "下一个", "closeFind": "关闭查找" },
     "empty": {
       "chats": "选择一个对话开始聊天",
       "contacts": "选择联系人查看详情"
@@ -384,6 +384,7 @@ export default {
     "fileGone": "文件已删除",
     "fileVersion": "第 {{n}} 版",
     "fileExpired": "文件已过期",
+    "originalExpired": "原图已过期，只剩这张缩略图",
     "fileMissing": "已失效",
     "reupload": "重新上传",
     "selectOriginal": "选择原文件",
@@ -405,7 +406,7 @@ export default {
     "senderUploadFailed": "发送方未能完成该文件的上传",
     "uploading": "正在上传",
     "notUploaded": "尚未上传完成",
-    "uploadFailed": "上传失败，点按重试",
+    "uploadFailed": "上传失败，点按重试", "uploadOriginalChanged": "没发出去：文件在上传完成前被改动或删除了，请重新发送",
     "newerInFolder": "文件夹里有新版",
     "retry": "重试"
   },

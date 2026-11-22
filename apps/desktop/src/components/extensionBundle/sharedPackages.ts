@@ -1,5 +1,5 @@
 import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { attachmentBytes, cachedAttachmentCopy, sourceKeyOf } from '../../lib/attachmentBytes'
+import { attachmentBytes, localAttachmentCopy, sourceKeyOf } from '../../lib/attachmentBytes'
 import { chatService } from '../../lib/chat'
 import type { AttachmentPackage } from '../../session/shared/extensions/attachment-install'
 import { rendererLogger } from '../../lib/log'
@@ -35,7 +35,7 @@ export function installPackageOf(card: PackageCard): AttachmentPackage {
  * `ok: false` (not a package this build reads) is an answer; bytes not there throw `PackageUnavailableError`; neither is kept.
  */
 export async function readPackageSummary(source: AttachmentSource, sha256: string | null, progress: (done: number, total: number) => void): Promise<ExtensionBundleSummary> {
-  const kept = await cachedAttachmentCopy(sha256).catch(() => null)
+  const kept = await localAttachmentCopy(sha256).catch(() => null)
   const bytes = kept ? null : await attachmentBytes(source, 'full', undefined, undefined, progress)
   if (bytes && bytes.status !== 'ready') throw new PackageUnavailableError(bytes.status)
   const summary = await summarizeExtensionBundle(new Uint8Array(await (kept ?? bytes!.blob).arrayBuffer()), __APP_VERSION__)

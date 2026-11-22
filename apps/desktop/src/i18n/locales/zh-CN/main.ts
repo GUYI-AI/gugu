@@ -1,8 +1,9 @@
 export default {
   "firstInstallImport": {
+    "remoteDescription": "从 {{machine}} 导入记忆、项目规则和工作习惯",
     "title": "导入已有数据",
     "description": "导入你的记忆、项目规则和工作习惯",
-    "available": "可从本机导入 {{name}} 的配置"
+    "available": "导入这台机器的 {{name}} 配置"
   },
   "usagePopover": {
     "title": "用量",
@@ -133,6 +134,7 @@ export default {
     "manageConnections": "管理连接"
   },
   "agentHome": {
+  "sourceUnavailable": "无法读取这台机器的终端配置。",
   "nativeHistorySummary": "旧咕咕会话：已移走 {{removed}} 条，待重试 {{pending}} 条，保留 {{retained}} 条；另有 {{unowned}} 条不属于当前档案",
   "historySummary_other": "已导入 {{count}} 条最近会话，{{skipped}} 条仍在原处",
   "preparation": { "preparing": "正在准备迁移", "copying": "正在导入配置和会话", "history": "正在整理历史", "elapsedLabel_other": "{{label}}，已用 {{count}} 秒" },
@@ -305,8 +307,15 @@ export default {
     "helpImproveFailed": "设置保存失败，请重试。",
     "harnessRecommended": "推荐",
     "harnessTitle": "选择智能体",
-    "harnessSub": "可多选，咕咕会在后台安装并管理。",
+    "harnessSub": "可多选。本机够新的直接用，否则咕咕在后台装一份。",
     "harnessInstalled": "已安装",
+    "harnessLocalUsable": "用你本机的 {{version}}",
+    "harnessLocalOutdated": "本机 {{version}} 太旧，咕咕会装一份",
+    "harnessLocalBroken": "本机的 {{command}} 运行不起来，咕咕会装一份",
+    "harnessLocalMissing": "本机没有，咕咕会装一份",
+    "installLocalOutdated": "你的 {{command}} {{version}} 太旧，正在另装一份…",
+    "installLocalBroken": "你的 {{command}} 运行不起来，正在另装一份…",
+    "installLocalMissing": "本机没有 {{name}}，正在下载…",
     "harnessSelect": "选择 {{name}}",
     "backgroundInstall": "智能体安装",
     "hideInstall": "收起",

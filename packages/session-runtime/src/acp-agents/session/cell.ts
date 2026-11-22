@@ -605,7 +605,7 @@ export class SessionCell {
       if (event.error && request && !request.steered && request.cycle === this.activeTurnCompletion
         && this.machine.phase.kind === 'ready') {
         const classified = classifyTurnFailure({ at: 'prompt', cause: event.error,
-          platformCredentials: this.deps.platformCredentials, closeRequested: this.closeRequested,
+          hostCredentials: this.deps.hostCredentials, closeRequested: this.closeRequested,
           credentialRefusal: this.credentialRefusal });
         this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId, stopReason: null, error: event.error });
         this.endWork(classified.outcome, { dequeueQueuedPrompt: this.dequeueAfterFailure });
@@ -1612,7 +1612,7 @@ export class SessionCell {
         }
         const classified = classifyTurnFailure({ at: 'prompt',
           cause: toSerializedError(event.error ? Object.assign(new Error(event.error.message), event.error) : new Error('Foreground ended with an error')),
-          platformCredentials: this.deps.platformCredentials, closeRequested: this.closeRequested,
+          hostCredentials: this.deps.hostCredentials, closeRequested: this.closeRequested,
           credentialRefusal: this.credentialRefusal });
         if (classified.outcome.kind === 'error') this.deps.logger.error('SessionCell: prompt failed', { sessionId: this.sessionId, providerId: this.deps.providerId, acpSessionId: this.acpSessionId, cause: event.error });
         if (this.endWork(classified.outcome, { foreground: event, dequeueQueuedPrompt: this.dequeueAfterFailure })) this.lastFailureProvisional = classified.provisional;
@@ -1945,7 +1945,7 @@ export class SessionCell {
     if (stopReason === 'cancelled' && this.interruptedForMessage) {
       return { kind: 'cancelled', reason: 'interrupted_for_message' };
     }
-    const refused = this.deps.platformCredentials ? refusedTurnOutcome(this.credentialRefusal) : null;
+    const refused = this.deps.hostCredentials ? refusedTurnOutcome(this.credentialRefusal) : null;
     if (stopReason === 'end_turn' && refused) return refused;
     const stderrFailure = this.turnHadAgentOutput ? null : this.providerStderrFailure;
     const failure = [this.providerTurnFailure, stderrFailure].filter(Boolean).join('\n');

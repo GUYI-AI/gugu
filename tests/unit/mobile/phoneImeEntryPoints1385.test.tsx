@@ -41,7 +41,7 @@ it('contact search keeps its filtered results and query while dismissing an Ente
   function Page() {
     const [query, setQuery] = useState('')
     return <ContactSearch query={query} onQuery={setQuery} mobile head={button => <header>{button}</header>}
-      people={providers.contacts.contacts} agents={[]} groups={[]} onOpenContact={vi.fn()} onOpenGroup={vi.fn()} onLookupNumber={vi.fn()}><div>Browse</div></ContactSearch>
+      people={providers.contacts.contacts} agents={[]} groups={[]} onOpenContact={vi.fn()} onOpenGroup={vi.fn()} onSearchEveryone={vi.fn()}><div>Browse</div></ContactSearch>
   }
   await renderWithAppProviders(h, <Owner><Page /></Owner>, { ...providers, shellTab: 'contacts' })
   await clickElement(h.container.querySelector('[data-header-search-open]')!)

@@ -33,7 +33,11 @@ export type AttachDeps = {
    * 同一种信封,见 attach-protocol.ts)。send 把一条信封(应答或推送)交回这条连接;连接断了调 dispose。
    * 不给 = 这个进程不接设备连接(回 bad_request,桌面说「版本太旧」)。
    */
-  link?(send: (message: unknown) => void): { handle(message: unknown): void; dispose(): void };
+  /**
+   * `sendData`: a stream's bytes as a `D` frame, resolved once the socket takes more (its `drain`): a stream goes at the
+   * line's pace, never ahead of it into memory. Rejects once the connection is gone.
+   */
+  link?(send: (message: unknown) => void, sendData: (frame: Buffer) => Promise<void>): { handle(message: unknown): void; dispose(): void };
 };
 
 /** 连上之后多久还没说明是哪种连接,就断开。 */
@@ -48,6 +52,15 @@ export function serveAttachConnection(socket: Duplex, deps: AttachDeps, helloTim
   const send = (frame: Buffer) => {
     if (!closed && !socket.destroyed) socket.write(frame);
   };
+  const sendData = (frame: Buffer) => new Promise<void>((resolve, reject) => {
+    if (closed || socket.destroyed) return reject(new Error('device link closed'));
+    if (socket.write(frame)) return resolve();
+    const done = () => { socket.off('drain', drained); socket.off('close', gone); };
+    const drained = () => { done(); resolve(); };
+    const gone = () => { done(); reject(new Error('device link closed')); };
+    socket.once('drain', drained);
+    socket.once('close', gone);
+  });
   const finish = () => {
     if (closed) return;
     closed = true;
@@ -115,7 +128,7 @@ export function serveAttachConnection(socket: Duplex, deps: AttachDeps, helloTim
         if ('code' in hello) return fail(hello);
         if (!deps.link) return fail({ code: 'bad_request', message: 'this process does not accept device links' });
         try {
-          linked = deps.link((message) => send(encodeJsonFrame(FRAME.message, message)));
+          linked = deps.link((message) => send(encodeJsonFrame(FRAME.message, message)), sendData);
         } catch (error) {
           return fail({ code: 'unavailable', message: error instanceof Error ? error.message : String(error) });
         }

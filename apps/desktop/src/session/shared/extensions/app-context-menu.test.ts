@@ -19,3 +19,14 @@ it('carries a row\'s program for its icon, and drops one of the wrong type witho
   expect(appContextMenuOf({ x: 1, y: 2, items: [{ id: 'a', label: 'VS Code', program: 'vscode' }, { id: 'b', label: 'Terminal', program: 7 }] }))
     .toEqual({ x: 1, y: 2, items: [{ id: 'a', label: 'VS Code', program: 'vscode' }, { id: 'b', label: 'Terminal' }] });
 });
+it('carries fold, alone and a hotkey (API 62), and drops a malformed hotkey or a fold that is not true', () => {
+  expect(appContextMenuOf({ x: 1, y: 2, items: [
+    { id: 'a', label: 'Rename', fold: true, hotkey: 'F2' },
+    { id: 'b', label: 'Another App…', alone: 'Open with another App', hotkey: 'Mod+Click' },
+    { id: 'c', label: 'Delete', fold: 'yes', hotkey: 'Ctrl Alt Del!' },
+  ] })).toEqual({ x: 1, y: 2, items: [
+    { id: 'a', label: 'Rename', fold: true, hotkey: 'F2' },
+    { id: 'b', label: 'Another App…', alone: 'Open with another App', hotkey: 'Mod+Click' },
+    { id: 'c', label: 'Delete' },
+  ] });
+});

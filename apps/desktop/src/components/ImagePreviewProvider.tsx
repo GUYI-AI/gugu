@@ -26,7 +26,8 @@ import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
-import { wireReadingZoom } from './preview/image-reading-zoom'
+import { bindFileZoom, showZoomRatio, zoomForCommand } from './preview/file-content-zoom'
+import { pinchZoom } from '@/session/shared/preview/pinch-zoom'
 import { usesPhoneFlight, wirePhoneFlight } from './preview/image-viewer-phone-flight'
 import {
   decodedSizeOf,
@@ -158,7 +159,24 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
 }
 
 function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
-  wireReadingZoom(pswp)
+  // Every image opens whole: no ratio carries over to the next one (documents still keep theirs). A zoom to read by shows
+  // its ratio for a moment (zoom B); the opening and a double click's peek do not.
+  pswp.on('beforeZoomTo', ({ destZoomLevel }) => {
+    const levels = pswp.currSlide?.zoomLevels
+    if (!levels || !pswp.element || !pswp.opener.isOpen || destZoomLevel === levels.secondary) return
+    showZoomRatio(pswp.element, Math.min(levels.max, destZoomLevel) / levels.initial)
+  })
+  // Zoom keys and menu commands (Cmd + / - / 0) step from what is shown.
+  pswp.on('afterInit', () => {
+    if (!pswp.element) return
+    const offCommand = bindFileZoom(pswp.element, command => {
+      const slide = pswp.currSlide
+      if (!slide) return
+      const { initial } = slide.zoomLevels
+      slide.zoomTo(initial * Math.max(1, zoomForCommand(slide.currZoomLevel / initial, command)), undefined, 0)
+    })
+    pswp.on('destroy', offCommand)
+  })
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
   // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点。
   // Its neighbours are warmed with their thumbnails only (`current` false), so paging to one shows pixels at once, never
@@ -269,10 +287,18 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   pswp.on('initialZoomPan', ({ slide }) => {
     if (isLongSlide(slide)) slide.pan.y = slide.bounds.min.y
   })
+  // A pinch (ctrl wheel) follows the fingers 1:1 and a Ctrl+wheel notch is one 1.2× step, as every other view's pinch
+  // (`pinchZoom`). PhotoSwipe's own rate (2^(-deltaY·0.002)) is a seventh of that: a pinch barely moved the picture.
   pswp.on('wheel', (event) => {
     const slide = pswp.currSlide
     const wheel = event.originalEvent
-    if (!slide || wheel.ctrlKey || !slide.isPannable() || !isLongSlide(slide)) return
+    if (!slide) return
+    if (wheel.ctrlKey) {
+      event.preventDefault()
+      if (slide.isZoomable()) slide.zoomTo(pinchZoom(slide.currZoomLevel, wheel.deltaY, slide.zoomLevels.min, slide.zoomLevels.max), { x: wheel.clientX, y: wheel.clientY })
+      return
+    }
+    if (!slide.isPannable() || !isLongSlide(slide)) return
     event.preventDefault()
     slide.panTo(slide.pan.x - wheel.deltaX, slide.pan.y - wheel.deltaY)
   })

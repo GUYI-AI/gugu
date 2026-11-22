@@ -19,8 +19,15 @@ export function createNativeFileHost(deps: {
   /** A task attachment's own copy for the agent (`writeTaskCopy`): its path. */
   taskCopy?(name: string, bytes: Uint8Array, mimeType?: string): Promise<{ path: string; name: string; size: number; mimeType?: string }>
   publication?(chatId: string, owner: string): Promise<boolean>
+  /** This machine's bytes of a sha (`localCopy`): asked only for a read already authorized. */
+  stored?(sha256: string): Promise<Blob | null>
+  /**
+   * This machine's bytes reach the renderer at an address (`createBytesPreview`, `gugu-preview://<id>/<sha>`), never over
+   * this IPC: a `<video>` reads its ranges, a Blob is fetched whole. `release` takes the address down.
+   */
+  serve(sha256: string, contentType: string, file: Pick<FileBytes, 'size' | 'read'>): Promise<{ url: string; release(): void }>
 }) {
-  type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; context?: string; name?: string; size?: number; sha?: string;
+  type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; release?: () => void; url?: string; context?: string; name?: string; size?: number; sha?: string;
     sink?: Awaited<ReturnType<typeof createFileSink>>; hash?: ReturnType<typeof createHash>; written?: number; path?: string; busy?: boolean }
   const entries = new Map<string, Entry>()
   let lastOwner: string | null = null
@@ -32,7 +39,7 @@ export function createNativeFileHost(deps: {
   const drop = async (scope?: number) => {
     for (const id of scope === undefined ? epochs.keys() : [scope]) epochs.set(id, epochOf(id) + 1)
     await Promise.all([...entries].filter(([, entry]) => scope === undefined || entry.scope === scope).map(async ([id, entry]) => {
-      entries.delete(id); await entry.file?.dispose(); await entry.sink?.abort()
+      entries.delete(id); entry.release?.(); await entry.file?.dispose(); await entry.sink?.abort()
     }))
   }
   const entryFor = async (scope: number, id: string) => {
@@ -41,12 +48,12 @@ export function createNativeFileHost(deps: {
     await check(scope, entry.owner, entry.epoch); return entry
   }
   return { drop,
-    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string } | { op: 'resume' }) {
+    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string }) {
       const epoch = epochOf(scope), owner = await deps.owner()
       if (!owner || !deps.attachments) throw new Error('Attachment uploader is unavailable')
       await check(scope, owner, epoch)
       const result = request.op === 'declare' ? (await deps.attachments.declare(request)).declared
-        : request.op === 'resume' ? await deps.attachments.resume() : await deps.attachments[request.op](request.messageId)
+        : await deps.attachments[request.op](request.messageId)
       await check(scope, owner, epoch)
       return result
     },
@@ -61,13 +68,26 @@ export function createNativeFileHost(deps: {
     },
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
     /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
-    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string },
-      report?: (progress: { id: string; done: number; total: number }) => void) {
+    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string },
+      report?: (progress: { id: string; done: number; total: number; stalled?: true }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
+      /** This machine's bytes, verified: kept for this reader at an address until it disposes them. */
+      const served = async (sha256: string, contentType: string, file: FileBytes) => {
+        try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
+        const { url, release } = await deps.serve(sha256, contentType, file)
+        const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file, release, url }); return { id, size: file.size, url }
+      }
+      if (request.op === 'stored') {
+        const sha256 = request.sha256!
+        const blob = await deps.stored?.(sha256) ?? null
+        if (!blob) return null
+        const contentType = typeof request.contentType === 'string' ? request.contentType : ''
+        return served(sha256, contentType, { size: blob.size, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+      }
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
         const named = request.progress
-        if (typeof named === 'string' && report) context = { ...context, progress: (done, total) => report({ id: named, done, total }) }
+        if (typeof named === 'string' && report) context = { ...context, progress: (done, total, stalled) => report({ id: named, done, total, ...(stalled ? { stalled } : {}) }) }
         const local = request.op === 'ssh' ? null : await deps.local(context)
         await check(scope, owner, epoch)
         if (request.op === 'local') return local?.revision ?? null
@@ -76,13 +96,15 @@ export function createNativeFileHost(deps: {
           JSON.stringify([revision.item_id, revision.version, revision.sha256, revision.size_bytes])) throw new Error('Local file revision changed')
         const file = request.op === 'ssh' ? await deps.ssh(revision, context) : await local?.open()
         if (!file) return null
+        if (request.op === 'open') return served(revision.sha256!, revision.content_type, file)
         try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
         const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file }); return { id, size: file.size }
       }
       const entry = await entryFor(scope, request.id!)
       if (!entry.file || entry.context !== key) throw new Error('File handle belongs to another reader')
-      if (request.op === 'dispose') { entries.delete(request.id!); await entry.file.dispose(); return }
+      if (request.op === 'dispose') { entries.delete(request.id!); entry.release?.(); await entry.file.dispose(); return }
       if (request.op !== 'read') throw new Error('Unknown file operation')
+      if (entry.url) throw new Error('This file is read at its address')
       requireFileRange(entry.file.size, request.offset!, request.length!)
       const bytes = await entry.file.read(request.offset!, request.length!); await check(scope, owner, entry.epoch); return bytes
     },
@@ -153,7 +175,6 @@ export function registerNativeFileIpc(ipc: IpcMain, host: ReturnType<typeof crea
   ipc.handle('attachments:declare', (event, row: AttachmentDeclareRequest) => host.attachment(scope(event), { ...row, op: 'declare' }))
   ipc.handle('attachments:drop', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'drop' }))
   ipc.handle('attachments:retry', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'retry' }))
-  ipc.handle('attachments:resume', event => host.attachment(scope(event), { op: 'resume' }))
   ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row,
     (progress) => { if (!event.sender.isDestroyed()) event.sender.send('files:read-progress', progress) }))
   ipc.handle('files:stage', (event, row: FileStageCommand) => host.stage(scope(event), row))

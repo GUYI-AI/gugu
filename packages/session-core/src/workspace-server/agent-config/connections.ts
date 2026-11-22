@@ -39,6 +39,13 @@ export type RenameHarnessConnection = z.infer<typeof renameHarnessConnectionSche
 export type HarnessConnection = z.infer<typeof harnessConnectionSchema>;
 export type CreateHarnessConnection = z.infer<typeof createHarnessConnectionSchema>;
 
+/** Safe, localized transport diagnostics. Never carry exception text or credentials over RPC. */
+export const connectionFailureReasonSchema = z.enum([
+  'unreachable', 'dns', 'timeout', 'certificate', 'connection-refused', 'redirect', 'proxy',
+]);
+export type ConnectionFailureReason = z.infer<typeof connectionFailureReasonSchema>;
+export const connectionUnlistedReasonSchema = z.enum(['no-list', 'unauthorized', ...connectionFailureReasonSchema.options]);
+
 /**
  * 读到了 ⇒ `listed`; 点名模型试通 ⇒ `connected`; 读不到 ⇒ `unlisted` + 一个原因,表单退回手填:
  * `no-list` 这个地址不报模型清单;`unauthorized` 地址拒了这把 key;`unreachable` 连不上这个地址。
@@ -46,7 +53,7 @@ export type CreateHarnessConnection = z.infer<typeof createHarnessConnectionSche
 export const connectionModelListSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('listed'), models: z.array(z.string()) }),
   z.object({ kind: z.literal('connected') }),
-  z.object({ kind: z.literal('unlisted'), reason: z.enum(['no-list', 'unauthorized', 'unreachable']) }),
+  z.object({ kind: z.literal('unlisted'), reason: connectionUnlistedReasonSchema }),
 ]);
 
 export type ConnectionModelList = z.infer<typeof connectionModelListSchema>;

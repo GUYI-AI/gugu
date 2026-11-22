@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronsLeft, ChevronsRight, FolderPlus, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { Archive, ChevronsLeft, ChevronsRight, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
@@ -286,7 +286,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
             onClick={() => navigate('automations')}
             data-testid="sidebar-scheduled"
           >
-            <CalendarClock />
+            <Clock />
           </IconButton>
         </Hint>
         <Hint label={historyLabel} side="bottom">
@@ -300,7 +300,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
             onClick={() => (historyShown ? navigateBack(appState.history.canGoBack) : navigate('session-history'))}
             data-testid="sidebar-session-history"
           >
-            <History />
+            <Archive />
           </IconButton>
         </Hint>
       </div>

@@ -63,7 +63,7 @@ async function mount(kind: typeof platform.kind, width: number) {
   const lane = () => card()?.closest<HTMLElement>('[data-index]') ?? null;
   // The message scrolls like any row; its lane sticks the two-line summary below it (@@@sticky-user-lanes).
   const summary = () => lane()?.querySelector<HTMLElement>('[data-pin-summary="own-message"]') ?? null;
-  const pinned = () => summary() != null && getComputedStyle(lane()!.querySelector('[data-chat-pin-backdrop]')!.parentElement!).position === 'sticky';
+  const pinned = () => summary() != null && getComputedStyle(lane()!.firstElementChild!).position === 'sticky';
   const top = () => card()!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   const summaryTop = () => summary()!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   const reply = async () => {
@@ -101,7 +101,7 @@ it.each([
   expect(sent.top).toBeGreaterThanOrEqual(t.scroller.getBoundingClientRect().top);
   expect(sent.bottom).toBeLessThanOrEqual(composer.top);
   expect(t.pinned()).toBe(pins);
-  if (!pins) expect(t.lane()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
+  if (!pins) expect(t.lane()!.querySelector('[data-pin-summary]')).toBeNull();
 
   await t.reply();
   await until('running reply supplies scrollable content', () => t.scroller.scrollHeight > 2000);
@@ -128,7 +128,7 @@ it('updates phone pinning on a retained web transcript without remounting', asyn
   await until('phone layout disables the existing pin lane', () => !t.pinned());
   await t.scrollTo(0);
   await until('phone user message remains in normal flow', () => t.lane() != null && !t.pinned());
-  expect(t.lane()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
+  expect(t.lane()!.querySelector('[data-pin-summary]')).toBeNull();
   await page.viewport(1000, 844);
   await until('desktop layout restores its pin lane', t.pinned);
   expect(t.mounts()).toBe(1);

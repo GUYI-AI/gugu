@@ -24,7 +24,7 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // A fake `opencode` executable: answers `--version` for the preflight, and in `serve` mode just stays
 // alive until killed (the real HTTP/SSE surface is served in-process below, on the same port).
 const FAKE_CMD_SRC = `#!/usr/bin/env node
-if (process.argv.slice(2).includes('--version')) { process.stdout.write('opencode 1.18.28\\n'); process.exit(0); }
+if (process.argv.slice(2).includes('--version')) { process.stdout.write('1.18.28\\n'); process.exit(0); }
 const t = setInterval(() => {}, 1 << 30);
 const stop = () => { clearInterval(t); process.exit(0); };
 process.on('SIGTERM', stop); process.on('SIGINT', stop);

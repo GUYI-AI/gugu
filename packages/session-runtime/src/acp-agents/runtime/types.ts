@@ -60,7 +60,7 @@ export interface AcpRuntimeDeps {
   onTurnCommitted?: (event: {
     sessionId: string;
     providerId?: string;
-    platformCredentials?: boolean;
+    hostCredentials?: boolean;
     source: 'live' | 'replay' | 'revision' | 'backfill';
     turn: TranscriptTurn;
   }) => void;

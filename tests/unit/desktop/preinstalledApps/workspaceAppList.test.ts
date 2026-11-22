@@ -157,40 +157,51 @@ describe('a row: its suffix, its size, how long its cloud copy has left, the mac
   })
 })
 
-describe('「设为临时 / 持续保存」 in the ⋯', () => {
-  test('my upload: both ways offered, the current one ticked; choosing one keeps it so and reads the list again', async () => {
+// @@@file-menu: how long the cloud copy is kept is set in the details, not in the menu.
+describe('「临时 / 持续保存」 in the details', () => {
+  const openDetails = async (id: string) => {
+    openMenu(id)
+    await menu.pick('更多', '详情')
+  }
+  const keepButtons = () => [...document.querySelectorAll<HTMLButtonElement>('#details .details-keep button')]
+
+  test('the menu has no keep rows: they are in the details', async () => {
     openMenu('spec')
-    expect(radios('保留方式').map((r) => [r.label, r.checked, r.enabled === false])).toEqual([['临时', true, false], ['持续保存', false, false]])
+    expect(menu.labels()).not.toContain('保留方式')
+    expect(menu.labels('更多')).not.toContain('保留方式')
+    await menu.dismiss()
+  })
+
+  test('my upload: both ways offered, the current one pressed; choosing one keeps it so and reads the list again', async () => {
+    await openDetails('spec')
+    expect(keepButtons().map((b) => [b.textContent, b.getAttribute('aria-pressed'), b.disabled])).toEqual([['临时', 'true', false], ['持续保存', 'false', false]])
     const reads = gugu.files.list.mock.calls.length
-    await menu.pick('保留方式', '持续保存')
+    keepButtons()[1]!.click()
     await until('the list read again', () => gugu.files.list.mock.calls.length > reads)
     expect(gugu.files.keep).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'spec' }), 'permanent')
   })
 
-  test('someone else\'s upload, or a file that stays on its machine: shown, not choosable, why on hover', async () => {
-    openMenu('clip')
-    expect(radios('保留方式').map((r) => r.enabled === false)).toEqual([true, true])
-    expect(radios('保留方式')[0]!.title).toBe('只有上传这份文件的人能改它保留多久。')
-    await menu.dismiss()
-    openMenu('shot')
-    expect(radios('保留方式').map((r) => [r.checked, r.enabled === false])).toEqual([[false, true], [false, true]])
-    expect(radios('保留方式')[0]!.title).toContain('R server')
-    await menu.dismiss()
-    openMenu('notes')
-    expect(menu.labels(), 'a document has no cloud copy to keep').not.toContain('保留方式')
-    await menu.dismiss()
+  test('someone else\'s upload: shown, not choosable, why said; no cloud copy: no switch', async () => {
+    await openDetails('clip')
+    expect(keepButtons().map((b) => b.disabled)).toEqual([true, true])
+    expect(document.querySelector<HTMLElement>('#details .details-keep')!.title).toBe('只有上传这份文件的人能改它保留多久。')
+    await openDetails('shot')
+    expect(keepButtons(), 'a file that stays on its machine has no cloud copy to keep').toEqual([])
+    expect(document.getElementById('details')!.textContent).toContain('没有云端副本')
+    await openDetails('notes')
+    expect(keepButtons(), 'a document has no cloud copy to keep').toEqual([])
   })
 
   test('a refusal is said on the list', async () => {
     gugu.files.keep.mockRejectedValueOnce(Object.assign(new Error('Only the person who uploaded a file can change how long it is kept'), { code: 'denied' }))
-    openMenu('pack')
-    await menu.pick('保留方式', '临时')
+    await openDetails('pack')
+    keepButtons()[0]!.click()
     await until('the refusal said', () => banner(), (said) => said === '只有上传这份文件的人能改它保留多久。')
   })
 })
 
 describe('a file that arrives while the folder is open', () => {
-  // A change is read one file at a time, without `keep`: a new file is read again with the list, so its ⋯ has 「保留方式」.
+  // A change is read one file at a time, without `keep`: a new file is read again with the list, so its details say 「保留」.
   test('is read again with the list, once, and then says how long its cloud copy is kept', async () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     const arrived = file('late', 'late.pdf', 'application/pdf', 10, ago(5))
@@ -204,8 +215,8 @@ describe('a file that arrives while the folder is open', () => {
     await new Promise((done) => setTimeout(done, 900))
     expect(gugu.files.list.mock.calls.length, 'two changes, one read').toBe(reads + 1)
     openMenu('late')
-    expect(radios('保留方式').map((r) => r.enabled === false)).toEqual([true, true])
-    await menu.dismiss()
+    await menu.pick('更多', '详情')
+    expect([...document.querySelectorAll<HTMLButtonElement>('#details .details-keep button')].map((b) => b.disabled)).toEqual([true, true])
   })
 })
 
