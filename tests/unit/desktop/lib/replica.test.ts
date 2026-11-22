@@ -448,6 +448,29 @@ describe('core batch: device reads and change feeds', () => {
     harness.cleanup({ keepReads: true })
   })
 
+  // A reader that peeks without showing (account projects reading this computer's device id) holds the entry. The first
+  // answer can be "not yet" (null); when the feed says it changed, the held entry must be read again like a shown one.
+  it('a held entry is read, and read again when its feed fires, with no surface showing it', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let answer: string | null = null
+    let fire = () => {}
+    const reads = vi.fn(async () => answer)
+    const model = rm.replica({ name: 'test-held', scope: 'account', fresh: Infinity, read: reads,
+      watch: { start: () => { fire = () => { void model.refresh() }; return () => { fire = () => {} } } } })
+    const settle = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
+    const release = model.hold()
+    await settle()
+    expect(reads).toHaveBeenCalledTimes(1)
+    expect(model.peek()).toMatchObject({ state: 'value', value: null })
+    answer = 'device-1'
+    fire(); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'device-1' })
+    release()
+    fire(); await settle()
+    expect(reads).toHaveBeenCalledTimes(2)
+  })
+
   it('a model with no push (fresh 0) is read again by a surface that opens while another surface keeps showing it', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const reads = vi.fn(async () => 'v')
