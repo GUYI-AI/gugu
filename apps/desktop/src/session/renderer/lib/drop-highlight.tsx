@@ -65,7 +65,7 @@ export const DropHighlightLayer = observer(function DropHighlightLayer() {
       data-drop-refused={refused ? '' : undefined}
     >
       {refused ? (
-        <span className="absolute top-full left-0 mt-1 max-w-80 rounded-md border border-border-destructive bg-background px-2 py-px text-xs text-foreground-destructive shadow-sm">
+        <span className="absolute top-full left-0 mt-1 w-max max-w-80 rounded-md border border-border-destructive bg-background px-2 py-px text-xs text-foreground-destructive shadow-sm">
           {refused}
         </span>
       ) : null}

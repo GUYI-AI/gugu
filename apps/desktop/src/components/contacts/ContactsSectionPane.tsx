@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { SectionLabel } from '../ui/SectionLabel'
@@ -8,6 +8,8 @@ import { agentFamiliesUnnest, buildAgentForest, useAgentParents } from './contac
 import { AgentFamilies } from './AgentFamilies'
 import { ContactsGrid } from './ContactsGrid'
 import { DropHighlightLayer } from '@renderer/lib/drop-highlight'
+import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
+import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { ContactsAgentSectionState, ContactsGroupSectionState, ContactsPersonSectionState } from './ContactsSectionState'
 import { ContactsCreateAgentButton } from './ContactsCreateAgentButton'
 import { ContactsPageFrame } from './ContactsPageFrame'
@@ -34,6 +36,7 @@ export function ContactsSectionPane({ section, rows, detail, onCloseDetail, onCr
   const onSelectAgent = useStableHandler(rows.onSelectContact)
   const agentMenu = useStableHandler(render.agentMenu)
   const empty = sectionCount(section) === 0
+  const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme)
   return (
     <ContactsPageFrame
       testId="contacts-section-pane"
@@ -52,8 +55,9 @@ export function ContactsSectionPane({ section, rows, detail, onCloseDetail, onCr
               {section.agents.length > 0 ? <SectionLabel className="!mt-4">{t('sectionPane.agents')} · {section.agents.length}</SectionLabel> : null}
               <AgentFamilies forest={forest} selectedId={rows.selectedContactId} onSelect={onSelectAgent} menuFor={agentMenu}
                 pick={rows.selectionMode ? { ids: rows.selectedContactIds, can: (c) => c.owner_user_id === rows.currentUserId } : undefined} />
-              {/* 落点高亮那一层另画一份:会话页那份(workspace)在这一页时藏着(content-visibility hidden),画了也看不见。 */}
-              <DropHighlightLayer />
+              {/* 落点高亮那一层另画一份:会话页那份(workspace)在这一页时藏着(content-visibility hidden),画了也看不见。
+                  它是会话页的组件,穿会话页的皮(同 SessionModalHost):拒收的红色来自会话页的 token,皮外不生效。 */}
+              <div className={sessionSkinClassName(theme)}><DropHighlightLayer /></div>
             </div>
             {section.groups.length > 0 ? <SectionLabel className="!mt-6">{t('sectionPane.groups')} · {section.groups.length}</SectionLabel> : null}
             {section.groups.length > 0 ? <ContactsGrid>{section.groups.map(render.renderGroup)}</ContactsGrid> : null}
