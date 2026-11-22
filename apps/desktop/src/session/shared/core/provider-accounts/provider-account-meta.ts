@@ -56,7 +56,11 @@ const v1Schema = z.object({
     /** 建连接时按地址探出来的接口(这家讲得了不止一种时才有,#2507)。 */
     protocol: z.enum(['openai-responses', 'openai-chat-completions']).optional(),
     removed: z.boolean().optional(),
-    /** Retained for rollback; migration also deduplicates by credential_ref. */
+    /**
+     * The row is no longer a connection of its harness, which falls back to `native`. The value only records where it
+     * went: `native` for a merged Codex alias, a `models:custom` account for a former API connection (which also
+     * deduplicates by credential_ref). Retained for rollback.
+     */
     migratedTo: z.string().optional(),
     /** Device-local reference only. OAuth tokens remain in the native CLI's file. */
     nativeOAuth: z.object({ root: z.string(), identity: z.string(), operationId: z.string() }).optional(),

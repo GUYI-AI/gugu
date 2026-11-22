@@ -26,7 +26,8 @@ export function migrateCustomModelConnections(): void {
   const vendors = new Set(pluginRegistry.getAll().filter((plugin) =>
     plugin.capabilities.auth.kind === 'supported' && plugin.capabilities.auth.vendorKey,
   ).map((plugin) => plugin.metadata.id));
-  migrateCustomModels(db, vendors);
+  const migrated = migrateCustomModels(db, vendors);
+  if (migrated.length) log.info('custom-model migration: moved API connections', { migrated });
   migratedDatabases.add(db);
 }
 
