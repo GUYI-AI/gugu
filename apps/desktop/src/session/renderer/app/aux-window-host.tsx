@@ -30,6 +30,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
+import { setAuxLayer } from './aux-layers';
 import { auxWindows, type AuxChatTabContent, type AuxTabContent, type AuxWindow } from './aux-windows';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { AUX_WINDOW_TRAFFIC_LIGHTS_PX, ScreenBlockContext, type ScreenBlockPlace } from './screen-block-context';
@@ -94,7 +95,8 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
     };
     win.addEventListener('focus', onFocus);
     win.addEventListener('pagehide', onGone);
-    auxWindows.setHandle(id, win, layer);
+    setAuxLayer(doc, layer);
+    auxWindows.setHandle(id, win);
     setMounted({ win, root, layer });
     win.focus();
 

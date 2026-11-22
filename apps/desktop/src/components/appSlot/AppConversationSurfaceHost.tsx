@@ -11,7 +11,7 @@ import { readAssistantShellBridge, type AssistantShellAssistant } from '../../li
 import { useAuth } from '../../store/auth'
 import { useAppComposerEntries } from './appComposerActions'
 import { AppComposerRow } from './AppComposerRow'
-import { portalToPaneSlot } from './ChatTabHosts'
+import { portalToPaneSlot } from './paneSlotPortal'
 import { useStoreValueBy } from '../../store/chatContext'
 import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { useReplica } from '../../lib/replica'

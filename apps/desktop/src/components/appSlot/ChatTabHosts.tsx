@@ -1,9 +1,7 @@
 import { observer } from 'mobx-react-lite'
 import { Fragment, useEffect, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
-import { auxWindows } from '@renderer/app/aux-windows'
 import { chatTabSlotKey, readShellSlots } from '../../lib/shellSlots'
+import { portalToPaneSlot } from './paneSlotPortal'
 import { chatLayoutOf, chatPaneOf, chatTabOf, focusedChatTab, infoTabOf, panelTabOf, panelTabsOf, topicTabOf, type ChatPanelTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { PaneContext } from '@renderer/features/tabs/pane-context'
 import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation'
@@ -22,15 +20,6 @@ export function ChatPaneContent({ chatId, tabId, ...props }: ComponentProps<'div
   return <div {...props} onPointerDownCapture={focus} onFocusCapture={focus} />
 }
 
-
-/**
- * Draw a tab's content into its pane's slot. The content belongs to the shell's tree, so its popups (menus, sheets, pickers)
- * portal where the shell's do: the main window. A slot in a pop-out window (aux-window-host) is another document; there
- * they go into that window's layer, or they open behind it in the main window.
- */
-export function portalToPaneSlot(children: ReactNode, slot: HTMLElement, key: string) {
-  return createPortal(<UiPortalContainerProvider value={auxWindows.layerOf(slot.ownerDocument) ?? undefined}>{children}</UiPortalContainerProvider>, slot, key)
-}
 
 /**
  * In a block, each tab of the chat that is on screen has a slot the session page's engine left for it (chat-tab-providers'
