@@ -53,7 +53,7 @@ describe('useRowAboveViewport', () => {
     const seen: boolean[] = []
     function Probe(props: { index: number | null; enabled: boolean }) {
       const ref = useRef<HTMLElement | null>(scroller)
-      seen.push(useRowAboveViewport(ref, 'a', props.index, props.enabled, onSeen))
+      seen.push(useRowAboveViewport(ref, undefined, 'a', props.index, props.enabled, onSeen))
       return null
     }
     harness = createReactHarness()
