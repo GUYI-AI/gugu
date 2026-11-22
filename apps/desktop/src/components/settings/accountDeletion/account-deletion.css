@@ -22,8 +22,6 @@
   gap: 8px;
   min-height: var(--control-h-lg);
   padding: 0 4px 0 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
 }
 .gg-account-deletion-code input { min-width: 0; flex: 1; }
 .gg-account-deletion-code button { flex: none; color: var(--muted-fg); }

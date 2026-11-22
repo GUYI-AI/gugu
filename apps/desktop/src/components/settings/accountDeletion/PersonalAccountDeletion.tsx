@@ -46,13 +46,13 @@ export function PersonalAccountDeletion({ view, onCancel }: { view: AccountDelet
       </label>}
       <Field.Root invalid={!!view.error}>
         <Field.Label className="sr-only">{t('accountDeletion.code')}</Field.Label>
-        <div className="gg-account-deletion-code">
+        <Field.InputGroup className="gg-account-deletion-code">
           <Field.Input variant="bare" value={view.code} onValueChange={value => view.onCode(value.replace(/\D/g, ''))}
             placeholder={t('accountDeletion.code')} inputMode="numeric" autoComplete="one-time-code" maxLength={6} disabled={!ready} />
           <Button variant="ghost" size="sm" disabled={!ready || view.remainingCredits === null} onClick={view.onResend}>
             {t(view.codeSent ? 'accountDeletion.resend' : 'accountDeletion.sendCode')}
           </Button>
-        </div>
+        </Field.InputGroup>
         {view.error && <Field.Error match>{view.error}</Field.Error>}
       </Field.Root>
       {status && <p className="gg-account-deletion-status" role="status">{t(`accountDeletion.${status}`)}</p>}
