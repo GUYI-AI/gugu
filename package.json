@@ -321,7 +321,8 @@
       "@steipete/sweet-cookie@0.4.4": "patches/@steipete__sweet-cookie@0.4.4.patch",
       "ssh2@1.17.0": "patches/ssh2@1.17.0.patch",
       "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch",
-      "vitest@4.1.10": "patches/vitest@4.1.10.patch"
+      "vitest@4.1.10": "patches/vitest@4.1.10.patch",
+      "photoswipe@5.4.4": "patches/photoswipe@5.4.4.patch"
     }
   },
   "optionalDependencies": {

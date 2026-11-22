@@ -1,6 +1,5 @@
 import { i18n } from '@/i18n/runtime'
 import { useCallback, useEffect, useSyncExternalStore, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { observer } from 'mobx-react-lite'
 import { readShellSlots } from '@/lib/shellSlots'
 import { readChatSummary } from '@/lib/chatSummariesBridge'
@@ -11,6 +10,7 @@ import { installOwnedAgentResourceTabs } from '@/lib/ownedAgentResources'
 import { readSessionpageViewRequestBridge } from '@/lib/sessionpageViewRequestBridge'
 import { GroupTabContent } from './GroupTabContent'
 import { ChatTabPage } from './ChatTabHosts'
+import { portalToPaneSlot } from './paneSlotPortal'
 import { RightPanel } from '../chat/RightPanel'
 import { useChatOpener } from './useChatOpener'
 import { PaneContext } from '@renderer/features/tabs/pane-context'
@@ -64,6 +64,6 @@ const ResourcePortals = observer(function ResourcePortals({ chatId, projectId, s
     const element = entries.get(ownedAgentResourceSlotKey(chatId, tab.tabId))
     const layout = getSessionView(projectId, sessionId)?.paneLayout
     const owner = [...(layout?.groups ?? []), ...(layout?.windowPanes.values() ?? [])].find(({ pane }) => [...pane.entries.values()].some(entry => entry.kind === 'chat-resource' && (entry.state as { chatId?: string; sourceTabId?: string }).chatId === chatId && (entry.state as { sourceTabId?: string }).sourceTabId === tab.tabId))
-    return element ? createPortal(<PaneContext.Provider value={owner ? { pane: owner.pane, paneId: owner.paneId, isFocusedPane: layout?.activePaneId === owner.paneId } : null}>{panel(tab)}</PaneContext.Provider>, element, tab.tabId) : null
+    return element ? portalToPaneSlot(<PaneContext.Provider value={owner ? { pane: owner.pane, paneId: owner.paneId, isFocusedPane: layout?.activePaneId === owner.paneId } : null}>{panel(tab)}</PaneContext.Provider>, element, tab.tabId) : null
   })}</>
 })

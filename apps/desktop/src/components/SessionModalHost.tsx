@@ -7,6 +7,7 @@ import { modalStore } from '@renderer/lib/modal/modal-store'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { sessionSkinClassName } from './sessionpage/sessionSkin'
+import { requestLayer } from '@renderer/app/aux-layers'
 import { SessionUiTheme } from './sessionpage/SessionUiTheme'
 
 // The renderer and its dialogs are part of the task page's renderer chunk: pulled when a dialog is first asked for.
@@ -21,7 +22,11 @@ const ModalRenderer = lazy(() => import('@renderer/lib/modal/modal-renderer').th
 export const SessionModalHost = observer(function SessionModalHost() {
   const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme)
   const [asked, setAsked] = useState(false)
-  if (!asked && modalStore.activeModalId) setAsked(true)
+  // Each dialog opens in the window it was asked from (aux-layers: a pop-out's layer), fixed when it opens.
+  const [opened, setOpened] = useState<{ id: string | null; layer: HTMLElement | null }>({ id: null, layer: null })
+  const activeId = modalStore.activeModalId
+  if (activeId !== opened.id) setOpened({ id: activeId, layer: activeId ? requestLayer() : opened.layer })
+  if (!asked && activeId) setAsked(true)
   if (!asked) return null
   // At the end of <body>: above every page layer (the task page is one), as a dialog over the whole screen is.
   return createPortal(<SessionUiTheme theme={theme} skin>
@@ -32,5 +37,5 @@ export const SessionModalHost = observer(function SessionModalHost() {
         </SessionLocalizationProvider>
       </QueryClientProvider>
     </div>
-  </SessionUiTheme>, document.body)
+  </SessionUiTheme>, opened.layer ?? document.body)
 })
