@@ -166,7 +166,7 @@ describe('agent rename has one path #6021', () => {
   it('renames on the task host and never writes the name to the identity itself', async () => {
     const harness = await renderProvider()
     try {
-      await act(async () => { await store!.renameAgent(sharedGroupAgent.id, '  新名字  ') })
+      await act(async () => { await store!.updateAgentProfile(sharedGroupAgent.id, { name: '  新名字  ' }) })
       expect(renameOnHost).toHaveBeenCalledExactlyOnceWith(sharedGroupAgent.id, '新名字')
       expect(contactsServiceMock.updateOwnedAgentProfile).not.toHaveBeenCalled()
       expect(refreshChatsMock).toHaveBeenCalledOnce()
@@ -178,7 +178,7 @@ describe('agent rename has one path #6021', () => {
     contactsServiceMock.updateOwnedAgentProfile.mockResolvedValue(updated)
     const harness = await renderProvider()
     try {
-      await act(async () => { await store!.renameAgent(updated.id, '新名字') })
+      await act(async () => { await store!.updateAgentProfile(updated.id, { name: '新名字' }) })
       expect(contactsServiceMock.updateOwnedAgentProfile).toHaveBeenCalledWith(updated.id, { display_name: '新名字' })
       expect(identitiesById[updated.id]).toEqual(updated)
     } finally { harness.cleanup() }
@@ -187,7 +187,7 @@ describe('agent rename has one path #6021', () => {
     renameOnHost.mockRejectedValue(new Error('The task host could not be reached; reconnect and retry.'))
     const harness = await renderProvider()
     try {
-      await expect(store!.renameAgent('agent-1', 'New')).rejects.toThrow('could not be reached')
+      await expect(store!.updateAgentProfile('agent-1', { name: 'New' })).rejects.toThrow('could not be reached')
       expect(contactsServiceMock.updateOwnedAgentProfile).not.toHaveBeenCalled()
       expect(refreshChatsMock).not.toHaveBeenCalled()
     } finally { harness.cleanup() }

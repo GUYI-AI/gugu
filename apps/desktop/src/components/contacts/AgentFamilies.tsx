@@ -16,8 +16,8 @@ import { ContactsGrid } from './ContactsGrid'
 
 // 一组 agent 按派生关系排在通讯录的列轨上(ContactsGrid:最多 4 列,随正文宽度 4→3→2→1):
 // 每个有子 agent 的顶层 agent 连同子孙是一个「家族」,只占一格,在格里从上往下画成大纲 —— 父在上,子缩进一级,
-// ├ / └ 连接线与 │ 竖线是纯 CSS 边框。没有子 agent 的 agent 也各占一格,排在家族后面。任何东西都不跨列,
-// 所以人、群、agent 永远落在同一组竖线上,正文再窄也不横向滚动。
+// ├ / └ 连接线与 │ 竖线是纯 CSS 边框;一行家族没排满时,剩下的宽度分给这一行的家族(ContactsGrid fill),名字截在可用宽度上。
+// 没有子 agent 的 agent 各占一格,排在家族后面。正文再窄也不横向滚动。
 // 节点 = 头像 + 名字;状态只在头像角上的状态点(Avatar 自带的 AgentStatusBadge:聊天列表、成员列表、消息头像同一套)。
 
 // 一个 agent 的子 agent 超过 FOLD_OVER 个时只露前 FOLD_SHOW 个,其余收成一个「…+N」行,点开就地展开。
@@ -163,7 +163,7 @@ export function AgentFamilies({ forest, ...props }: FamiliesProps & { forest: re
   return (
     <div data-testid="agent-families" className={cn('!py-2', props.pick
       ? '[--rail-x:calc(8px_+_var(--avatar-xs)/2)]' : '[--rail-x:calc(8px_+_var(--avatar-sm)/2)]', '[--indent:calc(var(--rail-x)_+_4px)]')}>
-      {families.length > 0 ? <ContactsGrid className="items-start gap-y-4">{families.map((root) => <Family key={root.contact.id} root={root} {...props} />)}</ContactsGrid> : null}
+      {families.length > 0 ? <ContactsGrid fill className="items-start gap-y-4">{families.map((root) => <Family key={root.contact.id} root={root} {...props} />)}</ContactsGrid> : null}
       {singles.length > 0 ? (
         <ContactsGrid className={cn(families.length > 0 && '!mt-4 border-t border-[var(--border)] !pt-4')}>
           {singles.map((node) => <div key={node.contact.id} className="h-[44px] min-w-0"><Node contact={node.contact} {...props} /></div>)}

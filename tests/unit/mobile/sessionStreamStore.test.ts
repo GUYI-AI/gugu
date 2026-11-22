@@ -25,20 +25,17 @@ describe('session stream store', () => {
   })
 
   it('clears every stream on sign-out and on another account; an absent session (boot restore) holds', async () => {
-    const { publishRendererSession, sessionStreams, sessionpageTimelineFacts, updateSessionStream, updateSessionpageFacts } = await load()
+    const { publishRendererSession, sessionStreams, updateSessionStream } = await load()
     publishRendererSession('SIGNED_IN', session('alice'))
-    const fill = () => {
-      updateSessionStream(key, (current) => ({ ...current, phase: 'ready' }))
-      updateSessionpageFacts('s1', () => ({ recentActions: null, settlements: {} }))
-    }
-    const sizes = () => [sessionStreams, sessionpageTimelineFacts].map((store) => Object.keys(store.get()).length)
+    const fill = () => updateSessionStream(key, (current) => ({ ...current, phase: 'ready' }))
+    const size = () => Object.keys(sessionStreams.get()).length
     fill()
     publishRendererSession('BOOT_RESTORING', null)
-    expect(sizes()).toEqual([1, 1])
+    expect(size()).toBe(1)
     publishRendererSession('SIGNED_IN', session('bob'))
-    expect(sizes()).toEqual([0, 0])
+    expect(size()).toBe(0)
     fill()
     publishRendererSession('SIGNED_OUT', null)
-    expect(sizes()).toEqual([0, 0])
+    expect(size()).toBe(0)
   })
 })

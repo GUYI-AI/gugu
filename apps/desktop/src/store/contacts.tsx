@@ -265,11 +265,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     await refreshChats()
   }, [applyAgentProfileUpdate, refreshChats, userId])
 
-  // Every name entry uses the profile path (renameOwnedAgent decides where the rename is written).
-  const renameAgent = useCallback(async (agentId: string, name: string) => {
-    await updateAgentProfile(agentId, { name })
-  }, [updateAgentProfile])
-
   const uploadAgentAvatar = useCallback(async (agentId: string, file: File, profile?: { name?: string; bio?: string }) => {
     // The name (if any) goes the one rename way (updateAgentProfile → renameOwnedAgent); the upload carries the rest.
     if (profile?.name !== undefined) await updateAgentProfile(agentId, { name: profile.name })
@@ -361,7 +356,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       updateContactAlias,
       setAgentPublic,
       setAgentDesiredStatus,
-      renameAgent,
       updateAgentProfile,
       uploadAgentAvatar,
       setAgentLook,
@@ -373,7 +367,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
     groupInvitations, managedJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
     loadingGroups, contactsStatus, groupChatsStatus, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
-    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
+    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact,
   ])
   const [store] = useState(() => createSelectStore<ContactsContextValue>(value))

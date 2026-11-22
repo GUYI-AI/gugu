@@ -6,6 +6,8 @@ import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
+import { egress } from '@gugu/core/shared/egress'
+import { localFileResponse } from './lib/file-response'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { followAppPresence } from './app-presence'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
@@ -31,6 +33,9 @@ import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { PROJECT_FILE_STREAM } from './projectFileHost'
+import { createWorkingCopyStreamer } from './session/main/core/extensions/working-copy-files'
+import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/files/machine-file-streams'
+import { remoteFileStreams } from './projectFileSsh'
 import { nativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
@@ -56,7 +61,6 @@ import {
   dialog,
   clipboard,
   Notification,
-  net,
   protocol,
   powerMonitor,
   safeStorage,
@@ -93,7 +97,6 @@ import { registerErrorSummaryReporting } from './error-summary-reporting-host'
 import { registerErrorSummaryConsent } from './error-summary-consent-host'
 import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
-import { pathToFileURL } from 'node:url'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
@@ -154,8 +157,9 @@ import {
 } from '../shared/update-policy'
 import { createUpdateState, type VersionedUpdateState } from '../shared/update-state'
 import { createBuiltRendererRootResolver } from './rendererRoot'
+import { installHostEgress } from './egress/install'
 import { ensureWindowsNpmGlobalBinInPath, hydrateLoginShellPath, loginShellEnvSnapshot, refreshUserPath } from './shellPath'
-import { makeChatClient, makeIdentityClient, supabase, electronFetch, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
+import { makeChatClient, makeIdentityClient, supabase, onElectronCloudAnswer, bindElectronSupabaseAuth, refreshElectronSupabaseAuth, resumeElectronSupabaseRealtime, createElectronRealtimeClient } from './supabase'
 import { createAccountResumeHandler, installNativeResumeSource, installNativeSleepActivity } from './server/account-resume-wiring'
 import { applyOwnerTimeZoneContext, ownerTimeZoneFromEnvironment } from './server/owner-timezone'
 import { runDueScheduledTasksForOwner } from './scheduled-tasks-runner'
@@ -1088,7 +1092,7 @@ function createDeviceSessionpageBridge() {
           resolveDeviceId: async () => deviceId,
           resolveProjectName: (projectId: string) => emdash.emdashProjectName(projectId),
           takeBirthGroup: (sessionId: string) => emdash.emdashTakeBirthGroup(sessionId),
-          provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
+          provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: egress.fetch }),
           env: process.env,
         })
         if (!provisioned) throw new Error(`session-page agent session ${session.sessionId} has no addressable identity`)
@@ -2473,7 +2477,7 @@ ipcMain.handle('updates:install', () => installUpdate())
 // @@@5758 更新说明**由主进程去取**。渲染层的 origin 是 gugu-app://app(corsEnabled),去下载站属于
 // 跨源,而下载站一个 Access-Control-Allow-Origin 都不发 —— 浏览器层当场拦掉,产品里就是那句
 // 「暂时取不到更新说明」。2026-09-18 在同样的 scheme 下实测:渲染层 TypeError: Failed to fetch,
-// 主进程 net.fetch 200。主进程没有同源策略,这条路本来就不该走渲染层。
+// 主进程云请求 200。主进程没有同源策略,这条路本来就不该走渲染层。
 // 取不到返回 null(调用方回落本机缓存,❌ 不当成「没有更新说明」),但原因必须进日志 ——
 // 之前渲染层那个空 catch 把它吞了,查了一轮才找到。
 ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
@@ -2484,7 +2488,7 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
     return null
   }
   try {
-    const res = await net.fetch(url, { cache: 'no-cache' })
+    const res = await egress.fetch(url, { cache: 'no-cache' })
     if (!res.ok) {
       updaterLogger.warn({ url, status: res.status }, '[updater] 更新说明取回来了但状态码不对')
       return null
@@ -2496,7 +2500,7 @@ ipcMain.handle('updates:changelog', async (): Promise<unknown> => {
   }
 })
 const teamPaymentCheckout = createTeamPaymentCheckout({
-  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: electronFetch,
+  auth: () => desktopAuthProvider().getAuth(), url: getSupabaseUrl, anonKey: getSupabaseAnonKey, fetch: egress.fetch,
   open: input => {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('TEAM_PAYMENT_WINDOW_UNAVAILABLE')
     return openTeamPaymentWindow(mainWindow, currentHostCatalog().teamPaymentTitle, input)
@@ -2533,11 +2537,13 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  fetch: electronFetch, links: () => sshLinks,
+  fetch: egress.fetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
+// A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
+setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
 // Every image main uploads (the composer's, an agent's, an App's, a project publication) offers this preview.
 drawImagePreviews({ draw: nativeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
@@ -2550,7 +2556,7 @@ const attachmentUploads = createAttachmentUploadHost({
       if (current?.userId !== auth.userId || !current.accessToken) throw new Error('Attachment upload account changed')
       return hostAttachmentsEndpoint({
         supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken,
-      }, electronFetch, SERVER_MODE)
+      })
     } }
   },
   result: result => createLogger('files/attachment-uploads')[result.outcome === 'failed' ? 'warn' : 'info'](result, 'Attachment upload outcome'),
@@ -3075,11 +3081,6 @@ if (sshMachineStore) {
   registerSshMachinesIpc({ ipcMain, getWindow: () => mainWindow, store: sshMachineStore, currentUserId }) // #6264 远程 SSH 的机器:一切走设备连接(server/ssh-link.ts)
   if (REMOTE_TUNNEL_OPEN) {
     const tunnelLog = createLogger('server/tunnel')
-    const requireAuth = async () => {
-      const auth = await desktopAuthProvider().getAuth()
-      if (!auth?.accessToken || !auth.userId) throw new Error('this machine is not signed in to 咕咕')
-      return auth
-    }
     // 问 tunnel.open 只走咕咕云(要建的正是另一条路);一台机器一条频道,与窗口那条各订各的。
     const cloud = createDeviceRpcRequester({
       userId: async () => (await requireAuth()).userId,
@@ -3854,19 +3855,28 @@ function deviceActionCaller(): DeviceActionCaller {
   return (deviceActionCallerInstance = caller)
 }
 
+async function requireAuth() {
+  const auth = await desktopAuthProvider().getAuth()
+  if (!auth?.accessToken || !auth.userId) throw new Error('this machine is not signed in to 咕咕')
+  return auth
+}
+
+/**
+ * A machine this desktop reaches over a device link: one it added over SSH, or one a remote tunnel links. Everything
+ * main sends that machine goes over that link (the requester's pipe, a working copy's file stream); the rest go
+ * through 咕咕云. One rule, read from the mapping, never from how the link is doing right now.
+ */
+async function linkReaches(deviceId: string): Promise<boolean> {
+  const store = sshMachineStore
+  return !!(store && findSshMachine(store.list(), deviceId, (await requireAuth()).userId)) || !!tunnelMachines?.linkMachine(deviceId)
+}
+
 /** 跨机器的发起方,第一次用到时才装。通道与渲染层同一条规矩:这台桌面用 SSH 装上的机器走 SSH,其余走咕咕云。 */
 function crossMachine(): CrossMachineSessions {
   if (crossMachineSessions) return crossMachineSessions
-  const requireAuth = async () => {
-    const auth = await desktopAuthProvider().getAuth()
-    if (!auth?.accessToken || !auth.userId) throw new Error('this machine is not signed in to 咕咕')
-    return auth
-  }
-  const store = sshMachineStore
-  const sshMachine = async (deviceId: string) => (store ? findSshMachine(store.list(), deviceId, (await requireAuth()).userId) : null)
   const requester = createDeviceRpcRequester({
     userId: async () => (await requireAuth()).userId,
-    openPipe: async (deviceId, handlers) => (sshLinks && ((await sshMachine(deviceId)) || tunnelMachines?.linkMachine(deviceId))
+    openPipe: async (deviceId, handlers) => (sshLinks && await linkReaches(deviceId)
       ? openSshDeviceRpcPipe(sshLinks, deviceId, handlers)
       : openCloudDeviceRpcPipe({ supabase, deviceId, userId: async () => (await requireAuth()).userId, ...handlers })),
     // #7199 第二步:设备推回来的「还在跑」与结果。「收到」之后管道本来就留着(只有超时且没有在途请求才拆),
@@ -4728,6 +4738,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Before anything reaches the network: every host request and cloud socket goes through the egress from here on.
+  installHostEgress()
   if (!hasSingleInstanceLock) return
   // #6264 重启前发出去的卡还有 agent 拿着(tmux 里的会话):开机**第一步**就把端口绑回来。agent 的 HTTP MCP 客户端在宿主
   // 一退就开始重连(claude:5 次、退避 1/2/4/8 s,15 s 内用完就永远放弃),而开机到会话页就绪要十几秒;端口晚绑,
@@ -4791,9 +4803,9 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('[codex-app-server] retired capability run cleanup failed:', error)
   }
-  // @@@gugu-app-scheme — serve the built renderer (dist/) over gugu-app://app/…; net.fetch on the
+  // @@@gugu-app-scheme — serve the built renderer (dist/) over gugu-app://app/…; the local file response on the
   // file URL supplies correct Content-Type per extension (module scripts require a JS MIME).
-  // 路径越界直接 403,找不到的文件由 net.fetch 报 404 — fail loud,无兜底页。
+  // 路径越界直接 403,找不到的文件由本地文件适配报 404 — fail loud,无兜底页。
   // 解析惰性执行:注册不碰磁盘,第一次真有人请求才解析(#2795)。dev 从 VITE_DEV_SERVER_URL
   // 取渲染层、永不请求本 scheme,所以不该被生产产物的存在性检查挡住启动。
   const builtRendererRoot = createBuiltRendererRootResolver({
@@ -4807,7 +4819,7 @@ app.whenReady().then(async () => {
     if (url.host !== 'app' || !filePath.startsWith(rendererRoot + sep)) {
       return new Response('forbidden', { status: 403 })
     }
-    return net.fetch(pathToFileURL(filePath).toString())
+    return localFileResponse(filePath)
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
@@ -6577,7 +6589,16 @@ app.whenReady().then(async () => {
             warn: (message) => createLogger('server/link').warn({}, message),
             // #7199 心跳随行报「隧道最近一次有流量」(会话页宿主的心跳不算):云电脑的管家据此判闲置。
             onActivity: () => noteTunnelActivity(),
-            streams: { [PROJECT_FILE_STREAM]: desktopFiles.stream },
+            streams: {
+              [PROJECT_FILE_STREAM]: desktopFiles.stream,
+              // The link's own account: a working copy streams only to it, as its app calls answer only it.
+              [MACHINE_FILE_STREAM]: createWorkingCopyStreamer(async () => process.env.GUGU_SERVER_ACCOUNT ?? '', async (projectId, workspaceId) => {
+                const { resolveWorkspace } = await import('./session/main/core/projects/utils')
+                const workspace = await resolveWorkspace(projectId, workspaceId)
+                if (!workspace) throw new Error(`No workspace ${workspaceId} in project ${projectId}`)
+                return workspace.path
+              }),
+            },
           })
           await emdash.startSessionPtyAttachServer(app.getPath('userData'), { link, serverUpdate: callServerUpdate,
             timeZone: context => applyOwnerTimeZoneContext(context), resume: since => {

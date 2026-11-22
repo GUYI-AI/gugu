@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { withLoopbackNoProxy } from './agent-env';
 import { hostCliKey, hostCliSchema } from './host-cli';
 
 /**
@@ -176,6 +177,9 @@ export function runContextLaunchArgs(ctx: AgentRunContext, session: { platformQu
  *    `ctx.pinnedEnv` 同层 —— 关自更新的会话级开关,同样必须赢过用户与 provider。
  * 4. `hostInjections` —— 每次调用才有的宿主注入:工作区信任、平台中转/能力包、
  *    任务级变量、钩子端口。它压在最上面(理由见 #2503:宿主的注入不是用户偏好)。
+ *
+ * 叠完以后把回环并进 NO_PROXY(`withLoopbackNoProxy`):不论哪一层带进来了代理,
+ * agent 发给咕咕本机服务的请求都不能交给代理。
  */
 export function composeAgentSpawnEnv(
   ctx: AgentRunContext,
@@ -192,6 +196,6 @@ export function composeAgentSpawnEnv(
   for (const injection of layers.hostInjections ?? []) {
     if (injection) Object.assign(env, injection);
   }
-  return env;
+  return withLoopbackNoProxy(env);
 }
 

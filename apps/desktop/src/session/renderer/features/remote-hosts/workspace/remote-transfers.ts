@@ -1,7 +1,7 @@
 // #6264 别的机器上的文件树:上传(含从访达拖进来)。下载走 App 文件那一条(app-files.ts 的 downloadAppFile)。
 //
 // 照 VS Code 远程资源管理器(1.36 起:拖进来即上传、右键「下载...」,https://code.visualstudio.com/updates/v1_36#_remote-development):
-//  · 上传:字节分段走「写文件」那个既有动词(与编辑器存回同一条,SSH 直连优先、云端中转兜底);
+//  · 上传:字节分段走「写文件」那个既有动词(与编辑器存回同一条,走那台机器的通道:SSH / 隧道连着走设备连接,只走云的机器走云,❌ 按请求换路);
 //    文件夹按层先建目录再传文件;同名已有先问一次「替换」(与本机文件树拖进来同一个对话框),❌ 静默覆盖;
 // 每一件都有真实进度(已完成 / 总共 · 速度),能取消;失败说人话,写了一半的由落盘那一侧删掉。
 //
@@ -15,7 +15,6 @@ import {
   WORKSPACE_EXISTS_CODE,
   WORKSPACE_WRITE_FORCE,
   type SessionpageWorkspaceEntry,
-  type SessionpageWorkspaceReadRequest,
   type SessionpageWorkspaceWriteRequest,
 } from '@gugu/session-core/session-record/contract';
 import { bytesToBase64 } from '@shared/lib/base64';
@@ -70,10 +69,9 @@ class Cancelled extends Error {
   }
 }
 
-/** 传输要问那台机器的四件事(生产装配在 remote-transfer-wiring.ts,经 rpc 路由到那台机器)。 */
+/** 传输要问那台机器的三件事(生产装配在 remote-transfer-wiring.ts,经 rpc 路由到那台机器)。 */
 export type TransferRpc = {
   listWorkspace(deviceId: string, request: { sessionId: string; path?: string }): Promise<{ entries: SessionpageWorkspaceEntry[] }>;
-  readWorkspaceFile(deviceId: string, request: SessionpageWorkspaceReadRequest): Promise<{ size: number; etag: string; data: string }>;
   writeWorkspaceFile(deviceId: string, request: SessionpageWorkspaceWriteRequest): Promise<unknown>;
   createWorkspaceEntry(
     deviceId: string,

@@ -1,6 +1,5 @@
 import { columnAgents, standaloneAgentAnchor } from './inner-sidebar-column';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
-import { motion } from 'framer-motion';
 import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
@@ -170,7 +169,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const sample = useSampleProject();
   const sampleOwnerId = next === null && sample.shown && sampleProjectInView() ? sample.owner?.id : undefined;
   const attachedTo = next?.chatId ?? (sampleOwnerId ? 'sample' : null);
-  // 收起着:这一列 ❌ 画,挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮),正文左上角浮出展开钮。
+  // 收起着:这一列照旧挂着(收起是它的格子合到 0,@@@panel-track),挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮),正文左上角浮出展开钮。
   const crowded = useInnerSidebarCrowded();
   useLayoutEffect(() => setInnerSidebarCrowded(crowded), [crowded]);
   const folded = innerSidebarFolded.get();
@@ -195,7 +194,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
   return (
     <>
       <MyChatAgentCountsPublisher agents={agents} summaries={summaries} />
-      {folded ? null : next?.kind === 'agent' ? (
+      {next?.kind === 'agent' ? (
         <InnerAgentColumn
           key={next.chatId}
           anchor={next}
@@ -330,26 +329,33 @@ const InnerAgentColumn = observer(function InnerAgentColumn({
 
 /**
  * 这一列本身(群 / 项目 / 智能体 / 示例都是它):列表与正文之间的一列;里面是头一行(这一列顶上那条带)与分区。
- * 宽度拖它右边缘调(#2642,分隔条由工作区画,useInnerSidebarFrame),没拖过就是默认侧栏宽。
+ * 宽度由工作区的那一格给(PanelSlot「inner」,拖它右边缘调 #2642),这一列只铺满它;收起时它照旧挂着,只报给那一格。
  */
-function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAnchor['kind'] | 'sample'; chatId?: string; children: ReactNode }) {
-  const width = useInnerSidebarFrame();
+const InnerSidebarFrame = observer(function InnerSidebarFrame({
+  kind,
+  chatId,
+  children,
+}: {
+  kind: InnerSidebarAnchor['kind'] | 'sample';
+  chatId?: string;
+  children: ReactNode;
+}) {
+  useInnerSidebarFrame(innerSidebarFolded.get());
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
     // 底色是列表那一档(同 left-sidebar):这一列归列表那一层,只有正文是叠在上面的卡片(同任务页)。
-    <motion.div
+    <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
-      className="relative isolate flex h-full shrink-0 flex-col bg-background-tertiary text-foreground-tertiary-muted"
-      style={{ width }}
+      className="relative isolate flex h-full w-full flex-col bg-background-tertiary text-foreground-tertiary-muted"
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>
       </SidebarContainer>
-    </motion.div>
+    </div>
   );
-}
+});
 
 /** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
 function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {

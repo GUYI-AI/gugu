@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import { BUNDLE_STALL_TIMEOUT_MS } from '@shared/extensions/market';
 import type { BundleDownloadOptions, MarketBackend } from './market-catalog';
 
@@ -10,7 +11,7 @@ export class DownloadSiteMarketBackend implements MarketBackend {
     private readonly base: string,
     /** Nothing new for this long — the wait for the answer included — and the read fails. */
     private readonly stallMs = BUNDLE_STALL_TIMEOUT_MS,
-    private readonly fetchFile: typeof fetch = fetch
+    private readonly fetchFile: typeof globalThis.fetch = egress.fetch
   ) {}
 
   urlOf(relativePath: string): string {

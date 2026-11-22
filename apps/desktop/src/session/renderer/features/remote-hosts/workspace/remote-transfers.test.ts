@@ -26,10 +26,6 @@ function fakeMachine(files: Record<string, string> = {}, dirs: string[] = ['/w']
   };
   const rpc = {
     listWorkspace: vi.fn(async (_d: string, request: { path?: string }) => ({ root: '/w', path: request.path ?? '/w', entries: entries(request.path ?? '/w'), truncated: false })),
-    readWorkspaceFile: vi.fn(async (_d: string, request: { path: string; offset: number; length: number }) => {
-      const bytes = store.get(request.path)!;
-      return { path: request.path, size: bytes.length, etag: 'e1', offset: request.offset, data: bytes.subarray(request.offset, request.offset + request.length).toString('base64') };
-    }),
     writeWorkspaceFile: vi.fn(async (_d: string, request: SessionpageWorkspaceWriteRequest) => {
       writes.push(request);
       const list = parts.get(request.uploadId) ?? [];

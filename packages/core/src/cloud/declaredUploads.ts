@@ -120,7 +120,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
     permits.set(task.messageId, { pendingKey: task.pendingKey, upload })
     try {
       const endpoint = await host.endpoint()
-      const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, size_bytes: task.size, ...(first ? { plan: first } : {}) },
+      const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, sha256: task.sha256, size_bytes: task.size, ...(first ? { plan: first } : {}) },
         { bytes: file.slice(0, file.size, task.contentType), name: task.name, contentType: task.contentType }, { id: task.messageId, chat_id: task.chatId, as: task.as }, {
           signal: controller.signal,
           upload,

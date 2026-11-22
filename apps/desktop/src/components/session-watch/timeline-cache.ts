@@ -292,9 +292,7 @@ export async function clearTimelineCache(): Promise<void> {
  */
 export function forgetInMemoryTimelines(): void {
   memory.clear()
-  for (const store of [streams, sessionpageFacts]) {
-    if (Object.keys(store.get()).length > 0) store.set({})
-  }
+  if (Object.keys(streams.get()).length > 0) streams.set({})
 }
 onAccountChange(() => forgetInMemoryTimelines())
 
@@ -346,17 +344,4 @@ export function updateSessionStream(key: TimelineCacheKey, fields: StreamWrite<S
 
 export function forgetSessionStream(key: TimelineCacheKey): void {
   patch(streams, sessionStreamKey(key), undefined)
-}
-
-type SessionpageTimelineFacts = {
-  recentActions: { actions: string[]; lastActionAt: string | null } | null
-  settlements: Readonly<Record<string, Settlement>>
-}
-
-/** Desktop task sessions' timeline facts (useSessionpageSessionTimeline), keyed by session, owned like `sessionStreams`. */
-const sessionpageFacts = createSelectStore<Readonly<Record<string, SessionpageTimelineFacts>>>({})
-export const sessionpageTimelineFacts: Readable<Readonly<Record<string, SessionpageTimelineFacts>>> = sessionpageFacts
-
-export function updateSessionpageFacts(sessionId: string, change: (current: SessionpageTimelineFacts | undefined) => SessionpageTimelineFacts | undefined): void {
-  patch(sessionpageFacts, sessionId, change(sessionpageFacts.get()[sessionId]))
 }

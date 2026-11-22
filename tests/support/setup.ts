@@ -125,3 +125,4 @@ afterEach(() => {
   if ((globalThis as Record<string, unknown>).__GUGU_OUTBOX__ === testOutbox) delete (globalThis as Record<string, unknown>).__GUGU_OUTBOX__
   testOutbox = undefined
 })
+import '../../apps/desktop/session-tooling/vitest-egress-setup'

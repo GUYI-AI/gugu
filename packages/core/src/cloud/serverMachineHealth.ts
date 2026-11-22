@@ -16,12 +16,13 @@ export const SERVER_ACTIVITY_STALE_MS = 60_000
  * 照 VS Code / Zed 的「客户端与 server 版本对不上就明说」(Zed 发了旧客户端不认的消息直接断线:zed#42474),
  * 只是不要求逐版本相等 —— server 自动升级、桌面自动升级,两边总有先后。
  */
-// 19 adds `file.stream` on a device link (a held version as raw `D` frames, FILE_STREAM_PROTOCOL); 18 hosts keep the
-// `file.read` parts. 18 adds the task input admission decision.
+// 19 adds `file.stream` / `files.stream` on a device link (raw `D` frames, FILE_STREAM_PROTOCOL); 18 hosts keep the
+// `file.read` parts and the working copy's `filesRead` pieces. 18 adds the task input admission decision.
 export const REMOTE_PROTOCOL_VERSION = 19
 /**
- * The first remote protocol whose device link streams a held file (`file.stream`). Below it the desktop reads `file.read`
- * parts; when MIN_SERVER_PROTOCOL reaches it (the next bump, to 20), the part reader and `file.read` go.
+ * The first remote protocol whose device link streams a file (`file.stream`, `files.stream`). Below it the desktop reads
+ * `file.read` parts and `filesRead` pieces; when MIN_SERVER_PROTOCOL reaches it (the next bump, to 20), the part reader and
+ * `file.read` go, and `filesRead` pieces stay only for machines no device link reaches.
  */
 export const FILE_STREAM_PROTOCOL = 19
 /**
@@ -83,7 +84,8 @@ export const FILE_STREAM_PROTOCOL = 19
  * 16: task inputs carry folder-file references; attachment sends require this version rather than silently losing files.
  * 17: durable task attachment upload/status/commit verbs; editor saves are unchanged.
  * 18: task input replies report accepted/rejected/uncertain independently of diagnostic codes.
- * 19: a device link streams a held file: `file.stream` answered by raw `D` frames, then its reply (FILE_STREAM_PROTOCOL).
+ * 19: a device link streams a file: `file.stream` (a held version) and `files.stream` (a working copy's file), answered by raw
+ *     `D` frames, then its reply (FILE_STREAM_PROTOCOL). `files.stream` joined 19 before any release carried 19.
  *
  * 向下兼容一档(owner 10-28,换版打断 7 条车道之后):两边只差一档时照常连,由**新的一侧**降级 ——
  * 16 ↔ 15 的文字与窗口照常互通;附件输入要求 16，旧宿主明确拒绝。14 的改文件降级在升到 16 时移除。

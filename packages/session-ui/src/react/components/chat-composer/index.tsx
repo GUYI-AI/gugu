@@ -516,6 +516,12 @@ export function ChatComposer({
   const rootRef = useRef<HTMLDivElement>(null);
   const phoneCapsule = mobile && phoneActions;
   const phoneEditor = usePhoneComposer(phoneCapsule, rootRef);
+  // @@@phone-has-attachment - whether the capsule holds a paperclip (ours via onAttach, or a host's in toolbarExtra that
+  // carries data-phone-attachment). phone-composer.css reads this attribute instead of :has(), which WebView < 105 drops.
+  // Written on the element, not through state: no render follows (React does not own this attribute).
+  useLayoutEffect(() => {
+    rootRef.current?.toggleAttribute('data-phone-has-attachment', !!phoneCapsule && !!rootRef.current.querySelector('[data-phone-attachment]'));
+  });
   const editorRef = useRef<PromptEditorRef | null>(null);
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
@@ -959,7 +965,7 @@ export function ChatComposer({
                   isItemDisabled={(item) => item.disabled === true}
                   disabled={disabled}
                   searchPlaceholder={translate('common.search')}
-                  className={permissionModeIsFirst ? styles.permissionModeTrigger : undefined}
+                  className={cx('gg-composer-permission-trigger', permissionModeIsFirst && styles.permissionModeTrigger)}
                   contentStyle={{ minWidth: '12rem' }}
                   // 面板自己不留内距 —— 与模型/agent 面板同一族,见 @@@composer-panel-row。
                   contentClassName={styles.composerPanelContent}

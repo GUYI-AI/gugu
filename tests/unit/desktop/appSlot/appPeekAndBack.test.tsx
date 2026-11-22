@@ -236,7 +236,7 @@ describe('G1: something opened over a page keeps the page', () => {
   it('a page made for a file, covered by a peek: its claim is kept (not released), and it is the same element after', async () => {
     const page = createElement(ClaimedPage, { slotId: 'slot-x', chatId: 'c-1', kind: 'pdf.viewer', itemId: 'f-1' })
     await harness.render(createElement(AppPeekSlot, { sessionId: null, tabId: 'slot-x', children: page }))
-    const box = harness.container.querySelector('[data-testid="app-peek-slot"] > div')!
+    const box = harness.container.querySelector('[data-peek-page]')!
     expect(slotEvents).toEqual([{ type: 'claim', slotId: 'slot-x' }])
     await act(async () => {
       peekStore.open(null, 'slot-x', { kind: 'chat', detail: { chatId: 'c-1', itemId: 'f-2', name: 'b.pdf', typedName: 'b.pdf', choice: { kind: 'one', candidate: pdf }, file: { document: false, contentType: 'application/pdf', version: 1, size: 1 } } })
@@ -248,7 +248,7 @@ describe('G1: something opened over a page keeps the page', () => {
     // What opens is drawn once its module is in (loaded when something first opens).
     await until('the peek claims a page of its own', () => slotEvents.some((event) => event.type === 'claim' && event.slotId === ':slot-x#peek'))
     await act(async () => peekStore.close(null, 'slot-x'))
-    expect(harness.container.querySelector('[data-testid="app-peek-slot"] > div')).toBe(box)
+    expect(harness.container.querySelector('[data-peek-page]')).toBe(box)
     expect(slotEvents).toContainEqual({ type: 'release', slotId: ':slot-x#peek' })
     expect(slotEvents.filter((event) => event.slotId === 'slot-x')).toEqual([{ type: 'claim', slotId: 'slot-x' }])
   })

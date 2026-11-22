@@ -367,7 +367,6 @@ export function contactsStore(overrides: Partial<ContactsContextValue> = {}): Co
     updateContactAlias: vi.fn(async () => {}),
     setAgentPublic: vi.fn(async () => {}),
     setAgentDesiredStatus: vi.fn(async () => {}),
-    renameAgent: vi.fn(async () => {}),
     updateAgentProfile: vi.fn(async () => {}),
     uploadAgentAvatar: vi.fn(async () => {}),
     setAgentLook: vi.fn(async () => {}),

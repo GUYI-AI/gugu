@@ -75,7 +75,7 @@ describe('useMessageFilePreview', () => {
     })
     openPreview = preview.open
     closePreview = preview.close
-    return preview.panel
+    return preview.beside(null)
   }
 
   beforeEach(() => {
@@ -105,7 +105,7 @@ describe('useMessageFilePreview', () => {
     expect(bytesMocks.openAttachmentImage).toHaveBeenCalledWith(image.source, image.fileName, { chatId: 'chat', messageId: 'message' })
     expect(appMocks.openResource).not.toHaveBeenCalled()
     expect(closeRightSurfaces).not.toHaveBeenCalled()
-    expect(container.childElementCount).toBe(0)
+    expect(container.querySelector('[data-testid="preview-content"]')).toBeNull()
   })
 
   it.each([

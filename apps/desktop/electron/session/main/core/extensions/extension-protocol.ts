@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { net, type Session } from 'electron';
+import { localFileResponse } from '../../../../lib/file-response';
+import type { Session } from 'electron';
 import { EXTENSION_SCHEME, extensionIdFromUrl } from '@shared/extensions/partition';
 import { APP_RUNTIME_PREFIX, injectAppRuntime } from '@shared/extensions/app-runtime-protocol';
 import { extensionContentSecurityPolicy } from '@shared/extensions/app-csp';
@@ -48,7 +48,7 @@ export interface ExtensionBundle {
 export function setupExtensionProtocol(
   session: Pick<Session, 'protocol'>,
   currentBundle: () => ExtensionBundle,
-  fetchFile: (file: string) => Promise<Response> = (file) => net.fetch(pathToFileURL(file).toString()),
+  fetchFile: (file: string) => Promise<Response> = localFileResponse,
 ): void {
   const { protocol } = session;
   if (protocol.isProtocolHandled(EXTENSION_SCHEME)) return;
@@ -84,7 +84,7 @@ export function setupExtensionProtocol(
       return new Response('forbidden', { status: 403, headers: { 'Content-Security-Policy': csp } });
     }
     if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-      // A directory (or a file gone since the line above): answer rather than let net.fetch reject,
+      // A directory (or a file gone since the line above): answer rather than let the file read reject,
       // which would surface as a network error with no status at all.
       return new Response('not found', { status: 404, headers: { 'Content-Security-Policy': csp } });
     }
