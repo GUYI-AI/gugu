@@ -2,11 +2,17 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writ
 import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, test } from 'vitest'
 
 const repoRoot = resolve(__dirname, '../../..')
 const fixtureRoot = join(repoRoot, 'tests/fixtures/ui-state-debt-check')
 const checker = join(repoRoot, 'scripts/checks/ui-state-debt-check.mjs')
+type Output = { log: (...parts: unknown[]) => void; error: (...parts: unknown[]) => void }
+const { countTree, run } = await import(pathToFileURL(checker).href) as {
+  countTree: (ref: string, root: string, rootDirectory?: string) => { entries: unknown[] }
+  run: (argv: string[], output?: Output) => number
+}
 
 // @@@synthetic-fixtures (#2333 计数 / #3079 方向性) — 方向性断言一律跑在**合成**仓上,
 // ❌ 不读活基线 scripts/checks/ui-state-debt-baseline.json。
@@ -59,7 +65,19 @@ function seededRepo() {
   })
 }
 
+/** The checker's own `run`, in this process: each spawned Node paid ~0.5 s to load TypeScript for a 20 ms check. */
 function runChecker(cwd: string, args: string[]) {
+  const stdout: string[] = [], stderr: string[] = []
+  const previous = process.cwd()
+  process.chdir(cwd)
+  try {
+    const status = run(args, { log: (...parts: unknown[]) => stdout.push(parts.join(' ')), error: (...parts: unknown[]) => stderr.push(parts.join(' ')) })
+    return { status, stdout: stdout.join('\n'), stderr: stderr.join('\n') }
+  } finally { process.chdir(previous) }
+}
+
+/** The real command line, once: its exit code and streams are what CI reads. */
+function runCli(cwd: string, args: string[]) {
   const result = spawnSync(process.execPath, [checker, ...args], { cwd, encoding: 'utf8' })
   return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
 }
@@ -75,15 +93,7 @@ const ARGS = ['--root', 'apps/desktop/src', '--baseline', BASELINE]
  * 独立、可见于 diff 的动作,不能由 `--write` 顺手完成。
  */
 function seedBaseline(directory: string) {
-  const script =
-    `import { countTree } from ${JSON.stringify(checker)}\n` +
-    `import { writeFileSync } from 'node:fs'\n` +
-    `writeFileSync(${JSON.stringify(BASELINE)}, JSON.stringify(countTree('HEAD','apps/desktop/src').entries, null, 2) + '\\n')\n`
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-    cwd: directory,
-    encoding: 'utf8'
-  })
-  expect(result.status, `seed failed: ${result.stderr}`).toBe(0)
+  writeFileSync(join(directory, BASELINE), JSON.stringify(countTree('HEAD', 'apps/desktop/src', directory).entries, null, 2) + '\n')
   git(directory, ['add', '-A'])
   git(directory, ['commit', '-q', '-m', 'baseline'])
   return JSON.parse(readFileSync(join(directory, BASELINE), 'utf8')) as Array<Record<string, unknown>>
@@ -120,7 +130,7 @@ describe('UI-state debt checker — counting probes (#2333)', () => {
   test('reports every counter plus the scan-surface denominator', () => {
     const repo = seededRepo()
     try {
-      const result = runChecker(repo.directory, ARGS)
+      const result = runCli(repo.directory, ARGS)
       expect(result.status).toBe(0)
       // 五个计数全部报,不挑;分母同报 —— 只报分子分不清「0 是干净」还是「没扫到」。
       expect(result.stdout).toContain('imperative-style-hover: baseline=3 actual=3')
@@ -156,7 +166,7 @@ describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
       cpSync(join(fixtureRoot, 'head', 'apps'), join(repo.directory, 'apps'), { recursive: true })
       commitAll(repo.directory, 'growth')
 
-      const result = runChecker(repo.directory, ARGS)
+      const result = runCli(repo.directory, ARGS)
       expect(result.status).toBe(1)
       expect(result.stderr).toContain('::error::NEW')
       expect(result.stderr).toContain('UI-state debt increased')

@@ -64,19 +64,8 @@ afterEach(() => {
 })
 
 describe('CI e2e/integration spec coverage', () => {
-  it('classifies every current repository test declaration', () => {
-    const result = auditCoverage({ root: process.cwd() })
-    expect(result.errors).toEqual([])
-    const e2eSpecs = result.discovered.filter((file) => file.startsWith('tests/e2e/'))
-    const exemptions = JSON.parse(readFileSync('.github/ci-spec-coverage.json', 'utf8')).exemptions
-    // #6270:e2e/ 只剩 PR CI 的 ci-local 真跑的那几条,全部由自动执行器收走、一条豁免都没有。
-    expect(e2eSpecs.length).toBeGreaterThan(0)
-    expect(e2eSpecs.every((file) => file.startsWith('tests/e2e/ci/local/'))).toBe(true)
-    expect(Object.keys(exemptions).filter((file) => file.startsWith('tests/e2e/'))).toEqual([])
-    expect(result.groupCounts
-      .filter((group) => group.disposition === 'automatic executor')
-      .reduce((total, group) => total + group.count, 0)).toBe(e2eSpecs.length)
-  })
+  // The live repository's audit (every declaration classified, e2e only under ci/local, no e2e exemption) is the
+  // Source checks step `node scripts/ci/ci-spec-coverage.mts` on every PR; the cases below prove its mechanism.
 
   it('discovers the PR web projects by directory and keeps them fail-closed through the required aggregate', () => {
     const workflow = YAML.parse(readFileSync('.github/workflows/ci.yml', 'utf8'))
@@ -111,23 +100,8 @@ describe('CI e2e/integration spec coverage', () => {
     expect(gateRun).toContain('needs.web-smoke.result')
     expect(gateRun).toContain('[ "${{ needs.web-smoke.result }}" != "success" ]')
 
-    const commands = collectAutomaticRunnerCommands({
-      workflows: [{ ...loadCoverageWorkflowInventory(process.cwd()).find(entry => entry.path === '.github/workflows/ci.yml'), path: '.github/workflows/ci.yml', workflow }],
-      changedPaths: ['tests/e2e/ci/local/search-field-consistency.spec.ts'],
-      packageScripts: {},
-    }).filter((command) => command.job === 'web-smoke')
-    expect(commands).toHaveLength(1)
-    const perShard = commands.map((command) => collectRunnerFiles(process.cwd(), command))
-    expect(perShard.every((files) => files.length > 0)).toBe(true)
-    // e2e/ci 下的每个 spec 都必须被这个 job 真收走(#6270 起 e2e 不接受豁免)。
-    const allCiSpecs = execFileSync('git', ['ls-files', '-z', '--', 'tests/e2e/ci'], { encoding: 'utf8' })
-      .split('\0')
-      .filter((file) => file.endsWith('.spec.ts'))
-      .sort()
-    const collected = [...new Set(perShard.flat())].sort()
-    expect(collected).toEqual(allCiSpecs)
-    expect(collected.every((file) => file.startsWith('tests/e2e/ci/local/'))).toBe(true)
-
+    // That this job really collects every tests/e2e/ci spec is the live audit in Source checks (an e2e spec no
+    // automatic executor collects is an error there); collection itself is proven on a fixture below.
     const manifest = JSON.parse(readFileSync('.github/ci-spec-coverage.json', 'utf8'))
     expect(manifest.automaticExecutors).toHaveLength(1)
     expect(manifest.automaticExecutors[0].specs).toBeUndefined()
@@ -186,9 +160,7 @@ describe('CI e2e/integration spec coverage', () => {
   })
 
   it('requires the producer-specific non-success rejection on one gate line', () => {
-    const positive = auditCoverage({ root: process.cwd() })
-    expect(positive.errors).toEqual([])
-
+    // Positive control: the unmodified repository passes the same audit in Source checks on every PR.
     const root = fixtureRoot()
     mkdirSync(path.join(root, '.github/workflows'), { recursive: true })
     writeFileSync(path.join(root, '.github/workflows/ci.yml'), readFileSync('.github/workflows/ci.yml', 'utf8').replace(
