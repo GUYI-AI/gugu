@@ -235,7 +235,7 @@ function Engines({ usage, range }: { usage: UsageDay[]; range: DayRange }) {
   const { t } = useTranslation('settings')
   const rows = engineRows(usage, range)
   const totals = totalsFor(usage, range)
-  if (rows.length === 0) return <span className="gg-usage-muted" data-testid="usage-engines-empty">{t('usage.enginesEmpty')}</span>
+  if (rows.length === 0) return <div className="gg-settings-surface gg-usage-empty gg-usage-muted" data-testid="usage-engines-empty">{t('usage.enginesEmpty')}</div>
   return (
     <>
       <div className="na-table-wrap gg-settings-surface">

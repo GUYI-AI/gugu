@@ -26,6 +26,7 @@
 }
 
 .gg-usage-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); min-width: 0; }
+.gg-usage-empty { padding: var(--spacing-lg); }
 .gg-usage-hint { font-size: var(--font-caption); color: var(--muted-fg); font-weight: var(--font-weight-regular); }
 .gg-usage-card { padding: var(--spacing-lg); min-width: 0; }
 .gg-usage-muted { color: var(--muted-fg); font-size: var(--font-body); }
