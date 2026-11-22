@@ -17,7 +17,7 @@ const page = (count: number, from: number) => ({
 /** A range's commits, a page at a time: each page is its own entry, read once (both ends are oids). */
 describe('commits of a range', () => {
   it('reads the first page, then the next one asked for at its offset; a remount reads nothing again', async () => {
-    git.getLog.mockImplementation(async (_p, _w, _limit, offset: number) => page(offset === 0 ? COMMIT_PAGE_SIZE : 10, offset))
+    git.getLog.mockImplementation(async (_w, _limit, offset: number) => page(offset === 0 ? COMMIT_PAGE_SIZE : 10, offset))
     const range = { source: 'branch' as const, baseRefOid: 'b1', headRefOid: 'h1' }
     let seen: CommitPages | undefined
     const Probe = () => { seen = useCommits('p', 'w', range); return null }
@@ -28,7 +28,7 @@ describe('commits of a range', () => {
     expect(seen!.more).not.toBeNull()
     await act(async () => { seen!.more!() })
     expect(seen!.pages).toHaveLength(2)
-    expect(git.getLog.mock.calls.map((call) => call[3])).toEqual([0, COMMIT_PAGE_SIZE])
+    expect(git.getLog.mock.calls.map((call) => call[2])).toEqual([0, COMMIT_PAGE_SIZE])
     expect(seen!.more).toBeNull()
     harness.cleanup({ keepReads: true })
 
