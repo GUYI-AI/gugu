@@ -29,7 +29,7 @@ const W_FILE = '0d000000-0000-4000-8000-000000000002'
 const W_OTHER = '0d000000-0000-4000-8000-000000000003'
 const W_NEW = '0d000000-0000-4000-8000-000000000004'
 const TEST_CONTEXT = {
-  supabaseUrl: '',
+  supabaseUrl: 'https://db.example.test',
   anonKey: '',
   agentId: 'agent-1',
   threadRootId: null,
@@ -2195,17 +2195,17 @@ describe('restRpc void/空 body 容忍 (#1216)', () => {
     try { await fn() } finally { globalThis.fetch = orig }
   }
   test('204/空 body → null（不在空 body 上 JSON.parse）', async () => {
-    await withFetch(() => ({ ok: true, status: 204, text: async () => '', json: async () => { throw new Error('不应调用 json()') } }), async () => {
+    await withFetch(() => new Response(null, { status: 204 }), async () => {
       await expect(restRpc('retired_probe', {})).resolves.toBeNull()
     })
   })
   test('非空 body → 正常解析', async () => {
-    await withFetch(() => ({ ok: true, status: 200, text: async () => '{"x":1}' }), async () => {
+    await withFetch(() => new Response('{"x":1}', { status: 200 }), async () => {
       await expect(restRpc('some_rpc', {})).resolves.toEqual({ x: 1 })
     })
   })
   test('!ok → 抛错（含 status）', async () => {
-    await withFetch(() => ({ ok: false, status: 403, text: async () => 'denied' }), async () => {
+    await withFetch(() => new Response('denied', { status: 403 }), async () => {
       await expect(restRpc('x', {})).rejects.toThrow(/403/)
     })
   })

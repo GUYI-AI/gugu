@@ -1,6 +1,6 @@
 import { buildUserShellBaseEnv } from '@main/utils/childProcessEnv';
-import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
+import { systemProxyFill } from '../../../../egress/harness-proxy';
 
 /** Same shell/process precedence and system-proxy fallback as buildAgentEnv, without changing process.env. */
 export function connectionProbeEnv(): NodeJS.ProcessEnv {

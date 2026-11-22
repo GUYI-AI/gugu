@@ -31,7 +31,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
         {(['builtin', 'extensions'] as const).map((section) => <section key={section}
           aria-label={sectionLabels[section]} className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">{sectionLabels[section]}</h2>
-          <div className="grid grid-cols-2 gap-2 @max-[260px]:grid-cols-1">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-2">
             {actions.filter((item) => (item.section ?? 'builtin') === section).map((item) => <div key={item.id} className="relative min-w-0">
               <PaneEmptyStateAction icon={item.icon} label={item.label} disabled={item.disabled}
                 title={shortcutTitle(item.title ?? item.label, item.shortcutSettingsKey)} onClick={item.onClick}

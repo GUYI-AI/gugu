@@ -17,7 +17,7 @@ vi.hoisted(() => {
 import { callTool as callToolImpl, restGet as restGetImpl, RpcHttpError } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 
 const SESSION_CONTEXT = {
-  supabaseUrl: '', anonKey: '', agentId: 'agent-1', threadRootId: null,
+  supabaseUrl: 'https://db.example.test', anonKey: '', agentId: 'agent-1', threadRootId: null,
   guguHome: '/tmp/gugu-im-token-test',
 }
 function callTool(name: string, args: Record<string, unknown>, deps: Record<string, unknown>) {

@@ -1,4 +1,4 @@
-import { net } from 'electron';
+import { egress } from '@gugu/core/shared/egress';
 import { extensionsService } from '@main/core/extensions/extensions-root';
 import { githubDefaultCredential } from '@main/core/github/accounts/github-token-vault-instance';
 import { passwordVaultForHost } from '../../../../password-vault/beta-host';
@@ -12,5 +12,5 @@ export const appCredentials = createAppCredentials({
   saved: (site) => passwordVaultForHost.list(site),
   secret: (credentialId) => passwordVaultForHost.secret(credentialId),
   connectorDefault: githubDefaultCredential,
-  fetch: (url, init) => net.fetch(url, init),
+  fetch: (url, init) => egress.fetch(url, init),
 });
