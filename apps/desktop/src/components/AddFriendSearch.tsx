@@ -95,7 +95,7 @@ type Status = 'friend' | 'sent' | null
 
 function ResultRow({
   user, text, status, active, open, note, sending, error, justSent,
-  onPick, onOpen, onNote, onCancel, onSend,
+  onPick, onOpen, onNote, onCancel, onSend, onAgain,
 }: {
   user: ContactUser
   text: string
@@ -111,6 +111,7 @@ function ResultRow({
   onNote: (note: string) => void
   onCancel: () => void
   onSend: () => void
+  onAgain: () => void
 }) {
   const { t } = useTranslation('contacts')
   const agent = user.type === 'agent'
@@ -160,7 +161,12 @@ function ResultRow({
           </div>
         </div>
       ) : null}
-      {justSent ? <div className={cn(captionClass, 'pb-1 pl-14')}>{t('friendSearch.sentHint', { name: user.display_name })}</div> : null}
+      {justSent ? (
+        <div className={cn(captionClass, 'flex flex-wrap items-center gap-x-3 pb-1 pl-14')}>
+          {t('friendSearch.sentHint', { name: user.display_name })}
+          <Button variant="ghost" size="sm" data-testid="friend-search-again" onClick={onAgain}>{t('friendSearch.searchAnother')}</Button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -230,7 +236,7 @@ export function AddFriendSearch({
   const ordered = [...people, ...agents]
   const current = Math.min(active, Math.max(0, ordered.length - 1))
   // 框里的字和画着的结果对得上,Enter 才是「加这一行」;否则 Enter 是「现在就搜」。
-  const showingTyped = !!submitted && submitted.text === query.trim() && found.state === 'value' && !found.stale
+  const showingTyped = !!submitted && submitted.text === query.trim() && found.state === 'value' && !fetching
 
   const clearSearch = () => {
     setQuery(''); setSettled(''); setSubmitted(null); setOpenId(null); setJustSentId(null); setActive(0)
@@ -306,6 +312,7 @@ export function AddFriendSearch({
       onNote={setNote}
       onCancel={closeNote}
       onSend={() => void submitRequest(u)}
+      onAgain={clearSearch}
     />
   )
 
@@ -368,14 +375,9 @@ export function AddFriendSearch({
     )
   } else {
     body = (
-      <div className={cn('flex flex-col transition-opacity duration-[var(--dur-fast)]', found.state === 'value' && found.stale && 'opacity-60')}>
+      <div className={cn('flex flex-col transition-opacity duration-[var(--dur-fast)]', fetching && 'opacity-60')}>
         {people.length > 0 ? <><SectionLabel className="!mt-3">{t('panel.contactSectionTitle')} · {people.length}</SectionLabel>{people.map(rowFor)}</> : null}
         {agents.length > 0 ? <><SectionLabel className="!mt-3">{t('panel.agentSectionTitle')} · {agents.length}</SectionLabel>{agents.map(rowFor)}</> : null}
-        {justSentId ? (
-          <div className="mt-4 px-2">
-            <Button variant="ghost" size="sm" data-testid="friend-search-again" onClick={clearSearch}>{t('friendSearch.searchAnother')}</Button>
-          </div>
-        ) : null}
       </div>
     )
   }
