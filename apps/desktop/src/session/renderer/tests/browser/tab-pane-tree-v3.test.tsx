@@ -135,7 +135,8 @@ it.each([false, true])('a pane whose last tab closes goes off the track live —
   const sidePage = () => harness.container.querySelector<HTMLElement>(`[data-page="${side.paneId}"]`);
   await untilStable('the side page is in', () => sidePage()!.getBoundingClientRect().left);
   const element = sidePage()!;
-  await act(() => side.pane.closeTab(file));
+  // The strip's ×, as a person closes it.
+  await act(() => side.pane.requestCloseTab(file));
   // Still the store's, out of reach, until it is off the screen: the same element, ❌ a copy.
   expect(layout.closingPaneId).toBe(side.paneId);
   expect(element.closest('[inert]')).not.toBeNull();

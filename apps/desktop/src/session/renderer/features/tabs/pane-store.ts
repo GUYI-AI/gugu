@@ -285,7 +285,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       const entry = this.entries.get(id) ?? this._layoutSplitter?.entryForTab?.(id);
       return entry?.kind === kind && (!which || which(entry.state));
     });
-    for (const id of ids) this._holderOf(id)?._removeTab(id);
+    for (const id of ids) this._holderOf(id)?.closeTab(id);
   }
 
   /** The pane holding this tab now (a pair collapsing moves tabs between the two panes of a strip). */
@@ -529,6 +529,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this.openKind(kind as string, args, config);
   }
 
+  /** Every close comes here, the strip's × too: closing a pane's last tab may close the pane on the track first (@@@closing-pane). */
   closeTab(id: string): void {
     if (this.entries.has(id) && this._layoutSplitter?.closesPane?.(id, () => this._removeTab(id))) return;
     this._removeTab(id);
@@ -852,14 +853,14 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       if (def.onBeforeClose) {
         return Promise.resolve(def.onBeforeClose(entry as never, resource as never, this._ctx, { alone })).then(
           (proceed) => {
-            if (proceed) runInAction(() => this._removeTab(tabId));
+            if (proceed) runInAction(() => this.closeTab(tabId));
           }
         );
       }
     }
 
     // 一排关的时候第二枚起是在 await 之后跑的,已经出了调用方的 action。
-    runInAction(() => this._removeTab(tabId));
+    runInAction(() => this.closeTab(tabId));
     return Promise.resolve();
   }
 
@@ -1026,11 +1027,11 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     // User-style close: run onBeforeClose veto.
     if (!opts?.force && resource && def?.onBeforeClose) {
       return Promise.resolve(def.onBeforeClose(entry as never, resource as never, this._ctx, { alone: false })).then((proceed) => {
-        if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this._removeTab(entry.tabId));
+        if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this.closeTab(entry.tabId));
         return proceed;
       });
     }
-    runInAction(() => this._removeTab(entry.tabId));
+    runInAction(() => this.closeTab(entry.tabId));
     return Promise.resolve(true);
   }
 
