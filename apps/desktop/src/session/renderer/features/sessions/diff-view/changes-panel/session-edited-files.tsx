@@ -1,55 +1,70 @@
 import { sessionFileChanges } from '@gugu/session-chat-ui';
 import { observer } from 'mobx-react-lite';
 import { findAcpChatStore } from '@renderer/features/sessions/acp/acp-chat-resource-manager';
-import { useSessionViewContext, useWorkspace } from '@renderer/features/sessions/session-view-context';
-import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
-import { splitPath } from '@renderer/features/sessions/utils';
-import { sessionConversationTabId } from '@renderer/features/sessions/view/session-pane-policy';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { useSessionViewContext, useWorkspace, useWorkspaceSurface } from '@renderer/features/sessions/session-view-context';
+import { workspaceBackend } from '@renderer/features/sessions/workspace-backend/workspace-backend';
+import { EmptyState } from '@renderer/lib/ui/empty-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { formatDiffLineCount } from '@renderer/utils/format-diff-line-count';
-import { displayPathForChange } from './components/changes-tree-utils';
+import type { RecordedDiffTabResource } from '../recorded-diff-tab-provider';
+import { ChangesListOrTree } from './components/changes-list-or-tree';
+import { ChangesViewModeToggle } from './components/changes-view-mode-toggle';
+import { SectionHeader } from './components/section-header';
+import { useChangesViewMode } from './hooks/use-changes-view-mode';
 
-/** 不是 git 仓库时审阅页列的东西:本会话「已编辑」卡里的文件(同一个来源,不另读)。点开 = 点卡上那个文件。 */
-export const SessionEditedFiles = observer(function SessionEditedFiles({ notRepository }: { notRepository: string }) {
+/**
+ * 不是 git 仓库时的审阅页:同一个「已更改」头、同一种行、同一种点开(这一格原地翻到 diff),
+ * 列的是本会话「已编辑」卡里的文件(同一个来源,不另读)。git 才有的状态、勾选、暂存、提交这里没有。
+ */
+export const SessionEditedFiles = observer(function SessionEditedFiles() {
   const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
+  const surface = useWorkspaceSurface();
   const workspace = useWorkspace();
+  const changesView = surface.diffView?.changesView;
+  const { mode, setMode } = useChangesViewMode('unstaged');
+  const machine = workspaceBackend(projectId).machine;
   const store = findAcpChatStore(sessionId);
   void store?.transcriptRevision;
-  const files = store ? sessionFileChanges(store.chatState.transcript.state.committedTurns) : [];
-  const open = (index: number) => {
-    const layout = getSessionView(projectId, sessionId)?.paneLayout;
-    if (!layout) return;
-    const { adds: _adds, dels: _dels, ...change } = files[index]!;
-    layout.open('recorded-diff', { ...change, sessionId }, { from: sessionConversationTabId(layout, sessionId), intent: 'beside' });
+  if (!changesView) return null;
+  // 对话没载入(页签关着)= 不知道:没读过的轮次 ❌ 说成「没编辑过」。
+  const files = store
+    ? sessionFileChanges(store.chatState.transcript.state.committedTurns)
+      .map(file => ({ ...file, additions: file.adds ?? 0, deletions: file.dels ?? 0 }))
+    : null;
+  const open = (file: NonNullable<typeof files>[number], intent: 'navigate' | 'newTab') => {
+    const { adds: _adds, dels: _dels, additions: _additions, deletions: _deletions, ...change } = file;
+    surface.activePane.open('recorded-diff', { ...change, sessionId }, { intent });
   };
+  const notRepository = machine.kind === 'remote'
+    ? translate('remoteWorkspace.notRepository', { device: machine.label() })
+    : translate('changes.notRepository');
+  const expanded = changesView.expandedSections.unstaged;
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="text-foreground-muted px-3 py-2 text-xs">
-        {/* 对话没载入(页签关着)就只说不是仓库:没读过的轮次 ❌ 说成「没编辑过」。 */}
-        {notRepository}{store && ` ${translate(files.length ? 'changes.sessionEditedFiles' : 'changes.noSessionEdits')}`}
-        {store?.canLoadOlderHistory && ` ${translate('changes.olderTurnsNotLoaded')}`}
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto px-1">
-        {files.map((file, index) => {
-          const { filename, directory } = splitPath(displayPathForChange(file.path, workspace.path));
-          return (
-            <button key={file.path} type="button" title={file.path} onClick={() => open(index)}
-              className="flex h-7 w-full items-center gap-2 rounded-md px-2 py-1 hover:bg-row-hover active:bg-row-press">
-              <FileIcon filename={filename} size={12} />
-              <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                <span className="max-w-full shrink-0 truncate text-sm">{filename}</span>
-                {directory && <span className="min-w-0 shrink truncate text-xs text-foreground-muted">{directory}</span>}
-              </span>
-              <span className="flex shrink-0 items-center gap-1 text-xs tabular-nums">
-                {!!file.adds && <span className="text-foreground-diff-added">+{formatDiffLineCount(file.adds)}</span>}
-                {!!file.dels && <span className="text-foreground-diff-deleted">-{formatDiffLineCount(file.dels)}</span>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <SectionHeader
+        label={translate('changes.changed')}
+        count={files?.length ?? null}
+        collapsed={!expanded}
+        onToggleCollapsed={() => changesView.toggleExpanded('unstaged')}
+        actions={<ChangesViewModeToggle value={mode} onChange={setMode} label={translate('changes.changed')} />}
+      />
+      {expanded && <>
+        <div className="text-foreground-muted px-4 pb-2 text-xs">
+          {notRepository}{!!files?.length && ` ${translate('changes.sessionEditedFiles')}`}
+          {store?.canLoadOlderHistory && ` ${translate('changes.olderTurnsNotLoaded')}`}
+        </div>
+        {files?.length === 0 && <EmptyState label={translate('changes.noSessionEdits')} />}
+        {!!files?.length && <div className="min-h-0 flex-1 px-1">
+          <ChangesListOrTree
+            viewMode={mode}
+            changes={files}
+            rootPath={workspace.path}
+            activePath={surface.activePane.activeResourceOfKind<RecordedDiffTabResource>('recorded-diff')?.change.path}
+            onSelectChange={file => open(file, 'navigate')}
+            onDoubleClickChange={file => open(file, 'newTab')}
+          />
+        </div>}
+      </>}
     </div>
   );
 });
