@@ -19,8 +19,8 @@ import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 //   · App 代发 —— #6835 App 用 gugu.dispatch 以人的名义发的消息(via_app 非空)。发送人自己看到「由『X』App 代你发送」,
 //     别人(悄悄话的收件人)看到「由『X』App 代 A 发送」:不然人会以为那句是 A 亲手打的。判据只有 via_app 一个,
 //     看的人是不是发送人只决定文案;手机和桌面同一条。
-//   · 定向兜底徽标 —— **只兜底**「to_user_ids 有 X、正文却缺 @X」的旧数据(#2010 发送时一致性校验前的历史
-//     消息)。一致态(正文已 @)只高亮不挂徽标 = 单重显示;reply 被回复者由引用条表达、不进本徽标。
+//   · 定向徽标 ——「to_user_ids 有 X、正文却没有 @X」时标出 X:引用了文件、没写 @ 的消息默认发给改过这些文件的人,
+//     还有 #2010 发送时一致性校验前的历史消息。一致态(正文已 @)只高亮不挂徽标 = 单重显示;reply 被回复者由引用条表达、不进本徽标。
 //     标签由 MessageBubble 经 buildMentionRender 算好传入(owner 终版 + product spec §3)。
 //   · 转发指示 ——「forwarded」视觉。@@@5856 带上出处:「引自:某某线」。
 //     spec(product spec)要的是「让人看得见发生了搬运、能当场喊停」——「发生过搬运」不够,
