@@ -208,12 +208,19 @@ describe('a file that arrives while the folder is open', () => {
     const listed = { ...arrived, keep: { expiresAt: null, mine: false } }
     gugu.files.list.mockImplementation(async (place?: { folder?: string }) => listedIn([...ENTRIES, listed], place))
     const reads = gugu.files.list.mock.calls.length
-    changed({ kind: 'entries', entries: [arrived], gone: [] })
-    changed({ kind: 'entries', entries: [{ ...arrived, name: 'late.pdf' }], gone: [] })
-    expect(ids()).toContain('late')
-    await until('the list read again', () => gugu.files.list.mock.calls.length > reads)
-    await new Promise((done) => setTimeout(done, 900))
-    expect(gugu.files.list.mock.calls.length, 'two changes, one read').toBe(reads + 1)
+    // The app reads the folder again a moment (800 ms) after the last change; that moment runs on a fake clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      changed({ kind: 'entries', entries: [arrived], gone: [] })
+      changed({ kind: 'entries', entries: [{ ...arrived, name: 'late.pdf' }], gone: [] })
+      expect(ids()).toContain('late')
+      await vi.advanceTimersByTimeAsync(799)
+      expect(gugu.files.list.mock.calls.length, 'not read before the moment').toBe(reads)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(gugu.files.list.mock.calls.length, 'read again with the list').toBe(reads + 1)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(gugu.files.list.mock.calls.length, 'two changes, one read').toBe(reads + 1)
+    } finally { vi.useRealTimers() }
     openMenu('late')
     await menu.pick('更多', '详情')
     expect([...document.querySelectorAll<HTMLButtonElement>('#details .details-keep button')].map((b) => b.disabled)).toEqual([true, true])

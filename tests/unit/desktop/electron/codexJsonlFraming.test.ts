@@ -51,13 +51,15 @@ async function bridge(scenario = 'unicode') {
   const fake = join(dir, 'codex.cjs')
   writeFileSync(fake, fixture); chmodSync(fake, scenario === 'permission' ? 0o600 : 0o755)
   // Expire deadlines only after the native fixture acknowledges the in-flight resume.
+  // The bridge's clock: the 45 s / 120 s deadlines can be expired on demand, and the 5 s wait before a backfill retry
+  // (backfill-once) is 10 ms. What is proven is the retry, not the length of the wait.
   const shim = join(dir, 'clock.mjs')
-  writeFileSync(shim, "const realSet=globalThis.setTimeout, realClear=globalThis.clearTimeout, deadlines=new Map();\nglobalThis.setTimeout=(fn,ms,...args)=>{const timer=realSet(()=>{deadlines.delete(timer);fn(...args)},ms);if(ms===45000 || ms===120000)deadlines.set(timer,{fire:()=>fn(...args),ms});return timer;};\nglobalThis.clearTimeout=timer=>{deadlines.delete(timer);return realClear(timer);};\nprocess.on('message',message=>{if(message?.type!=='expire-deadlines')return;const pending=[...deadlines].filter(([,value])=>value.ms===message.ms);for(const [timer,value]of pending){deadlines.delete(timer);realClear(timer);value.fire()}process.send('deadlines-expired');});")
+  writeFileSync(shim, "const realSet=globalThis.setTimeout, realClear=globalThis.clearTimeout, deadlines=new Map();\nglobalThis.setTimeout=(fn,ms,...args)=>{if(ms===5000&&process.env.SCENARIO==='backfill-once')ms=10;const timer=realSet(()=>{deadlines.delete(timer);fn(...args)},ms);if(ms===45000 || ms===120000)deadlines.set(timer,{fire:()=>fn(...args),ms});return timer;};\nglobalThis.clearTimeout=timer=>{deadlines.delete(timer);return realClear(timer);};\nprocess.on('message',message=>{if(message?.type!=='expire-deadlines')return;const pending=[...deadlines].filter(([,value])=>value.ms===message.ms);for(const [timer,value]of pending){deadlines.delete(timer);realClear(timer);value.fire()}process.send('deadlines-expired');});")
   const release = join(dir, 'release-resume')
   const env: NodeJS.ProcessEnv = { ...process.env, GUGU_HOME: join(dir, 'gugu'), GUGU_USER_DATA_DIR: join(dir, 'userdata'),
     CODEX_HOME: join(dir, 'codex-home'), GUGU_CODEX_BIN: fake, SCENARIO: scenario, RESUME_RELEASE: release }
   delete env.GUGU_PLATFORM_MODELS
-  child = spawn(process.execPath, (scenario === 'slow' || scenario.startsWith('initialize-')) ? ['--import', shim, BRIDGE] : [BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
+  child = spawn(process.execPath, (scenario === 'slow' || scenario === 'backfill-once' || scenario.startsWith('initialize-')) ? ['--import', shim, BRIDGE] : [BRIDGE], { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
   const processChild = child
   const { stdin, stdout, stderr: errorOutput } = processChild
   if (!stdin || !stdout || !errorOutput) throw new Error('Bridge fixture requires piped stdio')

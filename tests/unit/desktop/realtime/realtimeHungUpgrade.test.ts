@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WebSocketServer } from 'ws'
 
 // A host's link drops, and the first reconnect lands on a path that accepts the connection but never answers the
@@ -15,15 +15,24 @@ vi.mock('@gugu/core/cloud/supabase', async (importOriginal) => {
 import { bindElectronSupabaseAuth, supabase } from '../../../../apps/desktop/electron/supabase'
 import { _resetElectronRealtimeChannelRegistryForTesting, subscribeAuthenticatedElectronRealtimeChannel } from '../../../../apps/desktop/electron/realtime-channel'
 import { isSubscribeFailure } from '@gugu/core/cloud/deviceRpcProtocol'
+import { installEgress, runtimeEgress } from '@gugu/core/shared/egress'
+
+// The egress bounds every opening handshake (10 s by default). What is proven here is what happens after the bound, so
+// the bound itself is short: the behavior is the same, without idling 10 s.
+beforeEach(() => {
+  const base = runtimeEgress()
+  installEgress({ fetch: base.fetch, webSocket: (url, options) => base.webSocket(url, { ...options, handshakeTimeoutMs: 250 }) })
+})
 
 afterEach(async () => {
+  installEgress(runtimeEgress())
   _resetElectronRealtimeChannelRegistryForTesting()
   await supabase.removeAllChannels()
   supabase.realtime.disconnect()
   bindElectronSupabaseAuth(async () => null)
 })
 
-it('rejoins after the link is back even when one reconnect hung in the upgrade', { timeout: 60_000 }, async () => {
+it('rejoins after the link is back even when one reconnect hung in the upgrade', { timeout: 30_000 }, async () => {
   let hangNextUpgrade = false
   const hung: Array<(ok: boolean) => void> = []
   const server = new WebSocketServer({
@@ -67,7 +76,7 @@ it('rejoins after the link is back even when one reconnect hung in the upgrade',
     hangNextUpgrade = true
     for (const client of server.clients) client.terminate()
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`no rejoin after the hung upgrade: ${statuses.slice(before).join(',')}`)), 45_000)
+      const timer = setTimeout(() => reject(new Error(`no rejoin after the hung upgrade: ${statuses.slice(before).join(',')}`)), 20_000)
       void subscribed(before).then(() => { clearTimeout(timer); resolve() })
     })
     expect(hung).toHaveLength(1)

@@ -237,8 +237,10 @@ export function createLocalFileService(options: {
    * (Linux) the change stream only carries folders someone watches, and an open file's must be one. Resolves to letting go.
    */
   watchFolder: (folder: string) => Promise<() => void>;
+  /** How long writing back waits for more edits (default 1 s; at most five times that). Tests shorten it. */
+  writeDebounceMs?: number;
 }) {
-  const { warn, watchFolder } = options;
+  const { warn, watchFolder, writeDebounceMs = 1000 } = options;
   const openFiles = createOpenFiles<{ contentType: string }>({
     maxBytes: MAX_BYTES,
     // One person types here; these only stop an App that runs away — it would hold up main, which all of gugu shares.
@@ -393,8 +395,8 @@ export function createLocalFileService(options: {
     name: 'gugu-local-files',
     quiet: true,
     timeout: CONNECTION_TIMEOUT_MS,
-    debounce: 1000,
-    maxDebounce: 5000,
+    debounce: writeDebounceMs,
+    maxDebounce: writeDebounceMs * 5,
     unloadImmediately: true,
 
     async onAuthenticate({ documentName, context }) {
