@@ -64,14 +64,14 @@ describe('refreshUserPath', () => {
       exportKey: async (key) => {
         keys.push(key)
         return key.startsWith('HKLM')
-          ? regFile(key, `"Path"=hex(2):${wrap(hex2('C:\\windows\;C:\\Program Files\\nodejs'))}`)
+          ? regFile(key, `"Path"=hex(2):${wrap(hex2('C:\\windows\\;C:\\Program Files\\nodejs'))}`)
           : regFile(key, `"PATH"=hex(2):${wrap(hex2('%USERPROFILE%\\.local\\bin;%UNSET%\\x'))}`)
       },
     })
     expect(keys).toEqual(['HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment', 'HKCU\\Environment'])
     expect(read).toMatchObject({ from: 'windows-registry', hydrated: true })
     expect(env.Path).toBe(
-      'C:\\windows\;C:\\Program Files\\nodejs;C:\\Users\\张三\\.local\\bin;%UNSET%\\x;C:\\Users\\u\\AppData\\Roaming\\npm',
+      'C:\\windows\\;C:\\Program Files\\nodejs;C:\\Users\\张三\\.local\\bin;%UNSET%\\x;C:\\Users\\u\\AppData\\Roaming\\npm',
     )
   })
 
