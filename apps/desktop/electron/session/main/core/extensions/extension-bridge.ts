@@ -1353,7 +1353,7 @@ export async function chatMembersChanged(chatId: string, changes: readonly Membe
     const person = await readerLeftChat(chatId, memberId!);
     for (const [id, binding] of bindings) {
       if (binding.conversation !== chatId) continue;
-      if (person ? binding.operator.kind === 'person' : binding.operator.kind === 'agent' && binding.operator.id === memberId) void fileSync.revoke(id, 'removed-from-group');
+      if (person ? binding.operator.kind === 'person' : binding.operator.kind === 'agent' && binding.operator.id.replace(/^user:/, '') === memberId) void fileSync.revoke(id, 'removed-from-group');
     }
   }
   // No page drawn for it: nobody keeps its members current, so they are forgotten — read afresh when a page is (`pushContext`).
