@@ -13,7 +13,7 @@ vi.mock('@/lib/fileAccess', () => ({
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.blob }))
 
 const revision = { source: 'managed-object', file_name: 'a.png', content_type: 'image/png', size_bytes: 4, sha256: 'a'.repeat(64) }
-const pixels = 'data:image/png;base64,iVBORw0KGgo='
+const pixels = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' })
 const url: AttachmentSource = { kind: 'url', url: 'https://x/a.png' }
 const item: AttachmentSource = { kind: 'item', itemId: 'file', version: 2 }
 const message: AttachmentSource = { kind: 'message', messageId: 'msg' }
@@ -76,8 +76,8 @@ describe('a file kept in a task\'s session', () => {
   })
 
   it('reports an unreadable host as a failure rather than a missing file, including when no reader is lent', async () => {
-    const giveBack = lendSessionFileReader('session-1', async () => null)
-    await expect(attachmentBytes(session, 'thumb')).rejects.toThrow('Could not read the file from its session host')
+    const giveBack = lendSessionFileReader('session-1', async () => { throw new Error('not_opened') })
+    await expect(attachmentBytes(session, 'thumb')).rejects.toThrow('not_opened')
     giveBack()
     await expect(attachmentBytes(session, 'thumb')).rejects.toThrow()
     await expect(attachmentBytes({ ...session, sessionId: null }, 'thumb')).rejects.toThrow()

@@ -109,6 +109,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
 import { openComposerImage, openDiagramViewer, openImageViewer } from '@/lib/imageViewer';
@@ -2113,6 +2114,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       flashMessageId: sourceMessage.flashMessageId,
       conversationAgentName: () => conversationAgentName,
       conversationAgentSession: () => store?.sessionId ?? null,
+      readConversationFile: (request) => { const machine = store ? machineRegistry.machineOf(store.runtimeSessionId) : null; return readConversationFile(!machine, machine ?? '', request); },
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
