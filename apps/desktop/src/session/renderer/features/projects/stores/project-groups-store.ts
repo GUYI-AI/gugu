@@ -1,7 +1,7 @@
 import { comparer, observable, reaction, runInAction } from 'mobx';
 import type { ProjectGroupBinding } from '@shared/core/projects/project-groups';
 import { onAccountChange } from '@/lib/replica';
-import { machineRegistry } from '@renderer/lib/machine-routing';
+import { machineRegistry, type MachineListSource } from '@renderer/lib/machine-routing';
 import { publishProjectGroupChats } from './project-group-chats-bridge';
 import { projectGroupBindings } from './project-group-bindings';
 
@@ -112,13 +112,14 @@ export class ProjectGroupsStore {
   }
 
   /** 这台机器上的绑定整份换成这一份(那台机器此刻的回答,或没连着时账号上记着的那份)。 */
-  applyBindings(machine: string | null, bindings: readonly ProjectGroupBinding[]): void {
+  applyBindings(machine: string | null, bindings: readonly ProjectGroupBinding[], from: MachineListSource = 'machine'): void {
     runInAction(() => {
       for (const projectId of [...this.byProject.keys()]) {
         if ((machineRegistry.machineOf(projectId) ?? null) === machine) this.byProject.delete(projectId);
       }
       for (const binding of bindings) {
-        if (machine) machineRegistry.register(machine, [binding.projectId]);
+        if (machine && from === 'machine') machineRegistry.register(machine, [binding.projectId]);
+        else if (machine) machineRegistry.propose(machine, [binding.projectId]);
         this.byProject.set(binding.projectId, binding.chatId);
       }
     });

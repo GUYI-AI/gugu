@@ -813,9 +813,8 @@ export class RemoteHostsStore {
     }
     if (!this.accountIsNewer(deviceId)) return;
     const sessions = this.sessionsOf(deviceId).sessions;
-    if (sessions.length) appState.projects.syncMachineProjects(deviceId, accountProjectsOf(deviceId, records), sessions);
-    else appState.projects.syncMachineProjects(deviceId, accountProjectsOf(deviceId, records));
-    projectGroupsStore.applyBindings(deviceId, accountBindingsOf(deviceId, records));
+    appState.projects.syncMachineProjects(deviceId, accountProjectsOf(deviceId, records), sessions, 'account');
+    projectGroupsStore.applyBindings(deviceId, accountBindingsOf(deviceId, records), 'account');
   }
 
   /** #113 账号上那份比这一端经连接读到的新(或这一端还没经连接读到过它):没连着时以账号上那份为准。 */

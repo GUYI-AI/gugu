@@ -4,7 +4,7 @@ import { createRPCClient } from '@shared/lib/ipc/rpc';
 import type { SessionHostBridgeApi } from '@shared/lib/ipc/session-host-client';
 import { findSessionHostBridge, type SessionHostBridge } from './electron-api';
 import { machineClient, reportMachineOutdated } from './machine-clients';
-import { machineCodec as codecOf, machineOfChannel, machineRegistry } from './machine-routing';
+import { collectEntityIds, machineCodec as codecOf, machineOfChannel, machineRegistry } from './machine-routing';
 
 // @@@task-fusion (#2802) / @@@task-web-host — 桥的解析在 electron-api.ts(桌面 preload 或网页版
 // WebSocket 桥)。**按调用时解析,不在模块求值时定死**:网页版里这个 bundle 可能被预热加载,那时
@@ -73,8 +73,11 @@ function sameVersionAs(deviceId: string): boolean {
 }
 
 async function invokeOn(deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
-  // 发过去的参数与拿回来的结果里出现的实体 id 都记到那台机器名下(新建的任务 / 会话从此认得出)。
-  machineRegistry.absorb(deviceId, args);
+  // 发过去的参数里新出现的实体 id(新建的任务 / 会话)记到那台机器名下,从此认得出;已有主的不改 —— 参数是这边说的,
+  // 不是那台答的(propose)。拿回来的结果是那台答的,记到它名下(receiveFrom)。
+  const sent: string[] = [];
+  collectEntityIds(args, sent);
+  machineRegistry.propose(deviceId, sent);
   const result = await remoteApi(deviceId)
     .invoke(channel, ...codecOf(deviceId).outbound(args))
     .catch((error: unknown) => {
