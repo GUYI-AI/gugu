@@ -27,36 +27,73 @@ async function inChunkCacheDirectory<T>(directory: string, operation: () => Prom
   return result
 }
 
-/** Raw resumable chunks share the existing private open-file cache and its stale-directory cleanup. */
+// A key's chunks are read and written by every lane at once; its cleanup waits for those already running, and any that
+// start meanwhile wait for the cleanup (one process: every cache instance on the same normalized directory shares this).
+const chunkReads = new Map<string, Set<Promise<unknown>>>(), chunkCleanups = new Map<string, Promise<void>>()
+const chunkDirectories = new Map<string, Promise<string>>()
+
+/**
+ * Raw resumable chunks share the existing private open-file cache and its stale-directory cleanup. A key's directory is
+ * checked against the agent file boundary and made once, in the queue its cleanup also takes; its chunks are then files
+ * named by their index inside it, written aside and renamed in, and read, by every lane at once. Checking each chunk's
+ * path again, one operation at a time, held a read to ~65 MB/s (200 MB, three lanes, local server); this runs at ~180.
+ */
 export function createFileChunkCache(tempRoot: string): FileChunkCache {
-  const directory = (key: string, index = 0) => {
+  let base: Promise<string> | undefined
+  const directory = async (key: string, index = 0) => {
     if (!/^(?:[0-9a-f]{32}|[0-9a-f]{64})$/.test(key) || !Number.isSafeInteger(index) || index < 0) throw new Error('Invalid file cache key')
-    return join(tempRoot, `open-${key}`)
+    // Normalize the stable parent once, not the removable child: aliases of one cache share their directories.
+    base ??= requireAgentFileAccess(tempRoot)
+    base.catch(() => { base = undefined })
+    return join(await base, `open-${key}`)
+  }
+  const made = (at: string) => {
+    let ready = chunkDirectories.get(at)
+    if (!ready) {
+      ready = inChunkCacheDirectory(at, async () => {
+        await requireAgentFileAccess(at)
+        await mkdir(at, { recursive: true, mode: 0o700 })
+        return requireAgentFileAccess(at)
+      })
+      chunkDirectories.set(at, ready)
+      ready.catch(() => { if (chunkDirectories.get(at) === ready) chunkDirectories.delete(at) })
+    }
+    return ready
+  }
+  const using = async <T>(key: string, index: number, operation: (root: string) => Promise<T>): Promise<T> => {
+    const at = await directory(key, index)
+    await chunkCleanups.get(at)
+    const running = (async () => operation(await made(at)))()
+    const active = chunkReads.get(at) ?? new Set<Promise<unknown>>()
+    chunkReads.set(at, active); active.add(running)
+    try { return await running } finally { active.delete(running); if (!active.size && chunkReads.get(at) === active) chunkReads.delete(at) }
   }
   return {
-    async get(key, index) {
-      const root = directory(key, index)
-      return inChunkCacheDirectory(root, async () => {
-        const file = await requireAgentFileAccess(join(root, String(index))), info = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
-        if (!info) return null
-        requireFileRange(FILE_CHUNK_BYTES, 0, info.size)
-        return new Uint8Array(await readFile(file))
-      })
-    },
+    get: (key, index) => using(key, index, async root => {
+      const bytes = await readFile(join(root, String(index))).catch(error => { if (error.code === 'ENOENT') return null; throw error })
+      if (!bytes) return null
+      requireFileRange(FILE_CHUNK_BYTES, 0, bytes.length)
+      return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    }),
     async put(key, index, bytes) {
       requireFileRange(FILE_CHUNK_BYTES, 0, bytes.length)
-      const root = directory(key, index)
-      return inChunkCacheDirectory(root, async () => {
-        const file = await requireAgentFileAccess(join(root, String(index)))
-        await requireAgentFileAccess(root)
-        await mkdir(root, { recursive: true, mode: 0o700 })
-        const part = await requireAgentFileAccess(`${file}.${crypto.randomUUID()}.part`)
+      return using(key, index, async root => {
+        const file = join(root, String(index)), part = `${file}.${crypto.randomUUID()}.part`
         await writeFile(part, bytes, { flag: 'wx', mode: 0o600 }); await rename(part, file)
       })
     },
-    clear(key) {
-      const root = directory(key)
-      return inChunkCacheDirectory(root, () => cleanupRemoteFileDirectory(root))
+    async clear(key) {
+      const at = await directory(key)
+      const cleanup = (async () => {
+        await chunkCleanups.get(at)
+        chunkDirectories.delete(at)
+        await Promise.allSettled([...(chunkReads.get(at) ?? [])])
+        await inChunkCacheDirectory(at, () => cleanupRemoteFileDirectory(at))
+      })()
+      const tail = cleanup.then(() => {}, () => {})
+      chunkCleanups.set(at, tail)
+      void tail.then(() => { if (chunkCleanups.get(at) === tail) chunkCleanups.delete(at) })
+      return cleanup
     },
   }
 }
