@@ -21,13 +21,12 @@ const nativeAcpProviders: Array<{
     args: ['--acp'],
     env: { AUGMENT_DISABLE_AUTO_UPDATE: '1' },
   },
-  // New chats run `agy acp` on the managed config root; loopback proxy exclusions are always added
-  // (it reaches its own local harness; a system proxy intercepting that fails session/new with -32603).
+  // New chats run `agy acp` on the managed config root. Loopback stays out of the proxy at the child
+  // environment's exit (composeAgentSpawnEnv -> withLoopbackNoProxy), not in this provider.
   {
     id: 'antigravity',
     spawnEnv: { GEMINI_HOME: '/managed/.gemini' },
     args: ['acp', '--stdio', '--gemini-dir', '/managed/.gemini'],
-    env: { NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' },
   },
   { id: 'cline', args: ['--acp'] },
   { id: 'copilot', args: ['--acp'] },

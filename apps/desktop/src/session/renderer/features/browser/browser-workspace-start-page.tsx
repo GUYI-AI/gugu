@@ -38,7 +38,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
             {recent.slice(0, 4).map((item) => {
               const remove = translate('browser.workspaceRemoveRecent', { label: item.title });
               return <StartTile key={item.id} label={item.title} title={item.title} onClick={item.open}
-                icon={item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <Folder className="size-7" /> : <FileIcon filename={item.title} className="size-7" />}
+                icon={item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <Folder className="size-7" /> : <FileIcon filename={item.title} size={28} className="size-7" />}
                 corner={<Button size="icon-xs" variant="ghost" aria-label={remove} title={remove} onClick={item.remove}><X className="size-3" /></Button>} />;
             })}
           </div> : <p className="text-sm text-foreground-muted">{translate('browser.workspaceRecentEmpty')}</p>}

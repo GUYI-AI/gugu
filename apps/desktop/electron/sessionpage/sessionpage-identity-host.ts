@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 // @@@task-shell-port (#5012) — 「给会话开咕咕账号并绑到会话」这一套,桌面主进程与网页版无头宿主共用的口。
 //
 // 从前只在 electron/main.ts 里有(它同时握着登录态与本机 roster),网页版宿主里一个字都没有,于是网页版
@@ -21,7 +22,7 @@ import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import { createLogger } from '../lib/logger'
 
 const log = createLogger('sessionpage/task-names')
-import { electronFetch, makeIdentityClient } from '../supabase'
+import { makeIdentityClient } from '../supabase'
 import {
   SESSION_CACHE_KEY,
   isSessionpageAddressable,
@@ -123,7 +124,7 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
     resolveProjectName: deps.resolveProjectName,
     ...(deps.takeBirthGroup ? { takeBirthGroup: deps.takeBirthGroup } : {}),
     // #5331 铸身份 + 名字去重 + 进群一次往返。
-    provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: electronFetch }),
+    provisionOneTrip: (input) => provisionSessionpageAgentOneTrip({ ...input, fetchImpl: egress.fetch }),
     // #4277 老名册行没记 owner 时问云端一次:identity.users 的 owner_user_id 是既有事实,RLS 下 owner
     // 读得到自己名下的 agent 行。查询出错要抛(❌ 当「不归我」—— 那会把自己的 agent 停放掉)。
     //

@@ -1,3 +1,4 @@
+import { installNodeEgress } from '../../../../../egress/install-node'
 /**
  * #2507 宿主这一层(renderer ↔ worker 之间)的两件事,走真的连接表与真的 run context 解析:
  *
@@ -41,7 +42,6 @@ vi.mock('@main/lib/logger', () => {
 });
 vi.mock('@main/lib/host-ipc', () => ({ getHostIpc: vi.fn() }));
 vi.mock('@main/worker-manifest', () => ({ desktopWorkerPath: () => '/unused' }));
-vi.mock('@main/utils/systemProxyEnv', () => ({ systemProxyFill: () => ({}) }));
 vi.mock('@main/utils/userEnv', () => ({ loginShellEnv: () => ({}) }));
 vi.mock('@main/core/dependencies/host-dependency-ledger', () => ({ buildHostDependencyLedgerSnapshot: vi.fn() }));
 vi.mock('@main/core/dependencies/dependency-managers', () => ({ ensureAgentDependenciesProbed: vi.fn(), localDependencyManager: {} }));
@@ -233,3 +233,5 @@ it('custom providers are saved and tested in the host without exposing the key',
   expect(await host.removeCustomModel({ connectionId: created.data.id })).toMatchObject({ success: true });
   expect(await host.listCustomModels()).toMatchObject({ success: true, data: [] });
 });
+
+installNodeEgress()

@@ -10,7 +10,7 @@
  * 等 `onSessionpageAgentProvisioned` 那一刻再起;本机身份到了之后它的云端那一发可能还在路上,签票前先等它落地
  * (与会话自己签平台票同一个约定)。5 秒预算从身份落地那一刻算。
  */
-import * as electron from 'electron'
+import { egress } from '@gugu/core/shared/egress'
 import type { RuntimeAuthProvider } from '@gugu/core'
 import { parseCreatedAt } from '@gugu/core/shared/agentDefaultName'
 import {
@@ -63,11 +63,6 @@ export interface SessionTitleNamerDeps {
   /** 落名;返回 false = 这一刻已经有别的名(人改的 / harness 起的),不收。 */
   applyTitle: (sessionId: string, title: string) => Promise<boolean>
   now?: () => number
-}
-
-function netFetch(url: string, init: RequestInit): Promise<Response> {
-  const fetcher = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
-  return fetcher ? fetcher(url, init) : fetch(url, init)
 }
 
 /** 模型回的 content:字符串,或 [{type:'text', text}] 一串。 */
@@ -154,7 +149,7 @@ export function createSessionTitleNamer(deps: SessionTitleNamerDeps) {
       let response: Response
       try {
         response = await Promise.race([
-          netFetch(`${access.relayUrl}/v1/chat/completions`, {
+          egress.fetch(`${access.relayUrl}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access.token}` },
             body: JSON.stringify(sessionTitleRequestBody(model, access.model, state.firstUtterance ?? '', instructions)),

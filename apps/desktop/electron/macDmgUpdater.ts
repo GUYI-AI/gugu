@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto'
 import { spawnSync } from '@gugu/core/local/childProcess'
 import { createWriteStream } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
-import { get as httpsGet } from 'node:https'
-import { get as httpGet } from 'node:http'
+import { egress } from '@gugu/core/shared/egress'
+import { Readable, Transform } from 'node:stream'
+import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web'
+import { pipeline } from 'node:stream/promises'
 import { join } from 'node:path'
 
 // @@@663 mac 更新的 dmg 半自动路径:应用内下载 dmg(按架构选 + sha512 校验)→ 下载完自动打开,
@@ -80,7 +82,7 @@ export function pickMacDmgFile(files: UpdateFileEntry[], arch: string): UpdateFi
 
 /**
  * 下载 dmg 到 destDir 并做 sha512(base64) 校验;校验不过删文件报错。返回落盘路径。
- * 跟随一次 3xx 重定向(OSS/CDN 常见)。
+ * HTTP 栈处理 CDN 重定向,正文仍流式落盘并校验。
  */
 export async function downloadDmg(opts: {
   fileUrl: string
@@ -93,50 +95,32 @@ export async function downloadDmg(opts: {
   // tmp 名带随机段:同进程并发两次下载(双击/双窗口)不得互踩同一 part 文件
   const tmp = `${dest}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.part`
 
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    const request = (url: string, redirectsLeft: number) => {
-      const getter = url.startsWith('http://') ? httpGet : httpsGet
-      getter(url, (res) => {
-        const status = res.statusCode ?? 0
-        if (status >= 300 && status < 400 && res.headers.location && redirectsLeft > 0) {
-          res.resume()
-          request(new URL(res.headers.location, url).toString(), redirectsLeft - 1)
-          return
-        }
-        if (status !== 200) {
-          res.resume()
-          rejectPromise(new Error(`下载失败 HTTP ${status}: ${url}`))
-          return
-        }
-        const total = Number(res.headers['content-length'] ?? 0)
-        const hash = createHash('sha512')
-        const out = createWriteStream(tmp)
-        let received = 0
-        res.on('data', (chunk: Buffer) => {
-          hash.update(chunk)
-          received += chunk.length
-          opts.onProgress?.(received, total)
-        })
-        res.on('error', rejectPromise)
-        out.on('error', rejectPromise)
-        res.pipe(out)
-        out.on('finish', () => {
-          const digest = hash.digest('base64')
-          // != null(而非 truthiness):feed 给了 sha512 字段就必须匹配——空串也是「给了但无效」,
-          // 一样拒绝,不得静默跳过校验。只有字段缺席才跳过。
-          if (opts.expectedSha512 != null && digest !== opts.expectedSha512) {
-            rejectPromise(new Error(`sha512 校验失败: 期望 ${opts.expectedSha512} 实得 ${digest}`))
-            return
-          }
-          resolvePromise()
-        })
-      }).on('error', rejectPromise)
+  try {
+    const response = await egress.fetch(opts.fileUrl, { redirect: 'follow' })
+    if (response.status !== 200 || !response.body) {
+      await response.body?.cancel()
+      throw new Error(`下载失败 HTTP ${response.status}: ${opts.fileUrl}`)
     }
-    request(opts.fileUrl, 3)
-  }).catch(async (err) => {
+    const total = Number(response.headers.get('content-length') ?? 0)
+    const hash = createHash('sha512')
+    let received = 0
+    const observe = new Transform({
+      transform(chunk: Buffer, _encoding, done) {
+        hash.update(chunk)
+        received += chunk.length
+        opts.onProgress?.(received, total)
+        done(null, chunk)
+      },
+    })
+    await pipeline(Readable.fromWeb(response.body! as unknown as NodeWebReadableStream<Uint8Array>), observe, createWriteStream(tmp))
+    const digest = hash.digest('base64')
+    if (opts.expectedSha512 != null && digest !== opts.expectedSha512) {
+      throw new Error(`sha512 校验失败: 期望 ${opts.expectedSha512} 实得 ${digest}`)
+    }
+  } catch (error) {
     await rm(tmp, { force: true })
-    throw err
-  })
+    throw error
+  }
 
   await rename(tmp, dest)
   return dest

@@ -20,9 +20,8 @@ function delay(ms: number, signal?: AbortSignal | null) {
 
 function fixtures(metadata: Record<string, number> = {}, body: Record<string, number> = {}) {
   vi.useFakeTimers();
-  const close = vi.fn(async () => {});
   const routes: Array<string | null> = [];
-  const transport = vi.fn((actualEnv) => ({ close, fetch: vi.fn(async (url: string, init?: RequestInit) => {
+  const transport = vi.fn((actualEnv) => ({ fetch: vi.fn(async (url: string, init?: RequestInit) => {
     routes.push(installProxyRoute(actualEnv, url));
     const id = new URL(url).hostname.split('.')[0];
     await delay(body[id] ?? 100, init?.signal);
@@ -32,7 +31,7 @@ function fixtures(metadata: Record<string, number> = {}, body: Record<string, nu
     await delay(metadata[registry] ?? 1, signal);
     return release(registry);
   });
-  return { dependencies: { transport, resolve, now: () => Date.now() }, close, routes, resolve, transport };
+  return { dependencies: { transport, resolve, now: () => Date.now() }, routes, resolve, transport };
 }
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -48,13 +47,12 @@ describe('operation-owned install source selection', () => {
     expect(selection.report.sources.find((s) => s.registry === 'npmmirror')!.elapsedMs).toBe(100);
     expect(f.transport).toHaveBeenCalledWith(env);
     expect(f.routes).toEqual([env.HTTPS_PROXY + '/', env.HTTPS_PROXY + '/', env.HTTPS_PROXY + '/']);
-    expect(f.close).toHaveBeenCalledOnce();
     expect(JSON.stringify(selection.report)).not.toMatch(/private|archive|7897/);
   });
 
   it('has no absolute speed threshold; ranks two valid slow partial samples relatively', async () => {
     const f = fixtures();
-    f.transport.mockImplementation(() => ({ close: f.close, fetch: vi.fn(async (_url, init) => {
+    f.transport.mockImplementation(() => ({ fetch: vi.fn(async (_url, init) => {
       let timer: ReturnType<typeof setTimeout>;
       const id = new URL(_url).hostname.split('.')[0];
       const stream = new ReadableStream<Uint8Array>({ start(controller) {
@@ -77,7 +75,6 @@ describe('operation-owned install source selection', () => {
     expect(result.report.reason).toBe('no-throughput-sample-use-default-order');
     expect(result.attempts.map((c) => c.registry)).toEqual(source.registries);
     expect(f.resolve.mock.calls.every((args) => args[2]!.aborted)).toBe(true);
-    expect(f.close).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -88,7 +85,6 @@ describe('operation-owned install source selection', () => {
     const assertion = expect(pending).rejects.toThrow('stop');
     controller.abort(new Error('stop'));
     await assertion;
-    expect(f.close).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });
 
