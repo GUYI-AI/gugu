@@ -760,6 +760,18 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
   }
 
+  /**
+   * A tab turned into another kind of page where it stands (the 「+」 page into a folder, a link to a file, Back): a page
+   * arriving there, so on screen in the pair it comes at its own width (@@@seat-side) — ❌ the width the page before it
+   * had, dragged or declared (owner 11-22: a folder opened from the 「+」 page came at the 「+」 page's width). Another
+   * page of the same kind (a chat's members, then its announcement) is still that page: a dragged width stays.
+   */
+  private _kindChanged(tabId: string): void {
+    this._sideShares.delete(tabId);
+    const pair = this._shownPair;
+    if (pair && (tabId === pair.side || tabId === pair.pinned)) this._seatShown();
+  }
+
   /** A tab left for good: hand its record on; if it was on screen in the pair, bring back what it pushed out. */
   private _tabRemoved(paneId: string, tabId: string, wasActive: boolean, after: string | null): void {
     const pair = this.pair;
@@ -1015,8 +1027,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   /**
    * @@@seat-side - the one place the pair's cut gets its shares: every way a page comes to the side (opened, pushed out
-   * and back, its tab brought to the front, a tool group dropped on an edge, a restart, the divider let go or
-   * double-clicked) ends here, so no path can give a page another page's width (pane-side-width.test.ts walks each one).
+   * and back, its tab brought to the front, its tab turned into it in place, a tool group dropped on an edge, a restart,
+   * the divider let go or double-clicked) ends here, so no path can give a page another page's width
+   * (pane-side-width.test.ts walks each one).
    * Left as it is (the same object) when it is already there.
    */
   private _seatSide(pinned: string, side: string, extent = this._pairExtent()): void {
@@ -1343,6 +1356,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         },
         // Closing the pinned page = the side fills (closing the side closes its pane): 关掉一页 ≠ 拆开.
         tabRemoved: (tabId, wasActive, after) => this._tabRemoved(paneId, tabId, wasActive, after),
+        kindChanged: action((tabId: string) => this._kindChanged(tabId)),
         // Selecting a tab is explicit focus movement; opening a page uses _openFrom instead.
         activating: (tabId) => {
           if (this._selectChatWorkspaceTab(tabId)) return true;

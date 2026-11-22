@@ -93,6 +93,8 @@ export interface PaneSplitter {
    * it was first) — where it stood, told by the removal itself, since the pane's front has already moved on.
    */
   tabRemoved?(tabId: string, wasActive: boolean, after: string | null): void;
+  /** A tab now shows another kind of page (navigated, Back/Forward, a page dropped from its history). */
+  kindChanged?(tabId: string): void;
   /** A tab is being brought forward; true = the layout placed it (it replaced the side of the pair). */
   activating?(tabId: string): boolean;
   /** 这一枚能不能单独成窗,能的话怎么开(会话自己那枚 = 整个会话,App 那枚 = 这个 App,别的附页 = 这一枚)。 */
@@ -661,6 +663,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this._resources.set(entry.tabId, this.registry.has(entry.kind)
       ? this.registry.get(entry.kind).initialize(entry as never, this._buildHandle(entry), this._ctx)
       : createUnavailableTabResource());
+    if (entry.kind !== oldEntry.kind) this._layoutSplitter?.kindChanged?.(entry.tabId);
   }
 
   closeActiveTab(): void {
