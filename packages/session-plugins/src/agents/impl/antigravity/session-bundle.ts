@@ -77,30 +77,6 @@ const noExtension: Degradation = {
 };
 
 /**
- * 回环地址免代理 —— 递给**每一次** spawn(真会话与模型目录探针同一条 `buildSpawn`)。
- *
- * 读数(owner 侧 2026-09-23 MBP,系统 SOCKS 代理 127.0.0.1:7897 开着):`session/new` 回
- * `-32603 "python-socks is required to use a SOCKS proxy"` —— 它起会话时要连**自己的**本地 harness
- * (stderr `local_connection.py … RAW WS MSG`,一条回环 websocket),而这条连接被代理设置截走;
- * 子进程环境补 `NO_PROXY=127.0.0.1,localhost`(大小写两份)后同一台机器上通过。
- * ⚠️ 本 slice 在另一份 shell 环境里**没复现**那个失败(系统代理的 ExceptionsList 已含 127.0.0.1;
- *    显式加 `ALL_PROXY=socks5://127.0.0.1:7897` 也照样通),即触发条件依赖环境 —— 正因为如此才无条件带上:
- *    多带一条回环豁免没有任何代价,少带就是某些用户机器上会话起不来。
- * ⚠️ 合并而不是覆盖:用户自己的 `NO_PROXY` 一个条目都不许丢。
- */
-export const LOOPBACK_NO_PROXY = ['127.0.0.1', 'localhost'] as const;
-
-export function withLoopbackNoProxy(env: Readonly<Record<string, string>>): Record<string, string> {
-  const merged = (value: string | undefined) => {
-    const entries = (value ?? '').split(',').map((entry) => entry.trim()).filter(Boolean);
-    for (const host of LOOPBACK_NO_PROXY) if (!entries.includes(host)) entries.push(host);
-    return entries.join(',');
-  };
-  const existing = env.NO_PROXY ?? env.no_proxy;
-  return { NO_PROXY: merged(existing), no_proxy: merged(env.no_proxy ?? existing) };
-}
-
-/**
  * 终端腿(`tui`)跑的 `agy` 版本读数底座:2026-09-24 MBP,agy 1.2.9(`~/.local/bin/agy`),
  * 影子 HOME + API key 模式(托管 `settings.json` 写 `{"modelProvider":"gemini"}`,`GEMINI_API_KEY` +
  * `GOOGLE_GEMINI_BASE_URL` 指本地假 Gemini 端点)+ 本地假 MCP,零 Google 账号、零真实推理。

@@ -30,9 +30,12 @@ import { getSupabaseUrl } from '@gugu/core/cloud/config'
 import { resolveServerHome } from './server/server-installation'
 import { inspectAccountLayout } from './server/server-startup'
 import { homeLockHolder } from './server/server-startup'
+import { installNodeEgress } from './egress/install-node'
 import { configureNodeNetwork } from '@gugu/core/local/node-network.mjs'
 
 configureNodeNetwork()
+// Login/unregister CLI commands do not load main.ts. Install before dispatching any of them.
+installNodeEgress()
 
 const stderr = (line: string): void => void process.stderr.write(`${line}\n`)
 

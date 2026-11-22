@@ -2,6 +2,9 @@ import { createServer, type RequestListener, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, expect, it } from 'vitest';
 import { requestSubscriptionJson } from './subscription-http';
+import { installNodeEgress } from '../../../../../apps/desktop/electron/egress/install-node';
+
+installNodeEgress();
 
 let server: Server;
 afterEach(async () => { if (server) await new Promise<void>(resolve => server.close(() => resolve())); });

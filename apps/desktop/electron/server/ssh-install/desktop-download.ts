@@ -6,6 +6,7 @@
  * 另外把 install.sh 本身也取回来,经 SSH 带过去 —— 那台机器上什么都不用再下。
  * fetch 与文件目录都注入,单测里换成假的。
  */
+import { egress } from '@gugu/core/shared/egress'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -35,7 +36,7 @@ export async function downloadServerOnDesktop(options: {
   onProgress: (done: number, total: number | null) => void
   fetch?: FetchLike
 }): Promise<DesktopPackage> {
-  const fetchImpl: FetchLike = options.fetch ?? ((url, init) => fetch(url, init))
+  const fetchImpl: FetchLike = options.fetch ?? ((url, init) => egress.fetch(url, init))
   const get = async (url: string): Promise<Response> => {
     let response: Response
     try {

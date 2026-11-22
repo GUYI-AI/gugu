@@ -1,10 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { uploadAttachmentPlan } from '@gugu/core/cloud/attachmentsApi'
 import { AttachmentDeadlineError, ATTACHMENT_UPLOAD_IDLE_MS } from '@gugu/core/cloud/attachmentDeadline'
-import { net } from '../../../../apps/desktop/electron/server/server-electron-shim'
 import { hostAttachmentsEndpoint } from '../../../../apps/desktop/electron/attachmentUploadTransport'
-
-vi.mock('electron', () => import('../../../../apps/desktop/electron/server/server-electron-shim'))
 
 afterEach(() => {
   vi.useRealTimers()
@@ -13,12 +10,11 @@ afterEach(() => {
 })
 
 const url = 'https://store.test/attachment'
-const headlessEndpoint = () => hostAttachmentsEndpoint({
+const hostEndpoint = () => hostAttachmentsEndpoint({
   supabaseUrl: 'https://db.test', anonKey: 'anon', getAccessToken: async () => 'token',
-}, net.fetch, true)
+})
 
-it('uploads attachments on the headless server through net.fetch without reaching net.request', async () => {
-  const request = vi.spyOn(net, 'request')
+it('uploads attachments through the host egress', async () => {
   const fetch = vi.fn<typeof globalThis.fetch>(async (_url, sent) => {
     const headers = new Headers(sent?.headers)
     const bytes = await new Response(sent?.body).arrayBuffer()
@@ -29,25 +25,24 @@ it('uploads attachments on the headless server through net.fetch without reachin
     return new Response(null, { status: 204 })
   })
   vi.stubGlobal('fetch', fetch)
-  const endpoint = await headlessEndpoint()
+  const endpoint = await hostEndpoint()
 
   await uploadAttachmentPlan(endpoint, { url, fields: { key: 'pending' }, max_bytes: 100 }, {
     bytes: new Blob(['attachment']), name: 'file.txt', contentType: 'text/plain',
   })
 
   expect(fetch).toHaveBeenCalledExactlyOnceWith(url, expect.objectContaining({ method: 'POST' }))
-  expect(request).not.toHaveBeenCalled()
 })
 
 async function uploadPutWithDeadline(observe: (loaded: number) => void) {
-  const endpoint = await headlessEndpoint()
+  const endpoint = await hostEndpoint()
   const bytes = new Blob([new Uint8Array(256 * 1024)])
   return uploadAttachmentPlan(endpoint, { url, method: 'PUT', fields: {}, max_bytes: bytes.size }, {
     bytes, name: 'slow.bin', contentType: 'application/octet-stream',
   }, false, ({ loaded }) => observe(loaded))
 }
 
-it('keeps a slow headless upload alive beyond the first-progress deadline while the body is consumed', async () => {
+it('keeps a slow host upload alive beyond the first-progress deadline while the body is consumed', async () => {
   vi.useFakeTimers()
   const readFirst = Promise.withResolvers<void>()
   const interval = ATTACHMENT_UPLOAD_IDLE_MS - 5_000
@@ -75,7 +70,7 @@ it('keeps a slow headless upload alive beyond the first-progress deadline while 
 it.each([
   ['before its first byte', false],
   ['after its first chunk', true],
-])('aborts a headless upload stalled %s', async (_phase, readChunk) => {
+])('aborts a host upload stalled %s', async (_phase, readChunk) => {
   vi.useFakeTimers()
   const stalled = Promise.withResolvers<AbortSignal>()
   vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
@@ -121,7 +116,7 @@ it('waits for storage until the signed plan expires after the body of a part is 
       waiting.resolve(signal)
     })
   })
-  const endpoint = await headlessEndpoint()
+  const endpoint = await hostEndpoint()
   const expires_at = new Date(Date.now() + 300_000).toISOString()
   const uploaded = uploadAttachmentPlan(endpoint, { url, fields: {}, max_bytes: bytes.size, expires_at,
     staging_key: 'pending', parts: { part_bytes: partBytes, count: 2 } }, { bytes, name: 'slow.bin', contentType: 'application/octet-stream' })

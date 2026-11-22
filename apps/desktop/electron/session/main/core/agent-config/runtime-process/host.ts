@@ -25,6 +25,7 @@ import { getPlugin, listPlugins } from '@main/core/agents/plugin-registry';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { harnessWorkerHost } from '@main/harness-worker-host';
 import { connectionProbeProxyEnv } from '@main/core/agents/connection-endpoint-env';
+import { withLoopbackNoProxy } from '@gugu/session-core/agents/agent-env';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
@@ -46,16 +47,19 @@ const agentConfigWorker = lazyWorker(
     // #6264「登录已失效」标记按「这台机器 × 这家的配置家」记(见 session-runtime auth-expiry-file.ts):
     // 咕咕 server 上放在几个账号共用的数据根(同机账号共用 claude 那份登录,A 发现过期 B 也看得到);
     // 桌面上一台机器一份数据目录,仍放那里。
-    env: {
+    // 回环免代理:登录、认证、额度探针都经 composeAgentSpawnEnv;只有 `which` / `--version` 这类宿主依赖探针
+    // 直接继承这个 worker 的环境,同一条规矩也在这里用上。
+    env: withLoopbackNoProxy({
       ...process.env,
-      // The worker cannot read the host's login-shell snapshot. Resolve proxy values here,
-      // with the same shell/process/system precedence as the agents it configures.
+      // The worker cannot read the host's login-shell snapshot. Resolve proxy values here, with the same
+      // shell/process/system-proxy precedence as the agents it configures (#6892: harness login and model-list
+      // probes run in this worker and reach the internet).
       ...connectionProbeProxyEnv(),
       GUGU_AGENT_AUTH_EXPIRY_FILE: join(
         process.env.GUGU_SERVER_MODE === '1' && process.env.GUGU_SERVER_HOME ? process.env.GUGU_SERVER_HOME : app.getPath('userData'),
         'agent-auth-expiry.json'
       ),
-    },
+    }),
   }),
   {
     onSpawned: (handle) => {

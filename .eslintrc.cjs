@@ -83,6 +83,27 @@ const childProcessImportGate = ['node:child_process', 'child_process'].map((name
     '起子进程用 @gugu/core/local/childProcess:同一套 API,windowsHide 默认 true(Windows 上不弹黑框)。要人看见窗口的(「用 X 打开」)显式写 windowsHide: false。'
 }))
 
+const abortSignalAnyGate = {
+  object: 'AbortSignal', property: 'any',
+  message: 'Use anySignal from @gugu/core/shared/anySignal: AbortSignal.any is missing on Android WebView before 116.'
+}
+const egressMessage = 'Use egress from @gugu/core/shared/egress: it decides proxy, certificates, deadlines and failure wording for every host request and cloud socket.'
+const egressImportGates = [
+  ...['undici', 'https', 'node:https', 'http2', 'node:http2', 'tls', 'node:tls'].map((name) => ({ name, message: egressMessage })),
+  ...['http', 'node:http'].map((name) => ({ name, importNames: ['request', 'get', 'Agent'], message: egressMessage })),
+  { name: 'ws', importNames: ['default', 'WebSocket'], allowTypeImports: true, message: egressMessage + ' (WebSocketServer and types stay allowed.)' },
+  { name: 'electron', importNames: ['net'], allowTypeImports: true, message: egressMessage },
+]
+
+const rawHttpCall = {
+  // http.request / https.get, and an Electron session's own fetch (session.defaultSession.fetch, webContents.session.fetch,
+  // session.fromPartition(...).fetch): the latter is Chromium's stack, outside the egress's proxy and error policy.
+  selector: ":matches(CallExpression[callee.type='MemberExpression'][callee.object.name=/^(http|https)$/][callee.property.name=/^(request|get)$/], CallExpression[callee.property.name='fetch'][callee.object.property.name=/^(defaultSession|session)$/], CallExpression[callee.property.name='fetch'][callee.object.callee.property.name='fromPartition'])",
+  message: egressMessage
+}
+// An override replaces no-restricted-syntax whole: the host-code overrides below spread these to keep the top-level gates.
+const topLevelSyntaxGates = [noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath, noDynamicElectronImport]
+
 module.exports = {
   root: true,
   env: { browser: true, es2020: true, node: true },
@@ -308,6 +329,22 @@ module.exports = {
       }
     },
     {
+      // @@@egress: a host process reaches the network through one egress (@gugu/core/shared/egress): proxy,
+      // certificates, deadlines and failure wording are decided there. Node's globals and raw stacks skip all of it:
+      // behind a system-only proxy every Gugu tool call failed while the rest of the app worked. Tests stub on purpose.
+      files: ['apps/desktop/electron/**', 'packages/core/src/**', 'packages/session-core/src/**', 'packages/session-runtime/src/**', 'packages/session-plugins/src/**'],
+      excludedFiles: ['**/*.test.*', '**/test-support/**', '**/__tests__/**', 'apps/desktop/electron/egress/**', 'packages/core/src/shared/egress/**', 'packages/core/src/local/loopback.ts', 'apps/desktop/electron/lib/file-response.ts'],
+      rules: {
+        'no-restricted-globals': ['error', ...['fetch', 'WebSocket'].map((name) => ({ name, message: egressMessage }))],
+        // Overrides replace a rule whole: the AbortSignal.any entry is repeated from the top level.
+        'no-restricted-properties': ['error', abortSignalAnyGate,
+          ...['globalThis', 'window', 'self'].flatMap((object) => ['fetch', 'WebSocket'].map((property) => ({ object, property, message: egressMessage }))),
+          ...['fetch', 'request', 'WebSocket'].map((property) => ({ object: 'net', property, message: egressMessage }))],
+        '@typescript-eslint/no-restricted-imports': ['error', { paths: egressImportGates }],
+        'no-restricted-syntax': ['error', ...topLevelSyntaxGates, rawHttpCall]
+      }
+    },
+    {
       // Tests drive the auth SDK directly on purpose (what a bare call does is what they prove); the single-refresher
       // rule guards product code only.
       files: ['tests/**'],
@@ -321,13 +358,10 @@ module.exports = {
     }
   ],
   rules: {
-    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath, noDynamicElectronImport],
+    'no-restricted-syntax': ['error', ...topLevelSyntaxGates],
     // Android System WebView before 116 has no AbortSignal.any: calling it threw before the request was sent (images
     // could not load). One function owns the native call and its fallback; everything else combines signals through it.
-    'no-restricted-properties': ['error', {
-      object: 'AbortSignal', property: 'any',
-      message: 'Use anySignal from @gugu/core/shared/anySignal: AbortSignal.any is missing on Android WebView before 116.'
-    }],
+    'no-restricted-properties': ['error', abortSignalAnyGate],
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     '@typescript-eslint/no-explicit-any': 'warn',
     // @@@task-fusion (#2802) — vars/caughtErrors 也认 `_` 前缀:会话页用 `const _x = ...` 表示

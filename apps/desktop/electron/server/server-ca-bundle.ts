@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import tls from 'node:tls'
+import { bundledCaPem } from '../egress/certificates'
 
 const SYSTEM_CA_FILES = [
   '/etc/ssl/certs/ca-certificates.crt', // Debian / Ubuntu / Alpine
@@ -22,7 +22,7 @@ export function ensureCaBundleForChildren(dataDir: string, env: NodeJS.ProcessEn
   if (env.SSL_CERT_FILE || env.SSL_CERT_DIR) return null
   if (SYSTEM_CA_FILES.some((file) => fs.existsSync(file))) return null
   const bundle = path.join(dataDir, 'ca-bundle.pem')
-  const wanted = `${tls.rootCertificates.join('\n')}\n`
+  const wanted = bundledCaPem()
   // #6264 磁盘满时每次启动都「截断再写」会把证书文件写坏、再抛异常让守护进程秒退(systemd 每 3 秒重来一次)。
   // 内容没变就不写;要写就先写临时文件再改名 —— 写不进去时旧的那份还完好,照样能用。
   let current: string | null = null
