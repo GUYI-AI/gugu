@@ -1,6 +1,8 @@
 import { observer } from 'mobx-react-lite'
 import { Fragment, useEffect, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
+import { auxWindows } from '@renderer/app/aux-windows'
 import { chatTabSlotKey, readShellSlots } from '../../lib/shellSlots'
 import { chatLayoutOf, chatPaneOf, chatTabOf, focusedChatTab, infoTabOf, panelTabOf, panelTabsOf, topicTabOf, type ChatPanelTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { PaneContext } from '@renderer/features/tabs/pane-context'
@@ -20,6 +22,15 @@ export function ChatPaneContent({ chatId, tabId, ...props }: ComponentProps<'div
   return <div {...props} onPointerDownCapture={focus} onFocusCapture={focus} />
 }
 
+
+/**
+ * Draw a tab's content into its pane's slot. The content belongs to the shell's tree, so its popups (menus, sheets, pickers)
+ * portal where the shell's do: the main window. A slot in a pop-out window (aux-window-host) is another document; there
+ * they go into that window's layer, or they open behind it in the main window.
+ */
+export function portalToPaneSlot(children: ReactNode, slot: HTMLElement, key: string) {
+  return createPortal(<UiPortalContainerProvider value={auxWindows.layerOf(slot.ownerDocument) ?? undefined}>{children}</UiPortalContainerProvider>, slot, key)
+}
 
 /**
  * In a block, each tab of the chat that is on screen has a slot the session page's engine left for it (chat-tab-providers'
@@ -47,10 +58,10 @@ export const ChatTabPortals = observer(function ChatTabPortals({ chatId, panel, 
         const layout = chatLayoutOf(chatId)
         const owner = [...layout.groups, ...layout.windowPanes.values()].find(({ pane }) => pane.entries.has(tab.tabId))
         // A portal inherits the shell's React context, not the pane around its DOM slot.
-        return element && owner ? createPortal(<PaneContext.Provider value={{ pane: owner.pane, paneId: owner.paneId, isFocusedPane: tab.focused && tab.shown }}><ChatPaneContent chatId={chatId} tabId={tab.tabId} className="contents">{panel(tab)}</ChatPaneContent></PaneContext.Provider>, element, tab.tabId) : null
+        return element && owner ? portalToPaneSlot(<PaneContext.Provider value={{ pane: owner.pane, paneId: owner.paneId, isFocusedPane: tab.focused && tab.shown }}><ChatPaneContent chatId={chatId} tabId={tab.tabId} className="contents">{panel(tab)}</ChatPaneContent></PaneContext.Provider>, element, tab.tabId) : null
       })}
-      {topicTab && topicSlot ? createPortal(<ChatPaneContent chatId={chatId} tabId={topicTab.tabId} className="contents">{topic()}</ChatPaneContent>, topicSlot, topicTab.tabId) : null}
-      {infoTab && infoSlot ? createPortal(<ChatPaneContent chatId={chatId} tabId={infoTab.tabId} className="contents">{info()}</ChatPaneContent>, infoSlot, infoTab.tabId) : null}
+      {topicTab && topicSlot ? portalToPaneSlot(<ChatPaneContent chatId={chatId} tabId={topicTab.tabId} className="contents">{topic()}</ChatPaneContent>, topicSlot, topicTab.tabId) : null}
+      {infoTab && infoSlot ? portalToPaneSlot(<ChatPaneContent chatId={chatId} tabId={infoTab.tabId} className="contents">{info()}</ChatPaneContent>, infoSlot, infoTab.tabId) : null}
     </>
   )
 })

@@ -409,7 +409,7 @@ describe('ImagePreviewProvider', () => {
   it('opens in the window its thumbnail is in, and closes by Escape there', async () => {
     const frame = document.createElement('iframe')
     document.body.append(frame)
-    const popOut = frame.contentWindow!
+    const popOut = frame.contentWindow as Window & typeof globalThis
     Object.assign(popOut, { matchMedia: window.matchMedia })
     const thumb = popOut.document.createElement('img')
     popOut.document.body.append(thumb)

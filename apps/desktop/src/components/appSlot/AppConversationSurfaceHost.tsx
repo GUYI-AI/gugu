@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import '../../i18n/registerAssistantCatalog'
 import { ChatAreaPanel } from '../ChatAreaPanel'
@@ -12,6 +11,7 @@ import { readAssistantShellBridge, type AssistantShellAssistant } from '../../li
 import { useAuth } from '../../store/auth'
 import { useAppComposerEntries } from './appComposerActions'
 import { AppComposerRow } from './AppComposerRow'
+import { portalToPaneSlot } from './ChatTabHosts'
 import { useStoreValueBy } from '../../store/chatContext'
 import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { useReplica } from '../../lib/replica'
@@ -98,7 +98,7 @@ export function AppConversationSurfaceHost({ visible, ...handlers }: {
         if (!key.startsWith(APP_CONVERSATION_SLOT_PREFIX)) return []
         const surface = drawable.get(key.slice(APP_CONVERSATION_SLOT_PREFIX.length))
         // Keyed by its authority too: the same conversation under a new grant, choice or installation is drawn anew.
-        return surface && ownerId ? [createPortal(<AppConversationColumn chatId={surface.chatId} viewportKey={key} visible={visible} ownerId={ownerId}
+        return surface && ownerId ? [portalToPaneSlot(<AppConversationColumn chatId={surface.chatId} viewportKey={key} visible={visible} ownerId={ownerId}
           extensionId={key.slice(APP_CONVERSATION_SLOT_PREFIX.length)} authority={surface.authority} ownAssistant={surface.header === 'assistant'} {...handlers} />, element, `${key}#${surface.authority}`)] : []
       })}
     </>
