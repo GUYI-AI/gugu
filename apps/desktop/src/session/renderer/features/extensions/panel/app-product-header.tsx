@@ -16,6 +16,7 @@ export function AppProductHeader({
   name,
   subtitle,
   publisher,
+  links,
   deprecated,
   facts,
   factsTestId,
@@ -25,6 +26,8 @@ export function AppProductHeader({
   name: string;
   subtitle?: string;
   publisher?: string;
+  /** Links after the publisher (the App's source, homepage, repository). */
+  links?: ReactNode;
   deprecated?: boolean;
   facts: readonly { caption: string; value: ReactNode }[];
   factsTestId?: string;
@@ -33,21 +36,21 @@ export function AppProductHeader({
 }) {
   return (
     <>
+      {icon}
       <div className="mk-dh-main">
         <h2 className={cn('gg-type-display mk-dh-title', deprecated && 'is-deprecated')}>{name}</h2>
         {subtitle ? <p className="mk-dh-sub">{subtitle}</p> : null}
-        {publisher ? <div className="mk-dh-by"><span>{publisher}</span></div> : null}
-        <dl className="mk-facts" data-testid={factsTestId}>
-          {facts.map(({ caption, value }) => (
-            <div key={caption}>
-              <dt className="order-last">{caption}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-        {children}
+        {publisher ? <div className="mk-dh-by"><span>{publisher}</span>{links}</div> : null}
       </div>
-      {icon}
+      <dl className="mk-facts" data-testid={factsTestId}>
+        {facts.map(({ caption, value }) => (
+          <div key={caption}>
+            <dt className="order-last">{caption}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {children}
     </>
   );
 }

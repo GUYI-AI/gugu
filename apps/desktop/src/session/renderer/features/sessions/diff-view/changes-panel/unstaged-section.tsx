@@ -1,7 +1,7 @@
 import type { GitChange } from '@gugu/session-core/git';
 import { Plus, Undo2 } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { activeDiffResource } from '@renderer/features/sessions/diff-view/pane-selectors';
 import {
   useSessionViewContext,
@@ -84,15 +84,14 @@ export const UnstagedSection = observer(function UnstagedSection() {
   const handleDiscardSelection = () => {
     const paths = [...changesView.unstagedSelection];
     showConfirmActionModal({
-      title: 'Discard Files Changes',
+      title: translate('changes.discardSelectedTitle'),
       variant: 'destructive',
-      description:
-        'Are you sure you want to discard the changes to the selected files? This can not be undone.',
+      description: translate('changes.discardSelectedConfirm'),
       onSuccess: () => {
         void (async () => {
           const result = await git.discardFiles(paths);
           if (!result.success) {
-            toast.error(vcsFailureText('discard', result.error, translate, 'changes.discardFailed'));
+            notify({ title: vcsFailureText('discard', result.error, translate, 'changes.discardFailed'), tier: 'error' });
             return;
           }
           changesView.removeUnstagedSelection(paths);
@@ -103,13 +102,13 @@ export const UnstagedSection = observer(function UnstagedSection() {
 
   const handleDiscardAll = () => {
     showConfirmActionModal({
-      title: 'Discard All Changes',
+      title: translate('changes.discardAllChanges'),
       variant: 'destructive',
-      description: 'Are you sure you want to discard all changes? This can not be undone.',
+      description: translate('changes.discardAllConfirm'),
       onSuccess: () =>
         void git.discardAllFiles().then((result) => {
           if (!result.success) {
-            toast.error(vcsFailureText('discard', result.error, translate, 'changes.discardFailed'));
+            notify({ title: vcsFailureText('discard', result.error, translate, 'changes.discardFailed'), tier: 'error' });
           }
         }),
     });
@@ -119,7 +118,7 @@ export const UnstagedSection = observer(function UnstagedSection() {
     const paths = [...changesView.unstagedSelection];
     void git.stageFiles(paths).then((result) => {
       if (!result.success) {
-        toast.error(vcsFailureText('stage', result.error, translate, 'changes.stageFailed'));
+        notify({ title: vcsFailureText('stage', result.error, translate, 'changes.stageFailed'), tier: 'error' });
         return;
       }
       changesView.removeUnstagedSelection(paths);
@@ -129,7 +128,7 @@ export const UnstagedSection = observer(function UnstagedSection() {
   const handleStageAll = () => {
     void git.stageAllFiles().then((result) => {
       if (!result.success) {
-        toast.error(vcsFailureText('stage', result.error, translate, 'changes.stageFailed'));
+        notify({ title: vcsFailureText('stage', result.error, translate, 'changes.stageFailed'), tier: 'error' });
       }
     });
   };

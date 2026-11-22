@@ -3,7 +3,6 @@ import { z } from 'zod'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import type { GuguMcpRequestTracker } from '../gugu-mcp-host'
 import { passwordBetaAgentPort } from '../password-vault/beta-runtime-port'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { passwordSaveFailure } from '../password-vault/save-error'
 import { registerGuguTool } from './register-gugu-tool.mjs'
 
@@ -22,7 +21,6 @@ const saveArguments = z.discriminatedUnion('action', [
 ])
 
 export function registerPasswordBetaTools(server: McpServer, context: () => GuguMcpContext, track: GuguMcpRequestTracker, lifetime: AbortSignal) {
-  if (!PASSWORD_BETA_ENABLED) return
   const result = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] })
   // The person's request card goes through the host action, which needs this call's signal (as gugu-im-server binds it).
   const bound = (signal: AbortSignal): GuguMcpContext => {

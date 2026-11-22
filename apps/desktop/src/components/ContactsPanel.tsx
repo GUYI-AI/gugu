@@ -1,15 +1,13 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
-import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
-import { contactAgents, peopleContacts } from './contacts/contactSelectors'
+import { myAgents, peopleContacts } from './contacts/contactSelectors'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AgentSettingsModal } from './agentsettings/AgentSettingsModal'
-import { chatPublicId, displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from '../lib/contactsListSort'
+import { displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from '../lib/contactsListSort'
 // @@@ui-ruler 通讯录只消费原语:列/列头 → Pane/PaneHeader、行 → ListRow、图标钮 → IconButton、
 // 分区标签 → SectionLabel、小标签/计数 → Chip。几何一律来自 tokens.css 的那把尺子。
 import { Sheet } from './ui/Sheet'
 import { Pane, PaneHeader } from './ui/Pane'
 import { navigateMobile } from '@/mobile/navigateMobile'
-import { ListRow } from './ui/ListRow'
 import { SectionLabel } from './ui/SectionLabel'
 import { Chip } from './ui/Chip'
 import {
@@ -31,9 +29,7 @@ import { useAuth } from '../store/auth'
 import { NewFriendsPanel } from './NewFriendsPanel'
 import { AddFriendSearch } from './AddFriendSearch'
 import { ContactsHeaderActions } from './contacts/AddContactMenu'
-import { ActionButton, FieldList, FieldRow, IconButton } from './contactsDetailControls'
-import { Avatar } from './Avatar'
-import { CopyValue } from './CopyValue'
+import { IconButton } from './contactsDetailControls'
 import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal'
 import { ContactsGroupSectionState } from './contacts/ContactsSectionState'
 import { ContactsSectionNav } from './contacts/ContactsDeviceSections'
@@ -41,25 +37,22 @@ import { useContactsSections, type ContactsSection } from './contacts/contactsSe
 import { ContactsSectionPane } from './contacts/ContactsSectionPane'
 import { useDesktopContactSearch } from './contacts/ContactsSearchPane'
 import type { ContactsRowHandlers } from './contacts/ContactRows'
-import { ContactGroupAvatar, ContactSearch } from './contacts/ContactSearch'
+import { ContactSearch } from './contacts/ContactSearch'
 import { ContactsListDock } from './contacts/ContactsListDock'
-import { Button } from './ui/Button'
+import { GroupChatDetailPane } from './contacts/GroupChatDetailPane'
+import { sortGroupsByActivity } from './contacts/groupRowFacts'
 import { useToast } from './toastContext'
 import type { ContactGroup, ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { isCloudAgentMarked } from '@gugu/core/shared/enums/agentTypeModels'
 import { chatService } from '../lib/chat'
-import { groupRoster } from '../hooks/useRoomCollab'
-import { useReplica } from '../lib/replica'
 import { closeIfMyAssistant } from '../lib/assistantClose'
-import { normalizeGroupRole } from '@gugu/core/shared/enums/groupRoleModels'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import { Unknown } from './ui/Unknown'
 import type { QrScanRoute } from '../lib/qrScanRoute'
 import { AgentContactProfileCard, PersonContactProfileCard } from './contacts/ContactProfileCard'
 import { commonGroupForAgent, requestStateForAgent } from './contacts/agentContactRequest'
 import type { ContactRowMenuActions } from './contacts/ContactRowActions'
 import { ShareAgentModal } from './contacts/ShareAgentModal'
-import { GroupInviteJoinModal, GroupInviteQrShare } from './contacts/GroupInvite'
+import { GroupInviteJoinModal } from './contacts/GroupInvite'
 import { ContactsIndex } from './contacts/ContactsIndex'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
@@ -67,11 +60,7 @@ import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
 import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
-import {
-  cpaneActionsClass, cpaneAvatarClass, cpaneCardClass, cpaneNameClass, cpaneStatusClass, ct,
-  detailCaptionClass, detailCardRowClass, detailPlaceholderClass, detailSectionClass, detailTitleClass, groupChatListCountLabel,
-  groupChatListTitle, groupChatSummaryLabel, inlineInputClass, rowKeyActivate
-} from './contacts/contactsPanelStyles'
+import { ct, profileBodyClass, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel, inlineInputClass } from './contacts/contactsPanelStyles'
 // #855 契约：GroupJoinConfirmDialog 曾从本模块导出，实现搬走后仍从这里透出，外部 import 不受影响。
 export { GroupJoinConfirmDialog } from './contacts/GroupInvite'
 interface ContactsPanelProps {
@@ -228,25 +217,9 @@ function ContactsThreeSectionSidebar({
       />
       {searchField}
       <div className="flex-1 overflow-y-auto !px-2 !pb-3">
-        {/* 新的请求 row — @@@1944 目的地统一走 onSelectNewFriends（selectedNav 单一真相源），
-            与「添加联系人」+ 同一入口，请求视图只在详情列渲一次（不再有 sidebar 私有 overlay）。 */}
-        <ListRow
-          role="button"
-          tabIndex={0}
-          selected={newFriendsActive}
-          data-testid={AUTOMATION_TEST_IDS.contactsNewFriendsNav}
-          leading={
-            <div className="grid h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--fg)]">
-              <UserPlus size={16} />
-            </div>
-          }
-          title={ct('panel.newRequests')}
-          accessory={pendingCount > 0 ? <Chip tone="accent" shape="count">{pendingCount}</Chip> : null}
-          onClick={onSelectNewFriends}
-          onKeyDown={rowKeyActivate(onSelectNewFriends)}
-        />
-
-        <ContactsSectionNav sections={sections} selectedKey={newFriendsActive ? null : selectedSectionKey} onSelect={onSelectSection} />
+        {/* 新的请求 — @@@1944 目的地统一走 onSelectNewFriends（selectedNav 单一真相源）;请求视图只在详情列渲一次。 */}
+        <ContactsSectionNav sections={sections} selectedKey={selectedSectionKey} onSelect={onSelectSection}
+          requests={{ count: pendingCount, active: !!newFriendsActive, disabled: selectionMode, onSelect: onSelectNewFriends }} />
       </div>
       <ContactsListDock
         mobile={mobile}
@@ -267,35 +240,11 @@ function CpaneShell({ title, overlay, children }: { title?: string; overlay?: Re
   return (
     <Pane paneRole="detail">
       <PaneHeader divider title={title} />
-      <div className="flex flex-1 items-start justify-center overflow-y-auto !px-6 !pb-6 !pt-[calc(var(--spacing-2xl)*2)]">
+      <div className={profileBodyClass}>
         <div className="w-full max-w-[480px]">{children}</div>
       </div>
       {overlay}
     </Pane>
-  )
-}
-
-function CpaneGroupHeader({
-  group,
-  onOpenGroupChat
-}: {
-  group: ContactGroupChat
-  onOpenGroupChat?: (g: ContactGroupChat) => void
-}) {
-  return (
-    <div className={cpaneCardClass}>
-      <div className={cpaneAvatarClass}>
-        <ContactGroupAvatar group={group} size={96} />
-      </div>
-      <div className={cpaneNameClass}>{groupDisplayName(group)}</div>
-      {/* group status: member count, no dot per design noStatus class */}
-      <div className={cpaneStatusClass}>{ct('panel.memberCount', { count: group.member_count })}</div>
-      <div className={cpaneActionsClass}>
-        <Button variant="primary" size="lg" onClick={() => onOpenGroupChat?.(group)}>
-          {ct('panel.enterGroup')}
-        </Button>
-      </div>
-    </div>
   )
 }
 
@@ -340,7 +289,7 @@ function ContactsNav({
     <Pane paneRole="nav" mobile={mobile}>
       <ContactSearch mobile={mobile} query={query} onQuery={onQuery} people={people} agents={agents} groups={groupChats} onOpenContact={onOpenContact}
         head={(searchButton) => <PaneHeader mobile={mobile} title={ct('common.contacts')} actions={searchButton} />}
-        onOpenGroup={(group) => onOpenGroupChat?.(group)} onLookupNumber={(number) => onSelect('add_friend', number)}>
+        onOpenGroup={(group) => onOpenGroupChat?.(group)} onSearchEveryone={(text) => onSelect('add_friend', text)}>
       <div className="flex-1 overflow-y-auto !px-2 !pb-3">
         <NavButton
           mobile={mobile}
@@ -459,143 +408,6 @@ function ContactsNav({
         )}
       </div>
       </ContactSearch>
-    </Pane>
-  )
-}
-
-function GroupChatDetailPane({
-  group,
-  mobile = false,
-  onBack,
-  onOpenGroupChat
-}: {
-  group: ContactGroupChat | null
-  mobile?: boolean
-  onBack?: () => void
-  onOpenGroupChat?: (group: ContactGroupChat) => void
-}) {
-  const { identitiesById } = useChatStore('identitiesById')
-  const groupId = group?.id ?? null
-  // The chat's roster replica (the IM library's copy first, the same write path): ❌ a loader of its own (open-flicker CH22).
-  const roster = useReplica(groupRoster, groupId ? [groupId, 'group'] : null)
-  const members = roster.state === 'value' ? [...roster.value.humans, ...roster.value.agents] : null
-  const visibleMembers = members ? members.slice(0, 12) : []
-  const memberNames = useShownAgentName(visibleMembers.map(member => ({ name: identitiesById[member.id]?.display_name ?? '', createdAt: member.type === 'agent' ? identitiesById[member.id]?.created_at ?? undefined : undefined })))
-
-  if (!group) {
-    return (
-      <Pane paneRole="detail" mobile={mobile}>
-        <PaneHeader divider mobile={mobile} title={ct('groupDetail.title')} />
-        <div className={detailPlaceholderClass}>{ct('panel.selectGroupDetail')}</div>
-      </Pane>
-    )
-  }
-
-  const densityText = group.member_count >= 10
-    ? ct('groupDetail.multi')
-    : group.member_count >= 3
-      ? ct('groupDetail.small')
-      : ct('common.groupChat')
-
-  return (
-    <Pane paneRole="detail" mobile={mobile}>
-      {/* @@@1238-top 群详情列头与会话头同高同线,标题字阶来自 PaneHeader。 */}
-      <PaneHeader
-        divider
-        mobile={mobile}
-        title={ct('groupDetail.title')}
-        leading={mobile && onBack ? <PaneBackButton label={ct('panel.backToGroupList')} onBack={onBack} /> : undefined}
-      />
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <section className={cn(detailSectionClass(mobile), 'flex items-start gap-4 border-b border-[var(--border)]')}>
-          <div className="flex h-[var(--avatar-lg)] w-[var(--avatar-lg)] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--primary)] text-[var(--primary-fg)]">
-            <Users size={28} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className={detailTitleClass}>{groupDisplayName(group)}</h2>
-            <div className="!mt-2 flex flex-wrap items-center gap-2">
-              <Chip>{densityText}</Chip>
-              <span className="text-sm text-[var(--muted-fg)]">
-                {ct('groupDetail.memberCount', { count: group.member_count })}
-              </span>
-            </div>
-            <div className="!mt-4 flex flex-wrap gap-2">
-              <ActionButton
-                primary
-                icon={<MessageCircle size={15} />}
-                label={ct('panel.enterGroup')}
-                onClick={() => onOpenGroupChat?.(group)}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className={cn(detailSectionClass(mobile), 'border-b border-[var(--border)]')}>
-          <FieldList className="max-w-[620px]">
-            <FieldRow
-              label={ct('groupDetail.number')}
-              value={
-                chatPublicId(group) ? (
-                  <CopyValue
-                    value={chatPublicId(group)!}
-                    message={ct('groupDetail.copiedNumber')}
-                  />
-                ) : (
-                  ct('common.unassigned')
-                )
-              }
-            />
-            <FieldRow label={ct('groupDetail.membersLabel')} value={ct('groupDetail.memberCountValue', { count: group.member_count })} />
-            <FieldRow label={ct('groupDetail.typeLabel')} value={densityText} />
-            <GroupInviteQrShare group={group} />
-          </FieldList>
-        </section>
-
-        <section className={cn(detailSectionClass(mobile), mobile && '!pb-[max(24px,env(safe-area-inset-bottom))]')}>
-          <div className={cn(detailCaptionClass, '!mb-3')}>
-            {ct('groupDetail.overview')}
-          </div>
-          {roster.state !== 'value' || visibleMembers.length === 0 ? (
-            <div className="text-sm text-[var(--muted-fg)]" role={roster.state === 'error' ? 'alert' : undefined}>
-              {roster.state === 'unknown' ? <Unknown className="w-40" /> : roster.state === 'error' ? roster.error.message : ct('groupDetail.emptyMembers')}
-            </div>
-          ) : (
-            <div className="grid max-w-[720px] grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
-              {visibleMembers.map((member, index) => (
-                <div key={member.id} className={detailCardRowClass}>
-                  <Avatar
-                    name={memberNames[index]!}
-                    avatarUrl={identitiesById[member.id]?.avatar}
-                    seed={member.id}
-                    size="sm"
-                    isAgent={member.type === 'agent'}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--font-body)] text-[var(--fg)]">
-                      {memberNames[index]}
-                    </div>
-                    <div className="text-xs text-[var(--muted-fg)]">
-                      {member.type === 'agent' ? 'Agent · ' : ''}
-                      {ct(`profile.roles.${normalizeGroupRole(member.role)}`)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {members && members.length > visibleMembers.length ? (
-                <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
-                  {ct('groupDetail.remainingMembers', { count: members.length - visibleMembers.length })}
-                </div>
-              ) : null}
-              {members && group.member_count > members.length ? (
-                <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
-                  {ct('groupDetail.pendingSync', { count: group.member_count - members.length })}
-                </div>
-              ) : null}
-            </div>
-          )}
-        </section>
-      </div>
     </Pane>
   )
 }
@@ -779,7 +591,7 @@ export const ContactsPanel = memo(function ContactsPanel({
   const [selectedSidebarGroupId, setSelectedSidebarGroupId] = useState<string | null>(null)
 
   const humanContacts = useMemo(() => peopleContacts(contacts), [contacts])
-  const agentContacts = useMemo(() => contactAgents(contacts, sharedGroupAgents), [contacts, sharedGroupAgents])
+  const agentContacts = useMemo(() => myAgents(contacts, user?.id), [contacts, user?.id])
   // 桌面左栏点中的分组(设备 / 个人 / 群组);null = 第一组。
   const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null)
   const sentRequestIds = useMemo(
@@ -867,11 +679,11 @@ export const ContactsPanel = memo(function ContactsPanel({
     () => new Map(groupChats.map((g) => [g.id, (chats.find((c) => c.id === g.id)?.notification_level ?? 'all') === 'none'])),
     [groupChats, chats]
   )
-  // #2598 置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次:分组页、导图、搜索读同一个次序。
+  // #2598 置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次:分组页、agent 家族、搜索读同一个次序。
   const sections = useContactsSections(
     useMemo(() => sortContactsPinnedFirst(agentContacts, (c) => contactPinned.get(c.id) ?? false), [agentContacts, contactPinned]),
     useMemo(() => sortContactsPinnedFirst(humanContacts, (c) => contactPinned.get(c.id) ?? false), [humanContacts, contactPinned]),
-    useMemo(() => sortGroupChatsPinnedFirst(groupChats, (g) => groupPinned.get(g.id) ?? false), [groupChats, groupPinned]),
+    useMemo(() => sortGroupsByActivity(groupChats, chats, groupPinned), [groupChats, chats, groupPinned]),
     user?.id,
   )
   const handleGroupPin = useCallback(
@@ -1031,10 +843,9 @@ export const ContactsPanel = memo(function ContactsPanel({
     })
   }
 
+  // 进多选留在原处:开着的详情、选中的分组都不动;只有从「新的请求」/ 加人页进来时回到分组(那两页没有可勾的人)。
   const enterContactSelectionMode = () => {
     setSelectedNav('contacts')
-    setSelectedContactId(null)
-    setSelectedSidebarGroupId(null)
     setContactSelectionMode(true)
     setSelectedContactIds(new Set())
   }
@@ -1078,7 +889,7 @@ export const ContactsPanel = memo(function ContactsPanel({
       setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts')
     },
     onOpenGroup: (g, key) => { setSelectedSectionKey(key); setSelectedContactId(null); setSelectedSidebarGroupId(g.id); setSelectedNav('group_chats') },
-    onLookupNumber: (number) => { setQuery(''); setAddFriendMode('contact'); setSelectedNav('add_friend'); setAddFriendSeed({ query: number, token: Date.now() }) },
+    onSearchEveryone: (text) => { setQuery(''); setAddFriendMode('contact'); setSelectedNav('add_friend'); setAddFriendSeed({ query: text, token: Date.now() }) },
   })
 
   // Desktop layout: section nav + the selected section spread over the right area
@@ -1122,12 +933,7 @@ export const ContactsPanel = memo(function ContactsPanel({
     const contactDetail = (() => {
       if (selectedSidebarGroup) {
         return (
-          <CpaneShell title={selectedSidebarGroup.name}>
-            <CpaneGroupHeader
-              group={selectedSidebarGroup}
-              onOpenGroupChat={onOpenGroupChat}
-            />
-          </CpaneShell>
+          <GroupChatDetailPane group={selectedSidebarGroup} onOpenGroupChat={onOpenGroupChat} />
         )
       }
       if (selectedSidebarContact) {

@@ -18,6 +18,7 @@ import {
 import { obfuscateOwnChunks, parseObfuscateFlag } from './scripts/build/obfuscate-own-chunks.mjs'
 import { deterministicModuleSideEffects } from './scripts/build/deterministic-module-side-effects.mjs'
 import { devNodeExternals, type DependencyManifest } from './scripts/build/dev-node-externals.mjs'
+import { NODE_ESM_BUNDLE } from './scripts/build/node-esm-bundle.mjs'
 import { activateDbEnv, serverChannelForDb } from './scripts/build/build-env-preflight.mts'
 import { serverPackageIdentity } from './scripts/build/server-package-identity.mts'
 import { rendererNodeShimGuard } from './scripts/build/renderer-node-shim-guard.mts'
@@ -241,26 +242,17 @@ const sessionMainVite: ElectronOptions['vite'] = {
             import.meta.url,
           ))],
           outfile: resolve(outDir, 'codex-app-server-acp.mjs'),
-          bundle: true,
-          platform: 'node',
-          format: 'esm',
-          target: 'node18',
+          ...NODE_ESM_BUNDLE,
         })
         // Hermes over `hermes serve` (Hermes Desktop's backend): ACP to Gugu, the serve gateway's JSON-RPC to the
-        // user's own hermes. WebSocket is the runtime's global (Electron's Node), so nothing extra is bundled for it.
+        // user's own hermes over the local transport (@gugu/core/local/loopback).
         await esbuild.build({
           entryPoints: [fileURLToPath(new URL(
             './apps/desktop/electron/runtime/hermes-serve-acp.ts',
             import.meta.url,
           ))],
           outfile: resolve(outDir, 'hermes-serve-acp.mjs'),
-          bundle: true,
-          platform: 'node',
-          format: 'esm',
-          target: 'node18',
-          // `yaml` resolves to its CommonJS build under the node condition and calls `require('process')`;
-          // an ESM bundle has no `require`, so the bridge died before its first line (mac1 A/B 10-04).
-          banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
+          ...NODE_ESM_BUNDLE,
         })
         // #6335 咕咕 MCP 的 stdio ⇄ HTTP 中继:Antigravity 终端腿的 `agy` 按托管 mcp_config.json 起它
         // (理由见文件抬头)。SDK 一并打进单文件 —— 它由 agy 在用户机器上起,旁边没有 node_modules。

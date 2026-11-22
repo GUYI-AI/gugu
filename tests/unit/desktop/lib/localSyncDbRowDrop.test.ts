@@ -10,17 +10,18 @@ describe('a stored row this build rejects drops alone', () => {
   beforeEach(() => { vi.stubGlobal('IDBKeyRange', IDBKeyRange); vi.spyOn(console, 'error').mockImplementation(() => {}) })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-  it('drops a message window that no longer covers its messages, keeps the rest, and forgets the revision cursor', async () => {
+  it('drops a chat row this build rejects, keeps the rest, and forgets the revision cursor', async () => {
     const adapter = await openLocalSyncDb(new IDBFactory())
     await adapter.commit([
       { type: 'put', store: 'identity', value: { accountId: 'a', id: 'human-1', value: person } },
-      { type: 'put', store: 'view', value: { accountId: 'a', key: 'message-window:chat-1', value: { oldestSeq: 1, maxSeq: 3, hasMoreOlder: false } } },
+      { type: 'put', store: 'chat', value: { accountId: 'a', id: 'chat-1', value: { id: 'chat-1' } } },
       { type: 'put', store: 'view', value: { accountId: 'a', key: 'list-scroll', value: { top: 0 } } },
       { type: 'put', store: 'sync_state', value: { accountId: 'a', key: 'account-revision-cursor', value: { revision: '9' } } },
       { type: 'put', store: 'sync_state', value: { accountId: 'a', key: 'other', value: 1 } },
     ])
     const rows = await adapter.loadAccount('a')
     expect(rows.identity.map((row) => row.id)).toEqual(['human-1'])
+    expect(rows.chat).toEqual([])
     expect(rows.view.map((row) => row.key)).toEqual(['list-scroll'])
     expect(rows.sync_state.map((row) => row.key)).toEqual(['other'])
     adapter.close()

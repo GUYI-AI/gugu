@@ -449,7 +449,8 @@ async function resolveMachineIdentifier(
 // 所以 server 在自己的安装目录(GUGU_SERVER_HOME,不是某个账号的目录)里首跑时发一个随机 id:
 //   · 同一次安装的所有账号共用它 —— 设备 id 仍按账号各不相同(哈希里有 userId);
 //   · 重启、升级(只换 versions/ 与 current)都不动它 ⇒ 设备 id 不变;
-//   · 卸载会删掉整个安装目录 ⇒ 重装算一台新机器(旧行 30 天无心跳后由 stale 回收清掉)。
+//   · 卸载会删掉整个安装目录 ⇒ 重装算一台新机器;旧行不会自己消失(stale 回收已于 gugu-supabase 20261110051000 撤掉),
+//     只在主人移除它时删(identity.remove_device)。这期间旧行的账号副本照样写着同一批项目 id,见 machine-routing 的 propose。
 // 桌面(含 Linux 桌面)照旧走硬件标识,已有设备 id 一个字节都不变(见 @@@tier-isolated-device-id)。
 export const SERVER_INSTALL_ID_FILE = 'install-id'
 

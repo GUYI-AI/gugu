@@ -1,8 +1,8 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { Unplug, X } from '@/lib/icons'
-import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { Unknown } from '@/components/ui/Unknown';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { Button } from '@renderer/lib/ui/button';
 import { Spinner } from '@renderer/lib/ui/spinner';
@@ -79,7 +79,7 @@ export function UnavailableTabContent({ tab, host }: { tab: ResolvedTab; host: T
  * *not enabled* — the person just removed it from the panel while this tab was open —
  * says which one, that enabling brings the tab back in place, and offers exactly that.
  */
-export const UnavailableTabPlaceholder = observer(function UnavailableTabPlaceholder({
+export function UnavailableTabPlaceholder({
   kind,
   onClose,
 }: {
@@ -89,8 +89,11 @@ export const UnavailableTabPlaceholder = observer(function UnavailableTabPlaceho
   const { translate, locale } = useSessionMessages();
   const [enabling, setEnabling] = useState(false);
   const parsed = parseExtensionTabKind(kind);
-  const manifest = parsed ? installedExtensionsStore.manifestFor(parsed.extensionId) : undefined;
-  const notEnabled = manifest !== undefined && !installedExtensionsStore.isEnabled(manifest.id);
+  const installed = useInstalledApps(LOCAL_HOST);
+  // An App's tab while what is installed is not known: whether it is off or gone is not known either (drawn as placeholders).
+  const listUnknown = !!parsed && installed.state !== 'value';
+  const manifest = parsed && installed.state === 'value' ? installed.value.manifestFor(parsed.extensionId) : undefined;
+  const notEnabled = manifest !== undefined && installed.state === 'value' && !installed.value.isEnabled(manifest.id);
   /** 会话类的标签页(会话页聊天 / 终端)——它们不是扩展，落到这一屏时文案要另说一句。 */
   const isSessionKind = kind === 'session' || kind === 'acp-chat' || kind === 'side-chat';
 
@@ -124,18 +127,18 @@ export const UnavailableTabPlaceholder = observer(function UnavailableTabPlaceho
     <div
       data-testid="unavailable-tab-placeholder"
       data-tab-kind={kind}
-      data-reason={notEnabled ? 'not-enabled' : 'unavailable'}
+      data-reason={listUnknown ? 'unknown' : notEnabled ? 'not-enabled' : 'unavailable'}
       className="flex h-full w-full flex-col items-center justify-center p-8"
     >
       <div className="flex max-w-md flex-col items-center gap-3 text-center">
         <Unplug className="size-6 text-foreground-passive" />
         <p className="font-sans text-sm font-medium text-foreground">
-          {notEnabled
+          {listUnknown ? <Unknown className="w-40" /> : notEnabled
             ? translate('tabs.notEnabledTitle', { name: localizedManifestText(manifest, locale).name })
             : translate('tabs.unavailableTitle')}
         </p>
         <p className="text-xs text-foreground-passive">
-          {notEnabled
+          {listUnknown ? <Unknown className="w-56" /> : notEnabled
             ? translate('tabs.notEnabledDescription')
             : isSessionKind
               ? /* 会话标签页落到这一屏说的是「它的提供方还没注册」（快照恢复期、provider 注销），
@@ -159,4 +162,4 @@ export const UnavailableTabPlaceholder = observer(function UnavailableTabPlaceho
       </div>
     </div>
   );
-});
+}

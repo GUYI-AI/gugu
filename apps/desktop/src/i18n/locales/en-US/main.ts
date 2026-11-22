@@ -1,8 +1,9 @@
 export default {
   "firstInstallImport": {
+    "remoteDescription": "Import memories, project rules, and work habits from {{machine}}",
     "title": "Import your data",
     "description": "Import your memories, project rules, and work habits",
-    "available": "Import your local {{name}} configuration"
+    "available": "Import the {{name}} configuration from this machine"
   },
   "usagePopover": {
     "title": "Usage",
@@ -137,6 +138,7 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "sourceUnavailable": "The terminal configuration on this machine cannot be read.",
   "nativeHistorySummary": "Previous Gugu sessions: {{removed}} moved, {{pending}} pending, {{retained}} retained; {{unowned}} belong to other profiles",
   "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
   "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
@@ -317,11 +319,17 @@ export default {
     "helpImproveFailed": "Could not save this setting. Try again.",
     "harnessRecommended": "Recommended",
     "harnessTitle": "Choose your agents",
-    "harnessSub": "Select one or both. Gugu installs and manages them in the background.",
+    "harnessSub": "Select one or both. Gugu uses yours if it is new enough, or installs one in the background.",
     "harnessInstalled": "Installed",
+    "harnessLocalUsable": "Uses your {{version}}",
+    "harnessLocalOutdated": "Your {{version}} is too old. Gugu will install a copy",
+    "harnessLocalBroken": "Your {{command}} won't run. Gugu will install a copy",
+    "harnessLocalMissing": "Not on this computer. Gugu will install it",
+    "installLocalOutdated": "Your {{command}} {{version}} is too old. Installing another copy…",
+    "installLocalBroken": "Your {{command}} won't run. Installing another copy…",
+    "installLocalMissing": "{{name}} isn't on this computer. Downloading…",
     "harnessSelect": "Select {{name}}",
     "backgroundInstall": "Agent installation",
-    "hideInstall": "Hide",
     "harnessVerifyFailed": "Could not detect the agent after installation. Try again.",
     "harnessReadFailed": "Could not read agent status. Try again.",
     "harnessCancelFailed": "Could not cancel the installation. Try again.",
@@ -452,7 +460,6 @@ export default {
       "tooLarge": "Too large · view on desktop"
     },
     "timeline": {
-      "loadingWindow": "Loading…",
       "outputTrimmed_one": "… {{count}} char omitted from this preview",
       "outputTrimmed_other": "… {{count}} chars omitted from this preview",
       "loading": "Loading the timeline…",
@@ -600,7 +607,6 @@ export default {
       "cancel": "Cancel Google sign-in",
       "waiting": "Complete Google sign-in in your browser",
       "exchanging": "Completing sign-in…",
-      "cancelled": "Google sign-in cancelled",
       "staleCallback": "Ignored an earlier sign-in callback. Complete your current Google sign-in.",
       "timeout": "Google sign-in timed out. Try again.",
       "invalidCallback": "Invalid sign-in callback. Start Google sign-in again.",
@@ -1009,7 +1015,6 @@ export default {
     "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
-    "resizeChatList": "Resize chat list",
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",
       "title": "Cannot connect to the server"
@@ -1061,7 +1066,6 @@ export default {
       "availableDescription": "Choose Update to start downloading, or choose Later.",
       "availableTitle": "A new version is available",
       "availableVersion": "Version {{version}} is available",
-      "close": "Close",
       "download": "Update",
       "downloadingDescription": "You can restart and update as soon as the download finishes.",
       "downloadingTitle": "Downloading the new version…",
@@ -1108,7 +1112,6 @@ export default {
       "pickFolder": "Choose folder",
       "offline": "Offline",
       "noMachine": "No computer is online",
-      "readingDirectory": "Reading this computer's projects folder",
       "noDefaultDirectory": "This computer has no default projects folder",
       "invalidName": "A project name cannot contain / \\ : * ? \" < > |",
       "pathTaken": "This folder is already used by “{{name}}”",

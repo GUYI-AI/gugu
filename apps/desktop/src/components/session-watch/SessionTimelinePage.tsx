@@ -8,13 +8,10 @@ import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { boundedWindowReady } from './desktop-window-history'
-import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
-import { reaction } from 'mobx'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../../mobile/local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -27,7 +24,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { RefreshCw } from '@/lib/icons'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { SessionConversation } from './SessionConversation'
-import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/outbox/kinds/sessionInput'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
 import { SessionAvatar } from './StatusGlyph'
@@ -37,15 +34,16 @@ import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { deriveAttention } from './agent-watch-store'
 import { useShownAgentStatus } from '@/components/chat/useAgentsOnCloudComputer'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
-import { agentStatusText } from '@/lib/agentStatusText'
-import { agentStatusColorVar, presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
+import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import { useAgentWatchSession } from './useAgentWatchSession'
 import { DropdownMenu } from '@/components/ui/Menu'
 import { type SessionMenuTarget, SessionActions, SessionMenuButton } from './SessionsPage'
 import { SessionAppMenu, SessionAppMenuItems } from './SessionAppMenu'
 import { useMachineLabel } from './useMachineLabel'
 import { SessionAppFrame } from '@/components/appSlot/SessionAppFrame'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '@/components/appSlot/hereHost'
+import type { Reading } from '@/lib/replica'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { useMobileShell } from '@/hooks/useMobileShell'
@@ -58,11 +56,11 @@ import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
  * on a computer. Their page draws here; their program runs on the session's computer.
  */
-function useSessionApps(): Array<{ kind: string; name: string }> {
-  const read = () => installedExtensionsStore.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName }))
-  const [apps, setApps] = useState(read)
-  useEffect(() => reaction(read, setApps, { equals: (a, b) => a.length === b.length && a.every((one, i) => one.kind === b[i]?.kind && one.name === b[i]?.name) }), [])
-  return apps
+function useSessionApps(): Reading<Array<{ kind: string; name: string }>> {
+  const installed = useInstalledApps(HERE_HOST)
+  return useMemo(() => installed.state === 'value'
+    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })) }
+    : installed, [installed])
 }
 
 /**
@@ -79,7 +77,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   initialAppKind,
   innerSidebarEntry,
   local = false,
-  cleanedRecord = false,
   appPanel = false,
   onBack,
 }: {
@@ -92,8 +89,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   innerSidebarEntry?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
-  /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
-  cleanedRecord?: boolean
   /**
    * owner 11-12 Over an App's panel (AssistantTaskChatWindow): the panel's top row and the assistant chat's composer. The
    * view switcher is not offered there — the panel is the task's conversation, nothing else.
@@ -130,29 +125,22 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // A draft brought to this session (a cite from its Files App) is the person's next words here: its conversation comes up.
   useEffect(() => { if (draft) setAppKind(null) }, [draft])
   const apps = useSessionApps()
+  const browserApp = { kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
-  const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
-    deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
-    sourceFormat: session.harness, native, online, local, cleanedRecord,
-  })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
     reload, loadOlder, loadToolImage, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
-    useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local, boundedHistory)
+    useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local)
 
-  const windowReady = boundedWindowReady(timeline)
-  const conversation = nativeHistory ? { ...timeline,
-    turns: [...(nativeRecord.record?.turns ?? []), ...(nativeRecord.record?.activeTurn ? [nativeRecord.record.activeTurn] : [])],
-    hasOlder: nativeRecord.record ? nativeRecord.record.nextCursor !== null : false,
-  } : timeline
+  const conversation = timeline
   const recovery = useSessionRestart({ deviceId: device.device_id, projectId: session.projectId, sessionId: session.conversationId,
-    missing: nativeHistory ? nativeRecord.errorCode === 'record_not_found' : errorCode === 'record_not_found', online, local,
-    onReady: () => { reload(); return nativeHistory ? nativeRecord.reload() : undefined } })
-  useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error ?? (nativeHistory ? nativeRecord.error : null), recovery)
+    missing: errorCode === 'record_not_found', online, local,
+    onReady: () => { reload() } })
+  useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error, recovery)
   // The directory says a crashed / unplugged machine is online until its lease runs out (about two minutes): its not
   // answering is the earlier fact: the header says 「连接中」 (❌ 「设备离线」); the reads keep trying and the page comes back by itself.
-  const hostSilent = !local && online && ((link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')) || (nativeHistory && nativeRecord.unreachable))
+  const hostSilent = !local && online && link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
   const answering = online && !hostSilent
   // Header state (owner 11-08: 「连接中」/「设备离线」 in the header, ❌ a banner, ❌ 「未连接」). The directory saying
   // the machine is off and this page's link not answering are separate facts: only the first is 「设备离线」.
@@ -170,7 +158,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // 会话列表、乃至刚切走时都叫得住人。这里再发一份的话,正开着这条会话时同一件事会响两次。
   const attention = deriveAttention(conversation)
   const foregroundWorking = attention === 'running' || attention === 'waiting' || recovery.pendingPrompt !== null
-  const queueReady = answering && phase === 'ready' && link === 'ok' && (!native || (!boundedHistory && Boolean(nativeRecord.ready && nativeRecord.record && !nativeRecord.record.hasNewer && !nativeRecord.record.activeTurn)))
+  const queueReady = answering && phase === 'ready' && link === 'ok'
   const queuedInput = foregroundWorking || queuedInputs.length > 0
   const beforeSend = () => {
     if (mobile && native && queuedInput && session.nativeInputIdentity !== true) {
@@ -188,7 +176,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
       }
     }
-    if (nativeHistory) nativeRecord.followTail()
   }
   // Identified agents share the group/avatar reading; transport only governs timeline access.
   const shownStatus = useShownAgentStatus()
@@ -199,8 +186,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // only when the device is; while connecting the avatar claims nothing.
   const presentation = !answering ? (agentUserId && connection === 'device_offline' ? presentAgentStatus({ reading: null, reachability: 'offline' }) : null)
     : shownStatus.presentation(agentUserId, sessionPresentation(session, true, agentUserId))
-  const statusColor = presentation ? agentStatusColorVar(presentation.tone) : null
-  const statusStyle: CSSProperties | undefined = statusColor ? { color: statusColor } : undefined
   // The task's one name is its agent's name: the header says it once.
   const entryGroupId = innerSidebarEntry?.startsWith('chat:') ? innerSidebarEntry.slice(5) : null
   const sourceGroup = chatSummaries.get(entryGroupId ?? sidebar.source ?? session.bornInChatId ?? '')
@@ -219,12 +204,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         detail={wakeFailed && wakeIssue ? tc(`cloudComputer.reason.${wakeIssue.kind}`) : null}
         testId="agent-watch-connection-status"
       />
-    ) : presentation ? (
-      <span className="gg-aw-head-status">
-        <span className="gg-aw-head-state" data-testid="agent-watch-session-status" data-tone={presentation.tone} data-emphasis={presentation.emphasis ? 'true' : undefined} style={statusStyle}>
-          {agentStatusText(presentation.label)}
-        </span>
-      </span>
     ) : undefined,
     headerTestId: 'agent-watch-hero',
   }
@@ -265,7 +244,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const appNavigation = !phoneHost && !appPanel ? {
     appKind,
     onConversation: () => setAppKind(null),
-    apps: [{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps],
+    apps: apps.state === 'value' ? [browserApp, ...apps.value] : [browserApp],
+    pending: !!HERE_HOST && apps.state !== 'value',
     onOpenApp: setAppKind,
   } : null
   const canManage = reachable && !hostSilent
@@ -343,14 +323,10 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           startupPrompt={recovery.pendingPrompt}
           sending={sending}
           agentWorking={foregroundWorking}
-          headerRunning={presentation?.tone === 'running'}
           onStop={cancel}
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}
-          onAtBottom={nativeHistory ? nativeRecord.loadNewer : undefined}
-          historyReady={boundedHistory ? windowReady : !nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
-          onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
-          onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
+          onLoadOlder={loadOlder}
           onLoadToolImage={loadToolImage}
           emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——

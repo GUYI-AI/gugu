@@ -1,5 +1,5 @@
 import { MessageChannelMain, webContents } from 'electron';
-import WebSocket from 'ws';
+import { egress } from '@gugu/core/shared/egress';
 import { getSupabaseUrl } from '@gugu/core/cloud/config';
 import {
   FileSyncRelay,
@@ -19,7 +19,7 @@ import { createLocalFileService } from '@main/core/extensions/local-files';
 
 /**
  * The App file sync relay on the desktop: the shared relay (`file-sync-core.ts`) running in main,
- * over `ws` to the file service and a MessageChannelMain port to each App page's webContents.
+ * over the egress WebSocket to the file service and a MessageChannelMain port to each App page's webContents.
  * The phone runs the same relay in the outer gugu page (components/appSlot).
  *
  * A task's working copy is served by the local file service in this process (`local-files.ts`): the relay's
@@ -58,21 +58,18 @@ export function fileServiceUrl(): string {
 const platform: FileSyncPlatform = {
   serviceUrl: () => webSocketUrl(fileServiceUrl()),
   connect(url, protocols, events) {
-    const ws = new WebSocket(url, protocols, { handshakeTimeout: 10_000 });
-    ws.binaryType = 'nodebuffer';
-    ws.on('open', () => events.open());
-    ws.on('message', (data: Buffer) => events.message(new Uint8Array(data)));
-    ws.on('pong', () => events.pong());
-    ws.on('close', (code: number, reason: Buffer) => events.close(code, reason.toString()));
-    ws.on('error', (error: Error) => events.error(error.message));
+    const ws = egress.webSocket(url, { protocols });
+    ws.binaryType = 'arraybuffer';
+    ws.addEventListener('open', () => events.open());
+    ws.addEventListener('message', event => events.message(new Uint8Array(event.data as ArrayBuffer)));
+    ws.addEventListener('close', event => events.close(event.code, event.reason));
+    ws.addEventListener('error', event => events.error((event as Event & { message?: string }).message ?? 'File sync connection failed'));
     return {
-      send: (frame) => ws.send(frame),
+      send: (frame) => ws.send(new Uint8Array(frame)),
       close: (code, reason) => ws.close(code, reason),
-      ping: () => {
-        ws.ping();
-        return true;
-      },
-      terminate: () => ws.terminate(),
+      // The relay already handles browser transports without control-frame pings (the mobile path).
+      ping: () => false,
+      terminate: () => ws.close(),
     };
   },
   connectLocal: (events) => localFileService.connect(events),

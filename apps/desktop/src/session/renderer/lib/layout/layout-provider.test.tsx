@@ -2,12 +2,12 @@
 // GUYI-AI/gugu#2548 the sidebar starts expanded, and as one list it collapses to a rail of avatars instead of away.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Reduced motion lands every collapse on its end value at once, so the widths below are read without waiting on a spring.
-vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal<typeof import('framer-motion')>()), useReducedMotion: () => true }));
+// Reduced motion lands every collapse on its end value at once (PanelTrack), so the widths below are read without waiting on a spring.
+window.matchMedia = ((query: string) => ({ matches: query.includes('prefers-reduced-motion'), media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
 
 const {
   innerSidebarMaxWidth,
@@ -16,7 +16,6 @@ const {
   INNER_SIDEBAR_WIDTH_STORAGE_KEY,
   sidebarEdgeDrag,
   sidebarEdgeSnapsOpen,
-  SIDEBAR_LANDED_PX,
   SIDEBAR_RAIL_PX,
   sidebarOccupiedWidth,
   sidebarRailLayout,
@@ -107,16 +106,20 @@ describe('collapsing', () => {
 });
 
 describe('the rail layout switches where the names cannot be seen', () => {
-  it('the count changes place (row end ↔ avatar corner) only where the edge lands on the rail, outside the motion', () => {
-    const drawn = (progress: number) => sidebarOccupiedWidth(progress, 240, SIDEBAR_RAIL_PX);
-    expect(sidebarRailLayout(drawn(1))).toBe(false);
-    expect(sidebarRailLayout(drawn(0.5))).toBe(false);
-    // the first frame of an expand moves the edge a pixel or more: the rows leave the rail there
-    expect(sidebarRailLayout(drawn(0.01))).toBe(false);
-    // the spring's sub-pixel tail is already the rail, ❌ waiting for its formal rest
-    expect(sidebarRailLayout(SIDEBAR_RAIL_PX + SIDEBAR_LANDED_PX / 2)).toBe(true);
-    expect(sidebarRailLayout(drawn(0))).toBe(true);
-    expect(sidebarRailTextOpacity(0.01)).toBe(0);
+  it('the rows are the rail only while the list is laid out at the rail\'s width: from a collapse\'s landing to an expand\'s start', () => {
+    // a move lays the list out at its larger width throughout (panel-track), so mid-motion is never the rail
+    expect(sidebarRailLayout(240)).toBe(false);
+    expect(sidebarRailLayout(SIDEBAR_RAIL_PX + 1)).toBe(false);
+    expect(sidebarRailLayout(SIDEBAR_RAIL_PX)).toBe(true);
+  });
+
+  it('a fold puts the rows on the rail when it lands, an expand takes them off in its first frame', async () => {
+    await mount();
+    expect(layout.leftRailLayout.get()).toBe(false);
+    await act(async () => layout.setCollapsed('left', true));
+    expect(layout.leftRailLayout.get()).toBe(true);
+    await act(async () => layout.toggleLeft());
+    expect(layout.leftRailLayout.get()).toBe(false);
   });
 });
 
@@ -212,7 +215,7 @@ describe('the inner column\'s width (#2642)', () => {
   it('starts at today\'s width when nothing is stored, else at the stored width clamped to 200–520', async () => {
     await mount();
     expect(layout.innerWidth.get()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
-    expect(layout.innerShownWidth.get()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(layout.innerShownWidth()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
     act(() => root.unmount());
     for (const [stored, expected] of [['310', 310], ['90', 200], ['9000', 520], ['nonsense', INNER_SIDEBAR_DEFAULT_WIDTH_PX]] as const) {
       writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, Number(stored));
@@ -249,14 +252,13 @@ describe('the inner column\'s width (#2642)', () => {
     expect(innerSidebarShownWidth(150, 1360)).toBe(200);
     writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, Number('500'));
     await mount();
-    expect(layout.innerShownWidth.get(), 'not measured yet').toBe(500);
-    // A transform recomputes on the next frame.
-    act(() => layout.workspaceWidth.set(1000));
-    await expect.poll(() => layout.innerShownWidth.get()).toBe(304);
+    expect(layout.innerShownWidth(), 'not measured yet').toBe(500);
+    act(() => layout.setWorkspaceWidth(1000));
+    expect(layout.innerShownWidth()).toBe(304);
     act(() => layout.setLeftWidth(400));
-    await expect.poll(() => layout.innerShownWidth.get()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
-    act(() => layout.workspaceWidth.set(2000));
-    await expect.poll(() => layout.innerShownWidth.get()).toBe(500);
+    expect(layout.innerShownWidth()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    act(() => layout.setWorkspaceWidth(2000));
+    expect(layout.innerShownWidth()).toBe(500);
     expect(layout.innerWidth.get(), 'the choice itself never changed').toBe(500);
   });
 });

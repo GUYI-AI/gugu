@@ -322,6 +322,16 @@ export async function readProjectFile(ref: FileRef, ownerId: string, deviceId: s
   return revision
 }
 
+/** A version of `sha256` this device holds for the account, as its version records say (no database lookup). */
+export async function heldRevisionBySha(sha256: string, ownerId: string, deviceId: string, env: NodeJS.ProcessEnv = process.env): Promise<FileRevision | null> {
+  const mapping = await readMapping(env)
+  for (const record of Object.values(mapping.files?.[ownerId] ?? {})) {
+    const revision = record.sha256 === sha256 ? held(mapping, ownerId, deviceId, record) : null
+    if (revision) return revision
+  }
+  return null
+}
+
 /**
  * 这个账号名下记过的全部「项目 → 群」。回收器用它当群投影的枚举面:项目没了、群还挂在映射里,就该
  * 归档 —— 哪怕那个项目的 agent 名册行早已一条不剩(以前只从名册行推「死项目的群」,名册一空这些群就

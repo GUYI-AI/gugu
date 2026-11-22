@@ -21,8 +21,8 @@ import {
 import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
-import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReplicas'
-import { useReplica } from '../../lib/replica'
+import { agentModelSelection, platformModels, sessionCreateModels } from '../../lib/agentModelReplicas'
+import { refreshFailure, useReplica, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
@@ -32,6 +32,8 @@ import { platformOptionId } from '@/session/shared/platform-model-id'
 import type { ComposerModelOption } from '@gugu/session-ui/react/components'
 import { offeredInModelPicker } from '@/session/shared/core/agents/platform-model'
 import { useMyAssistant } from '@/lib/myAssistant'
+import { useAuth } from '@/store/auth'
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 
 function selectionValue(selection: AgentModelSelection): string {
   if (selection.source === 'default') return 'default'
@@ -66,20 +68,28 @@ function sameSelection(a: AgentModelSelection, b: AgentModelSelection | null): b
 
 export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const { t } = useTranslation('agents')
-  const { devices, cloudComputer } = useDevicesStore()
-  const mine = useMyAssistant(agent.owner_user_id, agent.id)
-  const cloudOnly = (mine.agentId === agent.id || mine.loading) && Boolean(agent.device_id
+  const { devices } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
+  // The assistant of the account signed in only (another owner's agent is never it); not read yet = treated as it, the safe side.
+  const ownerId = useAuth().user?.id ?? null
+  const mine = useMyAssistant()
+  const maybeAssistant = agent.owner_user_id === ownerId && (mine.state === 'unknown' || (mine.state === 'value' && mine.value.agentId === agent.id))
+  const cloudOnly = maybeAssistant && Boolean(agent.device_id
     && (devices.some(device => device.device_id === agent.device_id && device.cloud_computer !== undefined)
-      || cloudComputer?.snapshot?.deviceId === agent.device_id))
+      || cloudSnapshotOf(cloudComputer)?.deviceId === agent.device_id))
   const isLocal = platform.capabilities.agentRuntime && devices.some((device) => device.device_id === agent.device_id && device.is_current_device)
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
-  const harnessReading = useReplica(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
+  const harnessReading = useReplica(sessionCreateModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, 'general', null, isLocal ? 'local' : 'machine'] : null)
   const harness: SessionpageSessionCreateModels | null = harnessReading.state === 'value' ? harnessReading.value : null
-  const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
+  // A failed read, or a re-read failing over the harness state still drawn: said with a retry (❌ drawn as current).
+  const harnessFailure = refreshFailure(harnessReading)
+  const harnessFailed = harnessFailure ? messageForUser(harnessFailure) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
   // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
-  const catalogReading = useReplica(platformModels, protocol ? [] : null)
-  const catalogError = catalogReading.state === 'error' ? messageForUser(catalogReading.error) : null
+  // Restored from the snapshot (no multipliers or context, the menu's details): unknown here until the read lands.
+  const catalogReading = useReplica(platformModels, protocol !== null ? [] : null)
+  const catalogFailure = refreshFailure(catalogReading)
+  const catalogError = catalogFailure ? messageForUser(catalogFailure) : null
   // The platform models this engine can run: none without a protocol; null while the catalog is not read; a failed read
   // offers none and says why (catalogError).
   const listed = useMemo((): PlatformCatalogModel[] | null => !protocol ? []
@@ -128,14 +138,18 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       if (model.source === 'harness') ownOptions[model.id] = { name: model.name, description: model.description }
     }
   }
+  const harnessUnknown = harnessReading.state === 'unknown' && Boolean(agent.device_id && engine && !cloudOnly)
   const options = (listed === null ? null : assembleComposerModelOptions(ownOptions, listed.map((model) => ({
       ...model, creditMultiplier: model.creditMultiplier ?? null, contextWindow: model.contextWindow ?? null,
     })), engine ?? '', undefined, state?.desired.source === 'platform' ? state.desired.modelId : null)) ?? ownOptions
-  const current = parseSelection(value ?? 'default')
-  const selectedOption = current.source === 'default' ? originalOption
+  const current = value === null ? null : parseSelection(value)
+  const selectedOption = current === null || current.source === 'default' ? originalOption
     : current.source === 'byok' ? current.modelId : platformOptionId(current.modelId)
-  if (current.source !== 'default' && !options[selectedOption]) options[selectedOption] = { name: current.modelId }
-  const items = [...(!cloudOnly || current.source === 'default' ? [{ id: originalOption, name: t('settings.model.original'), description: t('settings.model.originalSourceNote') }] : []),
+  // A saved model its catalog no longer lists: still the selection, named as retired (❌ a raw id drawn as a name).
+  if (current !== null && current.source !== 'default' && !options[selectedOption]) {
+    options[selectedOption] = { name: t('settings.model.retired', { model: current.modelId }) }
+  }
+  const items = [...(!cloudOnly || current?.source === 'default' ? [{ id: originalOption, name: t('settings.model.original'), description: t('settings.model.originalSourceNote') }] : []),
     ...Object.entries(options).filter(([id]) => !cloudOnly || id.startsWith('platform:')).map(([id, option]) => ({ id, ...option }))]
 
   // 能改的前提:Agent 绑了设备(没有谁能把选择变成事实,RPC 会拒)且当前值已读到。
@@ -203,7 +217,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   return (
     <div className={agentSettingsPaneClass(true)}>
       <div className={asClass.aiModelLabel}>{t('settings.model.label')}</div>
-      {value === null || listed === null ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
+      {value === null || listed === null || harnessUnknown ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
         const chosen = composerModelSelection(optionId)
         if (cloudOnly && (optionId === originalOption || chosen.source === 'own')) return
         const next = optionId === originalOption ? 'default' : selectionValue(chosen.source === 'own'
@@ -211,7 +225,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
           : { source: 'platform', protocol: protocol!, modelId: chosen.modelId })
         if (next !== value) void save(next)
       }} />}
-      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={() => { void agentHarnessModels.refresh() }}>{t('settings.model.retryCatalog')}</Button></div>
+      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={retryOf(harnessReading)}>{t('settings.model.retryCatalog')}</Button></div>
         : harness?.harnessState === 'auth-required' ? <div className={asClass.aiModelArd}>{t('settings.model.deviceSubscriptionMissing')}</div> : null)}
       <div className={asClass.aiModelArd} role="status">
         {saving ? t('settings.model.applying') : value === null && selection.state !== 'error' ? <Unknown className="w-48" /> : error

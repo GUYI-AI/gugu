@@ -60,7 +60,6 @@ export type {
 } from './chat-composer/permission-band';
 export { ConfirmationDialog, type ConfirmationDialogProps } from './confirmation-dialog';
 export { AttachmentViewerDialog, type AttachmentViewerDialogProps } from './attachment-viewer';
-export { MermaidViewerDialog, type MermaidViewerDialogProps } from './mermaid-viewer';
 export { ComboboxPopover, type ComboboxPopoverProps } from './combobox-popover';
 export { UpdateCard, type UpdateCardProps, type UpdateStatus } from './update-card/update-card';
 export {

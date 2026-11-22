@@ -22,7 +22,7 @@ export type StatItem = { key: string; title: string; value: string; icon: ReactN
 /** 统计条:一条带竖分隔的横排数字格。 */
 export function StatStrip({ items, testId }: { items: StatItem[]; testId?: string }) {
   return (
-    <div className="na-stats" data-testid={testId}>
+    <div className="na-stats gg-settings-surface" data-testid={testId}>
       <div className="na-stats-grid" data-cols={items.length}>
         {items.map((item) => (
           <div className="na-stat" key={item.key} data-testid={testId ? `${testId}-${item.key}` : undefined}>
@@ -45,7 +45,7 @@ export function ChartCard({ icon, tone, title, total, totalLabel, actions, child
 }) {
   const { t } = useTranslation('settings')
   return (
-    <div className="na-card" data-testid={testId}>
+    <div className="na-card gg-settings-surface" data-testid={testId}>
       <div className="na-card-head">
         <div className="na-card-title">
           <IconBadge icon={icon} tone={tone} />

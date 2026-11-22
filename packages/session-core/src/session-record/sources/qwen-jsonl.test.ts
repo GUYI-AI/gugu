@@ -87,6 +87,19 @@ describe('qwen jsonl 记录源', () => {
     expect(keys.some((key) => key.startsWith('qwen:note-0001'))).toBe(false);
   });
 
+  it('the session context Gugu sent in front of the first prompt, kept joined into one part, is not what the person said', async () => {
+    const { root, file, id } = await stage();
+    const leaf = (await records()).at(-1)!;
+    const context = '<gugu_platform>\nRules that mention `<thread_context>`.\n</gugu_platform>\n<agent_identity>\nid\n</agent_identity>';
+    await appendFile(file, `${JSON.stringify({ uuid: 'user-0002', parentUuid: leaf.uuid, sessionId: id, timestamp: '2026-10-17T08:00:00.000Z',
+      type: 'user', provenance: 'real_user', message: { role: 'user', parts: [{ text: `${context} <b>hello</b>` }] } })}\n`);
+    const { entries, started } = collect(createQwenJsonlSource({ harness: 'qwen', providerSessionId: id, roots: [root] }));
+    await started;
+    const opening = entries.find((entry) => entry.key === 'qwen:user-0002#0');
+    expect(opening?.event).toMatchObject({ kind: 'message', role: 'user', text: '<b>hello</b>' });
+    expect(opening?.turn).toBe('user-0002');
+  });
+
   it('找不到就响亮地失败', async () => {
     const { root } = await stage();
     await expect(
@@ -125,6 +138,17 @@ describe('qwen jsonl 记录源', () => {
     expect(tools.length).toBeGreaterThan(0);
     expect(tools.map((tool) => tool.status)).toContain('error');
     expect(tools.map((tool) => tool.status)).toContain('done');
+  });
+
+  it('the ACP rewind: its system/rewind line, off the line before the dropped prompt, drops that prompt and after', async () => {
+    const { root, file, id } = await stage();
+    const prompts = (await records()).filter((r) => r.type === 'user' && r.provenance === 'real_user');
+    await appendFile(file, `${JSON.stringify({ uuid: 'rewind-0001', parentUuid: prompts[1]!.parentUuid, sessionId: id,
+      timestamp: '2026-10-17T08:00:00.000Z', type: 'system', subtype: 'rewind' })}\n`);
+    const timeline = await createSessionTimeline(createQwenJsonlSource({ harness: 'qwen', providerSessionId: id, roots: [root] }), { sessionId: 's' });
+    disposers.push(() => timeline.dispose());
+    const asked = timeline.getSnapshot({ limit: 1e9 }).turns.filter((turn) => turn.items.some((item) => item.kind === 'message' && item.role === 'user'));
+    expect(asked.map((turn) => turn.id)).toEqual([`s:${prompts[0]!.uuid}`]);
   });
 
   it('尾读：接着叶子写的只发增量;/rewind 另起一支 ⇒ 整份重来，丢掉的那一支不再出现', async () => {

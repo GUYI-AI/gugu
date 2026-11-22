@@ -2,6 +2,8 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 // @vitest-environment jsdom
 import { act, createElement, useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 
@@ -11,6 +13,7 @@ const boundary = vi.hoisted(() => ({
   document: vi.fn(),
   forward: vi.fn(),
   signed: vi.fn(),
+  local: vi.fn(),
   save: vi.fn(),
   open: vi.fn(),
   close: vi.fn(),
@@ -22,26 +25,27 @@ vi.mock('@/components/preview/html-preview-registration', () => ({ registerHtmlP
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } } }))
 vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => boundary.mobile, readMobileShell: () => boundary.mobile }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: boundary.read,
-  attachmentPreview: boundary.signed,
+  attachmentPreview: boundary.signed, localAttachmentUrl: boundary.local,
   openAttachmentInSystemApp: boundary.open,
   openAttachmentImages: boundary.image,
   sourceKeyOf: (source: { itemId: string; version: number }) => `${source.itemId}@${source.version}`,
-}))
+})))
 vi.mock('@/lib/chatFolder', () => ({ readChatFolderText: boundary.document, rendererFileServiceUrl: () => 'https://files.test' }))
 vi.mock('@/lib/download', () => ({ downloadBlob: boundary.save }))
 vi.mock('@/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
 }))
-vi.mock('@/components/extensionBundle/sharedPackages', () => ({ sharedPackagesOf: async () => new Map(), subscribeSharedPackages: () => () => {} }))
+vi.mock('@/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()), chatPackageCards: async () => (await import('./chatTabsHarness')).sharedCards.answer() }))
 
 const { AppPeek } = await import('@/components/appSlot/AppPeek')
 const { ask, linkShell, pill, shownItem } = await import('./chatTabsHarness')
 const { folderItem, isFolderItem } = await import('@/session/renderer/features/chats/chat-tabs/chat-panel-item')
 const { chatAlone, chatPaneOf, closeChatTab, openPanelItem, panelFull, panelTabsOf, shownPanelTab } = await import('@/session/renderer/features/chats/chat-tabs/chat-layouts')
 import { tabFullscreen } from '@/session/renderer/features/tabs/tab-fullscreen'
-const { installedExtensionsStore } = await import('@/session/renderer/features/extensions/installed-extensions-store')
+const { installedExtensions } = await import('@/session/renderer/features/extensions/installed-extensions')
 const { appsHere } = await import('@/components/appSlot/appsHere')
 const workspace = { id: 'workspace', name: '文件夹', version: '0.2.53', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: '文件夹', opensFiles: { chat: ['.md', '.json'] } }] } }
 const candidate = { extensionId: 'workspace', tabKind: 'workspace.main', tabTitle: '文件夹', app: { name: '文件夹', defaultLocale: 'zh-CN' }, onlyTab: true, state: false, suffix: '.md' }
@@ -61,6 +65,8 @@ const slot = async (opener: ReturnType<typeof detail>, supplied = true, extra: {
 const redraw = (chatId: string, extra: { visible?: boolean } = {}) =>
   harness.render(linkShell({ chatId, visible: extra.visible ?? true, mobile: boundary.mobile, onForward: boundary.forward }, 'viewer'))
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account.
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} })
@@ -72,19 +78,24 @@ beforeEach(() => {
     boundary.previewContents.set(url, html)
     return { ok: true, url, update: vi.fn(), release: vi.fn() }
   })
-  boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content: async () => ({ url: 'https://media.test/signed.mp4', expiresAt: Date.now() + 60_000 }), dispose: vi.fn() })
+  boundary.local.mockResolvedValue(null)
+  boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content: async () => ({ url: 'https://media.test/signed.mp4', expiresAt: Date.now() + 60_000 }), dispose: vi.fn() })
   boundary.read.mockResolvedValue({ status: 'ready', blob: { text: async () => '<h1>lane report</h1>', arrayBuffer: async () => new ArrayBuffer(4) } })
   boundary.document.mockResolvedValue({ text: '<h1>live report</h1>' })
   boundary.save.mockResolvedValue(undefined)
   for (const tab of panelTabsOf('preview-group')) closeChatTab('preview-group', tab.tabId)
-  act(() => installedExtensionsStore.applyList({ extensions: [workspace], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [workspace], invalid: [] } as never))
 })
-afterEach(() => {
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
+afterEach(async () => {
   harness.cleanup()
+  ;(await import('@/lib/replica')).followRendererSession('SIGNED_OUT', null)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   HTMLElement.prototype.checkVisibility = checkVisibility
-  act(() => installedExtensionsStore.applyList({ extensions: [], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [], invalid: [] } as never))
 })
 
 /** What the tab's × does in the strip: the engine asks the tab, and its close hands back what opened it. */
@@ -97,11 +108,14 @@ async function closeFromTab(chatId: string) {
 describe('unclaimed group files use the message preview from every entry', () => {
   it.each([false, true])('an image opened from the folder opens in the image viewer over it, the folder left as it is (mobile=%s)', async (mobile) => {
     boundary.mobile = mobile
-    const folder = openPanelItem('preview-group', folderItem())
-    const file = detail('png')
+    boundary.read.mockResolvedValue({ status: 'ready', blob: new Blob(['png'], { type: 'image/png' }) })
+    // A chat of its own per run: the chat's tabs (module state) of the other run are not this one's.
+    const chatId = `preview-group-${mobile ? 'phone' : 'desktop'}`
+    const folder = openPanelItem(chatId, folderItem())
+    const file = { ...detail('png'), chatId }
     const among = [{ itemId: 'file-a', version: 1, name: 'a.png', contentType: 'image/png' }, { itemId: file.itemId, version: 3, name: file.name, contentType: 'image/png' }]
     const origin = { x: 40, y: 60, width: 120, height: 120 }
-    await slot({ ...file, among, origin } as never, true, { from: shownPanelTab('preview-group')!.tabId })
+    await slot({ ...file, among, origin } as never, true, { from: shownPanelTab(chatId)!.tabId })
     await until('the viewer asked', () => boundary.image.mock.calls.length === 1)
     expect(boundary.image).toHaveBeenCalledWith(among, 1, { chatId: file.chatId }, origin)
     expect(shownPanelTab(file.chatId)?.tabId).toBe(folder)
@@ -122,7 +136,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(harness.container.querySelector('[data-testid="message-file-preview-panel"]')!.textContent).toContain('无法渲染此文件')
   })
   it.each(['preview-group', 'another-chat'])('an image link retains its originating message in %s', async (chatId) => {
-    const file = detail('png')
+    const file = { ...detail('png'), chatId }
     const message = { id: 'image-reference', chat_id: chatId } as MessageItem
     await slot(file, true, { message })
     expect(boundary.image).toHaveBeenCalledWith([{ itemId: file.itemId, version: 3, name: file.name, contentType: file.file.contentType }], 0, { chatId, messageId: message.id }, undefined)
@@ -131,7 +145,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     let now = 1_800_000_000_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
     const content = vi.fn(async () => ({ url: `https://media.test/lease-${now}.mp4`, expiresAt: now + 60_000 })), dispose = vi.fn()
-    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content, dispose })
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content, dispose })
     await slot(detail('mp4'))
     await until('first short playback lease', () => harness.container.querySelector('video')?.src.includes(`lease-${now}`) === true)
     const video = harness.container.querySelector('video')!, play = vi.spyOn(video, 'play').mockResolvedValue()
@@ -146,22 +160,12 @@ describe('unclaimed group files use the message preview from every entry', () =>
   })
   it('a fresh video lease failure is displayed once instead of repeatedly signing or fetching the original', async () => {
     const content = vi.fn(async () => ({ url: 'https://media.test/fresh.mp4', expiresAt: Date.now() + 60_000 }))
-    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content, dispose: vi.fn() })
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'managed-object' }, content, dispose: vi.fn() })
     await slot(detail('mp4'))
     await until('player ready', () => harness.container.querySelector('video') !== null)
     await act(async () => harness.container.querySelector('video')!.dispatchEvent(new Event('error')))
     expect(harness.container.querySelector('video')).toBeNull(); expect(content).toHaveBeenCalledTimes(1)
     expect(boundary.read).not.toHaveBeenCalled()
-  })
-  it('a verified project video uses and releases a local Blob URL, without requesting a streaming cloud lease', async () => {
-    const urls = { create: vi.fn(() => 'blob:verified-project-video'), revoke: vi.fn() }, dispose = vi.fn()
-    vi.stubGlobal('URL', class extends URL { static createObjectURL = urls.create; static revokeObjectURL = urls.revoke })
-    const content = vi.fn(async () => new Blob(['verified video'], { type: 'video/mp4' }))
-    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', content, dispose })
-    await slot(detail('mp4'))
-    await until('verified local playback', () => harness.container.querySelector('video')?.src === 'blob:verified-project-video')
-    expect(content).toHaveBeenCalledTimes(1); expect(boundary.read).not.toHaveBeenCalled()
-    await harness.render(null); expect(urls.revoke).toHaveBeenCalledWith('blob:verified-project-video'); expect(dispose).toHaveBeenCalledTimes(1)
   })
   it('the phone opens its chooser above the App page; cancelling keeps that page and picking preserves its Back link', async () => {
     boundary.mobile = true
@@ -222,6 +226,40 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(boundary.open).not.toHaveBeenCalled()
     const download = harness.container.querySelector('button[aria-label="下载"]')
     expect(download).not.toBeNull()
+  })
+
+  // A video this machine already has (it sent it, holds it, or opened it before) plays from its address: no link is asked for.
+  it.each(['managed-object', 'local'])('plays a %s MP4 this machine already has from its address, without a streaming lease', async (source) => {
+    const dispose = vi.fn(async () => {}), content = vi.fn(), release = vi.fn(async () => {})
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source, sha256: 'c'.repeat(64), content_type: 'video/mp4' }, content, dispose })
+    boundary.local.mockResolvedValue({ url: `gugu-preview://served/${'c'.repeat(64)}`, release })
+    await slot(detail('mp4'))
+    await until('the video plays from its address', () => harness.container.querySelector('video')?.getAttribute('src') === `gugu-preview://served/${'c'.repeat(64)}`)
+    expect(boundary.local).toHaveBeenCalledWith('c'.repeat(64), 'video/mp4')
+    expect(content).not.toHaveBeenCalled(); expect(boundary.read).not.toHaveBeenCalled(); expect(dispose).toHaveBeenCalledTimes(1)
+    await harness.render(null); expect(release).toHaveBeenCalledOnce()
+  })
+
+  // A video kept on another machine has no signed link: it is read whole like any file, its bar moving while it comes.
+  it('reads a held MP4 whole with its progress, then plays it from its bytes', async () => {
+    const dispose = vi.fn(async () => {}), content = vi.fn()
+    boundary.signed.mockResolvedValue({ status: 'ready', purpose: 'preview', revision: { source: 'local' }, content, dispose })
+    let arrive!: () => void
+    boundary.read.mockImplementation(async (_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, progress: (done: number, total: number) => void) => {
+      progress(4, 10)
+      await new Promise<void>(resolve => { arrive = resolve })
+      return { status: 'ready', blob: new Blob(['held video'], { type: 'video/mp4' }) }
+    })
+    const urls = { create: vi.fn(() => 'blob:held-video'), revoke: vi.fn() }
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = urls.create; static revokeObjectURL = urls.revoke })
+    await slot(detail('mp4'))
+    await until('the read shows how far it has come', () => harness.container.querySelector('[data-testid="message-file-preview-loading"] progress')?.getAttribute('value') === '0.4')
+    await act(async () => { arrive() })
+    await until('the held video plays', () => harness.container.querySelector('video')?.getAttribute('src') === 'blob:held-video')
+    expect(content).not.toHaveBeenCalled()
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: 'file-mp4', version: 3 }, 'shown', undefined, undefined, expect.any(Function))
+    await harness.render(null); expect(urls.revoke).toHaveBeenCalledWith('blob:held-video')
   })
 
   it('a file link and an App card resolve HTML through the same host preview', async () => {
@@ -358,7 +396,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     const release = async () => act(async () => answer({ success: true, data: later } as never))
     if (answerFirst) await release()
     const app = { ...workspace, id: 'exe-reader', contributes: { tabs: [{ name: 'main', title: 'Reader', opensFiles: { chat: ['.exe'] } }] } }
-    await act(async () => installedExtensionsStore.applyList({ extensions: [workspace, app], invalid: [] } as never))
+    await act(async () => installedExtensions.set(['local'], { extensions: [workspace, app], invalid: [] } as never))
     expect(shownItem(file.chatId)?.itemId, 'the later ask is not answered by the App arriving').toBe(answerFirst ? later.itemId : file.itemId)
     if (!answerFirst) await release()
     expect(shownItem(file.chatId)).toMatchObject({ kind: 'workspace.main', itemId: later.itemId })
@@ -369,7 +407,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     await slot(file)
     expect(harness.container.querySelector('[data-preview-kind="unsupported"]')).not.toBeNull()
     const app = { ...workspace, id: 'exe-reader', contributes: { tabs: [{ name: 'main', title: 'Reader', opensFiles: { chat: ['.exe'] } }] } }
-    await act(async () => installedExtensionsStore.applyList({ extensions: [workspace, app], invalid: [] } as never))
+    await act(async () => installedExtensions.set(['local'], { extensions: [workspace, app], invalid: [] } as never))
     expect(shownItem(file.chatId)).toMatchObject({ kind: 'exe-reader.main', itemId: file.itemId })
     expect(harness.container.querySelector('[data-preview-kind="unsupported"]')).toBeNull()
   })
@@ -417,4 +455,9 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(shownItem('preview-group')?.itemId).toBe('file-mp4')
   })
 
+})
+
+it('the shared-package mock is live (signed in): a file waits for this chat\'s packages, then is drawn', async () => {
+  const { expectSharedPackagesLive } = await import('./chatTabsHarness')
+  await expectSharedPackagesLive((node) => harness.render(node))
 })

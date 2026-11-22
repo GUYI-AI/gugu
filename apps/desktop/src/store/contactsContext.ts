@@ -30,10 +30,6 @@ export interface ContactsContextValue {
   // #2118 — contacts / groupChats 各自的三态(注意 loadingGroups 是联系人标签 groups,≠ 群聊 groupChats)。
   contactsStatus: ContactsLoadStatus
   groupChatsStatus: ContactsLoadStatus
-  searchResults: ContactUser[]
-  isSearching: boolean
-  searchUsers: (query: string) => Promise<void>
-  clearSearch: () => void
   sendRequest: (targetUserId: string, message?: string | null) => Promise<void>
   acceptRequest: (requestId: string) => Promise<AcceptFriendRequestResult>
   rejectRequest: (requestId: string) => Promise<void>
@@ -47,7 +43,6 @@ export interface ContactsContextValue {
   updateContactAlias: (contactId: string, alias: string) => Promise<void>
   setAgentPublic: (agentId: string, agentPublic: boolean) => Promise<void>
   setAgentDesiredStatus: (agentId: string, desiredStatus: 'online' | 'offline') => Promise<void>
-  renameAgent: (agentId: string, name: string) => Promise<void>
   updateAgentProfile: (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => Promise<void>
   uploadAgentAvatar: (agentId: string, file: File, profile?: { name?: string; bio?: string }) => Promise<void>
   /** 存这只 agent 的形象(颜色 + 休息表情):写进它的头像字段,换掉之前的形象或照片。 */
@@ -73,10 +68,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   loadingGroups: false,
   contactsStatus: 'idle',
   groupChatsStatus: 'idle',
-  searchResults: [],
-  isSearching: false,
-  searchUsers: async () => {},
-  clearSearch: () => {},
   sendRequest: async () => {},
   acceptRequest: async () => ({ chatId: null, name: null, kind: null, created: false, member_count: null }),
   rejectRequest: async () => {},
@@ -90,7 +81,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   updateContactAlias: async () => {},
   setAgentPublic: async () => {},
   setAgentDesiredStatus: async () => {},
-  renameAgent: async () => {},
   updateAgentProfile: async () => {},
   uploadAgentAvatar: async () => {},
   setAgentLook: async () => {},

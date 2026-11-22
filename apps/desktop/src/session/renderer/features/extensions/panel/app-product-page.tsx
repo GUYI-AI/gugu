@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowUp,
   Bell,
@@ -12,7 +12,6 @@ import {
   Moon,
   Pencil,
   Share2,
-  ShieldCheck,
   Terminal,
   Users,
   Wrench,
@@ -26,7 +25,6 @@ import { ExpandableImage } from '@renderer/lib/ui/expandable-image';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { rpc } from '@renderer/lib/ipc';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
-import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import { givesAgentTools } from '@shared/extensions/app-places';
 import {
@@ -39,7 +37,6 @@ import {
   type DeclaredPermission,
 } from '@shared/extensions/catalog';
 import { claimedSuffixes, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
-import type { MarketListing } from '@shared/extensions/market-entries';
 import {
   marketSourceLabel,
   marketSourceUrl,
@@ -50,12 +47,14 @@ import {
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
+import { useReplica } from '@/lib/replica';
+import { LOCAL_HOST } from '../extensions-api';
+import { marketListing, marketVersionHistory } from '../market-replicas';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppShelfRow } from './app-shelf';
-import { VersionHistorySection, shortDate, type Loadable } from './app-version-history';
+import { VersionHistorySection, shortDate } from './app-version-history';
 import { AppProductBack, AppProductHeader } from './app-product-header';
-import { useVersionHistory } from './use-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
 
@@ -75,9 +74,9 @@ export type ProductPageApi = Pick<typeof rpc.extensions, 'marketListing' | 'mark
 
 /**
  * 一个 App 的市场页(#7059):在「App」那一栏里整页铺开,左上「‹ App」回到清单。只回答「要不要装」,所以页上没有开关;管装着的那一份在
- * App 设置页(app-manage-page.tsx)。版面照 Google Play 的应用页(owner 10-10「这个是我想要的」):头上大字名字、副标题、发布方、一排
- * 要点、大按钮,右边大图标;下面左栏截图轮播 → 关于 → 新功能和版本历史 → 它带来了什么 → 权限(它能看 / 它能做)→ 信息;右栏审核那张
- * 卡、链接、类似 App。名字、副标题、关于、示例句跟界面语言走;它还写了别的语言,「关于」旁边给一个切换。
+ * App 设置页(app-manage-page.tsx)。版面照 Google Play 的应用页(owner 10-10「这个是我想要的」):左边大图标,旁边大字名字、副标题、
+ * 发布方(后面跟「查看源码」和主页、仓库链接),下面一排要点、大按钮;再下面只有一栏:截图轮播 → 关于 → 新功能和版本历史 → 它带来了
+ * 什么 → 权限(它能看 / 它能做)→ 信息。名字、副标题、关于、示例句跟界面语言走;它还写了别的语言,「关于」旁边给一个切换。
  */
 export function AppProductPage({
   subject,
@@ -88,7 +87,7 @@ export function AppProductPage({
   locale,
   translate,
   machine,
-  api = rpc.extensions,
+  hostKey = LOCAL_HOST,
   readOnly = false,
   justInstalled = false,
   backLabel,
@@ -102,7 +101,6 @@ export function AppProductPage({
   onOpenExternal = confirmOpenExternalLink,
   backgroundSupported = true,
   phoneAgentCapabilities = [],
-  similar = [],
   resource,
 }: {
   subject: ExtensionDetailSubject;
@@ -115,8 +113,8 @@ export function AppProductPage({
   translate: SessionTranslate;
   /** 看的是另一台机器的 App 时,那台的名字:权限那一张卡如实写它,❌ 写「这台电脑」。不给 = 本机。 */
   machine?: string;
-  /** 产品页内容、版本历史、工具清单问哪台机器(#6264)。不给 = 本机。 */
-  api?: ProductPageApi;
+  /** 产品页内容、版本历史问哪台机器的市场(#6264;手机 = `phone`)。不给 = 本机。 */
+  hostKey?: string;
   /** 那台机器此刻做不了事(离线 / server 太旧,#6264):照旧看,动作全灰。 */
   readOnly?: boolean;
   /** 刚在这一页装好:头下面一句「装好了」和去哪找它。 */
@@ -126,6 +124,7 @@ export function AppProductPage({
   onBack: () => void;
   onLifecycle: () => void;
   onInstallVersion?: (ref: MarketSourceRef) => void;
+  /** Installing on this account's other devices: one more button in the action row. */
   targetSummary?: ReactNode;
   /** Installed only: its settings page, where everything about this copy is managed. */
   onManage?: () => void;
@@ -138,8 +137,6 @@ export function AppProductPage({
   backgroundSupported?: boolean;
   /** Agent capabilities declared by the App, before the phone removes them from its permission list. */
   phoneAgentCapabilities?: readonly ExtensionCapability[];
-  /** 右栏「类似 App」:市场里同一类的别的 App(照 Google Play),点一个 = 换到它的产品页。 */
-  similar?: { id: string; name: string; publisher: string; line: string; iconUrl?: string | null; onOpen: () => void }[];
   resource?: ResourceContext;
 }) {
   const { manifest, cloud, installedVersion } = subject;
@@ -149,43 +146,21 @@ export function AppProductPage({
   const textLocale = languages.find((option) => option.locale === picked)?.locale ?? languages[0]!.locale;
   const text = localizedManifestText(manifest, textLocale);
   const { compat, deprecated } = cloud;
-  const [listing, setListing] = useState<Loadable<MarketListing> | { status: 'outdated' }>({ status: 'idle' });
-  const { state: history, retry: readHistoryAgain } = useVersionHistory(api, manifest.id);
+  const history = useReplica(marketVersionHistory, [hostKey, manifest.id]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutClamped, setAboutClamped] = useState(false);
   const aboutRef = useRef<HTMLDivElement | null>(null);
 
-  // 懒加载,换了 App(id / 版本变了)才取一次;卸下时取消挂起的那次,免得旧数据落进新的一页。只有市场上的版本有产品页内容
-  // (`store/` 不进安装包);读不到就照实说(那台机器的咕咕太旧 / 市场上这一版没有),❌ 改读别处。
+  // 只有市场上的版本有产品页内容(`store/` 不进安装包);读不到就照实说,❌ 改读别处。
   const listedVersion = cloud.version;
-  useEffect(() => {
-    setAboutOpen(false);
-    let cancelled = false;
-    setListing({ status: 'loading' });
-    void api
-      .marketListing({ extensionId: manifest.id, version: listedVersion })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result.success) throw new Error(result.error);
-        setListing({ status: 'ready', data: result.data });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        log.warn('App market listing unreadable:', error);
-        setListing({ status: (error as { code?: unknown } | null)?.code === 'server_outdated' ? 'outdated' : 'error' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, manifest.id, listedVersion]);
-
-
+  const listingReading = useReplica(marketListing, [hostKey, manifest.id, listedVersion]);
+  const listing = listingReading.state === 'value' && !('outdated' in listingReading.value) ? listingReading.value.listing : null;
 
   const publishedAt = cloud.publishedAt;
   const permissions = declaredPermissions(manifest);
-  const shots = listing.status === 'ready' ? listing.data.screenshots : [];
-  const aboutText = listing.status === 'ready' ? listing.data.about[textLocale] : undefined;
+  const shots = listing ? listing.screenshots : [];
+  const aboutText = listing ? listing.about[textLocale] : undefined;
   // 折叠到四行放不下才给「展开」:量的是画出来的高度,换语言、换 App 都重量。
   useLayoutEffect(() => {
     const box = aboutRef.current;
@@ -270,11 +245,11 @@ export function AppProductPage({
           ) : null}
         </>
       ) : (
-        <p className="mk-note" role={listing.status === 'idle' || listing.status === 'loading' ? undefined : 'alert'}>
+        <p className="mk-note" role={listingReading.state === 'unknown' ? undefined : 'alert'}>
           {translate(
-            listing.status === 'idle' || listing.status === 'loading'
+            listingReading.state === 'unknown'
               ? 'extensions.loading'
-              : listing.status === 'outdated'
+              : listingReading.state === 'value' && 'outdated' in listingReading.value
                 ? 'extensions.listingPeerOutdated'
                 : 'extensions.listingUnavailable'
           )}
@@ -285,8 +260,8 @@ export function AppProductPage({
 
   // ── 新功能 + 版本历史 ──
   let news: ReactNode = null;
-  if (cloud.releaseNotes || (history.status === 'ready' && history.data.length > 0)) {
-    const latest = history.status === 'ready' ? history.data[0] : undefined;
+  if (cloud.releaseNotes || (history.state === 'value' && history.value.length > 0)) {
+    const latest = history.state === 'value' ? history.value[0] : undefined;
     const notes = cloud.releaseNotes || latest?.releaseNotes || '';
     const notesVersion = cloud.version;
     const notesDate = cloud.publishedAt;
@@ -311,8 +286,7 @@ export function AppProductPage({
           <fieldset disabled={readOnly} className="contents">
             <div className="mk-vers">
               <VersionHistorySection
-                state={history}
-                onReadAgain={readHistoryAgain}
+                reading={history}
                 extensionId={manifest.id}
                 installedVersion={installedVersion}
                 offeredVersion={null}
@@ -440,62 +414,13 @@ export function AppProductPage({
     </section>
   );
 
-  // ── 右边一栏:审核那张卡(照 Google Play 的「内容分级」卡)、链接、类似 App ──
+  // ── 发布方后面的链接:出包的那份代码、主页、仓库 ──
   const links = [
+    // 市场记下的出包来源(仓 @ 提交 @ 目录,App 市场方案 10-07):打出这份字节的那份代码。早于这条记录的版本没有。
+    cloud.source && { label: translate('extensions.viewSource'), href: marketSourceUrl(cloud.source), title: marketSourceLabel(cloud.source) },
     manifest.homepage && { label: translate('extensions.linkHomepage'), href: manifest.homepage },
     manifest.repository && { label: translate('extensions.linkRepository'), href: manifest.repository },
-  ].filter((entry): entry is { label: string; href: string } => Boolean(entry));
-  const sourceButton =
-    cloud.source ? (
-      // 市场记下的出包来源(仓 @ 提交 @ 目录,App 市场方案 10-07):打出这份字节的那份代码。早于这条记录的版本没有。
-      <button type="button" className="mk-ext" title={marketSourceLabel(cloud.source)} onClick={() => cloud.source && onOpenExternal(marketSourceUrl(cloud.source))}>
-        {translate('extensions.viewSource')}
-        <ExternalLink className="size-3" />
-      </button>
-    ) : null;
-  const side = (
-    <aside className="mk-dside">
-      <div className="mk-card mk-review" data-testid="app-product-review">
-        <ShieldCheck className="size-6" />
-        <div>
-          <b>{translate('extensions.infoReviewed', { version: cloud.version })}</b>
-          <span className="mk-review-k">{sourceButton ?? publisher}</span>
-        </div>
-      </div>
-      {links.length > 0 ? (
-        <section className="mk-dsec is-side">
-          <h3>{translate('extensions.detailLinks')}</h3>
-          <div className="mk-side-links">
-            {links.map((link) => (
-              <button type="button" className="mk-ext" key={link.href} onClick={() => onOpenExternal(link.href)}>
-                {link.label}
-                <ExternalLink className="size-3" />
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {similar.length > 0 ? (
-        <section className="mk-dsec is-side" data-testid="app-product-similar">
-          <h3>{translate('extensions.similarApps')}</h3>
-          <div className="mk-similar">
-            {similar.map((app) => (
-              <button type="button" className="mk-similar-row" key={app.id} onClick={app.onOpen} data-testid={`app-product-similar-${app.id}`}>
-                <span className="mk-icon is-56">
-                  <ExtensionMonogram name={app.name} iconDataUrl={app.iconUrl} />
-                </span>
-                <span className="mk-similar-tx">
-                  <b>{app.name}</b>
-                  <span>{app.publisher}</span>
-                  <i>{app.line}</i>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </aside>
-  );
+  ].filter((entry): entry is { label: string; href: string; title?: string } => Boolean(entry));
 
   // ── 头上一排要点:数在上、名目在下,格子之间一根短竖线(照 Google Play)──
   const size = formatSize(cloud.bundleBytes);
@@ -528,7 +453,7 @@ export function AppProductPage({
 
   return (
     <div className="mk" data-testid="app-product-page" data-extension-id={manifest.id}>
-      {/* 那台机器离线 / server 太旧(#6264):照旧能看(翻截图、看简介、点类似 App),装、卸、收回、装某一版一起灰。 */}
+      {/* 那台机器离线 / server 太旧(#6264):照旧能看(翻截图、看简介),装、卸、收回、装某一版一起灰。 */}
       <AppProductBack label={backLabel ?? translate('extensions.title')} onBack={onBack} testId="app-product-back" />
       <ResourceMenu resource={resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}>
         <header className="mk-dh">
@@ -537,6 +462,12 @@ export function AppProductPage({
             subtitle={text.subtitle}
             publisher={publisher}
             deprecated={Boolean(deprecated)}
+            links={links.map((link) => (
+              <button type="button" className="mk-ext" key={link.href} title={link.title} onClick={() => onOpenExternal(link.href)}>
+                {link.label}
+                <ExternalLink className="size-3" />
+              </button>
+            ))}
             facts={facts}
             factsTestId="app-product-strip"
             icon={<span className="mk-icon is-hero"><ExtensionMonogram name={text.name} iconDataUrl={cloud.iconUrl ?? iconDataUrl} /></span>}
@@ -558,6 +489,7 @@ export function AppProductPage({
                     {translate('extensions.appSettings')}
                   </Button>
                 ) : null}
+                {targetSummary}
                 {onForward ? (
                   <Button type="button" variant="ghost" size="lg" onClick={onForward} data-testid="app-product-forward">
                     <Share2 className="size-4" />
@@ -565,7 +497,6 @@ export function AppProductPage({
                   </Button>
                 ) : null}
               </div>
-              {targetSummary}
             </fieldset>
           </AppProductHeader>
         </header>
@@ -602,25 +533,22 @@ export function AppProductPage({
       ) : null}
 
       <div className="mk-dbody">
-        <div className="mk-dmain">
-          {screenshots}
-          {about}
-          {news}
-          {addsSection}
-          {permissionsSection}
-          <section className="mk-dsec" data-testid="app-product-info">
-            <h3>{translate('extensions.info')}</h3>
-            <dl className="mk-info-grid">
-              {info.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        </div>
-        {side}
+        {screenshots}
+        {about}
+        {news}
+        {addsSection}
+        {permissionsSection}
+        <section className="mk-dsec" data-testid="app-product-info">
+          <h3>{translate('extensions.info')}</h3>
+          <dl className="mk-info-grid">
+            {info.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       </div>
 
     </div>

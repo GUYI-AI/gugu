@@ -14,17 +14,16 @@ vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<objec
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => { dismissNotice('clipboard-copy'); harness?.cleanup(); vi.restoreAllMocks() })
 
-it('shows a compact copy hint above the input and removes it automatically', async () => {
+it('shows the copy hint in the one notice stack, 8px above the composer, and removes it automatically', async () => {
   await page.viewport(390, 844)
   harness = createReactHarness()
-  await renderWithAppProviders(harness, <><NoticeHost /><div data-testid="input" style={{ position: 'fixed', bottom: 0, height: 100, width: '100%' }}>Input</div></>)
+  await renderWithAppProviders(harness, <><NoticeHost /><div data-testid="input" data-slot="composer" style={{ position: 'fixed', bottom: 0, height: 100, width: '100%' }}>Input</div></>)
   await act(async () => { notifyCopied('已复制') })
-  const hint = () => document.querySelector<HTMLElement>('.gugu-notice-compact')
+  const hint = () => document.querySelector<HTMLElement>('[data-sonner-toast]')
   await until('copy confirmation mounts', () => !!hint())
   const rect = hint()!.getBoundingClientRect(), input = harness.container.querySelector<HTMLElement>('[data-testid="input"]')!.getBoundingClientRect()
-  expect(rect.width).toBeLessThan(200)
   expect(rect.height).toBeLessThan(60)
-  expect(rect.bottom).toBeLessThan(input.top)
+  await until('the stack settles 8px above the composer', () => Math.abs(input.top - hint()!.getBoundingClientRect().bottom - 8) < 0.5)
   expect(getComputedStyle(hint()!).pointerEvents).toBe('none')
   await until('copy confirmation expires without input', () => !hint())
 })

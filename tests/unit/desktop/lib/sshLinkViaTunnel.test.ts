@@ -28,17 +28,13 @@ afterAll(() => {
 
 describe('远程隧道上的设备连接:原因 ❌ 进远程 SSH 那张卡', () => {
   it('keeps the updating status while the retained transport is available for update controls', async () => {
-    const { openSshLink, subscribeSshLinkProblems } = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
-    let problems: ReadonlyMap<string, SshLinkFailure> = new Map()
-    const off = subscribeSshLinkProblems(next => { problems = next })
+    const { openSshLink, sshLinkProblems } = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
     await expect(openSshLink('old', { onMessage: () => undefined, onClosed: () => undefined }).ready).resolves.toBeUndefined()
-    expect(problems.get('old')).toBe('updating')
-    off()
+    expect(sshLinkProblems.get().get('old')).toBe('updating')
   })
   it('打开失败与断开都按主进程标的 via 分;没标的(远程 SSH)照记,与清单到没到无关', async () => {
-    const { openSshLink, subscribeSshLinkProblems } = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
-    let problems: ReadonlyMap<string, SshLinkFailure> = new Map()
-    const off = subscribeSshLinkProblems((next) => (problems = next))
+    const { openSshLink, sshLinkProblems } = await import('../../../../apps/desktop/src/lib/sshLinkChannel')
+    const problems = { has: (id: string) => sshLinkProblems.get().has(id), get: (id: string) => sshLinkProblems.get().get(id) }
     const closed: string[] = []
     const handlers = (id: string) => ({ onMessage: () => undefined, onClosed: (reason: SshLinkFailure) => closed.push(`${id}:${reason}`) })
 
@@ -54,6 +50,5 @@ describe('远程隧道上的设备连接:原因 ❌ 进远程 SSH 那张卡', ()
     expect(problems.get('ssh1')).toBe('unreachable')
     // 断开照样告诉开着它的那一方(设备 RPC 据此重开 / 换管道)。
     expect(closed).toEqual(['tun1:unreachable', 'ssh1:unreachable'])
-    off()
   })
 })

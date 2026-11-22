@@ -3,7 +3,11 @@ import 'fake-indexeddb/auto'
 import { IDBFactory, forceCloseDatabase } from 'fake-indexeddb'
 import { createIndexedDbHandle } from '../../../../apps/desktop/src/lib/indexedDbHandle'
 import { openLocalSyncDb, type LocalImDbAdapter } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { openSessionInputStorage, SessionInputOutbox, type SessionInput } from '../../../../apps/desktop/src/lib/sessionInputOutbox'
+import type { SessionInput } from '../../../../apps/desktop/src/lib/sessionInput'
+import { openOutboxStorage } from '../../../../apps/desktop/src/lib/outbox/storage'
+import type { OutboxItem } from '../../../../apps/desktop/src/lib/outbox/core'
+import { enqueueSessionInput, state } from '../../../../apps/desktop/src/lib/outbox/kinds/sessionInput'
+import { installSessionInputOutbox, settle } from '../../../helpers/sessionInputOutbox'
 import { getAgentWatchStore, resetAgentWatchStore } from '../../../../apps/desktop/src/session/shared/remote-sessions/local-store'
 import { createIndexedDbBacklog } from '../../../../apps/desktop/src/mobile/assistant/phoneVoiceBacklog'
 
@@ -55,36 +59,45 @@ it('invalidates a forced-close handle, coalesces the next opens, and keeps IM da
   expect(tracked.databases).toHaveLength(2)
 })
 
+const outboxRow = (id: string): OutboxItem => ({ accountId: 'owner', id, kind: 'sessionInput', lane: 'session:local/management', order: 1, dependsOn: [],
+  payload: { deviceId: null, sessionId: 'management', text: 'hello', createdAt: 1 }, state: 'queued', attempts: 0, rev: 0 })
+
 it('enqueues and sends one input per session after forced close without losing already queued inputs', async () => {
   const tracked = trackedFactory()
-  const storage = await openSessionInputStorage(tracked.factory)
+  const storage = openOutboxStorage(tracked.factory)
+  await storage.list('owner')
   const deliver = vi.fn(async (_input: SessionInput) => {})
-  const queue = new SessionInputOutbox('owner', storage, deliver, () => true)
-  const pending = await queue.enqueue({ deviceId: null, sessionId: 'management', text: 'before close' })
-  await forceCloseAndWait(tracked.databases[0]!)
-  const next = await queue.enqueue({ deviceId: null, sessionId: 'ordinary', text: 'after close' })
-  await queue.flush()
-  expect(deliver.mock.calls.map(([input]) => input)).toEqual([pending, next])
-  expect(await queue.list()).toEqual([])
-  expect(tracked.databases).toHaveLength(2)
+  const installed = installSessionInputOutbox({ send: deliver, storage })
+  try {
+    const pending = await enqueueSessionInput({ deviceId: null, sessionId: 'management', text: 'before close' })
+    await settle()
+    await forceCloseAndWait(tracked.databases[0]!)
+    const next = await enqueueSessionInput({ deviceId: null, sessionId: 'ordinary', text: 'after close' })
+    await settle()
+    expect(deliver.mock.calls.map(([input]) => input.id)).toEqual([pending.id, next.id])
+    expect(state().rows).toEqual([])
+    expect(await storage.list('owner')).toEqual([])
+    expect(tracked.databases).toHaveLength(2)
+  } finally { installed.dispose() }
 })
 
 it('keeps independent main-window and quick-window owners usable after both are forced closed', async () => {
   const tracked = trackedFactory()
-  const main = await openSessionInputStorage(tracked.factory)
-  const quick = await openSessionInputStorage(tracked.factory)
+  const main = openOutboxStorage(tracked.factory)
+  const quick = openOutboxStorage(tracked.factory)
+  await main.list('owner'); await quick.list('owner')
   for (const db of [...tracked.databases]) await forceCloseAndWait(db)
-  const input = { id: 'one', accountId: 'owner', deviceId: null, sessionId: 'management', text: 'hello', createdAt: 1 }
-  await main.put(input)
-  expect(await quick.list('owner')).toEqual([input])
+  await main.write('owner', [outboxRow('one')], [])
+  expect(await quick.list('owner')).toEqual([outboxRow('one')])
   expect(tracked.databases).toHaveLength(4)
 })
 
-it.each(['im', 'input'] as const)('propagates an interrupted %s write without replay and permits a later write', async kind => {
+it.each(['im', 'outbox'] as const)('propagates an interrupted %s write without replay and permits a later write', async kind => {
   const tracked = trackedFactory()
   const adapter = await openLocalSyncDb(tracked.factory)
   adapters.push(adapter)
-  const storage = await openSessionInputStorage(tracked.factory)
+  const storage = openOutboxStorage(tracked.factory)
+  await storage.list('owner')
   const db = tracked.databases[kind === 'im' ? 0 : 1]!
   const closed = new Promise<void>(resolve => db.addEventListener('close', () => resolve(), { once: true }))
   const transaction = db.transaction.bind(db)
@@ -96,7 +109,7 @@ it.each(['im', 'input'] as const)('propagates an interrupted %s write without re
   })
   const write = kind === 'im'
     ? () => adapter.commit([{ type: 'put', store: 'view', value: { accountId: 'owner', key: 'draft', value: 'hello' } }])
-    : () => storage.put({ id: 'input', accountId: 'owner', deviceId: null, sessionId: 'management', text: 'hello', createdAt: 1 })
+    : () => storage.write('owner', [outboxRow('input')], [])
   await expect(write()).rejects.toBeDefined()
   expect(makeTransaction).toHaveBeenCalledTimes(1)
   expect(tracked.databases).toHaveLength(2)

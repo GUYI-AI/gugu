@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
-import { projectMessagePreview, mergeMessagePreviews, messagePreviewProjectionSchema } from './message-preview';
+import { projectMessagePreview } from './message-preview';
 
 function envelope(chat: string, body = 'hi', msg = 'msg:1'): string {
   return [
@@ -47,16 +47,6 @@ function turn(id: number, items: TranscriptItem[], done = true): TranscriptTurn 
 }
 
 describe('预览投影', () => {
-  it('#2007 joins bounded live/archive projections with the same prompt and tool grouping semantics', () => {
-    const archiveTurns = [turn(1, [user(envelope('111')), said('done'), tool('read-tool-call')])];
-    const activeTurns = [turn(2, [tool('read-tool-call'), said('working'), tool('patch-tool-call'), said('more'), tool('execute-tool-call')], false)];
-    const archive = projectMessagePreview(archiveTurns), active = projectMessagePreview(activeTurns);
-    const original = structuredClone(archive);
-    const merged = mergeMessagePreviews(archive, active);
-    expect(merged).toEqual(projectMessagePreview([...archiveTurns, ...activeTurns]));
-    expect(archive).toEqual(original);
-    expect(messagePreviewProjectionSchema.parse(merged)).toEqual(merged);
-  });
   it('只说了 [NO_REPLY] 的回合不往群里推那一声;带正文的照推', () => {
     const { entries } = projectMessagePreview([
       turn(1, [user(envelope('111')), said('[NO_REPLY][NO_REPLY]')]),

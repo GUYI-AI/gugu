@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// #1047 — a queued prompt committing while an earlier turn loads.
+// #1047 — a queued prompt committing while an earlier turn loads. Only a side chat reconciles with its runtime;
+// every other session draws its timeline.
 import { afterEach, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { HistoryPage } from '@gugu/session-core/acp/client';
@@ -11,7 +12,7 @@ const { AcpChatStore } = await import('./acp-chat-store');
 
 
 function turn(id: string, seq: number, text: string): TranscriptTurn {
-  return { id, seq, initiator: 'user', items: [
+  return { id, seq, initiator: 'user', startedAt: seq + 1, items: [
     { kind: 'message', id: `${id}:question`, seq: 0, role: 'user', text: `Question ${id}` },
     { kind: 'message', id: `${id}:answer`, seq: 1, role: 'assistant', text },
   ] };
@@ -34,7 +35,7 @@ it('loads A while queued B is still running, preserves B during the history requ
     getHistory: vi.fn(() => new Promise<{ success: true; data: HistoryPage }>(resolve => { pending.push(resolve); })),
     dispose() {},
   };
-  const store = new AcpChatStore('queued-commit', 'project');
+  const store = new AcpChatStore('queued-commit', 'project', { id: 'queued-commit-side', forkFromProviderSessionId: 'native-parent' });
   cleanup.push(() => store.dispose());
   const internals = store as unknown as {
     session: unknown;

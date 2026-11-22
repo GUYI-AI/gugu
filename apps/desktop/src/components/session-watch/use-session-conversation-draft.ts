@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useSyncExternalStore, type RefObject, typ
 import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 import { useChatDraft } from '@/components/chat/useChatDraft'
 import { readNativeOfflineDraft, subscribeNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft'
-import { state as sessionInputs, useSessionInputAccount } from '@/lib/sessionInputOutboxBridge'
+import { state as sessionInputs, useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput'
 import { appendToDraft, useChatStore } from '@/store/chatContext'
 
 const flushed = () => {}

@@ -145,17 +145,6 @@ const ptyConfigV1 = z.object({
   forkedFrom: z.object({ sessionId: z.string() }).optional(),
   /** Host-owned provider control endpoint for native session-TUI sessions. */
   providerSessionEndpoint: z.string().url().optional(),
-  /**
-   * spec session-runtime-switch:`sessions.provider_session_id` 里那个 id 是**引擎自己铸的**,
-   * 不是咕咕拿 `--session-id <conversation.id>` 交给它的。
-   *
-   * 今天唯一的来源:一条通用模式(ACP)会话换到编程模式 —— 它的 provider 会话 id 由 ACP 适配器铸,
-   * 与 conversation.id 不同。续跑必须用那个 id,❌ 不能回落到 conversation.id:那会指向一条根本
-   * 不存在的会话,引擎于是起一条全新的空会话,而界面上一个字都不会说(2026-09-09 实测 claude)。
-   *
-   * ⚠️ 它记的是**这个 id 的来历**,不是又存一份 id —— id 只有 `session_id` 那一处。
-   */
-  providerMintedSessionId: z.boolean().optional(),
   /** 换计费路的重开留下的待办,与 ACP 那份同义(见 ACP 配置的同名字段)。 */
   forkOnStartProviderSessionId: z.string().optional(),
   /**
@@ -217,17 +206,6 @@ const acpConfigV1 = z.object({
   forkedFrom: z.object({ sessionId: z.string() }).optional(),
   /** Host-owned provider control endpoint for native session-TUI sessions. */
   providerSessionEndpoint: z.string().url().optional(),
-  /**
-   * spec session-runtime-switch:`sessions.provider_session_id` 里那个 id 是**引擎自己铸的**,
-   * 不是咕咕拿 `--session-id <conversation.id>` 交给它的。
-   *
-   * 今天唯一的来源:一条通用模式(ACP)会话换到编程模式 —— 它的 provider 会话 id 由 ACP 适配器铸,
-   * 与 conversation.id 不同。续跑必须用那个 id,❌ 不能回落到 conversation.id:那会指向一条根本
-   * 不存在的会话,引擎于是起一条全新的空会话,而界面上一个字都不会说(2026-09-09 实测 claude)。
-   *
-   * ⚠️ 它记的是**这个 id 的来历**,不是又存一份 id —— id 只有 `session_id` 那一处。
-   */
-  providerMintedSessionId: z.boolean().optional(),
   /**
    * spec session-fork-share:要分叉的**来源 provider 会话 id**,首次启动时用它走 ACP 的
    * `session/fork`,拿回一个独立的新 provider 会话 id 落进 `session_id`,此后这条会话就是

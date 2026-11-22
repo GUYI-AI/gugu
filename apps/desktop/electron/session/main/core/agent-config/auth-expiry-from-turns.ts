@@ -6,8 +6,8 @@
  *  · 这一轮正常做完(`done`)⇒ 这家现在能用,撤掉(本来没标就是空操作)。
  * 取消、其它失败、重放回来的旧回合、更早那一轮被补内容(`backfill`,#6582)都不动它 —— 旧回合说的是过去,
  * ❌ 拿它改现在的状态。
- * 跑咕咕平台模型的会话也不动它:那时用的是咕咕签的凭据,成败与用户自己那份登录无关
- * (平台那边 401 ❌ 把用户的 codex 说成失效;平台模型跑通 ❌ 把失效的登录说成好了)。
+ * 凭据由宿主提供的会话(咕咕平台模型,或模型连接里用户自己的 key)也不动它:成败与这家在这台机器上的登录无关
+ * (平台那边 401、key 被拒 ❌ 把用户的 codex 说成失效;用 key 跑通 ❌ 把失效的登录说成好了)。
  *
  * 纯函数;真正去改标记的是 `applyTurnToAuthExpiry`(写入方注入,见下)。
  */
@@ -19,12 +19,12 @@ export type AuthExpiryEffect = { kind: 'mark' | 'clear'; providerId: string } | 
 export function authExpiryEffect(event: {
   providerId?: string;
   sessionId?: string;
-  platformCredentials?: boolean;
+  hostCredentials?: boolean;
   source: 'live' | 'replay' | 'revision' | 'backfill';
   turn: Pick<TranscriptTurn, 'outcome'>;
 }): AuthExpiryEffect {
   const providerId = event.providerId;
-  if (!providerId || event.source === 'replay' || event.source === 'backfill' || event.platformCredentials) return null;
+  if (!providerId || event.source === 'replay' || event.source === 'backfill' || event.hostCredentials) return null;
   const outcome = event.turn.outcome;
   if (!outcome) return null;
   if (outcome.kind === 'error' && outcome.signInRequired) return { kind: 'mark', providerId };
@@ -40,10 +40,10 @@ export type AuthExpiryWriter = {
 
 /** Startup can fail before any turn exists. Attribute explicit revocation to the session's bound connection. */
 export function applyStartToAuthExpiry(
-  event: { providerId?: string; sessionId: string; platformCredentials: boolean; failure: unknown },
+  event: { providerId?: string; sessionId: string; hostCredentials: boolean; failure: unknown },
   writer: AuthExpiryWriter,
 ): Promise<void> | null {
-  if (!event.providerId || event.platformCredentials || !event.failure || typeof event.failure !== 'object') return null;
+  if (!event.providerId || event.hostCredentials || !event.failure || typeof event.failure !== 'object') return null;
   const cause = (event.failure as { cause?: unknown }).cause;
   if (!cause || !isCodexRefreshTokenRevoked(toSerializedError(cause))) return null;
   return writer.mark(event.providerId, event.sessionId).catch(error => {
@@ -76,27 +76,27 @@ export function hookAuthExpiryEffect(event: {
   sessionId?: string;
   type: string;
   signInRequired?: boolean;
-  platformCredentials: boolean;
+  hostCredentials: boolean;
 }): AuthExpiryEffect {
-  if (!event.providerId || event.platformCredentials) return null;
+  if (!event.providerId || event.hostCredentials) return null;
   if (event.type === 'error' && event.signInRequired) return { kind: 'mark', providerId: event.providerId };
   if (event.type === 'stop') return { kind: 'clear', providerId: event.providerId };
   return null;
 }
 
 /**
- * 这条终端会话此刻是不是跑在咕咕平台模型上。答案在宿主那边(平台令牌的持有表),由宿主注入 ——
+ * 这条终端会话的凭据此刻是不是由宿主提供(咕咕平台模型或自定义模型连接)。答案在宿主那边,由宿主注入 ——
  * ❌ 会话页相对 import 宿主模块(跨 bundle 只会拿到一份读不到的复制品,同 setLoginShellEnvProvider)。
  * 没注入 = 当作「是」:宁可不学,❌ 把平台那边的 401 说成用户自己的登录失效。
  */
-let platformCredentialsProbe: ((sessionId: string) => boolean) | null = null;
+let hostCredentialsProbe: ((sessionId: string) => boolean) | null = null;
 
-export function setPlatformCredentialsProbe(fn: ((sessionId: string) => boolean) | null): void {
-  platformCredentialsProbe = fn;
+export function setHostCredentialsProbe(fn: ((sessionId: string) => boolean) | null): void {
+  hostCredentialsProbe = fn;
 }
 
-export function sessionUsesPlatformCredentials(sessionId: string): boolean {
-  return platformCredentialsProbe ? platformCredentialsProbe(sessionId) : true;
+export function sessionUsesHostCredentials(sessionId: string): boolean {
+  return hostCredentialsProbe ? hostCredentialsProbe(sessionId) : true;
 }
 
 /** 把一条钩子事件落到标记上。写失败只记日志(同 applyTurnToAuthExpiry)。 */

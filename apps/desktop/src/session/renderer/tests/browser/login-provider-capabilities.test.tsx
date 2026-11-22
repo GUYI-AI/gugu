@@ -5,6 +5,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 import { i18n } from '@/i18n'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
+import { queryClient } from '@/lib/replica'
 
 vi.mock('@/lib/auth', () => ({ authService: {} }))
 vi.mock('@/lib/sessionCoordinator', () => ({ sessionCoordinator: {} }))
@@ -21,7 +22,8 @@ const rect = (node: Element) => {
 }
 
 beforeAll(async () => { await i18n.changeLanguage('zh-CN') })
-afterEach(() => { root?.unmount(); host?.remove(); vi.unstubAllGlobals(); document.documentElement.removeAttribute('data-theme') })
+// Each case starts on a device that has never read the sign-in methods (no answer in memory or kept across restarts).
+afterEach(() => { root?.unmount(); host?.remove(); queryClient.clear(); localStorage.clear(); vi.unstubAllGlobals(); document.documentElement.removeAttribute('data-theme') })
 
 for (const mode of ['on', 'off', 'timeout', 'error'] as const) for (const theme of (mode === 'on' || mode === 'off' ? ['light', 'dark'] : ['light'])) {
   it(`keeps the App login card stable for backend ${mode}, ${theme}`, async () => {

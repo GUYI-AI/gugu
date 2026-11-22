@@ -3,7 +3,7 @@ import { orderMessages } from './messageTimeline'
 import type { MessageItem, ReactionGroup } from '../types/chat'
 import type { FileMetadata, FileRevision } from '../fileResolver'
 
-function sameReactions(a: ReactionGroup[] = [], b: ReactionGroup[] = []): boolean {
+export function sameReactions(a: ReactionGroup[] = [], b: ReactionGroup[] = []): boolean {
   if (a === b) return true
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {

@@ -4,34 +4,31 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { log } from '@renderer/utils/logger';
 import { extensionsQuitChangedChannel } from '@shared/extensions/marketEvents';
 import { extensionViewStore } from './extension-view-store';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { fetchInstalledApps, installedExtensions, LOCAL_HOST, peekInstalledApps, writeInstalled, type InstalledApps } from './installed-extensions';
 import { openInWindow, returnToScreen, revealAppBlock, takeAppOffScreen } from '@renderer/app/screen-layout-actions';
 import { appPlacementStore } from './app-placement-store';
 
-/**
- * The far-left rail's dock — this machine's Apps pinned there, in order. One write of the whole list, as main keeps it:
- * pinning, taking off and reordering are the same verb. Optimistic, the answer kept; a refusal puts the list back and
- * reaches the caller, which says it.
- */
+/** The rail's dock: pinning, taking off and reordering are one write of the whole list. */
 export async function setDock(ids: readonly string[]): Promise<void> {
-  const store = installedExtensionsStore;
-  const before = store.dock;
-  store.applyDock(ids);
-  try {
+  await writeInstalled(LOCAL_HOST, (list) => ({ ...list, dock: [...ids] }), async () => {
     const result = await rpc.extensions.setDock({ ids: [...ids] });
     if (!result.success || !result.data) throw new Error(result.error ?? 'the dock was not changed');
-    store.applyDock(result.data.dock);
-  } catch (error) {
-    store.applyDock(before);
-    throw error;
-  }
+    return result.data.dock;
+  }, (dock) => (list) => ({ ...list, dock }));
+}
+
+/** A pin is a click on a drawn rail, so the list is known. */
+function dockNow(): string[] {
+  const apps = peekInstalledApps(LOCAL_HOST);
+  if (!apps) throw new Error('what is installed is not known yet');
+  return apps.dock;
 }
 
 export const pinToDock = (extensionId: string) =>
-  setDock([...installedExtensionsStore.dock.filter((id) => id !== extensionId), extensionId]);
+  setDock([...dockNow().filter((id) => id !== extensionId), extensionId]);
 
 export const unpinFromDock = (extensionId: string) =>
-  setDock(installedExtensionsStore.dock.filter((id) => id !== extensionId));
+  setDock(dockNow().filter((id) => id !== extensionId));
 
 /**
  * Whether an App is running now — the dot beside its icon on the rail, as the macOS dock marks a running app (#7050).
@@ -39,10 +36,9 @@ export const unpinFromDock = (extensionId: string) =>
  * or one opened for a file. And while it is on, if it has a background: that one lives exactly as long as the App is on
  * (extension-background.ts) — so being on and declaring one IS its running, not a copy of main's state.
  */
-export function appIsRunning(extensionId: string): boolean {
-  const store = installedExtensionsStore;
-  if (store.isEnabled(extensionId) && !store.quit.includes(extensionId) && store.manifestFor(extensionId)?.background?.entry) return true;
-  const kinds = new Set<string>(store.allTabContributions.filter((entry) => entry.extensionId === extensionId).map((entry) => entry.kind));
+export function appIsRunning(apps: InstalledApps, extensionId: string): boolean {
+  if (apps.isEnabled(extensionId) && !apps.quit.includes(extensionId) && apps.manifestFor(extensionId)?.background?.entry) return true;
+  const kinds = new Set<string>(apps.allTabContributions.filter((entry) => entry.extensionId === extensionId).map((entry) => entry.kind));
   return [...extensionViewStore.residentPages.values()].some((page) => kinds.has(page.kind));
 }
 
@@ -51,7 +47,8 @@ export function appIsRunning(extensionId: string): boolean {
  * 把它那一枚翻到前面;哪都没摆着才整页打开(behavior tab-extensions「一个 App 只有一份、放在哪就在哪」,#7052)。
  */
 export function openApp(extensionId: string, tab?: string): LinkPlace | 'own' {
-  const main = tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.extensionId === extensionId && entry.kind === `${extensionId}.${tab}`) : installedExtensionsStore.mainTabOf(extensionId);
+  const apps = peekInstalledApps(LOCAL_HOST);
+  const main = !apps ? null : tab ? apps.allTabContributions.find((entry) => entry.extensionId === extensionId && entry.kind === `${extensionId}.${tab}`) ?? null : apps.mainTabOf(extensionId);
   // 它正自己占着一块(spec session-page「一屏几块」):去会话页、看那一块。
   if (main && revealAppBlock(main.kind)) return 'own';
   const placed = main ? appPlacementStore.of(main.kind) : undefined;
@@ -82,7 +79,7 @@ export function openApp(extensionId: string, tab?: string): LinkPlace | 'own' {
  * 正看着它的整页 = 先回到它后面那一页(和「退出」同一处),❌ 留一张空的整页在主窗里。
  */
 export function openAppInWindow(extensionId: string): void {
-  const main = installedExtensionsStore.mainTabOf(extensionId);
+  const main = peekInstalledApps(LOCAL_HOST)?.mainTabOf(extensionId);
   if (!main) return;
   leaveAppPage(extensionId);
   openInWindow({ kind: 'app', tabKind: main.kind });
@@ -103,8 +100,7 @@ function leaveAppPage(extensionId: string): void {
  * (正看着就回到任务)、群里开着它的那个页签(GroupTabContent 看到退出了自己关)。收完之后,藏着活的页一并销毁。
  */
 export async function quitApp(extensionId: string): Promise<void> {
-  const store = installedExtensionsStore;
-  const kinds = store.allTabContributions.filter((entry) => entry.extensionId === extensionId);
+  const kinds = (await fetchInstalledApps(LOCAL_HOST)).allTabContributions.filter((entry) => entry.extensionId === extensionId);
   for (const { kind } of kinds) {
     appPlacementStore.take(kind);
     takeAppOffScreen(kind);
@@ -113,7 +109,8 @@ export async function quitApp(extensionId: string): Promise<void> {
   leaveAppPage(extensionId);
   const result = await rpc.extensions.quit({ extensionId });
   if (!result.success || !result.data) throw new Error(result.error ?? 'the App was not quit');
-  store.applyQuit(result.data.quit);
+  const { quit } = result.data;
+  installedExtensions.set([LOCAL_HOST], (list) => list && { ...list, quit });
   // The places above unmount on the next render; only then are its pages idle, and those go.
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   for (const { kind } of kinds) extensionViewStore.forgetIdle(kind);
@@ -121,5 +118,5 @@ export async function quitApp(extensionId: string): Promise<void> {
 
 /** Main says which Apps are quit whenever that changes — reopened from anywhere (a tab, a file, the rail) included. */
 export function wireAppQuit(): () => void {
-  return events.on(extensionsQuitChangedChannel, ({ quit }) => installedExtensionsStore.applyQuit(quit));
+  return events.on(extensionsQuitChangedChannel, ({ quit }) => installedExtensions.set([LOCAL_HOST], (list) => list && { ...list, quit }));
 }

@@ -1,22 +1,18 @@
 import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessions, sessionTurns } from '@main/db/schema';
-import { events } from '@main/lib/events';
-import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
+import { sessions } from '@main/db/schema';
 import { resolveWorkspace } from '../projects/utils';
 import { createAttachmentUploads } from '../files/attachment-uploads';
 import { ATTACHMENT_UPLOAD_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
 import type { TranscriptMessage, TranscriptTurn } from '@gugu/session-core/acp/client';
 import { noteNativeConversationReplies } from './session-conversation-read';
-import { renumberStoredTurn, withStoredTurns } from './session-turn-store';
 import { readCurrentTurnIdentity } from './session-activity-source';
-import { setOwnerNotificationHead } from './owner-notification-state';
 import { nativePublicationContext } from './native-publication-host';
-import { recordNativePublicationTurn } from './native-publication-turn';
-export { ownerNotificationHead } from './owner-notification-state';
+import { prepareNativePublicationTurn } from './native-publication-turn';
+import { appendJournalTurn, journalTurns } from './session-journal';
 
 export type OwnerNotificationInput = {
   request_id: string; agent_user_id: string; text: string;
@@ -48,7 +44,26 @@ async function snapshotFile(root: string, input: OwnerNotificationInput): Promis
   return [{ path: join(root, saved.workspacePath), name: input.file.name, mimeType: input.file.mime_type, sizeBytes: bytes.length, sha256: spec.sha256 }];
 }
 
-/** The host supplies the caller coordinates and revalidates identity immediately before committing. */
+// One session's notifications commit one after another: the retry of a request finds the first one written.
+const tails = new Map<string, Promise<unknown>>();
+function serially<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+  const next = (tails.get(sessionId) ?? Promise.resolve()).then(task, task);
+  const tail = next.then(() => undefined, () => undefined);
+  tails.set(sessionId, tail);
+  void tail.then(() => { if (tails.get(sessionId) === tail) tails.delete(sessionId); });
+  return next;
+}
+
+const notificationOf = (turn: TranscriptTurn) => {
+  const item = turn.items[0];
+  return item?.kind === 'message' ? item.ownerNotification : undefined;
+};
+
+/**
+ * The host supplies the caller coordinates and revalidates identity immediately before committing. The notification
+ * is a turn of the session's journal (the timeline reads it there, among the agent's turns by time); its request id
+ * names it, so a retry finds it.
+ */
 export async function commitOwnerNotification(context: Context, input: OwnerNotificationInput, beforeCommit: () => Promise<void>, signal?: AbortSignal) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)
     || typeof input.text !== 'string' || (!input.text.trim() && !input.file)) throw new Error('Invalid owner notification');
@@ -59,14 +74,16 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
   if (input.file && !workspace) throw new Error('The sending session workspace is not mounted');
   const sourceId = `owner-notify:${input.request_id}`;
   const requestHash = hash(Buffer.from(JSON.stringify([input.agent_user_id, input.text, input.file?.path, input.file?.name, input.file?.mime_type])));
-  return withStoredTurns(context.sessionId, async () => {
+  const receipt = (files: NonNullable<TranscriptMessage['ownerNotification']>['files']) =>
+    ({ status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, ...(files?.[0] ? { file_name: files[0].name } : {}) });
+  return serially(context.sessionId, async () => {
     signal?.throwIfAborted();
     await beforeCommit();
-    const existing = db.select().from(sessionTurns).where(and(eq(sessionTurns.sessionId, context.sessionId), eq(sessionTurns.turnId, sourceId))).get();
+    const existing = (await journalTurns(context.sessionId)).find(turn => turn.id === sourceId);
     if (existing) {
-      const previous = (JSON.parse(existing.data) as TranscriptTurn).items[0];
-      if (previous?.kind !== 'message' || previous.ownerNotification?.requestHash !== requestHash) throw new Error('Owner notification request_id was already committed with different content');
-      return { status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, seq: existing.seq, ...(previous.ownerNotification.files?.[0] ? { file_name: previous.ownerNotification.files[0].name } : {}) };
+      const previous = notificationOf(existing);
+      if (previous?.requestHash !== requestHash) throw new Error('Owner notification request_id was already committed with different content');
+      return receipt(previous.files);
     }
     const sourceTurnId = await readCurrentTurnIdentity(context.sessionId);
     const files = input.file ? await snapshotFile(workspace!.path, input) : undefined;
@@ -75,28 +92,22 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
     const publication = await nativePublicationContext(context.sessionId, true);
     if (publication && publication.agentUserId !== input.agent_user_id) throw new Error('Owner notification identity changed before publication');
     const at = Date.now();
-    let publish: (() => void) | undefined;
-    const seq = db.transaction(tx => {
+    const prepared = prepareNativePublicationTurn({ sessionId: context.sessionId, rowId: sourceId, source: 'live', context: publication, turn: { id: sourceId, seq: 0, initiator: 'agent', trigger: { kind: 'agent' }, startedAt: at, endedAt: at,
+      outcome: { kind: 'done' }, items: [{ kind: 'message', id: `${sourceId}:message:${input.request_id}`, seq: 0, role: 'assistant',
+        text: input.text || files![0]!.name, at, ownerNotification: { requestId: input.request_id, requestHash, ...(sourceTurnId ? { sourceTurnId } : {}), ...(files ? { files } : {}) } }] } }, db);
+    const publish = db.transaction(tx => {
       const current = tx.select().from(sessions).where(eq(sessions.id, context.sessionId)).get();
       if (!current || current.archivedAt || current.projectId !== context.projectId || current.workspaceId !== context.workspaceId) throw new Error('The sending session changed before the owner notification committed');
-      const tail = tx.select({ seq: sessionTurns.seq }).from(sessionTurns).where(eq(sessionTurns.sessionId, context.sessionId)).orderBy(desc(sessionTurns.seq)).limit(1).get();
-      const next = (tail?.seq ?? -1) + 1;
-      const turn = recordNativePublicationTurn({ sessionId: context.sessionId, rowId: `${context.sessionId}:${next}`, source: 'live', context: publication, turn: renumberStoredTurn({ id: sourceId, seq: next, initiator: 'agent', trigger: { kind: 'agent' }, startedAt: at, endedAt: at,
-        outcome: { kind: 'done' }, items: [{ kind: 'message', id: `${sourceId}:message:${input.request_id}`, seq: 0, role: 'assistant',
-          text: input.text || files![0]!.name, at, ownerNotification: { requestId: input.request_id, requestHash, ...(sourceTurnId ? { sourceTurnId } : {}), ...(files ? { files } : {}) } }] }, context.sessionId, next) }, tx);
-      tx.insert(sessionTurns).values({ id: `${context.sessionId}:${next}`, sessionId: context.sessionId, seq: next, turnId: sourceId, data: JSON.stringify(turn) }).run();
-      setOwnerNotificationHead(context.sessionId, next, tx);
-      publish = noteNativeConversationReplies(context.sessionId, turn, turn, tx);
-      return next;
+      prepared.commit(tx);
+      return noteNativeConversationReplies(context.sessionId, prepared.turn, prepared.turn, tx);
     });
+    await appendJournalTurn(context.sessionId, prepared.turn);
     publish?.();
-    events.emit(sessionChangedChannel, { sessionId: context.sessionId, projectId: context.projectId, changes: { nativeOwnerNotificationSeq: true } });
-    return { status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, seq, ...(files?.[0] ? { file_name: files[0].name } : {}) };
+    return receipt(files);
   });
 }
 
 /** Notification snapshots are authorized by their actual durable session message, not by arbitrary paths. */
-export function ownerNotificationFile(sessionId: string, path: string): boolean {
-  return db.select({ data: sessionTurns.data }).from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'owner-notify:%'))).all().some(row =>
-    (JSON.parse(row.data) as TranscriptTurn).items.some(item => item.kind === 'message' && item.ownerNotification?.files?.some(file => file.path === path)));
+export async function ownerNotificationFile(sessionId: string, path: string): Promise<boolean> {
+  return (await journalTurns(sessionId)).some(turn => notificationOf(turn)?.files?.some(file => file.path === path));
 }

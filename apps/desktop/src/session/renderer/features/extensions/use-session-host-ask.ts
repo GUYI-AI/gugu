@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ComposerPermissionRequest } from '@gugu/session-ui/react/components';
-import { settlementFromWire, type AskSource, type Settlement, type SessionpageSessionEvent, type TimelineAfterResult } from '@gugu/session-core/session-record/contract';
+import type { AskSource, RecordCursor, Settlement, SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { appInstallAskOf } from '@shared/extensions/host-actions';
 import { deviceCapabilityAskOf } from '@shared/device-capability-ask';
@@ -13,9 +13,10 @@ import { log } from '@renderer/utils/logger';
 import { answerAppInstall, answeredTooLate, appInstallWords, sessionWaitsOnApproval } from './app-install-approval';
 import { deviceCapabilityWords } from './device-capability-approval';
 import { latestAgentQuestion } from '@/lib/agentQuestion';
+import { batchDiscontinuity, mergeSettlements } from '@/components/session-watch/agent-watch-store';
 
-const pendingHostAsk = (settlements: ReadonlyMap<string, Settlement>, sources: readonly AskSource[]): Settlement | null =>
-  [...settlements.values()].find((settlement) => settlement.origin && sources.includes(settlement.origin.source) && settlement.state === 'pending') ?? null;
+const pendingHostAsk = (settlements: Readonly<Record<string, Settlement>>, sources: readonly AskSource[]): Settlement | null =>
+  Object.values(settlements).find((settlement) => settlement.origin && sources.includes(settlement.origin.source) && settlement.state === 'pending') ?? null;
 /** The host's approvals the band answers (an agent's question has its own card). */
 const HOST_APPROVALS: readonly AskSource[] = ['app-install', 'device-capability'];
 
@@ -33,37 +34,61 @@ export function useSessionHostAsk(
   useEffect(() => {
     setAsk(null);
     if (!sessionId) return;
-    let alive = true;
-    const settlements = new Map<string, Settlement>();
-    const take = (batch: readonly Settlement[]) => {
-      for (const settlement of batch) settlements.set(settlement.itemId, settlementFromWire(settlement));
-      if (alive) setAsk(includeDiscussion
-        ? latestAgentQuestion(Object.fromEntries([...settlements].filter(([, item]) => item.origin && sources.includes(item.origin.source))))
+    let settlements: Readonly<Record<string, Settlement>> = {};
+    const take = (next: Readonly<Record<string, Settlement>>) => {
+      settlements = next;
+      setAsk(includeDiscussion
+        ? latestAgentQuestion(Object.fromEntries(Object.entries(settlements).filter(([, item]) => item.origin && sources.includes(item.origin.source))))
         : pendingHostAsk(settlements, sources));
     };
-    const subscriptionId = crypto.randomUUID();
     const there = rpcOn(machineRegistry.machineOf(sessionId));
-    // Listen first: an ask between the snapshot and the subscription must not slip past.
-    const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
-      const result = event.result as TimelineAfterResult;
-      if (!result.ok) {
-        settlements.clear();
-        take(result.snapshot.settlements);
-      } else take(result.batch.settlements);
-    }, subscriptionId);
-    void (async () => {
-      const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
-      if (!alive || !snapshot.ok) return;
-      take(snapshot.value.settlements);
-      await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
-    })().catch((error: unknown) =>
-      log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) })
-    );
-    return () => {
-      alive = false;
-      off();
-      void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
+    let close = () => undefined as void;
+    // @@@host-ask-reread - one snapshot + subscription per timeline generation. A batch that does not continue what is held
+    // (`batchDiscontinuity`: another epoch — a new session's stand-in replaced by its real record — or skipped seqs) is
+    // read again, by the same rule as the session page's own timeline (agent-watch-store `applyBatch`). A generation
+    // closed before its snapshot or subscription lands takes nothing, and closes the subscription it opened late.
+    const open = () => {
+      close();
+      const subscriptionId = crypto.randomUUID();
+      let current = true;
+      let cursor: RecordCursor | null = null;
+      // Listen first: an ask between the snapshot and the subscription must not slip past.
+      const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
+        const result = event.result as TimelineAfterResult;
+        if (!result.ok) {
+          cursor = result.snapshot.cursor;
+          take(mergeSettlements({}, result.snapshot.settlements));
+          return;
+        }
+        const { batch } = result;
+        if (batchDiscontinuity(cursor, batch)) return open();
+        // Only a batch that moves forward may reopen an answered ask; a replay may not (`mergeSettlements`).
+        const newer = !cursor || batch.cursor.seq > cursor.seq;
+        if (newer) cursor = batch.cursor;
+        take(mergeSettlements(settlements, batch.settlements, newer));
+      }, subscriptionId);
+      const unsubscribe = () => there.sessionTimeline.sessionUnsubscribe({ subscriptionId });
+      close = () => {
+        current = false;
+        off();
+        void unsubscribe().catch(() => undefined);
+      };
+      void (async () => {
+        const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
+        if (!current) return;
+        if (!snapshot.ok) throw new Error(`sessionSnapshot refused: ${snapshot.error.code}: ${snapshot.error.message}`);
+        cursor = snapshot.value.cursor;
+        take(mergeSettlements({}, snapshot.value.settlements));
+        const subscribed = await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
+        // Closed while subscribing: its unsubscribe went first, so this subscription would stay open with nobody listening.
+        if (!current) return void await unsubscribe();
+        if (!subscribed.ok) throw new Error(`sessionSubscribe refused: ${subscribed.error.code}: ${subscribed.error.message}`);
+      })().catch((error: unknown) =>
+        log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) })
+      );
     };
+    open();
+    return () => close();
   }, [sessionId, sources, includeDiscussion]);
   return ask;
 }

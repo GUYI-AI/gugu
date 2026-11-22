@@ -21,7 +21,3 @@ export function classifyDocumentPreview(file: Pick<AttachmentMeta, 'fileName' | 
   if (/^video\/(mp4|webm|quicktime)$/.test(mime) || /^(mp4|m4v|mov|webm)$/.test(extension)) return 'video' // 三个宿主都能直接播的容器;avi、mkv 照旧交给系统应用
   return 'unsupported'
 }
-
-export function documentPreviewNeedsFetch(kind: DocumentPreviewKind): boolean {
-  return kind !== 'unsupported' && kind !== 'video' // 视频由 <video> 按需分段取,❌ 整段读进内存
-}

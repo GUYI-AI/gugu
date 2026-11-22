@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import {
   ShellNavigationHistory,
   type ShellLocation,
   type ShellLocationReachable,
 } from '../lib/shellNavigationHistory'
-import {
-  readSessionpageHistory,
-  SESSIONPAGE_HISTORY_READY_EVENT,
-  type SessionpageHistory,
-} from '../lib/sessionpageHistoryBridge'
+import { sessionpageHistoryBridge, type SessionpageHistory } from '../lib/sessionpageHistoryBridge'
+import { useSelect } from '../lib/selectStore'
 
 export interface ShellNavigation {
   canGoBack: boolean
@@ -25,21 +22,13 @@ function locationKey(location: ShellLocation): string {
   return location.tab === 'chats' ? `chats:${location.chatId ?? ''}` : location.tab
 }
 
+const NO_SESSIONPAGE_HISTORY = { get: () => 0, subscribe: () => () => undefined }
+
 function useSessionpageHistory(): SessionpageHistory | null {
-  const [history, setHistory] = useState<SessionpageHistory | null>(() => readSessionpageHistory())
-  const [, rerender] = useReducer((n: number) => n + 1, 0)
-
-  useEffect(() => {
-    // 会话页比壳晚加载(也会热更新重挂),挂上来时广播一次,这里重新读。
-    const onReady = () => setHistory(readSessionpageHistory())
-    window.addEventListener(SESSIONPAGE_HISTORY_READY_EVENT, onReady)
-    onReady()
-    return () => window.removeEventListener(SESSIONPAGE_HISTORY_READY_EVENT, onReady)
-  }, [])
-
+  // 会话页比壳晚加载(也会热更新重挂):挂上来时广播一次,这里换成新的那份。
+  const history = useSelect(sessionpageHistoryBridge, (bridge) => bridge, Object.is)
   // 会话页的游标一动(它自己的 ← →、换任务、换页签),按钮的可用态跟着重算。
-  useEffect(() => history?.subscribe(rerender), [history])
-
+  useSelect(history ?? NO_SESSIONPAGE_HISTORY, (index) => index, Object.is)
   return history
 }
 

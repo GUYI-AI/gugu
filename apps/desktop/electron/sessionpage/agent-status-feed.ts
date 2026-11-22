@@ -17,9 +17,11 @@ import { guguAgentUserIdForSession } from './sessionpage-session-agent'
 
 const log = createLogger('sessionpage/agent-status-feed')
 
-export type AgentStatusFeedEntry = Omit<AgentStatusChange, 'reading' | 'projectId'> & {
+export type AgentStatusFeedEntry = Omit<AgentStatusChange, 'reading' | 'projectId' | 'activityAt'> & {
   agentUserId: string
   reading: AgentStatusReading | null
+  /** 绑的那条会话最后一次有动静的时刻(ISO,会话行 lastInteractedAt);null = 还没有过。 */
+  lastInteractedAt: string | null
   /** The bound session's lifecycle; null = session-life does not own it (terminal legs). */
   life: LifeStatus | null
 }
@@ -45,6 +47,8 @@ type Listener = (
 
 export class AgentStatusFeed {
   private readonly changes = new Map<string, AgentStatusChange>()
+  /** 每条会话最后一次动静的时刻:变化与快照谁先到都取较新的那个(读数会被没有动静的变化盖掉,这一格不会)。 */
+  private readonly activityAt = new Map<string, number>()
   private readonly agentOf = new Map<string, string>()
   private readonly sessionOf = new Map<string, string>()
   private readonly entries = new Map<string, AgentStatusFeedEntry>()
@@ -101,6 +105,7 @@ export class AgentStatusFeed {
   dispose(): void {
     for (const dispose of this.disposers.splice(0)) dispose()
     this.changes.clear()
+    this.activityAt.clear()
     this.agentOf.clear()
     this.sessionOf.clear()
     this.entries.clear()
@@ -108,6 +113,9 @@ export class AgentStatusFeed {
 
   private async observe(change: AgentStatusChange, deps: { env: NodeJS.ProcessEnv; warn?: (message: string) => void }) {
     this.changes.set(change.sessionId, change)
+    if (change.activityAt !== undefined && change.activityAt > (this.activityAt.get(change.sessionId) ?? 0)) {
+      this.activityAt.set(change.sessionId, change.activityAt)
+    }
     const bound = this.agentOf.get(change.sessionId)
     if (bound) {
       this.publish(bound)
@@ -143,6 +151,7 @@ export class AgentStatusFeed {
     for (const [sessionId, change] of [...this.changes]) {
       if (!sessionInScope(change, scope)) continue
       this.changes.delete(sessionId)
+      this.activityAt.delete(sessionId)
       const agentUserId = this.agentOf.get(sessionId)
       if (!agentUserId) continue
       this.agentOf.delete(sessionId)
@@ -156,10 +165,12 @@ export class AgentStatusFeed {
     const change = sessionId ? this.changes.get(sessionId) : undefined
     const previous = this.entries.get(agentUserId) ?? null
     const life = sessionId ? this.lifeOf(sessionId) : null
+    const activityAt = sessionId ? this.activityAt.get(sessionId) : undefined
     // The lifecycle stands on its own: a session that is starting (or failed) before its first status reading shows so.
     const next: AgentStatusFeedEntry | null = sessionId && (change || life)
       ? { sessionId, agentUserId, reading: change?.reading ?? null, unseen: change?.unseen ?? false, reviewGate: change?.reviewGate ?? null,
         providerBlocker: change?.providerBlocker ?? null, statusSourceFault: change?.statusSourceFault ?? null,
+        lastInteractedAt: activityAt === undefined ? null : new Date(activityAt).toISOString(),
         life: life ? { kind: life.kind, stage: life.stage, ...(life.processExited ? { processExited: true } : {}) } : null }
       : null
     if (previous === null && next === null) return
@@ -185,6 +196,7 @@ function sameEntry(a: AgentStatusFeedEntry, b: AgentStatusFeedEntry): boolean {
     && a.reviewGate === b.reviewGate
     && a.providerBlocker?.message === b.providerBlocker?.message
     && a.statusSourceFault === b.statusSourceFault
+    && a.lastInteractedAt === b.lastInteractedAt
     && JSON.stringify(a.reading) === JSON.stringify(b.reading)
     && JSON.stringify(a.life) === JSON.stringify(b.life)
   )

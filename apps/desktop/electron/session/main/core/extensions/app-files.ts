@@ -59,7 +59,7 @@ import { fileIconKey } from '@shared/extensions/app-icon';
 import { claimantOf, openerChoice as chatOpenerChoice, requireOwnTabChoice } from '@shared/extensions/file-openers';
 import { sessionHostLocale } from '@main/core/host-locale';
 import { localizedManifestText } from '@shared/extensions/catalog';
-import { PACKAGE_MESSAGE_SELECT, type PackageMessageRow, type PackageReads } from '@shared/extensions/attachment-install';
+import type { PackageMessageRow, PackageReads } from '@shared/extensions/attachment-install';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { events } from '@main/lib/events';
 import { appFileHeardElsewhereChannel, appFileWatchElsewhereChannel, workingCopyMovedChannel } from '@shared/events/appEvents';
@@ -68,6 +68,7 @@ import { folderElsewhereRefusal } from '@shared/extensions/machine-call';
 import { readOneVersion, uploadInParts } from '@shared/extensions/working-copy-upload';
 import { log } from '@main/lib/logger';
 import type { HandedFile } from '@main/core/extensions/working-copy-files';
+import { changedOnItsMachine, machineFileStreams, openStreamVersion, streamedRange, streamGoesOn } from '@main/core/files/machine-file-streams';
 import { isValidOpenInAppId } from '@shared/openInApps';
 
 /**
@@ -212,22 +213,23 @@ export async function readAccount(id: string) {
 }
 
 /**
- * #7290 How main reads a card's message and signs its bytes for an install (`resolveAttachmentPackage`): as the signed-in
- * person — the chat's own rules, a message they cannot read is not there. Asked only for a card by its message.
+ * #7290 How main reads a card's message and signs its bytes for an install (`resolveAttachmentPackage`): as its reader —
+ * the agent whose `app_install` named it, else the signed-in person (`chat.messages_by_id_as`, the chat's own rules: a
+ * message they cannot read is not there). Asked only for a card by its message.
  */
 export const packageReads: PackageReads = {
-  async message(messageId) {
+  async message(messageId, reader) {
     const me = await signedIn();
     if (!me) throw new AppFileError('failed', 'Not signed in');
     const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${me.token}` } });
-    const { data, error } = await client.from('messages_view').select(PACKAGE_MESSAGE_SELECT).eq('id', messageId).maybeSingle();
+    const { data, error } = await client.rpc('messages_by_id_as', { p_as: reader ?? me.userId, p_id: messageId });
     if (error) throw new AppFileError('failed', error.message);
-    return (data as unknown as PackageMessageRow | null) ?? null;
+    return ((data as unknown as PackageMessageRow[] | null) ?? [])[0] ?? null;
   },
-  async open(source) {
+  async open(source, reader) {
     const ref = attachmentFileRef(source);
     if (!ref) return null;
-    const file = await resolveAccountFile(ref);
+    const file = await resolveAccountFile(ref, reader);
     return file?.status === 'ready' ? file : null;
   },
 };
@@ -396,8 +398,59 @@ export async function readAppFile(page: DesktopFilePage, args: { ref?: unknown; 
   return workspaceAppFileChunk(await workingCopyPiece(page, ref, offset, length));
 }
 
+/**
+ * @@@working-copy-stream - a piece of a working copy's file on another of this account's machines that a device link
+ * reaches: read from one stream of that file (`@@@machine-file-stream`) instead of one call per piece. The pieces a
+ * reader asks for come front to back (whole-file reads, `f.read` in order); one that jumps starts the stream again there,
+ * of the same version. The version is anchored by `filesRead` of no bytes, the same call and gate the pieces had.
+ * null = a machine no device link reaches (or a server below 19): the caller reads its pieces the way its channel goes.
+ * A linked machine never comes back null for how its link is doing: a link that will not open, or a stream that cannot
+ * go on, fails the read loudly (the stream itself resumes over the link first, `openLinkStream`).
+ */
+async function streamedPiece(page: DesktopFilePage, ref: WorkspaceFileRef, offset: number, length: number) {
+  const streams = machineFileStreams();
+  if (!streams) return null;
+  // The same gates as the call it replaces (`onItsMachine`), before any link is opened for it.
+  const folder = await folderElsewhere(ref);
+  if (folder) {
+    const refusal = folderElsewhereRefusal('filesRead', (capability) => extensionsService().hasCapability(page.extensionId, capability));
+    if (refusal) throw refusal;
+  }
+  const deviceId = folder?.deviceId ?? (await elsewhereGated(page, ref) ? (await sessionElsewhere(ref))?.deviceId : undefined);
+  if (!deviceId) return null;
+  const name = 'id' in ref ? ref.id : ref.name;
+  const key = `app\0${page.pageId}\0${placeKey(ref)}\0${name}`;
+  // A read going on from where it is goes on on its stream; any other piece asks the link first (streams or fails loudly).
+  const goesOn = streamGoesOn(key, offset);
+  if (!goesOn && !(await streams.linked(deviceId))) return null;
+  // A jump inside an open stream keeps its version; a new read anchors one.
+  let version = openStreamVersion(key);
+  if (!version) {
+    const anchor = await onItsMachine(page, ref, 'filesRead', { ref, offset: 0, length: 0 });
+    if (!anchor.there) return null;
+    const value = anchor.value as { size: number; etag: string };
+    version = { size: value.size, etag: value.etag };
+  }
+  if (offset >= version.size) return { size: version.size, etag: version.etag, offset, data: '' };
+  const { etag } = version;
+  const handed = handedOf(page);
+  let bytes: Uint8Array;
+  try {
+    bytes = await streamedRange(key, deviceId, version, (at, stream) => ({ ref, offset: at, etag, stream, ...(handed ? { handed } : {}) }), offset, length);
+  } catch (error) {
+    if (changedOnItsMachine(error)) throw new AppFileError('content-changed', `${pathOfRef(ref)} changed on its computer while it was read`);
+    throw error;
+  }
+  return { size: version.size, etag, offset, data: Buffer.from(bytes).toString('base64') };
+}
+
 /** A piece of a working copy's file, on the machine it is on. */
 async function workingCopyPiece(page: DesktopFilePage, ref: WorkspaceFileRef, offset: number, length: number) {
+  const streamed = await streamedPiece(page, ref, offset, length);
+  if (streamed) return streamed;
+  // @@@cloud-only-pieces - a machine no device link reaches (no SSH mapping, no tunnel link) has only its cloud channel,
+  // where raw stream frames do not travel: its pieces stay one call each. They go when stream frames travel there too,
+  // or when no such machine is left.
   const there = await onItsMachine(page, ref, 'filesRead', { ref, offset, length });
   if (there.there) return there.value as { size: number; etag: string; offset: number; data: string };
   const { readWorkingCopy } = await import('./working-copy-files');
@@ -868,11 +921,11 @@ export const viewedAmong = files.viewedAmong;
 /** A page naming a chat file to open: refused, as `openWithTarget` would, before anything is read. */
 export const mayOpen = (page: DesktopFilePage, itemId: string): void => files.mayName(chatSurface(page), itemId, 'opening');
 
-/** API 14 `chatFile`: the file an App opened in this chat shows, as that file opened with it (made the first time). */
-export function appChatFile(chatId: string, extensionId: string) {
+/** An App opened in a chat other than as a page of its own: the file it names there (made the first time), or its files there. */
+export function appInChat(chatId: string, extensionId: string) {
   const service = extensionsService();
   const manifest = service.list().extensions.find((entry) => entry.manifest.id === extensionId && service.isEnabled(extensionId))?.manifest;
-  return files.appChatFile(chatId, manifest);
+  return files.appInChat(chatId, manifest);
 }
 
 /**

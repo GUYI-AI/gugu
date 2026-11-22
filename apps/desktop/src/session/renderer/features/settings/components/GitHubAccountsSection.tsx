@@ -7,11 +7,8 @@ import {
 } from '@renderer/features/projects/components/github-account-select';
 import { sortGitHubAccountsByDefault } from '@renderer/features/projects/components/github-account-select-model';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import {
-  useGitHubAccounts,
-  useRemoveGitHubAccount,
-  useSetDefaultGitHubAccount,
-} from '@renderer/lib/hooks/useGithubAccounts';
+import { ReadingSlot } from '@/components/ui/ReadingSlot';
+import { useGitHubAccounts, useRemoveGitHubAccount, useSetDefaultGitHubAccount } from '@renderer/lib/hooks/useGithubAccounts';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { rpc } from '@renderer/lib/ipc';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
@@ -20,11 +17,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@rende
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { PRODUCT_NAME } from '@shared/app-identity';
 import type { GitHubAccountSummary } from '@shared/github';
-import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 
 export function GitHubAccountsSection() {
-  const { data: accounts = [], isLoading } = useGitHubAccounts();
-  const sortedAccounts = sortGitHubAccountsByDefault(accounts);
+  const accounts = useGitHubAccounts();
   const showConnectGitHub = useShowModal('githubConnectModal');
   const { translate } = useSessionMessages();
 
@@ -52,21 +47,18 @@ export function GitHubAccountsSection() {
         </TooltipProvider>
       </div>
 
-      {isLoading ? (
-        <div className="text-foreground-muted flex items-center gap-2 py-3 text-sm">
-          <LoadingIndicator size="inline" />
-          {translate('github.loading')}
-        </div>
-      ) : sortedAccounts.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3 dark:bg-foreground/[0.03]">
-          <div className="bg-background-2/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
-            <Github className="text-foreground-muted h-4 w-4" />
+      <ReadingSlot reading={accounts} placeholder="h-[60px] w-full rounded-lg" failed={() => translate('github.loadFailed')}>
+        {(value) => value.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3 dark:bg-foreground/[0.03]">
+            <div className="bg-background-2/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
+              <Github className="text-foreground-muted h-4 w-4" />
+            </div>
+            <p className="text-foreground-muted min-w-0 flex-1 text-sm">{translate('github.none')}</p>
           </div>
-          <p className="text-foreground-muted min-w-0 flex-1 text-sm">{translate('github.none')}</p>
-        </div>
-      ) : (
-        <GitHubAccountRows accounts={sortedAccounts} />
-      )}
+        ) : (
+          <GitHubAccountRows accounts={sortGitHubAccountsByDefault(value)} />
+        )}
+      </ReadingSlot>
     </section>
   );
 }

@@ -13,6 +13,8 @@ const sha = (data: Uint8Array) => createHash('sha256').update(data).digest('hex'
 const commitment = { size_bytes: bytes.length, sha256: sha(bytes), content_type: 'application/octet-stream' }
 const revision: FileRevision = { ...commitment, source: 'local', item_id: 'item', version: 1, chat_id: 'group', file_name: 'file.bin', relative_path: 'file.bin', host_account_id: 'owner', host_device_id: 'device', host_project_id: 'project' }
 const context = { ref: { item_id: 'item' }, actor: { accountId: 'owner', actorId: 'owner' } }
+const released = vi.fn()
+const serve = vi.fn(async (sha256: string, _contentType: string, _file: Pick<FileBytes, 'size' | 'read'>) => ({ url: `gugu-preview://served/${sha256}`, release: released }))
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'gugu-native-file-153-')); roots.push(root)
   let owner: string | null = 'owner'
@@ -22,7 +24,7 @@ async function fixture() {
   const openPath = vi.fn(async (_path: string) => '')
   const publish = vi.fn(async (_chat: string, _file: unknown, _actor: string, _message?: unknown): Promise<unknown> => ({ id: 'item', version: 1 }))
   const publication = vi.fn(async () => true)
-  const host = createNativeFileHost({ publish, publication, root, owner: async () => owner, alive: () => true, local, ssh, openPath, published: () => {} })
+  const host = createNativeFileHost({ publish, publication, root, owner: async () => owner, alive: () => true, local, ssh, openPath, published: () => {}, serve })
   const begin = () => host.stage(1, { op: 'begin', name: '../file.bin', revision: commitment }) as Promise<{ id: string }>
   return { root, host, publish, publication, local, ssh, file, openPath, begin, account: (value: string | null) => { owner = value } }
 }
@@ -41,6 +43,26 @@ describe('native file capabilities are scoped and never expose incomplete origin
     f.publish.mockImplementationOnce(() => { entered(); return new Promise(done => { finish = done }) })
     const pending = f.host.publish(1, request); await started; await f.host.drop(1); finish({ id: 'item', version: 1 })
     await expect(pending).rejects.toThrow('account or window changed')
+  })
+  // This machine's bytes (of a sha, or a file it holds) are served at an address, never in IPC frames; dispose takes it down.
+  it('serves this machine\'s bytes at an address, and nothing it does not hold', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gugu-native-file-153-')); roots.push(root)
+    const stored = vi.fn(async (sha256: string) => sha256 === 'a'.repeat(64) ? new Blob([bytes]) : null)
+    const host = createNativeFileHost({ root, owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, stored, serve })
+    const ref = { ref: { attachment_id: 'a'.repeat(64) }, actor: context.actor }
+    expect(await host.read(1, ref, { op: 'stored', sha256: 'b'.repeat(64) })).toBeNull()
+    const opened = await host.read(1, ref, { op: 'stored', sha256: 'a'.repeat(64), contentType: 'video/mp4' }) as { id: string; size: number; url: string }
+    expect(opened).toMatchObject({ size: bytes.length, url: `gugu-preview://served/${'a'.repeat(64)}` })
+    const served = serve.mock.calls.at(-1)!
+    expect(served[1]).toBe('video/mp4')
+    expect(await served[2].read(0, 3)).toEqual(bytes)
+    await expect(host.read(1, ref, { op: 'read', id: opened.id, offset: 0, length: 3 })).rejects.toThrow('read at its address')
+    released.mockClear()
+    await host.read(1, ref, { op: 'dispose', id: opened.id })
+    expect(released).toHaveBeenCalledOnce()
+    const f = await fixture()
+    const held = await f.host.read(1, context, { op: 'open', revision }) as { url: string }
+    expect(held.url).toBe(`gugu-preview://served/${revision.sha256}`)
   })
   it('plans a local publication without publishing a file or reading any bytes', async () => {
     const f = await fixture()
@@ -84,7 +106,7 @@ describe('native file capabilities are scoped and never expose incomplete origin
     const f = await fixture(), { id } = await f.begin()
     if (failure === 'truncated') await f.host.stage(1, { op: 'chunk', id, bytes: bytes.slice(0, 1) })
     if (failure === 'wrong SHA') await f.host.stage(1, { op: 'chunk', id, bytes: new Uint8Array([1, 2, 3]) })
-    if (failure === 'truncated' || failure === 'wrong SHA') await expect(f.host.stage(1, { op: 'commit', id })).rejects.toThrow('SHA-256 mismatch')
+    if (failure === 'truncated' || failure === 'wrong SHA') await expect(f.host.stage(1, { op: 'commit', id })).rejects.toThrow('integrity_failed: File SHA-256 mismatch')
     else if (failure === 'invalid bytes') await expect(f.host.stage(1, { op: 'chunk', id, bytes: '文字' as unknown as Uint8Array })).rejects.toThrow('Invalid file bytes')
     else await expect(f.host.stage(1, { op: 'chunk', id, bytes: new Uint8Array(failure === 'extra bytes' ? 4 : FILE_CHUNK_BYTES + 1) })).rejects.toThrow('Invalid file range')
     expect(await readdir(f.root)).toEqual([])
@@ -94,7 +116,7 @@ describe('native file capabilities are scoped and never expose incomplete origin
 
   it('refuses another renderer, account or actor without consuming the rightful file capability', async () => {
     const f = await fixture()
-    const opened = await f.host.read(1, context, { op: 'open', revision }) as { id: string }
+    const opened = await f.host.read(1, context, { op: 'ssh', revision }) as { id: string }
     await expect(f.host.read(2, context, { op: 'read', id: opened.id, offset: 0, length: 1 })).rejects.toThrow('unavailable')
     await expect(f.host.read(1, { ...context, actor: { accountId: 'owner', actorId: 'other-agent' } }, { op: 'read', id: opened.id, offset: 0, length: 1 })).rejects.toThrow('another reader')
     f.account('other-owner')

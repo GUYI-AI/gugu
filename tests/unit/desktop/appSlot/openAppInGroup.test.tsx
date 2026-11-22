@@ -19,27 +19,22 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => host.runs, grantable: (manifest: unknown) => host.grantable(manifest), installAttachment: vi.fn(), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => host.runs, grantable: (manifest: unknown) => host.grantable(manifest), installAttachment: vi.fn(), groupFileOpener: vi.fn(), appInChat: vi.fn(async () => ({ success: true, data: { files: [] } })), setOpenWithDefault: vi.fn() },
 }))
 const card = vi.hoisted(() => ({ manifest: null as unknown }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  summaryOf: async () => ({ ok: true, manifest: card.manifest }),
-  watchReading: () => () => {},
+  readPackageSummary: async () => ({ ok: true, manifest: card.manifest }),
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
-  showPackage: () => () => {},
-  newestShownPackage: () => undefined,
-  shownPackagesVersion: () => 0,
-  subscribeShownPackages: () => () => {},
-  sharedPackagesOf: async () => new Map(),
-  subscribeSharedPackages: () => () => {},
+  chatPackageCards: async () => [],
+  newestSharedPackages: <P,>(packages: P[]) => packages,
 }))
 
 const { phoneRuns } = await import('../../../../apps/desktop/src/components/appSlot/phoneAppHost')
 const { useChatOpener } = await import('../../../../apps/desktop/src/components/appSlot/useChatOpener')
 const { ExtensionBundleCard } = await import('../../../../apps/desktop/src/components/extensionBundle/ExtensionBundleCard')
 const { ChatStoreProvider } = await import('../../../../apps/desktop/src/store/chatContext')
-const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { UI_EVENTS } = await import('../../../../apps/desktop/src/lib/uiEvents')
 const { folderItem } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item')
 const { askChat, openPanelItem, panelTabsOf, chatPaneOf, shownPanelTab } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
@@ -53,10 +48,14 @@ const OWN_PAGE: Tab = { name: 'main', title: 'Board' }
 const GROUP_FILES: Tab = { name: 'main', title: 'Board', opensFiles: { chat: ['.board.json'] } }
 const SESSION_FILES: Tab = { name: 'main', title: 'Board', opensFiles: { session: ['TODO.md'] } }
 const install = (manifest: unknown) =>
-  act(() => installedExtensionsStore.applyList({ extensions: manifest ? [manifest] : [], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: manifest ? [manifest] : [], invalid: [] } as never))
+
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  // A card's package summary is the account's replica: a signed-in account reads it.
+  followRendererSession('SIGNED_IN', 'me')
   harness = createReactHarness()
   host.kind = 'electron'
   host.runs = true
@@ -105,20 +104,20 @@ describe('the chat on screen answers 「在本群打开」 (useChatOpener)', () 
 
   it('a link naming the App\'s own page opens the file it names here, as its card does: no second tab beside that one', async () => {
     const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
-    const appChatFile = vi.fn(async () => ({ success: false, error: 'read the file it names' }))
-    Object.assign(appsHere!, { appChatFile })
+    const appInChat = vi.fn(async () => ({ success: false, error: 'read the file it names' }))
+    Object.assign(appsHere!, { appInChat })
     const withChatFile = app([OWN_PAGE, { ...GROUP_FILES, name: 'file', chatFile: 'x.board.json' } as Tab])
     install(withChatFile)
     await harness.render(createElement(Chat, { id: 'link-1' }))
     askNow('link-1', { app: 'board', tab: 'main' })
     await act(async () => { await Promise.resolve() })
-    expect(appChatFile).toHaveBeenCalledWith({ chatId: 'link-1', extensionId: 'board' })
+    expect(appInChat).toHaveBeenCalledWith({ chatId: 'link-1', extensionId: 'board' })
     expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.main')
     // A tab the App does not have says so; it does not fall through to the file.
-    appChatFile.mockClear()
+    appInChat.mockClear()
     askNow('link-1', { app: 'board', tab: 'gone' })
     await act(async () => { await Promise.resolve() })
-    expect(appChatFile).not.toHaveBeenCalled()
+    expect(appInChat).not.toHaveBeenCalled()
     expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.gone')
     // Naming another tab still opens that one.
     askNow('link-1', { app: 'board', tab: 'file' })
@@ -190,7 +189,8 @@ describe("a card's 「打开」 is 「在本群打开」", () => {
         chatId: chat.id,
       })),
     )
-    await act(async () => {})
+    // The package's summary lands (its replica read, then react-query's notify).
+    await act(async () => { await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="extension-bundle-card-reading"]')).toBeNull()) })
   }
   const button = () => harness.container.querySelector<HTMLButtonElement>('[data-testid="extension-bundle-card-install"]')
 

@@ -45,18 +45,19 @@ describe('archived-agent delivery revisions', () => {
     const revalidate = vi.fn(async (chatId: string, throwOnError: boolean) => {
       expect(throwOnError).toBe(true)
       const ids = cache.rows(chatId).map((row) => row.id)
-      const overlays = await loadMessageOverlays(ids, 'viewer')
+      const overlays = await loadMessageOverlays(cache.rows(chatId), 'viewer')
       cache.update(chatId, (rows) => applyMessageWindowRevalidation(rows, new Set(ids), {
         overlays, mutations: new Map(), presentIds: new Set(ids),
       }))
     })
     const line: ChatLine = {
       userId: 'viewer', chatId: () => 'chat-1', maxSeqOf: () => 2, getMessageSnapshotEpoch: () => 0,
-      readCommittedMessage: id => repository.snapshot().message.find(row => row.id === id)?.value,
+      readCommittedMessage: id => cache.rows('chat-1').find(row => row.id === id),
+      threadRootId: () => null, ownsThread: () => false,
       noteCommittedMessages: vi.fn(),
       applyMessagesSnapshot: vi.fn(), healMessageGap: vi.fn(), revalidateWindowOverlays: revalidate,
       setMessagesAndCache: (update) => cache.update('chat-1', update),
-      persistWindowToLocalSync: vi.fn(), setThreadMessages: vi.fn(),
+      setThreadMessages: vi.fn(),
       memberReadSeqsChatRef: { current: 'chat-1' }, setMemberReadSeqs: vi.fn(), readMemberReadSeqs: () => ({}),
     }
     const blocked = (revision: string): AccountRevisionOperation => ({ revision, event: 'delivery_changed', payload: {

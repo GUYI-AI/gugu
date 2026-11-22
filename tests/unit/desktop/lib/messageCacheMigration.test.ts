@@ -1,33 +1,39 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import { expect, it } from 'vitest'
 import { openLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 
-it('drops legacy desktop message rows on every opening, preserving delivery queues and phone bodies', async () => {
-  const adapter = await openLocalSyncDb(new IDBFactory())
+// v4 → v5: messages moved to the message store (lib/localMessageStore). The old message cache leaves; nothing else does.
+it('drops the v4 message tables and message view rows, keeping every other row of every account', async () => {
+  const factory = new IDBFactory()
+  await new Promise<void>((resolve, reject) => {
+    const request = factory.open('gugu.localSync.v1', 4)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      const keys: Record<string, string[]> = { identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
+        message: ['accountId', 'id'], stream: ['accountId', 'id'], presence: ['accountId', 'identityId'], outbox: ['accountId', 'id'],
+        view: ['accountId', 'key'], sync_state: ['accountId', 'key'] }
+      for (const [name, keyPath] of Object.entries(keys)) db.createObjectStore(name, { keyPath }).createIndex('accountId', 'accountId')
+      const tx = request.transaction!
+      for (const accountId of ['desktop', 'phone']) {
+        tx.objectStore('message').put({ accountId, id: 'old', chatId: 'chat', streamId: 'main:chat', seq: 1, value: {} })
+        tx.objectStore('stream').put({ accountId, id: 'main:chat', chatId: 'chat', kind: 'main', rootMessageId: null })
+        for (const key of ['message-window:chat', 'message-revision:old', 'history-cleared:chat', 'account-revision-operation:1']) {
+          tx.objectStore('view').put({ accountId, key, value: { revision: '1', event: 'presence_changed', payload: {} } })
+        }
+        tx.objectStore('sync_state').put({ accountId, key: 'account-revision-cursor', value: { revision: '7' } })
+      }
+    }
+    request.onsuccess = () => { request.result.close(); resolve() }
+    request.onerror = () => reject(request.error)
+  })
+  const adapter = await openLocalSyncDb(factory)
   try {
-    // desktop2 sorts right after desktop: the purge's key ranges must stop at the account boundary.
-    for (const accountId of ['desktop', 'desktop2', 'phone']) await adapter.commit([
-      { type: 'put', store: 'message', value: { accountId, id: 'old', chatId: 'chat', streamId: 'main:chat', seq: 1, value: messageItemFromRow({ id: 'old', chat_id: 'chat', seq: 1, sender_user_id: accountId, content: 'old', content_type: 'text', created_at: '2026-11-03T00:00:00Z' }, accountId) } },
-      { type: 'put', store: 'stream', value: { accountId, id: 'main:chat', chatId: 'chat', kind: 'main', rootMessageId: null } },
-      { type: 'put', store: 'view', value: { accountId, key: 'message-window:chat', value: { oldestSeq: 1, maxSeq: 1, hasMoreOlder: false } } },
-      { type: 'put', store: 'view', value: { accountId, key: 'message-revision:old', value: { revision: '1' } } },
-      { type: 'put', store: 'view', value: { accountId, key: 'account-revision-operation:1', value: { revision: '1', event: 'presence_changed', payload: {} } } },
-    ])
-    await adapter.prepareLocalMessages!('desktop')
-    const desktop = await adapter.loadAccount('desktop')
-    expect(desktop.message).toEqual([])
-    expect(desktop.stream).toEqual([])
-    expect(desktop.view.map(row => row.key)).toEqual(['account-revision-operation:1'])
-    // Desktop never writes these rows again, so a repeated opening is an idempotent purge.
-    await adapter.commit([{ type: 'put', store: 'view', value: { accountId: 'desktop', key: 'message-window:legacy', value: { oldestSeq: 0, maxSeq: 0, hasMoreOlder: false } } }])
-    await adapter.prepareLocalMessages!('desktop')
-    expect((await adapter.loadAccount('desktop')).view.map(row => row.key)).toEqual(['account-revision-operation:1'])
-    const neighbour = await adapter.loadAccount('desktop2')
-    expect([neighbour.message.length, neighbour.stream.length, neighbour.view.length]).toEqual([1, 1, 3])
-    const phone = await adapter.loadAccount('phone')
-    expect(phone.message).toHaveLength(1)
-    expect(phone.stream).toHaveLength(1)
+    for (const accountId of ['desktop', 'phone']) {
+      const rows = await adapter.loadAccount(accountId)
+      expect(Object.keys(rows)).not.toContain('message')
+      expect(rows.view.map(row => row.key)).toEqual(['account-revision-operation:1'])
+      expect(rows.sync_state.map(row => row.value)).toEqual([{ revision: '7' }])
+    }
   } finally { adapter.close() }
 })

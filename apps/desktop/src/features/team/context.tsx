@@ -1,19 +1,18 @@
 /* eslint-disable react-refresh/only-export-components -- Providers and their hooks share the same feature context instances. */
-import { createContext, useContext, useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AuthUser } from '@/store/auth'
 import { useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/Button'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { teamApi } from './runtime'
-import { TeamApiError } from './errors'
 import { hasTeamAccountMarker } from './accountKind'
 import { teamErrorCopy } from './copy'
 import type { CurrentTeamContext, TeamApi, TeamProfile } from './types'
+import { refreshFailure, retryOf, useReplica } from '@/lib/replica'
+import { teamSession } from './replicas'
 import './catalog'
 import './team.css'
-import { TEAM_REALTIME_CONTEXT_CHANGED } from '../../../shared/team-realtime'
 
 const ApiContext = createContext<TeamApi>(teamApi)
 export function TeamApiProvider({ api, children }: { api: TeamApi; children: ReactNode }) {
@@ -30,61 +29,31 @@ export interface TeamSessionState {
 }
 const SessionContext = createContext<TeamSessionState>({ status: 'personal', retry() {} })
 export const useTeamSession = () => useContext(SessionContext)
-export const teamKeys = {
-  account: (userId: string) => ['team', userId] as const,
-  session: (userId: string) => ['team', userId, 'context'] as const,
-}
-
-function TeamSession({ user, children }: { user: AuthUser; children: ReactNode }) {
-  const api = useTeamApi()
+/** Team reads are account replicas: no team data survives an identity switch (the replica leaves with the account). */
+export function TeamProvider({ user, children }: { user: AuthUser; children: ReactNode }) {
   const { updateUser } = useAuth()
   const teamMarked = hasTeamAccountMarker(user)
-  const query = useQuery({
-    queryKey: teamKeys.session(user.id), enabled: teamMarked, retry: false, staleTime: 0,
-    refetchOnWindowFocus: true, refetchInterval: teamMarked ? 30_000 : false,
-    queryFn: async ({ signal }) => {
-      const context = await api.context(signal)
-      if (context.kind !== 'team') throw new TeamApiError('team_identity_required')
-      if (context.member_state !== 'active') throw new TeamApiError('membership_disabled')
-      const profile = await api.profile(signal)
-      if (context.member_identity_id !== user.id || profile.team.id !== context.team_id || profile.membership.id !== context.member_id
-        || profile.membership.identity_id !== context.member_identity_id
-        || profile.membership.state !== 'active' || profile.membership.role !== context.role
-        || profile.membership.revision !== context.membership_revision) throw new TeamApiError('version_conflict')
-      return { context, profile }
-    },
-  })
-  const refetch = query.refetch
-  useEffect(() => {
-    if (!teamMarked) return
-    const refresh = () => { void refetch() }
-    window.addEventListener(TEAM_REALTIME_CONTEXT_CHANGED, refresh)
-    return () => window.removeEventListener(TEAM_REALTIME_CONTEXT_CHANGED, refresh)
-  }, [refetch, teamMarked])
-  // Canonical team profile owns its display email; the internal Auth principal email is never shown.
-  const projectedProfile = useRef<TeamProfile | undefined>(undefined)
+  // Read while this account is marked a team member (an identity switch takes the reading with the account).
+  const reading = useReplica(teamSession, teamMarked ? [] : null)
+  const data = reading.state === 'value' ? reading.value : undefined
+  const failure = refreshFailure(reading)
+  // Canonical team profile owns its display email; the internal Auth principal email is never shown. Projected once per
+  // profile as read (by content: every re-read answers a new object), so a later self edit is not overwritten by a poll.
+  const projectedProfile = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
-    if (!query.data || query.isError) return
-    if (projectedProfile.current === query.data.profile) return
-    projectedProfile.current = query.data.profile
-    const profile = query.data.profile.profile
+    if (!data || failure) return
+    const read = JSON.stringify(data.profile)
+    if (projectedProfile.current === read) return
+    projectedProfile.current = read
+    const profile = data.profile.profile
     if (user.nickname !== profile.name || user.email !== profile.email || user.bio !== profile.bio
       || (user.avatarUrl ?? null) !== profile.avatar) updateUser({ ...user, nickname: profile.name,
       email: profile.email, bio: profile.bio, avatarUrl: profile.avatar ?? undefined })
-  }, [query.data, query.isError, updateUser, user])
+  }, [data, failure, updateUser, user])
   const state: TeamSessionState = !teamMarked ? { status: 'personal', retry() {} }
-    : { status: query.isError ? 'error' : query.data ? 'ready' : 'loading', ...query.data,
-      error: query.error, retry: () => { void query.refetch() } }
+    : { status: failure ? 'error' : data ? 'ready' : 'loading', ...data,
+      error: failure ?? undefined, retry: retryOf(reading) ?? (() => {}) }
   return <SessionContext.Provider value={state}>{children}</SessionContext.Provider>
-}
-
-/** A fresh account gets a fresh feature cache. No team data survives an identity switch. */
-export function TeamProvider({ user, api = teamApi, children }: { user: AuthUser; api?: TeamApi; children: ReactNode }) {
-  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }))
-  useEffect(() => () => { void client.cancelQueries(); client.clear() }, [client])
-  return <QueryClientProvider client={client}><TeamApiProvider api={api}>
-    <TeamSession user={user}>{children}</TeamSession>
-  </TeamApiProvider></QueryClientProvider>
 }
 
 export function TeamAccessGate({ children }: { children: ReactNode }) {

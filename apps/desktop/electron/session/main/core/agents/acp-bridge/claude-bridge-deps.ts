@@ -13,6 +13,8 @@ import { execWithStallWatch, resolveBundledNpmInvocation } from '../../../../../
 import { CLAUDE_BRIDGE_KEY, type ClaudeBridgeDeps } from './claude-bridge';
 import { getPlugin } from '../plugin-registry';
 import { parseCliVersion, parseCompat, type CompatCheck, type VersionedCompat } from './pairing';
+import { versionProbeArgs } from '@gugu/session-core/deps/runtime';
+import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
 
 const COMPAT_PACKAGE = '@gugu-acp/compat';
 const BUNDLED_BRIDGE_ALIAS = '@agentclientprotocol/claude-agent-acp';
@@ -50,7 +52,7 @@ export const realClaudeBridgeDeps: ClaudeBridgeDeps = {
       /* 读不到 stat 就不记忆 */
     }
     if (versionMemo.has(key)) return versionMemo.get(key)!;
-    const out = await execText(cliPath, ['--version'], env, 30_000);
+    const out = await execText(cliPath, await versionProbeArgs(cliPath, ['--version'], new LocalExecutionContext()), env, 30_000);
     const version = parseCliVersion(out, getPlugin('claude').capabilities.hostDependency.versionLine);
     if (key !== cliPath) versionMemo.set(key, version);
     return version;

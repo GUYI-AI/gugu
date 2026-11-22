@@ -26,7 +26,7 @@ const native = () => {
   return { contents, target: { contents, window: {} } as unknown as WindowMenuCommandTarget }
 }
 
-it('zooms the actual workspace image using its fitted geometry and retains the image preference', async () => {
+it('zooms the actual workspace image using its fitted geometry; the next image opens whole', async () => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1000)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
   const draw = async (path: string) => {
@@ -44,7 +44,7 @@ it('zooms the actual workspace image using its fitted geometry and retains the i
   await act(async () => runWindowMenuCommand('zoomIn', n.target))
   expect(parseFloat(image.style.width)).toBeGreaterThan(before)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
-  expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(before * 1.2)
+  expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(before)
 })
 
 it('a platform without reading zoom memory (the phone) zooms an image preview on double tap, opens the next one whole and stores nothing', async () => {

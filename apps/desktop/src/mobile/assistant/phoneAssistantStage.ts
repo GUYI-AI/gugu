@@ -1,4 +1,6 @@
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
+import type { Reading } from '@/lib/replica'
+import type { MyAssistant } from '@/lib/myAssistant'
 
 /**
  * 还没能打开它那条私聊时,这一格说哪一步(与桌面 assistant-view 同一套分法,❌ 读不到当成「还没开通」):
@@ -24,15 +26,16 @@ export function phoneAssistantStage(input: {
   /** 管家那边有结论了(没开放 / 有快照 / 没问到但知道原因):false = 还在读。 */
   cloudKnown: boolean
   cloudLoadFailed: boolean
-  identity: { loading: boolean; agentId: string | null; error: string | null }
+  identity: Reading<MyAssistant>
 }): PhoneAssistantStage {
   const { found, chatId, snapshot, identity } = input
   if (found && chatId) return { stage: 'ready' }
   if (found) return input.chatFailed ? { stage: 'chat-failed', error: input.chatFailed.error, retry: input.retryChat } : { stage: 'chat-opening' }
   // 标记读到了、通讯录里还没有那一位 = 还在读(开通刚建好它),❌ 说「没有」。
-  if (identity.loading || identity.agentId) return { stage: 'identity', state: 'loading' }
+  if (identity.state === 'unknown' || (identity.state === 'value' && identity.value.agentId)) return { stage: 'identity', state: 'loading' }
   // 读不到 ≠ 没有它:如实说读不到,❌ 把人送进「安家」再建一个。
-  if (identity.error) return { stage: 'identity', state: 'unreadable' }
+  // A kept "none" whose read again failed is not known now either.
+  if (identity.state === 'error' || identity.error) return { stage: 'identity', state: 'unreadable' }
   if (!snapshot) {
     if (input.cloudLoadFailed) return { stage: 'cloud-unreadable' }
     if (!input.cloudKnown) return { stage: 'cloud-loading' }

@@ -329,7 +329,7 @@ describe('making, moving, uploading, deleting', () => {
 
     gugu.files.move.mockClear()
     more('notes')!.click()
-    await menu.pick('移动到…')
+    await menu.pick('更多', '移动到…')
     await settle()
     const into = [...$('move-targets').querySelectorAll<HTMLButtonElement>('.move-target')].find((t) => t.textContent === '2026')!
     const listed = gugu.files.list.mock.calls.length
@@ -343,7 +343,7 @@ describe('making, moving, uploading, deleting', () => {
     ENTRIES.push(entry('dup', 'notes.md', 'text', 'contracts', '合同/notes.md'))
     await refreshed() // the list now has the second notes.md
     more('notes')!.click()
-    await menu.pick('移动到…')
+    await menu.pick('更多', '移动到…')
     await settle()
     const css = styled()
     try {
@@ -364,7 +364,7 @@ describe('making, moving, uploading, deleting', () => {
       expect(said(), 'the instrument: nothing said yet').toEqual([])
       gugu.files.rename.mockRejectedValueOnce(coded('name-taken', '这个文件夹里已经有「合同」了'))
       more('notes')!.click()
-      await menu.pick('改名')
+      await menu.pick('更多', '改名')
       const input = document.querySelector('.rename-input') as HTMLInputElement
       input.value = '合同'
       const listed = gugu.files.list.mock.calls.length

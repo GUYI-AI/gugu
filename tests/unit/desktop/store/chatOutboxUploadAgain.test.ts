@@ -2,7 +2,7 @@
 // A file whose commit failed is resent long after: the commit finds its upload permit lapsed (attachments/commit answers
 // `expired`). Retrying that commit can never help, so the row uploads its bytes again when this run still holds them, and
 // otherwise asks for the file again — never the bare "Upload permit expired".
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { upsertMessageById } from '@gugu/core/shared/ui/messageListModels'
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
@@ -11,6 +11,9 @@ import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localS
 import { openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createOutboxWiring, type OutboxWiringIo } from '../../../../apps/desktop/src/store/chatOutboxWiring'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
+import { createOutbox, type Outbox, type OutboxItem } from '../../../../apps/desktop/src/lib/outbox/core'
+import { recordOf, type ChatSend } from '../../../../apps/desktop/src/store/chatOutbox'
+import { fakeAccount, memoryStorage } from './chatOutboxHarness'
 
 const commit = vi.hoisted(() => vi.fn())
 vi.mock('@gugu/core/cloud/attachmentsApi', async (original) => ({ ...await original<object>(), commitAttachment: commit }))
@@ -49,7 +52,16 @@ async function failedCommit(h: ReturnType<typeof harness>, uploadAgain?: () => v
   await vi.runAllTimersAsync()
   expect(h.shown()).toMatchObject({ local_send_state: 'failed', local_send_retryable: true })
 }
-afterEach(() => { commit.mockReset(); vi.useRealTimers(); vi.restoreAllMocks(); setLocalePreference('zh-CN') })
+// The window's one outbox, real, over memory.
+let box: Outbox
+beforeEach(() => {
+  box = createOutbox({ storage: memoryStorage(), account: fakeAccount('owner-1'), online: () => () => {} })
+  ;(globalThis as Record<string, unknown>).__GUGU_OUTBOX__ = box
+})
+afterEach(() => {
+  box.dispose(); delete (globalThis as Record<string, unknown>).__GUGU_OUTBOX__
+  commit.mockReset(); vi.useRealTimers(); vi.restoreAllMocks(); setLocalePreference('zh-CN')
+})
 
 it('a resend whose commit finds the permit lapsed uploads the bytes this run holds again, as the same row', async () => {
   vi.useFakeTimers()
@@ -62,7 +74,7 @@ it('a resend whose commit finds the permit lapsed uploads the bytes this run hol
   expect(commit.mock.calls.length - before, 'a lapsed permit is not retried').toBe(1)
   expect(uploadAgain).toHaveBeenCalledOnce()
   expect(h.shown()?.local_send_state).toBe('sending')
-  expect((await h.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: ID, state: 'uploading', operation: { kind: 'upload' } })])
+  expect((box.items() as OutboxItem<ChatSend>[]).map(recordOf)).toEqual([expect.objectContaining({ clientMessageId: ID, state: 'uploading', operation: { kind: 'upload' } })])
   h.wiring.dispose()
 })
 

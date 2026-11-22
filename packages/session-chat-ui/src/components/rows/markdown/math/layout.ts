@@ -20,8 +20,11 @@
  *
  * This mirrors pretext, whose glyph metrics are likewise a global content-keyed
  * cache flushed by `clearTextMeasure()`. A typeset result is a pure function of
- * (source, font size, available width); nothing about it is
- * per-conversation. `clearMathMeasure()` is wired into the same font-load flush
+ * (source, font size); nothing about it is per-conversation. The available width
+ * is not part of it: KaTeX does not line-break and the measured box is a flex
+ * item at its own size (`mathContent`), so a new column width — every frame of a
+ * panel opening beside the chat — is answered from the cache. Only the error
+ * fallback wraps (`mathError`), so a failed formula is kept per width. `clearMathMeasure()` is wired into the same font-load flush
  * as pretext's, because KaTeX metrics are wrong until the KaTeX faces load —
  * exactly the failure the pretext flush already exists to fix.
  *
@@ -141,12 +144,13 @@ function measure(
   return metrics;
 }
 
-function cacheKey(
-  tex: string,
-  fontSize: number,
-  availableWidth: number
-): string {
-  return `${fontSize}\u0000${availableWidth}\u0000${tex}`;
+function cached(key: string): MathMetrics | undefined {
+  const hit = metricsCache.get(key);
+  if (hit !== undefined) {
+    metricsCache.delete(key);
+    metricsCache.set(key, hit);
+  }
+  return hit;
 }
 
 function measureCached(
@@ -154,18 +158,15 @@ function measureCached(
   fontSize: number,
   availableWidth: number
 ): MathMetrics {
-  const key = cacheKey(tex, fontSize, availableWidth);
-  const hit = metricsCache.get(key);
-  if (hit !== undefined) {
-    metricsCache.delete(key);
-    metricsCache.set(key, hit);
-    return hit;
-  }
+  const typeset = `${fontSize}\u0000${tex}`;
+  const wrapped = `${fontSize}\u0000${availableWidth}\u0000${tex}`;
+  const hit = cached(typeset) ?? cached(wrapped);
+  if (hit !== undefined) return hit;
   const metrics = measure(tex, fontSize, availableWidth);
   if (metricsCache.size >= MAX_CACHE_ENTRIES) {
     metricsCache.delete(metricsCache.keys().next().value!);
   }
-  metricsCache.set(key, metrics);
+  metricsCache.set(metrics.failed ? wrapped : typeset, metrics);
   return metrics;
 }
 

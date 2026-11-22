@@ -7,7 +7,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import { ExtensionViewLayer } from '@renderer/features/extensions/extension-view-layer';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { extensionViewStore } from '@renderer/features/extensions/extension-view-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { installedExtensions } from '@renderer/features/extensions/installed-extensions';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
@@ -56,7 +56,7 @@ beforeEach(async () => {
     },
     eventOn: () => () => {},
   });
-  act(() => { installedExtensionsStore.manifests = [manifest]; });
+  act(() => { installedExtensions.set(['local'], { extensions: [manifest], invalid: [] } as never); });
 });
 
 afterEach(() => {
@@ -65,7 +65,7 @@ afterEach(() => {
   act(() => {
     for (const block of [...screenLayout.blocks.values(), ...screenLayout.parkedContents]) screenLayout.forgetContent(block);
     extensionViewStore.forgetOpened(kind);
-    installedExtensionsStore.manifests = [];
+    installedExtensions.set(['local'], { extensions: [], invalid: [] } as never);
   });
   vi.unstubAllGlobals();
 });
@@ -157,7 +157,7 @@ it('keeps a host PDF canvas above both split backgrounds when fullscreen', async
   }
 });
 
-// Use the real ScreenFrame/ResizableHandle as well as the real pane and resident
+// Use the real ScreenFrame and its block divider as well as the real pane and resident
 // layer. The screen divider used to choose z-30 independently of the pane table.
 async function screenSplit() {
   const layouts = ['group', 'direct'].map((name) => {
@@ -194,7 +194,7 @@ async function screenSplit() {
 
 async function resizeScreen(handle: HTMLElement, input: 'pointer' | 'keyboard') {
   if (input === 'keyboard') {
-    // Also exercise the library's key listener if focus survives disabling it.
+    // A disabled divider takes no keys even if focus survives disabling it.
     handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
   } else {
     const rect = handle.getBoundingClientRect();

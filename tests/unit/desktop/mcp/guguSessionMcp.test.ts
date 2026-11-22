@@ -32,7 +32,7 @@ const EXTENSION_TOOL_NAMES = ['app_manage', 'app_create', 'app_pack', 'app_insta
 // #7221 给自己排的已安排:与 session_* 同一个分派器、同一份 grant。
 const SCHEDULE_TOOL_NAMES = ['schedule_create', 'schedule_list', 'schedule_cancel'] as const
 // #6614 每条 grant 都有的两个域:guide_* 与渐进披露的 catalog_*。
-const ALWAYS_TOOL_NAMES = ['guide_read', 'catalog_list', 'catalog_call', 'app_search', 'widget_send', 'widget_get'] as const
+const ALWAYS_TOOL_NAMES = ['guide_read', 'catalog_list', 'catalog_call', 'app_search', 'widget_send', 'widget_get', 'password_credentials', 'password_fill', 'password_save'] as const
 
 const clients: Client[] = []
 const hosts: DesktopGuguMcpHost[] = []
@@ -275,8 +275,8 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     for (const tool of reachable) {
       const fieldNames = Object.keys((tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {})
       for (const field of ['owner', ...((tool.name.startsWith('project_') || tool.name === 'activity_list') ? [] : ['project_id']), 'cwd', 'command']) expect(fieldNames, tool.name).not.toContain(field)
-      // 原子工具 = 扁平参数,没有 action 字段。
-      expect(fieldNames, tool.name).not.toContain('action')
+      // 原子工具 = 扁平参数,没有 action 字段。password_fill / password_save 的 action 是一次填入或保存的几步(请求、看结果),不是分派器。
+      if (!tool.name.startsWith('password_')) expect(fieldNames, tool.name).not.toContain('action')
     }
 
     // ids cross the tool boundary typed (session:<id> / msg:<id>); the host dispatcher receives storage-form ids.

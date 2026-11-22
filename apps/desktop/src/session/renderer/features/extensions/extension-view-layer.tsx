@@ -7,17 +7,18 @@ import type { BrowserWebviewElement } from '@renderer/features/browser/browser-w
 import { extensionSurfaceStore } from './extension-surface-store';
 import { extensionViewStore, type ExtensionViewClaim } from './extension-view-store';
 import { sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps } from './installed-extensions';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
 import { pageCorners } from './page-corners';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
-import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/elementVisibility';
+import { clippedElementBox, elementBox, isElementVisible, type ElementBox as Box } from '@/lib/elementVisibility';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { useTheme } from '@/store/theme';
-import { widgetSnapshotWebP, widgetSnapshots } from '@/lib/widgetSnapshots';
+import { widgetSnapshotWebP, widgetSnapshots, widgetWidthBucket } from '@/lib/widgetSnapshots';
+import { widgetSnapshot, widgetSnapshotDataUrl } from '@/lib/widgetSnapshot';
 import { PageLoading } from '@/lib/loading/PageLoading';
 
 /**
@@ -49,14 +50,16 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
   useEffect(
     () =>
       reaction(
-        () => installedExtensionsStore.residentTabContributions.map((contribution) => contribution.kind),
+        () => peekInstalledAppsTracked()?.residentTabContributions.map((contribution) => contribution.kind) ?? null,
         (now, before) => {
-          for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
+          if (now && before) for (const kind of before) if (!now.includes(kind)) extensionViewStore.forgetOpened(kind);
         }
       ),
     []
   );
-  const contributions = installedExtensionsStore.residentTabContributions;
+  const installed = useInstalledApps(LOCAL_HOST);
+  if (installed.state !== 'value') return <div ref={layerRef} data-slot="extension-view-layer" className="pointer-events-none absolute inset-0" />;
+  const contributions = installed.value.residentTabContributions;
   const enabled = new Map<string, (typeof contributions)[number]>(
     contributions.map((contribution) => [contribution.kind, contribution])
   );
@@ -88,6 +91,8 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
 /** Following a claimed slot's box after it appears: until it holds still this many frames, or this long. */
 const FOLLOW_STILL_FRAMES = 10;
 const FOLLOW_MAX_MS = 2_000;
+/** A slot placed by following within this long is still moving. */
+const MOVING_MS = 100;
 
 function releaseHiddenFocus(box: HTMLElement, claim?: ExtensionViewClaim): void {
   const focused = box.ownerDocument.activeElement;
@@ -172,6 +177,7 @@ export const ExtensionPage = observer(function ExtensionPage({
 }) {
   const unusedLayerRef = useRef<HTMLDivElement | null>(null);
   const layerRef = residentLayerRef ?? unusedLayerRef;
+  const installed = useInstalledApps(LOCAL_HOST);
   const claimOf = useCallback(
     () => pageKey === undefined ? undefined : extensionViewStore.claims.get(pageKey),
     [pageKey]
@@ -192,6 +198,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   /** 上一位认领方那一格的观察者;换格或卸载时先拆。 */
   const teardownRef = useRef<(() => void) | null>(null);
   const lastReportRef = useRef<string>('');
+  const occludedRef = useRef(false);
   /** 每次指向的序号:A→B→A 快速切换时,晚落地的 B 那次不许再往登记表里写。 */
   const aimSeqRef = useRef(0);
   const { theme } = useTheme();
@@ -221,7 +228,7 @@ export const ExtensionPage = observer(function ExtensionPage({
     if (!widgetId || !element || !account || accountIdRef.current !== account.accountId || webContentsId === null
       || !paintedRef.current || document.visibilityState === 'hidden' || !element.isConnected) return;
     const { clip } = clippedElementBox(element, { left: 0, top: 0, width: innerWidth, height: innerHeight });
-    if (clip.width <= 0 || clip.height <= 0 || !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return;
+    if (clip.width <= 0 || clip.height <= 0 || !isElementVisible(element, { opacity: true })) return;
     if (capturingRef.current) { pendingCaptureRef.current = true; return; }
     const remaining = 2_000 - (performance.now() - lastCaptureRef.current);
     if (remaining > 0) { captureTimerRef.current = setTimeout(capture, remaining); return; }
@@ -230,10 +237,12 @@ export const ExtensionPage = observer(function ExtensionPage({
     lastCaptureRef.current = performance.now();
     capturingRef.current = true;
     const theme = themeRef.current;
+    // Bound to the account now: a picture that lands after a switch goes nowhere (no account the replica follows: none shown).
+    const shown = widgetSnapshot.key(widgetId, theme, widgetWidthBucket(width)) ? widgetSnapshot.at(widgetId, theme, widgetWidthBucket(width)) : null;
     void rpc.extensions.captureWidget({ webContentsId, widgetId }).then(async reply => {
       if (!reply.success || !reply.data) return;
       const blob = await widgetSnapshotWebP(reply.data, width);
-      if (blob) await widgetSnapshots.put(account, widgetId, theme, width, blob);
+      if (blob && await widgetSnapshots.put(account, widgetId, theme, width, blob)) shown?.set(await widgetSnapshotDataUrl(blob));
     }).catch(error => log.warn('Widget picture could not be saved:', error))
       .finally(() => {
         capturingRef.current = false;
@@ -262,12 +271,13 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [extensionId, kind, managed]);
 
   /** 尺寸与可见性报给桥(它会去重);没绑定时无处可报,静默。 */
-  const report = useCallback((visible: boolean, width: number, height: number) => {
+  const report = useCallback((visible: boolean, width: number, height: number, following = false) => {
     const webContentsId = guestBinding.boundWebContentsId;
     if (webContentsId === null || guestReadyRef.current !== webviewRef.current) return;
     const element = webviewRef.current, clipElement = boxRef.current;
     if (!element || !clipElement) return;
-    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height);
+    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height, following ? occludedRef.current : undefined);
+    occludedRef.current = metrics.occluded ?? false;
     const key = JSON.stringify(metrics);
     if (key === lastReportRef.current) return;
     lastReportRef.current = key;
@@ -467,13 +477,20 @@ export const ExtensionPage = observer(function ExtensionPage({
             report(false, 0, 0);
             return;
           }
-          const place = () => {
+          const rectOf = () => { const r = claim.element.getBoundingClientRect(); return `${r.left},${r.top},${r.width},${r.height}`; };
+          let placedAt = '';
+          let followedAt = -Infinity;
+          // `following`: placed because the slot moved (a frame of a panel's motion): the box follows, occlusion is not
+          // sampled again — a hit test right after the motion's writes lays out the whole page in that frame.
+          const place = (following = false) => {
+            if (following) followedAt = performance.now();
+            placedAt = rectOf();
             const { full, clip } = boxOf(claim.element, layer);
             const shown =
               clip.width > 0 &&
               clip.height > 0 &&
               claim.element.isConnected &&
-              claim.element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+              isElementVisible(claim.element, { opacity: true });
             if (!shown) releaseHiddenFocus(box, claim);
             box.style.left = `${clip.left}px`;
             box.style.top = `${clip.top}px`;
@@ -494,7 +511,7 @@ export const ExtensionPage = observer(function ExtensionPage({
               inner.style.width = `${full.width}px`;
               inner.style.height = `${full.height}px`;
             }
-            report(shown && document.visibilityState === 'visible', full.width, full.height);
+            report(shown && document.visibilityState === 'visible', full.width, full.height, following);
           };
           place();
           // A slot that slides in (a side panel's enter animation) moves by transform, which no
@@ -506,34 +523,38 @@ export const ExtensionPage = observer(function ExtensionPage({
           let lastBox = '';
           let still = 0;
           const follow = () => {
-            place();
-            const r = claim.element.getBoundingClientRect();
-            const box = `${r.left},${r.top},${r.width},${r.height}`;
+            const box = rectOf();
+            // A move that writes an ancestor's style (a PanelTrack's transforms, a framer slide) is placed by `restyled` in
+            // that frame already; no need to place twice per frame.
+            if (box !== placedAt) place(true);
             still = box === lastBox ? still + 1 : 0;
             lastBox = box;
             frame = still < FOLLOW_STILL_FRAMES && performance.now() < followUntil ? requestAnimationFrame(follow) : 0;
           };
           frame = requestAnimationFrame(follow);
-          const observer = new ResizeObserver(place);
+          const resample = () => place();
+          const observer = new ResizeObserver(resample);
           // Hidden in place by a class or style above it (a slot covered by what opens beside its page, AppPeekSlot) moves no
           // box: the page is told to hide by the change itself.
-          const restyled = new MutationObserver(place);
+          const restyled = new MutationObserver(() => place(true));
           for (const node of ancestorsOf(claim.element)) {
             observer.observe(node);
             restyled.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden', 'inert'] });
           }
-          window.addEventListener('resize', place);
-          document.addEventListener('scroll', place, true);
-          document.addEventListener('visibilitychange', place);
-          const stopOcclusion = observeNativeSurfaceOcclusion(place);
+          window.addEventListener('resize', resample);
+          document.addEventListener('scroll', resample, true);
+          document.addEventListener('visibilitychange', resample);
+          // Mid-motion the periodic sample keeps the last one: a hit test there lays out the page in the middle of a frame
+          // the motion has written (tens of ms). The first tick after the slot settles samples again.
+          const stopOcclusion = observeNativeSurfaceOcclusion(() => place(performance.now() - followedAt < MOVING_MS));
           teardownRef.current = () => {
             if (frame) cancelAnimationFrame(frame);
             observer.disconnect();
             restyled.disconnect();
             stopOcclusion();
-            window.removeEventListener('resize', place);
-            document.removeEventListener('scroll', place, true);
-            document.removeEventListener('visibilitychange', place);
+            window.removeEventListener('resize', resample);
+            document.removeEventListener('scroll', resample, true);
+            document.removeEventListener('visibilitychange', resample);
           };
         },
         { fireImmediately: true }
@@ -583,7 +604,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [marked, pageKey]);
   // Not started yet, its box is still placed: the loading mark shows from the moment the page is asked for.
   if (!surface && !managed && inline) return null;
-  const manifest = installedExtensionsStore.manifestFor(extensionId);
+  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}

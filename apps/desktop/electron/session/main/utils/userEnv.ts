@@ -5,6 +5,7 @@ import {
   vendorInstallDirs,
 } from '@main/core/dependencies/managed-agent-home';
 import { log } from '@main/lib/logger';
+import type { LookupPathSource } from '@shared/core/agents/agent-payload';
 
 /**
  * 解析 agent 时优先看这些目录。第一位是咕咕自己的安装目录 —— 它**不会**出现在用户登录
@@ -36,8 +37,8 @@ function pathEntryExists(entry: string): boolean {
  * 它解决的是「用户先照官网装好了、咕咕却说你没装」：发现靠的是 PATH，而 PATH 是用户环境里
  * 最不稳的东西。放最后 = 只让它被看见，不改变谁先被找到。
  *
- * 为什么第一项必须是"移动"而不是"不在就补"：`rehydrateLoginShellPath()` 会把登录 shell 的
- * PATH 整体排到前面（安装脚本刚往 rc 里写过东西，必须重读）。咕咕的目录那时已经在 PATH 里，
+ * 为什么第一项必须是"移动"而不是"不在就补"：`refreshUserPath()` 会把登录 shell 的
+ * PATH 整体排到前面（每次检测都重读）。咕咕的目录那时已经在 PATH 里，
  * 若只判"存在就跳过"，它会留在末尾，被 `~/.local/bin` 里的旧副本重新遮住——正是 #4271
  * 那一幕：更新成功、版本不变。
  */
@@ -80,58 +81,49 @@ export function ensureUserBinDirsInPath(
 }
 
 // ---------------------------------------------------------------------------
-// 登录 shell PATH 的重新取回（宿主注入）
+// 用户当前 PATH 的重新读取（宿主注入）
 // ---------------------------------------------------------------------------
 
-type LoginShellPathRehydrator = () => void;
+type UserPathRefresher = () => Promise<LookupPathSource>;
 
-let rehydrator: LoginShellPathRehydrator | undefined;
+let refresher: UserPathRefresher | undefined;
+let lastPathSource: LookupPathSource | null = null;
 
 /**
- * 宿主把 `hydrateLoginShellPath` 交进来。
+ * 宿主把 `refreshUserPath` 交进来。
  *
  * ❌ 不从这里直接 import `electron/shellPath`：会话页与宿主是两个 bundle，跨过去只会拿到
  * 复制品，而那个模块**有模块级状态**（`lastLoginShellPath`，报错时要靠它说明「当时 PATH 补
  * 没补上」）。复制品里的记录宿主永远读不到。
  */
-export function setLoginShellPathRehydrator(fn: LoginShellPathRehydrator | undefined): void {
-  rehydrator = fn;
+export function setUserPathRefresher(fn: UserPathRefresher | undefined): void {
+  refresher = fn;
 }
 
 /**
- * 重新取一次用户登录 shell 的 PATH。
+ * 每次检测前重新读一次用户**当前**的 PATH(macOS/Linux:登录 shell;Windows:注册表里的用户 + 系统 PATH)。
  *
- * 为什么装完要做：安装脚本自己挑目录、再往用户的 rc 文件追加 PATH，是完全正当的做法
- * （实测 36 个 agent 里 15 个走脚本安装，mimo 落 `~/.mimocode/bin`、grok 落 `~/.grok/bin`）。
- * 而咕咕的 PATH 是**启动时**取的一次快照 —— rc 刚被改过，快照就过期了。于是「装成功了、
- * 当场探测不到、报安装后未检测到」，重启咕咕才看得见，没人猜得到要重启。
+ * 为什么:咕咕开着时用户在别的终端里 `npm i -g`、或者跑了一个往 rc / 用户 PATH 里加目录的安装器,
+ * 新目录只在此刻的环境里;启动时那份快照看不见它,检测就一直报「未安装」,只能重启咕咕。
+ * 读完把咕咕自己的目录重新排回最前(`ensureUserBinDirsInPath`,理由见它的注释)。
  *
- * ❌ 不给某个 agent 加特例目录：那是白名单，下一个 agent 挑个新目录又坏。rc 是安装脚本
- * 与 shell 之间的既有约定，咕咕重新读一次即可，与安装方式无关。
- *
- * 两条失败路径都**出声**，❌ 不静默：
- *   · 没注入 = 宿主↔会话页的接线断了。它不该让安装流程失败，但静默 no-op 会让这一整条修复
- *     悄悄失效、症状与修之前一模一样(装成功、当场找不到)，无从分辨。这一行也是这条接线
- *     唯一能从外部验证的读数。
- *   · 探测 shell 抛错 = 继续用启动时那份，属于降级不是失败。
+ * 读不成不抛:PATH 保持上一次的值,来源里记下失败,由检测结果原样说给用户。没注入 = 宿主接线断了,出声。
  */
-export function rehydrateLoginShellPath(): void {
-  if (!rehydrator) {
-    log.warn(
-      '[userEnv] 装完本该重新读一次登录 shell 的 PATH，但宿主没有注入实现 —— ' +
-        '安装脚本刚写进用户 rc 的目录这一轮不会被看见（症状：装成功却报"安装后未检测到"）。' +
-        '接线在 main.ts 的 setLoginShellPathRehydrator。'
-    );
+export async function refreshUserPath(): Promise<void> {
+  if (!refresher) {
+    log.warn('[userEnv] 宿主没有注入 PATH 重读实现 —— 这次检测用的还是启动时的 PATH。接线在 main.ts 的 setUserPathRefresher。');
     return;
   }
-  try {
-    rehydrator();
-    log.info('[userEnv] 装完已重新读取登录 shell 的 PATH');
-  } catch (error: unknown) {
-    log.warn(
-      `[userEnv] 重新读取登录 shell PATH 失败，继续使用启动时的那份: ${String(error)}`
-    );
-  }
+  lastPathSource = await refresher();
+  ensureUserBinDirsInPath();
+  const { from, tookMs, failed, failedDetail } = lastPathSource;
+  if (failed) log.warn(`[userEnv] 重新读取 PATH 失败(${from}: ${failed}, ${tookMs} ms): ${failedDetail ?? ''} —— 继续使用上一次的 PATH`);
+  else log.info(`[userEnv] 重新读取 PATH(${from}) 用了 ${tookMs} ms`);
+}
+
+/** 最近一次检测用的 PATH 从哪来;还没检测过则 null。 */
+export function lookupPathSource(): LookupPathSource | null {
+  return lastPathSource;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +138,7 @@ let warnedMissingLoginShellEnvProvider = false;
 /**
  * 宿主把 `loginShellEnvSnapshot` 交进来。
  *
- * ❌ 不从这里直接 import `electron/shellPath`：理由与 `setLoginShellPathRehydrator` 一字不差 ——
+ * ❌ 不从这里直接 import `electron/shellPath`：理由与 `setUserPathRefresher` 一字不差 ——
  * 会话页与宿主是两个 bundle，那个模块**有模块级状态**（快照本身就存在它的模块变量里），
  * 跨过去只会拿到一份永远是空的复制品，症状与不修一模一样（会话里还是没有用户的 key）。
  */

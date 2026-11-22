@@ -22,8 +22,8 @@ export type TurnFailureFact =
   | {
       at: 'prompt';
       cause: SerializedError;
-      /** 跑的是咕咕平台模型:被鉴权拒说的是平台那一侧,❌ 标成这家的登录失效(#6264)。 */
-      platformCredentials?: boolean;
+      /** 凭据由宿主提供(平台票或用户自己的 key):被鉴权拒说的是那份凭据,❌ 标成这家的登录失效(#6264)。 */
+      hostCredentials?: boolean;
       /**
        * 宿主先要求关掉了这条会话。有的家在 `session/close` 里自己把在飞的 prompt 答成 `cancelled`(claude),
        * 有的家不答,连接随宿主拆掉,prompt 以「线断了」被拒(codex)。两者是同一件事:人把它停了。
@@ -155,7 +155,7 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
       }
       // #7103 这一轮是咕咕拒的(取票没签出来):咕咕按原因说,这一家那句(claude 的「apiKeyHelper is failing」、
       // 转发回来的 403)不是拒绝方的话,❌ 进 detail。拒绝是终局,❌ 被后来的进程退出改口。
-      const refused = fact.platformCredentials ? refusedTurnOutcome(fact.credentialRefusal) : null;
+      const refused = fact.hostCredentials ? refusedTurnOutcome(fact.credentialRefusal) : null;
       if (refused) return { outcome: refused, provisional: false };
       // ⚠️ 过一道去敏,**与适配器 stderr 尾巴走的是同一道闸**(`boundedRedactedLine`)。
       // 这一段会上屏、也会随转录落盘,而 provider 完全可能把 auth 头或 key 回显在
@@ -163,7 +163,7 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
       const detail = redactSecrets(errorDetail(fact.cause) || fact.cause.name.trim());
       // 这家在这台机器上的登录不能用了(#6264):同一个 reason,多一格让界面说「登录已失效 · 重新登录」,
       // 并让宿主把这家标成「登录已失效」。判据见 `isSignInFailure`。
-      const signInRequired = !fact.platformCredentials && isSignInFailure(fact.cause);
+      const signInRequired = !fact.hostCredentials && isSignInFailure(fact.cause);
       // #7103 The failing side's own sentence goes on the row, never just "could not be completed".
       const said = signInRequired || !providerAuthored(fact.cause) ? undefined : upstreamSaid(fact.cause.message, fact.cause.data);
       return {

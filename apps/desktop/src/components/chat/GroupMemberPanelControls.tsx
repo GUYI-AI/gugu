@@ -25,10 +25,9 @@ import { settingsErrorStyle } from './groupSettingsStyles'
 
 const errorStyle: CSSProperties = { ...settingsErrorStyle, padding: '4px 14px' }
 
-export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
+export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
   chatId: string
   chatKind: 'group' | 'topic'
-  chatName?: string | null
   settings: GroupChatSettings | null
   snapshot: GroupCollabSnapshot | null
   identities: Readonly<Record<string, DisplayIdentity>>
@@ -209,7 +208,6 @@ export function useGroupMemberPanelControls({ chatId, chatKind, chatName, settin
               } : undefined}
               onWhisper={member.id !== currentUserId && onWhisper ? (target) => { profileCard.close(); onWhisper(target) } : undefined}
               searchChatId={chatId}
-              listenRoom={chatName ? { kind: chatKind, name: chatName } : undefined}
               editControls={editControlsFor(member)}
             />
           )

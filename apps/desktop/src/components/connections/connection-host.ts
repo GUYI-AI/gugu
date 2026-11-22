@@ -2,10 +2,11 @@ import { createConnectionClient, ConnectionError } from '@gugu/core/cloud/connec
 import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication'
 import { identityDb } from '@/lib/supabase'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/lib/realtimeChannel'
-import type { ConnectionBridge, ConnectionWindow } from '@/lib/connectionBridge'
-import { assistantPanelCacheStore } from '../assistant/assistant-panel-cache'
-import { createOwnerConnectionStore, isOwnerConnectionMetadataCache } from './owner-connection-store'
+import { routeCache, type ConnectionBridge, type ConnectionWindow } from '@/lib/connectionBridge'
+import { createOwnerConnectionStore } from './owner-connection-store'
 import type { ConnectionMetadataSnapshot, ConnectionMetadataStore } from './connection-metadata'
+import { ownerConnections,prefetchConnections } from './connection-replicas'
+import { valueOf } from '@/lib/replica'
 import { CONNECTIONS_CHANGED } from './owner-connection-metadata'
 import { rendererPlatformIntegrationsClient } from '@/lib/platformIntegrations'
 import { createConnectionRouting,connectionClientForRoute,type ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -22,8 +23,9 @@ export const ownerConnectionClient = createConnectionClient(async (name,args) =>
   return { data,error,status }
 },accountId)
 const stores = new Map<string,ConnectionMetadataStore>()
+// The last route is kept in the `connectionRoute` replica (routeCache): one copy for routing's checks and the readers.
 const routing = createConnectionRouting({ accountId,read: () => ownerConnectionClient.authority(),
-  changed: ownerId => announce(ownerId) })
+  changed: ownerId => announce(ownerId),cache: routeCache })
 async function executePlatformOperation(operationId: string,route: ConnectionRoute) {
   await routing.assert(route,true)
   const owner = accountId()
@@ -54,8 +56,12 @@ const bridge: ConnectionBridge = {
     const key = JSON.stringify([ownerId,route.mode,route.epoch,deviceId])
     let store = stores.get(key)
     if (!store) {
-      const cache = assistantPanelCacheStore().accountState<ConnectionMetadataSnapshot>(ownerId,`owner-connections.v1:${route.epoch}:${deviceId ?? 'all'}`,
-        (value): value is ConnectionMetadataSnapshot => isOwnerConnectionMetadataCache(value,ownerId))
+      // The store's copy is the `ownerConnections` replica entry of this route and device (❌ a second cache of its own);
+      // the store checks the account is the owner's before it peeks or saves.
+      const cache = {
+        peek: () => valueOf(ownerConnections.peek(route.epoch,deviceId)),
+        save: (value: ConnectionMetadataSnapshot) => { ownerConnections.set([route.epoch,deviceId],value) },
+      }
       store = createOwnerConnectionStore({ ownerId,deviceId,accountId,client: connectionClientForRoute(ownerConnectionClient,routing,route),cache,
         executePlatformOperation: id => executePlatformOperation(id,route),
         reread: () => announce(ownerId),changed: () => announce(ownerId),
@@ -84,6 +90,18 @@ const bridge: ConnectionBridge = {
   },
 }
 
+let warming: (() => void) | null = null
+let warmedFor: string | null = null
+
+function warmConnections(): void {
+  const owner = accountId()
+  if (!owner || owner === warmedFor) return
+  warmedFor = owner
+  queueMicrotask(prefetchConnections)
+}
+
 export function installConnectionHost(w: Window = window) {
   (w as ConnectionWindow).__GUGU_CONNECTIONS__ = bridge
+  warming ??= observeRendererSession(warmConnections)
+  warmConnections()
 }

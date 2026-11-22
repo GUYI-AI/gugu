@@ -65,7 +65,12 @@ const state = vi.hoisted(() => ({
   moveSessionUnder: vi.fn(),
   showDropHighlight: vi.fn(),
 }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
+// What the column reports to its slot in the workspace (folded: the slot closes to 0, the column stays mounted).
+const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({
+  useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
+  useInnerSidebarCrowded: () => false,
+}));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
 }));
@@ -151,7 +156,7 @@ state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
 }));
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
-const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
+const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarPresent } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
@@ -172,9 +177,9 @@ const render = () => act(async () => root.render(<InnerSidebar />));
 const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
 const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
   act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
-let shellColumnChat: string | null = null;
+let shellColumnPresent = false;
 function ShellProbe() {
-  shellColumnChat = useInnerSidebarChat();
+  shellColumnPresent = useInnerSidebarPresent();
   return null;
 }
 
@@ -259,7 +264,7 @@ describe('inner sidebar', () => {
     await render();
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
-    expect(sessionRows()).toEqual(['shop-task', 'shop-idle', 'shop-chat-agent']);
+    expect(sessionRows()).toEqual(['shop-chat-agent', 'shop-idle', 'shop-task']);
   });
 
   it('#3367 a sub-session dragged onto the Agents header goes back to the top level; a top-level one is not taken', async () => {
@@ -389,19 +394,18 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-inner-topics-drill]')).toBeNull();
   });
 
-  it('one flat list, no 「needs you」 / 「running」 headers: needs you, then running, then the rest; past 10 one 「Show more」 opens to Collapse', async () => {
+  it('one flat list, no 「needs you」 / 「running」 headers, most recent first; needs you past 10 still shows; one 「Show more」 opens to Collapse', async () => {
     state.items = [
-      ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 100 - index)),
       ...Array.from({ length: 5 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
+      ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 90 - index)),
       item('asks', 'p-shop', waiting, 0),
     ];
     openProject('p-shop');
     await render();
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
-    expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).not.toContain('sidebar.needsYou');
     expect(agentsCount()).toBe('13');
-    expect(sessionRows()).toEqual(['asks', ...Array.from({ length: 7 }, (_, index) => `run-${index}`), 'idle-0', 'idle-1']);
-    expect(moreRows()).toEqual(['sidebar.showMore:3']);
+    expect(sessionRows()).toEqual([...Array.from({ length: 5 }, (_, index) => `idle-${index}`), ...Array.from({ length: 5 }, (_, index) => `run-${index}`), 'asks']);
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
     await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
     expect(sessionRows()).toHaveLength(13);
     expect(moreRows()).toEqual(['sidebar.showLess']);
@@ -466,7 +470,7 @@ describe('inner sidebar', () => {
     expect(ends.at(-2)?.matches('[data-inner-head-hover]')).toBe(true);
 
     await act(async () => fold.click());
-    expect(host.querySelector('[data-region="inner-sidebar"]'), 'folded: the column is gone, the content is the card alone').toBeNull();
+    expect(innerFrame.folded, 'folded: its slot closes, the content is the card alone').toBe(true);
     expect(innerSidebarFolded.get()).toBe(true);
     expect(innerSidebarFoldedAway.get()).toBe(true);
     expect(innerSidebarShownFor.get()).toBeNull();
@@ -482,7 +486,8 @@ describe('inner sidebar', () => {
     // Remembered globally: another group (and a project) opens folded too.
     openProject('p-shop');
     await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(host.querySelector('[data-inner-sidebar-chat="shop-chat"]'), 'mounted, its slot closed').not.toBeNull();
+    expect(innerFrame.folded).toBe(true);
     expect(restore.querySelector('button')).not.toBeNull();
     // Nothing to fold over (a direct message): no expand button, no lane.
     openChat('dm');
@@ -507,7 +512,7 @@ describe('inner sidebar', () => {
     await act(async () => shell.render(<ShellProbe />));
     openChat('group');
     await render();
-    expect(shellColumnChat).toBe('group');
+    expect(shellColumnPresent).toBe(true);
     openSession('mine-in-group', true);
     await render();
     expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
@@ -517,7 +522,8 @@ describe('inner sidebar', () => {
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     expect(innerSidebarChat.get()).toBeNull();
-    expect(shellColumnChat).toBeNull();
+    // Still there for the window: a click on any group block moves it onto that group.
+    expect(shellColumnPresent).toBe(true);
     openChat('dm');
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
@@ -608,7 +614,7 @@ describe('a standalone agent with sub-agents', () => {
   });
   const head = () => host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-slot="button"]');
 
-  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, needs you → running → rest', async () => {
+  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, most recent first', async () => {
     const shell = createRoot(document.createElement('div'));
     await act(async () => shell.render(<ShellProbe />));
     openSession('solo-task');
@@ -626,10 +632,10 @@ describe('a standalone agent with sub-agents', () => {
     expect(sections()).toEqual(['agents']);
     expect(readShellSlots()!.getSlots().has('inner-topics:dm-solo')).toBe(false);
     // The grandchild stays folded under its parent; the count is every sub-agent.
-    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(agentsCount()).toBe('4');
     expect(innerSidebarChat.get()).toEqual(solo);
-    expect(shellColumnChat).toBe('dm-solo');
+    expect(shellColumnPresent).toBe(true);
     act(() => shell.unmount());
   });
 
@@ -727,7 +733,7 @@ describe('a standalone agent with sub-agents', () => {
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     openSession('solo-task');
     await render();
-    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(agentsCount()).toBe('4');
   });
 
@@ -743,7 +749,7 @@ describe('a standalone agent with sub-agents', () => {
     state.items = state.items.filter((entry) => entry.id !== 'sub-asks');
     await render();
     expect(state.placementReads).toBeGreaterThan(reads);
-    expect(sessionRows()).toEqual(['sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy']);
   });
 
   it('an agent living in a group or a project is no standalone agent: no column of its own, sub-agents or not', async () => {
@@ -774,7 +780,7 @@ describe('a standalone agent with sub-agents', () => {
     await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.click());
     openSession('solo-task');
     await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerFrame.folded).toBe(true);
     expect(innerSidebarFoldedAway.get()).toBe(true);
     expect(innerSidebarChat.get(), 'still attached: the list keeps the agent lit').toEqual(solo);
     await act(async () => restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!.click());

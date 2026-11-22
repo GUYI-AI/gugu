@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { connectionUnlistedReasonSchema } from './connections';
 import { customModelConnectionSchema, customModelMetaSchema, modelEndpointSchema, modelProtocolSchema } from '../../models/custom-model';
 
 export { customModelConnectionSchema };
@@ -35,7 +36,7 @@ export const customModelProtocolProbeSchema = z.object({
   /** What each step that failed reported, in the order tried. */
   failures: z.array(z.object({
     step: z.union([z.literal('models'), modelProtocolSchema]),
-    reason: z.enum(['unreachable', 'unauthorized', 'no-list', 'no-model', 'refused']),
+    reason: z.enum([...connectionUnlistedReasonSchema.options, 'no-model', 'refused']),
   })),
 });
 export type CustomModelProtocolProbe = z.infer<typeof customModelProtocolProbeSchema>;

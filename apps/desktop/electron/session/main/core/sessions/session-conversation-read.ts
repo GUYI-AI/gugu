@@ -13,7 +13,7 @@ function read(sessionId: string, source: JournalDb = db): NativeReadJournal {
   const record = source.select({ value: kv.value }).from(kv).where(eq(kv.key, keyFor(sessionId))).get();
   if (!record) return {};
   const journal: unknown = JSON.parse(record.value);
-  if (!journal || typeof journal !== 'object' || Array.isArray(journal) || Object.values(journal).some(value => !value || typeof value.read !== 'boolean' || !Array.isArray(value.aliases) || value.aliases.some((id: unknown) => typeof id !== 'string'))) {
+  if (!journal || typeof journal !== 'object' || Array.isArray(journal) || Object.values(journal).some(value => !value || typeof value.read !== 'boolean' || !Array.isArray(value.aliases) || value.aliases.some((id: unknown) => typeof id !== 'string') || (value.at !== undefined && !Number.isFinite(value.at)))) {
     throw new Error(`Invalid native conversation read journal: ${sessionId}`);
   }
   return journal as NativeReadJournal;
@@ -61,7 +61,7 @@ export function noteNativeConversationReplies(sessionId: string, turn: Transcrip
   const keys = nativeReplyKeys(turn).filter(id => personal.has(id));
   const aliases = new Map(turn.items.flatMap((item, index) => item.kind === 'message' && live.items[index]?.kind === 'message' ? [[item.id, nativeMessageKey(live.items[index]!.id)]] : []));
   const notifications = new Set(turn.items.flatMap(item => item.kind === 'message' && item.ownerNotification ? [item.id] : []));
-  const publish = keys.length ? update(sessionId, journal => addNativeReplies(journal, keys, aliases, notifications), transaction).publish : undefined;
+  const publish = keys.length ? update(sessionId, journal => addNativeReplies(journal, keys, aliases, notifications, turn.startedAt), transaction).publish : undefined;
   if (activity || publish) return () => {
     publish?.();
     if (activity) publishConversationActivity(sessionId);
@@ -72,12 +72,9 @@ export function markNativeConversationVisible(sessionId: string, itemIds: readon
   return update(sessionId, journal => seeNativeReplies(journal, itemIds)).unread;
 }
 
-export function truncateNativeConversationRead(sessionId: string, fromSeq: number, transaction?: JournalDb, removed: ReadonlySet<number> = new Set()): (() => void) | undefined {
-  const activity = truncateNativeConversationActivity(sessionId, fromSeq, transaction ?? db, removed);
-  const prefix = `${sessionId}:turn:s`;
-  const publish = update(sessionId, journal => Object.fromEntries(Object.entries(journal).filter(([key]) => {
-    const seq = key.startsWith(prefix) ? /^(\d+):/.exec(key.slice(prefix.length))?.[1] : undefined;
-    return seq === undefined || (Number(seq) < fromSeq && !removed.has(Number(seq)));
-  })), transaction).publish;
+/** A revert removed every turn from `from` (epoch ms) on: their replies are no longer there to read. */
+export function truncateNativeConversationRead(sessionId: string, from: number, transaction?: JournalDb): (() => void) | undefined {
+  const activity = truncateNativeConversationActivity(sessionId, from, transaction ?? db);
+  const publish = update(sessionId, journal => Object.fromEntries(Object.entries(journal).filter(([, value]) => value.at === undefined || value.at < from)), transaction).publish;
   return () => { publish(); if (activity) publishConversationActivity(sessionId); };
 }

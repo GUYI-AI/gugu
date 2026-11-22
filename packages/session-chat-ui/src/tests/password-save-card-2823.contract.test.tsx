@@ -7,7 +7,6 @@ import type { PasswordBetaUi, PasswordSaveRequest, PasswordUiCommand, PasswordUi
 import { createPasswordCardKey, openPasswordCard, sealPasswordCard } from '@gugu/core/shared/passwordCardCipher'
 import { remotePasswordSaveCard } from '../../../../apps/desktop/src/lib/passwordSaveCards'
 vi.mock('../../../../apps/desktop/src/lib/deviceRpc', () => ({ callDeviceRpc: vi.fn() }))
-vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }))
 const request: PasswordSaveRequest = { kind: 'save', requestId: '11111111-1111-4111-8111-111111111111',
   origin: 'https://example.com', agent: 'agent', agentName: '研究助理', sessionTitle: '研究助理', sessionId: 'session', deviceId: 'desktop',
   expiresAt: Date.now() + 100000, inputs: [{ key: 'phone', name: '手机号', secret: false }] }

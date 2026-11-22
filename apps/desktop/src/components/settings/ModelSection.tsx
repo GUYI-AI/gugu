@@ -1,6 +1,8 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { useTheme } from '@/store/theme'
+import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { useState } from 'react'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
@@ -14,6 +16,8 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from '
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { ChevronDown, ChevronRight } from '@/lib/icons'
 import { CustomModelsGroup } from './CustomModelsGroup'
+import { DeviceScopePicker, DeviceScopeStatus } from '@renderer/features/remote-hosts/device-scope-picker'
+import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
 import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import './ModelSettings.css'
 
@@ -34,6 +38,7 @@ const paneLog = rendererLogger('settings/model-pane')
 
 export function ModelSection({ addRequested, onAddClose }: { addRequested?: boolean; onAddClose?: () => void } = {}) {
   const { t } = useTranslation('settings')
+  const { theme } = useTheme()
   const catalog = useReplica(platformModels, [])
   const models = catalog.state === 'value' ? catalog.value.filter((model) => model.enabled) : null
   const loadFailed = catalog.state === 'error' ? messageForUser(catalog.error) : ''
@@ -41,8 +46,6 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
   // 列表顶上一格搜索(Cursor 那页同款):按名字或 id 筛,两组一起筛。
   const [query, setQuery] = useState('')
   const [showProvided, setShowProvided] = useState(false)
-
-  const load = () => { void platformModels.refresh() }
 
   const toggle = (model: PlatformCatalogModel, shown: boolean) => {
     setSaveFailed('')
@@ -66,6 +69,12 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
 
   return (
     <SettingsPage className="gg-model-page" data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
+      <SessionUiTheme theme={theme} skin>
+      <div className="flex min-w-0 items-center gap-2" data-testid="settings-model-machine">
+        <DeviceScopePicker store={settingsDeviceStore} />
+        <DeviceScopeStatus store={settingsDeviceStore} />
+      </div>
+      </SessionUiTheme>
       <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} />
       <SessionSettingsSection section="auxiliary-models" />
       <SettingsGroup data-platform-models="" data-expanded={String(showProvided)} title={<Button variant="ghost" size="option" className="gg-provided-model-toggle"
@@ -76,9 +85,9 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
         {showProvided && <>
         <SearchField value={query} onChange={event => setQuery(event.target.value)} placeholder={t('model.search')}
           clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />
-        {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={load}>{t('model.retry')}</Button>} />
+        {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={retryOf(catalog)}>{t('model.retry')}</Button>} />
           : groups === null ? <Unknown className="h-64 w-full" /> : <>
-            {catalog.state === 'value' ? <RefreshFailed error={catalog.error} onRetry={load} /> : null}
+            {catalog.state === 'value' ? <RefreshFailed reading={catalog} /> : null}
             {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
             <div className="gg-model-rows" data-testid="settings-model-usable">
               {groups.usable.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName}

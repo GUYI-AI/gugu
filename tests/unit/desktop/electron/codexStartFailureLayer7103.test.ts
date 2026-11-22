@@ -22,7 +22,7 @@ import { cachedFixtureExecutable } from '../../../support/cachedFixtureExecutabl
 /** @@@4918 正文逐字稳定(内容寻址);在端点就绪前退出,模拟 codex 自己起不来。 */
 const EXITS_BEFORE_READY = `#!/usr/bin/env node
 if (process.argv.includes('--version')) {
-  process.stdout.write('codex-cli 0.155.1\\n')
+  process.stdout.write('codex-cli 0.156.0\\n')
   process.exit(0)
 }
 process.stderr.write('codex: config.toml is broken\\n')

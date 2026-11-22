@@ -1,5 +1,6 @@
 import { findRemoteHostsBridge, type RemoteHostDevice } from '@shared/remote-hosts';
-import { rpc, rpcOn } from '@renderer/lib/ipc';
+import { installedExtensions, LOCAL_HOST } from './installed-extensions';
+import { remoteHostKey } from './extensions-api';
 
 export interface InstalledElsewhereDependencies {
   /** The person's other computers, as this window knows them. */
@@ -10,11 +11,9 @@ export interface InstalledElsewhereDependencies {
 
 const defaults: InstalledElsewhereDependencies = {
   devices: () => findRemoteHostsBridge()?.listDevices() ?? [],
-  installed: async (deviceId) => {
-    const result = await (deviceId ? rpcOn(deviceId) : rpc).extensions.list();
-    if (!result.success || !result.data) throw new Error(result.error ?? 'unreadable');
-    return result.data.extensions.map((manifest) => manifest.id);
-  },
+  // Read again now (an uninstall decides on it), through the computer's installed list.
+  installed: async (deviceId) =>
+    (await installedExtensions.reread(deviceId ? remoteHostKey(deviceId) : LOCAL_HOST)).extensions.map((manifest) => manifest.id),
 };
 
 /**

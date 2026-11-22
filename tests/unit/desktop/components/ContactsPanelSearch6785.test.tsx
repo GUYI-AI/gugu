@@ -3,10 +3,15 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsPanel'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
+import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
 import { clickElement, contact, contactsStore, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
 vi.mock('../../../../apps/desktop/src/lib/chat', () => import('../../../support/contactsChatServiceTestDouble'))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(),
+  openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 // 快捷键要等用户的按键设置读到才绑(getEffectiveHotkey):这里给一份已读到、没有改过的设置,⌘F 就是默认的 Mod+F。
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 
@@ -15,7 +20,7 @@ beforeEach(() => {
   harness = createReactHarness()
   Element.prototype.scrollIntoView = vi.fn() // jsdom 没有 scrollIntoView
 })
-afterEach(() => { harness.cleanup(); vi.useRealTimers() })
+afterEach(() => { harness.cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 const people = [
   contact({ id: 'zs', display_name: '张三', gugu_number: 109591 }),
@@ -40,9 +45,9 @@ async function render(options: { mobile?: boolean; contacts?: Parameters<typeof 
 const $ = (selector: string) => harness.container.querySelector(selector) as HTMLElement | null
 const input = () => $(`[data-testid="${AUTOMATION_TEST_IDS.contactsSearchInput}"]`) as HTMLInputElement
 const results = () => $('[data-testid="contacts-search-results"]')
-// 桌面:结果铺在右边;人和群是行([data-search-hit]),设备分组里的 agent 是导图节点([data-contact-id])。
+// 桌面:结果铺在右边;人和群是行([data-search-hit]),设备分组里的 agent 是家族里的节点([data-contact-id])。
 const hits = () => Array.from(results()?.querySelectorAll<HTMLElement>('[data-search-hit], [data-contact-id]') ?? [])
-const titles = () => hits().map((hit) => (hit.querySelector('.gg-list-row-title') ?? hit.querySelector('[data-map-name]'))?.textContent)
+const titles = () => hits().map((hit) => (hit.querySelector('.gg-list-row-title') ?? hit.querySelector('[data-agent-name]'))?.textContent)
 const sections = () => Array.from(results()?.querySelectorAll('[data-slot="section-label"]') ?? []).map((label) => label.textContent)
 const subtitle = (index: number) => hits()[index]?.querySelector('.gg-list-row-subtitle')?.textContent
 const drawerTitle = () => $('[data-testid="contacts-detail-drawer"] [data-slot="pane-header"]')?.textContent ?? ''
@@ -130,12 +135,12 @@ describe('contacts search (desktop: box in the left column, results in the right
   })
 
   it('offers a 咕咕号 lookup when a number finds nobody, and seeds the add-contact search with it', async () => {
-    const searchUsers = vi.fn(async () => {})
-    await render({ contacts: { searchUsers } })
+    const searchUsers = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await render()
     await typeInto(input(), '109601')
     expect(results()?.textContent).toContain('用咕咕号 109601 查找')
     await press('Enter')
-    expect(searchUsers).toHaveBeenCalledWith('109601')
+    expect(searchUsers).toHaveBeenCalledWith('109601', 'owner-1')
   })
 
   it('ticks a person instead of opening them while picking people for a new group, and keeps the query', async () => {
@@ -204,13 +209,13 @@ describe('contacts search (phone home)', () => {
   })
 
   it('looks a 咕咕号 up on Enter from the header box when it finds nobody', async () => {
-    const searchUsers = vi.fn(async () => {})
-    await render({ mobile: true, contacts: { searchUsers } })
+    const searchUsers = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await render({ mobile: true })
     await clickElement($('[data-header-search-open]')!)
     await typeInto(input(), '109601')
     expect(rowTitles()).toEqual(['用咕咕号 109601 查找'])
     expect(searchUsers).not.toHaveBeenCalled()
     await press('Enter')
-    expect(searchUsers).toHaveBeenCalledWith('109601')
+    expect(searchUsers).toHaveBeenCalledWith('109601', 'owner-1')
   })
 })

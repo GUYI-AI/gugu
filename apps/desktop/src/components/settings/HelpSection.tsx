@@ -11,7 +11,8 @@ export function HelpSection() {
   const { t } = useTranslation('productTour')
   const { user } = useAuth()
   const tour = useProductTourState(user?.id ?? null)
-  const resume = resumableStep(tour.data)
+  // Progress not read yet (or unreadable): no 「继续」 entry until it is.
+  const resume = resumableStep(tour.state === 'value' ? tour.value : null)
   function request(detail: ProductTourRequest) {
     window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
     window.dispatchEvent(new CustomEvent(UI_EVENTS.reopenProductTour, { detail }))

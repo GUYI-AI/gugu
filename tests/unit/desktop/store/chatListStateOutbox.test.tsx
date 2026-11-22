@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, useRef } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { chat, message, createReactHarness, deferred } from '../../../support/testHarness'
 import { useChatListState } from '../../../../apps/desktop/src/store/chatListState'
@@ -9,7 +9,9 @@ import { createChatListProjectionLedger, useChatProjectionBinding } from '../../
 import { createOutboxWiring } from '../../../../apps/desktop/src/store/chatOutboxWiring'
 import { chatService } from '../../../../apps/desktop/src/lib/chat'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { openImRepository, putOutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
+import { openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { createOutbox, type Outbox } from '../../../../apps/desktop/src/lib/outbox/core'
+import { fakeAccount, memoryStorage } from './chatOutboxHarness'
 
 const boundary = vi.hoisted(() => ({ visible: true, write: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { notifications: false } } }))
@@ -17,7 +19,13 @@ vi.mock('../../../../apps/desktop/src/lib/onScreenChat', () => ({ isChatOnScreen
 vi.mock('../../../../apps/desktop/src/lib/readWriter', async original => ({
   ...await original<typeof import('../../../../apps/desktop/src/lib/readWriter')>(), writeRead: boundary.write,
 }))
-afterEach(() => { vi.restoreAllMocks(); boundary.write.mockReset() })
+// The window's one outbox, real, over memory.
+let box: Outbox
+beforeEach(() => {
+  box = createOutbox({ storage: memoryStorage(), account: fakeAccount('outbox-owner'), online: () => () => {} })
+  ;(globalThis as Record<string, unknown>).__GUGU_OUTBOX__ = box
+})
+afterEach(() => { box.dispose(); delete (globalThis as Record<string, unknown>).__GUGU_OUTBOX__; vi.restoreAllMocks(); boundary.write.mockReset() })
 
 it.each(['send', 'restore-native'] as const)('%s read failure keeps the local read position through a later hidden publication (reconciled on recovery)', async mode => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -59,12 +67,13 @@ it.each(['send', 'restore-native'] as const)('%s read failure keeps the local re
         content: 'sent', toUserIds: [], replyToMessageId: null, threadRootId: null, isThreadRoot: false, isWhisper: false }) })
     } else {
       const now = new Date().toISOString()
-      await putOutboxRecord(repository, { clientMessageId: delivered.id, chatId: basis.id, senderUserId: 'outbox-owner',
+      // What a previous run left: a project-chat file committed for publication, its File gone with that run.
+      await wiring.outbox.enqueue({ clientMessageId: delivered.id, chatId: basis.id, senderUserId: 'outbox-owner',
         payload: { content: 'native.txt', contentType: 'attachment', toUserIds: [], replyToMessageId: null,
           threadRootId: null, isThreadRoot: false, isWhisper: false },
         operation: { kind: 'nativeAttachment', commit: { message_id: delivered.id, chat_id: basis.id,
           sender_user_id: 'outbox-owner', file_name: 'native.txt', to_user_ids: [] } },
-        state: 'sending', attempts: 0, lastError: null, enqueuedAt: now, updatedAt: now })
+        state: 'pending', attempts: 0, lastError: null, enqueuedAt: now, updatedAt: now })
       await act(async () => { stop = wiring.restoreAndWatch() })
     }
     await vi.waitFor(() => expect(boundary.write).toHaveBeenCalledTimes(1))

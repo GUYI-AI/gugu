@@ -1,6 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { replica, useReplica } from '../../lib/replica'
+import { replica, useEntry, useReplica } from '../../lib/replica'
 import { useTranslation } from 'react-i18next'
 import type { GroupChatSettings, GroupCollabSnapshot, UpdateGroupChatSettingsInput } from '@gugu/core/shared/types/chat'
 import { chatService } from '../../lib/chat'
@@ -54,13 +54,7 @@ export const groupSettings = replica({
     const w = writesOf(chatId)
     const seqAtStart = w.seq
     const startedDuringWrite = w.inFlight > 0
-    let loaded: GroupChatSettings
-    try {
-      loaded = await chatService.getGroupChatSettings(chatId)
-    } catch (error) {
-      settingsLog.error({ error, chatId }, 'group settings load failed')
-      throw error
-    }
+    const loaded = await chatService.getGroupChatSettings(chatId)
     const shown = groupSettings.peek(chatId)
     if ((startedDuringWrite || w.seq !== seqAtStart) && shown.state === 'value') {
       if (w.inFlight > 0) w.rereadAfter = true
@@ -85,14 +79,16 @@ export async function writeGroupSettings(chatId: string, input: UpdateGroupChatS
   const seq = ++w.seq
   for (const key of keys) w.latest.set(key, seq)
   const ownedKeys = () => keys.filter((key) => w.latest.get(key) === seq)
-  groupSettings.set([chatId], (current) => (current ? { ...current, ...input } as GroupChatSettings : current))
+  // Bound before the await: the answer lands in the account that asked (❌ the next one's group settings).
+  const entry = groupSettings.at(chatId)
+  entry.set((current) => (current ? { ...current, ...input } as GroupChatSettings : current))
   w.inFlight += 1
   try {
     const updated = await chatService.updateGroupChatSettings(chatId, input)
-    groupSettings.set([chatId], (current) => (current ? { ...current, ...pick(updated, ownedKeys()) } : updated))
+    entry.set((current) => (current ? { ...current, ...pick(updated, ownedKeys()) } : updated))
     return updated
   } catch (err) {
-    groupSettings.set([chatId], (current) => (current ? { ...current, ...pick(before, ownedKeys()) } : current))
+    entry.set((current) => (current ? { ...current, ...pick(before, ownedKeys()) } : current))
     settingsLog.error({ error: err, chatId, fields: keys }, 'group settings update failed')
     throw err
   } finally {
@@ -150,11 +146,13 @@ export function useGroupChatSettings(chatId: string | null, revision?: string, a
     }
   }, [chatId, t])
 
+  // Called after the upload's await: bound to the account this render drew.
+  const entry = useEntry(groupSettings, chatId ? [chatId] : null)
   const setAvatarUrl = useCallback((avatarUrl: string | null) => {
-    if (!chatId) return
+    if (!chatId || !entry) return
     writesOf(chatId).seq += 1
-    groupSettings.set([chatId], (current) => (current ? { ...current, avatar_url: avatarUrl } : current))
-  }, [chatId])
+    entry.set((current) => (current ? { ...current, avatar_url: avatarUrl } : current))
+  }, [chatId, entry])
 
   const reload = useCallback(() => { if (chatId) void groupSettings.refresh(chatId) }, [chatId])
   const setMessage = useCallback((message: string | null) => { setError(message === null ? null : { chatId, message }) }, [chatId])

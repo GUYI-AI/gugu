@@ -1,6 +1,5 @@
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { anySignal } from '@gugu/core/shared/anySignal'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { CredentialUseBinding } from '../session/main/core/browser/credential-use-contract'
 import { canonicalJson } from './operation'
 import { PasswordFactWindow, PasswordPermissionError, passwordUnavailable } from './password-facts'
@@ -51,7 +50,7 @@ export function createBetaPasswordAccess(host: Partial<BetaPasswordHost> = {}) {
   const windowFor = (signal: AbortSignal, nativeSignal?: AbortSignal) => {
     const window = new PasswordFactWindow(anySignal([signal, lifetime, nativeSignal]))
     try {
-      if (!PASSWORD_BETA_ENABLED || !(lifetime instanceof AbortSignal)) throw passwordUnavailable()
+      if (!(lifetime instanceof AbortSignal)) throw passwordUnavailable()
       // Capture the real lifetime without manufacturing a ready fact or generation.
       window.bind(() => {
         lifetime.throwIfAborted()

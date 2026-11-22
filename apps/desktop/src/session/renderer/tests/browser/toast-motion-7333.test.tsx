@@ -77,27 +77,27 @@ describe('notice appearance and reduced motion (#7333, #137)', () => {
 
   it('the same key updates one notice in place instead of stacking, and the waiting look is the product loading indicator', async () => {
     await mount()
-    await act(async () => { notify({ key: 'machine:d1', title: 'Reconnecting Mac 1', tier: 'info', ongoing: true, waiting: true }) })
+    await act(async () => { notify({ key: 'machine:d1', title: 'Reconnecting Mac 1', tier: 'warning', waiting: true }) })
     await until('the waiting notice appears', () => document.querySelectorAll('[data-sonner-toast]').length === 1)
     const waiting = document.querySelector<HTMLElement>('[data-sonner-toast]')!
     expect(waiting.textContent).toContain('Reconnecting Mac 1')
-    expect(dismissOf(waiting), 'an ongoing notice can always be closed').not.toBeNull()
-    await act(async () => { notify({ key: 'machine:d1', title: 'Mac 1 is offline', tier: 'info', ongoing: true }) })
+    expect(dismissOf(waiting), 'a notice to read can always be closed').not.toBeNull()
+    await act(async () => { notify({ key: 'machine:d1', title: 'Mac 1 is offline', tier: 'warning' }) })
     await until('the same notice now reads offline', () => document.querySelector('[data-sonner-toast]')?.textContent?.includes('Mac 1 is offline') === true)
     expect(document.querySelectorAll('[data-sonner-toast]')).toHaveLength(1)
     await act(async () => { dismissNotice('machine:d1') })
     await until('the keyed notice is dismissed', () => document.querySelector('[data-sonner-toast]') === null)
   })
 
-  it('a reused key carries nothing over from its earlier life: a click-through success never makes the next ongoing notice unclosable', async () => {
+  it('a reused key carries nothing over from its earlier life: a click-through success never makes the next error unclosable', async () => {
     await mount()
     await act(async () => { notify({ key: 'machine:d1', title: 'Connected', tier: 'success' }) })
     await until('the success notice appears', () => toast('success') !== null)
     expect(getComputedStyle(toast('success')!).pointerEvents).toBe('none')
     await act(async () => { dismissNotice('machine:d1') })
     await until('the success notice leaves', () => document.querySelector('[data-sonner-toast]') === null)
-    await act(async () => { notify({ key: 'machine:d1', title: 'Mac 1 is offline', tier: 'error', ongoing: true, onDismiss: () => {} }) })
-    await until('the ongoing notice appears', () => toast('error') !== null)
+    await act(async () => { notify({ key: 'machine:d1', title: 'Mac 1 is offline', tier: 'error', onDismiss: () => {} }) })
+    await until('the error appears', () => toast('error') !== null)
     const ongoing = toast('error')!
     expect(getComputedStyle(ongoing).pointerEvents).toBe('auto')
     expect(dismissOf(ongoing)).not.toBeNull()

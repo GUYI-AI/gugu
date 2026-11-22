@@ -12,7 +12,11 @@ vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>
   widgetSnapshotWebP: async () => new Blob(['picture'], { type: 'image/webp' }),
 }))
 vi.mock('@/store/theme', async original => ({ ...(await original<object>()), useTheme: () => ({ theme: 'light' }) }))
-vi.mock('@renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: { manifestFor: () => undefined } }))
+vi.mock('@renderer/features/extensions/installed-extensions', async original => {
+  const installed = { manifestFor: () => undefined }
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+})
 
 let harness: ReturnType<typeof createReactHarness>, slot: HTMLElement
 afterEach(() => {

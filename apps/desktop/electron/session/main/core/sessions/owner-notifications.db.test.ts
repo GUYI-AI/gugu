@@ -11,17 +11,25 @@ import { pendingNativePublications } from './native-publication-journal';
 const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, root: '', sourceTurn: 'runtime-turn' }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mocks.db) throw new Error('Missing fixture'); return mocks.db; } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+vi.mock('electron', () => ({ app: { getPath: () => mocks.root } }));
 vi.mock('../projects/utils', () => ({ resolveWorkspace: () => ({ path: mocks.root }) }));
 vi.mock('./session-activity-source', () => ({ readCurrentTurnIdentity: async () => mocks.sourceTurn }));
+vi.mock('../activity/signals', () => ({ activitySignal: vi.fn() }));
 const { commitOwnerNotification, ownerNotificationFile } = await import('./owner-notifications');
 const { nativeConversationUnread, nativeOwnerNotificationUnread, markNativeConversationVisible } = await import('./session-conversation-read');
-const { ownerNotificationHead, ownerNotificationEpoch } = await import('./owner-notification-state');
-const { getStoredHistory, persistCommittedTurn, truncateStoredHistory } = await import('./session-turn-store');
+const { appendJournalTurn, revertJournal } = await import('./session-journal');
+const { forgetRevertedTurns } = await import('./committed-turn-observer');
 let fixture: Awaited<ReturnType<typeof openFixture>>;
 let publicationHost: ReturnType<typeof startNativeConversationPublicationHost> | undefined;
 const context = { sessionId: 's', projectId: 'p', workspaceId: 'w' };
 const input = { request_id: '11111111-1111-4111-8111-111111111111', agent_user_id: 'agent', text: 'The result needs your review' };
-const records = () => (fixture.sqlite.prepare('SELECT data FROM session_turns ORDER BY seq').all() as { data: string }[]).map(row => JSON.parse(row.data) as TranscriptTurn);
+/** The session's journal, one turn per id as its reader takes it. */
+const records = async () => {
+  const text = await readFile(join(mocks.root, 'session-journal', 's.jsonl'), 'utf8').catch(() => '');
+  const byId = new Map<string, TranscriptTurn>();
+  for (const line of text.split('\n').filter(Boolean)) { const parsed = JSON.parse(line) as { id: string; turn: TranscriptTurn }; byId.set(parsed.id, parsed.turn); }
+  return [...byId.values()];
+};
 beforeEach(async () => {
   mocks.sourceTurn = 'runtime-turn';
   mocks.root = await mkdtemp(join(tmpdir(), 'gugu-owner-notification-'));
@@ -39,7 +47,10 @@ it('atomically journals a real explicit owner notification once while offline', 
   const receipt = await commitOwnerNotification(context, input, async () => {});
   expect(await commitOwnerNotification(context, input, async () => {})).toEqual(receipt);
   expect(pendingNativePublications()).toHaveLength(1);
-  expect(records()[0]!.items[0]).toMatchObject({ _meta: { guguPublicationId: pendingNativePublications()[0]!.id } });
+  expect((await records())[0]!.items[0]).toMatchObject({ _meta: { guguPublicationId: pendingNativePublications()[0]!.id } });
+  // The timeline reads it from the session's journal, once.
+  const journal = (await readFile(join(mocks.root, 'session-journal', 's.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { id: string });
+  expect(journal.map(line => line.id)).toEqual([expect.stringMatching(/^owner-notify:11111111-1111-4111-8111-111111111111@\d+$/)]);
 });
 it.each(['signed-out', 'rebound'] as const)('does not commit a notification after its publication scope becomes %s', async state => {
   publicationHost = startNativeConversationPublicationHost({
@@ -47,20 +58,20 @@ it.each(['signed-out', 'rebound'] as const)('does not commit a notification afte
     address: async () => { throw Error('must not address'); }, publish: async () => { throw Error('must not publish'); }, failed: () => {},
   });
   await expect(commitOwnerNotification(context, input, async () => {})).rejects.toThrow(state === 'signed-out' ? 'not authenticated' : 'identity changed');
-  expect(records()).toEqual([]);
+  expect((await records())).toEqual([]);
   expect(pendingNativePublications()).toEqual([]);
 });
 
 it('commits once and keeps a confirmed read across an identical retry', async () => {
   const receipt = await commitOwnerNotification(context, input, async () => {});
-  expect(receipt).toMatchObject({ status: 'sent', message_id: input.request_id, session_id: 's', seq: 0 });
-  const record = records()[0]!;
+  expect(receipt).toEqual({ status: 'sent', message_id: input.request_id, session_id: 's' });
+  const record = (await records())[0]!;
   expect(record.items[0]).toMatchObject({ kind: 'message', role: 'assistant', text: input.text, ownerNotification: { requestId: input.request_id, sourceTurnId: 'runtime-turn' } });
   expect(nativeConversationUnread('s')).toHaveLength(1);
   expect(nativeOwnerNotificationUnread('s')).toHaveLength(1);
   markNativeConversationVisible('s', [record.items[0]!.id]);
   expect(await commitOwnerNotification(context, input, async () => {})).toEqual(receipt);
-  expect(records()).toHaveLength(1);
+  expect((await records())).toHaveLength(1);
   expect(nativeConversationUnread('s')).toEqual([]);
   expect(nativeOwnerNotificationUnread('s')).toEqual([]);
   await expect(commitOwnerNotification(context, { ...input, text: 'different request' }, async () => {})).rejects.toThrow('different content');
@@ -70,13 +81,13 @@ it('retains the sent HTML bytes after the source changes or disappears and autho
   await writeFile(source, '<p>version one</p>');
   const fileInput = { ...input, text: '', file: { path: source, name: 'report.html', mime_type: 'text/html' } };
   const receipt = await commitOwnerNotification(context, fileInput, async () => {});
-  const message = records()[0]!.items[0]!;
+  const message = (await records())[0]!.items[0]!;
   if (message.kind !== 'message') throw new Error('Expected owner message');
   const file = message.ownerNotification!.files![0]!;
   expect(await readFile(file.path, 'utf8')).toBe('<p>version one</p>');
-  expect(ownerNotificationFile('s', file.path)).toBe(true);
-  expect(ownerNotificationFile('other', file.path)).toBe(false);
-  expect(ownerNotificationFile('s', source)).toBe(false);
+  expect(await ownerNotificationFile('s', file.path)).toBe(true);
+  expect(await ownerNotificationFile('other', file.path)).toBe(false);
+  expect(await ownerNotificationFile('s', source)).toBe(false);
   await writeFile(source, '<p>version two</p>'); await unlink(source);
   expect(await commitOwnerNotification(context, fileInput, async () => {})).toEqual(receipt);
   expect(await readFile(file.path, 'utf8')).toBe('<p>version one</p>');
@@ -85,10 +96,10 @@ it('retains the sent HTML bytes after the source changes or disappears and autho
 it('serializes concurrent sends and rejects identity or archival changes before committing', async () => {
   const second = { ...input, request_id: '22222222-2222-4222-8222-222222222222', text: 'second' };
   const receipts = await Promise.all([commitOwnerNotification(context, input, async () => {}), commitOwnerNotification(context, second, async () => {})]);
-  expect(receipts.map(row => row.seq).sort()).toEqual([0, 1]);
+  expect(receipts.map(row => row.message_id)).toEqual([input.request_id, second.request_id]);
   await expect(commitOwnerNotification(context, { ...input, request_id: '33333333-3333-4333-8333-333333333333' }, async () => { throw new Error('account changed'); })).rejects.toThrow('account changed');
   await expect(commitOwnerNotification(context, { ...input, request_id: '44444444-4444-4444-8444-444444444444' }, async () => { fixture.sqlite.exec("UPDATE sessions SET archived_at=1 WHERE id='s'"); })).rejects.toThrow('changed before');
-  expect(records()).toHaveLength(2);
+  expect((await records())).toHaveLength(2);
 });
 
 it('deduplicates concurrent identical file sends and refuses a session without a native reader', async () => {
@@ -97,48 +108,25 @@ it('deduplicates concurrent identical file sends and refuses a session without a
   const fileInput = { ...input, text: '', file: { path: source, name: 'report.html', mime_type: 'text/html' } };
   const receipts = await Promise.all([commitOwnerNotification(context, fileInput, async () => {}), commitOwnerNotification(context, fileInput, async () => {})]);
   expect(receipts[0]).toEqual(receipts[1]);
-  expect(records()).toHaveLength(1);
+  expect((await records())).toHaveLength(1);
   fixture.sqlite.exec("UPDATE sessions SET runtime='pty' WHERE id='s'");
   await expect(commitOwnerNotification(context, { ...input, request_id: '22222222-2222-4222-8222-222222222222' }, async () => {})).rejects.toThrow('not delivered to your owner');
-  expect(records()).toHaveLength(1);
+  expect((await records())).toHaveLength(1);
 });
 
-it('reverts notifications with their source turn and atomically resets unread, head and the cursor epoch', async () => {
-  const provider = (id: string): TranscriptTurn => ({ id, seq: 0, initiator: 'user', items: [{ kind: 'message', id: `${id}:input`, seq: 0, role: 'user', text: 'Work' }] });
-  mocks.sourceTurn = 'source-a';
-  await commitOwnerNotification(context, input, async () => {}); // notice 0 precedes provider commit 1
-  await persistCommittedTurn({ sessionId: 's', source: 'live', turn: provider('source-a') });
-  mocks.sourceTurn = 'source-b';
-  await commitOwnerNotification(context, { ...input, request_id: '22222222-2222-4222-8222-222222222222' }, async () => {});
-  await persistCommittedTurn({ sessionId: 's', source: 'live', turn: provider('source-b') });
-  expect(ownerNotificationHead('s')).toBe(2);
-  expect(nativeOwnerNotificationUnread('s')).toHaveLength(2);
-  await truncateStoredHistory('s', 3);
-  expect(records()).toHaveLength(2);
-  expect(records()[0]!.items[0]).toMatchObject({ ownerNotification: { requestId: input.request_id } });
-  expect(ownerNotificationHead('s')).toBe(0);
-  expect(ownerNotificationEpoch('s')).toBe(1);
-  expect((await getStoredHistory({ sessionId: 's' })).nativeOwnerNotificationEpoch).toBe(1);
-  expect(nativeOwnerNotificationUnread('s')).toHaveLength(1);
-  await truncateStoredHistory('s', 1);
-  expect(records()).toEqual([]);
-  expect(ownerNotificationHead('s')).toBeUndefined();
-  expect(ownerNotificationEpoch('s')).toBe(2);
-  expect(await getStoredHistory({ sessionId: 's' })).toMatchObject({ turns: [], nativeOwnerNotificationEpoch: 2 });
-  expect(nativeConversationUnread('s')).toEqual([]);
-  mocks.sourceTurn = 'source-c';
-  const receipt = await commitOwnerNotification(context, { ...input, request_id: '33333333-3333-4333-8333-333333333333' }, async () => {});
-  expect(receipt.seq).toBe(0);
-  expect(ownerNotificationHead('s')).toBe(0);
-  expect(ownerNotificationEpoch('s')).toBe(2);
-  expect(nativeOwnerNotificationUnread('s')).toHaveLength(1);
-});
-
-it('rolls back record deletion and notification metadata if the read journal cannot be truncated', async () => {
+it('a revert takes out the notifications after its point, and their unread, and keeps the ones before', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
   await commitOwnerNotification(context, input, async () => {});
-  fixture.sqlite.prepare('UPDATE kv SET value=? WHERE key=?').run('invalid journal', 'native-conversation-read:s');
-  await expect(truncateStoredHistory('s', 0)).rejects.toThrow();
-  expect(records()).toHaveLength(1);
-  expect(ownerNotificationHead('s')).toBe(0);
-  expect(ownerNotificationEpoch('s')).toBe(0);
+  now = 2000;
+  await appendJournalTurn('s', { id: 's:turn:1', seq: 1, initiator: 'user', startedAt: 2000, endedAt: 2001, outcome: { kind: 'done' },
+    items: [{ kind: 'message', id: 's:turn:1:message:u', seq: 0, role: 'user', text: 'Work', revertAnchor: 'anchor-1' }] } as TranscriptTurn);
+  now = 3000;
+  await commitOwnerNotification(context, { ...input, request_id: '22222222-2222-4222-8222-222222222222' }, async () => {});
+  expect(nativeOwnerNotificationUnread('s')).toHaveLength(2);
+  await revertJournal('s', 'anchor-1');
+  forgetRevertedTurns('s', 2000);
+  expect((await records()).map(turn => turn.id)).toEqual([`owner-notify:${input.request_id}`]);
+  expect(nativeOwnerNotificationUnread('s')).toHaveLength(1);
+  vi.restoreAllMocks();
 });

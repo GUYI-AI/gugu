@@ -34,6 +34,8 @@ const {
   removeHarnessConnection,
   sessionHarnessConnectionId,
 } = await import('./harness-connections');
+const { migrateCustomModelConnections } = await import('./custom-models');
+const { log } = await import('@main/lib/logger');
 
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-connections-'));
@@ -337,4 +339,20 @@ it('a Claude connection config root is where its old sessions ran (now its vault
   expect(connectionConfigRoot('claude', connection.id)).toBe(asked.configRootEnv?.CLAUDE_CONFIG_DIR);
   expect(connectionConfigRoot('claude', 'native')).toBeNull();
   expect(connectionConfigRoot('codex', connection.id)).toBeNull();
+});
+
+it('a default Claude API connection from an earlier release becomes a custom model, and Claude sessions still start on native', async () => {
+  await state.fixture!.registry.upsertAccount({ providerId: 'harness:claude', accountId: 'api', secret: 'fixture-key',
+    meta: { displayName: 'Anthropic API', harnessConnection: { kind: 'api-key', models: ['claude-sonnet-4-5'] } } });
+  await state.fixture!.registry.setDefaultAccount('harness:claude', 'api');
+  // The upgrade, in boot order.
+  migrateCustomModelConnections();
+  await migrateOwnedHarnessAccounts('claude', process.env, true);
+  const migratedTo = (await state.fixture!.registry.getAccount('harness:claude', 'api'))?.meta?.harnessConnection?.migratedTo;
+  expect((await state.fixture!.registry.getAccount('models:custom', migratedTo!))?.meta?.customModel).toBeTruthy();
+  expect(log.info).toHaveBeenCalledWith('custom-model migration: moved API connections',
+    { migrated: [{ namespace: 'harness:claude', from: 'api', to: `models:custom/${migratedTo}`, sessions: 0, automations: 0 }] });
+  await expect(resolveHarnessConnection('claude', { sessionId: 'old' })).resolves.toMatchObject({ connectionId: 'native' });
+  await expect(resolveHarnessConnection('claude', {})).resolves.toMatchObject({ connectionId: 'native' });
+  await expect(resolveHarnessConnection('claude', { connectionId: 'api' })).resolves.toMatchObject({ connectionId: 'native' });
 });

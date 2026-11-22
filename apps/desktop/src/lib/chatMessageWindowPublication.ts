@@ -1,6 +1,6 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { readDisplayIdentities } from './identityReadAdapter'
-import { imSelectors, replaceMessageWindow, type AccountImRepository } from './imRepository'
+import { imSelectors, type AccountImRepository } from './imRepository'
 import { installIdentityDirectoryBridge, publishIdentityDirectory, type IdentityDirectorySnapshot } from './identityDirectoryBridge'
 import { rendererLogger } from './log'
 import { messageReferencedUserIds } from './messageReferencedUserIds'
@@ -23,23 +23,14 @@ const absentUntil = new WeakMap<AccountImRepository, Map<string, number>>()
 const inFlight = new WeakMap<AccountImRepository, Set<string>>()
 
 /**
- * 消息窗口落本地库,并把窗口里**还没有身份**的发送者(含被回复者、@ 的收件人)身份一并提交。
+ * 窗口里**还没有身份**的发送者(含被回复者、@ 的收件人)补齐身份。消息行本身由消息存储持有(messageIngest),这里只补身份。
  *
  * 会话列表投影只为**当前成员**索要身份;退群 / 被移出的成员没有成员行,投影闭包再不会为他索要 ——
  * 于是在任何没提交过他身份的设备上,他的历史消息永远空名字、资料卡点不开(#5610 §2.3)。
- * 消息窗口是这些 id 的唯一引用方,所以由它在写入时补齐身份。
- *
- * 身份读失败会让这次持久化以错误结束(调用方已记日志):窗口本身先落库,身份在其后一笔,不互相拖累。
+ * 消息窗口是这些 id 的唯一引用方,所以由它补齐身份。身份读失败以错误结束(调用方已记日志)。
  */
-export async function publishMessageWindow(
-  repository: AccountImRepository,
-  chatId: string,
-  messages: MessageItem[],
-  hasMoreOlder = false,
-  verifiedTailSeq: number | null = null,
-): Promise<void> {
-  await replaceMessageWindow(repository, chatId, messages, hasMoreOlder, verifiedTailSeq)
-  await ensureIdentities(repository, messageReferencedUserIds(messages), { chatId })
+export function completeWindowIdentities(repository: AccountImRepository, chatId: string, messages: readonly MessageItem[]): Promise<void> {
+  return ensureIdentities(repository, messageReferencedUserIds(messages), { chatId })
 }
 
 /**

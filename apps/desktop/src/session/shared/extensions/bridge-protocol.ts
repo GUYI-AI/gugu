@@ -151,7 +151,7 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
 // 54: `files.sendSelection`, the preinstalled Files App's Send box beside a selection, into the page's session; 55: the same
 // on a chat folder's page, into that chat. Both withdrawn with 60 (the host's selection menu cites instead).
-// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
+// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's icon in its colour, or with `tile` the host's file tile. Presentation
 // only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
 // 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
@@ -161,7 +161,16 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
 // `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
 // Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
-export const EXTENSION_API_VERSION = 60;
+// 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
+// `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
+// App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
+// 62: `showContextMenu` rows say `fold` (rare: the host lays it under 更多 by its one menu rule, menu-table.ts
+// @@@menu-order, the destructive last), `alone` (its name when its submenu holds only it and is shown in its place) and
+// `hotkey` (the key drawn at the row's end, as host menus do: 'F2', 'Mod+Click'). The host orders and folds; the App only
+// says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
+// 63 (ui-entry.ts): `<gugu-file-mark folder [open]>`, a folder from the host's file icon set, in currentColor (ui.css gives it
+// the set's folder colour). Presentation only, as 51: an older host draws the element as a file by its name.
+export const EXTENSION_API_VERSION = 63;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1033,6 +1042,14 @@ export const BRIDGE_VERBS = {
   promptsDelete: { needs: 'prompts' },
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
+  /**
+   * `gugu.credentials` (61, app-credentials.ts): a request the host sends for the page with the credential the person
+   * picked for that website; the value never reaches the page. Gated by `permissions.credentials`, `permissions.network`
+   * and that pick, not a capability word. A page an agent works never uses the person's credential: a read there answers
+   * `unavailable`, a write is handed to the agent.
+   */
+  credentialsRead: { needs: null, only: 'page' },
+  credentialsWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
   cloudSubscribe: { needs: null, only: 'page' },
   cloudUnsubscribe: { needs: null, only: 'page' },

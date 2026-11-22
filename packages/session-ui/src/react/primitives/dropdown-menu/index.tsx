@@ -5,6 +5,7 @@ import { CheckIcon, ChevronRightIcon } from '../../../icons'
 import * as React from 'react';
 import type { FixedDataSlotProps } from '../fixed-data-slot';
 import * as styles from './dropdown-menu.css';
+import { OpenLayer } from '../open-layer';
 
 function DropdownMenuRoot({ ...props }: FixedDataSlotProps<MenuPrimitive.Root.Props>) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -52,6 +53,7 @@ function DropdownMenuContent({
         side={side}
         sideOffset={sideOffset}
       >
+        <OpenLayer />
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cx(

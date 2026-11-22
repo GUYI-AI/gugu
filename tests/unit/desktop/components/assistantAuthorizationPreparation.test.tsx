@@ -12,10 +12,10 @@ vi.mock('@/lib/connectionBridge',() => ({ useConnectionAuthority: () => ({ route
   } }),
 }))
 vi.mock('@/store/devicesContext',() => ({ useDevicesStore: () => ({ devices: [] }) }))
-vi.mock('@/lib/cloudComputerStore',()=>({wakeAndWaitOnline:fixture.wake}))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), wakeAndWaitOnline: fixture.wake }))
 vi.mock('@/lib/listDevicesOnceIdentified',()=>({listDevicesOnceIdentified:vi.fn(async()=>[])}))
 vi.mock('@/lib/assistantPanelBridge',()=>({useAssistantPanelAccountId:()=> 'owner',requireAssistantPanelBridge:vi.fn()}))
-vi.mock('@/components/assistant/assistant-panel-files',()=>({ASSISTANT_PANEL_CHANGED:'panel-changed',useCloudAssistantFiles:()=>({panel:{ownerId:'owner',assistantId:'assistant',assertCurrent:async()=>{}}})}))
+vi.mock('@/components/assistant/assistant-panel-files',()=>({useCloudAssistantFiles:()=>({panel:{ownerId:'owner',assistantId:'assistant',assertCurrent:async()=>{}}})}))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell',()=>({useAssistantShell:()=>({assistant:{id:'assistant'},chatId:'dm'})}))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/library/library-host',()=>({createRemoteLibraryHost:(info:unknown)=>({key:'remote',remote:info,integrations:{cliToolPrepare:fixture.prepare,checkConfiguredConnections:async()=>({})},github:{}}),LibraryHostProvider:({children}:{children:unknown})=>children,LOCAL_LIBRARY_HOST:{},useLibraryHost:vi.fn()}))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/integrations/integrations-provider',()=>({IntegrationsProvider:({children}:{children:unknown})=>children,useIntegrationsContext:vi.fn()}))

@@ -24,7 +24,6 @@ import type { Block, HtmlBlock } from '@session-chat/core/markdown/document'
 import type { MentionProvider } from '@session-chat/core/markdown/mention-provider'
 import { parseMarkdownToBlocks } from '@session-chat/core/markdown/parse'
 import type { ChatMessage, ChatResourceLink } from '@session-chat/model'
-import { FILE_MARKS } from '@gugu/session-shared/file-marks'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
   makeContractCtx,
@@ -73,13 +72,6 @@ function gapBeforePlace(name: HTMLElement, place: HTMLElement): number {
     end = right
   }
   return place.getBoundingClientRect().left - (end + ellipsisWidth)
-}
-
-/** The glyph a `FileMark` of this family draws, as the DOM writes it back. */
-function familyGlyph(family: keyof typeof FILE_MARKS): string {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.innerHTML = FILE_MARKS[family].glyph
-  return svg.innerHTML
 }
 
 function rootOf(host: HTMLElement): HTMLElement | null {
@@ -245,15 +237,16 @@ describe('a cited file stays a one-line pill in the user message', () => {
     }
   })
 
-  it('draws the file family glyph, not a devicon', async () => {
+  it('draws the file\'s icon in ink: a pill in running text takes the text\'s colour', async () => {
     const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
     const reading = await renderAndMeasureUnit(messageUnitDef, { ...userMessageCitingAFile, text: '@[report.pdf (Lines 3–4)](/home/me/notes/report.pdf)' },
       makeContractCtx({ width: WIDTH, mentionProvider: files }), host => {
         const icon = host.querySelector<HTMLElement>('.gg-md-mention .gg-md-mention-icon')
-        return { pdf: icon?.querySelector('svg')?.innerHTML === familyGlyph('pdf') ? 1 : 0, devicon: icon?.querySelectorAll('i').length ?? -1 }
+        const svg = icon?.querySelector('svg')
+        return { pdf: svg?.getAttribute('data-file-icon') === 'pdf' ? 1 : 0, ink: svg && !svg.style.color ? 1 : 0 }
       })
     expectHeightMatch('file pill glyph', reading)
-    expect(reading.inspected).toEqual({ pdf: 1, devicon: 0 })
+    expect(reading.inspected).toEqual({ pdf: 1, ink: 1 })
   })
 
   it('outside the task folder too', async () => {

@@ -13,7 +13,7 @@ import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { useLayoutEffect } from 'react';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '@/lib/replica';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
 import type { AgentHomeScan, HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import { modalStore } from '@renderer/lib/modal/modal-store';
@@ -227,6 +227,9 @@ async function openSwitch(provider: string) {
   await userEvent.click(page.getByTestId(`subscription-switch-${provider}`));
 }
 
+// Account-scoped replicas read only for a live account.
+followRendererSession('SIGNED_IN', 'subscription-test');
+
 beforeEach(() => {
   queryClient.clear();
   control.hold = null;
@@ -287,7 +290,8 @@ function ConnectionDetailsFixture() {
   </SessionLocalizationProvider></QueryClientProvider>;
 }
 function ConnectionDetailsList() {
-  const { data } = useManagementAgents();
+  const reading = useManagementAgents();
+  const data = reading.state === 'value' ? reading.value : undefined;
   return <>{data?.filter(agent => agent.id !== 'pi').map(agent => <div key={agent.id} data-testid={`subscription-row-${agent.id}`}>
     {agentOffersConnections(agent) && <AgentConnectionDetails agent={agent} machine={null} embedded />}
   </div>)}</>;
@@ -462,40 +466,29 @@ it('subscriptions contains only Gugu membership and does not turn membership err
   expect(thrown).toEqual([]);
 });
 
-it.each([390, 720, 1120])('Gugu credits fit a %s px settings container with a prominent total and compact recharge action', async width => {
+it.each([390, 720, 1120])('Gugu credits are settings rows in a %s px container: labels left, figures in one right-aligned column', async width => {
   host.style.cssText = `width: ${width}px; container: gg-settings / inline-size`;
   root.render(<GuguSubscriptionRow />);
   await until('the Gugu balances render', () => host.querySelector('[data-testid="subscription-credits-balance"]')?.textContent?.includes('8.2') ?? false);
   const row = host.querySelector<HTMLElement>('[data-testid="subscription-row-gugu"]')!;
-  const quotas = [...row.querySelectorAll<HTMLElement>('.subscription-quota')];
-  await untilStable('the credit layout is measured', () => quotas.map(q => q.getBoundingClientRect().top).join(','));
-  const period = quotas[0].getBoundingClientRect();
-  const wallet = quotas[1].getBoundingClientRect();
-  const walletLabel = quotas[1].querySelector('span')!;
-  const walletCredits = quotas[1].querySelector('strong')!;
-  expect(walletLabel.textContent).toMatch(/^(不过期积分|Non-expiring credits)$/);
-  const labelRect = walletLabel.getBoundingClientRect();
-  const creditsRect = walletCredits.getBoundingClientRect();
-  expect(creditsRect.left - labelRect.right).toBeCloseTo(8, 0);
-  expect(Math.abs(creditsRect.top - labelRect.top)).toBeLessThan(8);
-  const total = row.querySelector<HTMLElement>('[data-testid="subscription-credits-balance"]')!;
-  expect(parseFloat(getComputedStyle(total).fontSize)).toBeGreaterThan(parseFloat(getComputedStyle(quotas[0].querySelector('strong')!).fontSize));
-  expect(total.getBoundingClientRect().bottom).toBeLessThanOrEqual(period.top);
+  const figures = ['subscription-credits-balance', 'subscription-period-credits', 'subscription-wallet-credits']
+    .map(id => row.querySelector<HTMLElement>(`[data-testid="${id}"]`)!.closest<HTMLElement>('.gg-settings-row')!);
+  await untilStable('the credit rows are measured', () => figures.map(f => f.getBoundingClientRect().top).join(','));
+  // Each figure is its row's trailing value, and the three share one right edge.
+  const rights = figures.map(f => f.querySelector<HTMLElement>('.gg-settings-row-control')!.getBoundingClientRect().right);
+  expect(Math.max(...rights) - Math.min(...rights)).toBeLessThanOrEqual(1);
+  for (const f of figures) {
+    expect(f.querySelector('.gg-settings-row-title')!.getBoundingClientRect().left).toBeLessThan(f.querySelector('.gg-settings-row-control')!.getBoundingClientRect().left);
+  }
+  // Same body size as every other settings value: no oversized total.
+  const sizes = figures.map(f => getComputedStyle(f.querySelector('.subscription-figure')!).fontSize);
+  expect(new Set(sizes).size).toBe(1);
   const recharge = row.querySelector<HTMLElement>('[data-testid="membership-open-web"]')!;
   expect(recharge.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/#topup');
   expect(row.querySelector('a')?.getAttribute('href')).toBe('https://gugu.nextmind.space/dashboard/');
-  expect(recharge.getBoundingClientRect().width).toBeLessThan(row.clientWidth * 0.7);
+  expect(recharge.getBoundingClientRect().width).toBeLessThan(host.clientWidth * 0.7);
   expect(row.querySelector('[data-testid="subscription-billing-copy"]')).toBeNull();
-  if (width === 390) {
-    expect(wallet.top).toBeGreaterThanOrEqual(period.bottom);
-    expect(Math.abs(wallet.left - period.left)).toBeLessThanOrEqual(1);
-    const reset = quotas[0].querySelector('p')!.getBoundingClientRect();
-    expect(Math.abs(reset.left - period.left)).toBeLessThanOrEqual(1);
-    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
-  } else {
-    expect(Math.abs(wallet.top - period.top)).toBeLessThanOrEqual(1);
-    expect(wallet.left).toBeGreaterThan(period.right);
-  }
+  expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
 });
 
 it('explains reserved credits when the available total differs from the two balances', async () => {
@@ -800,7 +793,7 @@ it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { 
     await page.viewport(1200, 900);
     document.documentElement.dataset.theme = 'light';
     control.connectionsByProvider.codex = [];
-    host.style.cssText = 'width: 940px; padding: 24px; background: var(--model-settings-page);';
+    host.style.cssText = 'width: 940px; padding: 24px; background: var(--sidebar);';
   }
   root.render(<>
     {capture && <p style={{ marginBottom: 20, fontSize: 14 }}>组件测试夹具，非真实账号</p>}
@@ -825,8 +818,10 @@ function ModelsFixture() {
   return <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>;
 }
 
-it('keeps Coding Plan accounts on one line with aligned quota, state and delete columns', async () => {
-  await setLocalePreference('zh-CN');
+// 640: the settings card at any common window size (600px rows: sign-in wraps above current/switch and delete).
+// 1100: a card wide enough for one line.
+it.each([[1100, 'zh-CN'], [640, 'zh-CN'], [640, 'en-US']] as const)('keeps Coding Plan accounts aligned, uncovered and unscrolled in a %ipx card (%s)', async (width, locale) => {
+  await setLocalePreference(locale);
   await page.viewport(1280, 1000);
   document.documentElement.dataset.theme = 'light';
   control.codex = true;
@@ -844,7 +839,7 @@ it('keeps Coding Plan accounts on one line with aligned quota, state and delete 
     'layout-claude-a': [{ windowMinutes: 300, usedPercent: 0 }, { windowMinutes: 10_080, usedPercent: 23 }],
     native: [{ windowMinutes: 10_080, usedPercent: 5 }],
   };
-  host.style.cssText = 'width:640px;background:var(--model-settings-page)';
+  host.style.cssText = `width:${width}px;background:var(--sidebar)`;
   try {
     root.render(<>
       <p>组件测试夹具，非真实订阅账号</p>
@@ -858,22 +853,41 @@ it('keeps Coding Plan accounts on one line with aligned quota, state and delete 
       const state = row.querySelector<HTMLElement>('[data-testid^="model-current-"], [data-testid^="model-switch-"]')!;
       const remove = row.querySelector<HTMLElement>('.gg-model-subscription-remove')!;
       const centre = (element: Element) => { const box = element.getBoundingClientRect(); return box.y + box.height / 2; };
-      for (const window of windows) expect(Math.abs(centre(window) - centre(state))).toBeLessThan(1);
+      if (width === 1100) for (const window of windows) expect(Math.abs(centre(window) - centre(state))).toBeLessThan(1);
       const range = document.createRange(); range.selectNodeContents(state);
       const textLines = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
       expect(new Set(textLines.map(rect => Math.round(rect.y))).size).toBe(1);
       expect(getComputedStyle(state).whiteSpace).toBe('nowrap');
       expect(row.scrollWidth).toBeLessThanOrEqual(Math.ceil(row.clientWidth));
+      const provider = row.closest<HTMLElement>('.gg-coding-provider')!;
+      expect(provider.scrollWidth).toBeLessThanOrEqual(provider.clientWidth);
+      // A name too long for its column ends with an ellipsis; the whole name shows on hover.
+      const name = row.querySelector<HTMLElement>('.gg-model-name')!;
+      expect(name.getAttribute('title')).toBe(name.textContent);
+      expect(getComputedStyle(name.querySelector('span')!).textOverflow).toBe('ellipsis');
+      // The quota, the sign-in button and current/switch never cover one another: side by side, or sign-in above when narrow.
+      const signIn = row.querySelector<HTMLElement>('[data-testid^="model-sign-in-"]')!.getBoundingClientRect();
+      const stateBox = state.getBoundingClientRect();
+      for (const window of windows) expect(window.getBoundingClientRect().right).toBeLessThanOrEqual(Math.min(signIn.left, stateBox.left));
+      // Each window's label, bar and value sit side by side in any language, and the 5-hour window ends before the weekly one.
+      for (const window of windows) {
+        const [label, track, value] = [...window.children].map(part => part.getBoundingClientRect());
+        expect(label.right).toBeLessThanOrEqual(track.left);
+        expect(track.right).toBeLessThanOrEqual(value.left);
+      }
+      if (windows.length === 2) expect(windows[0].getBoundingClientRect().right).toBeLessThanOrEqual(windows[1].getBoundingClientRect().left);
+      if (width === 1100) expect(signIn.right).toBeLessThanOrEqual(stateBox.left);
+      else expect(signIn.bottom).toBeLessThanOrEqual(stateBox.top);
       return { state: state.getBoundingClientRect().x, remove: remove.getBoundingClientRect().x,
         weekly: row.querySelector('[data-window-minutes="10080"]')!.getBoundingClientRect().x };
     });
     for (const column of columns) for (const key of ['state', 'remove', 'weekly'] as const) {
       expect(Math.abs(column[key] - columns[0][key])).toBeLessThan(1);
     }
-    expect(host.querySelector('[data-testid="model-current-layout-codex-b"]')?.textContent).toBe('使用中');
-    expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe('切换');
+    expect(host.querySelector('[data-testid="model-current-layout-codex-b"]')?.textContent).toBe(locale === 'zh-CN' ? '使用中' : 'In use');
+    expect(host.querySelector('[data-testid="model-switch-layout-codex-a"]')?.textContent).toBe(locale === 'zh-CN' ? '切换' : 'Switch');
     expect(host.querySelector('[data-testid="model-remove-native"]')).toBeNull();
-    await page.screenshot({ element: host, path: '../../../../../../../test-results/coding-plan-single-row-zh.png' });
+    await page.screenshot({ element: host, path: `../../../../../../../test-results/coding-plan-rows-${locale}-${width}.png` });
   } finally {
     delete document.documentElement.dataset.theme;
   }
@@ -965,7 +979,8 @@ it('groups subscription rows by their real provider and keeps row icons and subt
   expect([...host.querySelectorAll('[data-coding-provider]')].map(group => group.getAttribute('data-coding-provider')))
     .toEqual(['chatgpt-subscription', 'claude-subscription']);
   expect(host.querySelectorAll('[data-subscription-model] .gg-settings-row-leading')).toHaveLength(0);
-  expect(host.querySelectorAll('[data-subscription-model] .gg-settings-row-description')).toHaveLength(0);
+  // No source subtitle: a line under a name can only be the account's own state (the CLI's sign-in, beside its quota).
+  for (const line of host.querySelectorAll('[data-subscription-model] .gg-settings-row-description')) expect(line.textContent).toBe('Signed in');
   expect(host.querySelectorAll('[data-testid="coding-plan-add"]')).toHaveLength(1);
 });
 it('renames a saved subscription with Enter and cancels a later edit with Escape', async () => {

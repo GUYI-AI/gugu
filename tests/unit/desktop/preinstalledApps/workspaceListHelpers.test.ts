@@ -105,6 +105,7 @@ describe('workspace list filters and views', () => {
     expect(wantsThumb(image)).toBe(true)
     expect(wantsThumb({ ...image, storedOn: { machine: 'GF server' } }), 'reading it would upload it').toBe(false)
     expect(wantsThumb({ ...image, storedOn: { machine: 'GF server' }, keep: { expiresAt: '2026-11-04T00:00:00Z', mine: true } }), 'its temporary cloud copy is read').toBe(true)
+    expect(wantsThumb(image, true), 'a working copy on another machine: not over its link').toBe(false)
     expect(wantsThumb({ ...image, size: 50 * 1024 * 1024 })).toBe(false)
     expect(wantsThumb({ ...image, contentType: 'image/svg+xml' })).toBe(false)
     expect(wantsThumb({ ...image, contentType: 'video/mp4' })).toBe(false)

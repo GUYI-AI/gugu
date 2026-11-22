@@ -1,6 +1,5 @@
 import { columnAgents, standaloneAgentAnchor } from './inner-sidebar-column';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
-import { motion } from 'framer-motion';
 import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
@@ -13,7 +12,7 @@ import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
   innerSidebarTopicsSlotKey,
-  publishInnerSidebarChat,
+  publishInnerSidebarPresent,
   publishMyChatAgentCounts,
   setInnerSidebarTopicsAll,
   useInnerSidebarTopicsAll,
@@ -27,7 +26,7 @@ import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
 import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
-import { WORKSPACE_APP_ID } from '@renderer/features/extensions/installed-extensions-store';
+import { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 import { searchInChat } from '@renderer/features/global-search/search-session';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
@@ -36,7 +35,7 @@ import { accountProjectsStore } from '@renderer/features/projects/stores/account
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
-import { useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
+import { useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
@@ -57,7 +56,7 @@ import {
   type InnerSidebarRoomAnchor,
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
-import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded } from './inner-sidebar-fold';
+import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
 import { chatScope, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
@@ -154,8 +153,11 @@ export const InnerSidebar = observer(function InnerSidebar() {
   // 换了对话就回到第一级(「全部」只对那一个对话)。
   useEffect(() => setInnerSidebarTopicsAll(null), [next?.chatId]);
   useEffect(() => runInAction(() => innerSidebarChat.set(next)), [next?.chatId, next?.kind]);
-  // 壳据此收起对话页头上与这一列重复的那一枚(话题)。
-  useEffect(() => publishInnerSidebarChat(next?.chatId ?? null), [next?.chatId]);
+  // 壳据此收起群页头上与这一列重复的话题钮(每一块都收:按到哪一块,这一列就挂过去)。
+  useEffect(() => {
+    publishInnerSidebarPresent(true);
+    return () => publishInnerSidebarPresent(false);
+  }, []);
   // 头一行是这一列自己:群 / 项目开着它的对话时,智能体开着它自己的(顶层)会话时(❌ 它的子智能体)。
   const ownSessions = next?.kind === 'agent' ? (families.topLevelOf.get(next.agentUserId) ?? []) : [];
   const headActive =
@@ -167,7 +169,9 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const sample = useSampleProject();
   const sampleOwnerId = next === null && sample.shown && sampleProjectInView() ? sample.owner?.id : undefined;
   const attachedTo = next?.chatId ?? (sampleOwnerId ? 'sample' : null);
-  // 收起着:这一列 ❌ 画,挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮),正文左上角浮出展开钮。
+  // 收起着:这一列照旧挂着(收起是它的格子合到 0,@@@panel-track),挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮),正文左上角浮出展开钮。
+  const crowded = useInnerSidebarCrowded();
+  useLayoutEffect(() => setInnerSidebarCrowded(crowded), [crowded]);
   const folded = innerSidebarFolded.get();
   const shownFor = folded ? null : attachedTo;
   const foldedAway = folded && attachedTo !== null;
@@ -190,7 +194,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
   return (
     <>
       <MyChatAgentCountsPublisher agents={agents} summaries={summaries} />
-      {folded ? null : next?.kind === 'agent' ? (
+      {next?.kind === 'agent' ? (
         <InnerAgentColumn
           key={next.chatId}
           anchor={next}
@@ -325,26 +329,33 @@ const InnerAgentColumn = observer(function InnerAgentColumn({
 
 /**
  * 这一列本身(群 / 项目 / 智能体 / 示例都是它):列表与正文之间的一列;里面是头一行(这一列顶上那条带)与分区。
- * 宽度拖它右边缘调(#2642,分隔条由工作区画,useInnerSidebarFrame),没拖过就是默认侧栏宽。
+ * 宽度由工作区的那一格给(PanelSlot「inner」,拖它右边缘调 #2642),这一列只铺满它;收起时它照旧挂着,只报给那一格。
  */
-function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAnchor['kind'] | 'sample'; chatId?: string; children: ReactNode }) {
-  const width = useInnerSidebarFrame();
+const InnerSidebarFrame = observer(function InnerSidebarFrame({
+  kind,
+  chatId,
+  children,
+}: {
+  kind: InnerSidebarAnchor['kind'] | 'sample';
+  chatId?: string;
+  children: ReactNode;
+}) {
+  useInnerSidebarFrame(innerSidebarFolded.get());
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
     // 底色是列表那一档(同 left-sidebar):这一列归列表那一层,只有正文是叠在上面的卡片(同任务页)。
-    <motion.div
+    <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
-      className="relative isolate flex h-full shrink-0 flex-col bg-background-tertiary text-foreground-tertiary-muted"
-      style={{ width }}
+      className="relative isolate flex h-full w-full flex-col bg-background-tertiary text-foreground-tertiary-muted"
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>
       </SidebarContainer>
-    </motion.div>
+    </div>
   );
-}
+});
 
 /** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
 function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {
@@ -493,7 +504,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
 
 /**
  * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
- * 是哪一档只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
+ * 按最近的动静排,状态只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
  */
 const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarAnchor; agents: readonly ChatAgentEntry[] }) {
   const { translate } = useSessionMessages();

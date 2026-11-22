@@ -1,5 +1,5 @@
 import { cn } from '@/lib/cn'
-import type { RailApp } from '../session/renderer/features/extensions/installed-extensions-store'
+import type { RailApp } from '../session/renderer/features/extensions/installed-extensions'
 import { extensionMonogram } from '../session/shared/extensions/catalog'
 import './Sidebar.css'
 

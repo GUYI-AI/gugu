@@ -15,6 +15,8 @@ export interface ImChatAccess {
 export type ImMessageWrite =
   /** claimed: set by the store on the put of the revision that first delivered this message (its notification claim). */
   | { type: 'put'; message: MessageItem; claimed?: true }
+  /** Overlay fields (receipts, reactions, blocks) applied to the stored row inside the write queue; absent row: nothing. */
+  | { type: 'patch'; chatId: string; id: string; fields: Partial<MessageItem> }
   | { type: 'delete'; chatId: string; id: string }
   | { type: 'deleteChat'; chatId: string }
   | { type: 'chatAccess'; access: ImChatAccess }
@@ -58,5 +60,6 @@ export interface MessageStore {
   page(accountId: string, page: ImMessagePage): Promise<ImMessagePageResult>
   throughRevision(accountId: string): Promise<string | null>
   clearAccount(accountId: string): Promise<void>
-  search(accountId: string, chatId: string, query: string, limit: number, fromUserId?: string): Promise<MessageItem[]>
+  /** Only where the platform indexes message text (the desktop's SQLite FTS). */
+  search?(accountId: string, chatId: string, query: string, limit: number, fromUserId?: string): Promise<MessageItem[]>
 }

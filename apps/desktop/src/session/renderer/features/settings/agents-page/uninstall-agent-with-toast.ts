@@ -1,4 +1,4 @@
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import type { SessionTranslate } from '@renderer/features/extensions/extension-consent';
@@ -8,12 +8,14 @@ export function uninstallAgentWithToast(
   uninstall: () => Promise<void>,
   translate: SessionTranslate,
 ) {
-  void toast.promise(uninstall(), {
-    loading: translate('agentsPage.uninstalling', { name }),
-    success: translate('agentsPage.uninstalled', { name }),
-    error: (error) => {
+  // One notice for the whole uninstall: waiting, then its result in place.
+  const key = `agent-uninstall:${name}`;
+  notify({ key, title: translate('agentsPage.uninstalling', { name }), waiting: true, ongoing: true });
+  void uninstall().then(
+    () => notify({ key, title: translate('agentsPage.uninstalled', { name }), tier: 'success' }),
+    (error: unknown) => {
       rendererLogger('actions/AgentSourceList').error({ error }, 'action failed');
-      return messageForUser(error);
+      notify({ key, title: messageForUser(error), tier: 'error' });
     },
-  });
+  );
 }

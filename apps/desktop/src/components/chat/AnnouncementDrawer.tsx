@@ -79,7 +79,9 @@ export function AnnouncementDrawer({
   const handleToggleLike = useCallback(async (ann: GroupAnnouncement) => {
     const nextLiked = !ann.likedByMe
     setError(null)
-    groupAnnouncements.set([chatId], (prev) => prev?.map((a) =>
+    // Bound before the await: a rollback lands in the account that liked (❌ the next one's announcements).
+    const entry = groupAnnouncements.at(chatId)
+    entry.set((prev) => prev?.map((a) =>
       a.id === ann.id
         ? { ...a, likedByMe: nextLiked, likeCount: a.likeCount + (nextLiked ? 1 : -1) }
         : a,
@@ -89,7 +91,7 @@ export function AnnouncementDrawer({
       await fetchAnnouncements()
     } catch (err) {
       // 回滚乐观更新
-      groupAnnouncements.set([chatId], (prev) => prev?.map((a) =>
+      entry.set((prev) => prev?.map((a) =>
         a.id === ann.id ? { ...a, likedByMe: ann.likedByMe, likeCount: ann.likeCount } : a,
       ))
       setError(String((err as Error)?.message ?? err))

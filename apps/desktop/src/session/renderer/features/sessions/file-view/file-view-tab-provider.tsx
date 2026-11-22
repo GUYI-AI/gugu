@@ -4,7 +4,7 @@ import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-reg
 import { registeredTabView } from '@renderer/features/tabs/core/tab-views';
 import type { SessionTabContext } from '@renderer/features/tabs/core/session-tab-context';
 import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark } from '@gugu/session-ui/file-mark';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName, filePathKey, resolveWorkspacePath } from '../stores/workspace-path';
 
@@ -27,7 +27,7 @@ export class FileViewResource implements TabResource {
 
 const icon = (path: string) => (
   <span className="shrink-0 [&>svg]:h-3 [&>svg]:w-3">
-    <FileIcon filename={fileBaseName(path)} className="shrink-0 text-foreground-muted" />
+    <FileMark name={fileBaseName(path)} size={12} className="shrink-0" />
   </span>
 );
 

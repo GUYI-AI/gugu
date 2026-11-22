@@ -6,7 +6,9 @@ import { TeamTopupDialog } from '@/features/team/TeamTopupDialog'
 import { TeamPage } from '@/features/team/TeamPage'
 import { TeamCheckoutError } from '../../../../../shared/team-topup'
 import type { OpenTeamPayment } from '@/features/team/topup-checkout'
-import { mockTeamApi, teamUser } from '../../../../../../../tests/fixtures/teamEdition'
+import { mockTeamApi, teamUser, teamApiDouble } from '../../../../../../../tests/fixtures/teamEdition'
+vi.mock('@/features/team/runtime', async () => (await import('../../../../../../../tests/fixtures/teamEdition')).teamRuntimeDouble)
+import { queryClient } from '@/lib/replica'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { i18n } from '@/i18n'
@@ -19,10 +21,10 @@ beforeEach(async () => {
   await i18n.changeLanguage('zh-CN'); await page.viewport(1100, 850)
   document.documentElement.dataset.theme = 'light'; localStorage.removeItem(storageKey)
 })
-afterEach(() => harness?.cleanup())
+afterEach(() => { harness?.cleanup(); queryClient.clear() })
 async function mount(api: ReturnType<typeof mockTeamApi>, openPayment: OpenTeamPayment, settled = vi.fn(async () => undefined)) {
-  harness = createReactHarness()
-  await renderWithAppProviders(harness, <TeamProvider user={teamUser} api={api}><TeamAccessGate>
+  harness = createReactHarness(); teamApiDouble.current = api
+  await renderWithAppProviders(harness, <TeamProvider user={teamUser}><TeamAccessGate>
     <TeamTopupDialog openPayment={openPayment} onClose={vi.fn()} onSettled={settled} />
   </TeamAccessGate></TeamProvider>, { auth: teamUser })
   await until('a real team recharge dialog loads', () => document.querySelector('[role=dialog]') !== null)
@@ -77,8 +79,8 @@ it('recovers the same key, quote and payment method after response loss and quot
 })
 it('does not offer recharge to an ordinary member', async () => {
   const api = mockTeamApi('member'), topupQuote = vi.fn(api.topupQuote)
-  harness = createReactHarness()
-  await renderWithAppProviders(harness, <TeamProvider user={teamUser} api={{ ...api, topupQuote }}><TeamAccessGate><TeamPage /></TeamAccessGate></TeamProvider>, { auth: teamUser })
+  harness = createReactHarness(); teamApiDouble.current = { ...api, topupQuote }
+  await renderWithAppProviders(harness, <TeamProvider user={teamUser}><TeamAccessGate><TeamPage /></TeamAccessGate></TeamProvider>, { auth: teamUser })
   await until('the ordinary team page loads', () => harness.container.querySelectorAll('.gg-team-settings-member').length > 0)
   expect(harness.container.textContent).not.toContain('充值'); expect(topupQuote).not.toHaveBeenCalled()
 })

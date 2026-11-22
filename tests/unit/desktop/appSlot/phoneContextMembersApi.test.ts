@@ -11,11 +11,12 @@ const ORIGIN = 'https://folder.acct.apps.gugu.invalid'
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => 'h.eyJzdWIiOiJwZXJzb24tMSJ9.s' }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => [{ id: PERSON, name: 'Reader', kind: 'human' }] }))
 vi.mock('../../../../apps/desktop/src/lib/memberFaces', () => ({ memberFaces: async () => ({}) }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { manifests: [], icons: {}, isEnabled: () => true,
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (original) => {
+  const installed = { manifests: [], icons: {}, isEnabled: () => true,
     manifestFor: () => ({ id: 'folder', name: 'Folder', version: '1.0.0', apiVersion: fixture.apiVersion, contributes: { tabs: [] } }),
-  },
-}))
+  }
+  return { ...(await original<object>()), peekInstalledApps: () => installed, fetchInstalledApps: async () => installed }
+})
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({
   rpc: async (name: string, args: { p_chat_id: string }) => {
     fixture.routes.push(`rpc/${name}`)

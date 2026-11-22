@@ -131,6 +131,16 @@
   -webkit-app-region: no-drag;
 }
 
+/* @@@open-layer-no-drag — 一个弹出层开着时(弹出框 / 菜单 / 下拉 / 组合框,三套 ui 都在定位层里画 `OpenLayer`,
+   它给 <html> 挂 data-layer-open),整扇窗不拖。拖拽区吞掉一切指针事件(Electron:「Draggable areas ignore all
+   pointer events」):点左侧栏、顶栏的空白处 DOM 收不到 pointerdown,「点外面就关」关不上;盖在拖拽带上的弹出层
+   自己也点不动。所以不给弹出层逐个退订,开着时全部退订,关上以后拖拽区原样回来。模态不在内:它们有自己的遮罩,
+   标题栏行开着模态也照样拖窗口(@@@window-layer)。❌ 别写成 `:root:has(…) *`:那会让开着时的每次 DOM 变动都重算
+   整页(@@@wide-invalidation)。 */
+:root[data-layer-open] * {
+  -webkit-app-region: no-drag !important;
+}
+
 /* @@@1238-titlebar-tokens — 无边框标题栏协调（#1238）。
    macOS 原生交通灯需要比 60px rail 多一点横向呼吸；其他平台继续使用 60px rail。 */
 :root {
@@ -185,8 +195,7 @@
   /* rail 顶上原来那 32px 是给「窗口顶沿」留的呼吸;现在顶沿是标题栏,rail 从标题栏下沿起。 */
   --sidebar-rail-pad-top: 8px;
 }
-/* ⚠️ 选择器按结构而不是给 MainLayout 加类名:那个文件在 IM 迁移账本里,
-   有行数预算(scripts/im-architecture-migration-gate.json)。 */
+/* 选择器按结构写(壳根下的阶段容器),❌ 给 MainLayout 再加类名。 */
 :root[data-window-titlebar='row'] [data-gugu-shell-phase] {
   padding-top: var(--window-titlebar-height);
 }
@@ -479,15 +488,16 @@
   --z-pane-fullscreen-resident: 40;
   /* 全局段（fixed/portal 层）：*/
   --z-chrome: 1000;        /* 窗口 chrome：WindowControls（win/linux 自绘钮） */
+  --z-notice: 1500;        /* 常驻通知那一叠卡(NoticeHost):浮在内容和窗口 chrome 之上、在所有弹窗之下 —— 弹窗一开就盖住它(#3501) */
   --z-modal: 2000;         /* 模态层：Sheet 及 backdrop+卡片式对话框 */
   --z-menu: 2100;          /* 右键/下拉菜单——可开在 modal 之上 */
-  --z-banner: 2300;        /* 全局通知横幅/浮动状态卡（更新、余额、下载进度、发现） */
+  --z-banner: 2300;        /* 登录失效那一条通栏(SessionExpiredNotice):页面状态,不是通知;owner 11-22 定保持原样 */
   --z-popover: 2400;       /* 锚定信息浮层：资料卡、已读回执、近期动作、token 悬浮卡 */
   --z-modal-top: 2500;     /* 从 popover 内开出的次级模态（#1862 海报对话框） */
   --z-settings: 5000;      /* 设置面板：高于全部工作区弹窗、低于 overlay/toast（#1182） */
   --z-settings-modal: 5100; /* 设置内次级模态：确认弹窗等必须盖过设置面板 */
   --z-overlay: 10000;      /* 全屏遮罩：图片预览、扫码 */
-  --z-toast: 10010;        /* 最顶：toast 必须盖过图片预览遮罩（#1892③） */
+  --z-toast: 10010;        /* NoticeHost 的提示条(转瞬的,含会议提醒):盖过设置与图片预览遮罩（#1892③）;它在底边,盖不到弹窗顶上的 ✕ */
   --z-chrome-menu: 10020;  /* 窗口 chrome 弹出的菜单（Windows 标题栏的文件/编辑/视图/帮助）。页面层都铺在标题栏行下面
                               （@@@window-layer），行一直点得到，从它开出来的菜单就得开在任何页面层之上（#6699） */
 
@@ -993,32 +1003,36 @@
   --pele-radius: var(--radius-xs);
 }
 
-/* File-family marks share one App/host palette. Dark keeps the light hue at 85% chroma; where the light lightness is too dark to be ink on a dark tile, it is raised so each glyph reads >= 3.6:1 on its tile, on page and card alike. */
+/* File icons (packages/session-shared/src/file-icons): 9 hues + 2 neutrals, one value per theme, from its manifest.json
+   palette (light ≥ 4.5:1 on the page except amber 4.2; ≥ 3:1 on every other surface and inside a tile). A tile is the
+   same colour washed under the icon: --file-tile-wash. */
 :root {
-  --file-generic: oklch(0.63634 0.01132 286.02);
-  --file-pdf: oklch(0.61840 0.14465 27.02);
-  --file-word: oklch(0.59100 0.13565 260.18);
-  --file-sheet: oklch(0.60970 0.11638 153.04);
-  --file-slides: oklch(0.69924 0.12360 59.28);
-  --file-archive: oklch(0.59100 0.05070 66.06);
-  --file-image: oklch(0.63298 0.08133 207.76);
-  --file-video: oklch(0.60100 0.15088 291.37);
-  --file-audio: oklch(0.61064 0.13170 357.37);
-  --file-code: oklch(0.59200 0.02913 261.32);
-  --file-text: oklch(0.59000 0.01492 285.71);
+  --file-blue: #6FA3FF;
+  --file-cyan: #3FB6C9;
+  --file-green: #4FBF7F;
+  --file-amber: #CBB535;
+  --file-orange: #F2954A;
+  --file-red: #F47A7E;
+  --file-pink: #EE7FBE;
+  --file-purple: #A98BFA;
+  --file-brown: #CF9C88;
+  --file-ink: #C4C4CC;
+  --file-mute: #A1A1AA;
+  --file-tile-wash: 20%;
 }
 [data-theme="light"] {
-  --file-generic: #8a8a93;
-  --file-pdf: #d9534a;
-  --file-word: #3b74d4;
-  --file-sheet: #2e9a5a;
-  --file-slides: #df8530;
-  --file-archive: #8a6b4c;
-  --file-image: #2f9aa8;
-  --file-video: #7657cf;
-  --file-audio: #c95584;
-  --file-code: #4a5568;
-  --file-text: #5b5b66;
+  --file-blue: #2F6FDE;
+  --file-cyan: #0B7D8E;
+  --file-green: #24834C;
+  --file-amber: #967900;
+  --file-orange: #C05800;
+  --file-red: #D2334B;
+  --file-pink: #C2408F;
+  --file-purple: #7A55D6;
+  --file-brown: #8E5A46;
+  --file-ink: #3F3F46;
+  --file-mute: #71717A;
+  --file-tile-wash: 14%;
 }
 
 /* ── theme batch C2:会话页功能里的固定色(App 市场主推卡、项目文件夹卡、App 图标兜底底板) ─────────────
@@ -1093,8 +1107,8 @@
    它们靠根的底色当正文底,不能跟着透。 */
 :root[data-window-material='native'] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
 :root[data-window-material='native'] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']),
-:root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) [data-region='left-sidebar']:not(.bg-background-2) {
+:root[data-window-material='native'] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
+:root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
 
@@ -1664,8 +1678,10 @@ body.barcode-scanner-active #root {
 
 /* 列表行:会话/联系人/任务/文件/成员行。选中挂 data-selected(React: data-selected={sel || undefined})。 */
 .gg-row {
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
+/* 此刻选不了的行(如联系人多选态下的「新的请求」):与菜单项的禁用态(.gg-mi[data-disabled])同一个淡法,不接指针。 */
+.gg-row[aria-disabled='true'] { opacity: 0.4; pointer-events: none; }
 /* #2598 置顶行常驻底色(飞书式:靠底色辨识,❌ 另起分隔条/标题栏——见 #1323/#1331 做减法先例)。
    刻意排在交互态之前:同特异度下后写的赢,hover/press/selected 照常盖过常驻态。 */
 .gg-row[data-pinned] { background: var(--pinned); }
@@ -1685,7 +1701,7 @@ body.barcode-scanner-active #root {
 /* @@@contacts-offscreen-rows 通讯录分组页(ContactsSectionPane)里的人行 / 群行:屏幕外的跳过布局与绘制(content-visibility)。
    auto 记住画过的实际高度,没画过的按 48px(头像 32 + 上下内距 8,通讯录行一律单行)占位。paint containment 会裁掉框外的东西:
    键盘焦点环画在框外 4px(outline 2 + offset 2),用 overflow-clip-margin 让出来,外观不变。 */
-.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
+.gg-c-sec-body .gg-row-host, .gg-c-sec-body .gg-c-grid > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
 
 /* Ghost 图标钮:导航轨/composer 图标/消息工具条/关闭钮。「开」态挂 data-on;菜单 Trigger 菜单开着时 Base UI 挂 data-popup-open,同一个开态。
    图标色只在 faint-fg → muted-fg → fg 三档内移动,不引入色相。 */
@@ -1777,12 +1793,6 @@ body.barcode-scanner-active #root {
 .gg-ghost[data-tone='strong']:not(:disabled) { color: var(--muted-fg); }
 @media (hover: hover) { .gg-ghost[data-tone='strong']:hover:not(:disabled) { color: var(--fg); } }
 
-/* 拖拽把手:列宽 resizer。hover/拖动中 = --selected 填充(SSOT .resizer)——「可拖」要有可见 affordance,
-   ❌ 只在拖动中才给反馈。宿主注意别再内联 background(内联会压死类的 :hover)。 */
-.gg-resizer { transition: background var(--dur-fast) var(--ease); }
-.gg-resizer:hover,
-.gg-resizer[data-dragging] { background: var(--selected); }
-
 /* @@@2322 win/linux 自绘窗控钮(WindowControls):hover 从命令式 e.currentTarget.style 迁到类。
    色值逐值保持现状;关闭钮 hover 红底 #E81123 是 Windows 平台惯例,专属色保留,❌ 归一到 --hover/--danger。 */
 .gg-winctl {
@@ -1794,11 +1804,6 @@ body.barcode-scanner-active #root {
 }
 .gg-winctl:hover { background-color: var(--hover); color: var(--text-primary); }
 .gg-winctl--close:hover { background-color: #E81123; color: #fff; }
-
-/* 悬浮显现:消息 hover 工具条/卡片快捷操作。❌ display:none 切换(闪跳);focus-within 保键盘可达。 */
-.gg-reveal { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
-.gg-reveal-host:hover .gg-reveal,
-.gg-reveal:focus-within { opacity: 1; }
 
 /* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1——
    只压时长的话 infinite 动画(spinner/pulse/shimmer)会变成每圈 0.01ms 的高频闪烁,比不降级更糟。 */
@@ -1972,6 +1977,12 @@ body.barcode-scanner-active #root {
 }
 .gg-pane-header[data-mobile] { height: var(--pane-header-h-touch); }
 .gg-pane-header[data-divider] { border-bottom: 1px solid var(--border); }
+/* At the window's right edge the controls drawn over content (Linux) keep their room; 0 where they are not over it.
+   A column with its own close floating at the top right (the contacts drawer) sets --pane-close-room, and every header
+   inside it leaves that room too — so a long title ends in an ellipsis before the close instead of running under it. */
+.gg-pane-header[data-window-edge], [data-pane-close] .gg-pane-header {
+  padding-right: calc(var(--pane-pad-x) + var(--pane-close-room, 0px) + var(--titlebar-controls-width, 0px));
+}
 .gg-pane-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -2003,6 +2014,12 @@ body.barcode-scanner-active #root {
   animation-duration: var(--mobile-motion-duration);
   animation-timing-function: var(--mobile-motion-ease);
 }
+/* The phone tab bar sits outside the page: unnamed, the opaque page group above covered it until the transition ended,
+   so it appeared late on every return to the list (owner 11-22). Its own group is drawn above the page and never animates:
+   it is there from the first frame when it arrives, and gone at once when it leaves. */
+:root[data-mobile-direction] [data-phone-tabbar] { view-transition-name: phone-tabbar; }
+::view-transition-group(phone-tabbar), ::view-transition-new(phone-tabbar) { animation: none; }
+::view-transition-old(phone-tabbar) { display: none; }
 ::view-transition-old(mobile-page) { animation-name: gg-mobile-leave; }
 ::view-transition-new(mobile-page) { animation-name: gg-mobile-enter; }
 :root[data-mobile-direction='pop'] { --mobile-motion-distance: calc(-1 * var(--spacing-xl)); }
@@ -2358,27 +2375,12 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* @@@unknown-slot — the read model's placeholder (components/ui/Unknown.tsx): it holds the value's place from the first
-   frame but is drawn only after 150 ms, so a read that answers sooner shows nothing in between (❌ a flash of a bar). */
-@keyframes gg-unknown-appear { to { opacity: 1; } }
-.gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
-@media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
-
-
-/* Model settings: approved light palette, with the existing dark theme surfaces. */
+/* Model settings: the expired-sign-in chip colours (the page itself uses the shared settings surfaces). */
 :root {
-  --model-settings-page: var(--page);
-  --model-settings-description: var(--text-secondary);
-  --model-settings-source: var(--muted-fg);
-  --model-settings-separator: var(--border);
   --model-sign-in-expired-bg: var(--danger-tint);
   --model-sign-in-expired-fg: var(--danger-fg);
 }
 [data-theme='light'] {
-  --model-settings-page: #f7f7f7;
-  --model-settings-description: rgba(0, 0, 0, .7);
-  --model-settings-source: rgba(0, 0, 0, .45);
-  --model-settings-separator: #f2f2f2;
   --model-sign-in-expired-bg: #fbf1f1;
   --model-sign-in-expired-fg: #b42c3f;
 }
@@ -2396,3 +2398,19 @@ body.barcode-scanner-active #root {
   --usage-brand-codex-trackLight: #C9CFD6;
   --usage-brand-codex-trackDark: #41474F;
 }
+
+/* @@@placeholder-reveal — how what stands for a value not read yet appears: the read model's placeholder
+   (components/ui/Unknown.tsx, `.gg-unknown`), a loading line (`.gg-loading-line`), a search's previous results dimmed
+   (`.gg-stale`). Nothing for 150 ms (a read that answers sooner leaves nothing drawn in between), then a slow start
+   (ease-in cubic over 450 ms): half way only ~500 ms after it is drawn, so a read answering within half a second leaves a
+   faint bar at most (❌ a flash of a bar); a slower one shows the placeholder, as it should. The same with reduced motion
+   (an opacity change, no movement). */
+:root {
+  --gg-placeholder-delay: 150ms;
+  --gg-placeholder-duration: 450ms;
+  --gg-placeholder-easing: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+@keyframes gg-placeholder-in { from { opacity: 0; } to { opacity: 1; } }
+.gg-unknown, .gg-loading-line { animation: gg-placeholder-in var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }
+@keyframes gg-stale-dim { from { opacity: 1; } to { opacity: 0.6; } }
+.gg-stale { animation: gg-stale-dim var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }

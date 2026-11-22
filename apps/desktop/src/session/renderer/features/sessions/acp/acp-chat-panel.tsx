@@ -1,7 +1,7 @@
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { useReplica } from '@/lib/replica';
+import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
@@ -14,7 +14,7 @@ import { agentOffersConnections } from '@renderer/features/settings/agents-page/
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
-import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
+import { useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput';
 import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
 import { useSearchedTaskReveal, useSessionSourceMessage } from './use-session-source-message';
@@ -23,8 +23,6 @@ import { composerCanSubmit } from './composer-can-submit';
 import { sendComposerInput } from './send-composer-input';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { useNativeConversationRead } from '@/hooks/useNativeConversationRead';
-import { useRememberNativeTail } from './use-remember-native-tail';
-import { useOwnerNotifications } from './use-owner-notifications';
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue';
 import { sessionLifeView } from '../stores/session-life-views';
 import { lifeIsStarting } from '@shared/core/sessions/session-life';
@@ -39,7 +37,6 @@ import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
 import {
   AttachmentViewerDialog,
-  MermaidViewerDialog,
   readAttachmentPreviewText,
 } from '@gugu/session-ui/react/components';
 import type {
@@ -110,15 +107,16 @@ import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
-import { openComposerImage, openImageViewer } from '@/lib/imageViewer';
+import { openComposerImage, openDiagramViewer, openImageViewer } from '@/lib/imageViewer';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
-import { SessionScheduleChip } from '../session-schedule-chip';
+import { scheduleSlotShown, SessionScheduleSlot } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';
 import { toComposerPermission } from './composer-permission';
@@ -745,18 +743,19 @@ const ComposerForStore = observer(function ComposerForStore({
     localSessionMentionProvider,
   ]);
 
-  const { data: agents } = useAgents();
+  const agentsReading = useAgents();
+  const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
   // @@@task-fusion (#2802) — 这个面板的选择器是 `agentLocked`(ACP 不允许会话中途换 agent),
   // 只渲染成一个禁用图标按钮、列表根本不展开,所以这里**不**接安装动作 —— 接了也是死代码。
   // 分组口径仍与 initial-session-section 共用,见 `agent-availability-groups`。
-  const agentOptions = useMemo<ComposerAgentOption[]>(
+  const agentOptions = useMemo<ComposerAgentOption[] | null>(
     () =>
-      sortAgentsByAvailability(agents ?? []).map((a) => ({
+      agents ? sortAgentsByAvailability(agents).map((a) => ({
         id: a.id,
         name: a.name,
         icon: <AgentIcon id={a.id} size={14} className="rounded-sm" />,
         groupLabel: agentGroupLabel(a.reading, translate),
-      })),
+      })) : null,
     [agents]
   );
 
@@ -941,11 +940,11 @@ const ComposerForStore = observer(function ComposerForStore({
   // 判定(harnessCatalogNotice)。只说「坏了」这一态:没装、没登录各有各的入口,不在这里。
   // #2982 PR-A 合进来以后收编进 ReadingSlot(读数三态的唯一画法)。
   const ownCatalogFailure = !ownTier && harnessCatalog.state.kind === 'unavailable'
-    ? harnessCatalogNotice(harnessCatalog.state, composerOwnTierAgentName(agents, providerId), translate)
+    ? harnessCatalogNotice(harnessCatalog.state, composerOwnTierAgentName(agents ?? null, providerId), translate)
     : null;
   const ownCatalogRetry = ownCatalogFailure
     ? {
-        groupLabel: composerTierLabel('own', composerOwnTierAgentName(agents, providerId), translate),
+        groupLabel: composerTierLabel('own', composerOwnTierAgentName(agents ?? null, providerId), translate),
         label: translate(ownCatalogFailure.key, ownCatalogFailure.values),
         title: ownCatalogFailure.detail ?? '',
         detail: translate('harnessCatalog.retry'),
@@ -1440,9 +1439,9 @@ const ComposerForStore = observer(function ComposerForStore({
         granularity={mcpPanel?.granularity ?? 'per-server'}
         onApply={applyMcpSelection}
       />
-      {schedules.length > 0 ? (
+      {scheduleSlotShown(schedules) ? (
         <div data-composer-band data-composer-top-band="schedule" className={sessionComposerTrayClassName} style={sessionComposerTrayStyle}>
-          <SessionScheduleChip machine={scheduleMachine} schedules={schedules} />
+          <SessionScheduleSlot machine={scheduleMachine} reading={schedules} />
         </div>
       ) : null}
       {/* This task's agent's failed deliveries (the shell draws the same bar a chat's composer shows). */}
@@ -1456,7 +1455,7 @@ const ComposerForStore = observer(function ComposerForStore({
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
       <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} />
       <ChatComposer
-        className={schedules.length > 0 ? sessionComposerFrameLiftClassName : undefined}
+        className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
         // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。
         hideLockedAgent={false}
         isWorking={a.isWorking}
@@ -1497,6 +1496,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 与新建任务那个 composer 同一套装配(@@@composer-model-assembly);
         // 「哪几条现在切不了」由 sessionModelOptions 判,见 @@@session-options-disabled。
         modelOptions={sessionModelOptions}
+        modelUnknown={merged === undefined || !platformCatalog.known}
         selectedModel={composerSelectedOptionId({
           platformModel: runningPlatformModel,
           model: store.model,
@@ -1531,6 +1531,7 @@ const ComposerForStore = observer(function ComposerForStore({
         )}
         onPermissionModeChange={handleModeChange}
         agentOptions={agentOptions}
+        agentOptionsLoading={agentsReading.state === 'unknown'}
         selectedAgent={providerId ?? undefined}
         agentLocked
         onAgentChange={() => {}}
@@ -1606,8 +1607,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const store = activeTab ? (activeTab.resource as AcpChatTabResource).store : null;
 
   const visibility = useConversationVisibility(useContext(SurfaceShownContext));
-  useRememberNativeTail(store?.projectId, store?.runtimeSessionId, store?.affordances.isBusy ?? false, visibility.shown);
-  useOwnerNotifications(store, visibility.shown);
   const rootRef = visibility.ref;
   const reading = useNativeConversationRead(store ? machineRegistry.machineOf(store.runtimeSessionId) : null, store?.runtimeSessionId, visibility.shown, () => {
     const transcript = store?.chatState.transcript.state;
@@ -1623,9 +1622,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [viewer, setViewer] = useState<
     { src?: string; alt?: string; text?: string; truncated?: boolean } | null
   >(null);
-  const [mermaidViewer, setMermaidViewer] = useState<{ svg: string | null; pending: boolean } | null>(null);
-  // Only the latest click may fill the viewer (renders resolve out of order once one has to load mermaid); a newer
-  // click or closing the viewer aborts the one before, which also drops it from the render queue.
+  // Only the latest click may open the viewer (renders resolve out of order once one has to load mermaid); a newer
+  // click aborts the one before, which also drops it from the render queue.
   const mermaidViewerRender = useRef<AbortController | null>(null);
   const placementSessionRef = useRef<string | null>(null);
   const placementWasEmptyRef = useRef<boolean | null>(null);
@@ -1678,27 +1676,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    * 这里就什么都不做 —— 到顶是常态,❌ 不是错误,不弹任何东西。
    */
   const handleReachStart = useCallback(() => sourceMessage.loadOlder(), [sourceMessage.loadOlder]);
-  /**
-   * @@@history-window — the bottom of a history window is not the conversation's end: reaching it reads the turns
-   * below, and once none are left the live transcript takes over, at its newest turn. The window's last row is held at
-   * the bottom edge first, so what is appended extends below the reader instead of being followed like a new reply.
-   */
-  const handleAtBottomChange = useCallback((bottom: boolean) => {
-    const shownWindow = store?.historyWindow;
-    if (!store || !shownWindow) { reading.onAtBottomChange(bottom); return; }
-    reading.onAtBottomChange(false);
-    if (!bottom) return;
-    if (!shownWindow.hasNewer) { store.closeHistoryWindow(); return; }
-    // An anchor instead of the tail intent the reader's arrival at the bottom just set: the list follows what is
-    // appended under a tail, and holds still under an anchor (also one it cannot place, when that row is folded away).
-    const last = shownWindow.turns.at(-1)?.items.at(-1)?.id;
-    if (last) viewRef.current?.setScrollMode({ kind: 'anchor', itemId: last, edge: 'bottom', offset: 0 });
-    void shownWindow.loadNewer();
-  }, [store, reading.onAtBottomChange]);
-  const returnToLatest = useCallback(() => {
-    store?.closeHistoryWindow();
-    viewRef.current?.scrollToBottom({ behavior: 'auto' });
-  }, [store]);
 
   const isSessionEmpty = useObserver(() => store?.isEmpty ?? false);
   const activeSessionId = store?.sessionId ?? null;
@@ -1738,7 +1715,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       ? sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)
       : undefined
   );
-  const { data: agents } = useAgents();
+  const agents = valueOf(useAgents());
   const providerId = sessionStore?.data.providerId ?? null;
   // 上一轮被宿主的退出打断(开机收残记下的):停着时说明原因;兼容旧 error 记录,下一轮开工就不是了。
   const interruptedBy = sessionStore?.status === 'idle' || sessionStore?.status === 'error'
@@ -1808,23 +1785,18 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
-  useEffect(() => {
-    if (!store) return;
+  // Computed in render from what the panel holds, ❌ an effect that works it out after paint.
+  const condition = useMemo((): PanelCondition | null => {
+    if (!store) return null;
     // 有没有可重来的首轮,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
     const canRestartSession = canStartFreshSession('provider_session_missing',
       sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
         .firstUtterance
     );
-    const setCondition = (condition: PanelCondition | null) => {
-      conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
-      store.chatState.session.setCondition(
-        condition && { ...condition, actions: condition.actions?.map(({ label, pending }) => ({ label, pending })) },
-      );
-    };
     const error = store.loadError;
     if (!error && membershipLock) {
       // #7056 会员中途到期:说清原因、给两条去路;发送键在输入框那一格已经停下了。
-      setCondition({
+      return ({
         code: 'membership-required',
         // 要会员的只有咕咕提供的模型;名字照模型按钮上的叫法(「咕咕 X」),❌ 裸名 —— 用户自己的同名模型不用会员。
         label: guguReasonText('membership-required', translate, membershipLock.modelName),
@@ -1832,37 +1804,33 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         // 「我开好了」= 让下拉重取目录:开成了,这一格自然变回 null。
         actions: reasonActions('membership-required', { joinMembership: openMembershipPage, retry: refreshPlatformModelCatalogs }, translate),
       });
-      return;
     }
     if (!error && store.reconcileAwaitingLink) {
       // 刚讲完的那一轮留在上面,线回来再对账补全(acp-chat-store @@@reconcile-across-link-loss)。
-      setCondition({
+      return ({
         code: 'machine-unreachable',
         label: translate('transcript.condition.turnAwaitsLink'),
         detail: 'reconcile-awaiting-link',
       });
-      return;
     }
     if (!error && interruptedBy && !signInExpired && !signInMissing) {
-      setCondition({
+      return ({
         code: 'turn-interrupted',
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
       });
-      return;
     }
     if (!error && birthGroup.join && !signInExpired && !signInMissing) {
       // Started from a group chat and not in it: messages there cannot reach this agent until the join succeeds.
-      setCondition({
+      return {
         code: 'group-join-failed',
         label: translate('transcript.condition.groupJoinFailed'),
         detail: birthGroup.join.reason,
         actions: [{ label: translate('transcript.condition.retry'), pending: birthGroup.retrying, run: birthGroup.retry }],
-      });
-      return;
+      };
     }
     if (!error) {
-      setCondition(
+      return (
         signInExpired || signInMissing
           ? {
               code: 'auth-required',
@@ -1881,7 +1849,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             }
           : null
       );
-      return;
     }
     const retry = { label: translate('transcript.condition.retry'), run: () => store.retry() };
     const condition = ((): PanelCondition => {
@@ -2018,8 +1985,15 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         }
       }
     })();
-    setCondition(condition);
+    return condition;
   }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  useEffect(() => {
+    if (!store) return;
+    conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
+    store.chatState.session.setCondition(
+      condition && { ...condition, actions: condition.actions?.map(({ label, pending }) => ({ label, pending })) },
+    );
+  }, [store, condition]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。
@@ -2115,6 +2089,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       flashMessageId: sourceMessage.flashMessageId,
       conversationAgentName: () => conversationAgentName,
       conversationAgentSession: () => store?.sessionId ?? null,
+      readConversationFile: (request) => { const machine = store ? machineRegistry.machineOf(store.runtimeSessionId) : null; return readConversationFile(!machine, machine ?? '', request); },
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
@@ -2206,7 +2181,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           arg.index
         ),
       resolveToolImage: (itemId, index) => store?.resolveToolImage(itemId, index) ?? Promise.resolve(null),
-      onHeldShown: (itemId) => store?.fillHeldTurn(itemId),
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
       onViewMermaid: (arg) => {
@@ -2216,10 +2190,13 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         mermaidViewerRender.current = render;
         const caches = store.chatContext.sharedCaches;
         const cached = caches.peekMermaid(arg.chart);
-        setMermaidViewer({ svg: cached, pending: cached === null });
-        if (cached !== null) return;
+        if (cached !== null) {
+          openDiagramViewer(cached, arg.thumb);
+          return;
+        }
+        // A source pele rejects (null) opens nothing: the block itself already says it could not be drawn.
         void caches.renderMermaid(arg.chart, render.signal).then((svg) => {
-          if (!render.signal.aborted) setMermaidViewer({ svg, pending: false });
+          if (svg !== null && !render.signal.aborted) openDiagramViewer(svg, arg.thumb);
         });
       },
       onOpenFile: (arg) => {
@@ -2320,8 +2297,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         <div className="relative min-h-0 flex-1">
           <ChatTranscript
             context={store.chatContext}
-            state={store.shownChatState}
-            onReturnToLatest={store.historyWindow ? returnToLatest : undefined}
+            state={store.chatState}
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
             contentOverlay
@@ -2332,7 +2308,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             commands={transcriptCommands}
             shown={visibility.shown}
             onVisibleItems={reading.onVisibleItems}
-            onAtBottomChange={handleAtBottomChange}
+            onAtBottomChange={reading.onAtBottomChange}
             onReachStart={handleReachStart}
             layout={{ ...chatLayout, agentConversation: true }}
             style={{ position: 'absolute', inset: 0 }}
@@ -2381,7 +2357,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           composerSlot={composerSlot}
           contentOverlaySlot={overlaySlot}
           onViewAttachment={handleAttachmentView}
-          onScrollToBottom={() => { store.closeHistoryWindow(); viewRef.current?.scrollToBottom({ behavior: 'smooth' }); }}
+          onScrollToBottom={() => viewRef.current?.scrollToBottom({ behavior: 'smooth' })}
           modelMenuRequest={modelMenuRequest}
           onModelMenuRequest={() => setModelMenuRequest((value) => value + 1)}
           onMembershipLockChange={setMembershipLock}
@@ -2397,16 +2373,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         text={viewer?.text}
         truncated={viewer?.truncated}
         name={viewer?.alt}
-      />
-      <MermaidViewerDialog
-        open={!!mermaidViewer}
-        onOpenChange={(open) => {
-          if (open) return;
-          mermaidViewerRender.current?.abort();
-          setMermaidViewer(null);
-        }}
-        svg={mermaidViewer?.svg ?? null}
-        pending={mermaidViewer?.pending ?? false}
       />
     </div>
   );

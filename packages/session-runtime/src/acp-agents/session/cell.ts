@@ -105,6 +105,8 @@ export class SessionCell {
   private _acpSessionId: string;
   private _agent: SessionCellDeps['agent'];
   private acceptsImagePrompts: boolean;
+  /** The running adapter build can revert (its plugin's `acp.revert`, `available` for the version it reports). */
+  private canRevert: boolean;
   private supportsSteering: boolean;
   private _canReattach = false;
   private lastRunningAgentCount = 0;
@@ -219,6 +221,7 @@ export class SessionCell {
     this.autoApprovePermissions = deps.autoApprovePermissions === true;
     this._agent = deps.agent;
     this.acceptsImagePrompts = deps.acceptsImagePrompts === true;
+    this.canRevert = revertAvailable(deps.revert, undefined);
     this.supportsSteering = deps.supportsSteering === true;
     this.liveSettings = deps.liveSettings;
     this.pendingSessionContext = deps.sessionContext?.trim() || null;
@@ -262,6 +265,13 @@ export class SessionCell {
   setAcceptsImagePrompts(acceptsImagePrompts: boolean): void {
     if (this.acceptsImagePrompts === acceptsImagePrompts) return;
     this.acceptsImagePrompts = acceptsImagePrompts;
+    this.deps.callbacks?.onSessionStateChanged?.();
+  }
+
+  setAgentVersion(agentVersion: string | undefined): void {
+    const canRevert = revertAvailable(this.deps.revert, agentVersion);
+    if (this.canRevert === canRevert) return;
+    this.canRevert = canRevert;
     this.deps.callbacks?.onSessionStateChanged?.();
   }
 
@@ -312,6 +322,7 @@ export class SessionCell {
         available: config.modeOptions.available.filter(mode => this.canUsePermissionMode(mode.id)),
       } : null,
       acceptsImagePrompts: this.acceptsImagePrompts,
+      canRevert: this.canRevert,
     };
   }
 
@@ -594,7 +605,7 @@ export class SessionCell {
       if (event.error && request && !request.steered && request.cycle === this.activeTurnCompletion
         && this.machine.phase.kind === 'ready') {
         const classified = classifyTurnFailure({ at: 'prompt', cause: event.error,
-          platformCredentials: this.deps.platformCredentials, closeRequested: this.closeRequested,
+          hostCredentials: this.deps.hostCredentials, closeRequested: this.closeRequested,
           credentialRefusal: this.credentialRefusal });
         this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId, stopReason: null, error: event.error });
         this.endWork(classified.outcome, { dequeueQueuedPrompt: this.dequeueAfterFailure });
@@ -935,7 +946,7 @@ export class SessionCell {
     }
     if (this.machine.phase.kind !== 'ready') return acpErr.invalidState('Wait for the session to become ready before reverting.');
     const revert = this.deps.revert;
-    if (!revert || !this.agent.extMethod) return acpErr.invalidState('This agent does not support conversation revert.');
+    if (!revert || !this.canRevert || !this.agent.extMethod) return acpErr.invalidState('This agent does not support conversation revert.');
     this.reverting = true;
     this.deps.callbacks?.onSessionStateChanged?.();
     try {
@@ -1601,7 +1612,7 @@ export class SessionCell {
         }
         const classified = classifyTurnFailure({ at: 'prompt',
           cause: toSerializedError(event.error ? Object.assign(new Error(event.error.message), event.error) : new Error('Foreground ended with an error')),
-          platformCredentials: this.deps.platformCredentials, closeRequested: this.closeRequested,
+          hostCredentials: this.deps.hostCredentials, closeRequested: this.closeRequested,
           credentialRefusal: this.credentialRefusal });
         if (classified.outcome.kind === 'error') this.deps.logger.error('SessionCell: prompt failed', { sessionId: this.sessionId, providerId: this.deps.providerId, acpSessionId: this.acpSessionId, cause: event.error });
         if (this.endWork(classified.outcome, { foreground: event, dequeueQueuedPrompt: this.dequeueAfterFailure })) this.lastFailureProvisional = classified.provisional;
@@ -1934,7 +1945,7 @@ export class SessionCell {
     if (stopReason === 'cancelled' && this.interruptedForMessage) {
       return { kind: 'cancelled', reason: 'interrupted_for_message' };
     }
-    const refused = this.deps.platformCredentials ? refusedTurnOutcome(this.credentialRefusal) : null;
+    const refused = this.deps.hostCredentials ? refusedTurnOutcome(this.credentialRefusal) : null;
     if (stopReason === 'end_turn' && refused) return refused;
     const stderrFailure = this.turnHadAgentOutput ? null : this.providerStderrFailure;
     const failure = [this.providerTurnFailure, stderrFailure].filter(Boolean).join('\n');
@@ -2836,6 +2847,10 @@ const PROMPT_ADMISSION_TIMEOUT_MS = 60_000;
 
 /** 「一个字都没回就正常结束」时,等 stderr 那行失败说明的最长时间。 */
 const STDERR_FAILURE_GRACE_MS = 300;
+function revertAvailable(revert: SessionCellDeps['revert'], agentVersion: string | undefined): boolean {
+  return !!revert && (revert.available?.(agentVersion) ?? true);
+}
+
 /** A harness that does not name a turn's revert point in this long leaves that turn without one. */
 const REVERT_POINT_TIMEOUT_MS = 5_000;
 

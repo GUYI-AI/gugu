@@ -1,3 +1,5 @@
+import { withRuntimeTurn } from './runtime-turn';
+import { withJournalTurns } from './journal-turns';
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
 import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
@@ -43,7 +45,6 @@ type PublishedSubagent = {
 const NO_STEPS: readonly ToolNode[] = [];
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
-import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
 import { SESSION_PLAN_ID } from '../acp/models/plan';
 import type { ToolNode } from '../acp/models/turns/tool-calls';
 
@@ -58,7 +59,7 @@ import type { ToolNode } from '../acp/models/turns/tool-calls';
  * 存档只是一条更快的捷径，❌ 任何一处对不上都必须能安全地退回「从头读」——
  * 接错了拼出来的是一份缺了中间的时间线，而那种缺失不报错、和"读得慢"在界面上分不出来。
  */
-export const TIMELINE_ARCHIVE_VERSION = 7;
+export const TIMELINE_ARCHIVE_VERSION = 8;
 
 export type TimelineArchive = {
   readonly version: number;
@@ -115,6 +116,8 @@ export type SessionTimelineDeps = {
    * 能 ⇒ 提问结算带上整份 `questions`(契约里「有 questions 就能代答」)。
    */
   answerableQuestions?: boolean;
+  /** Gugu's journal of this session (`sources/gugu-journal.ts`): its whole turns go among the record's by start time. */
+  journal?: SessionRecordSource | null;
   /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). A fill drains here. */
   onApplied?: (timeline: SessionTimeline) => void;
   /** Where the source starts when no archive is restored (a fill from the tail, `SessionRecordSource.startingAt`). */
@@ -179,7 +182,7 @@ type Subscriber = {
   listener: (result: TimelineAfterResult) => void;
 };
 
-type PublishedItem = { item: TranscriptItem; json: string; seq: number };
+type PublishedItem = { item: TranscriptItem; seq: number };
 /**
  * 上一次发布出去的一轮，按**条目**记版本：每条条目各有自己的 seq（最后一次变化的发布序号），
  * 轮的元信息（seq/initiator/startedAt/endedAt/outcome）与条目顺序也各记一个 seq。
@@ -187,9 +190,7 @@ type PublishedItem = { item: TranscriptItem; json: string; seq: number };
  */
 type PublishedTurn = {
   turn: TranscriptTurn;
-  metaJson: string;
   metaSeq: number;
-  orderJson: string;
   orderSeq: number;
   items: Map<string, PublishedItem>;
   /** 上面几个 seq 里最大的那个：这一轮最后一次有任何变化的发布序号。 */
@@ -240,6 +241,10 @@ class RecordTimeline implements SessionTimeline {
   private queued: QueuedPromptText[] = [];
   private queuedDirty = false;
   private liveReply: SessionLiveReply | null = null;
+  /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
+  private runtimeTurn: TranscriptTurn | null = null;
+  /** The journal's turns by key, in journal order; read again with the journal, never archived. */
+  private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
   private terminals: readonly TerminalState[] = [];
   private terminalsDirty = false;
@@ -250,6 +255,8 @@ class RecordTimeline implements SessionTimeline {
   private lastBoundaryMessageId: string | null = null;
   /** Per-tool timestamps collected from the same records that feed the transcript reducer. */
   private recentActionEntries = new Map<string, RecentActionEntry>();
+  /** Every action already timed: one pruned from the entries above must not come back with a later time. */
+  private recentActionSeen = new Set<string>();
   /**
    * 读进来的工具图在记录里的原文位置,按图的 base64 认 —— reducer 折条目时拷的是对象,这串字本身不复制,
    * 存档时拿条目上的图就查得到。只给存档用。
@@ -266,6 +273,7 @@ class RecordTimeline implements SessionTimeline {
   private stopHostTurnEnds: (() => void) | undefined;
   private hostEnds: readonly HostTurnEnd[] = [];
   private hostEnded = new WeakMap<TranscriptTurn, TranscriptTurn>();
+  private placed = new WeakMap<TranscriptTurn, TranscriptTurn>();
   /** Turns handed out by `drainSettled`, and the ids of what they own. */
   private retainedFrom = 0;
   /** Record position of each held turn's first entry (committed, then active), for a fill's cursor. */
@@ -309,6 +317,18 @@ class RecordTimeline implements SessionTimeline {
         },
         restored ? (this.deps.archive as TimelineArchive).resume : this.deps.resume ?? undefined
       );
+      await this.deps.journal?.start({
+        onEntries: (entries) => {
+          for (const entry of entries) if (entry.committed) this.journalTurns.set(entry.key, { turn: entry.committed, recorded: entry.recorded === true });
+          this.needsPublish = true;
+          this.publish();
+        },
+        onReset: () => {
+          this.journalTurns = new Map();
+          this.needsPublish = true;
+          this.publish();
+        }
+      });
     } finally {
       this.suspended = false;
     }
@@ -342,31 +362,26 @@ class RecordTimeline implements SessionTimeline {
     this.settlementSeq = new Map(archive.settlementSeq.map(([id, at]) => [id, at]));
     this.removed = new Map(archive.removed.map(([id, at]) => [id, at]));
     this.recentActionEntries = new Map(archive.recentActions.map((one) => [one.id, one]));
+    this.recentActionSeen = new Set();
+    for (const turn of archive.parser.transcript.committed) forEachAction(turn.items, (item) => this.recentActionSeen.add(item.id));
+    forEachAction(archive.parser.transcript.active?.items ?? [], (item) => this.recentActionSeen.add(item.id));
     this.archivedImages = new Map(archive.images.map(([id, refs]) => [id, refs]));
-    // `published` 里那两串 JSON 是用来比对"这一轮变了没有"的，存下来纯属浪费（它就是整条会话）——
-    // 装回来时按当前的轮重算一遍即可（一份 39MB 的记录实测 23ms）。seq 才是必须存的那一半。
+    // 存档只存 seq;比对「这一轮变了没有」按当前的轮在发布时现算(见 publish)。
     this.published = new Map();
     this.publishedSteps = new Map();
     const byId = new Map(this.currentTurns().map((turn) => [turn.id, turn]));
     for (const entry of archive.published) {
       const turn = byId.get(entry.turnId);
       if (!turn) continue;
-      const { items: _items, ...meta } = turn;
       const seqById = new Map(entry.items.map(([id, at]) => [id, at]));
       const items = new Map<string, PublishedItem>();
       for (const item of turn.items) {
-        items.set(item.id, {
-          item,
-          json: JSON.stringify(item),
-          // 存档里没有的条目只可能来自版本漂移；给它当前 seq，宁可多发一次也不少发。
-          seq: seqById.get(item.id) ?? entry.touchedSeq
-        });
+        // 存档里没有的条目只可能来自版本漂移；给它当前 seq，宁可多发一次也不少发。
+        items.set(item.id, { item, seq: seqById.get(item.id) ?? entry.touchedSeq });
       }
       this.published.set(turn.id, {
         turn,
-        metaJson: JSON.stringify(meta),
         metaSeq: entry.metaSeq,
-        orderJson: JSON.stringify(turn.items.map((item) => item.id)),
         orderSeq: entry.orderSeq,
         items,
         touchedSeq: entry.touchedSeq
@@ -383,11 +398,10 @@ class RecordTimeline implements SessionTimeline {
    */
   async archive(): Promise<TimelineArchive | null> {
     if (this.disposed) return null;
-    // Each source debits its already-known byte offset before copying resume
-    // state. No JSON-value walk, entry limit, or native-source-count limit.
-    const budget = { remainingBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES };
+    // Each source debits the record bytes it has read, so the archive says how much record it covers.
+    const budget = { remainingBytes: Number.MAX_SAFE_INTEGER };
     const resume = await this.source.resumePoint?.(budget);
-    if (!resume || budget.remainingBytes < 0) return null;
+    if (!resume) return null;
     const { parser, images } = this.parserForArchive();
     const published: TurnPublishArchive[] = [];
     for (const [turnId, entry] of this.published) {
@@ -401,7 +415,7 @@ class RecordTimeline implements SessionTimeline {
     }
     return {
       version: TIMELINE_ARCHIVE_VERSION,
-      sourceBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES - budget.remainingBytes,
+      sourceBytes: Number.MAX_SAFE_INTEGER - budget.remainingBytes,
       resume,
       epoch: this.epochValue,
       seq: this.seq,
@@ -665,6 +679,12 @@ class RecordTimeline implements SessionTimeline {
     this.publish();
   }
 
+  syncActiveTurn(turn: TranscriptTurn | null): void {
+    if (this.disposed || this.runtimeTurn === turn) return;
+    this.runtimeTurn = turn;
+    this.publish();
+  }
+
   syncLiveReply(reply: SessionLiveReply | null): void {
     if (this.disposed) return;
     const a = this.liveReply;
@@ -692,6 +712,7 @@ class RecordTimeline implements SessionTimeline {
 
   async catchUp(): Promise<void> {
     await this.source.catchUp?.();
+    await this.deps.journal?.catchUp?.();
   }
 
   /**
@@ -743,6 +764,7 @@ class RecordTimeline implements SessionTimeline {
     this.resetTimer = null;
     this.subscribers.clear();
     this.source.stop();
+    this.deps.journal?.stop();
   }
 
   // ─── 内部 ──────────────────────────────────────────────────────────────────
@@ -761,7 +783,7 @@ class RecordTimeline implements SessionTimeline {
         // 边界不是内容：它不进时间线，只把当前这一轮关掉并给它结局。
         // 没有活着的一轮时 reducer 自己 no-op，所以重复的边界是安全的。
         this.parser.settleTurn(outcomeOf(entry.boundary), at);
-      } else {
+      } else if (entry.event) {
         // An event for a drained turn would otherwise land in the newest turn: drop it, as a settled stored row is never revised.
         if (this.prunedOwners.size && eventOwnerIds(entry.event).some((id) => this.prunedOwners.has(id))) {
           this.prunedDrops += 1;
@@ -776,7 +798,8 @@ class RecordTimeline implements SessionTimeline {
         }
         const before = this.parser.snapshotState();
         const boundaryBefore = this.lastBoundaryMessageId;
-        this.parser.pushRecordEvent(entry.event, at, this.lastBoundaryMessageId);
+        // The turn an entry opens is named by the record (`RecordEntry.turn`, else its key), not by counting turns.
+        this.parser.pushRecordEvent(entry.event, at, this.lastBoundaryMessageId, { key: entry.turn ?? entry.key, opens: entry.turn !== undefined });
         const held = this.parser.history.length + (this.parser.activeTurn ? 1 : 0) - this.turnStarts.length;
         if (held < 0) this.turnStarts.length += held;
         // A fill's turn start keeps what a read from there needs to go on as this one does (the parser state is immutable).
@@ -918,6 +941,7 @@ class RecordTimeline implements SessionTimeline {
     this.lastAt = null;
     this.lastBoundaryMessageId = null;
     this.recentActionEntries = new Map();
+    this.recentActionSeen = new Set();
     this.imageOrigins = new Map();
     this.archivedImages = new Map();
     this.retainedFrom = 0;
@@ -948,7 +972,28 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const active = this.parser.activeTurn;
-    return this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    const folded = this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    const journal = [...this.journalTurns.values()];
+    return this.inPlace(withRuntimeTurn(withJournalTurns(folded,
+      journal.filter((line) => !line.recorded).map((line) => line.turn),
+      journal.filter((line) => line.recorded).map((line) => line.turn)), this.runtimeTurn), folded[0]?.seq ?? 0);
+  }
+
+  /**
+   * A turn's `seq` is its place in this timeline: readers order, page and find turns by it. Journal and runtime turns
+   * come numbered by their own source (a notification is always 0), so each turn takes its position here; a turn that
+   * kept its place keeps its object.
+   */
+  private inPlace(turns: TranscriptTurn[], base: number): TranscriptTurn[] {
+    return turns.map((turn, index) => {
+      const seq = base + index;
+      if (turn.seq === seq) return turn;
+      const cached = this.placed.get(turn);
+      if (cached?.seq === seq) return cached;
+      const placed = { ...turn, seq };
+      this.placed.set(turn, placed);
+      return placed;
+    });
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {
@@ -990,33 +1035,27 @@ class RecordTimeline implements SessionTimeline {
       // 不跳过的话，直播时每吐一段都要把**整条会话**重新序列化一遍，成本随会话长度线性涨
       // （实测 2000 轮的会话每推一次 28ms，而真正变了的只有最后那一轮）。
       if (prior && prior.turn === turn) continue;
-      const { items: _items, ...meta } = turn;
-      const metaJson = JSON.stringify(meta);
-      const order = turn.items.map((item) => item.id);
-      const orderJson = JSON.stringify(order);
+      // @@@publish-by-identity - 条目同样不可变:同一个对象 = 没变,只有换了对象的才按 JSON 比一次。从前每一轮、每一条都先
+      // 序列化存下来备比:打开一条长会话的第一次发布要把整条会话(上百 MB)一口气序列化一遍,而那些串多数永远用不上。
       let touched = false;
-
       const nextItems = new Map<string, PublishedItem>();
       for (const item of turn.items) {
-        const json = JSON.stringify(item);
         const priorItem = prior?.items.get(item.id);
-        if (priorItem && priorItem.json === json) {
-          nextItems.set(item.id, priorItem);
+        if (priorItem && (priorItem.item === item || JSON.stringify(priorItem.item) === JSON.stringify(item))) {
+          nextItems.set(item.id, priorItem.item === item ? priorItem : { item, seq: priorItem.seq });
           continue;
         }
-        nextItems.set(item.id, { item, json, seq: nextSeq });
+        nextItems.set(item.id, { item, seq: nextSeq });
         touched = true;
       }
-      const metaSeq = prior && prior.metaJson === metaJson ? prior.metaSeq : nextSeq;
-      const orderSeq = prior && prior.orderJson === orderJson ? prior.orderSeq : nextSeq;
+      const metaSeq = prior && JSON.stringify(turnMeta(prior.turn)) === JSON.stringify(turnMeta(turn)) ? prior.metaSeq : nextSeq;
+      const orderSeq = prior && sameOrder(prior.turn.items, turn.items) ? prior.orderSeq : nextSeq;
       if (metaSeq === nextSeq || orderSeq === nextSeq) touched = true;
       if (!touched && prior) continue;
 
       staged.set(turn.id, {
         turn,
-        metaJson,
         metaSeq,
-        orderJson,
         orderSeq,
         items: nextItems,
         touchedSeq: nextSeq
@@ -1143,18 +1182,11 @@ class RecordTimeline implements SessionTimeline {
   }
 
   private recordRecentActions(items: readonly TranscriptItem[], at: number): void {
-    for (const item of items) {
-      if (item.kind === 'message' || item.kind === 'thinking' || item.kind === 'compaction' || item.kind === 'context-reset' || item.kind === 'session-notice') continue;
-      if (item.kind === 'tool-group') {
-        this.recordRecentActions(item.children, at);
-        continue;
-      }
-      const name = recentActionName(item);
-      if (name && !this.recentActionEntries.has(item.id)) {
-        this.recentActionEntries.set(item.id, { id: item.id, name, at });
-      }
-      if (item.children) this.recordRecentActions(item.children, at);
-    }
+    forEachAction(items, (item, name) => {
+      if (this.recentActionSeen.has(item.id)) return;
+      this.recentActionSeen.add(item.id);
+      this.recentActionEntries.set(item.id, { id: item.id, name, at });
+    });
   }
 
   private recentActionsSnapshot(): { recentActions: string[]; lastActionAt: number | null } {
@@ -1182,12 +1214,29 @@ class RecordTimeline implements SessionTimeline {
   }
 }
 
-/**
- * 记录里的边界 → reducer 的轮结局。
- *
- * `max_turn_requests` 在三家记录里都没出现过（它是 ACP 侧的说法），留着是因为契约上那一档存在；
- * 真映射不出来的一律落回 `end_turn` —— 一轮结束了是确定的，只是没说清为什么。
- */
+/** The tool calls a turn's items show as actions (`recentActionName`), nested ones included. */
+function forEachAction(items: readonly TranscriptItem[], visit: (item: TranscriptItem, name: string) => void): void {
+  for (const item of items) {
+    if (item.kind === 'message' || item.kind === 'thinking' || item.kind === 'compaction' || item.kind === 'context-reset' || item.kind === 'session-notice') continue;
+    if (item.kind === 'tool-group') {
+      forEachAction(item.children, visit);
+      continue;
+    }
+    const name = recentActionName(item);
+    if (name) visit(item, name);
+    if (item.children) forEachAction(item.children, visit);
+  }
+}
+
+function turnMeta(turn: TranscriptTurn): Omit<TranscriptTurn, 'items'> {
+  const { items: _items, ...meta } = turn;
+  return meta;
+}
+
+function sameOrder(a: readonly TranscriptItem[], b: readonly TranscriptItem[]): boolean {
+  return a.length === b.length && a.every((item, index) => item.id === b[index].id);
+}
+
 function sameSettlement(a: Settlement, b: Settlement): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }

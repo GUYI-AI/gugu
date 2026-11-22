@@ -17,7 +17,7 @@ const io = vi.hoisted(() => ({
 }))
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
 vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({
-  startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), dismissFirstRunHints: vi.fn(),
+  startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), parseFirstRunHints: () => null, allFirstRunHintsDismissed: () => true, dismissFirstRunHints: vi.fn(),
 }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => ({ enrollSampleProject: vi.fn(async () => undefined) }))
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: {} }))
@@ -34,12 +34,13 @@ vi.mock('@renderer/lib/ipc', () => {
       getWithMeta: async () => ({ value: { enabled: false, lastPicked: 'codex' }, defaults: {}, overrides: {} }),
       update: async () => undefined,
     },
-    agents: { getAgentInstallationStatus: native.status, cancelInstall: vi.fn(), list: async () => [], listAgentInstallationStatus: async () => [] },
+    agents: { probe: async () => undefined, getAgentInstallationStatus: native.status, cancelInstall: vi.fn(), list: async () => [], listAgentInstallationStatus: async () => [] },
   }
   return { rpc, rpcOn: () => rpc, events: { on: () => () => {} }, onMachineEvent: () => () => {} }
 })
 
 import { FirstRunGate } from '../../../../apps/desktop/src/components/firstRun/FirstRunGate'
+import { NoticeHost } from '../../../../apps/desktop/src/components/NoticeHost'
 import { i18n } from '../../../../apps/desktop/src/i18n/runtime'
 import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 
@@ -68,7 +69,7 @@ afterEach(() => {
 })
 
 async function startAndVisitSetup() {
-  await renderWithAppProviders(harness, createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace')), { auth: user })
+  await renderWithAppProviders(harness, createNode('div', {}, createNode(NoticeHost), createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace'))), { auth: user })
   await waitForCondition(() => !!byId('first-run-harness-continue') && !(byId('first-run-harness-continue') as HTMLButtonElement).disabled, 'agent selection ready')
   await clickElement(byId('first-run-harness-continue')!)
   await waitForCondition(() => !!byId('first-run-terminal'), 'terminal page')
@@ -152,7 +153,7 @@ describe('installation notices appear only after full-screen first-run pages', (
     native.install.mockImplementation(() => new Promise(() => {}))
     const counts: string[] = []
     const count = () => byId('first-run-step-count')?.textContent ?? null
-    await renderWithAppProviders(harness, createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace')), { auth: user })
+    await renderWithAppProviders(harness, createNode('div', {}, createNode(NoticeHost), createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace'))), { auth: user })
     await waitForCondition(() => !!byId('first-run-harness-continue') && !(byId('first-run-harness-continue') as HTMLButtonElement).disabled, 'agent selection ready')
     await clickElement(byId('first-run-harness-back')!)
     await waitForCondition(() => !!byId('first-run-profile'), 'profile page')

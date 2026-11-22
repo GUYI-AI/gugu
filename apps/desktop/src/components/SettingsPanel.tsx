@@ -1,5 +1,4 @@
 import { settingsSectionsForAccount } from './settings/sectionsForAccount'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PasswordSection } from './settings/PasswordSection'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { useAuth } from '../store/auth'
@@ -50,7 +49,7 @@ import { useTranslation } from 'react-i18next'
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
-      (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
+      (section !== 'passwords' || (platform.kind === 'electron' && !mobile)) &&
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
       (section !== 'apps' || (mobile && platform.capabilities.mobileApps)) &&
       (section !== 'data-import' || (!mobile && platform.capabilities.sessionHost)) &&
@@ -147,7 +146,7 @@ export function SettingsPanel({
       case 'about':    return <AboutSection />
       case 'help':     return <HelpSection />
       case 'permissions': return <PermissionsSection />
-      case 'passwords': return PASSWORD_BETA_ENABLED ? <PasswordSection actionsHost={() => passwordActions.current} /> : null
+      case 'passwords': return <PasswordSection actionsHost={() => passwordActions.current} />
       case 'apps':     return <Suspense fallback={null}><PhoneMarketplace key={requestedSection}
         initialArea={marketConnections ? 'connectors' : 'agents'} appDetail={appDetail} onHandledAppDetail={onHandledAppDetail}
         assistant={marketAssistant} showMarketTabs={!detailPage} installedOpen={marketInstalled} onCloseInstalled={() => setMarketInstalled(false)} /></Suspense>
@@ -190,7 +189,7 @@ export function SettingsPanel({
         )}
         {(!mobile || mobilePane === 'detail') && (
           <Pane paneRole="detail" mobile={mobile} className="gg-settings-detail">
-            {activeSection !== 'data-import' && <PaneHeader
+            {<PaneHeader
               mobile={mobile}
               title={detailPage?.title ?? sectionTitle}
               titleLevel={mobile ? 'panel' : undefined}
@@ -238,7 +237,7 @@ export function SettingsPanel({
   // 顶层应用模态：Sheet portals 到 document.body，脱离 MainLayout 内 Sidebar/ChatListPanel
   // 的 stacking context，否则被它们内部的 fixed 高 z 弹窗盖住(#1182)。
   // --z-settings：高于所有工作区弹窗(modal/menu/banner/popover 全段)，
-  // 低于 --z-overlay(图片预览) 与 --z-toast——设置内弹出的 toast/图片仍要可见。
+  // 低于 --z-overlay(图片预览)与提示条那一层——设置内弹出的提示 / 图片仍要可见。
   return (
     <Sheet
       onClose={() => onClose?.()}

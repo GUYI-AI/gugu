@@ -14,15 +14,19 @@ vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useA
 vi.mock('@/store/theme', async original => ({ ...(await original<object>()), useTheme: () => ({ theme: 'light' }) }))
 vi.mock('@/store/chatContext', async original => ({ ...(await original<object>()), useChatStore: () => ({ subscribeAccountRevision: () => () => {} }) }))
 vi.mock('@/lib/widgetRegistry', async original => ({ ...(await original<object>()), widgetForOriginal: async () => ({ id: 'widget', widget: { v: 2, app: 'vote', view: 'poll', text: 'Dinner', height: 240 }, senderId: 'sender' }) }))
-vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => fixture.picture } }))
+vi.mock('@/lib/widgetSnapshots', async original => ({ ...(await original<object>()), widgetSnapshots: { read: async () => fixture.picture, capture: () => ({ accountId: 'reader', generation: 0 }) } }))
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: {} }))
 vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: useRef(null), shown: true }) }))
 // Another slot of the same widget holds its page: this one is inactive.
 vi.mock('@/components/chat/useWidgetPresence', () => ({ useWidgetPresence: () => ({ active: false, preload: false, locate: fixture.locate }) }))
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
+vi.mock('@/session/renderer/features/extensions/installed-extensions', async original => {
+  const installed = {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1', contributes: { tabs: [{ name: 'poll', widget: { height: 240 } }] } }),
-} }))
+}
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+})
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => { harness?.cleanup(); fixture.locate.mockClear() })

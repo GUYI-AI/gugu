@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { replica, useReplica, useReplicas, type Reading } from '@/lib/replica';
 import type { AttachProjectFolderError, ProjectFolder } from '@shared/core/projects/project-folders';
 import { projectFoldersChangedChannel, projectGroupBindingChangedChannel } from '@shared/core/projects/projectEvents';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { onMachineEvent, rpc } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { log } from '@renderer/utils/logger';
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
 import { cachedDevicesAccount } from '@/store/devicesCache';
 
@@ -22,7 +22,12 @@ import { cachedDevicesAccount } from '@/store/devicesCache';
  * 机器在读的那一刻按「是哪台答的 / 账号上那份是哪台记的」盖上,用的地方都读它(机器标签、设备范围、在哪台上开工),
  * ❌ 再拿 folder.projectId 去反查 —— 同一个本地项目 id 可能先后登记在两条设备行下(同一台机器重新登记)。
  */
-export type ShownFolder = ProjectFolder & { offline: boolean; deviceId: string | null; stale?: boolean };
+export type ShownFolder = ProjectFolder & {
+  offline: boolean;
+  deviceId: string | null;
+  stale?: boolean;
+  placeholder?: true;
+};
 
 /** 每个项目(按代表那一行的 id)「新会话从哪个文件夹开工」:切走再回来还在;没选过 = 代表行的根目录。 */
 const folderChoice = new Map<string, string>();
@@ -59,13 +64,17 @@ function accountIsNewer(projectId: string): boolean {
 }
 
 export function chosenFolderOf(rowId: string, folders: readonly ShownFolder[] | null): ShownFolder | null {
-  if (!folders || folders.length === 0) return null;
+  const real = folders?.filter((folder) => !folder.placeholder) ?? [];
+  if (real.length === 0) return null;
   const chosen = folderChoice.get(rowId);
+  const picked = real.find((folder) => folder.workspaceId === chosen);
+  if (picked) return picked;
+  // The row's own machine not answered yet: nothing is chosen (❌ "the first root that arrived").
+  if (folders?.some((folder) => folder.placeholder && folder.projectId === rowId)) return null;
   return (
-    folders.find((folder) => folder.workspaceId === chosen) ??
-    folders.find((folder) => folder.kind === 'root' && folder.projectId === rowId) ??
-    folders.find((folder) => folder.kind === 'root') ??
-    folders[0]
+    real.find((folder) => folder.kind === 'root' && folder.projectId === rowId) ??
+    real.find((folder) => folder.kind === 'root') ??
+    real[0]
   );
 }
 
@@ -89,178 +98,133 @@ export type ProjectFoldersState = {
   detach: (folder: ProjectFolder) => Promise<boolean>;
 };
 
+/** One local project's folders, drawn in member order, ❌ in the order machines answer (cards went 3 → 6 and reordered). */
+export const projectFolders = replica({
+  name: 'projectFolders',
+  scope: 'account',
+  networkMode: 'always',
+  read: async (_owner, projectId: string): Promise<ProjectFolder[]> => {
+    const result = await rpc.projects.listProjectFolders(projectId);
+    if (!result.success) throw new Error(result.error.message ?? `listing the folders of ${projectId} failed`, { cause: result.error });
+    return result.data;
+  },
+  fresh: Infinity,
+  watch: {
+    group: (projectId) => machineRegistry.machineOf(projectId) ?? null,
+    start: (_owner, projectId) => {
+      const machine = machineRegistry.machineOf(projectId) ?? null;
+      const offs = [
+        onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId: changed }) => { void projectFolders.refresh(changed); }),
+        onMachineEvent(machine, projectGroupBindingChangedChannel, () => { void projectFolders.refresh(); }),
+      ];
+      return () => offs.forEach((off) => off());
+    },
+  },
+});
+
+/** How many folders each member machine showed last, kept so the first open draws every paper at once. */
+export const projectFolderLayout = replica({
+  name: 'projectFolderLayout',
+  scope: 'account',
+  read: async (_owner, _rowId: string, _members: string): Promise<(number | null)[]> => {
+    throw new Error('a folder layout is written as folders settle, never read');
+  },
+  fresh: Infinity,
+  persist: { maxBytes: 320, maxEntries: 8 },
+});
+
+function membersHash(memberIds: readonly string[]): string {
+  let hash = 0x811c9dc5;
+  for (const char of memberIds.join('\u0000')) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
+  return hash.toString(16);
+}
+
 /**
  * @param rowId 代表这个项目的那一行(侧栏那一行)的本地项目 id
  * @param memberIds 这个项目在各台机器上的本地项目(含 rowId;没合并就只有它)
  */
 export function useProjectFolders(rowId: string, memberIds: readonly string[] = [rowId]): ProjectFoldersState {
-  const [snapshot, setSnapshot] = useState<{ rowId: string; connectionKey?: string; folders: ShownFolder[] | null; loadError: boolean; unanswered?: readonly string[] }>(
-    () => ({ rowId, folders: null, loadError: false })
-  );
-  // Switching projects must never expose the previous project's folders, even
-  // during the render before the new request's effect starts.
-  const [generation, setGeneration] = useState(0);
-  const [fresh, setFresh] = useState<string | undefined>(() => freshFolders.get(rowId));
-  // 上一次读到的那份:重读后多出来的文件夹就是刚挂上的(product spec:几条路挂上的都看得见它落进去)。
-  const previous = useRef<{ rowId: string; members: Map<string, Set<string> | null> } | null>(null);
-  // 上一次画出来的、每台机器的那一份(重读时还没答的那台先照旧列着)。
-  const shown = useRef<{ rowId: string; lists: Map<string, ShownFolder[]> } | null>(null);
-  const bump = useCallback(() => setGeneration((value) => value + 1), []);
   const membersKey = memberIds.join('\u0000');
-  // 账号上记着的那几份变了(那台机器离线时挂 / 摘了文件夹之后记上来、这一端刚读到账号上的那份):重读一遍。
+  const members = useMemo(() => [...new Set(membersKey.split('\u0000'))], [membersKey]);
+  const readings = useReplicas(projectFolders, members.map((id) => [id] as [string]));
+  const layoutArgs: [string, string] = [rowId, membersHash(members)];
+  const layout = useReplica(projectFolderLayout, layoutArgs, { read: false });
+  const [fresh, setFresh] = useState<string | undefined>(() => freshFolders.get(rowId));
+  const [late, setLate] = useState(false);
+  const [asked, setAsked] = useState(0);
+  const askAgain = useCallback((ids: readonly string[]) => {
+    setAsked((n) => n + 1);
+    for (const id of ids) void projectFolders.refresh(id);
+  }, []);
+
   // 读的是 mobx 里的设备行 —— 项目首页是 observer,那一份变了这里才重算。
-  const accountKey = JSON.stringify(memberIds.map((projectId) => [accountFolders(projectId), accountIsNewer(projectId), accountUnread(projectId)]));
-  // A cloud host can wake without changing its recorded folder metadata. Read
-  // again when its actual connection returns, rather than retaining an empty
-  // pre-wake response and leaving the composer blocked indefinitely.
-  const connectionKey = JSON.stringify(memberIds.map((projectId) => {
+  const connectionKey = JSON.stringify(members.map((projectId) => {
     const deviceId = machineRegistry.machineOf(projectId);
-    return [projectId, deviceId, deviceId ? remoteHostsStore.connectionState(deviceId) === 'connected' : true];
+    return [deviceId, deviceId ? remoteHostsStore.connectionState(deviceId) === 'connected' : true,
+      accountFolders(projectId)?.length ?? null, accountIsNewer(projectId), accountUnread(projectId)];
   }));
-  // A known empty answer belongs to the connection that produced it. During a
-  // reconnect, keep nonempty recorded folders visible, but do not present the
-  // previous empty answer as the new connection's result before it has replied.
-  const canShowFolders = snapshot.connectionKey === connectionKey || snapshot.folders?.length !== 0;
-  const folders = snapshot.rowId === rowId && canShowFolders ? snapshot.folders : null;
-  const loadError = snapshot.rowId === rowId && snapshot.connectionKey === connectionKey && snapshot.loadError;
+  const firstConnection = useRef(connectionKey);
+  useEffect(() => {
+    if (firstConnection.current === connectionKey) return;
+    firstConnection.current = connectionKey;
+    askAgain(members);
+  }, [connectionKey, members, askAgain]);
+
+  // A machine silent past the deadline is drawn without; counted from when a read starts, ❌ from the mount.
+  const inFlight = readings.map((entry) => entry.state === 'unknown' || (entry.state === 'value' && entry.stale)).join();
+  useEffect(() => {
+    setLate(false);
+    const deadline = setTimeout(() => setLate(true), UNANSWERED_AFTER_MS);
+    return () => clearTimeout(deadline);
+  }, [rowId, membersKey, asked, inFlight]);
+
   // 换了项目:「刚挂上」跟着换成那个项目的(❌ 把上一个项目的那张带过来)。
   useEffect(() => setFresh(freshFolders.get(rowId)), [rowId]);
 
+  const lists = members.map((projectId, index) => memberFolders(projectId, readings[index]!, layout, index, late));
+  const waiting = lists.some((list) => list === 'waiting');
+  const known = lists.filter((list): list is ShownFolder[] => Array.isArray(list));
+  // An empty answer belongs to the connection that gave it: a waking machine's "none" is not the new connection's answer.
+  const unanswered = late ? [] : members.filter((_id, index) => {
+    const reading = readings[index]!;
+    return reading.state === 'unknown' || (reading.state === 'value' && reading.stale && !reading.error && reading.value.length === 0);
+  });
+  const merged = known.flat();
+  const folders = waiting || known.length === 0 || (merged.length === 0 && unanswered.length > 0) ? null : merged;
+  const loadError = !waiting && known.length === 0 && lists.every((list) => list === 'nothing');
+
+  // A folder new in a member's answer (attached elsewhere, by an agent, undone) is the fresh one.
+  const answered = readings.map((reading) => (reading.state === 'value' ? reading.value : null));
+  const seen = useRef<{ rowId: string; members: Map<string, ProjectFolder[] | null> } | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    setSnapshot((current) => current.rowId === rowId
-      ? { ...current, loadError: false }
-      : { rowId, folders: null, loadError: false });
-    const ids = membersKey.split('\u0000');
-    // 这一轮问的是哪台(rpc 按这同一张表选线):答回来的、账号上记着的,都盖上它。
-    const deviceOf = new Map(ids.map((projectId) => [projectId, machineRegistry.machineOf(projectId) ?? null] as const));
-    const fromAccount = (projectId: string): ShownFolder[] | null =>
-      accountFolders(projectId)?.map((folder): ShownFolder => ({
-        ...folder, offline: true, deviceId: deviceOf.get(projectId) ?? null, ...(accountUnread(projectId) ? { stale: true } : {}),
-      })) ?? null;
-    // 每台各自回话:答了的(读到的,或读不到 = null)、过了时限还没答的。
-    const answered = new Map<string, ShownFolder[] | null>();
-    const late = new Set<string>();
-
-    // 哪台先答就先画哪台(❌ 等齐 —— 一台掉线的机器的请求可能挂很久,不能拖住这台电脑自己的文件夹)。
-    const publish = () => {
-      if (cancelled) return;
-      const lastShown = shown.current?.rowId === rowId ? shown.current.lists : null;
-      // 一台的那一份:读到的 > 读不到就用账号上记着的与这一页刚才画的那份里新的那个(都标离线;账号上那份在那台机器
-      // 经连接答过之后没变 = 刚才画的更新,❌ 拿它把刚挂上、还没记到账号上的文件夹抹掉);过了时限还没答的同样;
-      // 还没到时限的先照旧列着上一次画的(❌ 每次重读远程机器的文件夹都闪一下),这一行头一回读就先不画它(undefined)。
-      const listFor = (projectId: string): ShownFolder[] | null | undefined => {
-        const last = lastShown?.get(projectId);
-        const offline = () => {
-          const shownBefore = last?.map((folder) => ({ ...folder, offline: true })) ?? null;
-          const recorded = fromAccount(projectId);
-          return (accountIsNewer(projectId) ? recorded ?? shownBefore : shownBefore ?? recorded) ?? null;
-        };
-        if (answered.has(projectId)) return answered.get(projectId) ?? offline();
-        if (late.has(projectId)) return offline();
-        return last;
-      };
-      const lists = ids.map(listFor);
-      const known = lists.filter((list): list is ShownFolder[] => Array.isArray(list));
-      if (known.length === 0) {
-        // 还有没答的就再等;都答了(或都过了时限)也一份都没有:如实说读不到。
-        if (lists.some((list) => list === undefined)) return;
-        setSnapshot({ rowId, connectionKey, folders: null, loadError: true });
-        return;
-      }
-      const merged = known.flat();
-      // 「刚挂上」只拿上一次看见过的比:上一次那台还没答 / 没列出来的,这次它的文件夹不算刚挂上;
-      // 这一行新并进来的机器(上一次根本不是成员)上的文件夹才算 —— 那是刚从那台接进来的。
-      const before = previous.current?.rowId === rowId ? previous.current.members : null;
-      const added = before
-        ? merged.filter((folder) => {
-            if (!before.has(folder.projectId)) return true;
-            const seen = before.get(folder.projectId);
-            return !!seen && !seen.has(folder.workspaceId);
-          })
-        : [];
-      const newest = added.sort((a, b) => (b.attachedAt ?? '').localeCompare(a.attachedAt ?? ''))[0];
-      if (newest) {
-        freshFolders.set(rowId, newest.workspaceId);
-        setFresh(newest.workspaceId);
-      }
-      // 记下这一次看见的(null = 是这一行的成员、但还不知道它有哪些文件夹)。还没答的那台:沿用上一次的记录;
-      // 这一行头一回读(上一次没有记录)时记成 null —— 它只是答得慢,❌ 答了之后被当成新并进来的、整台标「刚挂上」;
-      // 读到一半新并进来的那台(上一次的成员里没有它)不记,它答了才算刚接进来。
-      const members = new Map<string, Set<string> | null>();
-      ids.forEach((projectId, index) => {
-        const list = lists[index];
-        if (Array.isArray(list)) members.set(projectId, new Set(list.map((folder) => folder.workspaceId)));
-        else if (before?.has(projectId)) members.set(projectId, before.get(projectId) ?? null);
-        else if (!before || list === null) members.set(projectId, null);
-      });
-      previous.current = { rowId, members };
-      shown.current = { rowId, lists: new Map(ids.flatMap((projectId, index) => { const list = lists[index]; return Array.isArray(list) ? [[projectId, list] as const] : []; })) };
-      setSnapshot({ rowId, connectionKey, folders: merged, loadError: false, unanswered: ids.filter((id) => !answered.has(id) && !late.has(id)) });
-    };
-
-    for (const projectId of ids) {
-      // 包一层:调用本身同步抛(通道不在)也算这一台读不到,❌ 让整页崩掉。
-      void Promise.resolve()
-        .then(() => rpc.projects.listProjectFolders(projectId))
-        .then((result) => {
-          if (result.success) {
-            return result.data.map((folder): ShownFolder => ({ ...folder, offline: false, deviceId: deviceOf.get(projectId) ?? null }));
-          }
-          log.warn('[project-folders] 读不到这台机器上的文件夹', {
-            projectId,
-            error: result.error,
-          });
-          return null;
-        })
-        .catch((error: unknown) => {
-          log.warn('[project-folders] 读不到这台机器上的文件夹', { projectId, error });
-          return null;
-        })
-        .then((live) => {
-          answered.set(projectId, live);
-          publish();
-        });
+    const before = seen.current?.rowId === rowId ? seen.current.members : null;
+    seen.current = { rowId, members: new Map(members.map((id, index) => [id, answered[index]!])) };
+    // Each machine that answered gives its count; one that has not keeps its old count (❌ blocking the others' write).
+    if (answered.some((list) => list !== null)) {
+      const stored = layout.state === 'value' ? layout.value : null;
+      const counts = answered.map((list, index) => (list ? list.length : stored?.[index] ?? null));
+      if (!stored || stored.join() !== counts.join()) projectFolderLayout.set(layoutArgs, counts);
     }
-    // 过了时限还没答的那台:先列账号上记着的、标离线;它答了再换成真的。
-    const deadline = setTimeout(() => {
-      for (const projectId of ids) if (!answered.has(projectId)) late.add(projectId);
-      if (late.size > 0) publish();
-    }, UNANSWERED_AFTER_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(deadline);
-    };
-  }, [rowId, membersKey, generation, accountKey, connectionKey]);
-
-  // 别处挂上 / 摘下 / 并进来(另一个窗口、agent、撤销)也要跟着变:在各成员项目所在的机器上订,那台推一声就重读。
-  useEffect(() => {
-    const ids = new Set(membersKey.split('\u0000'));
-    const machines = new Set([...ids].map((id) => machineRegistry.machineOf(id)));
-    const offs = [...machines].flatMap((machine) => {
-      // 那台机器此刻没有连接(离线 / 还没连上):没有什么可订的,连上之后 connectionKey 变了会再订一次;❌ 让一台离线的机器把整页(项目选择器的 ›)画崩。
-      try {
-        return [
-          onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId: changed }) => {
-            if (ids.has(changed)) bump();
-          }),
-          onMachineEvent(machine, projectGroupBindingChangedChannel, () => bump()),
-        ];
-      } catch (error) {
-        log.warn('[project-folders] 订不上这台机器的文件夹变动', { machine, error });
-        return [];
-      }
+    if (!before) return;
+    const added = answered.flatMap((list, index) => {
+      const previous = before.get(members[index]!);
+      if (!list || !previous) return [];
+      const had = new Set(previous.map((folder) => folder.workspaceId));
+      return list.filter((folder) => !had.has(folder.workspaceId));
     });
-    return () => offs.forEach((off) => off());
-  }, [membersKey, bump, connectionKey]);
+    const newest = added.sort((a, b) => (b.attachedAt ?? '').localeCompare(a.attachedAt ?? ''))[0];
+    if (newest) {
+      freshFolders.set(rowId, newest.workspaceId);
+      setFresh(newest.workspaceId);
+    }
+  });
 
+  // The choice lives in the module: it outlives a remount.
+  const [, setChoice] = useState(0);
   const choose = useCallback(
     (workspaceId: string) => {
       folderChoice.set(rowId, workspaceId);
-      // 列表没变,只是选中那一张变了:同一份数据换个引用,让卡片和输入框跟着重画。
-      setSnapshot((current) => current.rowId === rowId && current.folders
-        ? { ...current, folders: [...current.folders] }
-        : current);
+      setChoice((n) => n + 1);
     },
     [rowId]
   );
@@ -275,13 +239,15 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
           deviceId: machineRegistry.machineOf(projectId) ?? undefined, after: { path: result.data.path } }, ownerId);
         freshFolders.set(rowId, result.data.workspaceId);
         setFresh(result.data.workspaceId);
-        bump();
+        // Every member is read again; only the machine that attached it is waited for (❌ one out of reach holds the toast).
+        for (const id of members) if (id !== projectId) void projectFolders.refresh(id);
+        await projectFolders.refresh(projectId);
         return { ok: true, folder: result.data };
       } catch (error) {
         return { ok: false, error: { type: 'rpc-failed', message: error instanceof Error ? error.message : String(error) } };
       }
     },
-    [rowId, bump]
+    [rowId, members]
   );
 
   const detach = useCallback(
@@ -296,21 +262,55 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
         setFresh(undefined);
       }
       if (folderChoice.get(rowId) === folder.workspaceId) folderChoice.delete(rowId);
-      bump();
+      for (const id of members) if (id !== folder.projectId) void projectFolders.refresh(id);
+      await projectFolders.refresh(folder.projectId);
       return true;
     },
-    [rowId, bump]
+    [rowId, members]
   );
 
   return {
     folders,
     loadError,
-    unanswered: snapshot.rowId !== rowId || snapshot.connectionKey !== connectionKey ? memberIds : snapshot.unanswered ?? [],
+    unanswered,
     chosen: chosenFolderOf(rowId, folders),
     fresh,
     choose,
-    reload: bump,
+    reload: () => askAgain(members),
     attach,
     detach,
   };
+}
+
+/** One machine's part: its answer, else the account's record (marked offline), else the last run's count as placeholders. */
+function memberFolders(
+  projectId: string,
+  reading: Reading<ProjectFolder[]>,
+  layout: Reading<(number | null)[]>,
+  index: number,
+  late: boolean,
+): ShownFolder[] | 'waiting' | 'nothing' {
+  const deviceId = machineRegistry.machineOf(projectId) ?? null;
+  const live = (list: ProjectFolder[]) => list.map((folder): ShownFolder => ({ ...folder, offline: false, deviceId }));
+  // Marked offline only once the machine is known not to answer, ❌ "offline" before.
+  const recordedAs = (offline: boolean) => accountFolders(projectId)?.map((folder): ShownFolder => ({
+    ...folder, offline, deviceId, ...(accountUnread(projectId) ? { stale: true as const } : {}),
+  })) ?? null;
+  const recorded = recordedAs(true);
+  if (reading.state === 'value' && !reading.error && !(reading.stale && late)) return live(reading.value);
+  if (reading.state === 'value') {
+    const last = reading.value.map((folder): ShownFolder => ({ ...folder, offline: true, deviceId }));
+    return accountIsNewer(projectId) ? recorded ?? last : last;
+  }
+  if (reading.state === 'error') return recorded ?? 'nothing';
+  const waitingOnRecord = recordedAs(late);
+  if (waitingOnRecord) return waitingOnRecord;
+  const count = layout.state === 'value' ? layout.value[index] : null;
+  if (typeof count === 'number' && !late) {
+    return Array.from({ length: count }, (_, n): ShownFolder => ({
+      workspaceId: `pending:${projectId}:${n}`, projectId, kind: n === 0 ? 'root' : 'attached', path: '' as ProjectFolder['path'],
+      branch: null, sessionIds: [], attachedAt: null, offline: false, deviceId, placeholder: true,
+    }));
+  }
+  return late ? 'nothing' : 'waiting';
 }

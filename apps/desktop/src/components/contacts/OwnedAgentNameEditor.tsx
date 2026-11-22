@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { Check, Pencil, X } from '@/lib/icons'
 import { cn } from '@/lib/cn'
+import { nameClampClass } from './contactsPanelStyles'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
 import { IconButton } from '../ui/IconButton'
@@ -25,7 +26,7 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
 }) {
   const { t } = useTranslation('contacts')
   const { user } = useAuth()
-  const { renameAgent } = useContactsStore()
+  const { updateAgentProfile } = useContactsStore()
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -47,7 +48,7 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
     setSaving(true)
     setError(null)
     try {
-      await renameAgent(agentId, next)
+      await updateAgentProfile(agentId, { name: next })
       setDraft(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('agentName.failed'))
@@ -58,7 +59,8 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
   }
   if (draft === null || !canRename) return (
     <div className={cn('flex min-w-0 items-center gap-1', className)}>
-      {children}
+      {/* 名字封顶两行在文字上,❌ 在这个 flex 行上(line-clamp 是 display:-webkit-box)。 */}
+      <span className={cn('min-w-0', nameClampClass)} title={typeof children === 'string' ? children : name}>{children}</span>
       {canRename && (
         <Hint label={t('agentName.edit')} side="top">
           <IconButton size="sm" aria-label={t('agentName.edit')} className="shrink-0 text-[var(--muted-fg)]" onClick={() => setDraft(name)}><Pencil /></IconButton>

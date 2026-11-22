@@ -1,6 +1,6 @@
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
 import { sessionWorkspace, WORKSPACE_APP_ID, type WorkspaceFileRef } from '../../session/shared/extensions/app-runtime-protocol'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps, PHONE_HOST } from '../../session/renderer/features/extensions/installed-extensions'
 import { callOnComputer } from './phoneProgramCall'
 
 export type ReadWorkingCopyChunk = (offset: number, length: number) => Promise<SessionpageOpenedFileChunk>
@@ -26,7 +26,7 @@ export async function openPhoneWorkingCopyFile(
  */
 export function sessionWorkingCopyReader(session: { id: string; deviceId: string }): (request: SessionpageOpenedFileReadRequest) => Promise<SessionpageOpenedFileChunk> {
   return async ({ path, offset, length }) => {
-    const manifest = installedExtensionsStore.manifestFor(WORKSPACE_APP_ID)
+    const manifest = (await fetchInstalledApps(PHONE_HOST)).manifestFor(WORKSPACE_APP_ID)
     if (!manifest) throw Object.assign(new Error('The Files App is not installed'), { code: 'not-installed' })
     const ref = { workspace: sessionWorkspace(session.id), name: path }
     return await callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, { ...session, deviceLabel: null }, 'filesRead', { ref, offset, length }) as SessionpageOpenedFileChunk

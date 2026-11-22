@@ -1,5 +1,5 @@
-// @@@file-family - 一个文件归哪一族:图标和族色都只查这一处(packages/session-shared/src/file-marks.ts 的表)。
-// 10 族 + other;后缀说了算,没有后缀或后缀不认识时看 mime。文件 App 拿不到 core,经 `<gugu-file-mark>`(ui.js)读同一份。
+// @@@file-family - 一个文件归哪一族:文件图标在 manifest 认不出它时(没有后缀、后缀没收、只有 mime 说得清)按族取图标
+// (packages/session-shared/src/file-marks.ts)。10 族 + other;后缀说了算,没有后缀或后缀不认识时看 mime。
 import { extensionOf, normalizeMimeType } from './imageMime.mjs'
 
 const FAMILIES = [
@@ -11,7 +11,7 @@ const FAMILIES = [
   ['image', /^(png|jpe?g|gif|webp|bmp|svg|heic|avif|ico)$/, /^image\//],
   ['video', /^(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],
   ['audio', /^(mp3|wav|m4a|aac|flac|ogg|opus)$/, /^audio\//],
-  ['code', /^(js|ts|tsx|jsx|py|go|rs|java|c|cpp|h|sh|rb|php|swift|kt|sql)$/, /javascript|typescript|x-python|x-sh/],
+  ['code', /^(js|mjs|cjs|ts|mts|cts|tsx|jsx|py|go|rs|java|c|cpp|h|sh|rb|php|swift|kt|sql|css|scss|sass|less|vue|svelte)$/, /javascript|typescript|x-python|x-sh/],
   ['text', /^(md|txt|json|ya?ml|xml|html?|log)$/, /^text\/|json/],
 ]
 

@@ -72,7 +72,7 @@ describe('message send confirmation request budget', () => {
       }
       tableError.blocks = true
       const { loadMessageOverlays } = await import('../../../apps/desktop/src/lib/chatMessageRevalidation')
-      await expect(loadMessageOverlays([input.id], input.senderUserId)).rejects.toThrow('refusal table unavailable')
+      await expect(loadMessageOverlays([{ id: input.id, chat_id: input.chatId }], input.senderUserId)).rejects.toThrow('refusal table unavailable')
       for (const messages of [cache.rows(input.chatId), cache.history(input.chatId, viewport).getSnapshot().messages]) {
         expect(messages[0]?.delivery_blocks).toEqual(acknowledged.delivery_blocks)
       }

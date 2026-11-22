@@ -1,3 +1,4 @@
+import { realpath as fsRealpath } from 'node:fs/promises';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
 import {
@@ -8,6 +9,7 @@ import {
 import { execInProcessGroup, findWindowsCommandPaths, planDirectSpawn, spawnOwnedChild } from '@gugu/session-core/exec';
 import { NON_INTERACTIVE_GIT_ENV } from './non-interactive-git-env';
 import { buildExternalToolEnv } from '@main/utils/childProcessEnv';
+import { refreshUserPath } from '@main/utils/userEnv';
 import type { ExecContextOptions, ExecResult, IExecutionContext } from '@gugu/session-core/exec';
 import { anySignal } from '@gugu/core/shared/anySignal';
 
@@ -38,6 +40,15 @@ export class LocalExecutionContext implements IExecutionContext {
 
   private resolveCommand(command: string): string {
     return command === 'git' ? getGitExecutable() : command;
+  }
+
+  realpath(path: string): Promise<string> {
+    return fsRealpath(path);
+  }
+
+  /** Every detection re-reads the user's current PATH (login shell / Windows registry) into this process. */
+  refreshShellEnv(): Promise<void> {
+    return refreshUserPath();
   }
 
   async findWindowsCommandPaths(command: string, env?: Record<string, string>): Promise<string[] | null> {

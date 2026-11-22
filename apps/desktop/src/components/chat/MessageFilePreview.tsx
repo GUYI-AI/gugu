@@ -2,23 +2,23 @@ import { SquareArrowRight } from '@/lib/icons'
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { messageActionItems } from './messageActionItems'
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { queryClient } from '../../lib/replica'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { readOnce } from '../../lib/replica'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
 import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
 import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
-import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
+import { attachmentBytes, attachmentPreview, localAttachmentUrl, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
 import { sentFileCopy } from '../../lib/sentFileCopies'
-import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
+import { FileReadRevokedError, isFileIntegrityError, type FileProgress } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
 import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
 import { messageForUser } from '../../lib/userFacingError'
 import { useToast } from '../toastContext'
 import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
-import { classifyDocumentPreview, documentPreviewNeedsFetch, type DocumentPreviewKind } from './documentPreview'
+import { classifyDocumentPreview, type DocumentPreviewKind } from './documentPreview'
 import { savedFileName } from '../../session/shared/extensions/app-runtime-protocol'
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { FileTextSelection } from '../preview/FileTextContent'
@@ -65,7 +65,7 @@ export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { sou
  * 预览要读的那份字节:经 lib/attachmentBytes(签名链接 + Cache Storage);条目删了就说出来。
  * shown:先显示、后核验,`acknowledged` 失败时由显示它的预览撤下;下载不走这条。progress:读到哪了(预览的进度条)。
  */
-async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { shown?: true; progress?: (done: number, total: number) => void } = {}): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
+async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { shown?: true; progress?: FileProgress } = {}): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
   if (file.source.kind === 'hosted') return { blob: await file.source.read() }
   // A file this device sent this run is read from here: while it uploads, and after, without downloading it back.
   const sent = file.document ? null : sentFileCopy(file.source)
@@ -92,35 +92,38 @@ class OfflinePreviewRead extends Error {
 }
 function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
+  // The same bytes come again on a retry: not retryable.
+  if (isFileIntegrityError(error)) return { content: null, errorStatus: 'failed', retryable: false, error: t('attachmentView.fileIntegrity') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   const status = (error as { status?: number } | null)?.status
   const retryable = errorStatus === 'failed' && !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429)
   return { content: null, errorStatus, retryable, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
-async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
-  // A video read whole from here (a working copy, or a file this device sent this run) plays from its own bytes.
-  const whole = documentPreviewNeedsFetch(kind) ? null : file.source.kind === 'hosted' ? await file.source.read() : file.document ? null : sentFileCopy(file.source)
-  if (whole) {
-    const videoUrl = URL.createObjectURL(whole)
-    return { content: null, videoUrl, expiresAt: Infinity, release: async () => URL.revokeObjectURL(videoUrl) }
-  }
-  if (file.source.kind !== 'hosted' && !documentPreviewNeedsFetch(kind)) {
+async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: FileProgress): Promise<PreviewRead> {
+  // A video whose bytes are on this machine (held, sent from here, or kept from an earlier open) plays from their address;
+  // one only in the object store, from its signed link. One kept on another machine is read whole, with its progress.
+  if (kind === 'video' && file.source.kind !== 'hosted' && !file.document && !sentFileCopy(file.source)) {
     const preview = await attachmentPreview(file.source)
     if (preview.status !== 'ready') throw new Error(preview.status)
-    let objectUrl: string | undefined
-    const renew = async () => {
-      const content = await preview.content()
-      if (!(content instanceof Blob)) return { videoUrl: content.url, expiresAt: content.expiresAt }
-      objectUrl ??= URL.createObjectURL(content)
-      return { videoUrl: objectUrl, expiresAt: Infinity }
+    const here = await localAttachmentUrl(preview.revision.sha256, preview.revision.content_type).catch(async (error) => { await preview.dispose(); throw error })
+    if (here) {
+      await preview.dispose()
+      return { content: null, videoUrl: here.url, expiresAt: Infinity, release: here.release }
     }
-    const release = async () => { if (objectUrl) URL.revokeObjectURL(objectUrl); await preview.dispose() }
-    try { return { content: null, ...await renew(), renew, release } } catch (error) { await release(); throw error }
+    if (preview.revision.source === 'managed-object') {
+      const renew = async () => {
+        const content = await preview.content()
+        if (content instanceof Blob) throw new Error('Expected a video link')
+        return { videoUrl: content.url, expiresAt: content.expiresAt }
+      }
+      try { return { content: null, ...await renew(), renew, release: preview.dispose } } catch (error) { await preview.dispose(); throw error }
+    }
+    await preview.dispose()
   }
   const { blob, acknowledged } = await previewBytes(file, { shown: true, progress })
-  if (kind === 'image') {
-    const content = URL.createObjectURL(blob)
-    return { content, acknowledged, release: async () => URL.revokeObjectURL(content) }
+  if (kind === 'image' || kind === 'video') {
+    const url = URL.createObjectURL(blob), release = async () => URL.revokeObjectURL(url)
+    return kind === 'video' ? { content: null, videoUrl: url, expiresAt: Infinity, acknowledged, release } : { content: url, acknowledged, release }
   }
   // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is shown
   // like any video this preview cannot play.
@@ -130,7 +133,6 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
 
 /** The host's preview wherever a file opens: messages, the chat's folder and an App's peek. */
 export function MessageFilePreview({ file, mobile = false, fill = false, tabbed = false, readOnly = false, message, onForward, onBack, onClose }: { file: PreviewFile | HostedPreviewFile; mobile?: boolean; fill?: boolean; tabbed?: boolean; readOnly?: boolean; message?: MessageItem; onForward?: (message: MessageItem) => void; onBack?: () => void; onClose: () => void }) {
-  const reader = useId()
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const kind = classifyDocumentPreview(file)
@@ -155,6 +157,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const [read, setRead] = useState<PreviewRead | null>(null)
   /** How far the bytes being read have come (0–1); unknown until the provider carrying them says. */
   const [fraction, setFraction] = useState<number | undefined>(undefined)
+  /** The line carrying them is stuck: said in place of "reading" until bytes flow again. */
+  const [stalled, setStalled] = useState(false)
   // A chat folder's HTML document is given its folder: the files its page names beside it are shown (preview-protocol).
   const [besideOffline, setBesideOffline] = useState<{ machine: string; deviceId: string } | null>(null)
   // The machine a failed read waits for: when the device list sees it go from off to on, the file is read again by itself.
@@ -180,23 +184,18 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     let live = true, release: PreviewRead['release']
     setRead(null)
     setFraction(undefined)
+    setStalled(false)
     const source = file.source
-    const queryKey = ['file-preview-read', reader, key, kind, attempt]
-    if (kind !== 'unsupported') void queryClient.fetchQuery({
-      queryKey, gcTime: 0, retry: (failures, error) => failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true,
-      queryFn: async ({ signal }) => {
-        let done: PreviewRead
-        try { done = await readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }) }
-        catch (error) {
-          if (signal.aborted) throw signal.reason
-          const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
-          if (holder) throw new OfflinePreviewRead(holder, error)
-          throw error
-        }
-        if (signal.aborted) { void done.acknowledged?.catch(() => {}); await done.release?.(); throw signal.reason }
-        return done
-      },
-    }).then(
+    // A read that lands after the preview closed is released below; a failure then is not read again.
+    if (kind !== 'unsupported') void readOnce(async () => {
+      try { return await readPreview(file, kind, (done, total, stuck) => { if (!live) return; setStalled(stuck === true); if (total > 0) setFraction(done / total) }) }
+      catch (error) {
+        if (!live) throw error
+        const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
+        if (holder) throw new OfflinePreviewRead(holder, error)
+        throw error
+      }
+    }, { retry: (failures, error) => live && failures < 3 && !(error instanceof OfflinePreviewRead) && previewFailure(error, t).retryable === true }).then(
       (done) => {
         release = done.release
         // Shown before the server acknowledged the read: a refusal takes it down and says why.
@@ -206,15 +205,15 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       },
       (error) => {
         if (!live) return
-        // The query already checked the holder afresh. Cancellation must not start another metadata read after sign-out.
+        // The read already checked the holder afresh. A closed preview must not start another metadata read after sign-out.
         const offline = error instanceof OfflinePreviewRead ? error.holder : null
         setWaitingFor(offline)
         setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
       },
     )
-    return () => { live = false; void queryClient.cancelQueries({ queryKey, exact: true }); queryClient.removeQueries({ queryKey, exact: true }); void release?.() }
+    return () => { live = false; void release?.() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- source kind/id/version and the preview kind identify the bytes; attempt reads them again
-  }, [key, kind, file.document, message?.id, message?.chat_id, t, attempt, reader])
+  }, [key, kind, file.document, message?.id, message?.chat_id, t, attempt])
   const renewVideo = async (video: HTMLVideoElement) => {
     const current = read
     if (video.dataset.renewing) return
@@ -259,5 +258,5 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const connection = besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
   const shown = read?.binary ? 'unsupported' : kind
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, selectable: file.source.selectable, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, selectable: file.source.selectable, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} {...(stalled ? { loadingLabel: t('chatArea.filePreview.stalled') } : {})} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

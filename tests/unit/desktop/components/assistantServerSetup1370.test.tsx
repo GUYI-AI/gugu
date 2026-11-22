@@ -16,15 +16,22 @@ vi.mock('@/lib/assistantServerSetup', () => ({
   AssistantServerSetupError: f.SetupError, listAssistantServerTargets: f.list,
   setUpAssistantOnServer: f.setup, resumeServerAssistant: f.resume, pendingServerAssistant: () => f.pending,
 }))
+// The servers are derived from the account's machines (the devices replica); here a stand-in model whose rows are the targets.
+vi.mock('@/store/devicesCache', async () => ({
+  devicesModel: (await import('../../../../apps/desktop/src/lib/replica')).replica({ name: 'devicesForServerSetupTest', scope: 'account', read: () => f.list() }),
+}))
+vi.mock('@/lib/assistantServerTargets', () => ({ assistantServerTargets: (rows: unknown) => rows }))
 vi.mock('@/lib/assistantSetupState', () => ({ offerCustomizeCard: vi.fn(), writeSetupStep: f.step }))
-vi.mock('@/lib/myAssistant', () => ({ reloadMyAssistant: f.reload }))
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { refresh: f.reload } }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 
 import { AssistantServerSetup } from '../../../../apps/desktop/src/components/assistant/AssistantServerSetup'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 const draft = { name: '小满', color: 0, rest: 'neutral' as const, owner: { preferredName: '主人', about: '研究者' } }
 const record = () => ({ version: 1, ownerUserId: 'owner', deviceId: 'linux', deviceLabel: '研究服务器', operationId: 'op-1', draft, installationStarted: true, model: null })
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  queryClient.clear(); followRendererSession('SIGNED_IN', 'owner')
   harness = createReactHarness(); vi.clearAllMocks(); f.pending = null
   f.list.mockResolvedValue([{ deviceId: 'linux', label: '研究服务器', selectable: true, reason: null },
     { deviceId: 'mac', label: 'Mac 服务器', selectable: false, reason: 'unsupported_platform' }])
@@ -53,7 +60,7 @@ it('passes the existing draft and selected Linux target, and waits for actual co
   expect(f.step).not.toHaveBeenCalledWith('owner', 'connect')
   await act(async () => finish())
   expect(f.step).toHaveBeenLastCalledWith('owner', 'connect')
-  expect(f.reload).toHaveBeenCalledWith('owner')
+  expect(f.reload).toHaveBeenCalled()
 })
 
 it('retries the original operation and blocks Back after installation begins', async () => {
@@ -109,5 +116,17 @@ it('resumes a persisted server setup once under StrictMode', async () => {
   expect(f.resume).toHaveBeenCalledOnce()
   expect(f.resume.mock.calls[0][0].signal.aborted).toBe(false)
   expect(f.setup).not.toHaveBeenCalled()
-  expect(f.list).not.toHaveBeenCalled()
+  // The account's machines are one shared replica (read for the shell anyway); a resumed setup draws no target list from it.
+  expect(query('assistant-server-target')).toBeNull()
+})
+
+it('a server list read before whose 刷新 fails keeps the servers and says the refresh failed', async () => {
+  await render()
+  expect(harness.container.querySelectorAll('[data-testid="assistant-server-target"]')).toHaveLength(2)
+  expect(harness.container.querySelector('[data-refresh-failed]')).toBeNull()
+  f.list.mockRejectedValue(new Error('offline'))
+  const { devicesModel } = await import('@/store/devicesCache')
+  await act(async () => { await devicesModel.refresh().catch(() => undefined) })
+  await vi.waitFor(() => expect(harness.container.querySelector('[data-refresh-failed]')).not.toBeNull())
+  expect(harness.container.querySelectorAll('[data-testid="assistant-server-target"]')).toHaveLength(2)
 })

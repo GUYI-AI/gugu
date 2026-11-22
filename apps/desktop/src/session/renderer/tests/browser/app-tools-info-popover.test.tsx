@@ -24,6 +24,7 @@ vi.mock('@renderer/lib/ipc', () => {
     invokeOnMachine: async () => undefined,
     events: { on: () => () => {} },
     onMachineEvent: () => () => {},
+    routeMachine: () => {},
   };
 });
 vi.mock('@renderer/features/extensions/panel/app-given-section', () => ({ AppGivenSection: () => null }));

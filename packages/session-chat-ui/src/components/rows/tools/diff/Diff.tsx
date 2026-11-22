@@ -22,9 +22,11 @@ export function DiffHeader(props: DiffHeaderProps) {
   const commands = useCommands();
   const translate = useChatTranslator();
   const running = () => props.item.status === 'running' && !props.item.awaitingPermission;
+  // A one-file patch shows that file's family; a patch over several files has no one family.
+  const markName = () => { const changes = props.section?.patch.changes ?? []; return changes.length === 1 ? changedFilePath(changes[0]) ?? '' : ''; };
   const stats = () => props.hasBody && !props.item.awaitingPermission && props.section?.adds !== null && props.section?.dels !== null && ((props.section?.adds ?? 0) > 0 || (props.section?.dels ?? 0) > 0);
   return <div class={css.diffHeader({ hasBody: props.hasBody })} style={{ height: `${props.headerH}px` }} data-patch-scope={props.section?.patch.scope}>
-    <FileMark name="" size={12} class={genericFileIcon} />
+    <FileMark name={markName()} size={12} class={genericFileIcon} />
     <For each={props.section?.patch.changes ?? []}>{change => {
       const path = () => changedFilePath(change);
       const label = () => ('oldPath' in change && typeof change.oldPath === 'string' ? `${basename(change.oldPath)} → ` : '') + (path() ? basename(path()!) : change.operation);

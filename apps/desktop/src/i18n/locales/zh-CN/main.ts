@@ -1,8 +1,9 @@
 export default {
   "firstInstallImport": {
+    "remoteDescription": "从 {{machine}} 导入记忆、项目规则和工作习惯",
     "title": "导入已有数据",
     "description": "导入你的记忆、项目规则和工作习惯",
-    "available": "可从本机导入 {{name}} 的配置"
+    "available": "导入这台机器的 {{name}} 配置"
   },
   "usagePopover": {
     "title": "用量",
@@ -133,6 +134,7 @@ export default {
     "manageConnections": "管理连接"
   },
   "agentHome": {
+  "sourceUnavailable": "无法读取这台机器的终端配置。",
   "nativeHistorySummary": "旧咕咕会话：已移走 {{removed}} 条，待重试 {{pending}} 条，保留 {{retained}} 条；另有 {{unowned}} 条不属于当前档案",
   "historySummary_other": "已导入 {{count}} 条最近会话，{{skipped}} 条仍在原处",
   "preparation": { "preparing": "正在准备迁移", "copying": "正在导入配置和会话", "history": "正在整理历史", "elapsedLabel_other": "{{label}}，已用 {{count}} 秒" },
@@ -305,11 +307,17 @@ export default {
     "helpImproveFailed": "设置保存失败，请重试。",
     "harnessRecommended": "推荐",
     "harnessTitle": "选择智能体",
-    "harnessSub": "可多选，咕咕会在后台安装并管理。",
+    "harnessSub": "可多选。本机够新的直接用，否则咕咕在后台装一份。",
     "harnessInstalled": "已安装",
+    "harnessLocalUsable": "用你本机的 {{version}}",
+    "harnessLocalOutdated": "本机 {{version}} 太旧，咕咕会装一份",
+    "harnessLocalBroken": "本机的 {{command}} 运行不起来，咕咕会装一份",
+    "harnessLocalMissing": "本机没有，咕咕会装一份",
+    "installLocalOutdated": "你的 {{command}} {{version}} 太旧，正在另装一份…",
+    "installLocalBroken": "你的 {{command}} 运行不起来，正在另装一份…",
+    "installLocalMissing": "本机没有 {{name}}，正在下载…",
     "harnessSelect": "选择 {{name}}",
     "backgroundInstall": "智能体安装",
-    "hideInstall": "收起",
     "harnessVerifyFailed": "安装后未检测到智能体，请重试。",
     "harnessReadFailed": "无法读取智能体状态，请重试。",
     "harnessCancelFailed": "无法取消安装，请重试。",
@@ -437,7 +445,6 @@ export default {
       "outputTrimmed_one": "… 此预览省略了 {{count}} 字",
       "outputTrimmed_other": "… 此预览省略了 {{count}} 字",
       "loading": "正在读取时间线…",
-      "loadingWindow": "加载中…",
       "waitingRecord": "会话已启动，等待首条输出…",
       "empty": "此会话暂无内容。",
       "loadFailed": "无法打开时间线",
@@ -582,7 +589,6 @@ export default {
       "cancel": "取消 Google 登录",
       "waiting": "请在浏览器中完成 Google 登录",
       "exchanging": "正在完成登录…",
-      "cancelled": "已取消 Google 登录",
       "staleCallback": "已忽略旧的登录回调，请完成当前 Google 登录",
       "timeout": "Google 登录已超时，请重试",
       "invalidCallback": "登录回调无效，请重新发起 Google 登录",
@@ -989,7 +995,6 @@ export default {
     "newAgent": "创建智能体",
     "newTask": "新建任务",
     "usage": "用量",
-    "resizeChatList": "调整聊天列表宽度",
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",
       "title": "无法连接服务器"
@@ -1041,7 +1046,6 @@ export default {
       "availableDescription": "选择“更新”开始下载，或选择“稍后”。",
       "availableTitle": "发现新版本",
       "availableVersion": "发现新版本 v{{version}}",
-      "close": "关闭",
       "download": "更新",
       "downloadingDescription": "下载完成后可重启以完成更新。",
       "downloadingTitle": "下载新版本中…",
@@ -1088,7 +1092,6 @@ export default {
       "pickFolder": "选文件夹",
       "offline": "离线",
       "noMachine": "没有在线的电脑",
-      "readingDirectory": "正在读取此电脑的项目目录",
       "noDefaultDirectory": "此电脑未设置默认项目目录",
       "invalidName": "项目名不能包含 / \\ : * ? \" < > |",
       "pathTaken": "此文件夹已被「{{name}}」使用",

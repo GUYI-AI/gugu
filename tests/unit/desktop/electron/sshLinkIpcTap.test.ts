@@ -46,7 +46,7 @@ describe('ssh-link-ipc tap: an active close reaches whoever listens on that link
     expect(await openForRenderer()).toEqual({ ok: false, reason: 'updating' })
     expect(open).toHaveBeenCalledTimes(2)
   })
-  it('file borrowing requires the current owner’s real SSH mapping and an already-open link, excluding tunnels', async () => {
+  it('file reads use only the current owner’s real SSH mapping, excluding tunnels', async () => {
     let current = 'owner-1'
     const machines = [{ deviceId: 'ssh-device', ownerUserId: 'owner-1' }, { deviceId: 'foreign-device', ownerUserId: 'owner-2' }]
     const links = registerSshLinkIpc({
@@ -57,13 +57,11 @@ describe('ssh-link-ipc tap: an active close reaches whoever listens on that link
       tunnels: { linkMachine: vi.fn(() => ({ target: { destination: 'tunnel', display: 'tunnel' }, accountUserId: 'owner-1' })), reportBroken: vi.fn() },
     })
     const open = vi.spyOn(links, 'open')
-    const held = vi.spyOn(links, 'isOpen').mockReturnValue(true)
-    expect(await links.ownedOpen('ssh-device', 'owner-1')).toBe(true)
-    for (const device of ['foreign-device', 'tunnel-only']) expect(await links.ownedOpen(device, 'owner-1')).toBe(false)
-    held.mockReturnValue(false)
-    expect(await links.ownedOpen('ssh-device', 'owner-1')).toBe(false)
-    held.mockReturnValue(true); current = 'owner-2'
-    expect(await links.ownedOpen('ssh-device', 'owner-1')).toBe(false)
+    // Owned = this account's own SSH mapping, open or not (a read opens it again: one path, never a relay copy).
+    expect(await links.owned('ssh-device', 'owner-1')).toBe(true)
+    for (const device of ['foreign-device', 'tunnel-only']) expect(await links.owned(device, 'owner-1')).toBe(false)
+    current = 'owner-2'
+    expect(await links.owned('ssh-device', 'owner-1')).toBe(false)
     expect(open).not.toHaveBeenCalled()
   })
 

@@ -13,6 +13,7 @@ import { useToast } from '../toastContext'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useCopyConfirmation } from '@/hooks/useCopyConfirmation'
 import { annotateCaption, type AnnotateDocument } from './annotateModel'
+import { annotationItem, hasAnnotationSource } from './annotateSource'
 
 export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument, output: () => Promise<Blob>, onDone: () => void) {
   const { t } = useTranslation('main', { keyPrefix: 'imageAnnotate' })
@@ -21,7 +22,8 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
   const { copied, confirm } = useCopyConfirmation(doc)
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null)
   const running = useRef(false)
-  const source = item.source
+  // The chat it goes back to: a folder file's is asked here, at the "Done" step that needs it (❌ when the editor opens).
+  const sourceOf = async () => (await annotationItem(item)).source
   const filename = `${item.alt.replace(/\.[^/.]+$/, '') || 'image'}-annotated.png`
   const run = async (operation: () => Promise<void>) => {
     if (running.current) return
@@ -31,6 +33,11 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
     finally { running.current = false; setBusy(false) }
   }
   const putInComposer = () => run(async () => {
+    if (item.replace) {
+      item.replace(new File([await output()], filename, { type: 'image/png' }), annotateCaption(doc, ''))
+      onDone(); return
+    }
+    const source = await sourceOf()
     if (!source) throw new Error(t('noSource'))
     const session = getRendererSession()
     if (!session) throw new Error(t('notSignedIn'))
@@ -50,11 +57,12 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
   const copy = () => run(async () => { await writeImageBlobToClipboard(await output()); if (mobile) confirm(); else toast(t('copied'), 'success') })
   const save = () => run(async () => { if ((await downloadBlob(await output(), filename)).saved) toast(t('saved'), 'success') })
   const saveToFolder = () => run(async () => {
+    const source = await sourceOf()
     if (!source) throw new Error(t('noSource'))
     const blob = await output()
     const { saveFilesToChatFolder } = await import('../appSlot/phoneAppHost')
     await saveFilesToChatFolder(source.chatId, [{ name: filename, bytes: await blob.arrayBuffer(), contentType: 'image/png' }], source.messageId ? [source.messageId] : undefined)
     toast(t('savedToFolder'), 'success')
   })
-  return { busy, error, putInComposer, copy, copied: mobile && copied, save, saveToFolder, canCompose: !!source?.chatId }
+  return { busy, error, putInComposer, copy, copied: mobile && copied, save, saveToFolder, canCompose: !!item.replace || hasAnnotationSource(item), canSaveToFolder: hasAnnotationSource(item) }
 }

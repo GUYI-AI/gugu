@@ -22,6 +22,7 @@ function installSessionpageHistory(w: Window): void {
     forward: () => navigateForward(appState.history.canGoForward),
     // index 是这份 store 唯一的可观察量(entries 故意不观察);前进栈被截断时 index 也会变。
     subscribe: (listener) => reaction(() => appState.history.index, () => listener()),
+    get: () => appState.history.index,
   });
 }
 

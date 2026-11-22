@@ -30,7 +30,7 @@ import { useChatTranslator } from '@session-chat/localization';
 import type { TurnProcessItem } from '@session-chat/model';
 import { turnProcessExpanded, turnProcessLabel } from '@session-chat/state/turn-fold';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { conversationHeader, conversationName, conversationTime } from '../message/conversation-message.css';
+import { conversationHeader, conversationHeadBreak, conversationName, conversationTime } from '../message/conversation-message.css';
 import { UserMessageActions } from '../message/UserMessageActions';
 import { CONVERSATION_FOOTER_H } from '../message/conversation-body';
 import { processRowHeight } from '../message/process-row-layout';
@@ -115,9 +115,10 @@ export const turnProcessUnitDef = defineUnit<TurnProcessItem, { extraH: number }
             </div>
           </div>
         }>
-          <div class={conversationHeader} style={{ height: `${header().height}px`, gap: `${header().gap}px` }}>
+          <div class={conversationHeader} style={{ height: `${header().height}px`, 'column-gap': `${header().gap}px` }}>
             <Show when={header().name}>{name => <SenderName class={conversationName} name={name().text}
               style={{ width: `${header().nameWidth}px` }} target={conversationAgentTarget({ sessionId: commands().conversationAgentSession?.(), userId: commands().conversationAgentUserId?.() })} />}</Show>
+            <Show when={header().wrap}><span class={conversationHeadBreak} aria-hidden="true" /></Show>
             <div class={conversationTime} data-slot="tool-timeline-line" style={{ width: `${header().processWidth}px`, height: `${processRowHeight(props.data.id, props.data, header().processCtx)}px` }}>
               <ConversationProcess measureCtx={() => header().processCtx} process={props.data} anchorId={props.data.id} expanded={expanded()} />
               <ProcessBackgroundPill ownerId={props.data.id} ctx={{ ...props.ctx, measureCtx: () => header().processCtx }} />

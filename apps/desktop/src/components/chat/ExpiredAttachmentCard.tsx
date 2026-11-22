@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
-import { attachmentMetadata, cachedAttachmentCopy } from '../../lib/attachmentBytes'
+import { attachmentMetadata, localAttachmentCopy } from '../../lib/attachmentBytes'
 import { attachmentState } from '../../lib/attachmentState'
 import { chatService } from '../../lib/chat'
 import { useAuth } from '../../store/auth'
@@ -11,8 +11,8 @@ import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
 
-/** Re-upload is an ordinary new send, with the original message's audience and thread. */
-export function ExpiredAttachmentCard({ meta, messageId, isMine }: { meta: ParsedAttachment; messageId: string; isMine: boolean }) {
+/** Re-upload is an ordinary new send, with the original message's audience and thread. `children`: shown instead of the card (an image's preview). */
+export function ExpiredAttachmentCard({ meta, messageId, isMine, children }: { meta: ParsedAttachment; messageId: string; isMine: boolean; children?: ReactNode }) {
   const { t } = useTranslation('messaging')
   const { user } = useAuth()
   const { sendAttachmentsToChat } = useChatStore('sendAttachmentsToChat')
@@ -30,7 +30,7 @@ export function ExpiredAttachmentCard({ meta, messageId, isMine }: { meta: Parse
       if (!attachment) throw new Error(t('attachmentView.fileGone'))
       const status = await attachmentMetadata(attachment.source)
       if (status.status !== 'expired') throw new Error(t('attachmentView.fileUnavailable'))
-      const local = picked ?? await cachedAttachmentCopy(status.sha256)
+      const local = picked ?? await localAttachmentCopy(status.sha256)
       if (!local) { setNeedsOriginal(true); return }
       await sendAttachmentsToChat(original.chat_id, [new File([local], attachment.fileName, { type: attachment.mimeType })], { toUserIds: original.to_user_ids, isWhisper: original.is_whisper,
         threadRootId: original.thread_root_id ?? (original.is_thread_root ? original.id : null) })
@@ -40,7 +40,7 @@ export function ExpiredAttachmentCard({ meta, messageId, isMine }: { meta: Parse
     } finally { setBusy(false) }
   }
   return <div>
-    <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileExpired')} onOpen={() => undefined} />
+    {children || <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileExpired')} onOpen={() => undefined} />}
     {isMine && meta.source.kind !== 'attachment' && <>
       <Button variant="ghost" size="sm" disabled={busy} onClick={() => needsOriginal ? picker.current?.click() : void reupload()}>{t(needsOriginal ? 'attachmentView.selectOriginal' : 'attachmentView.reupload')}</Button>
       <input ref={picker} type="file" hidden aria-label={t('attachmentView.selectOriginal')} onChange={(event) => {

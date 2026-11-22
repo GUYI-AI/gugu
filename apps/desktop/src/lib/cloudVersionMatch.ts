@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { CloudComputerError, type CloudVersionMatchState } from '@gugu/core/cloud/cloudComputer'
-import { rendererCloudComputerClient } from './cloudComputer'
+import { rendererCloudComputerClient } from './cloudComputerClient'
 import { getRendererSession, observeRendererSession } from './sessionPublication'
 import { i18n } from '@/i18n/runtime'
 
@@ -26,8 +26,8 @@ export function useCloudVersionMatch(deviceId: string | null) {
 
 /** Called only for a verified version mismatch, never for a connection failure. */
 export async function requestCloudVersionMatch(deviceId: string, retry = false): Promise<boolean> {
-  const { getCloudComputerState } = await import('./cloudComputerStore')
-  if (getCloudComputerState().snapshot?.deviceId !== deviceId) return false
+  const { knownCloudDeviceId } = await import('./cloudComputer')
+  if (knownCloudDeviceId() !== deviceId) return false
   const key = keyFor(deviceId)
   if (running.has(key)) return true
   // A new verified mismatch invalidates a previous ready receipt: the desktop

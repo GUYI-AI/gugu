@@ -4,6 +4,7 @@
 //   这边等它写好再把 note.json 标成好了。每一步都把进度写进 note.json,换台电脑看也知道走到哪了。
 // 一个窗口里的进度在这一份模块里(录音条、列表、详情都读它);App 关了再开,没走完的那条由人在列表里点重试接着做。
 import { invokeOnMachine, rpcOn } from '@renderer/lib/ipc';
+import { machineFileReader } from '@renderer/features/sessions/workspace-backend/machine-file-reader';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { homeSessions, homeTarget } from '../assistant-home-sessions';
 import {
@@ -348,15 +349,19 @@ async function readBinary(machine: AssistantMachine, path: string): Promise<Blob
     if (!bytes) throw new Error('The recording no longer exists');
     return new Blob([bytes.slice().buffer]);
   }
+  // The machine's file reader (`@@@machine-file-reader`): streamed over its device link when one reaches it.
+  const reader = machineFileReader(machine.target ?? null, machine.projectId, machine.workspaceId, async (at, offset, length) => {
+    const result = await rpcOn(machine.target).workspace.files.readChunk(machine.projectId, machine.workspaceId, { path: at, offset, length });
+    if (!result.success) throw new Error(String(result.error.type));
+    return { size: result.data.size, etag: result.data.etag, bytes: base64ToBytes(result.data.data) };
+  });
   const parts: BlobPart[] = [];
   let offset = 0;
   for (;;) {
-    const result = await rpcOn(machine.target).workspace.files.readChunk(machine.projectId, machine.workspaceId, { path, offset, length: 512 * 1024 });
-    if (!result.success) throw new Error(String(result.error.type));
-    const bytes = base64ToBytes(result.data.data);
+    const { size, bytes } = await reader.read(path, offset, 512 * 1024);
     parts.push(bytes.slice().buffer);
     offset += bytes.length;
-    if (bytes.length === 0 || offset >= result.data.size) break;
+    if (bytes.length === 0 || offset >= size) break;
   }
   return new Blob(parts);
 }

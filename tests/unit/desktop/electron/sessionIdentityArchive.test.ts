@@ -5,7 +5,7 @@ import { createSessionpageIdentityHost } from '../../../../apps/desktop/electron
 
 const cloud = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('../../../../apps/desktop/electron/supabase', () => ({
-  electronFetch: vi.fn(), makeIdentityClient: () => ({ rpc: cloud.rpc }),
+  makeIdentityClient: () => ({ rpc: cloud.rpc }),
 }))
 
 const receipt = { userId: 'old-agent', removedAt: '2026-10-31T03:00:00Z' }

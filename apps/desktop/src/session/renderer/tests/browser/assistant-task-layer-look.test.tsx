@@ -49,7 +49,7 @@ const TIMELINE: AgentWatchTimeline = { ...emptyAgentWatchTimeline(), turns: Arra
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/components/session-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: {} }) }));
 vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null, current: () => null }) }));
 vi.mock('@/components/session-watch/useSessionRestart', () => ({ useSessionRestart: () => ({ canStartFresh: false, busy: false, refreshing: false, pendingPrompt: null, error: null, startFresh: async () => undefined, retry: null }) }));
 vi.mock('@/components/session-watch/useTimelineFailureNotice', () => ({ useTimelineFailureNotice: () => undefined }));
@@ -132,7 +132,7 @@ async function mountPanelLayer(theme: 'light' | 'dark') {
 
 const DEVICES = {
   devices: [], loading: false, error: null, refresh: async () => {}, rename: async () => {}, remove: async () => {},
-  listBoundAgents: async () => [], cloudComputer: { available: false, snapshot: null, loadError: null, wakeRefused: null },
+  listBoundAgents: async () => [],
 } as unknown as React.ContextType<typeof DevicesContext>;
 
 /** Pseudo-elements in `root` that paint something: the transcript's edge fades are drawn this way. */
@@ -150,13 +150,11 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   expect(window.getAttribute('data-app-panel')).toBe('true');
   expect(screen.getAttribute('data-panel-layer')).toBe('true');
 
-  // 1. The panel's gradient shows through: no page color of the task's own, no white fades painted over the gradient;
-  //    a pinned message's strip is the gradient where it sticks.
+  // 1. The panel's gradient shows through: no page color of the task's own, no white fades painted over the gradient.
   expect(getComputedStyle(panel).backgroundImage).toContain('linear-gradient');
   expect(getComputedStyle(screen).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(paintedPseudo(screen)).toEqual([]);
   expect(getComputedStyle(host.querySelector('[data-chat-scroll]')!).maskImage).toContain('linear-gradient');
-  for (const strip of host.querySelectorAll('[data-chat-pin-backdrop]')) expect(getComputedStyle(strip).backgroundImage).toContain('linear-gradient');
 
   // 2. The header is the panel's top row: its height, its 16px edge, the round back centred with the collapse, then the
   //    face, the name and the status, all clear of the collapse.
@@ -181,7 +179,8 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   expect(title.textContent).toBe('能力测试:写一份说明');
   expect(title.scrollHeight).toBeLessThanOrEqual(title.clientHeight + 1);
   expect(box(title).top).toBeGreaterThanOrEqual(box(header).top);
-  expect(header.querySelector('[data-testid="agent-watch-session-status"]')?.textContent).toBeTruthy();
+  // The transcript already shows what the agent is doing: the header carries no status line under the title.
+  expect(header.querySelector('.gg-pane-heading-subtitle')).toBeNull();
   for (const item of [back, avatar, title, ...header.querySelectorAll('button')]) {
     expect(box(item).right).toBeLessThanOrEqual(box(collapse).left - 8 + 0.5);
   }
@@ -211,7 +210,7 @@ it('the same desktop task page elsewhere keeps its view switcher and its model a
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
   harness.container.style.cssText = 'height:860px;width:900px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local cleanedRecord onBack={() => undefined} />, { contacts: {} });
+  await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local onBack={() => undefined} />, { contacts: {} });
   await until('the session page composer', () => !!harness!.container.querySelector('[data-testid="composer-model-trigger"]'));
   const host = harness.container;
   expect(host.querySelector('[data-testid="agent-watch-timeline-page"]')!.hasAttribute('data-panel-layer')).toBe(false);

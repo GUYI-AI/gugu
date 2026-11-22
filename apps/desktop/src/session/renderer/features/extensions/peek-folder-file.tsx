@@ -9,6 +9,9 @@ import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { WorkspaceFileView } from '@renderer/features/sessions/file-view/workspace-file-view';
 import { ExtensionTabPane } from './extension-tab-pane';
 import { pickSessionOpener, type SessionOpener } from './open-with';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
+import { log } from '@renderer/utils/logger';
 
 type FolderPeek = Extract<PeekTarget, { kind: 'folder' }>;
 
@@ -25,16 +28,27 @@ export const PeekFolderFile = observer(function PeekFolderFile({ target, tabId, 
 
 function Reachable({ target, tabId, chatId }: { target: FolderPeek; tabId: string; chatId?: string }) {
   const held = useHeldWorkspace(target);
-  const [opener, setOpener] = useState<SessionOpener | null>(null);
+  const [opener, setOpener] = useState<SessionOpener | { failed: unknown } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    void pickSessionOpener(target.path, target.ask).then((picked) => live && setOpener(picked));
+    setOpener(null);
+    pickSessionOpener(target.path, target.ask).then((picked) => live && setOpener(picked), (failed: unknown) => live && setOpener({ failed }));
     return () => {
       live = false;
     };
-  }, [target.path, target.ask]);
-  if (!opener || held === null) return null;
-  if (held !== 'ready') return <Unread target={target} why={held} />;
+  }, [target.path, target.ask, attempt]);
+  if (!opener) return null;
+  // The file is read while its workspace is being held (the machine resolves the workspace for the read itself): the
+  // hold's two round trips are not waited for first. A hold that fails says why in place of the file.
+  if (held !== null && held !== 'ready') return <Unread target={target} why={held} />;
+  if ('failed' in opener) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <ReadFailedLine message={messageForUser(opener.failed)} onRetry={() => setAttempt((n) => n + 1)} />
+      </div>
+    );
+  }
   if ('tabKind' in opener) {
     const extensionId = parseExtensionTabKind(opener.tabKind)?.extensionId ?? opener.tabKind;
     return (
@@ -76,6 +90,12 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
     if (!project) return undefined;
     let disposed = false;
     let acquired = false;
+    // Let go of it when the file is no longer shown. Nothing on screen is left to say a failure on: it goes to the log.
+    const release = () =>
+      void rpc.projects.releaseProjectWorkspace(project, workspaceId).then(
+        (result) => !result.success && log.warn('[peek] the folder was not let go', { project, workspaceId, error: result.error }),
+        (error: unknown) => log.warn('[peek] the folder was not let go', { project, workspaceId, error: String(error) }),
+      );
     void (async () => {
       const opened = await rpc.projects.openProject(project);
       const result = opened.success ? await rpc.projects.acquireProjectWorkspace(project, workspaceId) : opened;
@@ -84,12 +104,15 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
         return;
       }
       acquired = true;
-      if (disposed) void rpc.projects.releaseProjectWorkspace(project, workspaceId);
+      if (disposed) release();
       else setHeld('ready');
-    })();
+    })().catch((error: unknown) => {
+      // The file's own place says why it is not shown (that machine did not answer, …), as a failed read says it.
+      if (!disposed) setHeld(messageForUser(error));
+    });
     return () => {
       disposed = true;
-      if (acquired) void rpc.projects.releaseProjectWorkspace(project, workspaceId);
+      if (acquired) release();
     };
   }, [project, workspaceId]);
   return held;

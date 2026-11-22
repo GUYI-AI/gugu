@@ -6,6 +6,7 @@ import type { ChildHandle, ManagedProcess, ProcessExit, ProcessHost, ProcessSpec
 export type UtilityProcessForkOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
+  stdio: 'pipe';
 };
 
 export type UtilityProcessLike = EventEmitterLike & {
@@ -31,7 +32,7 @@ export function utilityProcessHost(deps: { fork: UtilityForkLike }): ProcessHost
 }
 
 function spawnUtilityChild(deps: { fork: UtilityForkLike }, spec: ProcessSpec): ChildHandle {
-  const process = deps.fork(spec.entry, spec.args ?? [], { cwd: spec.cwd, env: spec.env });
+  const process = deps.fork(spec.entry, spec.args ?? [], { cwd: spec.cwd, env: spec.env, stdio: 'pipe' });
 
   // @@@unhandled-error-event (#4942) — 与 node 那份同一处理:创建即接上,进程本体与两条输出流各是
   // 独立发射器。Electron 的 UtilityProcess 只在 V8 FatalError 时 emit 'error',但「少见」不是「不会」。

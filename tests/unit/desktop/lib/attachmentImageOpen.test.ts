@@ -8,8 +8,8 @@ import { galleryAround, registerImageViewerHost, type ImageViewerRequest } from 
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
-  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
-  attachmentCache: async () => ({ put: io.put }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
+  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined, nativeLocalBytes: async () => null,
+  attachmentCache: async () => ({ match: async () => undefined, put: io.put }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.original }))
 

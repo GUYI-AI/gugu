@@ -1,10 +1,9 @@
 import type { ModelProtocol } from '@gugu/session-core/models/custom-model';
-import type { ConnectionModelList } from '@gugu/session-core/workspace-server/agent-config';
+import { requestEndpoint } from './connection-endpoint-request';
+import type { ConnectionModelList, CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config';
 
-const PROBE_TIMEOUT_MS = 10_000;
-
-type Fetch = typeof fetch;
-type Endpoint = { endpoint: string; apiKey: string; protocol: ModelProtocol };
+type Fetch = typeof globalThis.fetch;
+type Endpoint = { endpoint: string; apiKey: string; protocol: ModelProtocol; env?: NodeJS.ProcessEnv };
 
 function endpointRequest(input: Endpoint) {
   const root = input.endpoint.replace(/\/+$/, '');
@@ -22,14 +21,6 @@ function endpointRequest(input: Endpoint) {
   return { root, headers };
 }
 
-async function requestEndpoint(fetchImpl: Fetch, url: string, init: RequestInit): Promise<Response | null> {
-  try {
-    return await fetchImpl(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * The live picker only reads provider metadata. An explicit connection test can also check a named model.
  * https://platform.claude.com/docs/en/api/models/list
@@ -37,36 +28,38 @@ async function requestEndpoint(fetchImpl: Fetch, url: string, init: RequestInit)
  */
 export async function listEndpointModels(
   input: Endpoint,
-  fetchImpl: Fetch = fetch
+  fetchImpl?: Fetch
 ): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
-  const response = await requestEndpoint(fetchImpl, root + '/models', { headers });
-  if (!response) return { kind: 'unlisted', reason: 'unreachable' };
-  if (response.status === 401 || response.status === 403) return { kind: 'unlisted', reason: 'unauthorized' };
-  if (!response.ok) return { kind: 'unlisted', reason: 'no-list' };
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return { kind: 'unlisted', reason: 'no-list' };
-  }
-  const content = body as { data?: unknown; models?: unknown } | null;
-  const gemini = input.protocol === 'gemini-generate-content';
-  const data = gemini ? content?.models : content?.data;
-  if (!Array.isArray(data)) return { kind: 'unlisted', reason: 'no-list' };
-  const models = [
-    ...new Set(
-      data
-        .map((entry) => entry && typeof entry === 'object' ? Reflect.get(entry, gemini ? 'name' : 'id') as unknown : undefined)
-        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-        .map((id) => gemini ? id.trim().replace(/^models\//, '') : id.trim())
-    ),
-  ].sort((a, b) => a.localeCompare(b));
-  return models.length > 0 ? { kind: 'listed', models } : { kind: 'unlisted', reason: 'no-list' };
+  const result = await requestEndpoint<ConnectionModelList>(fetchImpl, root + '/models', { headers }, input.env, async (response) => {
+    if (response.status === 401 || response.status === 403) return { kind: 'unlisted', reason: 'unauthorized' };
+    if (!response.ok) return { kind: 'unlisted', reason: 'no-list' };
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      return { kind: 'unlisted', reason: 'no-list' };
+    }
+    const content = body as { data?: unknown; models?: unknown } | null;
+    const gemini = input.protocol === 'gemini-generate-content';
+    const data = gemini ? content?.models : content?.data;
+    if (!Array.isArray(data)) return { kind: 'unlisted', reason: 'no-list' };
+    const models = [
+      ...new Set(
+        data
+          .map((entry) => entry && typeof entry === 'object' ? Reflect.get(entry, gemini ? 'name' : 'id') as unknown : undefined)
+          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+          .map((id) => gemini ? id.trim().replace(/^models\//, '') : id.trim())
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+    return models.length > 0 ? { kind: 'listed', models } : { kind: 'unlisted', reason: 'no-list' };
+  });
+  return result.ok ? result.value : { kind: 'unlisted', reason: result.reason };
 }
 
 /** Try a tiny request only after the person asks to test a named model. */
-export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl: Fetch = fetch): Promise<ConnectionModelList> {
+export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl?: Fetch): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
@@ -80,22 +73,18 @@ export async function verifyEndpointModel(input: Endpoint, modelId: string, fetc
     },
   };
   const { path, payload } = probes[input.protocol];
-  const response = await requestEndpoint(fetchImpl, root + path, { method: 'POST', headers, body: JSON.stringify(payload) });
-  if (!response) return { kind: 'unlisted', reason: 'unreachable' };
-  await response.body?.cancel();
-  if (response.ok) return { kind: 'connected' };
-  return { kind: 'unlisted', reason: response.status === 401 || response.status === 403 ? 'unauthorized' : 'unreachable' };
+  const result = await requestEndpoint<ConnectionModelList>(fetchImpl, root + path, { method: 'POST', headers, body: JSON.stringify(payload) }, input.env, async (response) => {
+    if (response.ok) return { kind: 'connected' };
+    return { kind: 'unlisted', reason: response.status === 401 || response.status === 403 ? 'unauthorized' : 'unreachable' };
+  });
+  return result.ok ? result.value : { kind: 'unlisted', reason: result.reason };
 }
 
-type ProbeReason = 'unreachable' | 'unauthorized' | 'no-list' | 'no-model' | 'refused';
-export type ProtocolProbe = {
-  endpoints: { protocol: ModelProtocol; baseUrl: string }[];
-  models: string[];
-  failures: { step: 'models' | ModelProtocol; reason: ProbeReason }[];
-};
+export type ProtocolProbe = CustomModelProtocolProbe;
+type ProbeReason = ProtocolProbe['failures'][number]['reason'];
 
 /** The smallest generating request each protocol accepts; any 2xx proves the address speaks it. */
-async function sendMinimal(fetchImpl: Fetch, input: Endpoint, modelId: string): Promise<'connected' | ProbeReason> {
+async function sendMinimal(fetchImpl: Fetch | undefined, input: Endpoint, modelId: string): Promise<'connected' | ProbeReason> {
   const { root, headers } = endpointRequest(input);
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
@@ -110,11 +99,11 @@ async function sendMinimal(fetchImpl: Fetch, input: Endpoint, modelId: string): 
   };
   const probe = probes[input.protocol];
   if (!probe) return 'refused';
-  const response = await requestEndpoint(fetchImpl, root + probe.path, { method: 'POST', headers, body: JSON.stringify(probe.payload) });
-  if (!response) return 'unreachable';
-  await response.body?.cancel();
-  if (response.ok) return 'connected';
-  return response.status === 401 || response.status === 403 ? 'unauthorized' : 'refused';
+  const result = await requestEndpoint<'connected' | ProbeReason>(fetchImpl, root + probe.path, { method: 'POST', headers, body: JSON.stringify(probe.payload) }, input.env, async (response) => {
+    if (response.ok) return 'connected';
+    return response.status === 401 || response.status === 403 ? 'unauthorized' : 'refused';
+  });
+  return result.ok ? result.value : result.reason;
 }
 
 /**
@@ -124,8 +113,8 @@ async function sendMinimal(fetchImpl: Fetch, input: Endpoint, modelId: string): 
  * first. The connection test's request shapes are reused, so a record saved from here reads the same as one tested.
  */
 export async function probeEndpointProtocols(
-  input: { baseUrl: string; apiKey: string; modelId?: string; hint?: ModelProtocol },
-  fetchImpl: Fetch = fetch,
+  input: { baseUrl: string; apiKey: string; modelId?: string; hint?: ModelProtocol; env?: NodeJS.ProcessEnv },
+  fetchImpl?: Fetch,
 ): Promise<ProtocolProbe> {
   const base = input.baseUrl.trim().replace(/\/+$/, '');
   const openaiBases = /\/v\d+(?:beta)?$/.test(base) ? [base] : [`${base}/v1`, base];
@@ -141,7 +130,7 @@ export async function probeEndpointProtocols(
   ];
   let unlisted: ProbeReason = 'no-list';
   for (const list of lists) {
-    const listed = await listEndpointModels({ ...list, apiKey: input.apiKey }, fetchImpl);
+    const listed = await listEndpointModels({ ...list, apiKey: input.apiKey, env: input.env }, fetchImpl);
     if (listed.kind === 'listed') { models = listed.models; break; }
     // What the last OpenAI-shaped list said is the reported reason, as before Gemini lists were read.
     if (listed.kind === 'unlisted' && list.endpoint === openaiBases.at(-1) && list.protocol !== 'gemini-generate-content') unlisted = listed.reason;
@@ -156,7 +145,7 @@ export async function probeEndpointProtocols(
   for (const protocol of order) {
     let last: ProbeReason = 'unreachable';
     for (const endpoint of basesFor(protocol)) {
-      const result = await sendMinimal(fetchImpl, { endpoint, apiKey: input.apiKey, protocol }, modelId);
+      const result = await sendMinimal(fetchImpl, { endpoint, apiKey: input.apiKey, protocol, env: input.env }, modelId);
       if (result === 'connected') { endpoints.push({ protocol, baseUrl: endpoint }); break; }
       last = result;
     }

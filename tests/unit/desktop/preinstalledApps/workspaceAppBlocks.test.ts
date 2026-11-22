@@ -143,8 +143,8 @@ describe('service-reported file availability', () => {
 
   test('details and history show each version independently of the unreadable current version', async () => {
     document.querySelector<HTMLElement>('[data-id="unknown"]')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
-    await until('the file menu includes Details', () => menu.isOpen() && menu.labels().includes('详情'))
-    await menu.pick('详情')
+    await until('the file menu includes Details', () => menu.isOpen() && menu.labels('更多').includes('详情'))
+    await menu.pick('更多', '详情')
     await until('history arrives', () => document.querySelectorAll('.details-versions li').length === 4)
     expect(document.querySelector('.details-facts')?.textContent).toContain('暂不可用')
     const versions = [...document.querySelectorAll<HTMLElement>('.details-versions li')]

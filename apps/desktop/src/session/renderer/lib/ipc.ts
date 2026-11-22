@@ -4,7 +4,7 @@ import { createRPCClient } from '@shared/lib/ipc/rpc';
 import type { SessionHostBridgeApi } from '@shared/lib/ipc/session-host-client';
 import { findSessionHostBridge, type SessionHostBridge } from './electron-api';
 import { machineClient, reportMachineOutdated } from './machine-clients';
-import { machineCodec as codecOf, machineOfChannel, machineRegistry } from './machine-routing';
+import { collectEntityIds, machineCodec as codecOf, machineOfChannel, machineRegistry } from './machine-routing';
 
 // @@@task-fusion (#2802) / @@@task-web-host — 桥的解析在 electron-api.ts(桌面 preload 或网页版
 // WebSocket 桥)。**按调用时解析,不在模块求值时定死**:网页版里这个 bundle 可能被预热加载,那时
@@ -73,8 +73,11 @@ function sameVersionAs(deviceId: string): boolean {
 }
 
 async function invokeOn(deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
-  // 发过去的参数与拿回来的结果里出现的实体 id 都记到那台机器名下(新建的任务 / 会话从此认得出)。
-  machineRegistry.absorb(deviceId, args);
+  // 发过去的参数里新出现的实体 id(新建的任务 / 会话)记到那台机器名下,从此认得出;已有主的不改 —— 参数是这边说的,
+  // 不是那台答的(propose)。拿回来的结果是那台答的,记到它名下(receiveFrom)。
+  const sent: string[] = [];
+  collectEntityIds(args, sent);
+  machineRegistry.propose(deviceId, sent);
   const result = await remoteApi(deviceId)
     .invoke(channel, ...codecOf(deviceId).outbound(args))
     .catch((error: unknown) => {
@@ -88,9 +91,16 @@ async function invokeOn(deviceId: string, channel: string, args: unknown[]): Pro
   return receiveFrom(deviceId, result);
 }
 
+// 一次调用的失败(含选线失败:参数指向两台机器)是这次调用的 rejection,❌ 在调用点同步抛出 —— 调用点照 Promise 接,
+// 同步抛出会穿过 `void rpc.x()`、穿出 React 的 effect 清理,把整页带进错误边界。成功的调用原样返回那个 Promise(❌ 包一层 async:
+// 多出的微任务会改变调用点之间的先后)。
 export const rpc = createRPCClient<RpcRouter>((channel, ...args) => {
-  const deviceId = machineRegistry.route(channel, args);
-  return deviceId ? invokeOn(deviceId, channel, args) : electronAPI.invoke(channel, ...args);
+  try {
+    const deviceId = machineRegistry.route(channel, args);
+    return deviceId ? invokeOn(deviceId, channel, args) : electronAPI.invoke(channel, ...args);
+  } catch (error) {
+    return Promise.reject(error);
+  }
 });
 
 /**
@@ -107,9 +117,17 @@ const localRpc = createRPCClient<RpcRouter>((channel, ...args) => electronAPI.in
  * 机器级的调用(那台机器的设置、资源库、模型目录……):调用点指明机器。null / 'local' = 本机 —— 真的是本机:
  * 参数里出现别的机器上的 id 也不改道(挂父会话:child 在本机、父会话在别的机器上,这一步只能在 child 这台做)。
  */
+/** Machines this app reaches by another pipe than its own machine clients (the phone shell's): set once, every reader follows. */
+const routed = new Map<string, typeof rpc>();
+
+/** Reach `machine` through `client` from now on (a transport boundary: readers keep calling `rpcOn`). */
+export function routeMachine(machine: string, client: typeof rpc): void {
+  routed.set(machine, client);
+}
+
 export function rpcOn(machine: string | null | undefined): typeof rpc {
   if (!machine || machine === 'local') return localRpc;
-  return createRPCClient<RpcRouter>((channel, ...args) => invokeOn(machine, channel, args));
+  return routed.get(machine) ?? createRPCClient<RpcRouter>((channel, ...args) => invokeOn(machine, channel, args));
 }
 
 function channelOf(eventName: string, topic?: string): string {

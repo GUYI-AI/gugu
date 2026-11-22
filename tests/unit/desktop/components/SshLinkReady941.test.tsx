@@ -14,12 +14,17 @@ vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: async (...args: unknown[]) =>
   return { result: args[1] === 'server.versionMatch.activity' ? { busyAgents: state.busyAgents } : { requested: !state.refused } }
 } }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: state.devices }) }))
+const problems = vi.hoisted(() => ({ byProblem: new Map<string, Map<string, string>>(), none: new Map() }))
+const problemsNow = vi.hoisted(() => () => {
+  if (!state.ssh) return problems.none
+  if (!problems.byProblem.has(state.problem)) problems.byProblem.set(state.problem, new Map([['remote', state.problem]]))
+  return problems.byProblem.get(state.problem)!
+})
 vi.mock('@/lib/sshLinkChannel', () => ({
   isSshMachine: () => state.ssh,
-  subscribeSshLinkProblems: (listener: (value: Map<string, string>) => void) => {
-    listener(new Map(state.ssh ? [['remote', state.problem]] : []))
-    return () => {}
-  },
+  // The channel's link problems store (read with useSelect): one map per state, a stable reference.
+  sshLinkProblems: { get: () => problemsNow(), subscribe: () => () => {} },
+  sshUpgrades: { get: () => problems.none, subscribe: () => () => {} },
   subscribeSshSignInPrompts: (listener: (event: { deviceId: string; prompt: unknown }) => void) => {
     state.onPrompt = listener
     return () => { state.onPrompt = null }
@@ -31,6 +36,7 @@ vi.mock('@/lib/sshLinkChannel', () => ({
   answerSshSignInPrompt: vi.fn(), requestSshServerUpgrade: vi.fn(), signInSshMachine: vi.fn(), sshReinstallCommand: vi.fn(),
 }))
 import { SshLinkSignIn } from '@/components/SshLinkSignIn'
+import { NoticeHost } from '@/components/NoticeHost'
 import { requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -46,7 +52,7 @@ function server(scope: 'account' | 'supervisor' | undefined, capability: boolean
 
 it.each(['account', 'supervisor', undefined] as const)('uses the same confirmation message for a restartable %s target', async scope => {
   state.devices = [server(scope, true)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   expect(document.querySelector('[data-testid=ssh-link-update-ask]')?.textContent).toContain(
     translateSessionMessage('remoteHost.notice.updateReady', { device: 'Remote', version: target }),
   )
@@ -55,7 +61,7 @@ it.each(['account', 'supervisor', undefined] as const)('uses the same confirmati
 
 it.each([['supervisor', false]] as const)('keeps the existing message without a confirmable scope/capability', async (scope, capability) => {
   state.devices = [server(scope, capability)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   expect(document.body.textContent).toContain('空闲')
   expect(document.body.textContent).not.toContain(target)
 })
@@ -63,7 +69,7 @@ it.each([['supervisor', false]] as const)('keeps the existing message without a 
 it('leaves the existing SSH upgrader waiting branch unchanged', async () => {
   state.ssh = true
   state.devices = [server('account', true)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   expect(document.body.textContent).toContain('空闲')
   expect(document.body.textContent).not.toContain(target)
 })
@@ -71,7 +77,7 @@ it('leaves the existing SSH upgrader waiting branch unchanged', async () => {
 it('reports an expired observer neutrally with the actual host version', async () => {
   const toast = vi.fn()
   state.devices = [server(undefined, true)]
-  await harness.render(<ToastContext.Provider value={{ toast }}><SshLinkSignIn /></ToastContext.Provider>)
+  await harness.render(<ToastContext.Provider value={{ toast }}><><NoticeHost /><SshLinkSignIn /></></ToastContext.Provider>)
   await act(async () => { state.onUpgrade?.({ deviceId: 'remote', phase: 'unconfirmed', request: 42, reportedVersion: '1.0.0' }) })
   expect(toast).toHaveBeenCalledWith(expect.stringContaining('1.0.0'), 'info')
   expect(toast.mock.calls[0]?.[0]).not.toMatch(/失败|成功|failed|succeeded/)
@@ -79,7 +85,7 @@ it('reports an expired observer neutrally with the actual host version', async (
 
 it('does not offer a restart for an offline tunnel device with a stale ready heartbeat', async () => {
   state.devices = [{ ...server(undefined, true), is_online: false, status: 'offline' }]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   expect(document.querySelector('[data-testid=ssh-link-update-now]')).toBeNull()
   expect(document.querySelector('[data-testid=ssh-link-update-confirm-now]')).toBeNull()
   expect(state.calls).toEqual([])
@@ -89,7 +95,7 @@ it('uses a fresh zero count in the tunnel confirmation rather than the heartbeat
   const host = server(undefined, true)
   host.capabilities.server_update!.busy_agents = 99
   state.devices = [host]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   await clickElement(document.querySelector<HTMLElement>('[data-testid=ssh-link-update-now]')!)
   const text = document.querySelector('[data-testid=ssh-link-update-confirm]')!.textContent!
   expect(text).toContain('0 个正在运行的任务')
@@ -101,13 +107,13 @@ it('uses a fresh zero count in the tunnel confirmation rather than the heartbeat
 it('closes the confirmation when its tunnel goes offline and asks afresh after it returns', async () => {
   const host = server(undefined, true)
   state.devices = [host]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   await clickElement(document.querySelector<HTMLElement>('[data-testid=ssh-link-update-now]')!)
   expect(document.querySelector('[data-testid=ssh-link-update-confirm]')).not.toBeNull()
   state.devices = [{ ...host, is_online: false, status: 'offline' }]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   state.devices = [host]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   expect(document.querySelector('[data-testid=ssh-link-update-confirm]')).toBeNull()
   await clickElement(document.querySelector<HTMLElement>('[data-testid=ssh-link-update-now]')!)
   expect(state.calls.filter(call => call[1] === 'server.versionMatch.activity')).toHaveLength(2)
@@ -121,7 +127,7 @@ async function confirmRestart() {
 it('reports a refused tunnel restart and keeps its action available', async () => {
   state.devices = [server(undefined, true)]; state.refused = true
   const toast = vi.fn()
-  await harness.render(<ToastContext.Provider value={{ toast }}><SshLinkSignIn /></ToastContext.Provider>)
+  await harness.render(<ToastContext.Provider value={{ toast }}><><NoticeHost /><SshLinkSignIn /></></ToastContext.Provider>)
   await confirmRestart()
   expect(toast).toHaveBeenCalledWith(expect.any(String), 'error', undefined)
   expect(document.querySelector('[data-testid=ssh-link-update-now]')).not.toBeNull()
@@ -130,7 +136,7 @@ it('reports a refused tunnel restart and keeps its action available', async () =
 it('reports a tunnel restart RPC error and keeps its action available', async () => {
   state.devices = [server(undefined, true)]; state.restartError = true
   const toast = vi.fn()
-  await harness.render(<ToastContext.Provider value={{ toast }}><SshLinkSignIn /></ToastContext.Provider>)
+  await harness.render(<ToastContext.Provider value={{ toast }}><><NoticeHost /><SshLinkSignIn /></></ToastContext.Provider>)
   await confirmRestart()
   expect(toast).toHaveBeenCalledWith(expect.any(String), 'error', 'Restart connection closed')
   expect(document.querySelector('[data-testid=ssh-link-update-now]')).not.toBeNull()
@@ -138,21 +144,21 @@ it('reports a tunnel restart RPC error and keeps its action available', async ()
 
 it.each(['account', 'supervisor', undefined] as const)('sends the displayed %s target as an explicit confirmed restart', async scope => {
   state.devices = [server(scope, true)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   await confirmRestart()
   expect(state.calls).toEqual([['remote', 'server.versionMatch.activity', {}, { timeoutMs: 15000 }], ['remote', 'server.versionMatch.restartConfirmed', { version: target, confirmed: true }, { timeoutMs: 15000 }]])
 })
 
 it('uses the existing legacy confirmation verb for an older account host', async () => {
   state.devices = [server(undefined, false)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   await confirmRestart()
   expect(state.calls).toEqual([['remote', 'server.versionMatch.activity', {}, { timeoutMs: 15000 }], ['remote', 'server.versionMatch.retry', {}, { timeoutMs: 15000 }]])
 })
 
 it('preserves the idle retry for a supervisor without confirmation capability', async () => {
   state.devices = [server('supervisor', false)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   await confirmRestart()
   expect(state.calls).toEqual([['remote', 'server.versionMatch.activity', {}, { timeoutMs: 15000 }], ['remote', 'server.versionMatch.retryWhenIdle', {}, { timeoutMs: 15000 }]])
 })
@@ -160,7 +166,7 @@ it('preserves the idle retry for a supervisor without confirmation capability', 
 it('keeps the SSH upgrader as the confirmation route for an SSH waiting prompt', async () => {
   state.ssh = true
   state.devices = [server('account', true)]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   await confirmRestart()
   expect(requestSshServerUpgrade).toHaveBeenCalledWith('remote', { force: true, now: true })
   expect(state.calls).toEqual([['remote', 'server.versionMatch.activity', {}, { timeoutMs: 15000 }]])
@@ -170,7 +176,7 @@ it('a background link that needs sign-in shows nothing; a sign-in started elsewh
   state.ssh = true
   state.problem = 'signInRequired'
   state.devices = [device('remote', [], { label: 'Remote' })]
-  await harness.render(<SshLinkSignIn />)
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
   expect(document.querySelector('[data-testid=ssh-link-sign-in]')).toBeNull()
   await act(async () => {
     state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'p1', kind: 'password', message: 'alice@box password:', subject: 'alice@box' } })

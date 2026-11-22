@@ -7,7 +7,7 @@ const badgeVariants = cva(
   // @@@radius-scale + @@@type-role (Refs #6106) — Badge 是全站被复制最多的基元:
   // 它是胶囊,胶囊语言就会散到整个产品。半径表里 --radius-capsule 只给 switch / 头像 / 状态点,
   // 徽标落 sm(6px)那一档。字号从一次性的像素值收到 --text-tiny(11px)。
-  'group/badge inline-flex h-4.5 w-fit shrink-0 text-tiny items-center justify-center gap-1 overflow-hidden rounded-sm border border-transparent px-1.5 py-0.5 font-medium whitespace-nowrap transition-all has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-border-destructive [&>svg]:pointer-events-none [&>svg]:size-3!',
+  'group/badge inline-flex h-4.5 w-fit shrink-0 text-tiny items-center justify-center gap-1 overflow-hidden rounded-sm border border-transparent px-1.5 py-0.5 font-medium whitespace-nowrap transition-colors has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-border-destructive [&>svg]:pointer-events-none [&>svg]:size-3!',
   {
     variants: {
       variant: {

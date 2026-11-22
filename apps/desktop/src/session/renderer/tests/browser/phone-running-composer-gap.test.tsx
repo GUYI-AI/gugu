@@ -86,7 +86,7 @@ for (const width of [360, 390]) for (const theme of ['dark', 'light']) for (cons
     expect(rect(button).height).toBe(keyboard ? 0 : 44)
     expect(parseFloat(getComputedStyle(composer).paddingBottom)).toBeGreaterThanOrEqual(8)
     if (token) {
-      expect(rect(slot).height).toBe(rect(token.closest('.rtb-bar')!).height + parseFloat(getComputedStyle(slot).paddingTop))
+      expect(rect(slot).height).toBe(rect(token.closest('.rtb-bar')!).height + parseFloat(getComputedStyle(token.closest('[data-running-bar-content]')!).marginTop))
       if (!keyboard) {
         const gap = parseFloat(getComputedStyle(dock).getPropertyValue('--spacing-sm'))
         expect(data.pillToMenu).toBe(gap)

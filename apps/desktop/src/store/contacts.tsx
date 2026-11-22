@@ -1,11 +1,11 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
-import { useIsFetching } from '@tanstack/react-query'
 import type { GroupInvitation } from '../lib/groupInvitations'
 import { rendererLogger } from '../lib/log'
 import { contactsService } from '../lib/contacts'
 import { contactGroupChatsOf, sharedGroupAgentsOf } from '../lib/contactGroupChats'
 import { contactGroups, contactRelations, contactRequests, groupJoinRequests, refreshStrictly, type ContactRelation } from '../lib/contactsReplicas'
-import { queryClient, useReplica } from '../lib/replica'
+import { joinRequestIdentityIds } from '../lib/groupAgentJoin'
+import { useReplica, useReplicaFetching } from '../lib/replica'
 import { useAuth } from './auth'
 import { useChatStore, useStoreValueBy } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
@@ -19,7 +19,7 @@ import { useIdentityLifecycle } from '../hooks/useIdentityLifecycle'
 import { friendRequestEntries } from '../lib/requestHistory'
 import { type AgentLook } from '../components/agentAvatar/look'
 import { recordContactsRender } from '../lib/perfCounters'
-import { isMyAssistant } from '../lib/myAssistant'
+import { myAssistant } from '../lib/myAssistant'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import { renameOwnedAgent } from '../lib/archiveOwnedAgent'
@@ -68,8 +68,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
   // The revision listeners below read the managed groups of the moment they run, ❌ resubscribe when they change.
   const managedGroupKeyRef = useRef(managedGroupKey)
   managedGroupKeyRef.current = managedGroupKey
-  const loadingContacts = useIsFetching({ queryKey: [contactRelations.name] }, queryClient) > 0
-  const loadingGroups = useIsFetching({ queryKey: [contactGroups.name] }, queryClient) > 0
+  const loadingContacts = useReplicaFetching(contactRelations, [])
+  const loadingGroups = useReplicaFetching(contactGroups, [])
   // #2118 — contacts / groupChats 各自的加载三态(见 ContactsLoadStatus)。空态 CTA 只在 ready 且为空时出现;一次刷新失败 = error,
   // 旧列表照常画(空列表 + error 显失败与重试,❌ 冒充「没有联系人」)。
   const contactsStatus: ContactsLoadStatus = !userId ? 'idle' : relationsReading.state === 'unknown' ? 'loading'
@@ -81,15 +81,12 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const failureText = (error: Error | null | undefined) => (error ? error.message || String(error) : null)
   const requestsError = requestsReading.state === 'error' ? failureText(requestsReading.error) : requestsReading.state === 'value' ? failureText(requestsReading.error) : null
   const groupJoinRequestsError = joinRequestsReading.state === 'error' ? failureText(joinRequestsReading.error) : joinRequestsReading.state === 'value' ? failureText(joinRequestsReading.error) : null
-  // @@@reading-default - the context pairs each list with its status (#2118: contactsStatus, requestsStatus, the join requests' error): an empty list while it loads is never drawn as "none"
   const contacts = relationsReading.state === 'value' ? relationsReading.value : NO_RELATIONS,
     groups = groupsReading.state === 'value' ? groupsReading.value : NO_GROUPS,
     receivedRequests = requestsReading.state === 'value' ? requestsReading.value.received : NO_REQUESTS,
     sentRequests = requestsReading.state === 'value' ? requestsReading.value.sent : NO_REQUESTS,
     groupInvitations = requestsReading.state === 'value' ? requestsReading.value.invitations : NO_INVITATIONS,
     managedJoinRequests = joinRequestsReading.state === 'value' ? joinRequestsReading.value : NO_JOIN_REQUESTS
-  const [searchResults, setSearchResults] = useState<ContactRelation[]>([])
-  const [isSearching, setIsSearching] = useState(false)
 
   const loadContacts = useCallback(() => contactRelations.refresh(), [])
   const loadGroups = useCallback(() => contactGroups.refresh(), [])
@@ -123,7 +120,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
 
     // @@@owned-agents-realtime (#671) - reload the owned-agent list when an agent is created/changed,
     // including from another device. 那条新 agent 私聊由投影按键补齐,不再靠整表重拉。
-    const refreshAgentSurfaces = () => refreshStrictly(contactRelations)
+    // agent_provisions writes no revision; a new assistant adds a users row, so `agent_changed` is a hint to read it again.
+    const refreshAgentSurfaces = () => { void myAssistant.refresh(); return refreshStrictly(contactRelations) }
     // #6091 会话页「重命名 Agent」改名落在主进程 / 宿主(不经过这里的 updateAgentProfile),通讯录缓存着
     // display_name —— 收到广播就按 agent_changed 同一条路重拉,❌ 挂着旧名等 realtime 兜底。
     const handleOwnedAgentRenamed = () => { void contactRelations.refresh() }
@@ -141,33 +139,17 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [userId, subscribeAccountRevision])
 
+  // The identities this domain names, all kept by the lifecycle prune: contacts, both ends of every friend request and the
+  // join requesters (their replicas write these identities; ❌ only the contacts — the prune then dropped request senders).
   useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]),
-    () => { const reading = contactRelations.peek(); return reading.state === 'value' ? reading.value.map((relation) => relation.id) : null })
+    () => {
+      const relations = contactRelations.peek()
+      const requests = contactRequests.peek()
+      if (relations.state !== 'value' || requests.state !== 'value') return null
+      return [...relations.value.map((relation) => relation.id), ...[...requests.value.received, ...requests.value.sent].flatMap((request) => [request.sender_id, request.receiver_id]), ...joinRequestIdentityIds(managedJoinRequests)]
+    })
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  const searchUsers = useCallback(
-    async (query: string) => {
-      if (!userId) return
-      setIsSearching(true)
-      try {
-        const results = await contactsService.searchUsers(query, userId)
-        await (await getImRepository()).putIdentities(results)
-        setSearchResults(results.map(({ id, alias, agent_type, project_path }) => ({ id, alias, agent_type, project_path })))
-      } catch (err) {
-        console.error('[ContactsStore] searchUsers error', err)
-        setSearchResults([])
-        throw err
-      } finally {
-        setIsSearching(false)
-      }
-    },
-    [getImRepository, userId],
-  )
-
-  const clearSearch = useCallback(() => {
-    setSearchResults([])
-  }, [])
-
   const sendRequest = useCallback(
     async (targetUserId: string, message?: string | null) => {
       if (!userId) return
@@ -258,7 +240,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   // the identity here, and the device running the task adopts it. Bio and avatar are the identity's own.
   const updateAgentProfile = useCallback(async (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => {
     const ownerId = userId
-    const personal = isMyAssistant(ownerId, agentId)
     const name = fields.name?.trim()
     if (fields.name !== undefined && !name) throw new Error(i18n.t('errors.nameRequired', { ns: 'contacts' }))
     const renamedOn = name !== undefined ? await renameOwnedAgent(agentId, name) : null
@@ -270,6 +251,11 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
     const updated = Object.keys(identityFields).length > 0 ? await contactsService.updateOwnedAgentProfile(agentId, identityFields) : null
     const deviceId = updated?.device_id ?? renamedOn?.deviceId
+    // Decided after the write (a failed assistant read never blocks a profile edit), ❌ guessed from what may not be read yet.
+    const personal = !!ownerId && await myAssistant.fetch().then((mine) => mine.agentId === agentId, (error: unknown) => {
+      rendererLogger('contacts/profile').error({ error: String(error), agentId }, 'Profile saved; whether it is the assistant could not be read, so the assistant App is not told')
+      return false
+    })
     if (personal) await reportAssistantAppChange(deviceId ? { rpc: machineRpc(deviceId) } : null, agentId, {
       resource: 'assistant', operation: 'edited', id: agentId, section: fields.avatar !== undefined ? 'appearance' : 'profile',
       ...(name !== undefined ? { after: { name } } : {}),
@@ -278,11 +264,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     else await contactRelations.refresh()
     await refreshChats()
   }, [applyAgentProfileUpdate, refreshChats, userId])
-
-  // Every name entry uses the profile path (renameOwnedAgent decides where the rename is written).
-  const renameAgent = useCallback(async (agentId: string, name: string) => {
-    await updateAgentProfile(agentId, { name })
-  }, [updateAgentProfile])
 
   const uploadAgentAvatar = useCallback(async (agentId: string, file: File, profile?: { name?: string; bio?: string }) => {
     // The name (if any) goes the one rename way (updateAgentProfile → renameOwnedAgent); the upload carries the rest.
@@ -298,11 +279,14 @@ export function ContactsProvider({ children, active = true }: { children: React.
     await updateAgentProfile(agentId, { avatar: contactsService.agentLookAvatarUrl(look) })
   }, [updateAgentProfile])
 
-  /** 删掉一个联系人 / 自家 agent 之后(云端已确认):本地先拿掉它,再按权威数据重读。 */
-  const dropContactAndReload = useCallback(
+  /** 删掉一个联系人 / 自家 agent:云端确认后,本地先拿掉它(落在发起删除的那个账号,❌ 换号后的下一个),再按权威数据重读。 */
+  const removeContact = useCallback(
     async (contactId: string) => {
-      contactRelations.set([], (current) => current?.filter((contact) => contact.id !== contactId))
-      contactGroups.set([], (current) => current?.map((group) => ({
+      const relations = contactRelations.at()
+      const groups = contactGroups.at()
+      await contactsService.removeContact(contactId)
+      relations.set((current) => current?.filter((contact) => contact.id !== contactId))
+      groups.set((current) => current?.map((group) => ({
         ...group,
         contactIds: group.contactIds.filter((id) => id !== contactId),
       })))
@@ -314,14 +298,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       ])
     },
     [loadContacts, loadGroups, loadRequests, refreshChats],
-  )
-
-  const removeContact = useCallback(
-    async (contactId: string) => {
-      await contactsService.removeContact(contactId)
-      await dropContactAndReload(contactId)
-    },
-    [dropContactAndReload],
   )
 
   const removeOwnedAgent = useCallback(
@@ -367,10 +343,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       loadingGroups,
       contactsStatus,
       groupChatsStatus,
-      searchResults: project(searchResults),
-      isSearching,
-      searchUsers,
-      clearSearch,
       sendRequest,
       acceptRequest,
       rejectRequest,
@@ -384,7 +356,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       updateContactAlias,
       setAgentPublic,
       setAgentDesiredStatus,
-      renameAgent,
       updateAgentProfile,
       uploadAgentAvatar,
       setAgentLook,
@@ -392,11 +363,11 @@ export function ContactsProvider({ children, active = true }: { children: React.
       removeContact,
     }
   }, [
-    contacts, searchResults, identitiesById, sharedGroupAgents, groups, groupChats, receivedRequests, sentRequests,
+    contacts, identitiesById, sharedGroupAgents, groups, groupChats, receivedRequests, sentRequests,
     groupInvitations, managedJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
-    loadingGroups, contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
+    loadingGroups, contactsStatus, groupChatsStatus, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
-    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
+    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact,
   ])
   const [store] = useState(() => createSelectStore<ContactsContextValue>(value))

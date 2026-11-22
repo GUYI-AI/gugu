@@ -44,6 +44,8 @@ export interface AcpAgentConnection {
   supportsImagePrompt: boolean;
   /** agent 在 initialize._meta 里声明 ACP steering 扩展。 */
   supportsSteering: boolean;
+  /** `initialize.agentInfo.version`: which build of its adapter this process runs, when it says. */
+  agentVersion?: string;
   /**
    * 这条连接**实际**在跟哪个进程说话 —— spawn 当场绑定的 pid,拿不到时为 null。
    *
@@ -193,6 +195,7 @@ export async function createAcpAgentConnection(
     const supportsImagePrompt = initialized.agentCapabilities?.promptCapabilities?.image === true;
     const initializeMeta = (initialized as InitializeResponse & { _meta?: unknown })._meta;
     const supportsSteering = isSteeringCapability(initializeMeta);
+    const agentVersion = initialized.agentInfo?.version;
     logger.debug('createAcpAgentConnection: initialized', {
       supportsLoadSession,
       supportsResumeSession,
@@ -250,6 +253,7 @@ export async function createAcpAgentConnection(
       supportsForkSession,
       supportsImagePrompt,
       supportsSteering,
+      ...(agentVersion ? { agentVersion } : {}),
       pid: typeof handle.pid === 'number' ? handle.pid : null,
       stopProcess: async () => {
         if (!actualExitObserved) handle.kill('SIGTERM');

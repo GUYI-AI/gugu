@@ -12,6 +12,7 @@ import { installSessionTabViews } from '@renderer/features/sessions/session-tab-
 import { BrowserWorkspaceStartContent } from '@renderer/features/browser/browser-workspace-start-page';
 import { recentToolPanel, type RecentTool } from '@renderer/features/browser/workspace-recent-tools';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { appState } from '@renderer/lib/stores/app-state';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
@@ -109,18 +110,16 @@ it('shows the context tools, opens recent resources, and removes them only from 
     />
   ));
   await render(group);
-  await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
   await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
-  const builtins = page.getByRole('region', { name: '内置', exact: true });
-  const apps = page.getByRole('region', { name: '应用', exact: true });
-  await expect.element(apps.getByRole('button', { name: '添加应用', exact: true })).toBeVisible();
-  await expect.element(builtins.getByRole('button', { name: '添加应用', exact: true })).not.toBeInTheDocument();
-  await userEvent.click(builtins.getByRole('button', { name: '文件', exact: true }));
-  await userEvent.click(builtins.getByRole('button', { name: '浏览器', exact: true }));
-  await userEvent.click(apps.getByRole('button', { name: '浏览器', exact: true }));
+  // One row of tiles: built-ins, then Apps, then Add App.
+  await userEvent.click(page.getByRole('button', { name: '文件', exact: true }));
+  await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }).nth(0));
+  await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }).nth(1));
   expect(openApp).toHaveBeenCalledOnce();
-  await userEvent.click(apps.getByRole('button', { name: '添加应用', exact: true }));
-  expect(navigate).toHaveBeenCalledWith('apps');
+  await userEvent.click(page.getByRole('button', { name: '添加应用', exact: true }));
+  // Add App goes to the Apps tab of the Apps page, wherever that page was left.
+  expect(appState.navigation.currentViewId).toBe('apps');
+  expect(appState.navigation.viewParamsStore.apps?.location).toEqual({ tab: 'market' });
   expect(openFolder).toHaveBeenCalledOnce();
   expect(focusUrl).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '行程.md', exact: true }));
@@ -153,7 +152,6 @@ it('opens the actual group tab from the header and reveals explicitly requested 
     await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
     await expect.poll(() => header('split')).not.toBeNull();
     await expect.element(page.getByPlaceholder('搜索或输入网址')).toBeVisible();
-    await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
     await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
     await expect.element(page.getByRole('button', { name: '审阅', exact: true })).not.toBeInTheDocument();
     await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }));
@@ -202,14 +200,13 @@ it('draws the start page in the app theme and the pinned-light web area in light
   };
   try {
     await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));
-    await expect.element(page.getByRole('heading', { name: '内置' })).toBeVisible();
+    await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
     const start = view.container.querySelector('[data-workspace-new-tab-page]')!;
-    const heading = page.getByRole('heading', { name: '内置' }).element();
-    const card = page.getByRole('button', { name: '文件', exact: true }).element();
+    const heading = page.getByRole('heading', { name: '最近' }).element();
+    const tile = page.getByRole('button', { name: '文件', exact: true }).element();
     expect(luminance(getComputedStyle(start).backgroundColor)).toBeLessThan(0.1);
-    expect(luminance(getComputedStyle(card).backgroundColor)).toBeLessThan(0.1);
     expect(luminance(getComputedStyle(heading).color)).toBeGreaterThan(0.8);
-    expect(luminance(getComputedStyle(card).color)).toBeGreaterThan(0.3);
+    expect(luminance(getComputedStyle(tile).color)).toBeGreaterThan(0.3);
 
     // The web area pins itself light once the start page steps aside; its colour classes must resolve to that light set.
     const pinned = document.createElement('div');

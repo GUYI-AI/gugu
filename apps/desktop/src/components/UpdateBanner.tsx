@@ -10,16 +10,16 @@
 //   downloading(宿主状态值 'downloading',百分比也在里面) → 「下载新版本中…」(由 update-downloaded 收尾)
 //   manual-install(downloaded-manual) → 「安装包已打开」+拖装指引,无重启按钮(系统接管)
 // 静默下载失败也回到 available(用户点一次走手动路径,那条路失败会显式报错)。
-// not-available/error 不弹(自动 check 不打扰)。桌面栏底、手机浮层，克制不阻断。
+// not-available/error 不弹(自动 check 不打扰)。桌面栏底、手机横幅位上的常驻提示，克制不阻断。
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, CheckCircle2, AlertTriangle, X } from '@/lib/icons'
+import { Download, CheckCircle2, AlertTriangle } from '@/lib/icons'
+import { useNotice } from '../lib/notices'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { platform } from '../platform'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { classifyUpdateError, type UpdateErrorReason } from '../lib/updateError'
 import { rendererLogger } from '../lib/log'
-import { useMobileShell } from '../hooks/useMobileShell'
 import { UpdateRailButton } from './UpdateRailButton'
 import { createUpdateStateReceiver } from '../../shared/update-state'
 
@@ -34,7 +34,6 @@ const updateLog = rendererLogger('update-banner')
 
 export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating' | 'rail' }) {
   const { t } = useTranslation('main')
-  const mobile = useMobileShell()
   const [phase, setPhase] = useState<UpdatePhase>('idle')
   const [version, setVersion] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState(false)
@@ -151,8 +150,7 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
   }, [phase, failReason])
 
   // web/不支持更新的平台不渲染(事件也不会来，双保险)。
-  if (!platform.capabilities.appUpdates) return null
-  if (phase === 'idle' || (placement === 'floating' && dismissed)) return null
+  const visible = platform.capabilities.appUpdates && phase !== 'idle'
 
   const ready = phase === 'ready'
   const downloading = phase === 'downloading'
@@ -192,80 +190,12 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
           ? t('shell.update.downloadingDescription')
           : t('shell.update.availableDescription')
 
-  if (placement === 'rail') {
-    const label = downloading
-      ? `${title}${percent === null ? '' : ` ${Math.round(percent)}%`}`
-      : installing === 'checking'
-        ? t('about.checking', { ns: 'settings' })
-        : installing === 'restarting'
-          ? t('shell.update.restarting')
-          : ready ? t('shell.update.restartNow') : failed ? t('shell.update.retry') : manualInstall ? title : t('shell.update.download')
-    return (
-      <UpdateRailButton
-        label={label}
-        description={failed ? failReasonText : manualInstall ? sub : phase === 'available' && version ? title : ''}
-        progress={downloading ? percent : undefined}
-        busy={downloading || installing !== false}
-        failed={failed}
-        onClick={manualInstall ? undefined : ready ? install : startDownload}
-      />
-    )
-  }
-
-  return (
-    <div
-      data-testid={AUTOMATION_TEST_IDS.updateBanner}
-      data-phase={phase}
-      style={{
-        position: 'fixed', zIndex: 'var(--z-banner)',
-        // 手机壳底部是常驻的 tab 栏,贴底会把它盖住(安卓应用内更新 #6188 模拟器实拍);
-        // 手机上改贴顶、左右各留 16px,桌面照旧右下角。
-        ...(mobile
-          ? { top: 'calc(env(safe-area-inset-top) + 12px)', left: 16, right: 16 }
-          : { right: 18, bottom: 18, width: 320 }),
-        background: 'var(--bg-elevated)',
-        border: '1px solid var(--border-strong)',
-        borderRadius: 'var(--radius-xl)',
-        boxShadow: 'var(--shadow-lift)',
-        padding: '14px 16px',
-        display: 'flex', flexDirection: 'column', gap: 10,
-        pointerEvents: 'auto',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div
-          style={{
-            width: 32, height: 32, borderRadius: 'var(--radius-surface)', flexShrink: 0,
-            display: 'grid', placeItems: 'center',
-            background: failed
-              ? 'var(--danger-tint)'
-              : 'var(--accent-tint-row)',
-            color: failed ? 'var(--danger)' : 'var(--text-primary)',
-          }}
-        >
-          {failed ? <AlertTriangle size={18} /> : ready || manualInstall ? <CheckCircle2 size={18} /> : <Download size={18} />}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {title}
-          </div>
-          <div style={{ fontSize: 'var(--font-caption)', color: 'var(--text-secondary)' }}>
-            {sub}
-          </div>
-        </div>
-        <button
-          type="button"
-          aria-label={t('shell.update.close')}
-          onClick={() => setDismissed(true)}
-          style={{
-            width: 24, height: 24, flexShrink: 0, display: 'grid', placeItems: 'center',
-            borderRadius: 'var(--radius-document)', border: 'none', background: 'transparent', cursor: 'pointer',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <X size={15} />
-        </button>
-      </div>
+  // 手机上是横幅位上的一条常驻提示(桌面在栏底,见下);关闭钮与「稍后」都只收起这一次。
+  useNotice('app-update', placement === 'floating' && visible && !dismissed ? {
+    title, ongoing: true, onDismiss: () => setDismissed(true),
+    icon: failed ? <AlertTriangle size={16} /> : ready || manualInstall ? <CheckCircle2 size={16} /> : <Download size={16} />,
+    description: <div data-testid={AUTOMATION_TEST_IDS.updateBanner} data-phase={phase} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div>{sub}</div>
 
       {/* @@@1961 downloading：进度条 + 百分比。percent=null(尚无进度事件)→「准备下载…」不确定态。 */}
       {downloading && (
@@ -282,39 +212,22 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
               }}
             />
           </div>
-          <div style={{ fontSize: 'var(--font-caption)', textAlign: 'right', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: 'var(--font-caption)', textAlign: 'right' }}>
             {percent === null ? t('shell.update.preparing') : `${Math.round(percent)}%`}
           </div>
         </div>
       )}
 
-      {/* available：用户选择「更新」(下载)/「稍后」 */}
-      {phase === 'available' && (
+      {/* available：用户选择「更新」(下载)/「稍后」;@@@2126 failed:显失败原因 + 重试(不静默 revert 成「可更新」诱导反复点) */}
+      {(phase === 'available' || failed) && (
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             type="button"
-            data-testid={AUTOMATION_TEST_IDS.updateDownloadButton}
+            data-testid={failed ? AUTOMATION_TEST_IDS.updateRetryButton : AUTOMATION_TEST_IDS.updateDownloadButton}
             onClick={() => startDownload()}
             style={primaryBtnStyle(false)}
           >
-            {t('shell.update.download')}
-          </button>
-          <button type="button" onClick={() => setDismissed(true)} style={laterBtnStyle}>
-            {t('shell.update.later')}
-          </button>
-        </div>
-      )}
-
-      {/* @@@2126 failed:显失败原因 + 重试(不静默 revert 成「可更新」诱导反复点) */}
-      {failed && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            data-testid={AUTOMATION_TEST_IDS.updateRetryButton}
-            onClick={() => startDownload()}
-            style={primaryBtnStyle(false)}
-          >
-            {t('shell.update.retry')}
+            {failed ? t('shell.update.retry') : t('shell.update.download')}
           </button>
           <button type="button" onClick={() => setDismissed(true)} style={laterBtnStyle}>
             {t('shell.update.later')}
@@ -343,8 +256,30 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
           </button>
         </div>
       )}
-    </div>
-  )
+    </div>,
+  } : null)
+
+  if (!visible) return null
+  if (placement === 'rail') {
+    const label = downloading
+      ? `${title}${percent === null ? '' : ` ${Math.round(percent)}%`}`
+      : installing === 'checking'
+        ? t('about.checking', { ns: 'settings' })
+        : installing === 'restarting'
+          ? t('shell.update.restarting')
+          : ready ? t('shell.update.restartNow') : failed ? t('shell.update.retry') : manualInstall ? title : t('shell.update.download')
+    return (
+      <UpdateRailButton
+        label={label}
+        description={failed ? failReasonText : manualInstall ? sub : phase === 'available' && version ? title : ''}
+        progress={downloading ? percent : undefined}
+        busy={downloading || installing !== false}
+        failed={failed}
+        onClick={manualInstall ? undefined : ready ? install : startDownload}
+      />
+    )
+  }
+  return null
 }
 
 function primaryBtnStyle(busy: boolean): React.CSSProperties {

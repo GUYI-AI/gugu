@@ -1,4 +1,3 @@
-import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import type { OpenTopic } from '../../hooks/useTopicSurface'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { useTopicScopedMemberProfile } from '../../hooks/useTopicScopedMemberProfile'
@@ -35,11 +34,6 @@ function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevis
   const mainChat = useActiveChatIdentity()
   const fromAside = opened.openedFrom === 'aside'
   const mainTopicChatId = mainChat?.kind === 'topic' ? mainChat.id : null
-  const listenRoom = fromAside
-    ? (asideTopic && { kind: 'topic' as const, name: asideTopic.name })
-    : (mainChat?.kind === 'group' || mainChat?.kind === 'topic'
-        ? { kind: mainChat.kind, name: chatDisplayName(mainChat, null) }
-        : null)
   const shown = useTopicScopedMemberProfile({
     profile,
     authorityRevision,
@@ -64,7 +58,6 @@ function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevis
         onWhisper(target)
       } : undefined}
       searchChatId={(fromAside ? asideTopic?.chatId : chatId) ?? undefined}
-      listenRoom={listenRoom ?? undefined}
       editControls={shown.editControls}
       testId={AUTOMATION_TEST_IDS.messageAvatarProfileMenu}
     />

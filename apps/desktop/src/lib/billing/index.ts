@@ -18,7 +18,6 @@ export {
 } from './balance'
 export {
   daysUntilExpiry,
-  getMembership,
   type Membership,
   type MembershipTier,
 } from './membership'

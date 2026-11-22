@@ -22,8 +22,11 @@ class MirrorAccounts extends AccountProjectsStore {
     super();
     runInAction(() => {
       this.status = 'ready';
-      this.localDeviceId = THIS_COMPUTER;
     });
+  }
+
+  override get localDeviceId(): string | null {
+    return THIS_COMPUTER;
   }
 
   override get projects(): readonly AccountProject[] {

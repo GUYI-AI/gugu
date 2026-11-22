@@ -5,6 +5,8 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { publishRendererSession } from '@/lib/sessionPublication';
+import { clearViewState } from '@/lib/viewStateTable';
+import { queryClient as replicaQueries } from '@/lib/replica';
 import type { Session } from '@shared/core/sessions/sessions';
 import type { SearchItem } from '@shared/core/search';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
@@ -97,6 +99,8 @@ beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.localStorage.clear();
   signIn('recent-account-a');
+  for (const account of ['recent-account-a', 'recent-account-b']) clearViewState({ conversation: '', panel: 'recent-tasks', account });
+  replicaQueries.removeQueries({ queryKey: ['commandPaletteSearch'] });
   fixture.opened.mockClear();
   fixture.markOpened.mockClear();
   fixture.search.mockReset().mockImplementation(async () => fixture.results);
@@ -201,5 +205,116 @@ describe('renderer task opening and empty Recent', () => {
     expect(sharedTimes()).toEqual(beforeTimes);
     expect(allIds.map(id => pages.get(id)!.data.lastInteractedAt)).toEqual(beforeTimes.map(row => row[1]));
     expect(fixture.markOpened).not.toHaveBeenCalled();
+  });
+});
+
+describe('palette search reading', () => {
+  async function typed(query: string) {
+    await act(async () => {
+      root.render(<QueryClientProvider client={queryClient}>
+        <CommandPaletteModal key={++generation} initialQuery={query} onClose={() => {}} onSuccess={() => {}} />
+      </QueryClientProvider>);
+    });
+  }
+
+  it('holds the result rows while the words are being searched, never "no results" first', async () => {
+    let answer!: (items: SearchItem[]) => void;
+    fixture.search.mockReset().mockImplementation(() => new Promise<SearchItem[]>((resolve) => { answer = resolve; }));
+    await typed('fresh-1');
+    await vi.waitFor(() => expect(fixture.search).toHaveBeenCalledWith({ query: 'fresh-1' }));
+    expect(host.textContent).not.toContain('palette.noResults');
+    expect(host.querySelector('[data-testid="palette-search-pending"] [data-unknown]')).not.toBeNull();
+    await act(async () => answer(fixture.results.slice(1, 2)));
+    await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-1']));
+    expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
+  });
+
+  it('keeps a completed empty reading while typing instead of inserting unknown task rows', async () => {
+    const answers: ((items: SearchItem[]) => void)[] = [];
+    fixture.search.mockReset().mockImplementation(() => new Promise<SearchItem[]>((resolve) => { answers.push(resolve); }));
+    await typed('w');
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    expect(host.querySelector('[data-testid="palette-search-pending"] [data-unknown]')).not.toBeNull();
+    await act(async () => answers[0]!([]));
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull());
+    const rows = () => host.querySelector('[cmdk-list]')!.childElementCount;
+    const emptyReadingRows = rows();
+
+    const input = host.querySelector('input')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    for (const [index, words] of ['we', 'wee'].entries()) {
+      await act(async () => { setValue.call(input, words); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      expect(rows()).toBe(emptyReadingRows);
+      expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
+      expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
+      expect(host.textContent).not.toContain('palette.noResults');
+      expect(host.querySelector('[cmdk-list]')!.className).not.toContain('gg-stale');
+      expect(host.querySelector('[data-value="search-messages"]')?.closest('.gg-stale')).toBeNull();
+      await vi.waitFor(() => expect(answers).toHaveLength(index + 2));
+      await act(async () => answers[index + 1]!([]));
+      await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
+      expect(rows()).toBe(emptyReadingRows);
+    }
+
+  });
+
+  it('says a failed search and reads again on retry, ❌ an empty list', async () => {
+    fixture.search.mockReset().mockRejectedValueOnce(new Error('index gone')).mockImplementation(async () => fixture.results.slice(2, 3));
+    await typed('fresh-2');
+    await vi.waitFor(() => expect(host.querySelector('[role=alert]')).not.toBeNull());
+    expect(host.textContent).not.toContain('palette.noResults');
+    await act(async () => { (host.querySelector('[role=alert] button') as HTMLButtonElement).click(); });
+    await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-2']));
+  });
+
+  it('a search read before whose read again fails says so with a retry, its rows staying', async () => {
+    fixture.search.mockReset().mockImplementation(async () => fixture.results.slice(3, 4));
+    await typed('fresh-3');
+    await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-3']));
+    fixture.search.mockReset().mockRejectedValue(new Error('index gone'));
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 6_000);
+    try {
+      await typed('fresh-3');
+      await vi.waitFor(() => expect(host.querySelector('[role=alert]')).not.toBeNull());
+      expect(taskRows()).toEqual(['fresh-3']);
+    } finally { clock.mockRestore(); }
+  });
+
+  /**
+   * Typing three characters, the result area never goes rows → none → rows (each new key is unknown
+   * until its read lands). The previous words' rows stay, dimmed, until the next words' arrive.
+   */
+  it('typing keeps the previous words\' rows (dimmed) until the next words\' land: never rows → none → rows', async () => {
+    const answers: ((items: SearchItem[]) => void)[] = [];
+    fixture.search.mockReset().mockImplementation(() => new Promise<SearchItem[]>((resolve) => { answers.push(resolve); }));
+    await typed('f');
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    await act(async () => answers[0]!(fixture.results.slice(0, 3)));
+    await vi.waitFor(() => expect(taskRows()).toHaveLength(3));
+
+    const counts: number[] = [];
+    const watch = new MutationObserver(() => { counts.push(taskRows().length); });
+    watch.observe(host, { subtree: true, childList: true, attributes: true });
+    const input = host.querySelector('input')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    for (const [index, words] of ['fr', 'fre', 'fres'].entries()) {
+      await act(async () => { setValue.call(input, words); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      expect(taskRows().length).toBeGreaterThan(0);
+      expect(host.querySelector('[cmdk-list][data-stale]')).not.toBeNull();
+      // Dimmed only by `.gg-stale` (after 150 ms, styles/staleResultsDelay.test.ts): nothing changes at once.
+      const retainedGroup = host.querySelector('[cmdk-item][data-value^="task:"]')!.closest('[cmdk-group]')!;
+      expect(retainedGroup.className).toContain('gg-stale');
+      expect(retainedGroup.className).not.toMatch(/opacity-/);
+      expect(host.querySelector('[cmdk-list]')!.className).not.toContain('gg-stale');
+      expect(host.querySelector('[data-value="search-messages"]')?.closest('.gg-stale')).toBeNull();
+      await vi.waitFor(() => expect(answers).toHaveLength(index + 2));
+      await act(async () => answers[index + 1]!(fixture.results.slice(0, 2)));
+      await vi.waitFor(() => expect(host.querySelector('[cmdk-list][data-stale]')).toBeNull());
+    }
+    watch.disconnect();
+    expect(counts.length).toBeGreaterThan(0);
+    expect(counts.every((count) => count > 0)).toBe(true);
+    expect(fixture.search.mock.calls.map(([input]) => input)).toEqual([{ query: 'f' }, { query: 'fr' }, { query: 'fre' }, { query: 'fres' }]);
   });
 });

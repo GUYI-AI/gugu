@@ -16,8 +16,6 @@ const mocks = vi.hoisted(() => ({
   listDevices: vi.fn(),
   refreshCloudComputer: vi.fn(),
   listener: null as null | ((operations: readonly unknown[]) => void | Promise<void>),
-  // one object, like the real store's snapshot (useSyncExternalStore compares it by identity)
-  cloudState: { available: true, snapshot: { state: 'running', deviceId: 'cloud', error: null, since: '2026-10-29T00:00:00Z' }, loadError: null, wakeRefused: null },
 }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
@@ -25,11 +23,15 @@ vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDevice
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: (_event: string, listener: (operations: readonly unknown[]) => void) => { mocks.listener = listener; return () => undefined } }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../apps/desktop/src/lib/cloudComputerStore')>()),
-  refreshCloudComputer: mocks.refreshCloudComputer,
-  getCloudComputerState: () => mocks.cloudState,
-}))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../../apps/desktop/src/lib/cloudComputer')>()
+  return {
+    ...original,
+    // The replica's `refresh` as the provider calls it; the cloud computer the manager last named is 'cloud'.
+    cloudComputer: { ...original.cloudComputer, refresh: mocks.refreshCloudComputer },
+    knownCloudDeviceId: () => 'cloud',
+  }
+})
 
 const device = (id: string) => ({ device_id: id, label: id, hostname: id, platform: 'linux', status: 'online', last_seen_at: '2026-10-29T00:00:00.000Z', is_online: true, capabilities: { terminals: [], runtimes: [] }, machine_id: null, session_digest: [] })
 const op = (deviceId: string, tombstone = false) => ({ revision: '1', event: 'device_changed', payload: { device_id: deviceId, kind: 'row', tombstone } })

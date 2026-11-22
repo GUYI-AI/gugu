@@ -84,7 +84,7 @@ it('uses the actual Supabase PKCE storage and exchange wire format without writi
   }
   const fetch = vi.fn(async () => new Response(JSON.stringify(session), { status: 200, headers: { 'Content-Type': 'application/json' } }))
   const options = { url: 'https://auth.example.test', anonKey: 'public-test-key', storage: sdkStorage, storageKey: 'sb-main',
-    persistSession: true, autoRefreshToken: false, flowType: 'pkce' as const, fetch }
+    persistSession: true, autoRefreshToken: false, flowType: 'pkce' as const, wrapFetch: () => fetch }
   const first = createGuguSupabaseClient(options)
   const authorization = await first.auth.signInWithOAuth({ provider: 'google', options: { redirectTo, skipBrowserRedirect: true } })
   expect(authorization.error).toBeNull()

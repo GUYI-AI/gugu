@@ -10,7 +10,7 @@ import '@/styles/tokens.css'
 
 let harness: ReturnType<typeof createReactHarness>
 let previousTheme: ReturnType<typeof readThemePreference> = 'light'
-afterEach(() => { dismissNotice('card-edge'); dismissNotice('first-install-card'); harness?.cleanup(); writeThemePreference(previousTheme) })
+afterEach(() => { dismissNotice('card-edge'); dismissNotice('first-install-card'); harness?.cleanup(); if (previousTheme) writeThemePreference(previousTheme) })
 
 it.each(['light', 'dark'] as const)('paints the real notice lower outline and safe-gap shadow in %s theme', async theme => {
   await page.viewport(1000, 700)
@@ -24,7 +24,7 @@ it.each(['light', 'dark'] as const)('paints the real notice lower outline and sa
       </div>
     </div>
   </>)
-  await act(async () => { notify({ key: 'card-edge', title: '群文件存储空间已满（1.00 GB / 1.00 GB），暂时无法上传新文件。', tier: 'warning', ongoing: true, action: { label: '管理文件', onClick() {} } }) })
+  await act(async () => { notify({ key: 'card-edge', title: '群文件存储空间已满（1.00 GB / 1.00 GB），暂时无法上传新文件。', tier: 'warning', duration: 60_000, action: { label: '管理文件', onClick() {} } }) })
   const card = () => document.querySelector<HTMLElement>('[data-sonner-toast]')!
   const composer = document.querySelector<HTMLElement>('[data-slot="composer"]')!
   await until('card settles at the approved 8px gap', () => !!card() && Math.abs(composer.getBoundingClientRect().top - card().getBoundingClientRect().bottom - 8) < 0.01)
@@ -50,31 +50,66 @@ it.each(['light', 'dark'] as const)('paints the real notice lower outline and sa
   expect(composer.getBoundingClientRect().top - box.bottom).toBeCloseTo(8, 2)
 })
 
-it('uses the approved first-install card geometry without mount or removal motion', async () => {
+it('persistent notices float as one deck at the top-right under the window-controls lane, page header clear, every dialog over it', async () => {
   await page.viewport(1000, 700)
   previousTheme = readThemePreference()
   harness = createReactHarness()
+  const pageClosed = vi.fn(), dialogClosed = vi.fn()
+  await harness.render(<><NoticeHost />
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+      <div style={{ flex: 1, position: 'relative' }}>
+        <header style={{ height: 40, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 12px' }}>
+          <button type="button" aria-label="Close page" onClick={pageClosed} style={{ width: 28, height: 28 }} />
+        </header>
+        <div data-slot="composer" style={{ position: 'absolute', left: 24, right: 24, bottom: 8, height: 110 }} />
+      </div>
+    </div>
+  </>)
+  await act(async () => {
+    notify({ key: 'first-install-card', title: '导入已有数据', description: '从 Claude Code、Codex 导入记忆、项目规则和工作习惯', ongoing: true, action: { label: '导入', onClick() {} } })
+    notify({ key: 'card-edge', title: '群文件存储空间快满了', tier: 'warning', ongoing: true, action: { label: '管理文件', onClick() {} } })
+  })
+  const cards = () => document.querySelectorAll<HTMLElement>('[data-testid="notice-deck"] .gugu-notice-card')
+  expect(cards()).toHaveLength(1)
+  expect(cards()[0]!.textContent).toContain('2/2')
+  expect(document.querySelector('[data-sonner-toast]')).toBeNull()
+  // Floating at the top-right, under the 40px window-controls lane: the page header and its close button stay clear.
+  const deck = document.querySelector<HTMLElement>('[data-testid="notice-deck"]')!.getBoundingClientRect()
+  const lane = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-actions-lane'))
+  expect(deck.top).toBeCloseTo(lane + 8, 0)
+  expect(innerWidth - deck.right).toBeCloseTo(16, 0)
+  const close = document.querySelector<HTMLButtonElement>('[aria-label="Close page"]')!.getBoundingClientRect()
+  expect(document.elementFromPoint(close.left + close.width / 2, close.top + close.height / 2)?.getAttribute('aria-label')).toBe('Close page')
+  // Paging shows the other one in the same place.
+  await clickElement(cards()[0]!.querySelector<HTMLButtonElement>('.gugu-notice-pager button')!)
+  expect(cards()[0]!.textContent).toContain('1/2')
+  // A settings-style dialog over the deck's very spot (#3501): the dialog's close button wins, by the layer order alone.
+  await harness.render(<><NoticeHost />
+    <div style={{ position: 'fixed', inset: 0 }} />
+    <div role="dialog" style={{ position: 'fixed', inset: '32px 0', zIndex: 'var(--z-settings)', background: 'var(--bg-primary)' }}>
+      <button type="button" aria-label="Close settings" onClick={dialogClosed} style={{ position: 'absolute', top: 30, right: 30, width: 32, height: 32 }} />
+    </div>
+  </>)
+  const settingsClose = document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.getBoundingClientRect()
+  expect(cards()).toHaveLength(1)
+  expect(document.elementFromPoint(settingsClose.left + settingsClose.width / 2, settingsClose.top + settingsClose.height / 2)?.getAttribute('aria-label')).toBe('Close settings')
+  await clickElement(document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!)
+  expect(dialogClosed).toHaveBeenCalledOnce()
+})
+
+it('「以后再说」 takes a card off the deck into the bell; the next one shows; the deck goes when none is left', async () => {
+  await page.viewport(1000, 700)
+  harness = createReactHarness()
   await harness.render(<NoticeHost />)
-  const closed = vi.fn()
-  await act(async () => { notify({ key: 'first-install-card', title: '咕咕 支持一键数据导入啦',
-    description: '快速带入你的记忆、项目规则和工作习惯', ongoing: true,
-    presentation: 'first-install-import', action: { label: '导入', onClick() {} }, onDismiss: closed }) })
-  const card = () => document.querySelector<HTMLElement>('.gugu-notice-first-install-import')!
-  await until('first-install card is mounted', () => Boolean(card()?.querySelector('[data-close-button]')))
-  const box = card().getBoundingClientRect()
-  expect(box.top).toBe(60)
-  expect(innerWidth - box.right).toBe(20)
-  expect(box.width).toBe(360)
-  expect(getComputedStyle(card()).padding).toBe('20px')
-  expect(getComputedStyle(card()).borderRadius).toBe('12px')
-  expect(getComputedStyle(card()).transform).toBe('none')
-  expect(getComputedStyle(card()).transitionDuration).toBe('0s')
-  const action = card().querySelector<HTMLElement>('[data-button]')!
-  expect(action.getBoundingClientRect().height).toBe(32)
-  expect(getComputedStyle(action).borderRadius).toBe('6px')
-  expect(card().querySelector('[data-icon]')).toBeNull()
-  const original = card()
-  await clickElement(card().querySelector<HTMLButtonElement>('[data-close-button]')!)
-  await expect.poll(() => closed.mock.calls.length).toBe(1)
-  expect(original.isConnected ? getComputedStyle(original).display : 'none').toBe('none')
+  await act(async () => {
+    notify({ key: 'first-install-card', title: '导入已有数据', ongoing: true, action: { label: '导入', onClick() {} } })
+    notify({ key: 'card-edge', title: '新版本已就绪', ongoing: true, action: { label: '重启更新', onClick() {} } })
+  })
+  const card = () => document.querySelector<HTMLElement>('[data-testid="notice-deck"] .gugu-notice-card')
+  expect(card()!.dataset.noticeKey).toBe('card-edge')
+  await clickElement(card()!.querySelector<HTMLButtonElement>('[data-notice-close]')!)
+  expect(card()!.dataset.noticeKey).toBe('first-install-card')
+  expect(card()!.textContent).not.toContain('/2')
+  await clickElement(card()!.querySelector<HTMLButtonElement>('[data-notice-close]')!)
+  expect(document.querySelector('[data-testid="notice-deck"]')).toBeNull()
 })

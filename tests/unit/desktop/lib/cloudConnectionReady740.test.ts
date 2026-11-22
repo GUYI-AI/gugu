@@ -2,16 +2,18 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 
 const f = vi.hoisted(() => ({ state: vi.fn(), wake: vi.fn() }))
-vi.mock('@/lib/cloudComputer', () => ({ rendererCloudComputerClient: () => f }))
-vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn() {}, debug() {}, info() {} }) }))
-const { wakeAndWaitOnline: ensureCloudConnectionReady, refreshCloudComputer, resetCloudComputerState } = await import('@/lib/cloudComputerStore')
+vi.mock('@/lib/cloudComputerClient', () => ({ rendererCloudComputerClient: () => f }))
+vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn() {}, debug() {}, info() {}, error() {} }) }))
+const { wakeAndWaitOnline: ensureCloudConnectionReady, readCloudSnapshotNow } = await import('@/lib/cloudComputer')
+const { publishRendererSession } = await import('@/lib/sessionPublication')
+const signIn = (id: string) => publishRendererSession('SIGNED_IN', { user: { id }, access_token: 't' } as never)
 const snap = (state: CloudComputerSnapshot['state']): CloudComputerSnapshot => ({ state, deviceId: 'cloud', since: null, error: null })
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  resetCloudComputerState()
+  signIn('owner')
   f.state.mockResolvedValue(snap('awake'))
-  await refreshCloudComputer()
+  await readCloudSnapshotNow()
 })
 afterEach(() => vi.useRealTimers())
 
@@ -28,8 +30,9 @@ it('re-reads the controller after attach failure and resumes despite stale awake
 })
 
 it('refuses an unrelated machine without sending a wake under this account', async () => {
+  const before = f.state.mock.calls.length
   await expect(ensureCloudConnectionReady('another-machine', { isOnline: async () => false })).rejects.toThrow('not this account')
-  expect(f.state).toHaveBeenCalledTimes(2) // Initial refresh and ownership check.
+  expect(f.state.mock.calls.length - before).toBe(1) // The ownership check.
   expect(f.wake).not.toHaveBeenCalled()
 })
 
@@ -49,7 +52,7 @@ it('account changes abort the old check before any wake under the next account',
   let answer!: (value: CloudComputerSnapshot) => void
   f.state.mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
   const old = ensureCloudConnectionReady('cloud', { isOnline: async () => true })
-  resetCloudComputerState()
+  signIn('someone-else')
   answer(snap('asleep'))
   await expect(old).rejects.toThrow()
   expect(f.wake).not.toHaveBeenCalled()

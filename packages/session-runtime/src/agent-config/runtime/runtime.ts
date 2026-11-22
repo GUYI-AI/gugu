@@ -76,7 +76,6 @@ export class AgentConfigRuntime {
 
   refreshAgents(input: {
     providerId?: string;
-    refreshShellEnv?: boolean;
   }): Promise<Result<void, AgentConfigRefreshError>> {
     return this.install.refresh(input);
   }

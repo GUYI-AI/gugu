@@ -19,6 +19,8 @@ const cliLoginMethodSchema = z.object({
    * `args`(那会在浏览器里停在一个连不上的 localhost 页)。每一条都要有厂商文档出处。
    */
   headlessArgs: z.array(z.string()).optional(),
+  /** 只加在登录进程上的环境变量(两种 `args` 都带)。 */
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 const apiKeyEnvVarSchema = z.object({

@@ -1,5 +1,6 @@
 import { readdir, rm, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
+import { cleanupOrphanedFileSinks } from '../../../packages/core/src/local/files/fileSnapshots.ts'
 
 export const REMOTE_FILE_TTL_MS = 60 * 60 * 1000
 
@@ -32,7 +33,9 @@ export async function cleanupStaleRemoteFileDirectories(
   tempRoot: string,
   now = Date.now(),
   ttlMs = REMOTE_FILE_TTL_MS,
+  startedAt = performance.timeOrigin,
 ): Promise<void> {
+  await cleanupOrphanedFileSinks(tempRoot, startedAt)
   const entries = await readdir(tempRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return []
     throw error

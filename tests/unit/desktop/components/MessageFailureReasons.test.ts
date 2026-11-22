@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MessageBubble } from '../../../../apps/desktop/src/components/chat/MessageBubble'
 import { clickElement, createNode, createReactHarness, message, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 const download = vi.hoisted(() => vi.fn())
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', async (original) => ({ ...(await original<object>()), downloadAttachment: download }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', async (original) => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ ...(await original<object>()), downloadAttachment: download })))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
