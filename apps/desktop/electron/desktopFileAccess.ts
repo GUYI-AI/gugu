@@ -2,7 +2,7 @@ import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
 import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
-import { attachmentRequest, configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { attachmentRequest, configuredEndpoint, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
@@ -15,7 +15,6 @@ import { createProjectTransferHost } from './projectFileTransferHost'
 import { findProjectFileByName, heldRevisionBySha, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
-import { offerNativeImagePreview } from './imagePreview'
 import type { makeIdentityClient } from './supabase'
 
 /** One composition root for native IPC, Apps, MCP and inbox. Identity lookup here never registers or refreshes. */
@@ -96,7 +95,7 @@ export function createDesktopFileAccess(deps: {
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
   const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
-    preview: async (original, contentType, sha256) => offerNativeImagePreview(await endpoint(), original, contentType, sha256, (await identity()).accountId),
+    preview: async (original, contentType, sha256) => offerImagePreviewOf(await endpoint(), original, contentType, sha256, (await identity()).accountId),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     // The account's projects are its project groups (chat.project_groups), with or without a folder on any machine.
     async projectChat(chatId) {

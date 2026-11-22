@@ -3,7 +3,7 @@ import { commitPreparedChatAttachment, prepareChatAttachment } from '../../../..
 import { i18n } from '../../../../apps/desktop/src/i18n'
 const f = vi.hoisted(() => ({ plan: vi.fn(), commit: vi.fn(), begin: vi.fn(), keep: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => 'published-test-token', observeRendererSession: () => () => {} }))
-vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ planAttachmentUpload: f.plan, commitAttachment: f.commit,
+vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ drawImagePreviews: () => {}, planAttachmentUpload: f.plan, commitAttachment: f.commit,
   declareAttachment: async (endpoint: unknown, file: { bytes: Blob; contentType: string }, scope: unknown, signal?: AbortSignal) => {
     const plan = await f.plan(endpoint, { size: file.bytes.size, contentType: file.contentType }, scope, signal)
     return { staging_key: plan.staging_key, sha256: 'sha', size_bytes: file.bytes.size, plan }
