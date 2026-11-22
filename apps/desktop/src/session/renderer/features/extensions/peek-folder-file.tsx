@@ -11,6 +11,7 @@ import { ExtensionTabPane } from './extension-tab-pane';
 import { pickSessionOpener, type SessionOpener } from './open-with';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { messageForUser } from '@/lib/userFacingError';
+import { log } from '@renderer/utils/logger';
 
 type FolderPeek = Extract<PeekTarget, { kind: 'folder' }>;
 
@@ -87,6 +88,12 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
     if (!project) return undefined;
     let disposed = false;
     let acquired = false;
+    // Let go of it when the file is no longer shown. Nothing on screen is left to say a failure on: it goes to the log.
+    const release = () =>
+      void rpc.projects.releaseProjectWorkspace(project, workspaceId).then(
+        (result) => !result.success && log.warn('[peek] the folder was not let go', { project, workspaceId, error: result.error }),
+        (error: unknown) => log.warn('[peek] the folder was not let go', { project, workspaceId, error: String(error) }),
+      );
     void (async () => {
       const opened = await rpc.projects.openProject(project);
       const result = opened.success ? await rpc.projects.acquireProjectWorkspace(project, workspaceId) : opened;
@@ -95,12 +102,15 @@ function useHeldWorkspace(target: FolderPeek): 'ready' | string | null {
         return;
       }
       acquired = true;
-      if (disposed) void rpc.projects.releaseProjectWorkspace(project, workspaceId);
+      if (disposed) release();
       else setHeld('ready');
-    })();
+    })().catch((error: unknown) => {
+      // The file's own place says why it is not shown (that machine did not answer, …), as a failed read says it.
+      if (!disposed) setHeld(messageForUser(error));
+    });
     return () => {
       disposed = true;
-      if (acquired) void rpc.projects.releaseProjectWorkspace(project, workspaceId);
+      if (acquired) release();
     };
   }, [project, workspaceId]);
   return held;

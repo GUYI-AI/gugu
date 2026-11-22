@@ -91,9 +91,16 @@ async function invokeOn(deviceId: string, channel: string, args: unknown[]): Pro
   return receiveFrom(deviceId, result);
 }
 
+// 一次调用的失败(含选线失败:参数指向两台机器)是这次调用的 rejection,❌ 在调用点同步抛出 —— 调用点照 Promise 接,
+// 同步抛出会穿过 `void rpc.x()`、穿出 React 的 effect 清理,把整页带进错误边界。成功的调用原样返回那个 Promise(❌ 包一层 async:
+// 多出的微任务会改变调用点之间的先后)。
 export const rpc = createRPCClient<RpcRouter>((channel, ...args) => {
-  const deviceId = machineRegistry.route(channel, args);
-  return deviceId ? invokeOn(deviceId, channel, args) : electronAPI.invoke(channel, ...args);
+  try {
+    const deviceId = machineRegistry.route(channel, args);
+    return deviceId ? invokeOn(deviceId, channel, args) : electronAPI.invoke(channel, ...args);
+  } catch (error) {
+    return Promise.reject(error);
+  }
 });
 
 /**
