@@ -37,3 +37,16 @@ it('keeps sparse unread seq 6 and 7 when the visible window only reaches seq 5',
     unread_locator: { message_id: 'unread-6', message_seq: 6, unread_count: 2, addressed_count: 1 } })
   expect(reads.write).toHaveBeenCalledWith({ kind: 'main', chatId: fetched.id, seq: 5 })
 })
+
+it('takes the server tuple once it holds the local read, though merged writes left its version behind the local count', () => {
+  // Three seen rows advanced the topic locally (version 7 → 10); the read outbox sent them as two writes (server 9).
+  const locator = { stream_id: 'main:topic-at', stream_kind: 'main' as const, thread_root_id: null, message_id: 'at-6', message_seq: 6, unread_count: 4, addressed_count: 1, cursor_seq: 5, version: 7, is_marked_unread: false }
+  const current = chat({ id: 'topic-at', kind: 'topic', last_read_seq: 9, next_message_seq: 12, read_state_version: 10, unread_count: 4, is_marked_unread: false, unread_locator: locator })
+  const fetched = { ...current, read_state_version: 9, unread_count: 2,
+    unread_locator: { ...locator, message_id: 'm10', message_seq: 10, unread_count: 2, addressed_count: 0, cursor_seq: 9, version: 9 } }
+  const [merged] = mergeFetchedChatsPreservingActiveLocal([fetched], [current], current.id)
+  expect(merged).toMatchObject({ last_read_seq: 9, read_state_version: 9, unread_count: 2, unread_locator: { addressed_count: 0, message_seq: 10 } })
+  // A response from before the local read still loses: its cursor is behind.
+  const [stale] = mergeFetchedChatsPreservingActiveLocal([{ ...fetched, last_read_seq: 5 }], [current], current.id)
+  expect(stale).toMatchObject({ last_read_seq: 9, read_state_version: 10, unread_locator: { addressed_count: 1 } })
+})
