@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { textFilePatch } from '@gugu/session-core/lib';
-import { fileChangeSummary, isListedInSummary } from './file-change-summary';
+import { fileChangeSummary, isListedInSummary, sessionFileChanges } from './file-change-summary';
 import type { ChatDiff, ChatItem } from '../model';
 const turn = (items: ChatItem[]) => ({ items });
 const diff = (id: string, path: string, before: string | null, after: string): ChatDiff =>
@@ -53,5 +53,17 @@ describe('is this file already on the Edited card', () => {
     expect(isListedInSummary(summary('/r/b/notes.md'), '/r/a/notes.md')).toBe(false);
     expect(isListedInSummary(summary('notes.md'), '/r/my-notes.md')).toBe(false);
     expect(isListedInSummary(null, '/r/a/notes.md')).toBe(false);
+  });
+});
+
+describe('a session\'s edited files', () => {
+  it('folds every turn\'s card per file, most recently edited first, under the latest turn', () => {
+    const a1 = diff('a1', '/r/a.txt', null, 'one');
+    const b = diff('b', '/r/b.txt', null, 'b');
+    const a2 = diff('a2', '/r/a.txt', 'one', 'two');
+    const files = sessionFileChanges([{ id: 't1', items: [a1, b] }, { id: 't2', items: [a2] }, { id: 't3', items: [] }]);
+    expect(files.map(file => [file.path, file.turnId])).toEqual([['/r/a.txt', 't2'], ['/r/b.txt', 't1']]);
+    expect(files[0]!.patches).toEqual([a1.patches[0], a2.patches[0]]);
+    expect(files[0]).toMatchObject({ adds: 2, dels: 1 });
   });
 });

@@ -146,6 +146,7 @@ export type {
  */
 export { collectSubagentRoster } from './lib/subagent-roster';
 export { formatElapsed } from './lib/format-elapsed';
+export { sessionFileChanges, type SessionFileChange } from './state/file-change-summary';
 export type { SubagentRosterEntry } from './lib/subagent-roster';
 
 /**
