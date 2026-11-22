@@ -368,7 +368,7 @@ export function AddFriendSearch({
     )
   } else {
     body = (
-      <div className={cn('flex flex-col transition-opacity duration-[var(--dur-fast)]', found.stale && 'opacity-60')}>
+      <div className={cn('flex flex-col transition-opacity duration-[var(--dur-fast)]', found.state === 'value' && found.stale && 'opacity-60')}>
         {people.length > 0 ? <><SectionLabel className="!mt-3">{t('panel.contactSectionTitle')} · {people.length}</SectionLabel>{people.map(rowFor)}</> : null}
         {agents.length > 0 ? <><SectionLabel className="!mt-3">{t('panel.agentSectionTitle')} · {agents.length}</SectionLabel>{agents.map(rowFor)}</> : null}
         {justSentId ? (

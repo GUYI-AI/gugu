@@ -15,22 +15,39 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
 afterEach(() => { harness.cleanup(); vi.restoreAllMocks() })
 
-const noResults = () => i18n.t('friendSearch.noResults', { ns: 'contacts' })
+const noResults = (query: string) => i18n.t('friendSearch.noResultsFor', { ns: 'contacts', query })
 const input = () => harness.container.querySelector('input') as HTMLInputElement
 const submit = () => act(async () => { input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
 const rowTitles = () => [...harness.container.querySelectorAll('.gg-row .gg-list-row-title')].map((row) => row.textContent)
 
 // The user search is a reading of the submitted query (lib/contactsReplicas.ts userSearch), ❌ the contacts store's state.
 describe('AddFriendSearch reads the submitted search', () => {
-  it('says nothing about a query that was only typed', async () => {
+  it('searches what was typed once typing pauses, never below the minimum', async () => {
     const search = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
     await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
+    await typeInto(input(), 's')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)) })
+    expect(search).not.toHaveBeenCalled()
+    expect(harness.container.textContent).not.toContain(noResults('s'))
     await typeInto(input(), 'someone')
     expect(search).not.toHaveBeenCalled()
-    expect(harness.container.textContent).not.toContain(noResults())
-    await submit()
-    await waitForCondition(() => harness.container.textContent?.includes(noResults()) ?? false, 'no empty answer')
+    await waitForCondition(() => harness.container.textContent?.includes(noResults('someone')) ?? false, 'no empty answer after the pause')
+    expect(search).toHaveBeenCalledTimes(1)
     expect(search).toHaveBeenCalledWith('someone', 'user-1')
+  })
+
+  it('takes one Han character as a query, and waits for an input method to finish', async () => {
+    const search = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
+    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
+    await act(async () => { input().dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })) })
+    await typeInto(input(), 'zhang')
+    await act(async () => { input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true })) })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)) })
+    expect(search).not.toHaveBeenCalled()
+    await typeInto(input(), '张')
+    await act(async () => { input().dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '张' })) })
+    await waitForCondition(() => search.mock.calls.length > 0, 'the composed text was not searched')
+    expect(search.mock.calls.map((call) => call[0])).toEqual(['张'])
   })
 
   it('says a failed search where the hits go, and Retry reads again', async () => {
@@ -44,7 +61,7 @@ describe('AddFriendSearch reads the submitted search', () => {
     await waitForCondition(() => harness.container.querySelector('[data-testid="friend-search-failed"]') !== null, 'failure not said')
     const failed = harness.container.querySelector('[data-testid="friend-search-failed"]')!
     expect(failed.textContent).toContain('network down')
-    expect(harness.container.textContent).not.toContain(noResults())
+    expect(harness.container.textContent).not.toContain(noResults('bob'))
     await clickElement(failed.querySelector('button')!)
     await waitForCondition(() => rowTitles().includes('Bob'), 'retry did not read again')
     expect(search).toHaveBeenCalledTimes(2)
@@ -58,7 +75,7 @@ describe('AddFriendSearch reads the submitted search', () => {
     await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
     await typeInto(input(), 'carol')
     await submit()
-    await waitForCondition(() => harness.container.textContent?.includes(noResults()) ?? false, 'no empty answer')
+    await waitForCondition(() => harness.container.textContent?.includes(noResults('carol')) ?? false, 'no empty answer')
     await submit()
     await waitForCondition(() => rowTitles().includes('Carol'), 'the same query was not read again')
     expect(search).toHaveBeenCalledTimes(2)

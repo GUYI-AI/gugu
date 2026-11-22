@@ -37,7 +37,7 @@ describe('empty contact search referral suggestion', () => {
 
     expect(searchUsers).toHaveBeenCalledWith('missing-person@example.test', 'user-1')
     await waitForCondition(() => harness.container.querySelector('[data-testid="referral-preview-search"]') !== null, 'no invitation')
-    const emptyText = i18n.t('friendSearch.noResults', { ns: 'contacts' })
+    const emptyText = i18n.t('friendSearch.noResultsFor', { ns: 'contacts', query: 'missing-person@example.test' })
     const empty = [...harness.container.querySelectorAll('div')].find(element => element.textContent === emptyText)
     const invitation = harness.container.querySelector('[data-testid="referral-preview-search"]')
     expect(empty).toBeDefined()
