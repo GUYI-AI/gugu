@@ -71,13 +71,30 @@ export const fileStoreDirectory = (guguHome: string) => join(guguHome, 'file-sto
 const STORED_FILE_MODE = 0o444
 const storeLog = coreLogger('file-store')
 
+// @@@file-sinks - a read in flight is staged in a private `read-*` directory under the temp root, owned by the one process
+// that made it and removed when its read is let go. A process killed outright cannot let go: a sink older than the running
+// process is such a leftover, which startup removes whatever its age (published `open-*` files keep their own lifetime).
+const FILE_SINK_PREFIX = 'read-'
+
+/** Removes the sinks of processes that are gone: every sink made before `startedAt`, this process's start. */
+export async function cleanupOrphanedFileSinks(tempRoot: string, startedAt: number): Promise<void> {
+  const entries = await readdir(tempRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return []
+    throw error
+  })
+  await Promise.all(entries.filter(entry => entry.isDirectory() && entry.name.startsWith(FILE_SINK_PREFIX)).map(async entry => {
+    const directory = join(tempRoot, entry.name)
+    if ((await stat(directory)).mtimeMs < startedAt) await cleanupRemoteFileDirectory(directory)
+  }))
+}
+
 /** A private bounded staging file. Only a committed, read-only snapshot can leave this sink. */
 export async function createFileSink(tempRoot: string, size: number, destination?: string): Promise<FileSink & { blob(): Promise<Blob>; path(): string }> {
   requireFileRange(size, 0, 0)
   await requireAgentFileAccess(tempRoot)
   if (destination) await requireAgentFileAccess(destination)
   await mkdir(tempRoot, { recursive: true, mode: 0o700 })
-  const directory = destination ? dirname(destination) : await mkdtemp(join(tempRoot, 'open-'))
+  const directory = destination ? dirname(destination) : await mkdtemp(join(tempRoot, FILE_SINK_PREFIX))
   await requireAgentFileTreeAccess(directory)
   await chmod(directory, 0o700)
   const partial = destination ? `${destination}.${randomUUID()}.part` : join(directory, 'data.part'), path = destination ?? join(directory, 'data')
