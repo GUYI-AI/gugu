@@ -179,7 +179,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
     <div className="flex max-h-[min(600px,80vh)] flex-col overflow-hidden max-sm:h-full max-sm:max-h-none" data-testid="global-search">
       {/* The phone page: the field is a filled capsule, roomier than the desktop modal's bare row. */}
       <div className="flex h-12 shrink-0 items-center gap-2 px-4 max-sm:h-16 max-sm:gap-3">
-        <div className="flex h-full min-w-0 flex-1 items-center gap-2 max-sm:h-11 max-sm:rounded-full max-sm:bg-foreground/[0.06] max-sm:px-3.5">
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 max-sm:h-11 max-sm:rounded-full max-sm:bg-foreground/[0.06] max-sm:px-4">
         <Search className="h-4 w-4 shrink-0 text-foreground/40 max-sm:h-5 max-sm:w-5" />
         {chips.map((chip, index) => (
           <span key={`${chip.kind}:${index}`} className="flex h-6 min-w-0 max-w-40 items-center gap-1 rounded-md bg-foreground/[0.06] pl-2 pr-1 text-xs text-foreground/75">
