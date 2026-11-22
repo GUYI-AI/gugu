@@ -14,9 +14,10 @@ vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
 vi.mock('@renderer/lib/components/app-icon', () => ({ AppIcon: () => null }));
 vi.mock('@/components/firstRun/first-run-install-context', () => ({ useFirstRunInstaller: () => f.queue }));
 vi.mock('@/lib/firstRun', () => ({ writeFirstRunHarness: f.remember }));
-vi.mock('@/components/firstRun/local-copy', async () => {
+// The shared installation status the agent store and Settings read; here a device entry over `f.local`.
+vi.mock('@renderer/lib/stores/agent-replicas', async () => {
   const { replica } = await import('@/lib/replica');
-  return { localCopy: replica({ name: 'testFirstRunLocalCopy', scope: 'device', read: (_device: string, id: string) => f.local(id) }) };
+  return { agentInstallationStatus: replica({ name: 'testAgentInstallationStatus', scope: 'device', read: (_device: string, _machine: null) => f.local() }) };
 });
 
 let host: HTMLDivElement; let root: Root;
@@ -26,7 +27,7 @@ const choice = (id: string) => host.querySelector<HTMLInputElement>(`[data-testi
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   f.queue.mockReset(); f.remember.mockReset().mockResolvedValue(undefined); f.save.mockReset().mockResolvedValue(undefined); f.done.mockReset();
-  f.local.mockReset().mockResolvedValue({ kind: 'missing' });
+  f.local.mockReset().mockResolvedValue([]);
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); queryClient.clear(); });
@@ -58,7 +59,10 @@ describe('first-run agent selection (#7582)', () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('offline');
   });
   it('says on each tile what this computer has', async () => {
-    f.local.mockImplementation(async (id: string) => id === 'codex' ? { kind: 'usable', version: '0.160.0' } : { kind: 'broken' });
+    f.local.mockResolvedValue([
+      { id: 'codex', reading: 'installed', version: '0.160.0', versionSupported: true },
+      { id: 'claude', reading: 'detected-but-broken', version: null, versionSupported: null },
+    ]);
     await render();
     const line = (id: string) => host.querySelector(`[data-testid="first-run-harness-${id}-local"]`)?.textContent
     await until('both tiles read this computer', () => Boolean(line('codex') && line('claude')));
