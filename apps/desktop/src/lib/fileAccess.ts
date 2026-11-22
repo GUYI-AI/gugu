@@ -84,8 +84,9 @@ const servedBytes = (context: FileContext, file: ServedFile): FileBytes => ({
   async dispose() { await native('dispose', context, { id: file.id }) },
 })
 // On the desktop no cloud object is fetched here: every one is read through main (`cloudObjectUrl`), a `<video>`'s too.
+// That address is main's own, not the network: the page reads it with its fetch, and main's egress goes out.
 const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size),
-  ...(globalThis.window?.electronAPI ? { objectUrl: cloudObjectUrl } : {}),
+  ...(globalThis.window?.electronAPI ? { objectUrl: cloudObjectUrl, fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init) } : {}),
   imageCache: { match: async request => (await attachmentCache()).match(request), put: async (request, response) => putAttachment(request, await response.blob()) },
 })
 export const resolveFile = createFileResolver({ ...cloud,

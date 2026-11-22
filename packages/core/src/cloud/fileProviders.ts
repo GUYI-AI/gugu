@@ -161,7 +161,8 @@ export function cloudFileProviders(deps: {
   cache: FileChunkCache; fetch?: typeof globalThis.fetch
   /**
    * Where this platform reads a signed object address from, when not from the address itself: the desktop renderer
-   * reads every object through main (`cloudObjectUrl`), for its bytes and for a `<video>`'s source alike.
+   * reads every object through main (`cloudObjectUrl`), for its bytes and for a `<video>`'s source alike. The mapped
+   * address is read with `fetch`, which such a platform gives too (main's address is not the network's).
    */
   objectUrl?(signed: string): string
   downloadSession?: FileDownloadSession
