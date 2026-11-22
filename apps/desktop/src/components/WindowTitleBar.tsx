@@ -121,7 +121,7 @@ export function WindowTitleBar({ desktopWindow: dw, controls, navigation, active
           <MenuSeparator />
           <MenuItem onClick={() => onOpenSettings('account')}>{t('shell.titlebar.items.settings')}</MenuItem>
           <MenuSeparator />
-          <MenuItem onClick={() => dw.close()}>{t('shell.titlebar.items.exit')}</MenuItem>
+          <MenuItem onClick={() => dw.quit()}>{t('shell.titlebar.items.exit')}</MenuItem>
         </TitlebarMenu>
 
         <TitlebarMenu label={t('shell.titlebar.menus.edit')} restoreFocusRef={restoreFocusRef} onClosed={flushWindowCommand}>
