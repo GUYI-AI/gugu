@@ -19,9 +19,12 @@ const legacyEndpoints: Record<string, { protocol: ModelProtocol; baseUrl?: strin
   antigravity: { protocol: 'gemini-generate-content' },
 };
 
-/** An old ACP adapter could report “provider/model” whereas the connection stored the upstream ID. */
-function legacyModelId(model: string | undefined, listed: readonly string[]): string | undefined {
-  if (!model) return listed[0];
+/**
+ * An old ACP adapter could report “provider/model” whereas the connection stored the upstream ID.
+ * The harness's own default (Claude's `default`) names no upstream model: it is the same choice as none.
+ */
+function legacyModelId(model: string | undefined, listed: readonly string[], harnessDefault: string | undefined): string | undefined {
+  if (!model || (model === harnessDefault && !listed.includes(model))) return listed[0];
   if (listed.includes(model)) return model;
   const slash = model.indexOf('/');
   const name = slash < 0 ? undefined : model.slice(slash + 1);
@@ -29,17 +32,27 @@ function legacyModelId(model: string | undefined, listed: readonly string[]): st
 }
 
 /** Atomic metadata-only migration: no secret is decrypted, copied or deleted. */
-export function migrateCustomModels(database: AppDb, vendorKeyProviders: ReadonlySet<string>): void {
+export function migrateCustomModels(database: AppDb, vendorKeyProviders: ReadonlySet<string>, harnessDefaults: ReadonlyMap<string, string>): void {
   database.transaction((tx) => {
     const customRows = tx.select().from(providerAccounts).where(eq(providerAccounts.providerId, 'models:custom')).all();
     const byRef = new Map(customRows.map((row) => [row.credentialRef, row.accountId]));
-    const legacyRows = tx.select().from(providerAccounts).where(like(providerAccounts.providerId, 'harness:%')).all().filter((row) => {
-      const old = row.meta?.harnessConnection;
-      if (old?.kind !== 'api-key') return false;
+    const apiKeyRows = tx.select().from(providerAccounts).where(like(providerAccounts.providerId, 'harness:%')).all()
+      .filter((row) => row.meta?.harnessConnection?.kind === 'api-key');
+    const legacyRows = apiKeyRows.filter((row) => {
+      const old = row.meta!.harnessConnection!;
       if (vendorKeyProviders.has(row.providerId.slice('harness:'.length))) return row.meta?.credentialSource !== 'vendor-key';
       return !old.migratedTo || old.migratedTo !== byRef.get(row.credentialRef);
     });
-    if (legacyRows.length === 0) return;
+    // @@@misread-default - 0.3.8 stored the harness default as a model of the migrated connection (`custom:<id>:default`).
+    // Point exactly those values at what this migration now writes; every other value is the person's choice.
+    const misread = new Map(apiKeyRows.flatMap((row) => {
+      const id = row.meta!.harnessConnection!.migratedTo;
+      const harnessDefault = harnessDefaults.get(row.providerId.slice('harness:'.length));
+      const listed = customRows.find((custom) => custom.accountId === id)?.meta?.customModel?.models.map((model) => model.id);
+      if (!id || !harnessDefault || !listed || listed.includes(harnessDefault)) return [];
+      return [[customModelOptionId({ connectionId: id, modelId: harnessDefault }), customModelOptionId({ connectionId: id, modelId: listed[0] })] as const];
+    }));
+    if (legacyRows.length === 0 && misread.size === 0) return;
     const platformRows = new Map(tx.select().from(kv).where(like(kv.key, 'sessionpage-platform-model:%')).all().map((row) => [row.key.slice('sessionpage-platform-model:'.length), JSON.parse(row.value) as { platformModel?: unknown }]));
     const automationRows = tx.select().from(automations).all();
     const sessionRows = tx.select().from(sessions).all();
@@ -47,6 +60,7 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
       const old = row.meta?.harnessConnection;
       if (old?.kind !== 'api-key') continue;
       const providerId = row.providerId.slice('harness:'.length);
+      const harnessDefault = harnessDefaults.get(providerId);
       if (vendorKeyProviders.has(providerId)) {
         if (row.meta?.credentialSource !== 'vendor-key') {
           tx.update(providerAccounts).set({ meta: { ...row.meta!, credentialSource: 'vendor-key' } })
@@ -86,7 +100,7 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
         if (session.provider !== providerId || !session.config || customModelRefFromOption(session.config.model)) continue;
         if (session.config.subscriptionConnectionId !== row.accountId && !(row.isDefault && !session.config.subscriptionConnectionId)) continue;
         if (platformRows.get(session.id)?.platformModel) continue;
-        const modelId = legacyModelId(session.config.model, listed);
+        const modelId = legacyModelId(session.config.model, listed, harnessDefault);
         tx.update(sessions).set({
           config: { ...session.config, model: customModelOptionId({ connectionId: id, modelId }) },
         }).where(eq(sessions.id, session.id)).run();
@@ -97,7 +111,7 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
         for (const automation of automationRows) {
           const config = automation.agentConfig;
           if (!config || config.provider !== providerId || config.platformModel || customModelRefFromOption(config.model)) continue;
-          const model = customModelOptionId({ connectionId: id, modelId: legacyModelId(config.model, listed) });
+          const model = customModelOptionId({ connectionId: id, modelId: legacyModelId(config.model, listed, harnessDefault) });
           tx.update(automations).set({ agentConfig: { ...config, model, platformModel: null } }).where(eq(automations.id, automation.id)).run();
         }
         const memory = tx.select().from(appSettings).where(eq(appSettings.key, 'newSessionMemory')).get();
@@ -105,11 +119,24 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
           const value = JSON.parse(memory.value);
           const last = value.lastStarted;
           if (last?.provider === providerId && !last.platformModel && !customModelRefFromOption(last.model)) {
-            value.lastStarted.model = customModelOptionId({ connectionId: id, modelId: legacyModelId(last.model, listed) });
+            value.lastStarted.model = customModelOptionId({ connectionId: id, modelId: legacyModelId(last.model, listed, harnessDefault) });
             tx.update(appSettings).set({ value: JSON.stringify(value) }).where(eq(appSettings.key, memory.key)).run();
           }
         }
       }
     }
+    if (misread.size === 0) return;
+    for (const session of tx.select().from(sessions).all()) {
+      const model = misread.get(session.config?.model ?? '');
+      if (model) tx.update(sessions).set({ config: { ...session.config!, model } }).where(eq(sessions.id, session.id)).run();
+    }
+    for (const automation of tx.select().from(automations).all()) {
+      const model = misread.get(automation.agentConfig?.model ?? '');
+      if (model) tx.update(automations).set({ agentConfig: { ...automation.agentConfig!, model } }).where(eq(automations.id, automation.id)).run();
+    }
+    const memory = tx.select().from(appSettings).where(eq(appSettings.key, 'newSessionMemory')).get();
+    const value = memory && JSON.parse(memory.value);
+    const model = misread.get(value?.lastStarted?.model ?? '');
+    if (model) tx.update(appSettings).set({ value: JSON.stringify({ ...value, lastStarted: { ...value.lastStarted, model } }) }).where(eq(appSettings.key, 'newSessionMemory')).run();
   });
 }
