@@ -1,4 +1,4 @@
-import { QueryClient, focusManager, hashKey, keepPreviousData, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
+import { QueryClient, QueryObserver, focusManager, hashKey, keepPreviousData, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
 import { useMemo, useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
 import { recordSnapshotRefusal } from './perfCounters'
@@ -538,7 +538,7 @@ export type Replica<A extends unknown[], V> = {
   isShown(...args: A): boolean
   /** Drop what is shown for these arguments (unknown again) and read again where it is shown; never throws. */
   reset(...args: A): Promise<void>
-  /** Keep this entry's `watch` feed running as a surface would, for a reader that peeks without showing. Returns the release. */
+  /** Observe this entry as a surface would (read, kept current by refresh, its `watch` feed running), for a reader that peeks without showing. Returns the release. */
   hold(...args: A): () => void
   /** @internal */ options(key: QueryKey): object
 }
@@ -677,12 +677,15 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const k = key(...args)
       return !!k && (queryClient.getQueryCache().find({ queryKey: k, exact: true })?.getObserversCount() ?? 0) > 0
     },
+    // A holder is an observer of the entry, as a surface is: read when missing or stale, read again on every refresh, and
+    // its feed followed (followWatch). ❌ A feed without the observer: refresh reads only observed entries, so a held entry
+    // would keep its first answer while its feed fired.
     hold: (...args) => {
       const k = key(...args)
-      if (!k || !definition.watch) return () => undefined
-      const id = holdFeed(definition.name, k[1] as string, args)
+      if (!k) return () => undefined
+      const stop = new QueryObserver(queryClient, options(k)).subscribe(() => undefined)
       let held = true
-      return () => { if (held) { held = false; releaseFeed(id) } }
+      return () => { if (held) { held = false; stop() } }
     },
     reset: async (...args) => {
       const k = key(...args)
