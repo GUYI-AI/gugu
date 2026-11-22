@@ -26,6 +26,23 @@ export const fileSha256 = {
   },
 }
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+/**
+ * A browser digests natively only in one go: a Blob up to this size is read whole and hashed by WebCrypto (10 MB: ~5 ms,
+ * against ~220 ms in noble), so a kept copy checked before it is shown costs nothing visible. A larger one streams through
+ * noble, never held whole in memory.
+ */
+export const ONE_SHOT_DIGEST_BYTES = 64 * 1024 ** 2
+/** A whole Blob's sha256 (hex), the fastest way this runtime has (@@@native-file-sha256). */
+export async function blobSha256(blob: Blob): Promise<string> {
+  const subtle = globalThis.crypto?.subtle
+  if (!nodeCrypto && subtle && blob.size <= ONE_SHOT_DIGEST_BYTES) return hex(new Uint8Array(await subtle.digest('SHA-256', await blob.arrayBuffer())))
+  const hash = fileSha256.create()
+  try {
+    const reader = blob.stream().getReader()
+    for (;;) { const chunk = await reader.read(); if (chunk.done) break; hash.update(chunk.value) }
+    return hex(hash.digest())
+  } finally { hash.destroy() }
+}
 const loadSodium = async () => {
   const { default: sodium } = await import('libsodium-wrappers')
   await sodium.ready

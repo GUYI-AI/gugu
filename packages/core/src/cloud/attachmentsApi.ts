@@ -13,7 +13,7 @@ import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } f
 import { serverNow } from '../shared/serverClock'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
-import { fileSha256 } from '../shared/fileCipher'
+import { blobSha256, fileSha256 } from '../shared/fileCipher'
 
 export type AttachmentByteProgress = { loaded: number; total?: number }
 export type AttachmentUploadTransport = (url: string, init: {
@@ -391,13 +391,10 @@ async function sendAttachmentPlan(endpoint: AttachmentsEndpoint, form: Attachmen
 
 /** The SHA-256 (hex) an upload claims for its file, read in chunks (natively where the host has node:crypto). */
 export async function attachmentSha256(bytes: Uint8Array | Blob): Promise<string> {
+  if (!(bytes instanceof Uint8Array)) return blobSha256(bytes)
   const hash = fileSha256.create()
   try {
-    if (bytes instanceof Uint8Array) hash.update(bytes)
-    else {
-      const reader = bytes.stream().getReader()
-      for (;;) { const chunk = await reader.read(); if (chunk.done) break; hash.update(chunk.value) }
-    }
+    hash.update(bytes)
     return Array.from(hash.digest(), byte => byte.toString(16).padStart(2, '0')).join('')
   } finally { hash.destroy() }
 }
