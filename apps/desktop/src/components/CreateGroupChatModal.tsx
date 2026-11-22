@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useMobileShell } from '../hooks/useMobileShell'
 import { useChatStore } from '../store/chatContext'
 import { useContactsStore } from '../store/contactsContext'
 import { useToast } from './toastContext'
@@ -22,6 +23,7 @@ export function CreateGroupChatForm({ onClose, onCreated, initialName, initialSe
   const { contacts } = useContactsStore()
   const { createGroupChat } = useChatStore('createGroupChat')
   const { toast } = useToast()
+  const mobile = useMobileShell()
   const [creating, setCreating] = useState(false)
   const [typedName, setTypedName] = useState('')
 
@@ -47,7 +49,7 @@ export function CreateGroupChatForm({ onClose, onCreated, initialName, initialSe
       initialSelectedIds={initialSelectedIds}
       underlineMobileSources
       actions={<Field.Input value={typedName} onChange={(event) => setTypedName(event.target.value)} disabled={creating}
-        aria-label={t('createGroup.nameLabel')} placeholder={t('createGroup.namePlaceholder')} className="w-64 max-w-full" data-testid="create-group-name" />}
+        aria-label={t('createGroup.nameLabel')} placeholder={t('createGroup.namePlaceholder')} className={mobile ? undefined : 'w-64 max-w-full'} data-testid="create-group-name" />}
       onConfirm={create}
       onClose={onClose}
     />
