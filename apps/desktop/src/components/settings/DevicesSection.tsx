@@ -254,12 +254,10 @@ export function DevicesSection({
         <div className={cn(DEVICE_LIST_CLASS, visibleActive.length === 0 && 'hidden')} role="list">
           {visibleActive.map(renderRow)}
         </div>
-        {/* Adding a machine is the group's last row; where this host cannot add one, the row still says what it brings. */}
+        {/* Adding a machine is the group's last row, and the row itself is the action; where this host cannot add one, the row still says what it brings. */}
         {!addingServer && (canAddServer || !showTools) && (
-          <SettingsRow leading={<Plus size={18} />} data-testid="settings-devices-empty"
-            title={t('devices.addServer.open')}
-            description={!showTools ? t('devices.empty.hint') : undefined}
-            control={canAddServer ? <AddServerMenu defaultOpen={addMenuFromIntent} onPick={setAddingServer} testId="settings-add-server-button" /> : undefined} />
+          <AddServerRow canAdd={canAddServer} defaultOpen={addMenuFromIntent} onPick={setAddingServer}
+            description={!showTools ? t('devices.empty.hint') : undefined} />
         )}
       </SettingsGroup>
 
@@ -276,41 +274,39 @@ export function DevicesSection({
 }
 
 /**
- * 「添加一台机器」:先挑装法,两个动作(照 VS Code 的 Remote - SSH / Remote - Tunnels 分成两条)。
+ * 「添加一台机器」这一行本身就是动作:先挑装法,两个动作(照 VS Code 的 Remote - SSH / Remote - Tunnels 分成两条)。
  * 远程 SSH 排第一:SSH 能连就用它,天然成本低;连不上才用远程隧道。菜单同设备行的「⋯」,键盘可达。
+ * 这台主机加不了机器(`canAdd` 为假)⇒ 同一行只说明添加机器带来什么,不可点。
  */
-function AddServerMenu({
+function AddServerRow({
+  canAdd,
   onPick,
-  primary,
+  description,
   defaultOpen = false,
-  testId,
 }: {
+  canAdd: boolean
   onPick: (method: AddServerMethod) => void
-  primary?: boolean
+  description?: string
   defaultOpen?: boolean
-  testId?: string
 }) {
   const { t } = useTranslation('settings')
   const [open, setOpen] = useState(defaultOpen)
-  // 挑了一种装法 ⇒ 这颗按钮随即卸掉、那一块接手焦点(它自己把焦点放进输入框 / 复制按钮)。
-  // 菜单关上时❌ 再「归还焦点」:触发按钮已不在,Base UI 会退回它记着的上一个焦点元素 —— 可能是设置窗口背后会话页的输入框,
-  // 接着打的字就进了那里(2026-09-24 实测:打的 ssh 命令在背后开了一条真会话)。没挑(Esc / 点外面)照常回到按钮上。
+  // 挑了一种装法 ⇒ 这一行随即卸掉、那一块接手焦点(它自己把焦点放进输入框 / 复制按钮)。
+  // 菜单关上时❌ 再「归还焦点」:触发的行已不在,Base UI 会退回它记着的上一个焦点元素 —— 可能是设置窗口背后会话页的输入框,
+  // 接着打的字就进了那里(2026-09-24 实测:打的 ssh 命令在背后开了一条真会话)。没挑(Esc / 点外面)照常回到这一行上。
   const pickedRef = useRef(false)
-  // 远程隧道暂不开放(REMOTE_TUNNEL_OPEN):只剩远程 SSH 一种,按钮点了直接展开它,❌ 弹一个只有一项的菜单。
-  if (!REMOTE_TUNNEL_OPEN) {
-    return (
-      <Button
-        data-testid={testId}
-        size="sm"
-        variant={primary ? 'primary' : 'secondary'}
-        className="shrink-0"
-        onClick={() => onPick('ssh')}
-      >
-        <Plus aria-hidden className="size-4" />
-        {t('devices.addServer.open')}
-      </Button>
-    )
-  }
+  const row = (onClick?: () => void) => (
+    <SettingsRow
+      data-testid={canAdd ? 'settings-add-server-button' : 'settings-devices-empty'}
+      leading={<Plus size={18} />}
+      title={t('devices.addServer.open')}
+      description={description}
+      onClick={onClick}
+    />
+  )
+  if (!canAdd) return row()
+  // 远程隧道暂不开放(REMOTE_TUNNEL_OPEN):只剩远程 SSH 一种,点这一行直接展开它,❌ 弹一个只有一项的菜单。
+  if (!REMOTE_TUNNEL_OPEN) return row(() => onPick('ssh'))
   const item = (method: AddServerMethod) => (
     <MenuItem data-testid={`settings-add-server-${method}`} onClick={() => { pickedRef.current = true; onPick(method) }}>
       <span className="flex flex-col gap-[2px]">
@@ -323,16 +319,7 @@ function AddServerMenu({
   )
   return (
     <DropdownMenu.Root open={open} modal={false} onOpenChange={(next) => { if (next) pickedRef.current = false; setOpen(next) }}>
-      <DropdownMenu.Trigger
-        data-testid={testId}
-        aria-haspopup="menu"
-        render={(
-          <Button size="sm" variant={primary ? 'primary' : 'secondary'} className="shrink-0">
-            <Plus aria-hidden className="size-4" />
-            {t('devices.addServer.open')}
-          </Button>
-        )}
-      />
+      <DropdownMenu.Trigger aria-haspopup="menu" nativeButton={false} render={row(() => undefined)} />
       {open && (
         <DropdownMenu.Content
           side="bottom"
@@ -478,7 +465,7 @@ function DeviceRow({
   const { t } = useTranslation('settings')
   const { toast } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
-  // 「改名」同「添加一台机器」:点了它这颗「⋯」随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerMenu)。
+  // 「改名」同「添加一台机器」:点了它这颗「⋯」随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerRow)。
   const renamingRef = useRef(false)
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
