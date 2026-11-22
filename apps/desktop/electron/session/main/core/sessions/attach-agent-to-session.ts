@@ -19,7 +19,7 @@ import { forkRuntimes } from '../agents/fork-legs';
 import { buildSessionRow } from './build-session-row';
 import {
   composerPlatformModel,
-  sessionPlatformModel,
+  inheritSessionPlatformModel,
   recordSessionPlatformModel,
 } from './platform-model-selection';
 import { mountSpawnedSession } from './spawn-session';
@@ -131,7 +131,8 @@ export async function attachAgentToSession(
   // 额度上的会话派生出来会落进「从没决策过」,于是回退 agent 级、多半就是 BYOK,而 UI 上它自称
   // 继承了模型(#4366 的军训 case 就是这个形状)。源会话自己也没记录(存量会话)时继续什么都不记,
   // 回退语义原样传下去。
-  // 三条派生路都走这一处,不是各自在调用点抄一份:抄第二份的那天,两处就开始分岔。
+  // 派生路都走 `inheritSessionPlatformModel` 这一处(这里三条,外加 fork-capture 登记的引擎自开分叉),
+  // 不是各自在调用点抄一份:抄第二份的那天,两处就开始分岔。
   // ❌ 不能写成 `composerPlatformModel(params) ?? 继承`:`??` 把「明确选了 harness」的 null 也当成
   // 空值,于是一个显式的 BYOK 选择会被源会话的平台记录顶掉。这里要分的正是 null 与 undefined。
   const composerChoice = composerPlatformModel(params);
@@ -139,15 +140,8 @@ export async function attachAgentToSession(
     params.origin.kind === 'fork'
       ? params.origin.forkedFrom.sessionId
       : params.inheritPlatformModelFrom;
-  const platformModel =
-    composerChoice !== undefined
-      ? composerChoice
-      : derivedFromId
-        ? await sessionPlatformModel(derivedFromId)
-        : undefined;
-  if (platformModel !== undefined) {
-    await recordSessionPlatformModel(id, platformModel);
-  }
+  if (composerChoice !== undefined) await recordSessionPlatformModel(id, composerChoice);
+  else if (derivedFromId) await inheritSessionPlatformModel(id, derivedFromId);
 
   const agentDisplayName = await taskNameFor(params.provider, params.agentDisplayName);
   const [row] = await database
