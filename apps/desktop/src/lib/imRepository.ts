@@ -131,7 +131,7 @@ export const imSelectors = {
   // position would make one moved conversation rewrite every row below it.
   chats: fromTable('chat', (rows) => rows
     .map((row) => row.value)
-    .sort((a, b) => compareChatsByActivityDesc(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
+    .sort(compareChatsByActivityDesc)),
   chatRowsById: fromTable('chat', (rows) => new Map(rows.map(row => [row.id, row.value]))),
   membershipsForChat: (chatId: string) => fromTable('membership', (rows) =>
     rows.filter((row) => row.chatId === chatId)),

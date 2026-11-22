@@ -46,6 +46,7 @@ export function createAgentRuntimeStatePublisher(options: {
     const previous = published.get(id)
     const next = { activityStatus: state.activityStatus,
       reading: state.agentStatus ? { status: state.agentStatus, detail: state.agentStatusDetail ?? null } : null,
+      lastInteractedAt: state.lastInteractedAt ?? null,
       runtimeKind: state.runtimeKind ?? null, runtimeLabel: state.runtimeLabel ?? null }
     const edge = !samePublishedStatus(previous, next)
       || previous?.runtimeKind !== next.runtimeKind || previous?.runtimeLabel !== next.runtimeLabel
@@ -95,16 +96,22 @@ export function createAgentRuntimeStatePublisher(options: {
 // 的流)。云端行上同时写读数本身(新客户端读)与它的 running/idle 投影(老客户端读)。❌ 在此另立一套判断
 // (最近有没有动作、有没有回过消息、投递命令在不在执行之类):那正是「两个事实源给出两个答案」的来源。
 
-/** 一次发布写到云端 presence 行上的内容:running/idle 投影 + 读数本身。 */
+/**
+ * 一次发布写到云端 presence 行上的内容:running/idle 投影 + 读数本身 + 它绑的那条会话最后一次有动静的时刻
+ * (会话行的 lastInteractedAt:开工、停下、等人、出错时写下;各端按最近活动排 agent 都读它)。
+ */
 export interface PublishedAgentStatus {
   activityStatus: AgentActivityStatus
   reading: Pick<AgentStatusReading, 'status' | 'detail'> | null
+  /** ISO;null = 本机说不出(老宿主、没有会话),云端 COALESCE 保留原值。 */
+  lastInteractedAt: string | null
 }
 
-export function publishedStatusOf(reading: AgentStatusReading | null): PublishedAgentStatus {
+export function publishedStatusOf(reading: AgentStatusReading | null, lastInteractedAt: string | null = null): PublishedAgentStatus {
   return {
     activityStatus: isAgentActive(reading) ? 'running' : 'idle',
     reading: reading ? { status: reading.status, detail: reading.detail } : null,
+    lastInteractedAt,
   }
 }
 
@@ -113,7 +120,12 @@ export function samePublishedStatus(a: PublishedAgentStatus | undefined, b: Publ
     && a.activityStatus === b.activityStatus
     && (a.reading?.status ?? null) === (b.reading?.status ?? null)
     && (a.reading?.detail ?? null) === (b.reading?.detail ?? null)
+    && sameInstant(a.lastInteractedAt, b.lastInteractedAt)
 }
+
+// The cloud spells an instant as `…+00:00`, the host as `…Z`: the same moment is the same published value.
+const sameInstant = (a: string | null, b: string | null): boolean =>
+  a === b || (a !== null && b !== null && Date.parse(a) === Date.parse(b))
 
 const errMsg = (error: unknown): string => String((error as Error)?.message ?? error)
 
@@ -132,6 +144,8 @@ export interface AgentStatusTransitionDeps {
   published: Map<string, PublishedAgentStatus>
   /** 这个 agent 在本机的读数;null = 本机没有它的状态。 */
   statusOf?: (agentUserId: string) => AgentStatusReading | null
+  /** 这个 agent 绑的会话最后一次有动静的时刻(ISO);null = 本机说不出。 */
+  lastInteractedAtOf?: (agentUserId: string) => string | null
   report: (agentUserId: string, published: PublishedAgentStatus) => Promise<boolean | void>
   /** Optional second fact stream that may require a report while the status is unchanged. */
   shouldPublish?: (agentUserId: string) => boolean
@@ -148,7 +162,7 @@ export async function publishAgentStatusTransitions(deps: AgentStatusTransitionD
   }
   for (const agentUserId of agentUserIds) {
     if (shouldBail()) return
-    const next = publishedStatusOf(statusOf?.(agentUserId) ?? null)
+    const next = publishedStatusOf(statusOf?.(agentUserId) ?? null, deps.lastInteractedAtOf?.(agentUserId) ?? null)
     if (samePublishedStatus(published.get(agentUserId), next) && !deps.shouldPublish?.(agentUserId)) continue
     try {
       const previous = published.get(agentUserId)

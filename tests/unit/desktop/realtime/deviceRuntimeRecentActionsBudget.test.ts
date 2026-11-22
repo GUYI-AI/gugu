@@ -22,7 +22,7 @@ async function fixture(beforeReport?: (args: Record<string, unknown>) => Promise
     }))
   }
   let reads = 0, snapshots = 0
-  const state: { at: number; recent: { actions: string[]; lastActionAt: string | null }; secondRecent: { actions: string[]; lastActionAt: string | null } | null; status: AgentStatusReading | null; secondStatus: AgentStatusReading | null } = { at: 0, recent: { actions: [], lastActionAt: null }, secondRecent: null, status: null, secondStatus: null }
+  const state: { at: number; recent: { actions: string[]; lastActionAt: string | null }; secondRecent: { actions: string[]; lastActionAt: string | null } | null; status: AgentStatusReading | null; secondStatus: AgentStatusReading | null; lastInteractedAt: string | null } = { at: 0, recent: { actions: [], lastActionAt: null }, secondRecent: null, status: null, secondStatus: null, lastInteractedAt: null }
   const reports: Array<{ at: number; args: Record<string, unknown> }> = []
   client.rpc = async (name: string, args: Record<string, unknown>) => {
     if (name === 'set_agent_runtime_state') await beforeReport?.(args)
@@ -44,6 +44,7 @@ async function fixture(beforeReport?: (args: Record<string, unknown>) => Promise
     runtimeBridge: {
       create: async () => {}, injectAgentInbox: async () => 'accepted' as const, stop: async () => {},
       agentStatus: (id) => id === 'agent-1' ? state.status : state.secondStatus,
+      lastInteractedAt: (id) => id === 'agent-1' ? state.lastInteractedAt : null,
       recentActionsForAgent: async (id) => { reads += 1; changed(); return id === 'agent-1' ? state.recent : state.secondRecent },
       onAgentStatusChanged: (listener) => { notify = () => listener('agent-1'); return () => { notify = undefined } },
     },
@@ -60,6 +61,25 @@ async function fixture(beforeReport?: (args: Record<string, unknown>) => Promise
   await setImmediate()
   return { state, reports, when, publish, client, reconciled: () => snapshots, tick: () => host.tickOnce(), notify: () => notify?.(), close: () => host.stop() }
 }
+
+test('the last interaction travels with the reading, and a new one alone is an edge', async () => {
+  const { state, reports, when, publish, close } = await fixture()
+  try {
+    state.at = 30_000
+    state.status = { status: 'working', detail: 'running', running: true, background: null }
+    state.lastInteractedAt = '2026-11-21T10:00:00.000Z'
+    await publish()
+    await when('running state published', () => reports.some(({ args }) => args.p_agent_status === 'working'))
+    expect(reports.at(-1)?.args.p_last_interacted_at).toBe('2026-11-21T10:00:00.000Z')
+    const before = reports.length
+    // Same reading, a newer interaction (e.g. a new turn the host saw without a status change): still published.
+    state.at = 31_000
+    state.lastInteractedAt = '2026-11-21T10:01:00.000Z'
+    await publish()
+    await when('interaction-only edge published', () => reports.length > before)
+    expect(reports.at(-1)?.args).toMatchObject({ p_agent_status: 'working', p_last_interacted_at: '2026-11-21T10:01:00.000Z' })
+  } finally { await close() }
+})
 
 test('stopping a host with agents marks its cloud device row offline once', async () => {
   const { state, client, tick, close } = await fixture()
