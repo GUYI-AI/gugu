@@ -114,5 +114,6 @@ describe('a watched session’s host ask is read again, not left to a subscripti
     await settle()
     expect(fx.snapshots).toBe(1)
     expect(fx.subscribes).toBe(1)
+  expect(harness.container.querySelector('[data-ask]')?.getAttribute('data-ask')).toBe('ask-1')
   })
 })
