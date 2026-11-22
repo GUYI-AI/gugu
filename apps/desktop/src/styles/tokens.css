@@ -131,6 +131,16 @@
   -webkit-app-region: no-drag;
 }
 
+/* @@@open-layer-no-drag — 一个弹出层开着时(弹出框 / 菜单 / 下拉 / 组合框,三套 ui 都在定位层里画 `OpenLayer`,
+   它给 <html> 挂 data-layer-open),整扇窗不拖。拖拽区吞掉一切指针事件(Electron:「Draggable areas ignore all
+   pointer events」):点左侧栏、顶栏的空白处 DOM 收不到 pointerdown,「点外面就关」关不上;盖在拖拽带上的弹出层
+   自己也点不动。所以不给弹出层逐个退订,开着时全部退订,关上以后拖拽区原样回来。模态不在内:它们有自己的遮罩,
+   标题栏行开着模态也照样拖窗口(@@@window-layer)。❌ 别写成 `:root:has(…) *`:那会让开着时的每次 DOM 变动都重算
+   整页(@@@wide-invalidation)。 */
+:root[data-layer-open] * {
+  -webkit-app-region: no-drag !important;
+}
+
 /* @@@1238-titlebar-tokens — 无边框标题栏协调（#1238）。
    macOS 原生交通灯需要比 60px rail 多一点横向呼吸；其他平台继续使用 60px rail。 */
 :root {
@@ -2006,6 +2016,12 @@ body.barcode-scanner-active #root {
   animation-duration: var(--mobile-motion-duration);
   animation-timing-function: var(--mobile-motion-ease);
 }
+/* The phone tab bar sits outside the page: unnamed, the opaque page group above covered it until the transition ended,
+   so it appeared late on every return to the list (owner 11-22). Its own group is drawn above the page and never animates:
+   it is there from the first frame when it arrives, and gone at once when it leaves. */
+:root[data-mobile-direction] [data-phone-tabbar] { view-transition-name: phone-tabbar; }
+::view-transition-group(phone-tabbar), ::view-transition-new(phone-tabbar) { animation: none; }
+::view-transition-old(phone-tabbar) { display: none; }
 ::view-transition-old(mobile-page) { animation-name: gg-mobile-leave; }
 ::view-transition-new(mobile-page) { animation-name: gg-mobile-enter; }
 :root[data-mobile-direction='pop'] { --mobile-motion-distance: calc(-1 * var(--spacing-xl)); }
@@ -2361,20 +2377,12 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* Model settings: approved light palette, with the existing dark theme surfaces. */
+/* Model settings: the expired-sign-in chip colours (the page itself uses the shared settings surfaces). */
 :root {
-  --model-settings-page: var(--page);
-  --model-settings-description: var(--text-secondary);
-  --model-settings-source: var(--muted-fg);
-  --model-settings-separator: var(--border);
   --model-sign-in-expired-bg: var(--danger-tint);
   --model-sign-in-expired-fg: var(--danger-fg);
 }
 [data-theme='light'] {
-  --model-settings-page: #f7f7f7;
-  --model-settings-description: rgba(0, 0, 0, .7);
-  --model-settings-source: rgba(0, 0, 0, .45);
-  --model-settings-separator: #f2f2f2;
   --model-sign-in-expired-bg: #fbf1f1;
   --model-sign-in-expired-fg: #b42c3f;
 }

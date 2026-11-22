@@ -61,7 +61,7 @@ export function ContactsSectionPane({ section, rows, detail, onCloseDetail, onCr
             </div>
             {section.groups.length > 0 ? <SectionLabel className="!mt-6">{t('sectionPane.groups')} · {section.groups.length}</SectionLabel> : null}
             {section.groups.length > 0 ? <ContactsGrid>{section.groups.map(render.renderGroup)}</ContactsGrid> : null}
-            {section.primary ? <ContactsAgentSectionState isEmpty={empty} onCreateAgent={onCreateAgent} /> : null}
+            {section.primary ? <ContactsAgentSectionState isEmpty={empty} onCreateAgent={onCreateAgent} page /> : null}
           </>
         ) : section.kind === 'people' ? (
           <ContactsGrid className="!mt-4">

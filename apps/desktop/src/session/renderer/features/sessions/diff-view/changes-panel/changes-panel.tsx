@@ -2,7 +2,6 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { useSessionViewContext, useWorkspace, useWorkspaceId, useWorkspaceSurface } from '@renderer/features/sessions/session-view-context';
-import { workspaceBackend } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { Button } from '@renderer/lib/ui/button';
 import { EmptyState } from '@renderer/lib/ui/empty-state';
@@ -12,6 +11,7 @@ import { cn } from '@renderer/utils/utils';
 import { GitStatusSection } from './git-status-section';
 import { SECTION_HEADER_HEIGHT, usePanelLayout } from './hooks/use-panel-layout';
 import { PullRequestsSection } from './pr-section';
+import { SessionEditedFiles } from './session-edited-files';
 import { StagedSection } from './staged-section';
 import { UnstagedSection } from './unstaged-section';
 
@@ -42,6 +42,8 @@ export const ChangesPanel = observer(function ChangesPanel({ isVisible }: { isVi
   } = usePanelLayout(changesView ?? null, shown);
 
   if (!diffView || !changesView) return null;
+  // 不是 git 仓库:同一张审阅页,来源换成本会话「已编辑」卡,git 才有的部分不画。
+  if (!sessionView.unreachableLabel && workspace.gitWorktree.problem?.kind === 'not-repository') return <SessionEditedFiles />;
   if (sessionView.unreachableLabel || !workspace.gitWorktree.hasData || workspace.gitWorktree.problem) {
     return <ChangesPanelState />;
   }
@@ -111,27 +113,14 @@ export const ChangesPanel = observer(function ChangesPanel({ isVisible }: { isVi
   );
 });
 
-/** 画不出改动清单时的那一格:那台机器离线 / 还在读 / 改动太多 / 不是 git 仓库 / 读失败(可重试)。❌ 空白一片。 */
+/** 画不出改动清单时的那一格:那台机器离线 / 还在读 / 改动太多 / 读失败(可重试)。❌ 空白一片。 */
 const ChangesPanelState = observer(function ChangesPanelState() {
   const { translate } = useSessionMessages();
-  const { projectId } = useSessionViewContext();
   const surface = useWorkspaceSurface();
   const git = useWorkspace().gitWorktree;
-  const machine = workspaceBackend(projectId).machine;
   const problem = git.problem;
   if (surface.unreachableLabel) return <EmptyState label={surface.unreachableLabel} />;
   if (problem?.kind === 'too-many-files') return <EmptyState label={translate('changes.tooManyChanges')} />;
-  if (problem?.kind === 'not-repository') {
-    return (
-      <EmptyState
-        label={
-          machine.kind === 'remote'
-            ? translate('remoteWorkspace.notRepository', { device: machine.label() })
-            : translate('changes.notRepository')
-        }
-      />
-    );
-  }
   if (problem?.kind === 'failed') {
     return (
       <EmptyState

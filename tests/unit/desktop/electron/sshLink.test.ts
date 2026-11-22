@@ -288,7 +288,7 @@ describe('账号进程里:设备连接用与咕咕云同一张处理表', () => 
       }),
     })
     const sent: unknown[] = []
-    const session = factory((message) => sent.push(message))
+    const session = factory((message) => sent.push(message), async () => undefined)
     session.handle(asBroadcast({ type: 'demo.echo', request_id: 'r1', user_id: 'someone-else', payload: { type: 'inner', a: 1 } }))
     await flush()
     // 请求自己的 payload 里带 type 也不会被当成信封读(外壳就是为此)。
@@ -304,7 +304,7 @@ describe('账号进程里:设备连接用与咕咕云同一张处理表', () => 
 
   it('还没登录的账号不接', () => {
     const factory = createDeviceLinkHost({ userId: () => null, createHandlers: () => ({ handlers: {}, dispose: () => undefined }) })
-    expect(() => factory(() => undefined)).toThrow()
+    expect(() => factory(() => undefined, async () => undefined)).toThrow()
   })
 })
 
@@ -392,7 +392,9 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     children[0]!.stdin.on('data', (chunk: Buffer) => written.push(chunk))
     expect(links.send('dev1', { ask: 1 })).toBe(true)
     await flush()
+    // The empty link frame written at spawn comes first (@@@win32-ssh-wake), then what was sent.
     expect(new FrameDecoder().push(Buffer.concat(written))).toEqual([
+      { type: FRAME.link, payload: Buffer.alloc(0) },
       { type: FRAME.message, payload: Buffer.from(JSON.stringify({ ask: 1 })) },
     ])
     expect(links.send('other', { ask: 1 })).toBe(false)
@@ -465,7 +467,8 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     children[0]!.stdin.on('data', chunk => writes.push(Buffer.from(chunk)))
     expect(links.send('old', asBroadcast({ type: 'taskhost.close', payload: {} }))).toBe(false)
     await flush()
-    expect(writes).toEqual([])
+    // Only the empty link frame written at spawn (@@@win32-ssh-wake).
+    expect(new FrameDecoder().push(Buffer.concat(writes))).toEqual([{ type: FRAME.link, payload: Buffer.alloc(0) }])
     expect(links.send('old', envelope('taskhost.call', 'ordinary'))).toBe(true)
     expect(onMessage).toHaveBeenCalledWith('old', expect.objectContaining({ payload: expect.objectContaining({
       type: 'taskhost.call:reply', request_id: 'ordinary', error: { code: 'server_outdated', message: '请更新该设备上的咕咕' },
@@ -473,7 +476,7 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     for (const type of SERVER_UPDATE_CONTROL_RPCS) expect(links.send('old', envelope(type, type))).toBe(true)
     expect(links.send('old', envelope('file.get', 'file'))).toBe(true)
     await flush()
-    const frames = new FrameDecoder().push(Buffer.concat(writes))
+    const frames = new FrameDecoder().push(Buffer.concat(writes)).filter(frame => frame.type === FRAME.message)
     expect(frames.map(frame => JSON.parse(frame.payload.toString()).payload.type)).toEqual([...SERVER_UPDATE_CONTROL_RPCS])
     expect(onMessage).toHaveBeenCalledTimes(2)
 

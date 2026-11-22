@@ -31,7 +31,7 @@ const CLAUDE_CREDITS_EXHAUSTED: SerializedError = {
   code: -32603,
 };
 
-const prompt = (cause: SerializedError) => classifyTurnFailure({ at: 'prompt', cause, platformCredentials: true });
+const prompt = (cause: SerializedError) => classifyTurnFailure({ at: 'prompt', cause, hostCredentials: true });
 
 describe('#7103 回合失败那一行说上游回的那一句', () => {
   it('codex 原样递上来的网关错误体:那一行说网关那句,原文照旧在详情', () => {
@@ -59,7 +59,7 @@ describe('#7103 回合失败那一行说上游回的那一句', () => {
 });
 
 it.each(['team-monthly-cap-reached', 'team-credits-exhausted'])('keeps %s on the shared turn failure path without a personal recharge action', reason => {
-  const { outcome } = classifyTurnFailure({ at: 'prompt', platformCredentials: true,
+  const { outcome } = classifyTurnFailure({ at: 'prompt', hostCredentials: true,
     credentialRefusal: `gugu-models:${reason}`, cause: { name: 'RequestError', message: 'private provider diagnostics' } });
   expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed', detail: expect.stringContaining('credits_exhausted') });
   expect(JSON.stringify(outcome)).not.toContain('private provider diagnostics');

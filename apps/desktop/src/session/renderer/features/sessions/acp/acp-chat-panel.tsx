@@ -39,7 +39,6 @@ import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
 import {
   AttachmentViewerDialog,
-  MermaidViewerDialog,
   readAttachmentPreviewText,
 } from '@gugu/session-ui/react/components';
 import type {
@@ -110,9 +109,10 @@ import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
-import { openComposerImage, openImageViewer } from '@/lib/imageViewer';
+import { openComposerImage, openDiagramViewer, openImageViewer } from '@/lib/imageViewer';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
@@ -1626,9 +1626,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [viewer, setViewer] = useState<
     { src?: string; alt?: string; text?: string; truncated?: boolean } | null
   >(null);
-  const [mermaidViewer, setMermaidViewer] = useState<{ svg: string | null; pending: boolean } | null>(null);
-  // Only the latest click may fill the viewer (renders resolve out of order once one has to load mermaid); a newer
-  // click or closing the viewer aborts the one before, which also drops it from the render queue.
+  // Only the latest click may open the viewer (renders resolve out of order once one has to load mermaid); a newer
+  // click aborts the one before, which also drops it from the render queue.
   const mermaidViewerRender = useRef<AbortController | null>(null);
   const placementSessionRef = useRef<string | null>(null);
   const placementWasEmptyRef = useRef<boolean | null>(null);
@@ -2115,6 +2114,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       flashMessageId: sourceMessage.flashMessageId,
       conversationAgentName: () => conversationAgentName,
       conversationAgentSession: () => store?.sessionId ?? null,
+      readConversationFile: (request) => { const machine = store ? machineRegistry.machineOf(store.runtimeSessionId) : null; return readConversationFile(!machine, machine ?? '', request); },
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
@@ -2216,10 +2216,13 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         mermaidViewerRender.current = render;
         const caches = store.chatContext.sharedCaches;
         const cached = caches.peekMermaid(arg.chart);
-        setMermaidViewer({ svg: cached, pending: cached === null });
-        if (cached !== null) return;
+        if (cached !== null) {
+          openDiagramViewer(cached, arg.thumb);
+          return;
+        }
+        // A source pele rejects (null) opens nothing: the block itself already says it could not be drawn.
         void caches.renderMermaid(arg.chart, render.signal).then((svg) => {
-          if (!render.signal.aborted) setMermaidViewer({ svg, pending: false });
+          if (svg !== null && !render.signal.aborted) openDiagramViewer(svg, arg.thumb);
         });
       },
       onOpenFile: (arg) => {
@@ -2397,16 +2400,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         text={viewer?.text}
         truncated={viewer?.truncated}
         name={viewer?.alt}
-      />
-      <MermaidViewerDialog
-        open={!!mermaidViewer}
-        onOpenChange={(open) => {
-          if (open) return;
-          mermaidViewerRender.current?.abort();
-          setMermaidViewer(null);
-        }}
-        svg={mermaidViewer?.svg ?? null}
-        pending={mermaidViewer?.pending ?? false}
       />
     </div>
   );

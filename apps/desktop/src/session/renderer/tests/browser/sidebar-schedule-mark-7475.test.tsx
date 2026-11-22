@@ -1,6 +1,6 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CalendarClock } from '@/lib/icons';
+import { Clock } from '@/lib/icons';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -63,8 +63,8 @@ it('空闲:行尾只有一枚钟,盖掉最后活动的时间;读屏读得到整�
   expect(mark()!.dataset.sessionSchedule).toBe('pending');
   expect(mark()!.textContent).toBe('');
   expect(mark()!.querySelector('svg')).not.toBeNull();
-  // #3371 定时一律是侧栏头「已安排」那枚日历钟(CalendarClock),❌ 普通的钟。
-  expect(mark()!.querySelector('svg')!.innerHTML).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<CalendarClock />), 'text/html').querySelector('svg')!.innerHTML);
+  // #3371 定时一律是侧栏头「已安排」那枚钟(Clock),和行尾一样。
+  expect(mark()!.querySelector('svg')!.innerHTML).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<Clock />), 'text/html').querySelector('svg')!.innerHTML);
   expect(time()).toBeNull();
   expect(mark()!.getAttribute('aria-label')).toContain('检查 CI 结果');
 });
@@ -78,7 +78,7 @@ it('鼠标:指针进行,钟排进 hover 层置顶 / 归档的左边(不叠),停�
   const clock = hoverMark()!.getBoundingClientRect();
   const pin = host.querySelector<HTMLElement>('[data-row-hover-actions] button')!.getBoundingClientRect();
   expect(clock.width).toBeGreaterThan(0);
-  expect(hoverMark()!.querySelector('svg')!.innerHTML).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<CalendarClock />), 'text/html').querySelector('svg')!.innerHTML);
+  expect(hoverMark()!.querySelector('svg')!.innerHTML).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<Clock />), 'text/html').querySelector('svg')!.innerHTML);
   expect(clock.right).toBeLessThanOrEqual(pin.left);
   // 车道留够了三枚:hover 层不越过这一格的左边(滚到末尾的标题不被盖)。
   const lane = host.querySelector<HTMLElement>('[data-row-hover-actions]')!.getBoundingClientRect();

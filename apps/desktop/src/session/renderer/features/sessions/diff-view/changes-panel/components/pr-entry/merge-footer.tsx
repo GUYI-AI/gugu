@@ -41,7 +41,7 @@ export function MergeFooter({
   const bypassEnabled = uiState.canBypassRequirements && bypassRequirements;
   const { icon: MergeStatusIcon, iconClass } =
     severityConfig[bypassEnabled ? 'warning' : uiState.severity];
-  const mergeStatusTitle = bypassEnabled ? 'Bypass requirements enabled' : uiState.title;
+  const mergeStatusTitle = bypassEnabled ? translate('pr.bypassEnabled') : uiState.title;
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-border px-3 py-2.5">
@@ -67,7 +67,7 @@ export function MergeFooter({
               size="xs"
               variant="outline"
               loading={isMerging}
-              loadingLabel="Merging..."
+              loadingLabel={translate('pr.merging')}
               icon={<GitMerge className="size-3" />}
               actions={mergeActions}
               disabled={mergeDisabled}

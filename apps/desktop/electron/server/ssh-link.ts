@@ -22,6 +22,7 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { spawn } from '@gugu/core/local/childProcess'
 import {
+  encodeFrame,
   encodeJsonFrame,
   FRAME,
   FrameDecoder,
@@ -29,6 +30,7 @@ import {
   LINK_PROTOCOL_MARK,
   LINK_PROTOCOL_MISMATCH_MARK,
   LINK_READY_MARK,
+  parseDataFrame,
   parseJson,
 } from '../session/main/core/pty/attach/attach-protocol'
 import { SERVER_UPDATE_CONTROL_RPCS, serverProtocolTooOld } from '@gugu/core/cloud/serverMachineHealth'
@@ -126,6 +128,8 @@ export type SshLinkManager = {
   isOpen(deviceId: string): boolean
   /** 此刻开着(或正在开)的那些。 */
   openDeviceIds(): string[]
+  /** The remote protocol the open link's server reported (LINK_PROTOCOL_MARK); not open or not said = null. */
+  protocol(deviceId: string): number | null
 }
 
 export function createSshLinkManager(options: {
@@ -133,6 +137,8 @@ export function createSshLinkManager(options: {
   machineFor(deviceId: string): Promise<SshLinkMachine | null>
   controlPath(): string | null
   onMessage(deviceId: string, message: unknown): void
+  /** A stream's raw piece (`D` frame, `file.stream`): main's own readers take these; the window never sees them. */
+  onData?(deviceId: string, piece: { stream: string; offset: number; bytes: Buffer }): void
   /** 接上之后断了(ssh 心跳没了、那边重启、被收掉)。主动 close 不报。 */
   onClosed(deviceId: string, failure: { reason: SshLinkFailure; detail: string }): void
   log?: (message: string, fields?: Record<string, unknown>) => void
@@ -157,6 +163,10 @@ export function createSshLinkManager(options: {
       return { child: null as unknown as ChildProcessWithoutNullStreams, ready: failed, open: false, protocol: null }
     }
     const child = (options.spawnSsh ?? systemSpawn)(args)
+    // @@@win32-ssh-wake - Windows' own OpenSSH (System32) relays nothing back until its stdin has carried something:
+    // with an idle stdin pipe the remote's ready mark never arrives and the link times out. An empty link frame goes
+    // first; the server's link drops every frame but messages, so it is a no-op there (every server version).
+    child.stdin.write(encodeFrame(FRAME.link))
     let stderr = ''
     let preamble: Buffer | null = Buffer.alloc(0)
     const decoder = new FrameDecoder()
@@ -188,6 +198,11 @@ export function createSshLinkManager(options: {
         return
       }
       for (const frame of frames) {
+        if (frame.type === FRAME.data) {
+          const piece = parseDataFrame(frame.payload)
+          if (piece) options.onData?.(deviceId, piece)
+          continue
+        }
         if (frame.type !== FRAME.message) continue
         const message = parseJson<unknown>(frame.payload)
         if (message !== null) options.onMessage(deviceId, message)
@@ -280,5 +295,6 @@ export function createSshLinkManager(options: {
     },
     isOpen: (deviceId) => links.get(deviceId)?.open === true,
     openDeviceIds: () => [...links.keys()],
+    protocol: (deviceId) => { const link = links.get(deviceId); return link?.open ? link.protocol : null },
   }
 }

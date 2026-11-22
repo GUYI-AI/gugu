@@ -17,7 +17,7 @@ const { shareMock, sendMock, bytesMock, dialog } = vi.hoisted(() => ({
 }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: {}, getCurrentAuthUserId: async () => 'me', dataClient: {} }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', () => ({ attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 't' }) }))
-vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ shareAttachment: shareMock, forwardAttachment: bytesMock, commitAttachment: bytesMock }))
+vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ drawImagePreviews: () => {}, shareAttachment: shareMock, forwardAttachment: bytesMock, commitAttachment: bytesMock }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ chats: [], forwardMessage: shareMock, sendAttachmentsToChat: sendMock, sendMessageToChat: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'me' } }) }))
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string, values?: { count?: number }) => `${key}:${values?.count}` }) }))

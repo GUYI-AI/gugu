@@ -43,6 +43,8 @@ export function ImageRenderer({ file, onError }: ImageRendererProps) {
     if (viewport) zoomTo(clampZoom(fitScale * zoomForCommand(scale / fitScale, command), fitScale, maxScale), { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
   });
   const anchorRef = useRef<ZoomAnchor | null>(null);
+  // Every image opens whole: a panel reused for the next image starts it at the fit, not at the ratio left on the last.
+  useEffect(() => { setZoom(1); }, [file.content, setZoom]);
 
   useEffect(() => {
     const viewport = viewportRef.current;

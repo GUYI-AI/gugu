@@ -116,7 +116,9 @@ export async function refreshUserPath(): Promise<void> {
   }
   lastPathSource = await refresher();
   ensureUserBinDirsInPath();
-  if (lastPathSource.failed) log.warn(`[userEnv] 重新读取 PATH 失败(${lastPathSource.from}: ${lastPathSource.failed}),继续使用上一次的 PATH`);
+  const { from, tookMs, failed, failedDetail } = lastPathSource;
+  if (failed) log.warn(`[userEnv] 重新读取 PATH 失败(${from}: ${failed}, ${tookMs} ms): ${failedDetail ?? ''} —— 继续使用上一次的 PATH`);
+  else log.info(`[userEnv] 重新读取 PATH(${from}) 用了 ${tookMs} ms`);
 }
 
 /** 最近一次检测用的 PATH 从哪来;还没检测过则 null。 */

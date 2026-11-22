@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { contentRequestId, declareAttachment, declaredUploadState, finishDeclaredAttachment, offerImagePreview, placeAttachment, planAttachmentUpload, withUploadedAttachment, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { contentRequestId, declareAttachment, declaredUploadState, drawImagePreviews, finishDeclaredAttachment, placeAttachment, planAttachmentUpload, withUploadedAttachment, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
 
 // Direct upload (contract §3): every upload sends the file's sha256 with its permit request; the server answers `stored`
 // (no bytes go up), `upload` straight to the final object, or 409 upload_in_progress (wait and ask again). The final
@@ -40,12 +40,17 @@ describe('hash first, then the permit', () => {
     await withUploadedAttachment(s.endpoint, file, scope, place(s.endpoint))
     await declareAttachment(s.endpoint, { bytes, contentType: 'text/plain' }, { ...scope, request_id: 'message-1' })
     await declareAttachment(s.endpoint, { bytes, contentType: 'text/plain', sha256: sha }, { ...scope, request_id: 'message-2' })
-    await offerImagePreview(s.endpoint, preview, sha, 'me')
+    // An uploaded image offers its preview: the preview goes up under its own sha, offered for the image's.
+    drawImagePreviews({ draw: async () => preview, warn: error => { throw error } })
+    try {
+      await withUploadedAttachment(s.endpoint, { ...file, contentType: 'image/png' }, scope, place(s.endpoint))
+      await vi.waitFor(() => expect(s.routes('file-preview')).toHaveLength(1))
+    } finally { drawImagePreviews({ draw: async () => null, warn: () => {} }) }
     const plans = s.routes('upload').map(call => call.body.sha256)
-    expect(plans).toEqual([sha, sha, sha, previewSha])
+    expect(plans).toEqual([sha, sha, sha, sha, previewSha])
     expect(s.routes('file-preview')[0]!.body).toMatchObject({ sha256: sha })
     await expect(planAttachmentUpload(s.endpoint, { size: 1, contentType: 'text/plain', sha256: '' }, scope)).rejects.toThrow('Invalid upload SHA-256')
-    expect(s.routes('upload')).toHaveLength(4)
+    expect(s.routes('upload')).toHaveLength(5)
   })
 
   it('asks with the sha256 and size of the exact bytes', async () => {

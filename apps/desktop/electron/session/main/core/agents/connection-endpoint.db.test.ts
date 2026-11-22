@@ -56,7 +56,7 @@ it('migration reuses credential references, restores the original official endpo
   state.fixture!.db.insert(kv).values({ key: 'sessionpage-platform-model:platform', value: JSON.stringify({ platformModel: { modelId: 'paid-model' } }) }).run();
   state.fixture!.db.insert(automations).values({ id: 'auto', name: 'Auto', createdAt: 1, updatedAt: 1, agentConfig: { provider: 'dsh', prompt: 'hello', autoApprove: false, model: 'scheduled-model' } }).run();
   state.fixture!.db.insert(appSettings).values({ key: 'newSessionMemory', value: JSON.stringify({ lastStarted: { provider: 'dsh', model: 'remembered-model', providerChosenByUser: true } }) }).run();
-  migrateCustomModels(state.fixture!.db, new Set(['kilocode', 'mimocode']));
+  migrateCustomModels(state.fixture!.db, new Set(['kilocode', 'mimocode']), new Map());
   const migrated = state.fixture!.db.select().from(providerAccounts).where(eq(providerAccounts.providerId, 'models:custom')).get()!;
   expect(migrated.credentialRef).toBe(old.credentialRef);
   expect(migrated.meta?.customModel).toMatchObject({ endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://api.deepseek.com/anthropic' }], models: [] });
@@ -67,14 +67,38 @@ it('migration reuses credential references, restores the original official endpo
   expect(customModelRefFromOption(state.fixture!.db.select().from(automations).get()!.agentConfig?.model)?.modelId).toBe('scheduled-model');
   expect(JSON.parse(state.fixture!.db.select().from(appSettings).get()!.value).lastStarted.model).toBe(customModelOptionId({ connectionId: migrated.accountId, modelId: 'remembered-model' }));
   state.fixture!.db.update(providerAccounts).set({ meta: old.meta }).where(eq(providerAccounts.accountId, old.accountId)).run();
-  migrateCustomModels(state.fixture!.db, new Set(['kilocode', 'mimocode']));
+  migrateCustomModels(state.fixture!.db, new Set(['kilocode', 'mimocode']), new Map());
   expect(state.fixture!.db.select().from(providerAccounts).where(eq(providerAccounts.providerId, 'models:custom')).all()).toHaveLength(1);
   expect(state.fixture!.secretStore.secrets.size).toBe(1);
+});
+it('the harness default is no upstream model: it migrates to the CLI default, and 0.3.8 records holding it are repaired', async () => {
+  const claudeDefault = new Map([['claude', 'default']]);
+  const old = await legacy('claude');
+  session('picked-default', 'claude', 'default', old.accountId);
+  session('picked-opus', 'claude', 'opus[1m]', old.accountId);
+  state.fixture!.db.insert(appSettings).values({ key: 'newSessionMemory', value: JSON.stringify({ lastStarted: { provider: 'claude', model: 'default', providerChosenByUser: true } }) }).run();
+  const read = (id: string) => state.fixture!.db.select().from(sessions).where(eq(sessions.id, id)).get()!.config!.model;
+  const lastStarted = () => JSON.parse(state.fixture!.db.select().from(appSettings).get()!.value).lastStarted.model;
+  migrateCustomModels(state.fixture!.db, new Set(), claudeDefault);
+  const id = state.fixture!.db.select().from(providerAccounts).where(eq(providerAccounts.providerId, 'models:custom')).get()!.accountId;
+  const cliDefault = customModelOptionId({ connectionId: id });
+  expect([read('picked-default'), read('picked-opus'), lastStarted()]).toEqual([cliDefault, customModelOptionId({ connectionId: id, modelId: 'opus[1m]' }), cliDefault]);
+
+  // What 0.3.8 wrote: the sentinel kept as a model of the migrated connection.
+  const misread = customModelOptionId({ connectionId: id, modelId: 'default' });
+  session('from-038', 'claude', misread);
+  state.fixture!.db.insert(automations).values({ id: 'auto', name: 'Auto', createdAt: 1, updatedAt: 1, agentConfig: { provider: 'claude', prompt: 'hello', autoApprove: false, model: misread } }).run();
+  state.fixture!.db.update(appSettings).set({ value: JSON.stringify({ lastPicked: 'claude', lastStarted: { provider: 'claude', model: misread } }) }).run();
+  migrateCustomModels(state.fixture!.db, new Set(), claudeDefault);
+  expect([read('from-038'), state.fixture!.db.select().from(automations).get()!.agentConfig?.model, lastStarted()]).toEqual([cliDefault, cliDefault, cliDefault]);
+  expect(JSON.parse(state.fixture!.db.select().from(appSettings).get()!.value).lastPicked).toBe('claude');
+  expect(read('picked-opus')).toBe(customModelOptionId({ connectionId: id, modelId: 'opus[1m]' }));
+  expect(state.fixture!.db.select().from(providerAccounts).where(eq(providerAccounts.providerId, 'models:custom')).all()).toHaveLength(1);
 });
 it('migrates a Pi ACP model reported with a provider prefix to the upstream model ID', async () => {
   const old = await legacy('pi', ['family/model'], 'https://provider.test/v1');
   session('pi-source', 'pi', 'Existing provider/family/model', old.accountId);
-  migrateCustomModels(state.fixture!.db, new Set());
+  migrateCustomModels(state.fixture!.db, new Set(), new Map());
   const migrated = state.fixture!.db.select().from(providerAccounts)
     .where(eq(providerAccounts.providerId, 'models:custom')).get()!;
   expect(customModelRefFromOption(state.fixture!.db.select().from(sessions).get()!.config?.model)).toEqual({

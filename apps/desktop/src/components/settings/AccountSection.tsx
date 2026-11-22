@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
 import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
-import { useReplica, retryOf } from '../../lib/replica'
+import { useReplica, retryOf, refreshFailure } from '../../lib/replica'
 import { clearViewState, useViewState } from '../../lib/viewStateTable'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
@@ -201,28 +201,11 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             />
           )}
         />
-        <SettingsRow
-          stack
-          layout="field"
-          className="col-start-1"
-          title={<label htmlFor="settings-account-bio">{t('account.bio')}</label>}
-          control={(
-            <input
-              id="settings-account-bio"
-              className="gg-settings-input window-no-drag-region"
-              data-field="wide"
-              value={bio ?? ''}
-              onChange={e => { setBio(e.target.value); setSaved(false) }}
-              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
-              placeholder={t('account.bioPlaceholder')}
-            />
-          )}
-        />
         {!teamAccount && <SettingsRow
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
-          description={occupation.kind === 'ready' ? <>{t('account.occupationNote')}{settingsRow.state === 'value' ? <RefreshFailed reading={settingsRow} /> : null}</> : undefined}
+          description={occupation.kind === 'ready' && refreshFailure(settingsRow) ? <RefreshFailed reading={settingsRow} /> : undefined}
           control={occupation.kind !== 'ready' ? (
             occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
               <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}
@@ -264,16 +247,32 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           )}
         />
         }
+        <SettingsRow
+          stack
+          layout="field"
+          data-settings-span="full"
+          title={<label htmlFor="settings-account-bio">{t('account.bio')}</label>}
+          control={(
+            <input
+              id="settings-account-bio"
+              className="gg-settings-input window-no-drag-region"
+              data-field="wide"
+              value={bio ?? ''}
+              onChange={e => { setBio(e.target.value); setSaved(false) }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
+              placeholder={t('account.bioPlaceholder')}
+            />
+          )}
+        />
+        {/* 保存:表单的最后一行,靠右;状态(失败 / 已保存)在按钮左边。 */}
+        <div className="gg-settings-actions">
+          {saveError && <span role="alert" className="gg-settings-actions-note" data-tone="danger">{saveError}</span>}
+          {saved && !dirty && <span className="gg-settings-actions-note">{t('account.saved')}</span>}
+          <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={saving || !dirty}>
+            {saving ? t('account.saving') : t('account.save')}
+          </Button>
+        </div>
       </SettingsGroup>
-
-      {/* 保存:靠右一行,状态(失败 / 已保存)在按钮左边。 */}
-      <div className="gg-settings-actions">
-        {saveError && <span role="alert" className="gg-settings-actions-note" data-tone="danger">{saveError}</span>}
-        {saved && !dirty && <span className="gg-settings-actions-note">{t('account.saved')}</span>}
-        <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={saving || !dirty}>
-          {saving ? t('account.saving') : t('account.save')}
-        </Button>
-      </div>
 
       {teamAccount ? <TeamAccountMethods /> : <>
         {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}

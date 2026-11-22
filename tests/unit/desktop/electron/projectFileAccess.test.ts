@@ -578,7 +578,7 @@ describe('local read fence and verified snapshot', () => {
   })
   it('rejects same-size SHA changes before exposing a snapshot and removes staging', async () => {
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    await expect(snapshotProjectFile(revision, request => reader()(request, 'owner'), tempRoot)).rejects.toThrow('SHA-256 mismatch')
+    await expect(snapshotProjectFile(revision, await openProjectFileSource(revision, request => reader()(request, 'owner')), tempRoot)).rejects.toThrow('SHA-256 mismatch')
     expect(await readdir(tempRoot)).toEqual([])
   })
   it('anchors current metadata, then detects modification, unbinding and account changes', async () => {
@@ -601,17 +601,17 @@ describe('local read fence and verified snapshot', () => {
     expect((await stat(join(tempRoot, dir!))).mode & 0o777).toBe(0o700)
     await sink.abort(); expect(await readdir(tempRoot)).toEqual([])
     const signal = AbortSignal.abort(new Error('cancelled'))
-    await expect(snapshotProjectFile(revision, request => reader()(request, 'owner'), tempRoot, signal)).rejects.toThrow('cancelled')
+    await expect(snapshotProjectFile(revision, await openProjectFileSource(revision, request => reader()(request, 'owner')), tempRoot, signal)).rejects.toThrow('cancelled')
     expect(await readdir(tempRoot)).toEqual([])
   })
 })
 
 describe('the owner’s already-held SSH link', () => {
-  it('uses the real requester envelope and host read core, without opening or closing the window connection', async () => {
+  it('uses the real requester envelope and host read core, reusing the window connection without closing it', async () => {
     let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
-    const untap = vi.fn(), open = vi.fn(), close = vi.fn(), asked: number[] = [], spans: [number, number][] = []
+    const untap = vi.fn(), open = vi.fn(async () => ({ ok: true as const })), close = vi.fn(), asked: number[] = [], spans: [number, number][] = []
     let pending = 0, most = 0
-    const links = { ownedOpen: vi.fn(async () => true), open, close, tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return untap }), send: vi.fn((_device: string, message: unknown) => {
+    const links = { owned: vi.fn(async () => true), protocol: () => 18, hold: () => vi.fn(), open, close, tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return untap }), send: vi.fn((_device: string, message: unknown) => {
       const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
       asked.push(envelope.payload.length); spans.push([envelope.payload.offset, envelope.payload.offset + envelope.payload.length]); most = Math.max(most, ++pending)
       void reader()(envelope.payload, envelope.user_id).then(result => { pending--; tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } }) })
@@ -626,7 +626,7 @@ describe('the owner’s already-held SSH link', () => {
     expect(most).toBe(2)
     // The parts run ahead of the 512 KB reads that verify the file: one is asked across the first read's end.
     expect(spans.some(([from, to]) => from < 524_288 && to > 524_288)).toBe(true)
-    expect(open).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled(); expect(untap).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledTimes(1); expect(close).not.toHaveBeenCalled(); expect(untap).toHaveBeenCalledTimes(1)
     await file!.dispose()
   })
   it('reads a few-MB HTML over a slow link in parts that stay short, saying how far it has come', async () => {
@@ -642,7 +642,7 @@ describe('the owner’s already-held SSH link', () => {
     const asked: number[] = []
     let open = 0, most = 0
     let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
-    const links = { ownedOpen: vi.fn(async () => true), tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return vi.fn() }), send: vi.fn((_device: string, message: unknown) => {
+    const links = { owned: vi.fn(async () => true), open: async () => ({ ok: true as const }), protocol: () => 18, hold: () => vi.fn(), tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return vi.fn() }), send: vi.fn((_device: string, message: unknown) => {
       const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
       asked.push(envelope.payload.length); most = Math.max(most, ++open)
       const arrives = lineFree = Math.max(lineFree, now) + 2_000, reply = reader()(envelope.payload, envelope.user_id)
@@ -669,10 +669,10 @@ describe('the owner’s already-held SSH link', () => {
     expect(seen.every(([done], index) => index === 0 || done > seen[index - 1]![0])).toBe(true)
   })
   it.each(['absent', 'other-account', 'agent'])('does not attach when %s', async kind => {
-    const links = { ownedOpen: vi.fn(async () => kind !== 'absent'), tap: vi.fn(), send: vi.fn() }
+    const links = { owned: vi.fn(async () => kind !== 'absent'), open: vi.fn(), protocol: () => 18, hold: vi.fn(), tap: vi.fn(), send: vi.fn() }
     const who = kind === 'other-account' ? { accountId: 'other', actorId: 'other' } : kind === 'agent' ? { ...actor, actorId: 'agent' } : actor
     expect(await ownSshFileProvider(links, tempRoot)(revision, { ref, actor: who })).toBeNull()
-    expect(links.tap).not.toHaveBeenCalled(); expect(links.send).not.toHaveBeenCalled()
+    expect(links.tap).not.toHaveBeenCalled(); expect(links.send).not.toHaveBeenCalled(); expect(links.open).not.toHaveBeenCalled()
   })
 })
 

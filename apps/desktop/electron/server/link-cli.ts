@@ -205,7 +205,8 @@ export async function runLink(
       })
       current.on('data', (chunk: Buffer) => {
         if (acked) {
-          io.stdout.write(chunk)
+          // A stream (`D` frames) can outrun the ssh channel: hold the socket until stdout takes more, never into memory.
+          if (!io.stdout.write(chunk)) { current.pause(); io.stdout.once('drain', () => current.resume()) }
           return
         }
         pending = pending.length ? Buffer.concat([pending, chunk]) : chunk
@@ -222,7 +223,10 @@ export async function runLink(
         io.stdout.write(`\n${LINK_PROTOCOL_MARK} ${REMOTE_PROTOCOL_VERSION}\n${LINK_READY_MARK}\n`)
         if (ack.rest.length) io.stdout.write(ack.rest)
         io.stdin.on('data', (data: Buffer | string) => {
-          current.write(typeof data === 'string' ? Buffer.from(data, 'utf8') : data)
+          if (!current.write(typeof data === 'string' ? Buffer.from(data, 'utf8') : data)) {
+            io.stdin.pause?.()
+            current.once('drain', () => io.stdin.resume?.())
+          }
         })
         io.stdin.on('end', () => current.end())
         io.stdin.on('error', () => current.end())

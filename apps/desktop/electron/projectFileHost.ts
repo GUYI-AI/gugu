@@ -2,38 +2,79 @@ import { openAsBlob } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { copyVerifiedFile } from '@gugu/core/shared/fileCipher'
 import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
-import { readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
+import { open } from 'node:fs/promises'
+import { etagOf, inWorkspace, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
 import { readProjectFile, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import { createFileSink } from './fileSnapshot'
 import { nextPartBytes, SMALLEST_PART_BYTES } from '@shared/extensions/working-copy-upload'
 
 export const PROJECT_FILE_READ = 'file.read'
+/** Remote protocol 19 and later (`FILE_STREAM_PROTOCOL`): a held version read as one stream of raw bytes. */
+export const PROJECT_FILE_STREAM = 'file.stream'
 const LINE_BUDGET_MS = 2_500
 type ReadRequest = { ref: FileRef; offset: number; length: number; etag?: string }
 export type ProjectFileChunk = { revision: FileRevision; offset: number; etag: string; data: string }
 export type ProjectFileReader = (request: ReadRequest) => Promise<ProjectFileChunk>
 
 /** The host chooses the path from the version record (readProjectFile). No reader path or write operation is accepted. */
-export function createProjectFileReader(deps: {
-  identity(): Promise<{ accountId: string; deviceId: string }>
-  root(projectId: string): Promise<string | null>
-  env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup
-}) {
+type HeldFileDeps = { identity(): Promise<{ accountId: string; deviceId: string }>; root(projectId: string): Promise<string | null>; env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup }
+/** Only the device's own account reads its held versions; the path is the version record's, inside the project's root. */
+async function heldVersion(deps: HeldFileDeps, ref: FileRef, callerId: string) {
+  fileRefKey(ref)
+  const identity = await deps.identity()
+  if (identity.accountId !== callerId) throw new Error('File reader is not the device owner')
+  const revision = await readProjectFile(ref, identity.accountId, identity.deviceId, deps.env, deps.later)
+  if (!revision) throw new Error('Local file revision is unavailable')
+  const root = await deps.root(revision.host_project_id!)
+  if (!root) throw new Error('Project root is unavailable')
+  const stillBound = async () => JSON.stringify(await deps.identity()) === JSON.stringify(identity) && !!await readProjectFile(ref, identity.accountId, identity.deviceId, deps.env, deps.later)
+  return { revision, root, stillBound }
+}
+
+export function createProjectFileReader(deps: HeldFileDeps) {
   return async (request: ReadRequest, callerId: string): Promise<ProjectFileChunk> => {
     if (!request || Object.keys(request).some(key => !['ref', 'offset', 'length', 'etag'].includes(key))) throw new Error('Invalid file read request')
-    fileRefKey(request.ref)
-    const identity = await deps.identity()
-    if (identity.accountId !== callerId) throw new Error('File reader is not the device owner')
-    const revision = await readProjectFile(request.ref, identity.accountId, identity.deviceId, deps.env, deps.later)
-    if (!revision) throw new Error('Local file revision is unavailable')
+    const { revision, root, stillBound } = await heldVersion(deps, request.ref, callerId)
     requireFileRange(revision.size_bytes, request.offset, request.length)
-    const root = await deps.root(revision.host_project_id!)
-    if (!root) throw new Error('Project root is unavailable')
     const chunk = await readWorkspaceChunk(root, { path: revision.relative_path!, offset: request.offset, length: request.length })
     if (chunk.size !== revision.size_bytes || request.etag !== undefined && request.etag !== chunk.etag) throw new Error('Local file changed during read')
-    if (JSON.stringify(await deps.identity()) !== JSON.stringify(identity) || !await readProjectFile(request.ref, identity.accountId, identity.deviceId, deps.env, deps.later)) throw new Error('File binding changed during read')
+    if (!await stillBound()) throw new Error('File binding changed during read')
     // Absolute host paths stay here. The current etag anchors this read, not the publication mtime.
     return { revision, offset: chunk.offset, etag: chunk.etag, data: chunk.data }
+  }
+}
+
+/** One piece of a stream: the reader sees bytes (and its bar moves) a piece at a time, and a message on the link waits one piece at most. */
+export const FILE_STREAM_PIECE_BYTES = 64 * 1024
+type StreamRequest = { ref: FileRef; offset: number; etag: string; stream: string }
+
+/**
+ * `file.stream`: a held version's bytes from `offset` to its end, raw, as fast as the line takes them (a device link's `D`
+ * frames, `DeviceLinkStream`). Anchored to the etag its reader got from `file.read`: a file changed before or while it streams
+ * is refused, never sent mixed. The reader verifies the whole file's sha as it does for parts.
+ */
+export function createProjectFileStreamer(deps: HeldFileDeps) {
+  return async (payload: unknown, context: { userId: string; write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }) => {
+    const request = payload as StreamRequest
+    if (!request || Object.keys(request).some(key => !['ref', 'offset', 'etag', 'stream'].includes(key)) || typeof request.etag !== 'string') throw new Error('Invalid file stream request')
+    const { revision, root, stillBound } = await heldVersion(deps, request.ref, context.userId)
+    requireFileRange(revision.size_bytes, request.offset, 0)
+    const file = await inWorkspace(root, revision.relative_path!, true)
+    const handle = await open(file, 'r')
+    try {
+      const changed = async () => { const info = await handle.stat({ bigint: true }); return Number(info.size) !== revision.size_bytes || etagOf(info) !== request.etag }
+      if (await changed()) throw new Error('Local file changed during read')
+      for (let offset = request.offset; offset < revision.size_bytes;) {
+        context.signal.throwIfAborted()
+        const bytes = Buffer.alloc(Math.min(FILE_STREAM_PIECE_BYTES, revision.size_bytes - offset))
+        const { bytesRead } = await handle.read(bytes, 0, bytes.length, offset)
+        if (bytesRead === 0) throw new Error('Local file changed during read')
+        await context.write(offset, bytes.subarray(0, bytesRead))
+        offset += bytesRead
+      }
+      if (await changed() || !await stillBound()) throw new Error('Local file changed during read')
+      return { size: revision.size_bytes, etag: request.etag }
+    } finally { await handle.close().catch(() => undefined) }
   }
 }
 
@@ -94,8 +135,10 @@ export async function openProjectFileSource(revision: FileRevision, read: Projec
   } }
 }
 
-export async function snapshotProjectFile(revision: FileRevision, read: ProjectFileReader, tempRoot: string, signal?: AbortSignal, progress?: FileContext['progress']): Promise<FileBytes> {
-  return copyVerifiedFile(revision, await openProjectFileSource(revision, read, progress), await createFileSink(tempRoot, revision.size_bytes), signal)
+/** A held version's bytes (parts or a stream) into a private snapshot, verified against its sha before anyone reads it. */
+export async function snapshotProjectFile(revision: FileRevision, source: FileBytes, tempRoot: string, signal?: AbortSignal): Promise<FileBytes> {
+  try { return await copyVerifiedFile(revision, source, await createFileSink(tempRoot, revision.size_bytes), signal) }
+  finally { await source.dispose() }
 }
 
 /**

@@ -5,11 +5,11 @@ import { platform } from '../../platform'
 import { onMachineEvent, rpc } from '../../session/renderer/lib/ipc'
 import { marketRefreshedChannel } from '../../session/shared/extensions/marketEvents'
 import { appState } from '../../session/renderer/lib/stores/app-state'
-import type { AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
+import type { AppInChat, AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import type { ExtensionInstallConsentOutcome } from '../../session/shared/extensions/host-actions'
 import type { InstallConsentAsk } from '../../session/renderer/features/extensions/install-consent'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
-import { appChatFile, groupFileOpener, groupFilesOpenedBy, phoneRuns } from './phoneAppHost'
+import { appInChat, groupFileOpener, phoneRuns } from './phoneAppHost'
 import { grantableBy, type AttachmentInstallRefused, type AttachmentPackage } from '../../session/shared/extensions/attachment-install'
 import { PHONE_CAPABILITIES, phoneApps } from './phoneApps'
 import { phoneMarketCatalog } from '../settings/phoneMarketPage'
@@ -66,9 +66,8 @@ export interface AppsHere {
   onMarketChanged(listener: () => void): () => void
   /** `at`: the place a pill points at — the App that opens the file gets it as a `link` event (desktop: main; phone: its host). */
   groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Answer<AppOpenWithDetail>>
-  groupFilesOpenedBy(args: { chatId: string; extensionId: string }): Promise<Answer<{ itemId: string; name: string; displayName: string }[]>>
-  /** API 14: the file an App names for this chat (`chatFile`), found or made, as that file opened with the App. */
-  appChatFile(args: { chatId: string; extensionId: string }): Promise<Answer<AppOpenWithDetail>>
+  /** An App picked in a chat, not as a page of its own: the file it names there (API 14 `chatFile`, made the first time), or its files there. */
+  appInChat(args: { chatId: string; extensionId: string }): Promise<Answer<AppInChat>>
   setOpenWithDefault(args: { key: string; tabKind: string | null }): Promise<unknown>
   /** An installed App switched on or off (161 10-16, every App has its switch): the Apps page's own switch on the desktop, the phone's store on the phone. */
   setEnabled(args: { manifest: ExtensionManifest; enabled: boolean }): Promise<Answer<unknown>>
@@ -84,8 +83,7 @@ const desktop: AppsHere = {
   marketOffers: () => rpc.extensions.marketOffers(),
   onMarketChanged: (listener) => onMachineEvent(null, marketRefreshedChannel, (refreshed) => { if (refreshed.outcome === 'changed') listener() }),
   groupFileOpener: (args) => rpc.extensions.groupFileOpener(args),
-  groupFilesOpenedBy: (args) => rpc.extensions.groupFilesOpenedBy(args),
-  appChatFile: (args) => rpc.extensions.appChatFile(args),
+  appInChat: (args) => rpc.extensions.appInChat(args),
   setOpenWithDefault: (args) => rpc.extensions.setOpenWithDefault(args),
   setEnabled: async ({ manifest, enabled }) => {
     try {
@@ -122,10 +120,9 @@ const phone: AppsHere = {
     await phoneApps.ready()
     return groupFileOpener(args)
   },
-  groupFilesOpenedBy,
-  appChatFile: async (args) => {
+  appInChat: async (args) => {
     await phoneApps.ready()
-    return appChatFile(args)
+    return appInChat(args)
   },
   setOpenWithDefault: async (args) => phoneApps.setOpenWithDefault(args),
   setEnabled: ({ manifest, enabled }) => phoneApps.setEnabled(manifest.id, enabled),

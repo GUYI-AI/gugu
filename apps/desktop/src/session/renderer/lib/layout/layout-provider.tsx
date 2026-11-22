@@ -40,6 +40,8 @@ export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
 /** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
 export const INNER_SIDEBAR_MAX_SHARE = 0.4;
 export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';
+/** 内层栏旁边的正文少于这个宽(窄窗口)时,这一列自己收起(useInnerSidebarCrowded)。 */
+export const INNER_SIDEBAR_BODY_MIN_PX = 480;
 const INNER_SIDEBAR_PANE = definePaneWidth({ id: INNER_SIDEBAR_WIDTH_STORAGE_KEY, initial: INNER_SIDEBAR_DEFAULT_WIDTH_PX, min: INNER_SIDEBAR_MIN_WIDTH_PX, max: INNER_SIDEBAR_MAX_WIDTH_PX });
 
 export const clampInnerSidebarWidth = (width: number): number => clampPaneWidth(INNER_SIDEBAR_PANE, width);
@@ -364,6 +366,24 @@ export function useInnerSidebarFrame(): MotionValue<number> {
   const { innerShownWidth, registerInnerSidebarFrame } = useWorkspaceLayoutContext();
   useLayoutEffect(registerInnerSidebarFrame, [registerInnerSidebarFrame]);
   return innerShownWidth;
+}
+
+/**
+ * 内层栏此刻挤不下:卡片宽(会话页宽 − 列表占位宽)减去这一列画出来的宽,剩给正文的不到 INNER_SIDEBAR_BODY_MIN_PX。
+ * 还没量到会话页宽时不算挤。只在翻转时重渲染。
+ */
+export function useInnerSidebarCrowded(): boolean {
+  const { workspaceWidth, leftAnimatedWidth, innerShownWidth } = useWorkspaceLayoutContext();
+  const read = () => {
+    const root = workspaceWidth.get();
+    return root > 0 && root - leftAnimatedWidth.get() - innerShownWidth.get() < INNER_SIDEBAR_BODY_MIN_PX;
+  };
+  const [crowded, setCrowded] = useState(read);
+  const update = () => setCrowded(read());
+  useMotionValueEvent(workspaceWidth, 'change', update);
+  useMotionValueEvent(leftAnimatedWidth, 'change', update);
+  useMotionValueEvent(innerShownWidth, 'change', update);
+  return crowded;
 }
 
 /**

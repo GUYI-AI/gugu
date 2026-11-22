@@ -104,7 +104,8 @@ type UploadOptions = { onPlan?: (plan: AttachmentUploadPlan) => void; retry?: bo
  * when its store signs parts and the file is more than one part; the same `request_id` then resumes it, sending only the
  * parts not yet stored. `use` looks at the object itself: `upload_missing` (the bytes are not there) sends them again
  * under the same permit, while `upload_changed` (not the declared size) and `expired` (the permit closed) ask for the
- * next permit, derived from the closed one's ID. Each happens at most once.
+ * next permit, derived from the closed one's ID. Each happens at most once. An image then offers its preview
+ * (offerImagePreviewOf) under the sha already computed.
  */
 export async function withUploadedAttachment<T>(
   endpoint: AttachmentsEndpoint,
@@ -114,6 +115,14 @@ export async function withUploadedAttachment<T>(
   options?: UploadOptions,
 ): Promise<T> {
   const sha256 = file.sha256 ?? await attachmentSha256(file.bytes)
+  const used = await uploadThen(endpoint, { ...file, sha256 }, scope, use, options)
+  offerImagePreviewOf(endpoint, file.bytes, file.contentType, sha256, scope.as)
+  return used
+}
+
+/** withUploadedAttachment without the preview offer: an image's preview itself goes up through here. */
+async function uploadThen<T>(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; name: string; contentType: string; sha256: string },
+  scope: { chat_id: string | null; as: string; request_id?: string }, use: (uploadKey: string) => Promise<T>, options?: UploadOptions): Promise<T> {
   const upload: DeclaredUploadState = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
   const retried = new Set<string>()
   // The last key the server gave: asking again under a live permit whose bytes are up says upload_used, and the server
@@ -122,7 +131,7 @@ export async function withUploadedAttachment<T>(
   for (;;) {
     let plan: AttachmentUploadPlan | undefined
     try {
-      plan = await storeManagedAttachment(endpoint, upload, { ...file, sha256 }, scope, {
+      plan = await storeManagedAttachment(endpoint, upload, file, scope, {
         signal: options?.signal, onProgress: options?.onProgress,
         onPlan: next => { given = next; options?.onPlan?.(next) },
         allowExisting: attempt => attempt > 1 || retried.size > 0 || options?.retry === true && upload.requestId === scope.request_id,
@@ -156,10 +165,27 @@ async function retryWhileOtherUploads<T>(use: () => Promise<T>, signal?: AbortSi
   }
 }
 
-/** An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`). */
-export async function offerImagePreview(endpoint: AttachmentsEndpoint, preview: Blob, sha256: string, as: string, signal?: AbortSignal): Promise<void> {
-  await withUploadedAttachment(endpoint, { bytes: preview, name: 'preview', contentType: preview.type }, { chat_id: null, as },
-    staging_key => call(endpoint, 'file-preview', { staging_key, sha256 }, signal), { signal })
+/** This process's image decoder: an image's preview (560 px wide at most), or null for a format it cannot decode. */
+export type ImagePreviewDrawer = { draw(original: Blob, contentType: string): Promise<Blob | null>; warn(error: unknown): void }
+let previews: ImagePreviewDrawer | null = null
+/**
+ * Every image this process uploads or declares offers a preview drawn here, whichever entry sent it (composer, agent,
+ * App). A process that registers none uploads images without one, and readers show the original.
+ */
+export function drawImagePreviews(drawer: ImagePreviewDrawer): void { previews = drawer }
+
+/**
+ * An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`), so
+ * any version of those bytes shows it. The upload never waits for it; a failure is warned, never thrown.
+ */
+export function offerImagePreviewOf(endpoint: AttachmentsEndpoint, original: Uint8Array | Blob, contentType: string, sha256: string, as: string): void {
+  if (!previews || !contentType.startsWith('image/')) return
+  const { draw, warn } = previews
+  void draw(original instanceof Blob ? original : new Blob([original as Uint8Array<ArrayBuffer>], { type: contentType }), contentType).then(async preview => {
+    if (!preview) return
+    await uploadThen(endpoint, { bytes: preview, name: 'preview', contentType: preview.type, sha256: await attachmentSha256(preview) }, { chat_id: null, as },
+      staging_key => call(endpoint, 'file-preview', { staging_key, sha256 }))
+  }).catch(warn)
 }
 
 /** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
@@ -387,6 +413,7 @@ export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { b
   const sha256 = file.sha256 ?? await attachmentSha256(file.bytes)
   const plan = await readManagedUploadPlan(endpoint, { size, contentType: file.contentType, sha256 }, scope, upload, signal)
   if (plan.status !== 'stored') requireUploadSize(size, plan.max_bytes)
+  offerImagePreviewOf(endpoint, file.bytes, file.contentType, sha256, scope.as)
   return { staging_key: plan.staging_key, sha256, size_bytes: size, plan }
 }
 

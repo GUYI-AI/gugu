@@ -53,8 +53,8 @@ async function nativeWithProgress(op: 'open' | 'ssh', context: FileContext, args
   if (!context.progress || !electron) return native(op, context, args)
   const id = crypto.randomUUID(), progress = context.progress
   const off = electron.eventOn('files:read-progress', (row) => {
-    const { id: of, done, total } = row as { id: string; done: number; total: number }
-    if (of === id) progress(done, total)
+    const { id: of, done, total, stalled } = row as { id: string; done: number; total: number; stalled?: true }
+    if (of === id) progress(done, total, stalled)
   })
   try { return await native(op, context, { ...args, progress: id }) } finally { off() }
 }

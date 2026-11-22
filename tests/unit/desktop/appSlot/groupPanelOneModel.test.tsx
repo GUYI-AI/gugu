@@ -19,7 +19,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
 }))
 // No App runtime under jsdom: this device's Apps answer nothing; the group's shared packages are the test's.
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), appChatFile: vi.fn(), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), appInChat: vi.fn(async () => ({ success: true, data: { files: [] } })), setOpenWithDefault: vi.fn() },
 }))
 const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>() }))
 /** The packages shared in the chat, as the chat's attachments say them. */
@@ -216,14 +216,14 @@ describe('an App opened in the group (「在本群打开」)', () => {
 
   it('opens its own page here, with no file', async () => {
     const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
-    vi.mocked(appsHere!.groupFilesOpenedBy).mockClear()
+    vi.mocked(appsHere!.appInChat).mockClear()
     installTabs([{ name: 'main', title: 'Board' }])
     await harness.render(slot({ chatId: 'group-5' }))
     ask('group-5', { app: 'board' })
     await act(async () => {})
     expect(shownItem('group-5')).toMatchObject({ kind: 'board.main', title: 'Board' })
     expect(shownItem('group-5')?.itemId).toBeUndefined()
-    expect(appsHere!.groupFilesOpenedBy).not.toHaveBeenCalled()
+    expect(appsHere!.appInChat).not.toHaveBeenCalled()
   })
 
   // App 引用 pill: the place a pill points at goes with the file to whoever resolves who opens it (main on the desktop,
@@ -245,12 +245,12 @@ describe('an App opened in the group (「在本群打开」)', () => {
 
   it('an App of files only goes to its files', async () => {
     const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
-    vi.mocked(appsHere!.groupFilesOpenedBy).mockClear()
+    vi.mocked(appsHere!.appInChat).mockClear()
     installTabs([{ name: 'main', title: 'Board', opensFiles: { chat: ['.board.json'] } }])
     await harness.render(slot({ chatId: 'group-6' }))
     ask('group-6', { app: 'board' })
     await act(async () => {})
-    expect(appsHere!.groupFilesOpenedBy).toHaveBeenCalledWith({ chatId: 'group-6', extensionId: 'board' })
+    expect(appsHere!.appInChat).toHaveBeenCalledWith({ chatId: 'group-6', extensionId: 'board' })
     expect(shownItem('group-6')).toBeNull()
     // 11-12: with none of its files in the chat yet, the card's 「打开」 came to nothing. It says so, in the same sheet.
     const sheet = harness.container.querySelector('[data-testid="group-app-slot-app-files"]')
@@ -266,11 +266,11 @@ describe('an App opened in the group (「在本群打开」)', () => {
     const chatId = 'group-9'
     const candidate = { extensionId: 'board', tabKind: 'board.file', tabTitle: 'Board', app: { name: 'Board', defaultLocale: 'en' }, onlyTab: false, state: false, suffix: '.board.json' }
     const detail = { chatId, itemId: 'B', name: 'team.board.json', typedName: 'team.board.json', file: { document: true, contentType: 'application/json', version: 1, size: 2 }, choice: { kind: 'one', candidate } }
-    vi.mocked(appsHere!.appChatFile).mockResolvedValue({ success: true, data: detail as never })
+    vi.mocked(appsHere!.appInChat).mockResolvedValue({ success: true, data: { open: detail } as never })
     await harness.render(slot({ chatId }))
     ask(chatId, { app: 'board' })
     await act(async () => {})
-    expect(appsHere!.appChatFile).toHaveBeenCalledWith({ chatId, extensionId: 'board' })
+    expect(appsHere!.appInChat).toHaveBeenCalledWith({ chatId, extensionId: 'board' })
     const board = shownPanelTab(chatId)
     expect(board?.item).toMatchObject({ kind: 'board.file', itemId: 'B', title: 'team' })
     expect(harness.container.querySelector('[data-testid="group-app-slot-back"]'), 'opened from the chat: no 上一页').toBeNull()

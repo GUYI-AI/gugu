@@ -177,7 +177,6 @@ export function TabChip({
             isActive={isActive}
             isFocusedPane={isFocusedPane}
             hasError={hasError}
-            maxWidth="max-w-none"
             // 关闭钮浮在标题尾巴上时,标题自己淡出(遮罩),钮下透出页签此刻的真实底色 —— 照 Chrome / VS Code。
             className={cn('min-w-0 flex-1 p-0', closeFloats && TITLE_FADE_UNDER_CLOSE)}
             toolTabTitle
