@@ -8,7 +8,6 @@ import { displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from 
 import { Sheet } from './ui/Sheet'
 import { Pane, PaneHeader } from './ui/Pane'
 import { navigateMobile } from '@/mobile/navigateMobile'
-import { ListRow } from './ui/ListRow'
 import { SectionLabel } from './ui/SectionLabel'
 import { Chip } from './ui/Chip'
 import {
@@ -61,7 +60,7 @@ import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
 import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
-import { ct, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel, inlineInputClass, rowKeyActivate } from './contacts/contactsPanelStyles'
+import { ct, profileBodyClass, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel, inlineInputClass } from './contacts/contactsPanelStyles'
 // #855 契约：GroupJoinConfirmDialog 曾从本模块导出，实现搬走后仍从这里透出，外部 import 不受影响。
 export { GroupJoinConfirmDialog } from './contacts/GroupInvite'
 interface ContactsPanelProps {
@@ -218,26 +217,9 @@ function ContactsThreeSectionSidebar({
       />
       {searchField}
       <div className="flex-1 overflow-y-auto !px-2 !pb-3">
-        {/* 新的请求 row — @@@1944 目的地统一走 onSelectNewFriends（selectedNav 单一真相源），
-            与「添加联系人」+ 同一入口，请求视图只在详情列渲一次（不再有 sidebar 私有 overlay）。 */}
-        <ListRow
-          role="button"
-          tabIndex={selectionMode ? -1 : 0}
-          aria-disabled={selectionMode || undefined}
-          selected={newFriendsActive}
-          data-testid={AUTOMATION_TEST_IDS.contactsNewFriendsNav}
-          leading={
-            <div className="grid h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--fg)]">
-              <UserPlus size={16} />
-            </div>
-          }
-          title={ct('panel.newRequests')}
-          accessory={pendingCount > 0 ? <Chip tone="accent" shape="count">{pendingCount}</Chip> : null}
-          onClick={onSelectNewFriends}
-          onKeyDown={rowKeyActivate(onSelectNewFriends)}
-        />
-
-        <ContactsSectionNav sections={sections} selectedKey={newFriendsActive ? null : selectedSectionKey} onSelect={onSelectSection} />
+        {/* 新的请求 — @@@1944 目的地统一走 onSelectNewFriends（selectedNav 单一真相源）;请求视图只在详情列渲一次。 */}
+        <ContactsSectionNav sections={sections} selectedKey={selectedSectionKey} onSelect={onSelectSection}
+          requests={{ count: pendingCount, active: !!newFriendsActive, disabled: selectionMode, onSelect: onSelectNewFriends }} />
       </div>
       <ContactsListDock
         mobile={mobile}
@@ -258,7 +240,7 @@ function CpaneShell({ title, overlay, children }: { title?: string; overlay?: Re
   return (
     <Pane paneRole="detail">
       <PaneHeader divider title={title} />
-      <div className="flex flex-1 items-start justify-center overflow-y-auto !px-6 !pb-6 !pt-[calc(var(--spacing-2xl)*2)]">
+      <div className={profileBodyClass}>
         <div className="w-full max-w-[480px]">{children}</div>
       </div>
       {overlay}
