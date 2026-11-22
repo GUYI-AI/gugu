@@ -175,6 +175,9 @@ export function createOutbox(deps: {
   const busy = new Set<string>()
   const timers = new Map<string, unknown>()
   const waiters = new Map<string, Set<Waiter>>()
+  // An enqueue reads its id's row before its disk write and stores the merge after it: enqueues of one id take turns, or
+  // the later of two concurrent ones overwrites the earlier with the same rev and an ack of the older payload removes both.
+  const enqueuing = new Map<string, Promise<unknown>>()
   const listeners = new Set<() => void>()
   let account: string | null = null
   let generation = 0
@@ -402,6 +405,33 @@ export function createOutbox(deps: {
     return { owner, gen }
   }
 
+  async function enqueueInTurn(name: string, payload: unknown, id: string, options: { dependsOn?: readonly string[]; hold?: boolean }): Promise<OutboxItem<never>> {
+    const kind = kinds.get(name)
+    if (!kind) throw new Error(`Outbox kind ${name} is not registered`)
+    const { owner, gen } = await requireLoaded()
+    const previous = items.get(id)
+    let item: OutboxItem
+    if (previous) {
+      if (previous.kind !== name) throw new Error(`Outbox id ${id} belongs to ${previous.kind}`)
+      if (!kind.merge) throw new Error(`Outbox id ${id} is already queued`)
+      const merged = kind.merge(previous.payload, payload)
+      item = { ...previous, payload: merged, lane: kind.lane(merged), rev: previous.rev + 1,
+        ...(previous.state === 'failed' || previous.state === 'waiting' ? { state: 'queued' as const, attempts: 0, failure: undefined, retryAt: undefined } : {}) }
+    } else {
+      lastOrder = Math.max(now(), lastOrder + 1)
+      item = { accountId: owner, id, kind: name, lane: kind.lane(payload), order: lastOrder, dependsOn: [...options.dependsOn ?? []],
+        payload, state: options.hold ? 'held' : 'queued', attempts: 0, rev: 0 }
+    }
+    // Durable first: a write the disk did not take is not accepted, and nothing in memory says otherwise.
+    await persist(owner, [item])
+    if (!current(gen)) throw new Error('The account changed before the write was queued')
+    items.set(id, item)
+    publish()
+    notify(item)
+    pump()
+    return item as OutboxItem<never>
+  }
+
   const stopAccount = deps.account.onChange((next) => switchAccount(next))
   const stopRecovered = subscribeBackendRecovered(() => recover())
   const stopOnline = (deps.online ?? ((listener) => {
@@ -419,32 +449,13 @@ export function createOutbox(deps: {
       pump()
       return () => { if (kinds.get(kind.name) === kind) kinds.delete(kind.name) }
     },
-    async enqueue(name, payload, options = {}) {
-      const kind = kinds.get(name)
-      if (!kind) throw new Error(`Outbox kind ${name} is not registered`)
-      const { owner, gen } = await requireLoaded()
+    enqueue(name, payload, options = {}) {
       const id = options.id ?? crypto.randomUUID()
-      const previous = items.get(id)
-      let item: OutboxItem
-      if (previous) {
-        if (previous.kind !== name) throw new Error(`Outbox id ${id} belongs to ${previous.kind}`)
-        if (!kind.merge) throw new Error(`Outbox id ${id} is already queued`)
-        const merged = kind.merge(previous.payload, payload)
-        item = { ...previous, payload: merged, lane: kind.lane(merged), rev: previous.rev + 1,
-          ...(previous.state === 'failed' || previous.state === 'waiting' ? { state: 'queued' as const, attempts: 0, failure: undefined, retryAt: undefined } : {}) }
-      } else {
-        lastOrder = Math.max(now(), lastOrder + 1)
-        item = { accountId: owner, id, kind: name, lane: kind.lane(payload), order: lastOrder, dependsOn: [...options.dependsOn ?? []],
-          payload, state: options.hold ? 'held' : 'queued', attempts: 0, rev: 0 }
-      }
-      // Durable first: a write the disk did not take is not accepted, and nothing in memory says otherwise.
-      await persist(owner, [item])
-      if (!current(gen)) throw new Error('The account changed before the write was queued')
-      items.set(id, item)
-      publish()
-      notify(item)
-      pump()
-      return item as OutboxItem<never>
+      const before = enqueuing.get(id)
+      const turn = before ? before.catch(() => undefined).then(() => enqueueInTurn(name, payload, id, options)) : enqueueInTurn(name, payload, id, options)
+      enqueuing.set(id, turn)
+      void turn.catch(() => undefined).then(() => { if (enqueuing.get(id) === turn) enqueuing.delete(id) })
+      return turn
     },
     async release(id, payload) {
       const item = items.get(id)
