@@ -5,10 +5,10 @@ export function captureMessagePosition(rows: readonly MessageItem[], createdAt: 
   return { afterSeq: rows.reduce((seq, row) => Math.max(seq, row.seq, row.local_timeline?.afterSeq ?? 0), 0), createdAt }
 }
 
-// An unsent row the outbox has not positioned yet is the newest thing on this device: it goes last.
-const position = (row: MessageItem) => row.local_timeline ?? (row.seq < 1 ? { afterSeq: Infinity, createdAt: row.created_at } : undefined)
+// Only an unconfirmed row has a local position; one the outbox has not positioned yet is the newest thing here: it goes last.
+const position = (row: MessageItem) => row.seq < 1 ? row.local_timeline ?? { afterSeq: Infinity, createdAt: row.created_at } : undefined
 
-/** Canonical rows retain seq order; locally sent rows keep their original slot after acknowledgement. */
+/** Confirmed rows are in seq order on every device; an unconfirmed row sits after the seq it was sent below. */
 export function orderMessages(rows: readonly MessageItem[]): MessageItem[] {
   return [...rows].sort((left, right) => {
     const a = position(left), b = position(right)

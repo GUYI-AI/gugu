@@ -27,16 +27,35 @@ describe('failed outgoing message positions', () => {
     expect(ids(mergeMessagesById(persisted, restored, 'chat'))).toEqual(['before', 'failed-1', 'failed-2', 'later'])
   })
 
-  it('keeps the same position through resend acknowledgement and subsequent body refreshes', () => {
+  it('moves an acknowledged resend to its seq, where every other device shows it, and keeps it there', () => {
     let window = upsertMessageById([row('before', 10, 1)], failed('failed', 10, 2))
     window = upsertMessageById(window, row('later', 11, 3))
     const acknowledged = row('failed', 12, 4)
     window = upsertMessageById(window, acknowledged)
-    expect(ids(window)).toEqual(['before', 'failed', 'later'])
-    expect(window.find(row => row.id === 'failed')).toMatchObject({ seq: 12, created_at: acknowledged.created_at, local_send_state: null })
+    expect(ids(window)).toEqual(['before', 'later', 'failed'])
+    expect(window.find(row => row.id === 'failed')).toMatchObject({ seq: 12, local_send_state: null, local_timeline: undefined })
     window = mergeMessagesById(window, [row('later', 11, 3), acknowledged, row('before', 10, 1)], 'chat')
-    expect(ids(window)).toEqual(['before', 'failed', 'later'])
+    expect(ids(window)).toEqual(['before', 'later', 'failed'])
     expect(window.filter(row => row.id === 'failed')).toHaveLength(1)
+  })
+
+  it('shows the same order on the sending device and another device, before and after a refresh', () => {
+    // Both devices have seen 10. The sender sends "mine" below 10; meanwhile someone else's 11 lands first on the server.
+    let sender = upsertMessageById([row('before', 10, 1)], failed('mine', 10, 2))
+    sender = upsertMessageById(sender, row('theirs', 11, 3))
+    expect(ids(sender)).toEqual(['before', 'mine', 'theirs'])
+    const confirmed = row('mine', 12, 2)
+    sender = upsertMessageById(sender, confirmed)
+    const other = mergeMessagesById([row('before', 10, 1)], [confirmed, row('theirs', 11, 3)], 'chat')
+    expect(ids(sender)).toEqual(ids(other))
+    const refreshed = [row('before', 10, 1), row('theirs', 11, 3), confirmed]
+    expect(ids(mergeMessagesById(sender, refreshed, 'chat'))).toEqual(['before', 'theirs', 'mine'])
+    expect(ids(mergeMessagesById([], refreshed, 'chat'))).toEqual(ids(mergeMessagesById(other, refreshed, 'chat')))
+  })
+
+  it('orders a confirmed row by seq even if an older build stored a send-time slot on it', () => {
+    const legacy = { ...row('mine', 12, 2), local_timeline: { afterSeq: 10, createdAt: at(2) } }
+    expect(ids(mergeMessagesById([], [row('later', 11, 3), legacy, row('before', 10, 1)], 'chat'))).toEqual(['before', 'later', 'mine'])
   })
 
   it('keeps server sequence order for unrelated messages despite clock skew', () => {
