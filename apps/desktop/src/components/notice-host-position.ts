@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from 'react'
+import { isElementVisible } from '@/lib/elementVisibility'
 
 // The phone bar's actual box includes its token height, lower gap and safe area.
 const ANCHORS = '[data-slot="composer"], [data-phone-shell] [data-phone-tabbar]'
@@ -10,7 +11,7 @@ export function readNoticeComposerBottom(anchors: Iterable<Element> = document.q
   let visible = false
   for (const composer of anchors) {
     // Retained task/chat surfaces keep their layout while content-visibility hides them.
-    if (!composer.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue
+    if (!isElementVisible(composer, { opacity: true })) continue
     const rect = composer.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.left >= window.innerWidth || rect.bottom <= 0 || rect.top >= window.innerHeight) continue
     visible = true

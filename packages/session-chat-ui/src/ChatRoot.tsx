@@ -1652,7 +1652,8 @@ export function ChatRoot(props: ChatRootProps) {
     // the tail would turn into an anchor at the spot they left. No reader input reaches a skipped scroller, so the first
     // drawn frame takes the browser's scrollTop as written and projects the intent the reader had.
     const wasSkipped = skipped;
-    skipped = !viewShown() || !el.checkVisibility();
+    // WebView < 105 has no checkVisibility (this runs every frame): there, only a scroller without a box counts as skipped.
+    skipped = !viewShown() || !(typeof el.checkVisibility === 'function' ? el.checkVisibility() : el.getClientRects().length > 0);
     if (skipped) return;
     if (wasSkipped) {
       expectedScrollTop = el.scrollTop;
