@@ -666,8 +666,10 @@ describe('a cloud object for the renderer, fetched by main', () => {
     const answer = await handlePreviewRequest(new Request(cloudObjectUrl(signed), { headers: { Range: 'bytes=0-' } }), 'pane');
     const reader = answer.body!.getReader();
     const first = await reader.read();
-    // The burst arrives as one piece, without waiting for the bytes still to come.
-    expect(first.value?.byteLength).toBe(8 * 16 * 1024);
+    // The first piece is small, so a stream starts at once; the rest of the burst follows as one piece, without waiting
+    // for the bytes still to come.
+    expect(first.value?.byteLength).toBe(4 * 16 * 1024);
+    expect((await reader.read()).value?.byteLength).toBe(4 * 16 * 1024);
     release();
     const second = await reader.read();
     expect(second.value?.byteLength).toBe(16 * 1024);
