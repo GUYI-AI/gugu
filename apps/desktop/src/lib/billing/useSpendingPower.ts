@@ -18,6 +18,7 @@ import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
 import { readCreditV2Account } from './v2/runtime'
 import { rendererLogger } from '../log'
+import { i18n } from '@/i18n'
 
 const planLog = rendererLogger('billing/plan')
 
@@ -25,6 +26,8 @@ export interface SpendingSnapshot {
   /** unknown = 这个账号在这台设备上还没读到过;界面画占位,❌ 画「—」或 0。 */
   state: 'unknown' | 'value' | 'error'
   membership: Membership | null
+  /** The plan was returned but this client cannot interpret it; credits can still be readable. */
+  membershipError: string | null
   creditVersion: string | null
   /** null = 还没取到或取不到,**不是** 0。 */
   balance: CreditAmount | null
@@ -42,6 +45,7 @@ export interface SpendingSnapshot {
 const UNKNOWN_SNAPSHOT: SpendingSnapshot = {
   state: 'unknown',
   membership: null,
+  membershipError: null,
   creditVersion: null,
   balance: null,
   balanceError: null,
@@ -147,7 +151,7 @@ export function isMember(spending: SpendingSnapshot): boolean | null {
 
 /** Why the plan cannot be said: the read failed, or the plan's did while the balance's did not (a value without membership). */
 export function membershipFailure(spending: SpendingSnapshot): string | null {
-  return spending.state !== 'unknown' && !spending.membership ? spending.balanceError : null
+  return spending.state !== 'unknown' && !spending.membership ? spending.membershipError ?? spending.balanceError : null
 }
 
 export function useSpendingPower(user: { id: string } | null): SpendingSnapshot {
@@ -166,9 +170,11 @@ export function useSpendingPower(user: { id: string } | null): SpendingSnapshot 
       return { ...UNKNOWN_SNAPSHOT, state: 'error', balanceError: message(failure), windowsError: message(failure), activityRevision: revision }
     }
     const account = (reading as Extract<typeof reading, { state: 'value' }>).value
+    const plan = account.plan ? membershipProjection(account.plan) : null
     return {
       state: 'value',
-      membership: account.plan ? membershipProjection(account.plan) : null,
+      membership: plan?.state === 'value' ? plan.value : null,
+      membershipError: plan?.state === 'unreadable' ? i18n.t('membership.invalidTier', { ns: 'settings' }) : null,
       creditVersion: account.creditVersion,
       balance: account.balance,
       balanceError: account.balanceError,
