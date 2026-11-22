@@ -4607,7 +4607,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // ⚠️ 只在 spawn 侧合并,❌ 不写回 process.env(污染 GUI 主进程,见 #2895)。
     emdashBridge.setLoginShellEnvProvider(() => loginShellEnvSnapshot())
     // #6264 终端会话跑在咕咕平台模型上时,它的登录被拒说的是平台令牌,❌ 用户自己那份登录(auth-expiry-from-turns.ts)。
-    emdashBridge.setPlatformCredentialsProbe((sessionId) => heldPlatformModelForSession(sessionId) !== null)
+    emdashBridge.setHostCredentialsProbe((sessionId) => heldPlatformModelForSession(sessionId) !== null)
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)

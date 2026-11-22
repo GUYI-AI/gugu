@@ -54,7 +54,7 @@ export { setUserPathRefresher } from './utils/userEnv'
 // 一直没人送 —— 终端腿靠 `-il` 自己 source 到,TUI 腿(`zsh -c`)与聊天腿(裸 spawn)读不到。
 export { setLoginShellEnvProvider } from './utils/userEnv'
 // #6264 这条终端会话是不是跑在咕咕平台模型上:平台令牌的持有表住宿主,由宿主注入(同上,❌ 相对 import)。
-export { setPlatformCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
+export { setHostCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
 // @@@5301 会话页 agent 系统通知的正文注入口。会话页 ❌ 不 import 宿主的语言 store
 // (它有模块级状态,跨界只会拿到复制品) —— 由宿主把当下语言的两句文案推进来。
 export { setSessionAgentNotificationCopy } from './core/agent-hooks/notification-copy'

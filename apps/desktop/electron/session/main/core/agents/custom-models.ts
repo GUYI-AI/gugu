@@ -23,10 +23,13 @@ const migratedDatabases = new WeakSet<object>();
 
 export function migrateCustomModelConnections(): void {
   if (migratedDatabases.has(db)) return;
-  const vendors = new Set(pluginRegistry.getAll().filter((plugin) =>
+  const plugins = pluginRegistry.getAll();
+  const vendors = new Set(plugins.filter((plugin) =>
     plugin.capabilities.auth.kind === 'supported' && plugin.capabilities.auth.vendorKey,
   ).map((plugin) => plugin.metadata.id));
-  const migrated = migrateCustomModels(db, vendors);
+  const defaults = new Map(plugins.flatMap(({ metadata, capabilities: { models } }) =>
+    models.kind === 'selectable' && models.defaultModelId ? [[metadata.id, models.defaultModelId] as const] : []));
+  const migrated = migrateCustomModels(db, vendors, defaults);
   if (migrated.length) log.info('custom-model migration: moved API connections', { migrated });
   migratedDatabases.add(db);
 }
