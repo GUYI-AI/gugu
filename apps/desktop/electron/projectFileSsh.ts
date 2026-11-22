@@ -106,8 +106,10 @@ export async function openProjectFileStream(revision: FileRevision, read: Projec
           onMessage(message) {
             const reply = parseDeviceRpcReply(message)
             if (reply?.requestId !== requestId) return
-            if (reply.error) return finish(reply.error.code === 'stream_failed' && /changed/i.test(reply.error.message ?? '')
-              ? new Error('Local file changed during read') : 'again')
+            // An answer that is an error is the machine refusing this read (its streamer threw: changed, gone, outside,
+            // denied): said at once, never retried as if the line had dropped. A dropped link answers nothing (onClosed).
+            if (reply.error) return finish(/changed/i.test(reply.error.message ?? '')
+              ? new Error('Local file changed during read') : new Error(`The machine refused the file read: ${reply.error.message ?? reply.error.code}`))
             finish(received === size ? 'done' : new Error('File stream ended before its size'))
           },
           onClosed() { finish('again') },
