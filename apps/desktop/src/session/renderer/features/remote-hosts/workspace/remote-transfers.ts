@@ -15,7 +15,6 @@ import {
   WORKSPACE_EXISTS_CODE,
   WORKSPACE_WRITE_FORCE,
   type SessionpageWorkspaceEntry,
-  type SessionpageWorkspaceReadRequest,
   type SessionpageWorkspaceWriteRequest,
 } from '@gugu/session-core/session-record/contract';
 import { bytesToBase64 } from '@shared/lib/base64';
@@ -70,10 +69,9 @@ class Cancelled extends Error {
   }
 }
 
-/** 传输要问那台机器的四件事(生产装配在 remote-transfer-wiring.ts,经 rpc 路由到那台机器)。 */
+/** 传输要问那台机器的三件事(生产装配在 remote-transfer-wiring.ts,经 rpc 路由到那台机器)。 */
 export type TransferRpc = {
   listWorkspace(deviceId: string, request: { sessionId: string; path?: string }): Promise<{ entries: SessionpageWorkspaceEntry[] }>;
-  readWorkspaceFile(deviceId: string, request: SessionpageWorkspaceReadRequest): Promise<{ size: number; etag: string; data: string }>;
   writeWorkspaceFile(deviceId: string, request: SessionpageWorkspaceWriteRequest): Promise<unknown>;
   createWorkspaceEntry(
     deviceId: string,
