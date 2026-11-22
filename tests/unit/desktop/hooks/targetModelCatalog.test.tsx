@@ -7,7 +7,7 @@ import { clickElement, createReactHarness } from '../../../support/testHarness'
 import { freshReplicaAccount } from '../../../support/replicaAccount'
 import { queryClient as client } from '@/lib/replica'
 import { harnessModelCatalog } from '@renderer/lib/stores/agent-replicas'
-import { NoticeHost } from '@/components/NoticeHost'
+import { NoticeBannerSlot, NoticeHost } from '@/components/NoticeHost'
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST } from '@renderer/features/library/library-host'
 import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog'
 import { draftFastMode } from '@renderer/features/sessions/session-config/fast-mode'
@@ -29,7 +29,7 @@ function Probe({ model, provider = 'codex', leg = 'acp' }: { model: string; prov
   return <div>{String(offered)}</div>
 }
 function tree(model: string, device = 'device-a', provider = 'codex', leg: SessionpageLeg = 'acp') {
-  return <><NoticeHost /><QueryClientProvider client={client}><LibraryHostProvider value={{ ...LOCAL_LIBRARY_HOST,
+  return <><NoticeBannerSlot /><NoticeHost /><QueryClientProvider client={client}><LibraryHostProvider value={{ ...LOCAL_LIBRARY_HOST,
     remote: { deviceId: device, deviceLabel: device, online: true, lastSeenAt: null } }}>
     <Probe model={model} provider={provider} leg={leg} />
   </LibraryHostProvider></QueryClientProvider></>
