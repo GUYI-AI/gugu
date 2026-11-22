@@ -78,9 +78,9 @@ function navErrorMessage(error: NavError, t: (key: string, options?: Record<stri
 }
 
 function entryIcon({ kind, name }: DeviceFsEntry) {
-  if (kind === 'dir') return <Folder size={14} />
-  if (kind === 'symlink') return <LinkIcon size={14} />
-  return <FileMark name={name} size={14} />
+  if (kind === 'dir') return <Folder size={16} />
+  if (kind === 'symlink') return <LinkIcon size={16} />
+  return <FileMark name={name} size={16} />
 }
 
 export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCancel }: Props) {

@@ -89,7 +89,7 @@ export function MentionPill({
             like Slack / Discord they are one token, removed whole by Backspace / Delete. */}
         {isFile && (
           <span className={styles.pillIconArea}>
-            {isSkill ? <Sparkles style={{ width: 12, height: 12 }} /> : <FileMark name={pillName} size={12} />}
+            {isSkill ? <Sparkles style={{ width: 12, height: 12 }} /> : <FileMark name={pillName} size={12} ink />}
             {removeBtn}
           </span>
         )}

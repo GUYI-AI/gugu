@@ -1,0 +1,556 @@
+{
+ "note": "Match order: names (exact, case-sensitive) > patterns (glob on the file name, case-insensitive) > ext (last extension, case-insensitive) > code family fallback \"code\" > \"unknown\". Colour: set CSS color on the <svg> (or a parent) from palette[colour][light|dark].",
+ "palette": {
+  "blue": [
+   "#2F6FDE",
+   "#6FA3FF"
+  ],
+  "cyan": [
+   "#0B7D8E",
+   "#3FB6C9"
+  ],
+  "green": [
+   "#24834C",
+   "#4FBF7F"
+  ],
+  "amber": [
+   "#967900",
+   "#CBB535"
+  ],
+  "orange": [
+   "#C05800",
+   "#F2954A"
+  ],
+  "red": [
+   "#D2334B",
+   "#F47A7E"
+  ],
+  "pink": [
+   "#C2408F",
+   "#EE7FBE"
+  ],
+  "purple": [
+   "#7A55D6",
+   "#A98BFA"
+  ],
+  "brown": [
+   "#8E5A46",
+   "#CF9C88"
+  ],
+  "ink": [
+   "#3F3F46",
+   "#C4C4CC"
+  ],
+  "mute": [
+   "#71717A",
+   "#A1A1AA"
+  ]
+ },
+ "icons": {
+  "code": {
+   "shape": "square",
+   "colour": "ink",
+   "label": "其他代码",
+   "names": [
+    "Makefile",
+    "makefile",
+    "CMakeLists.txt"
+   ],
+   "patterns": [],
+   "ext": [
+    "xml",
+    "lua",
+    "pl",
+    "r",
+    "dart",
+    "scala",
+    "ex",
+    "exs",
+    "clj",
+    "hs",
+    "erl",
+    "zig",
+    "nim",
+    "m",
+    "mm",
+    "asm",
+    "bat",
+    "cmd",
+    "gradle",
+    "cmake"
+   ]
+  },
+  "md": {
+   "shape": "square",
+   "colour": "ink",
+   "label": "Markdown",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "md",
+    "mdx",
+    "markdown"
+   ]
+  },
+  "json": {
+   "shape": "square",
+   "colour": "amber",
+   "label": "JSON",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "json",
+    "jsonc",
+    "json5"
+   ]
+  },
+  "js": {
+   "shape": "square",
+   "colour": "amber",
+   "label": "JavaScript",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "js",
+    "mjs",
+    "cjs"
+   ]
+  },
+  "jsx": {
+   "shape": "square",
+   "colour": "amber",
+   "label": "JSX",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "jsx"
+   ]
+  },
+  "ts": {
+   "shape": "square",
+   "colour": "blue",
+   "label": "TypeScript",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "ts",
+    "mts",
+    "cts"
+   ]
+  },
+  "tsx": {
+   "shape": "square",
+   "colour": "blue",
+   "label": "TSX",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "tsx"
+   ]
+  },
+  "py": {
+   "shape": "square",
+   "colour": "cyan",
+   "label": "Python",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "py",
+    "pyi"
+   ]
+  },
+  "go": {
+   "shape": "square",
+   "colour": "cyan",
+   "label": "Go",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "go"
+   ]
+  },
+  "rs": {
+   "shape": "square",
+   "colour": "brown",
+   "label": "Rust",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "rs"
+   ]
+  },
+  "java": {
+   "shape": "square",
+   "colour": "red",
+   "label": "Java",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "java"
+   ]
+  },
+  "kt": {
+   "shape": "square",
+   "colour": "purple",
+   "label": "Kotlin",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "kt",
+    "kts"
+   ]
+  },
+  "swift": {
+   "shape": "square",
+   "colour": "orange",
+   "label": "Swift",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "swift"
+   ]
+  },
+  "c": {
+   "shape": "square",
+   "colour": "blue",
+   "label": "C",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "c"
+   ]
+  },
+  "cpp": {
+   "shape": "square",
+   "colour": "blue",
+   "label": "C++",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "cpp",
+    "cc",
+    "cxx",
+    "hpp"
+   ]
+  },
+  "h": {
+   "shape": "square",
+   "colour": "blue",
+   "label": "C 头文件",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "h"
+   ]
+  },
+  "cs": {
+   "shape": "square",
+   "colour": "green",
+   "label": "C#",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "cs"
+   ]
+  },
+  "rb": {
+   "shape": "square",
+   "colour": "red",
+   "label": "Ruby",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "rb"
+   ]
+  },
+  "php": {
+   "shape": "square",
+   "colour": "purple",
+   "label": "PHP",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "php"
+   ]
+  },
+  "sh": {
+   "shape": "square",
+   "colour": "green",
+   "label": "Shell",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "ps1"
+   ]
+  },
+  "yaml": {
+   "shape": "square",
+   "colour": "pink",
+   "label": "YAML",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "yaml",
+    "yml"
+   ]
+  },
+  "toml": {
+   "shape": "square",
+   "colour": "brown",
+   "label": "TOML / INI",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "toml",
+    "ini"
+   ]
+  },
+  "html": {
+   "shape": "square",
+   "colour": "orange",
+   "label": "HTML",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "html",
+    "htm"
+   ]
+  },
+  "css": {
+   "shape": "square",
+   "colour": "blue",
+   "label": "CSS",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "css"
+   ]
+  },
+  "scss": {
+   "shape": "square",
+   "colour": "purple",
+   "label": "Sass",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "scss",
+    "sass"
+   ]
+  },
+  "vue": {
+   "shape": "square",
+   "colour": "green",
+   "label": "Vue",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "vue"
+   ]
+  },
+  "svelte": {
+   "shape": "square",
+   "colour": "pink",
+   "label": "Svelte",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "svelte"
+   ]
+  },
+  "sql": {
+   "shape": "square",
+   "colour": "purple",
+   "label": "SQL",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "sql"
+   ]
+  },
+  "docker": {
+   "shape": "square",
+   "colour": "cyan",
+   "label": "Dockerfile",
+   "names": [
+    "Dockerfile",
+    "dockerfile"
+   ],
+   "patterns": [
+    "Dockerfile.*",
+    "*.dockerfile"
+   ],
+   "ext": []
+  },
+  "lock": {
+   "shape": "square",
+   "colour": "mute",
+   "label": "锁文件",
+   "names": [
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "bun.lockb"
+   ],
+   "patterns": [
+    "*.lock"
+   ],
+   "ext": []
+  },
+  "text": {
+   "shape": "page",
+   "colour": "mute",
+   "label": "文本",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "txt",
+    "log"
+   ]
+  },
+  "pdf": {
+   "shape": "page",
+   "colour": "red",
+   "label": "PDF",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "pdf"
+   ]
+  },
+  "doc": {
+   "shape": "page",
+   "colour": "blue",
+   "label": "文档",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "doc",
+    "docx",
+    "odt",
+    "rtf",
+    "pages"
+   ]
+  },
+  "sheet": {
+   "shape": "page",
+   "colour": "green",
+   "label": "表格",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "csv",
+    "tsv",
+    "xls",
+    "xlsx",
+    "ods",
+    "numbers"
+   ]
+  },
+  "slides": {
+   "shape": "page",
+   "colour": "orange",
+   "label": "演示",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "ppt",
+    "pptx",
+    "odp"
+   ]
+  },
+  "image": {
+   "shape": "page",
+   "colour": "cyan",
+   "label": "图片",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "bmp",
+    "svg",
+    "heic",
+    "avif",
+    "ico"
+   ]
+  },
+  "audio": {
+   "shape": "page",
+   "colour": "pink",
+   "label": "音频",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "mp3",
+    "wav",
+    "m4a",
+    "aac",
+    "flac",
+    "ogg",
+    "opus"
+   ]
+  },
+  "video": {
+   "shape": "page",
+   "colour": "purple",
+   "label": "视频",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "mp4",
+    "mov",
+    "webm",
+    "mkv",
+    "avi",
+    "m4v"
+   ]
+  },
+  "archive": {
+   "shape": "page",
+   "colour": "brown",
+   "label": "压缩",
+   "names": [],
+   "patterns": [],
+   "ext": [
+    "zip",
+    "rar",
+    "7z",
+    "tar",
+    "gz",
+    "tgz",
+    "bz2",
+    "xz"
+   ]
+  },
+  "unknown": {
+   "shape": "page",
+   "colour": "mute",
+   "label": "未知",
+   "names": [],
+   "patterns": [],
+   "ext": []
+  },
+  "folder": {
+   "shape": "folder",
+   "colour": "mute",
+   "label": "文件夹",
+   "names": [],
+   "patterns": [],
+   "ext": []
+  },
+  "folder-open": {
+   "shape": "folder",
+   "colour": "mute",
+   "label": "文件夹（展开）",
+   "names": [],
+   "patterns": [],
+   "ext": []
+  }
+ }
+}

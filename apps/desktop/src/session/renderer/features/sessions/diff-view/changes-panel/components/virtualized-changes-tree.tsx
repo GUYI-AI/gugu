@@ -7,7 +7,7 @@ import {
   isChainExpanded,
   type TreeRow,
 } from '@renderer/features/sessions/file-tree/tree-utils';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark } from '@gugu/session-ui/file-mark';
 import { cn } from '@renderer/utils/utils';
 import { ChangeStatusAffordance, type ChangeRow } from './changes-list-item';
 import { buildChangesTree } from './changes-tree-utils';
@@ -141,7 +141,7 @@ function DirectoryRow({
         )}
       </span>
       <span className="shrink-0 text-foreground-muted">
-        {isExpanded ? <FolderOpen className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
+        {isExpanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
       </span>
       <span className="min-w-0 flex-1 truncate text-left text-sm">{displayName}</span>
     </button>
@@ -185,7 +185,7 @@ function FileRow({
     >
       <span className="inline-block w-3.5 shrink-0" />
       <span className="shrink-0">
-        <FileIcon filename={node.name} size={12} />
+        <FileMark name={node.name} size={16} />
       </span>
       <span
         className={cn(

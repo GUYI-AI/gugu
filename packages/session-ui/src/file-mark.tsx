@@ -1,12 +1,20 @@
 import type { CSSProperties } from 'react';
-import { fileFamily, type FileFamily } from '@gugu/core/shared/fileFamily.mjs';
-import { FILE_MARKS, IMAGE_OFF_GLYPH } from '@gugu/session-shared/file-marks';
+import { FILE_ICON_VIEWBOX, fileMark, IMAGE_OFF_GLYPH } from '@gugu/session-shared/file-marks';
 
-// 每族一个固定的 `{ __html }`:换一个新对象 React 就重写 innerHTML(见 icons.tsx 的 @@@icon-body-identity)。
-const HTML = Object.fromEntries(Object.entries(FILE_MARKS).map(([family, mark]) => [family, { __html: mark.glyph }])) as Record<FileFamily, { __html: string }>;
+// 一个 body 一个固定的 `{ __html }`:换一个新对象 React 就重写 innerHTML(见 icons.tsx 的 @@@icon-body-identity)。
+const HTML = new Map<string, { __html: string }>();
+const html = (body: string) => { let value = HTML.get(body); if (!value) HTML.set(body, value = { __html: body }); return value; };
 const OFF = { __html: IMAGE_OFF_GLYPH };
 
-/** 一个文件的族字形(墨色,跟 `currentColor`),查 `FILE_MARKS`;`off`:是张图、但读不回来。 */
-export function FileMark({ name, mime, off, size = 20, className, style }: { name: string; mime?: string; off?: boolean; size?: number; className?: string; style?: CSSProperties }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className={className} style={style} dangerouslySetInnerHTML={off ? OFF : HTML[fileFamily(name, mime)]} />;
+/**
+ * 一个文件的图标(`file-marks.ts`):画成它的色;`ink` 时不设色、跟 `currentColor`(正文里的提及胶囊)。
+ * `off`:是张图、但读不回来 —— 画 24 格的 Solar 字形,墨色。
+ */
+export function FileMark({ name, mime, off, ink, size = 20, className, style }: {
+  name: string; mime?: string; off?: boolean; ink?: boolean; size?: number; className?: string; style?: CSSProperties;
+}) {
+  if (off) return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className={className} style={style} dangerouslySetInnerHTML={OFF} />;
+  const mark = fileMark(name, mime);
+  return <svg width={size} height={size} viewBox={FILE_ICON_VIEWBOX} fill="none" aria-hidden="true" data-file-icon={mark.id} className={className}
+    style={ink ? style : { ...style, color: mark.color }} dangerouslySetInnerHTML={html(mark.body)} />;
 }

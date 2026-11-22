@@ -151,7 +151,7 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
 // 54: `files.sendSelection`, the preinstalled Files App's Send box beside a selection, into the page's session; 55: the same
 // on a chat folder's page, into that chat. Both withdrawn with 60 (the host's selection menu cites instead).
-// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
+// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's icon in its colour, or with `tile` the host's file tile. Presentation
 // only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
 // 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
