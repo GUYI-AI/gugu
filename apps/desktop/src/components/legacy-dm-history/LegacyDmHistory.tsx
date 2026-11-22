@@ -25,7 +25,7 @@ import { legacyDmList, legacyDmMessages } from './legacyDmReplicas';
 import { retryOf } from '@/lib/replica';
 import { useReplicaPages } from '@/lib/replicaPages';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
-import { legacyMessageBody } from './message-body';
+import { MessageBody } from '../chat/MessageBody';
 
 const previewToast = (title: string, tier: 'error', description?: string) => { notify({ title, tier, description }); };
 
@@ -103,12 +103,19 @@ function LegacyDmTranscript({ scope, chat, mobile }: { scope: LegacyDmScope; cha
   return <>
     <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto py-3" data-testid="legacy-dm-messages">
       {history.more && <Button variant="ghost" onClick={older}>{translate('legacyDm.older')}</Button>}
-      {messages.map(message => <ReadOnlyMessageBubble key={message.id} message={message} mobile={mobile} fileCardsOnly
-        body={legacyMessageBody(message, t('message.retracted'))}
-        sender={message.is_mine ? { display_name: owner?.display_name ?? '', avatar: owner?.avatar, type: 'human' }
-          : chat.agent && message.sender_user_id === chat.agent.id ? chat.agent : { display_name: translate('legacyDm.unknownSender') }}
-        timestamp={<time dateTime={message.created_at}>  {formatCalendarDate(Date.parse(message.created_at), locale)}</time>}
-        onOpenFile={file => preview.open(file, message)} />)}
+      {messages.map(message => {
+        const sender = message.is_mine ? { display_name: owner?.display_name ?? '', avatar: owner?.avatar, type: 'human' }
+          : chat.agent && message.sender_user_id === chat.agent.id ? chat.agent : { display_name: translate('legacyDm.unknownSender') };
+        // What the message says is drawn by the chat's own MessageBody: a task card is a task card here too. Read-only: an old
+        // question takes no answer, a widget is its text.
+        return <ReadOnlyMessageBubble key={message.id} message={message} mobile={mobile} sender={sender}
+          timestamp={<time dateTime={message.created_at}>  {formatCalendarDate(Date.parse(message.created_at), locale)}</time>}>
+          {message.retracted_at
+            ? <span className="italic text-muted-foreground">{t('message.retracted')}</span>
+            : <MessageBody message={message} compact={mobile} isGroup={false} senderName={sender.display_name} time={null} readOnly
+                onOpenFile={(file, shown) => preview.open(file, shown ?? message)} />}
+        </ReadOnlyMessageBubble>;
+      })}
       {loading && <LoadingIndicator size="panel" ariaLabel={translate('sessionImport.previewLoading')} />}
       {failed && <><PaneEmptyState caption={translate('legacyDm.failed')} hint={messageForUser(failed.error)} /><Button variant="ghost" onClick={retryOf(failed)}>{translate('common.retry')}</Button></>}
       {history.pages.length > 0 && !loading && !failed && !messages.length && <PaneEmptyState caption={translate('legacyDm.empty')} />}
