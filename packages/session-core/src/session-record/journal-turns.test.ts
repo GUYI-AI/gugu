@@ -44,6 +44,14 @@ describe('a recorded journal turn gives its outcome to the record turn it is', (
     expect(ids(out)).toEqual(['rec:1']);
     expect(out[0]!.outcome).toMatchObject({ reason: 'prompt_failed' });
   });
+  it('a prompt sent again after it failed: the failure stays on the turn that failed, not the retry', () => {
+    const error = { kind: 'error', reason: 'prompt_failed', detail: '503' } as const;
+    const out = withJournalTurns([asked('rec:1', 10, 'make a file'), asked('rec:2', 100, 'make a file')], [],
+      [{ ...asked('runtime-1', 9, 'make a file'), endedAt: 40, outcome: error } as TranscriptTurn]);
+    expect(ids(out)).toEqual(['rec:1', 'rec:2']);
+    expect(out[0]).toMatchObject({ outcome: error, endedAt: 40 });
+    expect(out[1]!.outcome).toBeUndefined();
+  });
   it('one the record does not hold is shown whole, by when it started', () => {
     expect(ids(withJournalTurns([said('r1', 10, 'a'), said('r2', 30, 'b')], [turn('j1', 40)], [failed('runtime-9', 20, 'never-written')]))).toEqual(['r1', 'runtime-9', 'r2', 'j1']);
   });

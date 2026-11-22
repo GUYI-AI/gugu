@@ -9,14 +9,16 @@ import { sameTurnAs } from './runtime-turn';
  *
  * `recorded`: turns the record holds too, journaled for what only the runtime knew of them, how they ended (an
  * engine that died mid-turn: the runtime's verdict, its exit code and stderr tail). Each gives its outcome to the
- * last record turn that is the same turn (`sameTurnAs`); one the record does not have (yet) is shown whole.
+ * record turn that is the same turn (`sameTurnAs`) and started nearest to it, the last of equals: a prompt sent again
+ * after it failed opens two turns alike, and the retry must not take the failure. One the record does not have (yet)
+ * is shown whole.
  */
 export function withJournalTurns(turns: readonly TranscriptTurn[], journal: readonly TranscriptTurn[], recorded: readonly TranscriptTurn[] = []): TranscriptTurn[] {
   if (recorded.length > 0) {
     const patched = [...turns];
     const unmatched: TranscriptTurn[] = [];
     for (const turn of recorded) {
-      const index = patched.findLastIndex(sameTurnAs(turn));
+      const index = nearestSameTurn(patched, turn);
       if (index < 0) unmatched.push(turn);
       else patched[index] = { ...patched[index]!, ...(turn.outcome ? { outcome: turn.outcome } : {}), ...(turn.endedAt === undefined ? {} : { endedAt: turn.endedAt }) };
     }
@@ -34,6 +36,17 @@ export function withJournalTurns(turns: readonly TranscriptTurn[], journal: read
   }
   while (next < journal.length) out.push(journal[next++]!);
   return out;
+}
+
+function nearestSameTurn(turns: readonly TranscriptTurn[], turn: TranscriptTurn): number {
+  const same = sameTurnAs(turn);
+  const distance = (other: TranscriptTurn) =>
+    other.startedAt === undefined || turn.startedAt === undefined ? Infinity : Math.abs(other.startedAt - turn.startedAt);
+  let best = -1;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (same(turns[index]!) && (best < 0 || distance(turns[index]!) < distance(turns[best]!))) best = index;
+  }
+  return best;
 }
 
 /** The record of a session that has none of an agent's, only gugu's journal beside it. */
