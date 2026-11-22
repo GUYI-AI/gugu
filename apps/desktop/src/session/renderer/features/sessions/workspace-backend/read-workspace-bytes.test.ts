@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({ readChunk: vi.fn(), readStreamed: vi.fn(), machine: { kind: 'local' } as { kind: 'local' } | { kind: 'remote'; deviceId: string } }));
 vi.mock('./workspace-backend', () => ({ workspaceRpc: () => ({ files: { readChunk: h.readChunk } }), workspaceBackend: () => ({ machine: h.machine }) }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { workspace: { files: { readStreamed: h.readStreamed } } } }));
-vi.mock('@renderer/lib/machine-routing', () => ({ machineCodec: () => ({ outbound: (ids: { projectId: string; workspaceId: string }) => ({ projectId: `there-${ids.projectId}`, workspaceId: ids.workspaceId }) }) }));
+vi.mock('@renderer/lib/machine-routing', () => ({ machineCodec: () => ({ outbound: (ids: { workspaceId: string }) => ({ workspaceId: `there-${ids.workspaceId}` }) }) }));
 
 import { readWorkspaceBytes } from './read-workspace-bytes';
 
@@ -60,13 +60,13 @@ it('reads the rest of a file on a linked machine from one stream, of the version
   const size = 9 * 1024 * 1024;
   h.machine = { kind: 'remote', deviceId: 'dev-b' };
   h.readChunk.mockResolvedValueOnce(chunk(size, 512 * 1024));
-  h.readStreamed.mockImplementation(async (_d: string, _p: string, _w: string, request: { offset: number; length: number }) => ({ success: true,
+  h.readStreamed.mockImplementation(async (_d: string, _w: string, request: { offset: number; length: number }) => ({ success: true,
     data: { linked: true, size, etag: 'e', offset: request.offset, data: Buffer.alloc(Math.min(request.length, size - request.offset), 2).toString('base64') } }));
   const parts = await readWorkspaceBytes('p', 'w', 'a.mp4');
   expect(new Blob(parts).size).toBe(size);
   expect(h.readChunk).toHaveBeenCalledOnce();
-  expect(h.readStreamed.mock.calls.map((call) => [call[0], call[1], (call[3] as { offset: number }).offset, (call[3] as { etag: string }).etag]))
-    .toEqual(Array.from({ length: 17 }, (_, k) => [ 'dev-b', 'there-p', (k + 1) * 512 * 1024, 'e' ]));
+  expect(h.readStreamed.mock.calls.map((call) => [call[0], call[1], (call[2] as { offset: number }).offset, (call[2] as { etag: string }).etag]))
+    .toEqual(Array.from({ length: 17 }, (_, k) => [ 'dev-b', 'there-w', (k + 1) * 512 * 1024, 'e' ]));
 });
 
 it('a machine no device link reaches reads its chunks through its channel', async () => {

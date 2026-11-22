@@ -107,8 +107,8 @@ it('the machine streams its working copy\'s file to its own account only, of the
   f.machine.mockResolvedValue(null);
   await fsp.writeFile(path.join(f.root, 'clip.bin'), Buffer.from('0123456789'));
   const etag = etagOf(await fsp.stat(path.join(f.root, 'clip.bin'), { bigint: true }));
-  const stream = createWorkingCopyStreamer(async () => 'owner', async (projectId, workspaceId) => {
-    if (projectId !== 'p' || workspaceId !== 'w') throw new Error('No such workspace');
+  const stream = createWorkingCopyStreamer(async () => 'owner', async (workspaceId) => {
+    if (workspaceId !== 'w') throw new Error('No such workspace');
     return f.root;
   });
   const written: [number, string][] = [];
@@ -120,10 +120,10 @@ it('the machine streams its working copy\'s file to its own account only, of the
   expect(await stream(request(), context('owner'))).toEqual({ size: 10, etag });
   expect(written).toEqual([[3, '3456789']]);
   // A workspace's file, named as the window's chunk read names it: the same version check and the same fence.
-  const place = (extra: Record<string, unknown> = {}) => ({ place: { projectId: 'p', workspaceId: 'w' }, path: 'clip.bin', offset: 8, etag, stream: 's', ...extra });
+  const place = (extra: Record<string, unknown> = {}) => ({ place: { workspaceId: 'w' }, path: 'clip.bin', offset: 8, etag, stream: 's', ...extra });
   await expect(stream(place(), context('someone-else'))).rejects.toMatchObject({ code: 'denied' });
   await expect(stream(place({ path: '../escape.bin' }), context('owner'))).rejects.toThrow();
-  await expect(stream(place({ place: { projectId: 'p', workspaceId: 'other' } }), context('owner'))).rejects.toThrow(/No such workspace/);
+  await expect(stream(place({ place: { workspaceId: 'other' } }), context('owner'))).rejects.toThrow(/No such workspace/);
   await expect(stream(place({ ref: { workspace, id: 'clip.bin' } }), context('owner'))).rejects.toMatchObject({ code: 'invalid' });
   written.length = 0;
   expect(await stream(place(), context('owner'))).toEqual({ size: 10, etag });

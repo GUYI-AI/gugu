@@ -10,7 +10,7 @@ import { publishChatRemoved } from '@/lib/chatRemovalBridge';
 
 beforeAll(() => {
   vi.stubGlobal('CSS', { escape: (value: string) => value });
-  for (const view of ['home', 'project', 'session', 'chat', 'screen'] as const) appState.navigation.registerView(view);
+  for (const view of ['home', 'session', 'chat', 'screen'] as const) appState.navigation.registerView(view);
   ensureScreenLayoutSync();
 });
 
