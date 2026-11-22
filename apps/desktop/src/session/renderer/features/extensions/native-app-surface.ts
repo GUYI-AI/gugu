@@ -1,9 +1,12 @@
 import type { ExtensionSurfaceMetrics } from '@shared/extensions/bridge-protocol';
 import { isBrowserPageOccluded } from '../browser/browser-page-occlusion';
 
-/** Only the trusted renderer measures native embedding bounds; App HTML cannot enlarge this box. */
+/**
+ * Only the trusted renderer measures native embedding bounds; App HTML cannot enlarge this box. `occluded`: the last sample,
+ * for a placing that only follows the page as it moves (no hit test then; overlays coming and going are sampled on their own).
+ */
 export function nativeAppSurfaceMetrics(element: HTMLElement, clipElement: HTMLElement, visible: boolean,
-  width: number, height: number): ExtensionSurfaceMetrics {
+  width: number, height: number, occluded?: boolean): ExtensionSurfaceMetrics {
   const box = element.getBoundingClientRect(), clip = clipElement.getBoundingClientRect();
   const doc = element.ownerDocument, win = doc.defaultView!;
   const x = Math.max(0, clip.x, box.x), y = Math.max(0, clip.y, box.y);
@@ -11,7 +14,7 @@ export function nativeAppSurfaceMetrics(element: HTMLElement, clipElement: HTMLE
     height: Math.max(0, Math.min(win.innerHeight, clip.bottom, box.bottom) - y) };
   const shown = visible && clipped.width > 0 && clipped.height > 0;
   return { visible: shown,
-    occluded: shown && isBrowserPageOccluded(element, { left: x, top: y, width: clipped.width, height: clipped.height }),
+    occluded: shown && (occluded ?? isBrowserPageOccluded(element, { left: x, top: y, width: clipped.width, height: clipped.height })),
     width, height, x: box.x, y: box.y, clip: clipped };
 }
 

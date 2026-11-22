@@ -91,6 +91,8 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
 /** Following a claimed slot's box after it appears: until it holds still this many frames, or this long. */
 const FOLLOW_STILL_FRAMES = 10;
 const FOLLOW_MAX_MS = 2_000;
+/** A slot placed by following within this long is still moving. */
+const MOVING_MS = 100;
 
 function releaseHiddenFocus(box: HTMLElement, claim?: ExtensionViewClaim): void {
   const focused = box.ownerDocument.activeElement;
@@ -196,6 +198,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   /** 上一位认领方那一格的观察者;换格或卸载时先拆。 */
   const teardownRef = useRef<(() => void) | null>(null);
   const lastReportRef = useRef<string>('');
+  const occludedRef = useRef(false);
   /** 每次指向的序号:A→B→A 快速切换时,晚落地的 B 那次不许再往登记表里写。 */
   const aimSeqRef = useRef(0);
   const { theme } = useTheme();
@@ -268,12 +271,13 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [extensionId, kind, managed]);
 
   /** 尺寸与可见性报给桥(它会去重);没绑定时无处可报,静默。 */
-  const report = useCallback((visible: boolean, width: number, height: number) => {
+  const report = useCallback((visible: boolean, width: number, height: number, following = false) => {
     const webContentsId = guestBinding.boundWebContentsId;
     if (webContentsId === null || guestReadyRef.current !== webviewRef.current) return;
     const element = webviewRef.current, clipElement = boxRef.current;
     if (!element || !clipElement) return;
-    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height);
+    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height, following ? occludedRef.current : undefined);
+    occludedRef.current = metrics.occluded ?? false;
     const key = JSON.stringify(metrics);
     if (key === lastReportRef.current) return;
     lastReportRef.current = key;
@@ -473,7 +477,14 @@ export const ExtensionPage = observer(function ExtensionPage({
             report(false, 0, 0);
             return;
           }
-          const place = () => {
+          const rectOf = () => { const r = claim.element.getBoundingClientRect(); return `${r.left},${r.top},${r.width},${r.height}`; };
+          let placedAt = '';
+          let followedAt = -Infinity;
+          // `following`: placed because the slot moved (a frame of a panel's motion): the box follows, occlusion is not
+          // sampled again — a hit test right after the motion's writes lays out the whole page in that frame.
+          const place = (following = false) => {
+            if (following) followedAt = performance.now();
+            placedAt = rectOf();
             const { full, clip } = boxOf(claim.element, layer);
             const shown =
               clip.width > 0 &&
@@ -500,7 +511,7 @@ export const ExtensionPage = observer(function ExtensionPage({
               inner.style.width = `${full.width}px`;
               inner.style.height = `${full.height}px`;
             }
-            report(shown && document.visibilityState === 'visible', full.width, full.height);
+            report(shown && document.visibilityState === 'visible', full.width, full.height, following);
           };
           place();
           // A slot that slides in (a side panel's enter animation) moves by transform, which no
@@ -512,34 +523,38 @@ export const ExtensionPage = observer(function ExtensionPage({
           let lastBox = '';
           let still = 0;
           const follow = () => {
-            place();
-            const r = claim.element.getBoundingClientRect();
-            const box = `${r.left},${r.top},${r.width},${r.height}`;
+            const box = rectOf();
+            // A move that writes an ancestor's style (a PanelTrack's transforms, a framer slide) is placed by `restyled` in
+            // that frame already; no need to place twice per frame.
+            if (box !== placedAt) place(true);
             still = box === lastBox ? still + 1 : 0;
             lastBox = box;
             frame = still < FOLLOW_STILL_FRAMES && performance.now() < followUntil ? requestAnimationFrame(follow) : 0;
           };
           frame = requestAnimationFrame(follow);
-          const observer = new ResizeObserver(place);
+          const resample = () => place();
+          const observer = new ResizeObserver(resample);
           // Hidden in place by a class or style above it (a slot covered by what opens beside its page, AppPeekSlot) moves no
           // box: the page is told to hide by the change itself.
-          const restyled = new MutationObserver(place);
+          const restyled = new MutationObserver(() => place(true));
           for (const node of ancestorsOf(claim.element)) {
             observer.observe(node);
             restyled.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden', 'inert'] });
           }
-          window.addEventListener('resize', place);
-          document.addEventListener('scroll', place, true);
-          document.addEventListener('visibilitychange', place);
-          const stopOcclusion = observeNativeSurfaceOcclusion(place);
+          window.addEventListener('resize', resample);
+          document.addEventListener('scroll', resample, true);
+          document.addEventListener('visibilitychange', resample);
+          // Mid-motion the periodic sample keeps the last one: a hit test there lays out the page in the middle of a frame
+          // the motion has written (tens of ms). The first tick after the slot settles samples again.
+          const stopOcclusion = observeNativeSurfaceOcclusion(() => place(performance.now() - followedAt < MOVING_MS));
           teardownRef.current = () => {
             if (frame) cancelAnimationFrame(frame);
             observer.disconnect();
             restyled.disconnect();
             stopOcclusion();
-            window.removeEventListener('resize', place);
-            document.removeEventListener('scroll', place, true);
-            document.removeEventListener('visibilitychange', place);
+            window.removeEventListener('resize', resample);
+            document.removeEventListener('scroll', resample, true);
+            document.removeEventListener('visibilitychange', resample);
           };
         },
         { fireImmediately: true }

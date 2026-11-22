@@ -23,7 +23,7 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
-import { SidebarOneListHead, SidebarOneListTop, SidebarRailBell } from './sidebar-one-list-chrome';
+import { followBelowRailBell, SidebarOneListHead, SidebarOneListTop, SidebarRailBell } from './sidebar-one-list-chrome';
 import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
 // #2548 the desktop left sidebar, one list: the head (collapse, bell, 已安排, 会话历史, search), 创建智能体 + 「+」, then ONE list
@@ -120,6 +120,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // starts (or only on release, for a drag), the progress is what is on screen.
   const listRef = useSidebarProgressFollow<HTMLDivElement>(followRail);
   const scrollRef = useSidebarProgressFollow<HTMLDivElement>(followNamesMask);
+  const belowBellRef = useSidebarProgressFollow<HTMLDivElement>(followBelowRailBell);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
   // button a no-op whenever the user was already sitting on that project's home — which is the default landing view.
@@ -187,7 +188,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       <RailHint list={listRef} />
       <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
       <SidebarRailBell />
-      <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
+      <SidebarContainer ref={belowBellRef} className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
           <UnfinishedAgentCreates collapsed={railed} />

@@ -976,8 +976,7 @@ export default {
       "collapseSplit": "Collapse split view",
       "collapseSplitHint": "Collapse the split view; the topic stays open",
       "composerPlaceholder": "Write a message…",
-      "empty": "No messages in this topic yet",
-      "resize": "Drag to resize the topic pane"
+      "empty": "No messages in this topic yet"
     }
   },
   "resources": {

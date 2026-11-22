@@ -26,7 +26,7 @@ const file = {
 function Conversation() {
   const preview = useMessageFilePreview({ mobile: true, visible: true, closeRightSurfaces: () => {}, toast: vi.fn() })
   return createElement('div', null,
-    createElement('button', { onClick: () => preview.open(file) }, 'report.txt'), preview.panel)
+    createElement('button', { onClick: () => preview.open(file) }, 'report.txt'), preview.beside(null))
 }
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {

@@ -480,8 +480,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
   }
 
   // Single source of truth for whether the changes panel is actually visible. SessionSidebar
-  // hides it via ShowHide (display: none) based on this, and usePanelLayout must defer
-  // imperative panel resizes to exactly the same condition (ENG-1559).
+  // hides it via ShowHide (display: none) based on this.
   get isChangesPanelVisible(): boolean {
     return !this.isSidebarCollapsed && this.sidebarTab === 'changes';
   }

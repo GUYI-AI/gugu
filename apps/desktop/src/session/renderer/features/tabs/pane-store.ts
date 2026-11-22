@@ -82,12 +82,19 @@ class TabEntryImpl<S = unknown> implements TabEntry<S> {
  * the side of a pair in a pane of its own (PaneLayoutStore `@@@pair`).
  */
 export interface PaneSplitter {
+  /**
+   * Closing this tab would close its pane: the layout may take the pane off the screen first (its page live until it is
+   * off) and run `close` then. True = it will; the tab stays until then.
+   */
+  closesPane?(tabId: string, close: () => void): boolean;
   tabClosing?(entry: TabEntry): void;
   /**
    * A tab left this pane for good; `wasActive`: it was the one in front; `after`: the tab that stood left of it (null:
    * it was first) — where it stood, told by the removal itself, since the pane's front has already moved on.
    */
   tabRemoved?(tabId: string, wasActive: boolean, after: string | null): void;
+  /** A tab now shows another kind of page (navigated, Back/Forward, a page dropped from its history). */
+  kindChanged?(tabId: string): void;
   /** A tab is being brought forward; true = the layout placed it (it replaced the side of the pair). */
   activating?(tabId: string): boolean;
   /** 这一枚能不能单独成窗,能的话怎么开(会话自己那枚 = 整个会话,App 那枚 = 这个 App,别的附页 = 这一枚)。 */
@@ -278,7 +285,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       const entry = this.entries.get(id) ?? this._layoutSplitter?.entryForTab?.(id);
       return entry?.kind === kind && (!which || which(entry.state));
     });
-    for (const id of ids) this._holderOf(id)?._removeTab(id);
+    for (const id of ids) this._holderOf(id)?.closeTab(id);
   }
 
   /** The pane holding this tab now (a pair collapsing moves tabs between the two panes of a strip). */
@@ -522,7 +529,9 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this.openKind(kind as string, args, config);
   }
 
+  /** Every close comes here, the strip's × too: closing a pane's last tab may close the pane on the track first (@@@closing-pane). */
   closeTab(id: string): void {
+    if (this.entries.has(id) && this._layoutSplitter?.closesPane?.(id, () => this._removeTab(id))) return;
     this._removeTab(id);
   }
 
@@ -655,6 +664,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this._resources.set(entry.tabId, this.registry.has(entry.kind)
       ? this.registry.get(entry.kind).initialize(entry as never, this._buildHandle(entry), this._ctx)
       : createUnavailableTabResource());
+    if (entry.kind !== oldEntry.kind) this._layoutSplitter?.kindChanged?.(entry.tabId);
   }
 
   closeActiveTab(): void {
@@ -843,14 +853,14 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
       if (def.onBeforeClose) {
         return Promise.resolve(def.onBeforeClose(entry as never, resource as never, this._ctx, { alone })).then(
           (proceed) => {
-            if (proceed) runInAction(() => this._removeTab(tabId));
+            if (proceed) runInAction(() => this.closeTab(tabId));
           }
         );
       }
     }
 
     // 一排关的时候第二枚起是在 await 之后跑的,已经出了调用方的 action。
-    runInAction(() => this._removeTab(tabId));
+    runInAction(() => this.closeTab(tabId));
     return Promise.resolve();
   }
 
@@ -1017,11 +1027,11 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     // User-style close: run onBeforeClose veto.
     if (!opts?.force && resource && def?.onBeforeClose) {
       return Promise.resolve(def.onBeforeClose(entry as never, resource as never, this._ctx, { alone: false })).then((proceed) => {
-        if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this._removeTab(entry.tabId));
+        if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this.closeTab(entry.tabId));
         return proceed;
       });
     }
-    runInAction(() => this._removeTab(entry.tabId));
+    runInAction(() => this.closeTab(entry.tabId));
     return Promise.resolve(true);
   }
 
