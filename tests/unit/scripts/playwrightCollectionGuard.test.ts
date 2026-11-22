@@ -50,14 +50,6 @@ describe('Playwright collection guard', () => {
     expect(run.status, output).not.toBe(0)
   })
 
-  test('keeps a passing test green', () => {
-    const run = runPlaywright('--grep=passing control')
-    const output = `${run.stdout}${run.stderr}`
-
-    expect(output).toMatch(/1 passed/)
-    expect(run.status, output).toBe(0)
-  })
-
   test('keeps a failing test red', () => {
     const run = runPlaywright('--grep=failing control')
     const output = `${run.stdout}${run.stderr}`
@@ -66,6 +58,7 @@ describe('Playwright collection guard', () => {
     expect(run.status, output).not.toBe(0)
   })
 
+  // Also the plain passing control: a shard that collects the passing test runs it green, guard silent.
   test('keeps a non-empty shard green', () => {
     const run = runPlaywright('--grep=passing control', '--shard=1/9')
     const output = `${run.stdout}${run.stderr}`

@@ -118,6 +118,11 @@ export function programFailureReason(program: Pick<ExtensionProgram, 'extensionI
 }
 
 const IDLE_MS = 5 * 60_000;
+/** Undefined: the transport's own grace (2 s). Tests that stop programs ignoring stdin shorten it. */
+let stopGraceMs: number | undefined;
+export function setExtensionProgramStopGraceForTesting(ms: number | undefined): void {
+  stopGraceMs = ms;
+}
 // The harness owns the call's deadline and cancels through the signal; the SDK's 60 s default would cut long tools short.
 const NO_TIMEOUT_MS = 2 ** 31 - 1;
 
@@ -357,7 +362,7 @@ class ProgramTransport extends OwnedStdioTransport {
         void Promise.resolve(this.surface?.close(true)).catch((error: unknown) => log.warn('App resources did not close cleanly', { error: String(error) }));
         this.surface = null;
       },
-    });
+    }, stopGraceMs);
   }
 }
 

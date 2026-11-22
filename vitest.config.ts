@@ -200,6 +200,8 @@ export default defineConfig({
     // ❌ 别改回一个数:那等于把同一条曲线往右推,下一次负载更高时它照样制造红。
     testTimeout: 0,
     hookTimeout: 0,
+    // Every project extends this root: byte arrays compare as bytes, not element by element (see the file).
+    setupFiles: [resolve(__dirname, 'tests/support/byte-equality.ts')],
     projects: [
       {
         // 咕咕自身的单测。

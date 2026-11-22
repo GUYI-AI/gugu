@@ -63,11 +63,12 @@ it('sends one join per channel when the socket comes back after several failed r
   }
   await vi.waitFor(() => expect(topics.every(name => subscribedSince(name, 0))).toBe(true))
 
-  // The backend goes away long enough for several retries of each channel, then comes back on the same address.
+  // The backend goes away long enough for several retries of each channel (1 s, 2 s and 5 s apart), then comes back on
+  // the same address. Before the fix, 9 s already left three joins per channel queued.
   const marks = new Map(topics.map(name => [name, statuses.get(name)!.length]))
   for (const client of backend.server.clients) client.terminate()
   await new Promise<void>(resolve => backend.http.close(() => resolve()))
-  await new Promise(resolve => setTimeout(resolve, 35_000))
+  await new Promise(resolve => setTimeout(resolve, 9_000))
   const outage = connections
   backend = await listen(backend.port)
 

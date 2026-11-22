@@ -103,8 +103,8 @@ describe('startCliLogin', () => {
 
   it('等到超时 → timed-out,进程被结束', async () => {
     const installed = fakeTool([...DEVICE_LINES.map((line) => `echo '${line}'`), 'sleep 30'].join('\n'));
-    const run = startCliLogin({ ...cliToolRecipe('dws'), loginTimeoutMs: 2_000 }, installed, work);
-    // 计时从起进程算。机器忙到两秒内连链接都没打出来,提示会先落空 —— 结局照样是超时,❌ 因此判红。
+    const run = startCliLogin({ ...cliToolRecipe('dws'), loginTimeoutMs: 200 }, installed, work);
+    // 计时从起进程算。链接还没打出来就到点,提示会先落空 —— 结局照样是超时,❌ 因此判红。
     run.prompt.catch(() => {});
     await expect(run.done).resolves.toMatchObject({ kind: 'timed-out' });
   });

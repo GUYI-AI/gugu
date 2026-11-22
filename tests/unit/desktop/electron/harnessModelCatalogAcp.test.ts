@@ -1094,7 +1094,7 @@ describe('终止条件:停摆判据取代握手总预算', () => {
       await useAgent(`
 const beat = setInterval(() => process.stderr.write('.'), 25);
 function handle(msg) {
-  if (msg.method === 'initialize') return setTimeout(() => reply(msg.id, { protocolVersion: 1 }), 800);
+  if (msg.method === 'initialize') return setTimeout(() => reply(msg.id, { protocolVersion: 1 }), 200);
   if (msg.method === 'initialized') return;
   if (msg.method === 'session/new') return setTimeout(() => {
     clearInterval(beat);
@@ -1103,7 +1103,7 @@ function handle(msg) {
         { value: 'slow-but-alive', name: 'Slow but alive' },
       ] },
     ] });
-  }, 800);
+  }, 200);
 }
 `)
       const state = await probeHarnessModelCatalog('slowpoke', 'acp')
@@ -1214,7 +1214,7 @@ setInterval(() => {}, 1000);
    * 这里那趟永远答不完(靠停摆守卫兜底),所以「立刻返回」是唯一能过的行为。
    */
   it('缓存全空 → 立刻回 unknown + refreshing,❌ 不等那趟探测', async () => {
-    __setInactivityLimitForTest(3_000)
+    __setInactivityLimitForTest(100)
     // 探测停在 spawn 解析这一步,由用例放行。lookup 若等那趟探测,就等不到这道门打开 ——
     // 「不等」由「门还关着它就答了」这个事实证明,❌ 拿墙钟量它答得多快(慢机器上照样会慢过任何阈值)。
     let openGate!: () => void
