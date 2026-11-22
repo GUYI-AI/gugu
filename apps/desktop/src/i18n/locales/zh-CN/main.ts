@@ -445,7 +445,6 @@ export default {
       "outputTrimmed_one": "… 此预览省略了 {{count}} 字",
       "outputTrimmed_other": "… 此预览省略了 {{count}} 字",
       "loading": "正在读取时间线…",
-      "loadingWindow": "加载中…",
       "waitingRecord": "会话已启动，等待首条输出…",
       "empty": "此会话暂无内容。",
       "loadFailed": "无法打开时间线",

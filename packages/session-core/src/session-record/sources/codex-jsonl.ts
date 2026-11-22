@@ -7,6 +7,7 @@ import { readCodexRecord, type CodexRecord, type CodexRecordItem } from '@gugu/c
 
 import type { RecordEntry, SessionRecordLocator, SessionRecordSource } from '../contract';
 import { createJsonlTailSource } from './jsonl-tail-source';
+import { RECORD_START } from './record-tree';
 import { openWindowByteSource } from '../window-cache/file-source';
 import { childState, withSubagentSources } from './subagent-sources';
 import {
@@ -34,47 +35,56 @@ const DIR_CONCURRENCY = 16;
 type Child = { id: string; name: string; callId: string; task?: string; model?: string };
 type Ordinals = {
   turn: number; item: number; userSeen: boolean; calls: Record<string, Record<string, unknown>>; children: Record<string, Child>;
-  /**
-   * Turns a `thread_rolled_back` took out of the thread. The first `applied` rollbacks are in it, `seen` counts those this
-   * read has met, and `rolled` says this read dropped turns it had already sent.
-   */
-  dropped: number[]; seen: number; applied: number; rolled: boolean;
+  /** The previous line on the chain, and the turns still in the thread: each turn's first line and the line before it. */
+  last: string; turns: Array<{ id: string; parent: string }>;
+  /** The running turn's own id (`task_started.turn_id`), null when its line has none. */
+  turnId: string | null;
 };
 
-const initialOrdinals = (dropped: number[] = [], applied = 0): Ordinals =>
-  ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {}, dropped, seen: 0, applied, rolled: false });
+const initialOrdinals = (): Ordinals => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {}, last: RECORD_START, turns: [], turnId: null });
 
 export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
   const lineage = new Set(ancestors);
   lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
-    resumeVersion: 8,
+    // 11: a fork reads its parent's prefix (history_base in a plainly named rollout); state saved before that never did.
+    resumeVersion: 11,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
+    continuesElsewhere: true,
     prefixes: (path) => rolloutPrefixes(locator, path),
     initial: () => initialOrdinals(),
-    // `calls`, `children` and `dropped` are replaced, never changed in place: a snapshot need not copy them.
+    // `calls`, `children` and `turns` are replaced, never changed in place: a snapshot need not copy them.
     snapshot: (ordinals) => ({ ...ordinals }),
     childIds: (ordinals) => Object.keys(ordinals.children),
-    // Turns already sent were rolled back: read again, knowing them from the start.
-    again: (ordinals) => ordinals.rolled ? initialOrdinals(ordinals.dropped, ordinals.applied) : null,
-    decode(record, ordinals) {
-      const codex = readCodexRecord(record);
+    node(record, ordinals) {
       // 序号按**每一条记录**推进，不按「解出了 event 的记录」推进:
-      // 这样以后给某个记录类型补上解码，已有 key 不会整体错位。
+      // 这样以后给某个记录类型补上解码，已有 key 不会整体错位。回退掉的行也照样数。
+      const codex = readCodexRecord(record);
       ordinals.item += 1;
       if (codex.turnStart) {
         ordinals.turn += 1;
         ordinals.item = 0;
       }
-      if (codex.turnStart || codex.end) ordinals.userSeen = false;
-      const key = `codex:${locator.providerSessionId}:${ordinals.turn}:${ordinals.item}`;
+      const id = `${ordinals.turn}:${ordinals.item}`;
+      const parent = ordinals.last;
+      ordinals.last = id;
       const rollback = rolledBackTurns(record);
       if (rollback !== null) {
-        rollBack(ordinals, rollback);
-        return [];
+        const back = rollBack(ordinals, rollback);
+        return { id, parent: back === undefined ? parent : back, kind: 'rewind' };
       }
-      if (ordinals.dropped.includes(ordinals.turn)) return [];
+      if (!codex.turnStart) return { id, parent, kind: 'line' };
+      ordinals.turns = [...ordinals.turns, { id, parent }];
+      const turnId = asRecord(record.payload)?.turn_id;
+      ordinals.turnId = typeof turnId === 'string' && turnId ? turnId : null;
+      return { id, parent, kind: 'prompt' };
+    },
+    decode(record, ordinals) {
+      const codex = readCodexRecord(record);
+      if (codex.turnStart || codex.end) ordinals.userSeen = false;
+      const key = `codex:${locator.providerSessionId}:${ordinals.turn}:${ordinals.item}`;
+      if (rolledBackTurns(record) !== null) return [];
       if (nativeChild && codex.turnStart) return [{ key, at: parseTimestamp(codex.timestamp), event: childState(locator.providerSessionId, 'in_progress') }];
       const item = codex.item;
       if (item?.kind === 'tool_call' && item.namespace === 'collaboration') {
@@ -123,6 +133,9 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
         const steering = ordinals.turn > 0 && ordinals.userSeen;
         ordinals.userSeen = true;
         if (steering) return [{ key: entry.key, at: entry.at, event: { ...event, steering: true } }];
+        // The leading input carries the point a revert steps back to, as its live receipt did: the Codex bridge
+        // reverts to before a turn by its id.
+        if (ordinals.turnId) return [{ key: entry.key, at: entry.at, event: { ...event, revertAnchor: ordinals.turnId } }];
       }
       return entry ? [entry] : [];
     }
@@ -145,21 +158,15 @@ function rolledBackTurns(record: Record<string, unknown>): number | null {
 /**
  * Codex's thread history drops the last `count` turns still in it, the running one included; a turn is what a
  * `task_started` opened, kept even when empty (app-server `ThreadHistoryBuilder::handle_thread_rollback`). The rolled
- * back turns stay in the file, so a read again meets this rollback again: it then changes nothing.
+ * back turns stay in the file: the rollback line hangs off the line before the first of them, which makes them an
+ * abandoned branch (`record-tree.ts`). Undefined = nothing to take back.
  */
-function rollBack(ordinals: Ordinals, count: number): void {
-  ordinals.seen += 1;
-  if (ordinals.seen <= ordinals.applied) return;
-  ordinals.applied = ordinals.seen;
-  const dropped = [...ordinals.dropped];
-  for (let turn = ordinals.turn; turn >= 1 && count > 0; turn--) {
-    if (dropped.includes(turn)) continue;
-    dropped.push(turn);
-    count -= 1;
-  }
-  if (dropped.length === ordinals.dropped.length) return;
-  ordinals.dropped = dropped;
-  ordinals.rolled = true;
+function rollBack(ordinals: Ordinals, count: number): string | undefined {
+  if (count <= 0 || ordinals.turns.length === 0) return undefined;
+  const kept = ordinals.turns.slice(0, Math.max(0, ordinals.turns.length - count));
+  const first = ordinals.turns[kept.length]!;
+  ordinals.turns = kept;
+  return first.parent;
 }
 
 /** A child's final answer, which Codex hands to its parent as an `agent_message` in the parent's record:
@@ -262,11 +269,17 @@ async function rolloutPrefixes(locator: SessionRecordLocator, tail: string): Pro
   }
 }
 
-/** Only the first record is metadata. Never scan the rollout looking for a history_base. */
+/**
+ * Only the first record is metadata. Never scan the rollout looking for a history_base. A segment
+ * (`-<thread>_<segment>.jsonl`) continues its thread; a fork's own rollout, plainly named, continues its parent
+ * (`forked_from_id`, history_base up to the fork point).
+ */
 async function historyBase(path: string): Promise<{ threadId: string; endByteOffset: number } | null> {
-  // Original rollouts (including legacy archives) are complete files. Only segment names carry continuation metadata.
-  if (!basename(path).includes('_')) return null;
-  if (path.endsWith('.zst')) throw new Error('Compressed Codex history segments are not supported');
+  if (path.endsWith('.zst')) {
+    // Archives are read whole, unopened here; a compressed segment cannot be.
+    if (basename(path).includes('_')) throw new Error('Compressed Codex history segments are not supported');
+    return null;
+  }
   const source = await openWindowByteSource(path);
   try {
     // Match the inventory's metadata-head bound; base_instructions can make this first line much larger than a page.

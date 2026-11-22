@@ -6,7 +6,7 @@
  * dependency through the package entry point.
  */
 
-import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest, TimelineWindowFields } from '@gugu/session-core/session-record/contract';
+import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract';
 import type { SessionPatch } from '@gugu/session-core/acp';
 import type { ViewportProtection } from './core/viewport-protection';
 import type { ChatAttachment, ChatMessage, OpenedOutput } from './model';
@@ -47,11 +47,6 @@ export const CHAT_VIEW_COMMANDS = [
 export type ChatCommands = {
   /** Mounted rows and reading intent for residency; never an unread acknowledgement. */
   onViewportProtection?: (protection: ViewportProtection) => void;
-  /** Bounded read-only source rows; never canonical input, unread, or permission state. */
-  sourceWindow?: Pick<TimelineWindowFields, 'sourceLineage' | 'sourceFragments' | 'resolvedFragmentOwners'> & {
-    /** An idle-fenced opening history precedes every subsequently admitted live turn. */
-    beforeLive?: true;
-  };
   /** Open the host's credit page after an authoritative credit exhaustion failure. */
   onRechargeCredits?: () => void;
   /** Retry the same durable input identity, in place. */
@@ -152,13 +147,6 @@ export type ChatCommands = {
 
   /** Fetch one tool picture from its original history source when its thumbnail is shown. */
   resolveToolImage?: (itemId: string, index: number) => Promise<string | null>;
-  /**
-   * A row has come on screen from behind a fold (an opened process, an opened exchange), or is drawn from an item
-   * its page held back (`held`). A host whose pages carry turns as their folded form reads that row's turn again,
-   * whole, and puts it in place; the row shows what it has until then. `itemId` is the row's; it starts with its
-   * turn's id.
-   */
-  onHeldShown?: (itemId: string) => void;
 
   /**
    * Called when the user clicks the stop button on the current user message

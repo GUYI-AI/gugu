@@ -6,14 +6,14 @@ import { messageReferenceId } from '@gugu/session-core/acp/client';
  * @@@outline-of-the-whole-conversation — what a timeline rail needs to draw the turns its window has not loaded:
  * who asked what, and how the reply began. A window loads history a page at a time from the newest end; without
  * this its rail ends where the loaded pages end, and a conversation of thousands of turns shows as its last few
- * dozen. The machine that keeps the conversation reads the outline off its stored turns without sending them: a few
+ * dozen. The machine that keeps the conversation reads the outline off its timeline without sending the turns: a few
  * hundred bytes per input.
  *
  * It lists candidates (`timelineRailCandidates`): the reader's own identity directory decides which of them its rail
  * shows, exactly as it does for loaded turns.
  */
-export type StoredOutlineSender = Pick<DeliveryReadFacts, 'route' | 'from' | 'fromId' | 'fromType' | 'chatKind' | 'sourceLink'>;
-export type StoredOutlineInput = {
+export type SessionOutlineSender = Pick<DeliveryReadFacts, 'route' | 'from' | 'fromId' | 'fromType' | 'chatKind' | 'sourceLink'>;
+export type SessionOutlineInput = {
   /** The user message, by the id it has in a loaded turn. */
   itemId: string;
   /** Its durable reference (`messageReferenceId`): what a reveal is asked with. */
@@ -22,15 +22,15 @@ export type StoredOutlineInput = {
   first: boolean;
   /** How many deliveries the message holds, or null for typed text. A reply to a mixed batch is nobody's. */
   segments: number | null;
-  candidates: { text: string; sender: StoredOutlineSender | null }[];
+  candidates: { text: string; sender: SessionOutlineSender | null }[];
   /** The first thing the agent said before the next input, cut to a preview. */
   reply: string;
 };
-export type StoredOutlineTurn = { id: string; seq: number; inputs: StoredOutlineInput[] };
+export type SessionOutlineTurn = { id: string; inputs: SessionOutlineInput[] };
 
-/** One message item of a stored turn, as the outline reads it: in turn order, then item order. */
+/** One message item of a turn, as the outline reads it: in turn order, then item order. */
 export type OutlineMessageRow = {
-  seq: number; turnId: string; referenceId: string | null; initiator: string | null;
+  turnId: string; referenceId: string | null; initiator: string | null;
   itemId: string; role: string; text: string | null;
 };
 
@@ -41,19 +41,19 @@ export const OUTLINE_REPLY_CHARS = 320;
 /** The first `chars` characters, without walking the rest of a long text. */
 const preview = (text: string, chars: number) => text.length <= chars ? text : [...text.slice(0, 2 * chars)].slice(0, chars).join('');
 
-function senderOf(facts: DeliveryReadFacts): StoredOutlineSender {
+function senderOf(facts: DeliveryReadFacts): SessionOutlineSender {
   return { ...(facts.sourceLink ? { sourceLink: facts.sourceLink } : {}), route: facts.route, from: facts.from, fromId: facts.fromId,
-    ...(facts.fromType ? { fromType: facts.fromType } : {}), chatKind: facts.chatKind } as StoredOutlineSender;
+    ...(facts.fromType ? { fromType: facts.fromType } : {}), chatKind: facts.chatKind } as SessionOutlineSender;
 }
 
 /** The outline of these messages' turns, oldest first. The same reading of a turn as the rail's own (`timelineTurnsFromTranscript`). */
-export function outlineOfMessages(rows: readonly OutlineMessageRow[]): StoredOutlineTurn[] {
-  const turns: StoredOutlineTurn[] = [];
-  let turn: StoredOutlineTurn | undefined, input: StoredOutlineInput | undefined, first = true;
+export function outlineOfMessages(rows: readonly OutlineMessageRow[]): SessionOutlineTurn[] {
+  const turns: SessionOutlineTurn[] = [];
+  let turn: SessionOutlineTurn | undefined, input: SessionOutlineInput | undefined, first = true;
   for (const row of rows) {
     if (typeof row.turnId !== 'string' || typeof row.itemId !== 'string') continue;
-    if (turn?.seq !== row.seq) {
-      turn = { id: row.turnId, seq: row.seq, inputs: [] };
+    if (turn?.id !== row.turnId) {
+      turn = { id: row.turnId, inputs: [] };
       turns.push(turn);
       input = undefined;
       first = true;

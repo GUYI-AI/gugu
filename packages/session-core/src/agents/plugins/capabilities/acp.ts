@@ -28,6 +28,7 @@ import type {
 import { definePluginCapability } from '@gugu/session-shared/plugins';
 import type { SerializedError } from '@gugu/session-shared';
 import z from 'zod';
+import semver from 'semver';
 import type { AcpPlatformInjection } from '../../../acp/api/runtime-contract';
 import type { NormalizedEvent } from '../../../acp/reducer/normalized-event';
 import type { SessionPromptReceipt } from '../../../acp/session-protocol';
@@ -558,6 +559,11 @@ export type AcpRevertPoint = { before: string; files?: true };
 
 export type AcpRevert = {
   /**
+   * Whether this agent process can revert, from the adapter build it reports (`initialize.agentInfo.version`).
+   * Unset = every build can. A record can name revert points the running adapter cannot step back to.
+   */
+  available?(agentVersion: string | undefined): boolean;
+  /**
    * After a foreground turn settles: the point that steps back to before it, or null when it has none.
    * `response` is how the turn ended as the agent sent it (its `_meta`, or vendor fields at the top level).
    * Answer synchronously when the point is in `response`: the turn then settles at its idle like any other; a point
@@ -583,6 +589,12 @@ export const guguBridgeRevert: AcpRevert = {
     if (result?.sessionId !== sessionId) throw new Error('Revert changed the provider session ID.');
   },
 };
+
+/** `guguBridgeRevert` for a bridge that has it from `since` on; a build that does not say its version has not. */
+export const guguBridgeRevertSince = (since: string): AcpRevert => ({
+  ...guguBridgeRevert,
+  available: (agentVersion) => !!agentVersion && semver.valid(agentVersion) !== null && semver.gte(agentVersion, since),
+});
 
 /**
  * Describes whether a provider supports the Agent Client Protocol (ACP) transport.

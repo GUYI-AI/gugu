@@ -49,7 +49,7 @@ const TIMELINE: AgentWatchTimeline = { ...emptyAgentWatchTimeline(), turns: Arra
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/components/session-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: {} }) }));
 vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null, current: () => null }) }));
 vi.mock('@/components/session-watch/useSessionRestart', () => ({ useSessionRestart: () => ({ canStartFresh: false, busy: false, refreshing: false, pendingPrompt: null, error: null, startFresh: async () => undefined, retry: null }) }));
 vi.mock('@/components/session-watch/useTimelineFailureNotice', () => ({ useTimelineFailureNotice: () => undefined }));
@@ -210,7 +210,7 @@ it('the same desktop task page elsewhere keeps its view switcher and its model a
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
   harness.container.style.cssText = 'height:860px;width:900px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local cleanedRecord onBack={() => undefined} />, { contacts: {} });
+  await renderWithAppProviders(harness, <SessionTimelinePage device={DEVICE} session={SUMMARY} local onBack={() => undefined} />, { contacts: {} });
   await until('the session page composer', () => !!harness!.container.querySelector('[data-testid="composer-model-trigger"]'));
   const host = harness.container;
   expect(host.querySelector('[data-testid="agent-watch-timeline-page"]')!.hasAttribute('data-panel-layer')).toBe(false);

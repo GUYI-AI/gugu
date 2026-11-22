@@ -10,7 +10,8 @@ export function nativeReplyKeys(turn: TranscriptTurn): string[] {
     ? [item.id] : []);
 }
 
-export type NativeReadJournal = Record<string, { read: boolean; aliases: string[]; notifyOwner?: true }>;
+/** `at`: when the reply's turn started (a revert drops replies from its point on); absent on entries kept from before. */
+export type NativeReadJournal = Record<string, { read: boolean; aliases: string[]; notifyOwner?: true; at?: number }>;
 export const unreadNativeMessages = (journal: NativeReadJournal): string[] => Object.keys(journal).filter(id => !journal[id]!.read);
 export const unreadOwnerNotifications = (journal: NativeReadJournal): string[] => Object.keys(journal).filter(id => journal[id]!.notifyOwner && !journal[id]!.read);
 export function nativeReadAliases(journal: NativeReadJournal): Record<string, string> {
@@ -20,9 +21,9 @@ export function nativeReadAliases(journal: NativeReadJournal): Record<string, st
   }
   return Object.fromEntries([...values].filter((entry): entry is [string, string] => entry[1] !== null));
 }
-export function addNativeReplies(journal: NativeReadJournal, keys: readonly string[], aliases: ReadonlyMap<string, string> = new Map(), notifications: ReadonlySet<string> = new Set()): NativeReadJournal {
+export function addNativeReplies(journal: NativeReadJournal, keys: readonly string[], aliases: ReadonlyMap<string, string> = new Map(), notifications: ReadonlySet<string> = new Set(), at?: number): NativeReadJournal {
   const next = { ...journal };
-  for (const key of keys) next[key] = { ...(next[key] ?? { read: false, aliases: [...new Set([key, nativeMessageKey(key), aliases.get(key) ?? key])] }), ...(notifications.has(key) ? { notifyOwner: true as const } : {}) };
+  for (const key of keys) next[key] = { ...(next[key] ?? { read: false, aliases: [...new Set([key, nativeMessageKey(key), aliases.get(key) ?? key])], ...(at !== undefined ? { at } : {}) }), ...(notifications.has(key) ? { notifyOwner: true as const } : {}) };
   return next;
 }
 export function seeNativeReplies(journal: NativeReadJournal, visible: readonly string[]): NativeReadJournal {

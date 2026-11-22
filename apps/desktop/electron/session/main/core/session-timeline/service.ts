@@ -4,15 +4,8 @@ import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { prepareWindowLivePosition } from './window-live-position';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
-import { createNativeRecordReader } from './native-record';
-import { createWindowOpenings, type WindowOpeningInput, type WindowOpeningLease, type WindowOpeningProof, type WindowOpeningSelection } from './window-opening';
-import { reserveWindowCommitHost } from './window-commit-production';
-import { closeWindowProjectionOwner } from './window-projection-production';
-import type { WindowProjectionOwner } from './window-projection-host';
-import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage, WindowLivePositionRequest, WindowLivePositionResult } from '@gugu/session-wire/session-window-live';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -20,8 +13,8 @@ import { answeredAskOf, readAnsweredAsks, recordAnsweredAsk } from '../asks/answ
 import { askSourceSpec } from '../asks/sources';
 import { readAgentQuestionRecords, rememberAgentQuestion } from '../sessions/agent-question-store';
 import { nativeConversationAliases, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
-import { ownerNotificationHead, ownerNotificationFile } from '../sessions/owner-notifications';
-import { ownerNotificationEpoch } from '../sessions/owner-notification-state';
+import { ownerNotificationFile } from '../sessions/owner-notifications';
+import { followSessionIndex, sessionIndexed, writeSessionIndex } from '../session-index/session-index';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
 import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
@@ -41,7 +34,6 @@ import {
   type Settlement,
   type SessionpageProjectSummary,
   type SessionpageSessionEvent,
-  type SessionpageSessionWindowStatusEvent,
   type SessionpageSessionRespondRequest,
   type SessionpageSessionRespondResult,
   type SessionpageSessionCancelResult,
@@ -59,9 +51,6 @@ import {
   type SessionpageOpenedFileReadRequest,
   type SessionpageOpenedFileChunk,
   type SessionpageSessionToolImageRequest,
-  type SessionpageSessionBodyReadRequest,
-  type SessionpageSessionOlderRequest,
-  type WindowBodyResult,
   type TimelineAfterResult,
   type TimelineOlderResult,
   type TimelineSnapshot,
@@ -77,7 +66,7 @@ import { db } from '@main/db/client';
 import { sessions, projects, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { events, tapMainEvents } from '@main/lib/events';
-import { onNativeMessagePreviewChanged, readNativeActiveMessagePreview } from './native-preview-events';
+import { onNativeMessagePreviewChanged } from './native-preview-events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
   automationChangedChannel,
@@ -89,7 +78,6 @@ import {
   type SessionSchedule,
 } from '@shared/core/automations/session-schedule';
 import { log } from '@main/lib/logger';
-import { app } from 'electron';
 import {
   legacyAgentStatusWord,
   parseAgentStatus,
@@ -102,12 +90,13 @@ import {
 } from '@shared/core/sessions/sessionEvents';
 import {
   dropTimelineArchive,
-  loadTimelineArchive,
   pruneTimelineArchives,
-  saveTimelineArchive,
+  timelineArchiveFile,
 } from './archive-store';
+import { createFoldClient, type FoldClient } from './fold-client';
 import { watchSessionState, type SessionStateWatch } from './live-permissions';
-import { locateSessionRecord, type SessionRecordLocation } from './locate';
+import { locateSessionRecord, sessionRecordHarnessForProvider, type SessionRecordLocation } from './locate';
+import { ensureJournal, journalHasTurns, journalLocator } from '../sessions/session-journal';
 import { OpenedFileError, readOpenedFileChunk } from './opened-file';
 import { sessionOpenedFile, sessionOutputs } from '../sessions/session-outputs';
 import { createStandInTimeline } from './stand-in-timeline';
@@ -157,7 +146,10 @@ function fail<T>(code: string, message: string): SessionTimelineResult<T> {
  * 显式置 null = fail loud（`timeline_unavailable`），❌ 不返回空时间线冒充「这条会话没内容」。
  */
 export type SessionTimelineFactory = (input: {
-  locator: SessionRecordLocator;
+  /** The agent's record; null = it has none gugu reads, and the journal is all there is. */
+  locator: SessionRecordLocator | null;
+  /** Gugu's journal of the session (`session-journal.ts`), read beside the record. */
+  journal?: SessionRecordLocator | null;
   conversationId: string;
   /** 记录里认出来的提问宿主能不能代答(#6798);能 ⇒ 提问结算带上整份题目。 */
   answerableQuestions?: boolean;
@@ -170,24 +162,28 @@ export type SessionTimelineFactory = (input: {
  * 会让每一个只想测服务层记账的用例都替记录源交税（也会把原生模块拖进不需要它的进程）。
  * 真开一份时间线的那一刻才加载。
  */
-const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
-  const { createSessionRecordSource, createSessionTimeline } = await import(
+const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
+  const { createSessionRecordSource, createSessionTimeline, emptyRecordSource } = await import(
     '@gugu/session-core/session-record'
   );
+  const own = locator ?? journal;
+  if (!own) throw new Error(`session ${sessionId}: neither a record nor a journal to read`);
   // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
-  const archive = readMode === 'snapshot' ? null : await loadTimelineArchive(sessionId);
+  const archive = !locator || readMode === 'snapshot' ? null : await foldedArchive({ locator, sessionId, parentLineage, answerableQuestions });
   const row = readSessionRow(sessionId, { includeArchived: true });
   const pty = row && row.runtime !== 'acp';
-  const timeline = await createSessionTimeline(createSessionRecordSource(locator, { readMode, parentLineage }), {
+  const source = locator ? createSessionRecordSource(locator, { readMode, parentLineage }) : emptyRecordSource(own);
+  const timeline = await createSessionTimeline(source, {
     sessionId,
-    ...(pty ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
+    ...(pty && locator ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
+    ...(journal ? { journal: createSessionRecordSource(journal) } : {}),
     ...(answerableQuestions ? { answerableQuestions } : {}),
   });
   try {
     // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
     const last = timeline.getSnapshot().turns.at(-1);
-    if (pty && last && !last.outcome && last.startedAt !== undefined
+    if (pty && locator && last && !last.outcome && last.startedAt !== undefined
       && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
       const latest = readSessionRow(sessionId, { includeArchived: true });
       if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
@@ -201,6 +197,28 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, convers
     throw error;
   }
 };
+
+let foldClient: FoldClient | null = null;
+
+/** The record folded on the fold thread (`fold.ts`); if that thread fails, the timeline folds the record here. */
+async function foldedArchive(input: { locator: SessionRecordLocator; sessionId: string; parentLineage?: readonly RecordLineageNode[]; answerableQuestions?: boolean }) {
+  const checkpoint = timelineArchiveFile(input.sessionId);
+  if (!checkpoint) return null;
+  try {
+    const archive = await (foldClient ??= createFoldClient((message, detail) => log.warn(message, detail))).fold({
+      locator: input.locator,
+      sessionId: input.sessionId,
+      checkpoint,
+      ...(input.parentLineage ? { parentLineage: input.parentLineage } : {}),
+      ...(input.answerableQuestions ? { answerableQuestions: true } : {}),
+    });
+    void pruneTimelineArchives();
+    return archive;
+  } catch (error) {
+    log.warn('sessionTimeline: fold thread failed; folding on the main thread', { sessionId: input.sessionId, error: String(error) });
+    return null;
+  }
+}
 
 let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;
 
@@ -220,13 +238,14 @@ type TimelineEntry = {
   pendingWatch: SessionStateWatch | null;
   /** What the live runtime last reported waiting (an ACP session's own approvals); the host's asks are added to it (D-31). */
   runtimeRequests: readonly PendingRequest[];
-  nativeActiveTurn?: import('@gugu/session-core/acp/client').TranscriptTurn | null;
   disposed: boolean;
   /**
    * 没有记录可读时的替身(见 stand-in-timeline.ts)。它**不进缓存**:真记录一出现,下一次 acquire
    * 就该开真时间线,而缓存里的替身会把它挡住。用完即拆。
    */
   standIn?: boolean;
+  /** Stops keeping the session index current from this timeline (`followSessionIndex`). */
+  stopIndex?: () => void;
 };
 
 const entries = new Map<string, TimelineEntry>();
@@ -237,8 +256,6 @@ let resetGeneration = 0;
 type ActiveSubscription = {
   conversationId: string;
   stop: () => void;
-  live?: WindowOpeningLease;
-  projection?: WindowProjectionOwner;
 };
 
 const subscriptions = new Map<string, ActiveSubscription>();
@@ -392,32 +409,7 @@ export function locateRow(row: SessionRow): SessionRecordLocation {
 
 // ─── timeline 缓存 ──────────────────────────────────────────────────────────
 
-/**
- * 拆之前把折算结果存下来。
- *
- * 放在拆除这一刻是因为它正好是「这条会话这一轮看完了」的时刻:该写的都写完了,
- * 而且此后这份内存状态就没人要了。⚠️ 存档失败不许影响拆除 —— 缓存写不进去是慢,
- * 拆不掉是泄漏。
- */
-function archiveBeforeDispose(entry: TimelineEntry): void {
-  const archive = entry.timeline.archive?.();
-  if (!archive) return;
-  void archive
-    .then(async (one) => {
-      if (!one) return;
-      await saveTimelineArchive(entry.conversationId, one);
-      await pruneTimelineArchives();
-    })
-    .catch((error) => {
-      log.warn('sessionTimeline: 存档失败(不影响拆除)', {
-        conversationId: entry.conversationId,
-        error: String(error),
-      });
-    });
-}
-
 function disposeEntry(entry: TimelineEntry): void {
-  archiveBeforeDispose(entry);
   entry.disposed = true;
   try {
     entry.pendingWatch?.dispose();
@@ -428,6 +420,7 @@ function disposeEntry(entry: TimelineEntry): void {
     });
   }
   entry.pendingWatch = null;
+  entry.stopIndex?.();
   entry.timeline.dispose();
 }
 
@@ -442,11 +435,11 @@ function attachPendingRequests(entry: TimelineEntry): void {
   void watchSessionState(entry.conversationId, (requests, queuedPrompts, liveReply, terminals, activeTurn) => {
     if (entry.disposed) return;
     entry.runtimeRequests = requests;
-    entry.nativeActiveTurn = activeTurn ?? null;
     syncPending(entry);
     entry.timeline.syncQueuedPrompts(queuedPrompts.filter(isVisibleQueuedPrompt).map(prompt => ({ ...prompt, text: conversationQueueText(prompt.text) })));
     entry.timeline.syncLiveReply(liveReply ?? null);
     entry.timeline.syncTerminals(terminals);
+    entry.timeline.syncActiveTurn(activeTurn ?? null);
   })
     .then((watch) => {
       if (!watch) return;
@@ -550,11 +543,14 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
   }
 
   const location = locateRow(row);
-  if (!location.supported) {
+  // An ACP session's journal holds the turns gugu adds to it, and all its turns when its agent keeps no record gugu reads.
+  const journal = summaryRuntime(row.runtime) === 'acp' ? journalLocator(conversationId) : null;
+  if (!location.supported && !(journal && journalOnly(row))) {
     // 没有记录可读也要打得开(spec session-always-openable):给一个只含第一句话的替身,
     // 为什么、怎么再试由各端按会话摘要画在转录末尾。❌ 回 record_unsupported 让它变成一行点不开的灰字。
     return { ok: true, value: standInEntry(row) };
   }
+  if (journal) await ensureJournal(conversationId);
   if (!timelineFactory) {
     return fail(
       'timeline_unavailable',
@@ -581,7 +577,7 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
   const generation = resetGeneration;
   // 审批只有 ACP 腿有可结算的请求 id；TUI 腿的审批画在终端里，没有通道
   // （`write-bridge` 对它 fail loud）。所以这条订阅只对 ACP 腿开。
-  const promise = factory({ locator: location.locator, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
+  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
     if (generation !== resetGeneration) {
       timeline.dispose();
       throw new Error('会话时间线服务在这份记录打开的过程中被重置了');
@@ -596,7 +592,7 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
       disposed: false,
     };
     entries.set(conversationId, entry);
-    try { attachInteractive(entry, row); }
+    try { attachInteractive(entry, row); entry.stopIndex = followSessionIndex(conversationId, timeline); }
     catch (error) { entries.delete(conversationId); timeline.dispose(); throw error; }
     return entry;
   });
@@ -631,6 +627,11 @@ function firstMessageOf(row: SessionRow): string | null {
   return session.initialQueue?.[0]?.text ?? session.firstUtterance ?? null;
 }
 
+/** Its agent keeps no record gugu reads, and gugu's journal has its turns. */
+function journalOnly(row: SessionRow): boolean {
+  return summaryRuntime(row.runtime) === 'acp' && sessionRecordHarnessForProvider(row.provider) === null && journalHasTurns(row.id);
+}
+
 function standInEntry(row: SessionRow): TimelineEntry {
   return {
     conversationId: row.id,
@@ -640,7 +641,7 @@ function standInEntry(row: SessionRow): TimelineEntry {
       createdAt: rowCreatedAt(row),
       recordAvailable: () => {
         const current = readSessionRow(row.id);
-        return current !== null && locateRow(current).supported;
+        return current !== null && (locateRow(current).supported || journalOnly(current));
       },
     }),
     refs: 1,
@@ -808,8 +809,6 @@ function summaryOf(
     nativeLastMessage: nativeConversationListActivity(session.id),
     nativeUnreadKeys: nativeConversationUnread(session.id),
     nativeOwnerNotificationUnreadCount: nativeOwnerNotificationUnread(session.id).length,
-    nativeOwnerNotificationSeq: ownerNotificationHead(session.id) ?? -1,
-    nativeOwnerNotificationEpoch: ownerNotificationEpoch(session.id),
     nativeUnreadAliases: nativeConversationAliases(session.id),
     ...(location.supported ? {} : { unsupportedReason: location.reason, ...notStartedFacts(session) }),
     // 这三项库里早就有,先前没往手机端传 —— 手机上于是既没有置顶区、也认不出未读、
@@ -844,163 +843,12 @@ export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
-  return withTimeline(input.conversationId, (timeline, floor) => {
+  return withTimeline(input.conversationId, async (timeline, floor) => {
+    // Asked for now (a revert just landed, say): the record as written by now, wherever it now is.
+    await timeline.catchUp();
     if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
     return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
   });
-}
-
-type SourceWindowReader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
-let sourceWindowOpening: Promise<SourceWindowReader> | null = null;
-
-/** Desktop reopening has its own bounded source path, including its subscription. A failed opening is not kept: the next read opens again. */
-function sourceWindowReader(): Promise<SourceWindowReader> {
-  return sourceWindowOpening ??= (async () => {
-    const [{ join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
-      import('node:path'), import('node:crypto'),
-      import('@gugu/session-core/session-record/window-cache/read-budget'), import('./desktop-source-reader'),
-      import('@gugu/session-core/session-record/window-cache/formats'),
-    ]);
-    const cacheDirectory = join(app.getPath('userData'), 'session-window-cache');
-    const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-    return createDesktopSourceWindowReader({
-      request: async (conversationId, limit, signal) => {
-        const row = readSessionRow(conversationId);
-        if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
-        const located = locateRow(row);
-        if (!located.supported || !supportsSourceWindow(located.locator.harness))
-          throw Object.assign(new Error(located.supported ? 'This native format has no window reader' : located.reason), { code: 'unsupported_format' });
-        const historyFloor = await nativeConversationHistoryFloor(conversationId);
-        const conversationScope = hash([cacheDirectory, conversationId, historyFloor]);
-        return { conversationId, historyFloor, locator: located.locator, cacheDirectory, conversationScope,
-          scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId, historyFloor]),
-          branchLineage: hash([located.locator.harness, located.locator.providerSessionId]),
-          cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) ?? undefined
-            : readSessionRows(false, eq(sessions.id, conversationId)).find(value => value.session.id === conversationId)?.project.path,
-          limit, signal, budget: createWindowBudget() };
-      },
-      reportError: error => log.warn('sessionWindow: bounded source subscription failed', { error: String(error) }),
-      observed: process.env.GUGU_WINDOW_IO_TRACE === '1'
-        ? (conversationId, io, phase) => log.info('sessionWindow: read', { conversationId, phase, ...io }) : undefined,
-      backgroundRead: process.env.GUGU_WINDOW_IO_TRACE === '1'
-        ? (jobId, io) => log.info('sessionWindow: read', { jobId, phase: 'reverse', ...io }) : undefined,
-    });
-  })().catch((error: unknown) => {
-    sourceWindowOpening = null;
-    throw error;
-  });
-}
-async function withSourceWindow<T>(read: (reader: SourceWindowReader) => Promise<T>): Promise<SessionTimelineResult<T>> {
-  try { return { ok: true, value: await read(await sourceWindowReader()) }; }
-  catch (error) {
-    const code = (error as { code?: string }).code ?? 'record_unreadable';
-    // The caller only shows this failure; the host keeps a line of it too.
-    log.warn('sessionWindow: read failed', { code, error: String(error) });
-    return fail(code, (error as Error).message ?? String(error));
-  }
-}
-export const windowSnapshot = (input: { conversationId: string; limit?: number }) => withSourceWindow(reader => reader.snapshot(input));
-export const windowAfter = (input: { conversationId: string; cursor: RecordCursor }) => withSourceWindow(reader => reader.after(input));
-export const windowOlder = (input: SessionpageSessionOlderRequest) => withSourceWindow(reader => reader.older(input));
-export const body = (input: SessionpageSessionBodyReadRequest): Promise<SessionTimelineResult<WindowBodyResult>> => withSourceWindow(reader => reader.body(input));
-
-const windowOpenings = createWindowOpenings({
-  reserve: (input, failed) => reserveWindowCommitHost(input.subscriptionId, input.conversationId, failed),
-  capture: async conversationId => {
-    if (await nativeConversationHistoryFloor(conversationId)) return null;
-    const row = readSessionRow(conversationId);
-    if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
-    const { supportsSourceWindow } = await import('@gugu/session-core/session-record/window-cache/formats');
-    if (row.runtime !== 'acp' || !supportsSourceWindow(row.provider)) return null;
-    const { sessionLife } = await import('../sessions/session-life');
-    return sessionLife().stoppedReadFence(conversationId);
-  },
-  register: (id, owner) => {
-    unsubscribe(id); subscriptions.set(id, owner);
-    return () => { if (subscriptions.get(id) === owner) subscriptions.delete(id); };
-  },
-});
-export async function windowPrepare(input: WindowOpeningInput, failed?: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<WindowOpeningSelection>> {
-  try { return { ok: true, value: await windowOpenings.prepare(input, error => failed?.({ ...input, state: 'failed',
-    error: { code: error.code, message: error.message } })) }; }
-  catch (error) { return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message); }
-}
-function windowLiveLease(input: WindowOpeningInput): WindowOpeningLease {
-  const owner = subscriptions.get(input.subscriptionId);
-  if (!owner?.live || owner.conversationId !== input.conversationId)
-    throw Object.assign(new Error('This window has no commit lease'), { code: 'invalid_subscription' });
-  return owner.live;
-}
-export function windowProjectionOwner(input: WindowOpeningInput): WindowProjectionOwner {
-  const owner = subscriptions.get(input.subscriptionId);
-  if (!owner?.projection || owner.conversationId !== input.conversationId)
-    throw Object.assign(new Error('This window has no projection owner'), { code: 'invalid_subscription' });
-  owner.projection.assertCurrent(); return owner.projection;
-}
-export async function windowLiveRead(input: WindowLiveReadRequest): Promise<SessionTimelineResult<WindowCommitPage>> {
-  try {
-    const lease = windowLiveLease(input), value = await lease.read(input.after);
-    if (windowLiveLease(input) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
-    return { ok: true, value };
-  } catch (error) { return fail((error as { code?: string }).code ?? 'live_read_failed', (error as Error).message); }
-}
-export async function windowLiveAck(input: WindowLiveAckRequest): Promise<SessionTimelineResult<void>> {
-  try { windowLiveLease(input).ack(input.through); return { ok: true, value: undefined }; }
-  catch (error) { return fail((error as { code?: string }).code ?? 'live_ack_failed', (error as Error).message); }
-}
-
-export async function windowLivePosition(input: WindowLivePositionRequest): Promise<SessionTimelineResult<WindowLivePositionResult>> {
-  try {
-    const lease = windowLiveLease(input), finish = await prepareWindowLivePosition(lease, input);
-    if (windowLiveLease(input) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
-    return { ok: true, value: finish() };
-  } catch (error) { return fail((error as { code?: string }).code ?? 'live_position_failed', (error as Error).message); }
-}
-
-export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
-  emit: (event: SessionpageSessionEvent) => void,
-  failed: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
-  const subscriptionId = input.subscriptionId?.trim();
-  if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId is required');
-  let opening: WindowOpeningProof | undefined;
-  let stopped = false, readFailed = false, projectionReady = false, teardown: (() => void) | undefined;
-  const abort = new AbortController();
-  const mine: ActiveSubscription = { conversationId: input.conversationId,
-    stop: () => { stopped = true; abort.abort(); closeWindowProjectionOwner(mine); teardown?.(); opening?.live.close(); } };
-  mine.projection = { identity: mine, sessionId: input.conversationId, signal: abort.signal, assertCurrent() {
-    if (stopped || !projectionReady || subscriptions.get(subscriptionId) !== mine)
-      throw Object.assign(new Error('Projection subscription is not active'), { code: 'unsubscribed' });
-  } };
-  const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
-  const onFailure = (status: SessionpageSessionWindowStatusEvent) => {
-    if (stopped) return;
-    readFailed = true; mine.stop(); forget(); failed(status);
-    log.warn('sessionWindow: subscription stopped', { subscriptionId, error: status.error });
-  };
-  try { opening = windowOpenings.take(input, error => onFailure({ conversationId: input.conversationId, subscriptionId,
-    state: 'failed', error: { code: error.code, message: error.message } })); opening(); mine.live = opening.live; }
-  catch (error) {
-    mine.stop();
-    if (subscriptions.get(subscriptionId)?.conversationId === input.conversationId) unsubscribe(subscriptionId);
-    return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message);
-  }
-  unsubscribe(subscriptionId);
-  subscriptions.set(subscriptionId, mine);
-  const result = await withSourceWindow(async reader => {
-    teardown = await reader.subscribe(input, event => {
-      if (stopped) return;
-      emit(event);
-      const fields = event.result.ok ? event.result.batch : event.result.snapshot;
-      if (!fields.pendingLongRecords?.length) { opening!.live.authorize(); projectionReady = true; }
-    }, onFailure, abort.signal, opening);
-    if (stopped) {
-      teardown();
-      if (!readFailed) throw Object.assign(new Error('Subscription was released before opening'), { code: 'unsubscribed' });
-    }
-    return { subscriptionId };
-  });
-  if (!result.ok) { mine.stop(); forget(); }
-  return result;
 }
 
 /**
@@ -1206,6 +1054,80 @@ export async function recordHistoryPage(input: {
   }
 }
 
+/**
+ * When the turn opened by the person's message `anchor` started: a revert to it removes that turn and every one after.
+ * Null when the session's history has no such message (nothing of ours to cut).
+ */
+export async function revertPointStartedAt(conversationId: string, anchor: string): Promise<number | null> {
+  const acquired = await acquire(conversationId);
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  try {
+    const timeline = acquired.value.timeline;
+    await timeline.catchUp();
+    const turn = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns
+      .find((one) => one.items.some((item) => item.kind === 'message' && item.role === 'user' && item.revertAnchor === anchor));
+    return turn?.startedAt ?? null;
+  } finally {
+    release(acquired.value);
+  }
+}
+
+/**
+ * Every turn of the session's record as written by now, the cleared part included (what the agent was sent stays
+ * sent); 'no-record' when there is no record to read (a stand-in, a harness without a reader).
+ */
+export async function recordTurns(conversationId: string): Promise<TimelineSnapshot['turns'] | 'no-record'> {
+  const acquired = await acquire(conversationId);
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  try {
+    if (acquired.value.standIn) return 'no-record';
+    const timeline = acquired.value.timeline;
+    await timeline.catchUp();
+    return timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns;
+  } finally {
+    release(acquired.value);
+  }
+}
+
+/** The session's history as the person sees it now: every turn of its timeline after the cleared part. */
+export async function historyTurns(conversationId: string): Promise<TimelineSnapshot['turns']> {
+  const acquired = await acquire(conversationId);
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  try {
+    const timeline = acquired.value.timeline;
+    const floor = await nativeConversationHistoryFloor(conversationId);
+    await timeline.catchUp();
+    return clearedHistoryResult({ turns: timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns }, floor).turns;
+  } finally {
+    release(acquired.value);
+  }
+}
+
+/**
+ * The session index holds this session's turns (`core/session-index`): read its timeline once if nobody has had it
+ * open since the index was built. A session with no record to read has none.
+ */
+export async function ensureSessionIndexed(conversationId: string): Promise<void> {
+  if (sessionIndexed(conversationId) || entries.has(conversationId)) return;
+  const row = readSessionRow(conversationId, { includeArchived: true });
+  if (!row) return;
+  const location = locateRow(row);
+  const journal = summaryRuntime(row.runtime) === 'acp' ? journalLocator(conversationId) : null;
+  if (!location.supported && !(journal && journalOnly(row))) {
+    writeSessionIndex(conversationId, []);
+    return;
+  }
+  if (!timelineFactory) throw new Error('session index: no timeline factory installed');
+  if (journal) await ensureJournal(conversationId);
+  // A reader of its own, outside the interactive cache: read once and let go, like the settling watch.
+  const timeline = await timelineFactory({ locator: location.supported ? location.locator : null, journal, conversationId });
+  try {
+    writeSessionIndex(conversationId, timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns);
+  } finally {
+    timeline.dispose();
+  }
+}
+
 /** The settling watch owns this reader. It cannot populate or dispose the interactive cache. */
 async function openIngestionRecord(conversationId: string, includeArchived?: boolean): Promise<SessionTimeline | null> {
   const row = readSessionRow(conversationId, { includeArchived });
@@ -1252,7 +1174,7 @@ export async function readOpenedFile(
   input: SessionpageOpenedFileReadRequest
 ): Promise<SessionTimelineResult<SessionpageOpenedFileChunk>> {
   try {
-    if (!(await sessionOpenedFile(input.conversationId, input.path)) && !ownerNotificationFile(input.conversationId, input.path)) {
+    if (!(await sessionOpenedFile(input.conversationId, input.path)) && !(await ownerNotificationFile(input.conversationId, input.path))) {
       return fail('not_opened', `这条会话没有打开过 ${input.path}`);
     }
     return { ok: true, value: await readOpenedFileChunk(input.path, input.offset, input.length) };
@@ -1408,7 +1330,7 @@ const sessionsSubscriptions = new Map<string, { stop: () => void }>();
 const SESSIONS_PUSH_DEBOUNCE_MS = 200;
 
 /** 列表上看得见、又不经状态写入者的变化:会话增删、这几格元信息,以及会话给自己排的定时。 */
-const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'nativeOwnerNotificationSeq', 'nativeOwnerNotificationEpoch', 'lastAnswered'];
+const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'lastAnswered'];
 function changesSessionList(channel: string, data: unknown): boolean {
   if (channel === sessionCreatedChannel.name) {
     return true;
@@ -1801,9 +1723,6 @@ function settlementOf(timeline: SessionTimeline, itemId: string): Settlement | n
 
 /** 测试与收尾用：拆掉所有订阅与缓存实例。 */
 export function resetSessionTimelineService(): void {
-  const sourceWindow = sourceWindowOpening;
-  sourceWindowOpening = null;
-  if (sourceWindow) void sourceWindow.then(reader => reader.dispose()).catch(error => log.warn('sessionWindow: dispose failed', { error: String(error) }));
   resetAsks();
   // 存档跟着一起作废:重置意味着「这一层记的东西可能都不作数了」,
   // 留着一份自称还对得上的存档,下次开会话就会拿它去续一段不存在的历史。
@@ -1835,18 +1754,4 @@ export async function changeQueue(input: { conversationId: string; action: impor
   }
 }
 
-const nativeRecordReader = createNativeRecordReader({ readSession: readSessionRow, activeTurn: id => entries.get(id)?.nativeActiveTurn, activePreview: readNativeActiveMessagePreview, withTimeline,
-  async withArchive<T>(conversationId: string, read: (historyFloor: string | null) => T | Promise<T>): Promise<SessionTimelineResult<T>> {
-    try {
-      const floor = await nativeConversationHistoryFloor(conversationId);
-      const value = await read(floor);
-      return { ok: true as const, value: clearedHistoryResult(value, floor) };
-    } catch (error) {
-      return fail('code' in Object(error) && (error as { code: unknown }).code === 'history_epoch_unstable' ? 'history_epoch_unstable' : 'timeline_failed', (error as Error)?.message ?? String(error));
-    }
-  },
-});
-export const nativeRecord = nativeRecordReader.snapshot;
-export const compactNativeRecord = nativeRecordReader.preview;
-export const nativeToolImage = nativeRecordReader.image;
 export { nativeAttachment } from './native-attachment';

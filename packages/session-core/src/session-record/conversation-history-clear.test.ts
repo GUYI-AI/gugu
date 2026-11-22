@@ -12,10 +12,10 @@ describe('personal native history clear', () => {
     expect(clearedHistoryTurns([turn()], floor)[0].items.map(item => item.id)).toEqual(['new'])
     expect(turn().items).toHaveLength(2)
   })
-  it('removes old turns and their deferred body references and unresolved fragments', () => {
-    const value = { turns: [{ ...turn(), items: [turn().items[0]] }], hasOlder: true, bodyRefs: [{ itemId: 'old' }], sourceFragments: [{ text: 'old fragment' }], cursor: { epoch: 'source', seq: 1 } }
+  it('removes old turns and stops paging older', () => {
+    const value = { turns: [{ ...turn(), items: [turn().items[0]] }], hasOlder: true, cursor: { epoch: 'source', seq: 1 } }
     const result = clearedHistoryResult(value, floor)
-    expect(result.turns).toEqual([]); expect(result.bodyRefs).toEqual([]); expect(result.sourceFragments).toEqual([])
+    expect(result.turns).toEqual([])
     expect(result.hasOlder).toBe(false)
     expect(result.cursor.epoch).toBe('source' + historyClearEpoch(floor))
   })

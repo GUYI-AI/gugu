@@ -8,14 +8,23 @@
 // hoisted above this call. Keep the call at the top level rather than in `beforeAll`: the import transforms
 // the whole renderer graph and can outrun a hook budget under load, which turns every case into "skipped".
 import { vi } from 'vitest';
+import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 
 type Invoke = (channel: string, ...args: never[]) => Promise<unknown>;
 type EventOn = (channel: string, callback: (data: unknown) => void) => () => void;
 
+/**
+ * The session's timeline every store in the file reads (`sessionTimeline.*` and its pushes): empty until a test shows
+ * turns on it (`host.show`). It answers before the test's own `invoke` / `eventOn`.
+ */
+export const host = hostTimeline();
+
 export function installAcpChatStoreHost(
-  invoke: Invoke = () => Promise.resolve([]),
-  eventOn: EventOn = () => () => {},
+  testInvoke: Invoke = () => Promise.resolve([]),
+  testEventOn: EventOn = () => () => {},
 ): void {
+  const invoke = ((channel: string, ...args: never[]) => host.invoke(channel) ?? testInvoke(channel, ...args)) as Invoke;
+  const eventOn: EventOn = (channel, callback) => host.eventOn(channel, callback) ?? testEventOn(channel, callback);
   Object.defineProperty(document, 'fonts', {
     configurable: true,
     value: { load: vi.fn().mockResolvedValue([]) },
@@ -58,5 +67,46 @@ export function replica<T>(initial: T) {
       for (const listener of [...goneListeners]) listener({ code: 'NOT_FOUND' });
     },
     listenerCount: () => listeners.size + goneListeners.size,
+  };
+}
+
+/**
+ * A session's timeline as this computer's host serves it (`sessionTimeline.*`): `invoke` answers the reads, `eventOn`
+ * carries what it pushes. `show` replaces the turns and pushes them as a fresh snapshot, as a reset does.
+ * Pass both to `installAcpChatStoreHost`, `invoke` first in line: it answers `undefined` for other channels.
+ */
+export function hostTimeline(initial: TranscriptTurn[] = []) {
+  let turns = initial;
+  let seq = 0;
+  const subscribers = new Map<string, (data: unknown) => void>();
+  const snapshot = () => ({ cursor: { epoch: 'host', seq }, turns, settlements: [], hasOlder: false });
+  const answer = (value: unknown) => Promise.resolve({ ok: true, value });
+  return {
+    reads: [] as string[],
+    /** When set, a snapshot read takes its turns from here (a test that holds, fails or pages the read). */
+    read: null as null | (() => Promise<TranscriptTurn[]>),
+    invoke(channel: string): Promise<unknown> | undefined {
+      if (!channel.startsWith('sessionTimeline.')) return undefined;
+      this.reads.push(channel);
+      if (channel === 'sessionTimeline.sessionSnapshot') {
+        if (!this.read) return answer(snapshot());
+        return this.read().then((next) => { turns = next; seq += 1; return { ok: true, value: snapshot() }; });
+      }
+      if (channel === 'sessionTimeline.sessionAfter') return answer({ ok: false, reset: 'epoch_changed', snapshot: snapshot() });
+      if (channel === 'sessionTimeline.sessionUnsubscribe') return Promise.resolve(null);
+      return answer(null);
+    },
+    eventOn(channel: string, callback: (data: unknown) => void): (() => void) | undefined {
+      if (!channel.startsWith('session-timeline:push.')) return undefined;
+      subscribers.set(channel, callback);
+      return () => subscribers.delete(channel);
+    },
+    show(next: TranscriptTurn[]) {
+      turns = next;
+      seq += 1;
+      for (const [channel, callback] of [...subscribers]) {
+        callback({ subscriptionId: channel.slice('session-timeline:push.'.length), result: { ok: false, reset: 'epoch_changed', snapshot: snapshot() } });
+      }
+    },
   };
 }

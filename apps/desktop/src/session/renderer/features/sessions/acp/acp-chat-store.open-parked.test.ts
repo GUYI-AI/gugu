@@ -23,7 +23,7 @@ import { reaction, runInAction } from 'mobx';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { Session } from '@shared/core/sessions/sessions';
 import { state as inputState, changed as inputsChanged, EMPTY as NO_INPUTS } from '@/lib/outbox/kinds/sessionInput';
-import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
+import { host as timeline, installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
 import { sessionLifeView } from '../stores/session-life-views';
 
 const records = vi.hoisted(() => new Map<string, Partial<Session>>());
@@ -161,26 +161,21 @@ vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/
 
 type StoredPage = { turns: TranscriptTurn[]; originTurnIds: string[]; nextCursor: number | null };
 const host = {
-  /** 库里那份;每读一次取队首(读完留最后一份)。 */
+  /** The session's timeline; each read takes the first page (the last one stays). */
   storedPages: [] as StoredPage[],
-  storedReads: [] as Array<{ limit?: number; fromSeq?: number }>,
+  storedReads: 0,
   storedFailure: null as Error | null,
   storedPending: null as Promise<StoredPage> | null,
-  sync: vi.fn(async (_sessionId: string): Promise<{ inserted: number }> => ({ inserted: 0 })),
 };
 
-installAcpChatStoreHost((channel: string, ...args: unknown[]) => {
-  if (channel === 'sessions.syncStoredHistoryFromRecord') return host.sync(args[0] as string);
-  if (channel !== 'sessions.getStoredHistory') return Promise.resolve([]);
-  const params = args[0] as { limit?: number; fromSeq?: number };
-  host.storedReads.push(params);
-  if (host.storedFailure) return Promise.reject(host.storedFailure);
-  if (host.storedPending) return host.storedPending;
-  // 开场补读那一页之后新落库的(`fromSeq`):这些用例里没有。
-  if (params.fromSeq !== undefined) return Promise.resolve({ turns: [], originTurnIds: [], nextCursor: null });
+installAcpChatStoreHost();
+timeline.read = async () => {
+  host.storedReads += 1;
+  if (host.storedFailure) throw host.storedFailure;
+  if (host.storedPending) return (await host.storedPending).turns;
   const page = host.storedPages.length > 1 ? host.storedPages.shift()! : host.storedPages[0];
-  return Promise.resolve(page ?? { turns: [], originTurnIds: [], nextCursor: null });
-});
+  return page?.turns ?? [];
+};
 const { AcpChatStore } = await import('./acp-chat-store');
 const { MACHINE_LINK_GRACE_MS } = await import('./acp-chat-store');
 const { machineRegistry } = await import('@renderer/lib/machine-routing');
@@ -236,10 +231,10 @@ function storeFor(record: Partial<Session> = { providerId: 'claude', providerSes
 }
 
 const committedIds = (store: Store) => store.chatState.transcript.state.committedTurns.map((t) => t.id);
-/** 停下了:画完库、问完会话表、请过主进程补记录。 */
+/** 停下了:时间线画完、问完会话表。 */
 const parked = (store: Store) => vi.waitFor(() => {
   expect(store.historyLoading).toBe(false);
-  expect(host.sync).toHaveBeenCalledWith(store.sessionId);
+  expect(store.starting).toBe(false);
 });
 
 describe('sender custody uses the ordinary transcript row', () => {
@@ -249,7 +244,7 @@ describe('sender custody uses the ordinary transcript row', () => {
     life.reads = 0;
     store.bootstrap();
     await parked(store);
-    expect(host.storedReads).toHaveLength(1);
+    expect(host.storedReads).toBe(1);
     expect(life.reads).toBe(0);
     expect(store.chatState.session.state.pendingMessages).toEqual([]);
   });
@@ -417,12 +412,12 @@ beforeEach(() => {
   running.failWith = null;
   running.watchCalls = 0;
   host.storedPages = [page(turn('s0', 0), turn('s1', 1))];
-  host.storedReads = [];
+  host.storedReads = 0;
+  timeline.reads.length = 0;
   host.storedFailure = null;
   host.storedPending = null;
   link.state = 'open';
   link.reconnected.clear();
-  host.sync.mockReset().mockResolvedValue({ inserted: 0 });
   runtime.getStoredQueue.mockClear();
   custody.mockClear();
   life.start.mockClear();
@@ -533,65 +528,48 @@ describe('#980 打开一条没在跑的会话', () => {
     expect(life.stop).toHaveBeenCalledWith(store.runtimeSessionId);
   });
 
-  it('记录里补进来几轮:库里那份就地重读,❌ 再亮「加载中」', async () => {
-    const backfill = Promise.withResolvers<{ inserted: number }>();
-    host.sync.mockReturnValue(backfill.promise);
-    host.storedPages = [page(turn('s0', 0), turn('s1', 1)), page(turn('r0', 0), turn('r1', 1), turn('s0', 2), turn('s1', 3))];
+  it('记录里补进来几轮:时间线推来的那份就地换上,❌ 再亮「加载中」', async () => {
     const { store } = storeFor();
     const loading: boolean[] = [];
     store.bootstrap();
     await parked(store);
-    expect(committedIds(store), '阳控:补之前画的是库里原来那份').toEqual(['s0', 's1']);
+    expect(committedIds(store), '阳控:先画的是时间线原来那份').toEqual(['s0', 's1']);
     const stop = reaction(() => store.historyLoading, (value) => loading.push(value));
 
-    backfill.resolve({ inserted: 2 });
-    await vi.waitFor(() => expect(committedIds(store)).toEqual(['r0', 'r1', 's0', 's1']));
+    timeline.show([turn('r0', 0), turn('r1', 1), turn('s0', 2), turn('s1', 3)]);
+    expect(committedIds(store)).toEqual(['r0', 'r1', 's0', 's1']);
     stop();
-    expect(loading, '补齐是就地换上,❌ 闪一下加载中').not.toContain(true);
-    expect(host.storedReads.at(-1)?.limit, '重读的窗口盖住屏上已有的再加补进来的').toBeGreaterThanOrEqual(100);
+    expect(loading, '就地换上,❌ 闪一下加载中').not.toContain(true);
     expect(create).not.toHaveBeenCalled();
-  });
-
-  it('补不了(主进程抛错):屏上照旧,❌ 弹错误、❌ 失败那一行', async () => {
-    host.sync.mockRejectedValue(new Error('record unreadable'));
-    const { store } = storeFor();
-    store.bootstrap();
-    await parked(store);
-    await Promise.resolve();
-
-    expect(committedIds(store)).toEqual(['s0', 's1']);
-    expect(store.loadError).toBeNull();
-    expect(toasts).toEqual([]);
   });
 
   it('停着时发一句:经 custody 交给宿主,页面不自己起、不挂,库里那页不再读一遍', async () => {
     const { store } = storeFor();
     store.bootstrap();
     await parked(store);
-    const readsBefore = host.storedReads.filter((read) => read.fromSeq === undefined).length;
+    const readsBefore = host.storedReads;
 
     runInAction(() => store.submitPrompt('接着上次的来'));
 
     expect(custody).toHaveBeenCalledWith(store, '接着上次的来', [], []);
     expect(life.start).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
-    expect(host.storedReads.filter((read) => read.fromSeq === undefined).length).toBe(readsBefore);
+    expect(host.storedReads).toBe(readsBefore);
     expect(committedIds(store)).toEqual(['s0', 's1']);
   });
 
-  it('库原本是空的老会话:宿主把它起起来、引擎就绪后再读一次库,补进来的历史照库上屏', async () => {
-    host.sync.mockReturnValue(new Promise(() => {}));
-    // 打开时读一次、挂上开场又读一次,都还是空的;宿主起会话前补完库,引擎就绪后那一读才读到。
-    host.storedPages = [page(), page(), page(turn('r0', 0), turn('r1', 1))];
+  it('时间线原本是空的老会话:宿主把它起起来,记录里有了的历史随时间线推来上屏', async () => {
+    host.storedPages = [page()];
     create.mockImplementation(async () => liveSession());
     const { store } = storeFor();
     store.bootstrap();
-    await vi.waitFor(() => expect(host.sync).toHaveBeenCalledWith(store.sessionId));
-    expect(committedIds(store), '阳控:打开时库是空的').toEqual([]);
+    await vi.waitFor(() => expect(timeline.reads).toContain('sessionTimeline.sessionSubscribe'));
+    expect(committedIds(store), '阳控:打开时是空的').toEqual([]);
 
     running.set(store.runtimeSessionId, 'running');
     await vi.waitFor(() => expect(store.session).not.toBeNull());
-    expect(committedIds(store), '引擎那页只有新轮,历史来自补完的库').toEqual(['r0', 'r1']);
+    timeline.show([turn('r0', 0), turn('r1', 1)]);
+    expect(committedIds(store), '历史来自时间线').toEqual(['r0', 'r1']);
   });
 
   it('停着时宿主把它拉起来(投递、定时):起完就挂上 —— 只附着、❌ 请宿主再起一次,不等人发一句', async () => {
@@ -608,7 +586,7 @@ describe('#980 打开一条没在跑的会话', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith(store.sessionId);
     expect(life.start).not.toHaveBeenCalled();
-    expect(host.storedReads.filter((read) => read.fromSeq === undefined), '库里那页沿用,❌ 再读一遍').toHaveLength(1);
+    expect(host.storedReads, '时间线那份沿用,❌ 再读一遍').toBe(1);
     expect(committedIds(store)).toEqual(['s0', 's1']);
     expect(running.watchers.size, '挂上了就不再盯会话表').toBe(0);
   });
@@ -627,10 +605,9 @@ describe('#980 打开一条在跑的会话', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith(store.sessionId);
     expect(life.start).not.toHaveBeenCalled();
-    expect(host.storedReads.filter((read) => read.fromSeq === undefined)).toHaveLength(1);
+    expect(host.storedReads).toBe(1);
     expect(committedIds(store)).toEqual(['s0', 's1']);
     expect(store.loadError).toBeNull();
-    expect(host.sync).not.toHaveBeenCalled();
   });
 });
 
@@ -1176,10 +1153,10 @@ describe('#980 打开那一下读不到会话表', () => {
 
 
 describe('#1449 every attachment entry uses the current-host ready gate', () => {
-  it.each(['running-open', 'parked-wakeup', 'host-reload', 'retry-start', 'retry-open', 'new-start', 'user-stop', 'side-chat', 'released-transcript'] as const)('%s', async entry => {
+  it.each(['running-open', 'parked-wakeup', 'host-reload', 'retry-start', 'retry-open', 'new-start', 'user-stop', 'side-chat'] as const)('%s', async entry => {
     let ready!: () => void;
     const readyWait = new Promise<void>(resolve => { ready = resolve; });
-    attachment.wait = entry === 'released-transcript' ? null : readyWait;
+    attachment.wait = readyWait;
     create.mockImplementation(async () => liveSession());
     const starts = entry === 'new-start' || entry === 'user-stop';
     const { store } = storeFor(starts ? { providerId: 'claude', forkFromProviderSessionId: 'prov-parent' }
@@ -1187,17 +1164,9 @@ describe('#1449 every attachment entry uses the current-host ready gate', () => 
     let opened = store;
     if (entry === 'side-chat') opened = new AcpChatStore(store.sessionId, store.projectId,
       { id: 'side-ready-' + store.sessionId, forkFromProviderSessionId: 'old-provider' });
-    if (entry === 'running-open' || entry === 'released-transcript') running.phases.set(opened.runtimeSessionId, 'running');
+    if (entry === 'running-open') running.phases.set(opened.runtimeSessionId, 'running');
     if (entry === 'user-stop') life.pend(opened.runtimeSessionId, 'dormant', [], 'user-stop');
     opened.bootstrap();
-    if (entry === 'released-transcript') {
-      await vi.waitFor(() => {
-        expect(opened.session).not.toBeNull();
-        expect((opened as unknown as { _bootstrapsInFlight: number })._bootstrapsInFlight).toBe(0);
-      });
-      create.mockClear(); attachment.calls.mockClear(); attachment.wait = readyWait;
-      opened.releaseTranscript(); opened.bootstrap();
-    }
     if (entry === 'parked-wakeup' || entry === 'host-reload' || entry === 'retry-open' || entry === 'retry-start') {
       await parked(opened);
       if (entry === 'parked-wakeup') running.set(opened.runtimeSessionId, 'running');

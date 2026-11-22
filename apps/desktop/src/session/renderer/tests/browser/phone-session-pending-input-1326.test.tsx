@@ -24,8 +24,10 @@ vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLife
 vi.mock('@/lib/outbox/kinds/sessionInput', async original => ({ ...(await original<object>()), retrySessionInputs: retry }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), fetchOlder: hostHistory.read, machineRpc: () => ({ sessions: { lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
+// A timeline that has had its first snapshot: until then an unknown receipt is not placed.
+const loaded = () => ({ ...emptyAgentWatchTimeline(), cursor: { epoch: 'e', seq: 0 } });
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(async () => {
   modalStore.closeModal();
@@ -45,7 +47,7 @@ it('clears an unknown incoming marker when the phone already has its native bubb
   const text = renderDeliveryEnvelope({ route: 'session-direct', from: 'Remote sender', fromType: 'agent', fromId: 'session:sender', messageId: 'msg:incoming', at: 'now', content: 'Incoming phone instruction' });
   hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
     pending: { count: 1, items: [{ seq: 1, messageId: 'incoming', kind: 'session-direct', text, preview: text, state: 'unknown', failure: null }] } };
-  const timeline = emptyAgentWatchTimeline();
+  const timeline = loaded();
   timeline.turns = [{ id: 'native', seq: 0, initiator: 'agent', items: [{ kind: 'message', id: 'native-echo', seq: 0, role: 'user', text }], outcome: { kind: 'done' } }];
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
@@ -71,7 +73,7 @@ it.each([false, true])('only resends an unmatched phone input on an explicit cli
   const send = vi.fn();
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={send} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   await until('the unmatched incoming input is visible with its unknown receipt', () => !!harness.container.querySelector('[data-user-card="not-landed"]') && !!harness.container.querySelector('[data-send-state="unknown"]'));
@@ -99,7 +101,7 @@ it('uses the ordinary pending projection on the phone, keeping acceptance and au
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   await until('phone pending input appears in the transcript', () => !!harness.container.querySelector('[data-user-card="phone-send"]') && !!harness.container.querySelector('[data-send-state="sending"]'));
@@ -139,22 +141,22 @@ it('loads older phone history before placing an unknown receipt and never draws 
   const text = renderDeliveryEnvelope({ route: 'session-direct', from: 'Remote sender', fromType: 'agent', fromId: 'session:sender', messageId: 'msg:older-incoming', at: 'now', content: 'Older incoming instruction' });
   hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
     pending: { count: 1, items: [{ seq: 1, messageId: 'older-incoming', kind: 'session-direct', text, preview: text, state: 'unknown', failure: null }] } };
-  const timeline = emptyAgentWatchTimeline();
+  const timeline = loaded();
   timeline.hasOlder = true;
   timeline.turns = [{ id: 'latest', seq: 2, initiator: 'user', items: [{ kind: 'message', id: 'latest-user', seq: 0, role: 'user', text: 'Latest human input' }], outcome: { kind: 'done' } }];
-  let release: (value: { turns: typeof timeline.turns; nextCursor: number | null }) => void = () => {};
+  let release: (value: { epoch: string; turns: typeof timeline.turns; hasOlder: boolean }) => void = () => {};
   hostHistory.read.mockImplementation(() => new Promise(resolve => { release = resolve }));
   const loadOlder = vi.fn(async () => {});
   const props = { deviceId: 'device', sessionId: 'phone-task', agentName: 'Agent', nativeRecord: true, sessionRuntime: 'acp' as const,
     respondingItemId: null, onRespond: vi.fn(), onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false, onStop: vi.fn(), stopping: false, onLoadOlder: loadOlder };
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation {...props} timeline={timeline} historyCursor={2} />, { contacts: {} });
+  await renderWithAppProviders(harness, <SessionConversation {...props} timeline={timeline} />, { contacts: {} });
   await until('missing unknown receipt requests its older page', () => hostHistory.read.mock.calls.length === 1);
   expect(harness.container.textContent).not.toContain('Older incoming instruction');
   const older = { ...timeline, hasOlder: false, turns: [{ id: 'older', seq: 1, initiator: 'agent' as const,
     items: [{ kind: 'message' as const, id: 'older-native', seq: 0, role: 'user' as const, text }], outcome: { kind: 'done' as const } }, ...timeline.turns] };
-  await act(async () => { release({ turns: [older.turns[0]!], nextCursor: null }); });
+  await act(async () => { release({ epoch: 'e', turns: [older.turns[0]!], hasOlder: false }); });
   await until('older confirmed agent delivery is folded without an unresolved marker', () => !!harness.container.querySelector('[data-agent-activity][data-expanded="false"]') && !harness.container.querySelector('[data-send-state="unknown"]'));
   await userEvent.click(harness.container.querySelector('[data-agent-activity] button[data-collapse-id]')!);
   await until('the older native bubble clears its unresolved marker', () => !!harness.container.querySelector('[data-user-card="older-native"]') && !harness.container.querySelector('[data-send-state="unknown"]'));
@@ -169,7 +171,7 @@ it('retains the phone recovery label on the same ordinary sending input', async 
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     startupPrompt={{ id: input.id, text: input.text, starting: 'restoring', held: true }}
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
@@ -185,7 +187,7 @@ it('uses the shared failed-message disclosure on touch and the existing inline e
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   await until('the shared failure trigger is mounted', () => !!harness.container.querySelector('[data-testid="message-send-failed"]'));
@@ -213,7 +215,7 @@ it('offers resend and discard on a failed host row and discard on an unknown one
     ] } };
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   // The host rows retain durable order; both states now use the same failed-send copy.
@@ -251,7 +253,7 @@ it.each([
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
   await renderWithAppProviders(harness, <SessionLocalizationProvider>
-    <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+    <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
       sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={send} pendingSends={[]} sending={false} agentWorking={false}
       onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />
     <ModalRenderer />

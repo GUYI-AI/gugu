@@ -1,6 +1,5 @@
 import { openRuntimeFork, runtimeFork, type RuntimeFork } from './session-life-forks';
-import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
-import { isFrameSender } from '@main/host-ws/frame-host';
+import { createRPCController } from '@shared/lib/ipc/rpc';
 import { archiveSession, restoreSession } from './archiveSession';
 import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
@@ -8,9 +7,7 @@ import { getSessionsForProject } from './getSessionsForProject';
 import { getUnarchivedSession } from './getUnarchivedSession';
 import { convertAutomationSession } from './convert-automation-session';
 import { forkSession } from './fork-session';
-import { getStoredHistory, getStoredToolImage, getStoredSettledTurn } from './session-turn-store';
-import { getStoredOutline } from './session-outline';
-import { syncStoredHistoryFromRecord } from './record-backfill';
+import { getOutline } from './session-outline';
 import { hydrateSession } from './hydrateSession';
 import { markSessionSeen } from './markSessionSeen';
 import { renameSession } from './renameSession';
@@ -40,14 +37,7 @@ import { setSessionsOnScreen } from './sessions-on-screen';
  */
 export const sessionController = createRPCController({
   getSessions,
-  // A window of this app reads at the local page size; a device link or a web socket reads at the transport size.
-  getStoredHistory: withSender((sender: number, params: Parameters<typeof getStoredHistory>[0]) =>
-    getStoredHistory(params, { local: !isFrameSender(sender) })),
-  getStoredSettledTurn,
-  getStoredToolImage,
-  getStoredOutline,
-  // #980 打开一条没在跑的会话时:把 agent 自己的记录里有、库里还没有的那几轮补进库,回补进了几轮。
-  syncStoredHistoryFromRecord: (sessionId: string) => syncStoredHistoryFromRecord(sessionId),
+  getOutline,
   forkSession,
   restartSession,
   switchSessionRuntime,

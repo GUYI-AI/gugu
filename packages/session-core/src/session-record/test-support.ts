@@ -60,6 +60,7 @@ export function recordProjection(entries: readonly RecordEntry[]) {
       return JSON.stringify({ key: entry.key, at: entry.at, boundary });
     }
     const event = entry.event;
+    if (!event) return JSON.stringify({ key: entry.key, at: entry.at, committed: entry.committed });
     parser.pushEvent(event, at);
     return JSON.stringify({ key: entry.key, at: entry.at, event });
   });

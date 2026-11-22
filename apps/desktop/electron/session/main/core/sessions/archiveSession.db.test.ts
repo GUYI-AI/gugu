@@ -334,9 +334,6 @@ describe('archiveSession', () => {
         VALUES ('historic-session', 'p1', 'historic-ws', 'acp', 'provider-original',
           json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'history survives'));
     `);
-    const originalTurn = JSON.stringify({ id: 'original-turn', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'original-message', seq: 0, role: 'user', text: '完整时间线必须保留' }] });
-    fixture.sqlite.prepare(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('historic-session:0', 'historic-session', 0, 'original-turn', ?)`)
-      .run(originalTurn);
     expect((await getProjects()).map((project) => project.id)).toContain('p1');
     await archiveSession('p1', 'historic-session');
     expect(await getProjects()).toEqual([]);
@@ -351,7 +348,6 @@ describe('archiveSession', () => {
     ]);
     expect((await getProjects()).map((project) => project.id)).toEqual(['p1']);
     expect((await listSessionHistory({ source: 'gugu', status: 'active' })).rows).toHaveLength(1);
-    expect(fixture.sqlite.prepare('SELECT session_id, data FROM session_turns').all()).toEqual([{ session_id: 'historic-session', data: originalTurn }]);
   });
 
   it('报回这一次真正收走的行:子会话在前、点名的在后;已经归档的不算 —— 撤销按它放回(#6083)', async () => {
@@ -665,7 +661,6 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     insert('kept-agent');
     for (const id of ['removed-agent', 'kept-agent']) {
       fixture.sqlite.prepare('INSERT INTO messages (id, session_id, content, sender) VALUES (?, ?, ?, ?)').run(`${id}:message`, id, 'history', 'user');
-      fixture.sqlite.prepare('INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES (?, ?, 0, ?, ?)').run(`${id}:turn`, id, `${id}:provider-turn`, '[]');
       await archiveSession('p1', id, { removeSocialIdentity: false });
     }
     const originalAt = archivedAt('removed-agent');
@@ -677,7 +672,6 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
     expect(sessionEvents._emit).not.toHaveBeenCalledWith('session:deleted', expect.any(String));
     expect(fixture.sqlite.prepare('SELECT id FROM sessions ORDER BY id').all()).toEqual([{ id: 'kept-agent' }, { id: 'removed-agent' }]);
     expect(fixture.sqlite.prepare('SELECT id FROM messages').all()).toHaveLength(2);
-    expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toHaveLength(2);
     await expect(restoreSession('p1', 'removed-agent')).resolves.toMatchObject({ id: 'removed-agent', archivedAt: null });
     expect(identityHost.restore).toHaveBeenCalledExactlyOnceWith({ projectId: 'p1', sessionId: 'removed-agent' }, receipt);
     await expect(restoreSession('p1', 'kept-agent')).resolves.toMatchObject({ id: 'kept-agent', archivedAt: null });

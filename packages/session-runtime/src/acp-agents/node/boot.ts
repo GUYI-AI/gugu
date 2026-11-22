@@ -25,7 +25,6 @@ import { createPromptAttachmentResolver } from './resolve-prompt-attachment';
 import { LocalPromptQueueStore } from './local-prompt-queue-store';
 
 export type BootAcpRuntimeProcessOptions = {
-  projectMessagePreview: NonNullable<AcpRuntimeDeps['messagePreview']>['project'];
   projectConversationPreview: NonNullable<AcpRuntimeDeps['conversationPreview']>['project'];
   pluginRegistry: PluginRegistry<CLIAgentPluginProvider>;
   env?: NodeJS.ProcessEnv;
@@ -103,7 +102,7 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
           project: options.projectConversationPreview,
           onChange: (event) => conversationActivity.emit(undefined, event),
         },
-        messagePreview: { project: options.projectMessagePreview, onChange: event => messagePreviewChanged.emit(undefined, event) },
+        messagePreview: { onChange: event => messagePreviewChanged.emit(undefined, event) },
         onTurnCommitted: (event) => turnCommitted.emit(undefined, event),
         onPromptSteered: (sessionId) => promptSteered.emit(undefined, { sessionId }),
         onForkHandshake: (providerId, fork) => forkHandshake.emit(undefined, { providerId, fork }),

@@ -269,7 +269,8 @@ function deviceRuntimeOwnerFile(env: NodeJS.ProcessEnv): string {
   return join(stateDir(env), 'device-runtime-owner.json')
 }
 
-async function readDeviceRuntimeOwner(env: NodeJS.ProcessEnv): Promise<string | null> {
+/** The account this machine's device runtime last ran for; null before it ever ran. */
+export async function readDeviceRuntimeOwner(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   const path = deviceRuntimeOwnerFile(env)
   let raw: string
   try {

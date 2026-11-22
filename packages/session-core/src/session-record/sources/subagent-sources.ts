@@ -48,6 +48,7 @@ export function withSubagentSources(
           if (entry.boundary) return { key: entry.key, at: entry.at, event: childState(id,
             entry.boundary.kind === 'turn_failed' ? 'failed' : entry.boundary.kind === 'turn_aborted' ? 'stopped' : 'completed') };
           const event = entry.event;
+          if (!event) return [];
           // A nested launch belongs to this child's stream; nested lifecycle facts already name their own child.
           // A child's positions are in its own file, never a place in the root record.
           if (event.kind === 'subagent_update' || event.kind === 'subagent_stream') return { ...entry, position: undefined };

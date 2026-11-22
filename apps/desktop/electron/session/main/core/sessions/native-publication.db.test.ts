@@ -5,10 +5,11 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 const mock = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mock.db) throw new Error('Missing fixture'); return mock.db; } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+vi.mock('../activity/signals', () => ({ activitySignal: vi.fn() }));
 import { nativeHistoryFloorCache, nativeInputPublication, pendingNativePublications, queueNativeInput, queueNativePublication, type NativePublicationContext } from './native-publication-journal';
 import { nativeConversationHistoryFloor, startNativeConversationPublicationHost } from './native-publication-host';
 import { recordNativePublicationTurn } from './native-publication-turn';
-import { persistCommittedTurn } from './session-turn-store';
+import { observeCommittedTurn } from './committed-turn-observer';
 import { enqueuePending } from './session-pending';
 let fixture: Awaited<ReturnType<typeof openFixture>>;
 let host: ReturnType<typeof startNativeConversationPublicationHost> | undefined;
@@ -126,22 +127,20 @@ it('parks another account’s pending publication and resumes only under its cap
   expect(pendingNativePublications()).toEqual([]);
 });
 
-it('wires live transcript commits to the journal but leaves replay and old-row revision silent', async () => {
+it('publishes live transcript commits, once per turn, but leaves replay and a revision of an unpublished turn silent', async () => {
   host = startNativeConversationPublicationHost({ context: async () => owner, address,
     publish: async () => { throw Error('offline'); }, failed: () => {} });
-  await persistCommittedTurn({ sessionId: 's', source: 'replay', turn: { ...record(), seq: 0 } });
-  await persistCommittedTurn({ sessionId: 's', source: 'revision', turn: record() });
+  await observeCommittedTurn({ sessionId: 's', source: 'replay', turn: { ...record(), seq: 0 } });
+  await observeCommittedTurn({ sessionId: 's', source: 'revision', turn: record() });
   expect(pendingNativePublications()).toEqual([]);
   const live = { ...record(), id: 'runtime:turn:1', referenceId: 'new-live-turn', seq: 1 };
-  await persistCommittedTurn({ sessionId: 's', source: 'live', turn: live });
+  await observeCommittedTurn({ sessionId: 's', source: 'live', turn: live });
   expect(pendingNativePublications()).toHaveLength(2);
-  const stored = fixture.sqlite.prepare('SELECT data FROM session_turns WHERE turn_id=?').get(live.id) as { data: string };
-  expect(JSON.parse(stored.data).items[1]._meta.guguPublicationId).toBe(pendingNativePublications()[1]!.id);
-  await persistCommittedTurn({ sessionId: 's', source: 'revision', turn: { ...live, endedAt: live.endedAt! + 20 } });
+  await observeCommittedTurn({ sessionId: 's', source: 'revision', turn: { ...live, endedAt: live.endedAt! + 20 } });
   expect(pendingNativePublications()).toHaveLength(2);
 });
 
-it('freezes window bytes before capture while admission and global ordering commit with the canonical row', async () => {
+it('freezes the turn\'s bytes while admission and global ordering commit with the canonical row', async () => {
   const { prepareNativePublicationTurn } = await import('./native-publication-turn')
   const prepared = prepareNativePublicationTurn({ sessionId: 's', rowId: 's:7', source: 'live', turn: record(), context: owner }, fixture.db)
   const serialized = JSON.stringify(prepared.turn)
