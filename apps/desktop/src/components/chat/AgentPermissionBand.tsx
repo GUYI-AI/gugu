@@ -6,7 +6,7 @@ import { useLocale } from '@/i18n'
 import { useTheme } from '../../store/theme'
 import { useToast } from '../toastContext'
 import { rendererLogger } from '../../lib/log'
-import type { SessionpageSessionTimeline } from '../../hooks/useSessionpageSessionTimeline'
+import type { Settlement, SessionpageSessionRespondResult } from '@gugu/session-core/session-record/contract'
 import { appInstallAskOf } from '@/session/shared/extensions/host-actions'
 import { deviceCapabilityAskOf } from '@/session/shared/device-capability-ask'
 import { deviceCapabilityWords } from '@/session/renderer/features/extensions/device-capability-approval'
@@ -18,12 +18,12 @@ import { toComposerPermission } from '@/session/renderer/features/sessions/acp/c
 
 const permissionLog = rendererLogger('chat/agent-permission-band')
 
-/** 会话页那条 `PermissionBand` 原样用在聊天页;数据与作答都走时间线结算(见 useSessionpageSessionTimeline),三端谁先答谁生效。 */
+/** 会话页那条 `PermissionBand` 原样用在聊天页;数据与作答都走时间线结算,三端谁先答谁生效。 */
 export function AgentPermissionBand({ sessionId, pending, respond }: {
   /** The session asking: its computer is named when it is not this one (another desktop's session followed here). */
   sessionId: string | null
-  pending: NonNullable<SessionpageSessionTimeline['pendingPermission']>
-  respond: SessionpageSessionTimeline['respondPermission']
+  pending: { itemId: string; title: string; options: { optionId: string; name: string; kind: string }[]; queueCount: number; origin?: Settlement['origin'] }
+  respond: (itemId: string, optionId: string, extra?: { digest?: string }) => Promise<SessionpageSessionRespondResult>
 }) {
   const { t } = useTranslation('messaging')
   const { resolvedLocale } = useLocale()
