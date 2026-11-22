@@ -32,6 +32,7 @@ import {
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { resolveWorkspace } from '../projects/utils';
+import { changedOnItsMachine, workspaceFileRange } from './machine-file-streams';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
 /**
@@ -40,7 +41,7 @@ import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, ty
  */
 type PreviewSource =
   | { kind: 'local'; projectId: string; workspaceId: string }
-  | { kind: 'remote'; projectId: string; workspaceId: string }
+  | { kind: 'remote'; projectId: string; workspaceId: string; machine?: StreamMachine }
   /**
    * A document in a chat's folder: its page's relative URLs name the files beside it in that folder, read as the
    * signed-in person (in the cloud, or fetched from the machine that keeps them). The root is the document's own folder.
@@ -250,10 +251,14 @@ export async function createPreview(
  *  · `pane`:「文件」页签的 HTML 预览,带 `documentPath`(+ 编辑器正文),返回那份文档的地址;
  *  · `browser`:「浏览器」页签,不带文档 —— 页签按 `remote-page-url.ts` 自己把 `file:` 地址排进来。
  */
+/** The machine a remote preview's files are on, and its workspace as that machine names it (`@@@machine-file-stream`). */
+export type StreamMachine = { deviceId: string; projectId: string; workspaceId: string };
+
 export function createRemotePreview(input: {
   /** 那台机器上的项目与工作区(渲染层按项目所在机器把读块请求路由过去)。 */
   projectId: string;
   workspaceId: string;
+  machine?: StreamMachine;
   root: string;
   surface: PreviewSurface;
   documentPath?: string;
@@ -270,7 +275,7 @@ export function createRemotePreview(input: {
     if (!url) return null;
   }
   registry.set(previewId, {
-    source: { kind: 'remote', projectId: input.projectId, workspaceId: input.workspaceId },
+    source: { kind: 'remote', projectId: input.projectId, workspaceId: input.workspaceId, ...(input.machine ? { machine: input.machine } : {}) },
     surface: input.surface,
     root,
     documentPath: input.surface === 'pane' ? input.documentPath : undefined,
@@ -559,7 +564,7 @@ async function readPreviewBytes(
   const source = registration.source;
   if (source.kind === 'remote') {
     const result = await readRemotePreviewBytes(
-      (chunk) => readRemoteChunk(source.projectId, source.workspaceId, chunk, signal),
+      remotePieces(source, signal),
       resolved,
       REMOTE_PREVIEW_MAX_BYTES,
       signal
@@ -642,6 +647,29 @@ const REMOTE_PREVIEW_MAX_BYTES = REMOTE_WORKSPACE_MAX_FILE_BYTES;
 
 /** 一块多久没回话就算这一块取不到(远程 SSH 的机器首次接上设备连接要握手,留足那一次)。 */
 export const REMOTE_CHUNK_TIMEOUT_MS = 20_000;
+
+/**
+ * A remote resource's pieces: the first through the machine's channel (it anchors the version), the rest from one stream
+ * over that machine's device link (`@@@machine-file-stream`) when one reaches it. A linked machine streams or fails.
+ */
+function remotePieces(source: { projectId: string; workspaceId: string; machine?: StreamMachine }, signal?: AbortSignal) {
+  let version: { size: number; etag: string } | null = null;
+  let linked: boolean | null = null;
+  return async (chunk: { path: string; offset: number; length: number }): Promise<RemoteChunk> => {
+    const machine = source.machine;
+    if (chunk.offset > 0 && version && machine && linked !== false) {
+      const range = await workspaceFileRange(machine.deviceId, { projectId: machine.projectId, workspaceId: machine.workspaceId }, { ...chunk, ...version })
+        .catch((error: unknown) => { throw Object.assign(new Error('remote read failed'), { code: changedOnItsMachine(error) ? 'content_changed' : 'unreadable', cause: error }); });
+      if (range) { linked = true; return range; }
+      if (linked) throw Object.assign(new Error('remote read failed'), { code: 'unreadable' });
+      linked = false;
+    }
+    // @@@cloud-only-chunks - a machine no device link reaches: its pieces go one call each through its channel.
+    const read = await readRemoteChunk(source.projectId, source.workspaceId, chunk, signal);
+    if (chunk.offset === 0) version = read.etag ? { size: read.size, etag: read.etag } : null;
+    return read;
+  };
+}
 
 /**
  * 问渲染层要一块:渲染层手里有到那台机器的连接(会话页宿主协议,远程 SSH 走 SSH、远程隧道走咕咕云),

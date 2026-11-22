@@ -33,6 +33,9 @@ import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { PROJECT_FILE_STREAM } from './projectFileHost'
+import { createWorkingCopyStreamer } from './session/main/core/extensions/working-copy-files'
+import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/files/machine-file-streams'
+import { remoteFileStreams } from './projectFileSsh'
 import { nativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
@@ -2538,6 +2541,8 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
+// A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
+setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
 // Every image main uploads (the composer's, an agent's, an App's, a project publication) offers this preview.
 drawImagePreviews({ draw: nativeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
@@ -3068,11 +3073,6 @@ if (sshMachineStore) {
   registerSshMachinesIpc({ ipcMain, getWindow: () => mainWindow, store: sshMachineStore, currentUserId }) // #6264 远程 SSH 的机器:一切走设备连接(server/ssh-link.ts)
   if (REMOTE_TUNNEL_OPEN) {
     const tunnelLog = createLogger('server/tunnel')
-    const requireAuth = async () => {
-      const auth = await desktopAuthProvider().getAuth()
-      if (!auth?.accessToken || !auth.userId) throw new Error('this machine is not signed in to 咕咕')
-      return auth
-    }
     // 问 tunnel.open 只走咕咕云(要建的正是另一条路);一台机器一条频道,与窗口那条各订各的。
     const cloud = createDeviceRpcRequester({
       userId: async () => (await requireAuth()).userId,
@@ -3839,19 +3839,28 @@ function deviceActionCaller(): DeviceActionCaller {
   return (deviceActionCallerInstance = caller)
 }
 
+async function requireAuth() {
+  const auth = await desktopAuthProvider().getAuth()
+  if (!auth?.accessToken || !auth.userId) throw new Error('this machine is not signed in to 咕咕')
+  return auth
+}
+
+/**
+ * A machine this desktop reaches over a device link: one it added over SSH, or one a remote tunnel links. Everything
+ * main sends that machine goes over that link (the requester's pipe, a working copy's file stream); the rest go
+ * through 咕咕云. One rule, read from the mapping, never from how the link is doing right now.
+ */
+async function linkReaches(deviceId: string): Promise<boolean> {
+  const store = sshMachineStore
+  return !!(store && findSshMachine(store.list(), deviceId, (await requireAuth()).userId)) || !!tunnelMachines?.linkMachine(deviceId)
+}
+
 /** 跨机器的发起方,第一次用到时才装。通道与渲染层同一条规矩:这台桌面用 SSH 装上的机器走 SSH,其余走咕咕云。 */
 function crossMachine(): CrossMachineSessions {
   if (crossMachineSessions) return crossMachineSessions
-  const requireAuth = async () => {
-    const auth = await desktopAuthProvider().getAuth()
-    if (!auth?.accessToken || !auth.userId) throw new Error('this machine is not signed in to 咕咕')
-    return auth
-  }
-  const store = sshMachineStore
-  const sshMachine = async (deviceId: string) => (store ? findSshMachine(store.list(), deviceId, (await requireAuth()).userId) : null)
   const requester = createDeviceRpcRequester({
     userId: async () => (await requireAuth()).userId,
-    openPipe: async (deviceId, handlers) => (sshLinks && ((await sshMachine(deviceId)) || tunnelMachines?.linkMachine(deviceId))
+    openPipe: async (deviceId, handlers) => (sshLinks && await linkReaches(deviceId)
       ? openSshDeviceRpcPipe(sshLinks, deviceId, handlers)
       : openCloudDeviceRpcPipe({ supabase, deviceId, userId: async () => (await requireAuth()).userId, ...handlers })),
     // #7199 第二步:设备推回来的「还在跑」与结果。「收到」之后管道本来就留着(只有超时且没有在途请求才拆),
@@ -6564,7 +6573,16 @@ app.whenReady().then(async () => {
             warn: (message) => createLogger('server/link').warn({}, message),
             // #7199 心跳随行报「隧道最近一次有流量」(会话页宿主的心跳不算):云电脑的管家据此判闲置。
             onActivity: () => noteTunnelActivity(),
-            streams: { [PROJECT_FILE_STREAM]: desktopFiles.stream },
+            streams: {
+              [PROJECT_FILE_STREAM]: desktopFiles.stream,
+              // The link's own account: a working copy streams only to it, as its app calls answer only it.
+              [MACHINE_FILE_STREAM]: createWorkingCopyStreamer(async () => process.env.GUGU_SERVER_ACCOUNT ?? '', async (projectId, workspaceId) => {
+                const { resolveWorkspace } = await import('./session/main/core/projects/utils')
+                const workspace = await resolveWorkspace(projectId, workspaceId)
+                if (!workspace) throw new Error(`No workspace ${workspaceId} in project ${projectId}`)
+                return workspace.path
+              }),
+            },
           })
           await emdash.startSessionPtyAttachServer(app.getPath('userData'), { link, serverUpdate: callServerUpdate,
             timeZone: context => applyOwnerTimeZoneContext(context), resume: since => {
