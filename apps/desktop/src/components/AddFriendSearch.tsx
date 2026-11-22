@@ -119,7 +119,7 @@ function ResultRow({
   const right = status === 'friend'
     ? <span className={captionClass}>{t('friendSearch.alreadyFriend')}</span>
     : status === 'sent'
-      ? <span data-testid="friend-search-sent" className="inline-flex items-center gap-1.5 whitespace-nowrap text-[length:var(--font-body)] text-[var(--text-secondary)]"><Check size={14} aria-hidden />{t('friendSearch.requestSent')}</span>
+      ? <span data-testid="friend-search-sent" className="inline-flex items-center gap-1 whitespace-nowrap text-[length:var(--font-body)] text-[var(--text-secondary)]"><Check size={14} aria-hidden />{t('friendSearch.requestSent')}</span>
       : open ? null
         : <Button variant={active ? 'primary' : 'secondary'} size="sm" data-testid="friend-search-add" onClick={onOpen}>{agent ? t('friendSearch.requestToJoin') : t('friendSearch.add')}</Button>
   return (

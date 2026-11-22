@@ -29,7 +29,7 @@ const REFUSAL_COPY_KEY: Record<JoinGroupByIdRefusal, string> = {
 
 // 几何走类名与 token,❌ 不写 inline style:那是 @@@ui-ruler 棘轮盯的债务,只减不增。
 const noteClass = 'pl-2 pr-2 pt-1 text-[length:var(--font-caption)] leading-[var(--lh-body)] text-[var(--text-secondary)]'
-const stateClass = 'inline-flex items-center gap-1.5 whitespace-nowrap text-[length:var(--font-body)] text-[var(--text-secondary)]'
+const stateClass = 'inline-flex items-center gap-1 whitespace-nowrap text-[length:var(--font-body)] text-[var(--text-secondary)]'
 
 // @@@typeahead 与「添加联系人」同一套节制(参数与出处见 AddFriendSearch 的 @@@typeahead):群号是整数,
 // 号段从 200001 起(chat.public_chat_id_seq),所以 6 位以上才可能是一个群;停顿 400 ms 才查,Enter 立即查。
