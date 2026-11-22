@@ -16,7 +16,7 @@ const builtAnchor = join(root, 'apps', 'desktop', 'dist-electron', 'main.js')
 const anchor = existsSync(builtAnchor) ? builtAnchor : join(root, 'package.json')
 const req = createRequire(anchor)
 
-// symbol interposition(靠 nm 读 Mach-O)与 `posix_spawnp failed`(Darwin 的错误文案)
+// symbol interposition(靠 nm 读 Mach-O)与 `posix_spawn failed`(Darwin 的错误文案)
 // 这两条断言都**只在 macOS 成立**,其他平台照抄必红 —— 本分支在 d15 实测过。
 // 但 ABI 对不上是**跨平台**的坑,而且正是这道闸要防的那一个:从前整个脚本在非 darwin 上
 // 直接 exit 0,等于把它一起放过了。所以分两档 —— macOS 全套,其余只跑纯 ABI 加载。
@@ -157,8 +157,8 @@ if (isDarwin) {
   if (reading.normalPty !== true) {
     throw new Error(`[verify-dev-native] invalid runtime probe reading: ${output.trim()}`)
   }
-  if (!String(reading.nativeError).includes('posix_spawnp failed')) {
-    throw new Error('[verify-dev-native] runtime probe did not observe posix_spawnp failed')
+  if (!String(reading.nativeError).includes('posix_spawn failed')) {
+    throw new Error('[verify-dev-native] runtime probe did not observe posix_spawn failed')
   }
 } else if (reading.abiOnly !== true) {
   // 非 macOS 必须真的走了 abi-only 那一档。少了这一条,探针哪天忘了认那个开关,

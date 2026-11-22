@@ -84,3 +84,38 @@ describe('spawnRuntime', () => {
     );
   });
 });
+
+describe('output pressure acknowledgements', () => {
+  it('the parent acknowledges a burst of wire messages once per event-loop turn', async () => {
+    const listeners = new Set<(message: unknown) => void>();
+    const sent: unknown[] = [];
+    const worker: ManagedProcess = {
+      pid: 1,
+      send: (message) => { sent.push(message); },
+      onMessage: (cb) => { listeners.add(cb); if (listeners.size === 1) queueMicrotask(() => cb({ kind: 'wire-runtime-signal', event: 'ready' })); return () => listeners.delete(cb); },
+      onExit: () => () => {},
+      onStdio: () => () => {},
+      onError: () => () => {},
+      dispose: async () => {},
+    };
+    const { logger } = createStubLogger();
+    const runtime = await spawnRuntime({ host: { spawn: async () => worker }, scope: createScope({ logger }), contract: defineContract({}), spec: { entry: 'worker.js' } });
+    for (let n = 0; n < 3; n++) for (const cb of [...listeners]) cb({ kind: 'update', topic: 't', update: { n } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(sent).toEqual([{ kind: 'wire-runtime-signal', event: 'ack', count: 3 }]);
+    await runtime.dispose();
+  });
+
+  it('the worker pauses its output sources until the parent acknowledges', async () => {
+    const wire = workerPort();
+    const pressure = vi.fn();
+    const messages: Array<(message: unknown) => void> = [];
+    wire.port.onMessage = (cb) => { messages.push(cb); return () => {}; };
+    const big = 'x'.repeat(9 * 1024 * 1024);
+    await serveWorkerProcess(() => ({ dispose: vi.fn(), call: async () => big } as unknown as Controller), { port: wire.port, exit: vi.fn(), onOutputPressure: pressure });
+    for (const cb of messages) cb({ kind: 'call', id: 'c1', path: 'big', input: undefined });
+    await vi.waitFor(() => expect(pressure).toHaveBeenLastCalledWith(true));
+    for (const cb of messages) cb({ kind: 'wire-runtime-signal', event: 'ack', count: 1 });
+    expect(pressure).toHaveBeenLastCalledWith(false);
+  });
+});

@@ -10,7 +10,7 @@ import type { ValidatePolicy } from '../../api/with-validation';
 import type { WireInstrumentation } from '../../observability';
 import type { ManagedProcess, ProcessHost, ProcessSpec } from '../../process/types';
 import { createScope, type Scope } from '../scope';
-import { createIpcPressureSender } from './ipc-pressure';
+import { createAckPressureSender } from './ipc-pressure';
 
 const RUNTIME_SIGNAL_KIND = 'wire-runtime-signal';
 /** Shared child-runtime readiness budget; ACP initialize uses the same no-ready-signal semantics. */
@@ -19,7 +19,9 @@ const DEFAULT_SHUTDOWN_GRACE_MS = 1_000;
 
 type RuntimeSignal = {
   kind: typeof RUNTIME_SIGNAL_KIND;
-  event: 'ready' | 'shutdown' | 'shutdown-complete';
+  event: 'ready' | 'shutdown' | 'shutdown-complete' | 'ack';
+  /** ack: how many wire messages the parent has taken off the channel since its last ack. */
+  count?: number;
 };
 
 const READY_SIGNAL: RuntimeSignal = { kind: RUNTIME_SIGNAL_KIND, event: 'ready' };
@@ -109,6 +111,16 @@ export async function spawnRuntime<Defs extends ContractDefinitions>(
     throw error;
   }
 
+  // One ack per turn of the parent's event loop: the worker's output pressure counts what is still unread here.
+  let received = 0;
+  const unsubscribeAck = managed.onMessage((message) => {
+    if (!isWireMessage(message) || received++ > 0) return;
+    setImmediate(() => {
+      managed.send({ kind: RUNTIME_SIGNAL_KIND, event: 'ack', count: received } satisfies RuntimeSignal);
+      received = 0;
+    });
+  });
+
   const restartedEmitter = new Emitter<void>();
   const reconnectListeners = new Set<() => void>();
   const unsubscribeReady = managed.onMessage((message) => {
@@ -146,6 +158,7 @@ export async function spawnRuntime<Defs extends ContractDefinitions>(
       if (disposePromise) return disposePromise;
       disposePromise = (async () => {
         unsubscribeReady();
+        unsubscribeAck();
         restartedEmitter.clear();
         reconnectListeners.clear();
         await managed.dispose();
@@ -191,10 +204,11 @@ export async function serveWorkerProcess(
       logger.error('worker process failed to post a message to its parent', {
         error: error.message,
       });
-    }, options.onOutputPressure);
+    });
   let exiting = false;
 
-  const transport = createRuntimeTransport(port);
+  const sender = options.onOutputPressure && createAckPressureSender((message) => port.send(message), options.onOutputPressure);
+  const transport = createRuntimeTransport(sender ? { ...port, send: sender.send } : port);
 
   const shutdown = async (code: number): Promise<void> => {
     if (exiting) return;
@@ -230,6 +244,7 @@ export async function serveWorkerProcess(
   scope.add(
     port.onMessage((message) => {
       if (isRuntimeSignal(message, 'shutdown')) shutdownOrCrash(0);
+      if (isRuntimeSignal(message, 'ack')) sender?.ack(message.count ?? 0);
     })
   );
   scope.add(port.onDisconnect(() => exit(0)));
@@ -431,7 +446,7 @@ function isRuntimeSignal(
   return record.kind === RUNTIME_SIGNAL_KIND && record.event === event;
 }
 
-function resolveParentPort(onSendError: (error: Error) => void, onPressure?: (paused: boolean) => void): ProcessRuntimePort {
+function resolveParentPort(onSendError: (error: Error) => void): ProcessRuntimePort {
   if (typeof process === 'undefined') {
     throw new Error('serveWorkerProcess requires an IPC channel to the parent process');
   }
@@ -473,14 +488,12 @@ function resolveParentPort(onSendError: (error: Error) => void, onPressure?: (pa
     throw new Error('serveWorkerProcess requires an IPC channel to the parent process');
   }
 
-  const sender = onPressure ? createIpcPressureSender(
-    (message, callback) => currentProcess.send!(message as Parameters<NonNullable<NodeJS.Process['send']>>[0], callback),
-    onSendError, onPressure
-  ) : { send: (message: unknown) => {
-    currentProcess.send!(message as Parameters<NonNullable<NodeJS.Process['send']>>[0], (error: Error | null) => { if (error) onSendError(error); });
-  } };
   return {
-    send: (message) => sender.send(message),
+    send(message) {
+      currentProcess.send!(message as Parameters<NonNullable<NodeJS.Process['send']>>[0], (error: Error | null) => {
+        if (error) onSendError(error);
+      });
+    },
     sendAndWait(message) {
       return new Promise<void>((resolve, reject) => {
         const send = currentProcess.send as (

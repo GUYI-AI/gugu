@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { NodePtySpawner } from './node-pty-spawner';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NodePtyProcess, NodePtySpawner } from './node-pty-spawner';
 
 const { spawnMock } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
@@ -44,5 +44,51 @@ describe('NodePtySpawner', () => {
     spawned.resize(100, 30);
     expect(proc.write).toHaveBeenCalledWith('input');
     expect(proc.resize).toHaveBeenCalledWith(100, 30);
+  });
+});
+
+describe('NodePtyProcess', () => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const setPlatform = (value: NodeJS.Platform) => Object.defineProperty(process, 'platform', { ...originalPlatform, value });
+  afterEach(() => Object.defineProperty(process, 'platform', originalPlatform));
+
+  function create(pid = 1234) {
+    const proc = { pid, write: vi.fn(), resize: vi.fn(), kill: vi.fn(), onData: vi.fn(), onExit: vi.fn() };
+    const terminator = { kill: vi.fn(), markExited: vi.fn() };
+    return { proc, terminator, pty: new NodePtyProcess(proc, terminator) };
+  }
+
+  it('kill() delegates POSIX process-tree termination', () => {
+    setPlatform('linux');
+    const { proc, terminator, pty } = create();
+    pty.kill();
+    expect(terminator.kill).toHaveBeenCalledTimes(1);
+    const [pid, killPty] = terminator.kill.mock.calls[0]!;
+    expect(pid).toBe(1234);
+    expect(proc.kill).not.toHaveBeenCalled();
+    killPty();
+    expect(proc.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('kill() does not use POSIX termination on Windows', () => {
+    setPlatform('win32');
+    const { proc, terminator, pty } = create();
+    pty.kill();
+    expect(terminator.kill).not.toHaveBeenCalled();
+    expect(proc.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('kill() falls back to node-pty when pid is unavailable', () => {
+    setPlatform('linux');
+    const { proc, terminator, pty } = create(0);
+    pty.kill();
+    expect(terminator.kill).not.toHaveBeenCalled();
+    expect(proc.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the terminator exited even when nobody subscribed to exit', () => {
+    const { proc, terminator } = create();
+    proc.onExit.mock.calls[0]![0]({ exitCode: 0 });
+    expect(terminator.markExited).toHaveBeenCalledTimes(1);
   });
 });

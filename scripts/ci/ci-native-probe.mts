@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
  * 而两半各自都被实测打脸过一次 —— 两次的形态正好相反,所以这里把两条一起钉住:
  *
  * 一、必须走**产品那条解析路**(按包名 require),❌ 不是某个写死路径上的 .node 文件。
- *     node-pty 1.1.0 随包发 `prebuilds/<platform>-<arch>/`,加载顺序是
+ *     node-pty 随包发 `prebuilds/<platform>-<arch>/`,加载顺序是
  *     build/Release → build/Debug → prebuilds(lib/utils.js)。槽里**没有** build/ 是正常态
  *     (实测 mac1-ci-04/07/08/12 就没有、一直全绿),按写死路径判会把它误判成坏。
  *
