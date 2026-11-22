@@ -53,6 +53,12 @@ vi.mock('./session-workspace-manager', () => ({
   },
 }));
 
+// The home Gugu manages for an engine (`resolveAgentHomeEnv`): empty = the engine runs on the app's env.
+const agentHome = vi.hoisted(() => ({ env: {} as Record<string, Record<string, string>> }));
+vi.mock('@main/core/agents/agent-home', () => ({
+  resolveAgentHomeEnv: async (providerId: string) => agentHome.env[providerId] ?? {},
+}));
+
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('./session-events', () => ({ sessionEvents: { _emit: vi.fn() } }));
@@ -85,6 +91,7 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     process.env.CLAUDE_CONFIG_DIR = configDir;
     process.env.CODEX_HOME = path.join(configDir, 'codex');
     process.env.GUGU_HOME = configDir;
+    agentHome.env = {};
 
     fixture.sqlite
       .prepare(
@@ -377,6 +384,61 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     expect(child?.provider).toBe('codex');
     expect(forkedFromId(child)).toBe('66666666-6666-4666-8666-666666666666');
     expect(child?.config).toMatchObject({ permissionMode: 'read-only' });
+  });
+
+  it('reads Codex rollouts from the home Gugu manages for codex, not the app env', async () => {
+    const codexParentId = '44444444-4444-4444-8444-444444444445';
+    const codexChildId = '55555555-5555-4555-8555-555555555556';
+    const managedCodexHome = path.join(configDir, 'agent-homes', 'codex', '.codex');
+    agentHome.env = { codex: { CODEX_HOME: managedCodexHome } };
+    await fixture.db.insert(sessions).values({
+      id: '66666666-6666-4666-8666-666666666667',
+      projectId,
+      workspaceId: 'workspace-1',
+      provider: 'codex',
+      config: { agentDisplayName: 'Codex 母会话', version: '1', type: 'pty', permissionMode: 'edit' },
+      providerSessionId: codexParentId,
+      runtime: 'pty',
+      lastInteractedAt: '2026-07-04T00:00:00.000Z',
+    });
+    const sessionDir = path.join(managedCodexHome, 'sessions', '2026', '07', '30');
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      path.join(sessionDir, `rollout-test-${codexChildId}.jsonl`),
+      `${JSON.stringify({
+        type: 'session_meta',
+        payload: { id: codexChildId, session_id: codexChildId, forked_from_id: codexParentId, cwd: await realpath(workspace) },
+      })}\n`
+    );
+
+    await captureExternalForks(projectId, '66666666-6666-4666-8666-666666666667');
+
+    const child = (await fixture.db.select().from(sessions)).find((row) => row.providerSessionId === codexChildId);
+    expect(child?.provider).toBe('codex');
+    expect(forkedFromId(child)).toBe('66666666-6666-4666-8666-666666666667');
+    // The source row keeps its own thread.
+    const parent = (await fixture.db.select().from(sessions)).find((row) => row.id === '66666666-6666-4666-8666-666666666667');
+    expect(parent?.providerSessionId).toBe(codexParentId);
+  });
+
+  it('reads Claude transcripts from the home Gugu manages for claude, not the app env', async () => {
+    const managedClaudeHome = path.join(configDir, 'agent-homes', 'claude', '.claude');
+    agentHome.env = { claude: { CLAUDE_CONFIG_DIR: managedClaudeHome } };
+    // Only the managed home holds the fork; the app env's dir (written in beforeEach) is not where claude runs.
+    const appDir = claudeTranscriptDirFor(await realpath(workspace));
+    await rm(path.join(appDir, `${CHILD}.jsonl`));
+    await rm(path.join(appDir, `${GRANDCHILD}.jsonl`));
+    const dir = claudeTranscriptDirFor(await realpath(workspace), { CLAUDE_CONFIG_DIR: managedClaudeHome });
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, `${PARENT}.jsonl`), jsonl(['p1', 'p2']));
+    await writeFile(path.join(dir, `${CHILD}.jsonl`), jsonl(['p1', 'p2', 'x1']));
+    await utimes(path.join(dir, `${PARENT}.jsonl`), new Date('2026-07-01'), new Date('2026-07-01'));
+    await utimes(path.join(dir, `${CHILD}.jsonl`), new Date('2026-07-02'), new Date('2026-07-02'));
+
+    await captureExternalForks(projectId, PARENT);
+
+    const child = (await fixture.db.select().from(sessions)).find((row) => row.providerSessionId === CHILD);
+    expect(forkedFromId(child)).toBe(PARENT);
   });
 
   it('scans a large Codex session tree with bounded open handles, still finding the fork', async () => {
