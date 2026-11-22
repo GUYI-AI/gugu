@@ -6,7 +6,7 @@ import { resolveAccountTargets } from '../agents-page/agent-account'
 import { refreshFailure } from '@/lib/replica'
 import { useConnectionDetails, useListedConnections } from './listed-connections'
 import { useSubscriptionPlan } from './subscription-queries'
-import { payerLine } from './subscription-view'
+import { payerLine, planText } from './subscription-view'
 
 /**
  * 一家的状态那一行:谁在付钱、套餐(订阅页那一行与资源库详情同一份读数、同一种写法 —— owner 2026-11-12
@@ -49,7 +49,7 @@ export function useConnectionStatus(
           : auth?.status.kind === 'authenticated' && auth.status.account
             ? auth.status.account
             : description
-  const badge = payer?.plan ?? (payer?.payer === 'api-key' || payer?.payer === 'custom-endpoint' ? 'API' : undefined)
+  const badge = (payer?.plan ? planText(payer) : undefined) ?? (payer?.payer === 'api-key' || payer?.payer === 'custom-endpoint' ? 'API' : undefined)
   return { identity, badge, ready, currentConnection, connections }
 }
 
