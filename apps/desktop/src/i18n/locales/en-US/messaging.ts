@@ -406,7 +406,7 @@ export default {
     "senderUploadFailed": "The sender's upload did not complete",
     "uploading": "Uploading",
     "notUploaded": "Not uploaded yet",
-    "uploadFailed": "Upload failed, tap to retry",
+    "uploadFailed": "Upload failed, tap to retry", "uploadOriginalChanged": "Not sent: the file changed or was removed before its upload finished. Send it again.",
     "newerInFolder": "Newer version in the folder",
     "retry": "Retry"
   },

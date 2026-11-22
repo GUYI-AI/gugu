@@ -63,19 +63,54 @@ const nativeBytes = (context: FileContext, file: { id: string; size: number }): 
   async read(offset, length) { context.signal?.throwIfAborted(); return new Uint8Array(await native('read', context, { id: file.id, offset, length }) as Uint8Array) },
   async dispose() { await native('dispose', context, { id: file.id }) },
 })
+/** This machine's bytes, at the address main serves them (`gugu-preview://<id>/<sha>`): read in ranges, never over IPC. */
+type ServedFile = { id: string; size: number; url: string }
+async function fetchServed(url: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(url, init)
+  if (!response.ok) throw new Error(`This machine's copy could not be read (${response.status})`)
+  return response
+}
+const servedBytes = (context: FileContext, file: ServedFile): FileBytes => ({
+  size: file.size,
+  async read(offset, length) {
+    context.signal?.throwIfAborted()
+    requireFileRange(file.size, offset, length)
+    if (length === 0) return new Uint8Array()
+    const bytes = new Uint8Array(await (await fetchServed(file.url, { headers: { Range: `bytes=${offset}-${offset + length - 1}` }, signal: context.signal })).arrayBuffer())
+    if (bytes.byteLength !== length) throw new Error('This machine\'s copy changed while it was read')
+    return bytes
+  },
+  async dispose() { await native('dispose', context, { id: file.id }) },
+})
 const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size),
   imageCache: { match: async request => (await attachmentCache()).match(request), put: async (request, response) => putAttachment(request, await response.blob()) },
 })
 export const resolveFile = createFileResolver({ ...cloud,
   async local(context) {
     const revision = await native('local', context) as FileRevision | null
-    return revision ? { revision, async open() { return nativeBytes(context, await nativeWithProgress('open', context, { revision }) as { id: string; size: number }) } } : null
+    return revision ? { revision, async open() { return { ...servedBytes(context, await nativeWithProgress('open', context, { revision }) as ServedFile), here: true } } } : null
   },
   async ssh(revision, context) {
     const file = await nativeWithProgress('ssh', context, { revision }) as { id: string; size: number } | null
     return file ? nativeBytes(context, file) : null
   },
 })
+
+/**
+ * The bytes of `sha256` the main process holds on this machine (its file store, an original this machine sent, a file it
+ * holds), checked against the sha: their address, until `release`. No network.
+ */
+export async function nativeLocalBytes(sha256: string, contentType = ''): Promise<{ url: string; size: number; blob(): Promise<Blob>; release(): Promise<void> } | null> {
+  if (!globalThis.window?.electronAPI) return null
+  const context: FileContext = { ref: { attachment_id: sha256 }, actor: fileReader(), signal: fileReadSignal() }
+  const file = await native('stored', context, { sha256, contentType }) as ServedFile | null
+  if (!file) return null
+  return {
+    url: file.url, size: file.size,
+    async blob() { const blob = await (await fetchServed(file.url, { signal: context.signal })).blob(); return contentType ? blob.slice(0, blob.size, contentType) : blob },
+    async release() { await native('dispose', context, { id: file.id }) },
+  }
+}
 
 /** Where a chat file's bytes are kept, from the same metadata batch the resolver reads: no bytes, no transfer. */
 export const fileMetadata = (itemId: string, version?: number) => cloud.metadata({ ref: version === undefined ? { item_id: itemId } : { item_id: itemId, version }, actor: fileReader(), signal: fileReadSignal() })

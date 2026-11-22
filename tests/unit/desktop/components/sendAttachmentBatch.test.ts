@@ -66,16 +66,15 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     finish[0](declared('photo')); finish[1](declared('second'))
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(2))
   })
-  it('keeps a local copy of a project chat image before its commit; a cloud file was kept as it was declared', async () => {
+  // A file sent from this machine is already on it: neither a project chat's file nor a cloud file is copied here.
+  it('copies no sent file, kept on this machine or uploaded', async () => {
     const f = fixture()
     await sendAttachmentBatch(f.args)
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledOnce())
-    expect(keep).not.toHaveBeenCalled()
     prepare.mockImplementationOnce(async (_endpoint, file: File) => ({ local: file }))
     await sendAttachmentBatch(f.args)
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(2))
-    expect(keep).toHaveBeenCalledWith(f.args.files[0])
-    expect(keep.mock.invocationCallOrder[0]).toBeLessThan(f.commitAttachment.mock.invocationCallOrder[1])
+    expect(keep).not.toHaveBeenCalled()
   })
   it('a refused declaration fails only its own row, and resending declares the same file under it', async () => {
     const f = fixture()

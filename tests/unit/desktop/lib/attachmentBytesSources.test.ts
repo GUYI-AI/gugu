@@ -7,8 +7,8 @@ import { lendSessionFileReader } from '@/lib/sessionFileReaders'
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), blob: vi.fn(), put: vi.fn(), dispose: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({
-  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
-  attachmentCache: async () => ({ put: io.put, delete: vi.fn() }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
+  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined, nativeLocalBytes: async () => null,
+  attachmentCache: async () => ({ match: async () => undefined, put: io.put, delete: vi.fn() }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), fileBlob: io.blob }))
 

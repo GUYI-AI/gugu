@@ -85,6 +85,8 @@ export interface FileBytes {
   dispose(): Promise<void>
   /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
   readonly acknowledged?: Promise<void>
+  /** Read from this machine's own disk: they are already here, so nothing keeps another copy of them. */
+  readonly here?: true
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'
@@ -95,6 +97,8 @@ export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   stream(): AsyncIterable<Uint8Array>
   /** Opened with `showFirst`: rejects (FileReadRevokedError) when what was read must be taken down. Otherwise already settled by the first read. */
   acknowledgement?(): Promise<void>
+  /** Once read: whether its bytes came from this machine's own disk (`FileBytes.here`). */
+  fromDisk?(): Promise<boolean>
   dispose(): Promise<void>
   /** `store`: into the shared file store (`fileStoreDirectory`): read-only, one sha once. */
   saveTo?(directory: string, name: string, store?: boolean): Promise<SavedFile>
@@ -254,6 +258,7 @@ export function createFileResolver(providers: FileProviders) {
       } }
     }
     return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose, acknowledgement: async () => { await (await get()).acknowledged },
+      fromDisk: async () => (await opened?.catch(() => undefined))?.here === true,
       ...(providers.saveTo ? { saveTo: async (directory: string, name: string, store?: boolean) => {
         check()
         try { return await providers.saveTo!(revision, context, directory, name, store) }

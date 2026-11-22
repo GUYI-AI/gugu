@@ -35,6 +35,9 @@ export function previewSchemePrivilege() {
       standard: true,
       secure: true,
       supportFetchAPI: true,
+      // CORS-enabled: the renderer fetches this machine's bytes of a sha here (createBytesPreview). Each kind of response
+      // decides whom it lets read it: a sha address only the renderer's own origin, never a previewed page.
+      corsEnabled: true,
       // 视频要按字节范围取才能拖进度条;没有它,预览里的 <video> 只能从头播。
       stream: true,
     },

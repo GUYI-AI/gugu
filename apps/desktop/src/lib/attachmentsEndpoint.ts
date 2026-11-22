@@ -45,9 +45,11 @@ async function cloudChatAttachment(endpoint: AttachmentsEndpoint, file: File, sc
       : await declareAttachment(endpoint, { bytes: file, contentType }, { chat_id: scope.chat_id, as: scope.as, request_id: scope.message_id }, signal)
     signal?.throwIfAborted()
   } finally { signal?.removeEventListener('abort', drop) }
-  // Renderer keeps a display copy; the native host owns the durable upload copy on desktop.
-  try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
-  catch (error) { drop(); throw error }
+  // On desktop the native host knows where these bytes are (localAttachmentCopy asks it); elsewhere the renderer keeps them.
+  if (!native) {
+    try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
+    catch (error) { drop(); throw error }
+  }
   if (signal?.aborted) { drop(); signal.throwIfAborted() }
   if (!native) void beginAttachmentUpload({ sha256: declared.sha256, messageId: scope.message_id, chatId: scope.chat_id, as: scope.as, pendingKey: declared.staging_key, name, contentType, size: file.size }, file, declared.plan ?? null)
   // Desktop main offers the preview of what it declares; here (the phone, the web) the renderer draws it.

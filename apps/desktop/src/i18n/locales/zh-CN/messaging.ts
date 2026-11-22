@@ -405,7 +405,7 @@ export default {
     "senderUploadFailed": "发送方未能完成该文件的上传",
     "uploading": "正在上传",
     "notUploaded": "尚未上传完成",
-    "uploadFailed": "上传失败，点按重试",
+    "uploadFailed": "上传失败，点按重试", "uploadOriginalChanged": "没发出去：文件在上传完成前被改动或删除了，请重新发送",
     "newerInFolder": "文件夹里有新版",
     "retry": "重试"
   },

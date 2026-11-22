@@ -272,8 +272,10 @@ export function cloudFileProviders(deps: {
         if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
         return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
       }
+      // A video kept on a machine has no preview of its own: it is read whole, like the file it is.
+      if (video) throw new Error('Local media preview is unavailable')
       // An image shows the preview its sender uploaded with it; without one, the original, read like any file.
-      if (video || !revision.preview) return snapshotBlob(await full(), revision.content_type)
+      if (!revision.preview) return snapshotBlob(await full(), revision.content_type)
       return readPreview(revision.preview, revision, context)
     },
   }
