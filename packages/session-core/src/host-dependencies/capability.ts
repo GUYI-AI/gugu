@@ -256,7 +256,8 @@ const hostDependencyBaseSchema = z.object({
   /**
    * 「`--version` 打出的哪一行是它自己的版本」—— 这一家自己的标识(`(Claude Code)`、`codex-cli `、整行就是版本号……),
    * 取自它实测的原样输出。一个包装器(wcc)会先打自己的 banner,banner 里也可能有版本号;认得出自己那一行才不读错。
-   * 三处读版本(启动闸、资源库、能不能跑)都经 `versionLineOf` 认这一行;不声明,或匹配的不是恰好一行,照旧读法。
+   * 读版本的各处(启动闸、资源库、能不能跑、会话诊断、Claude 桥)都经 `versionTextOf` 只认这一行:认不出(没有或不止一行)
+   * 就是没读到版本,❌ 退回读第一行。不声明的家照旧读整段。
    */
   versionLine: z.instanceof(RegExp).optional(),
   /** Skip executing the CLI after resolving its path.
