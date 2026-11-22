@@ -335,4 +335,22 @@ describe('egress contract on a real Node transport', () => {
     expect(await scoped('https://private.test:444')).toBe('http://proxy.invalid:1234')
     expect(await scoped('https://127.evil.test')).toBe('http://proxy.invalid:1234')
   })
+  // A large download reads one file as several ranged GETs at once; under HTTP/2 undici puts every request to an origin
+  // on one connection, so they share it. Each request gets its own connection, over HTTP/1.1.
+  it('gives concurrent requests to one origin their own connections, over HTTP/1.1, even where the server offers h2', async () => {
+    const { createSecureServer } = await import('node:http2')
+    const connections: string[] = [], versions: string[] = []
+    const server = createSecureServer({ key: TEST_KEY, cert: TEST_CERT, allowHTTP1: true }, (request, response) => {
+      versions.push(request.httpVersion); setTimeout(() => response.end('ok'), 50)
+    })
+    server.on('secureConnection', socket => connections.push(socket.alpnProtocol || 'none'))
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    cleanups.push(() => new Promise<void>(resolve => server.close(() => resolve())))
+    const port = (server.address() as { port: number }).port
+    const transport = nodeTransport(async () => null, [TEST_CERT])
+    const answers = await Promise.all([1, 2, 3].map(i => transport.fetch(`https://127.0.0.1:${port}/part-${i}`).then(response => response.text())))
+    expect(answers).toEqual(['ok', 'ok', 'ok'])
+    expect(versions).toEqual(['1.1', '1.1', '1.1'])
+    expect(connections).toEqual(['http/1.1', 'http/1.1', 'http/1.1'])
+  })
 })
