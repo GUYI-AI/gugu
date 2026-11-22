@@ -24,8 +24,13 @@ vi.mock('@gugu/session-wire', () => ({
     async dispose() { this.fake.disposed = true; }
   },
 }));
+const runtime = vi.hoisted(() => ({ up: true, clients: 0, spawned: new Set<() => void>() }));
 vi.mock('./runtime-client', () => ({
-  getAcpRuntimeClient: async () => ({ sessions: { state: () => ({}) } }),
+  getAcpRuntimeClient: async () => { runtime.clients += 1; return { sessions: { state: () => ({}) } }; },
+}));
+vi.mock('../ipc', () => ({
+  rpc: { sessions: { acpRuntimeUp: async () => runtime.up } },
+  events: { on: (_event: unknown, cb: () => void) => { runtime.spawned.add(cb); return () => runtime.spawned.delete(cb); } },
 }));
 vi.mock('@renderer/utils/logger', () => ({ log: { warn: () => undefined } }));
 
@@ -35,6 +40,8 @@ const row = (sessionId: string, lifecycle: string, closing?: boolean) => ({ sess
 
 beforeEach(() => {
   replicas.length = 0;
+  runtime.up = true;
+  runtime.clients = 0;
 });
 
 describe('runningPhase', () => {
@@ -86,6 +93,27 @@ describe('watchRunningSession', () => {
 
     const b = await watchRunningSession('sess-a', { onChange: () => undefined, onGone: () => undefined });
     expect(replicas).toHaveLength(2);
+    a.dispose();
+    b.dispose();
+  });
+
+  it('本机没有运行时:停着,不为了读表拉起它;运行时起来了告诉订的(由它们重订到真的表上)', async () => {
+    runtime.up = false;
+    const gone: string[] = [];
+    const a = await watchRunningSession('sess-a', { onChange: () => undefined, onGone: () => gone.push('a') });
+    expect(a.phase()).toBe('stopped');
+    expect(runtime.clients).toBe(0);
+    expect(replicas).toHaveLength(0);
+
+    runtime.up = true;
+    for (const cb of [...runtime.spawned]) cb();
+    expect(gone).toEqual(['a']);
+    expect(runtime.spawned.size).toBe(0);
+
+    const b = await watchRunningSession('sess-a', { onChange: () => undefined, onGone: () => undefined });
+    expect(runtime.clients).toBe(1);
+    replicas[0]!.value = { 'sess-a': row('sess-a', 'ready') };
+    expect(b.phase()).toBe('running');
     a.dispose();
     b.dispose();
   });

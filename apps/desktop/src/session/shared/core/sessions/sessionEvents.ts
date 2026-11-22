@@ -12,6 +12,8 @@ export type TurnSettlement = { sessionId: string; referenceId: string } & (
 export const sessionTurnSettledChannel = defineEvent<TurnSettlement>('session:turn-settled');
 /** Main rewrote the new-session memory itself (a switched model's first reply, #3293): the window's copy re-reads. */
 export const newSessionMemoryChangedChannel = defineEvent<Record<string, never>>('session:new-session-memory-changed');
+/** This machine's ACP runtime came up (main's `onAcpRuntimeSpawned`): a window that read "no runtime" reads again. */
+export const acpRuntimeSpawnedChannel = defineEvent<Record<string, never>>('session:acp-runtime-spawned');
 export const nativePersonalPublicationChannel = defineEvent<{ accountId: string; revision: string }>('session:native-personal-publication');
 
 export type ProviderReviewGate = 'mcp';

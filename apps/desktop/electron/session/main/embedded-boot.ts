@@ -222,6 +222,7 @@ import { agentHookService } from '@main/core/agent-hooks/agent-hook-service'
 import {
   disposeAcpRuntimeProcess,
   exposeAcpRuntimeWire,
+  onAcpRuntimeSpawned,
   getAcpRuntimeClient,
   peekAcpRuntimeClient,
   type AcpAnnounceSessionInput,
@@ -394,7 +395,7 @@ import { nativePendingInputLookup } from '@main/core/sessions/session-pending-hi
 import { createAcpLegAdapter } from '@main/core/acp/session-life-acp'
 import { forkStore, runtimeFork, runtimeForks, runtimeForksOf } from '@main/core/sessions/session-life-forks'
 import { sessionOwnedBy } from '@main/core/sessionpage/sessionpage-session-agent'
-import { sessionChangedChannel, sessionLifeViewChannel } from '@shared/core/sessions/sessionEvents'
+import { acpRuntimeSpawnedChannel, sessionChangedChannel, sessionLifeViewChannel } from '@shared/core/sessions/sessionEvents'
 import type { LifeStatus, LifeView } from '@shared/core/sessions/session-life'
 import { guguNodeTarget, installGuguNode } from './core/pty/gugu-node'
 import { createStageLedger, type StageLedger } from '@main/lib/stage-ledger'
@@ -758,6 +759,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // --- Wire surface #2: ACP + agent-config runtime workers (index.ts:159-165). ---
   // The ACP runtime (a Node worker, ~50 MB) starts when a session or the renderer first needs it, not at boot.
   exposeAcpRuntimeWire()
+  onAcpRuntimeSpawned(() => events.emit(acpRuntimeSpawnedChannel, {}))
   initializeAgentConfigRuntimeProcess().catch((e) => {
     log.error('Failed to start agent-config runtime process:', e)
   })

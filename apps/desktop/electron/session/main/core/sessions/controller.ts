@@ -85,6 +85,9 @@ export const sessionController = createRPCController({
   },
   // session-life: the ACP lifecycle projection (later changes arrive on sessionLifeViewChannel) and the person's
   // explicit start — the only way a page brings an ACP session up.
+  // Whether this machine's ACP runtime is up, without starting it (a page reads the session table only from a live runtime).
+  // (The runtime host loads on first call: it owns the worker, this table only answers about it.)
+  acpRuntimeUp: async () => (await (await import('../acp/runtime-process/host')).peekAcpRuntimeClient()) !== null,
   lifeView: async (sessionId: string) => {
     await sessionLife().reconcileUnknownRows(sessionId, nativePendingInputLookup(sessionId));
     return sessionLife().read(sessionId);

@@ -2,6 +2,8 @@ import { acpStartProgressSchema, type AcpStartProgress } from '@gugu/session-cor
 import { ReplicaState } from '@gugu/session-wire';
 import { log } from '@renderer/utils/logger';
 import { z } from 'zod';
+import { acpRuntimeSpawnedChannel } from '@shared/core/sessions/sessionEvents';
+import { events, rpc } from '../ipc';
 import { machineRegistry } from '../machine-routing';
 import { getAcpRuntimeClient } from './runtime-client';
 
@@ -38,14 +40,36 @@ export function runningPhase(list: SessionList, sessionId: string): RunningPhase
 }
 
 type Listener = { changed(): void; gone(): void };
-type SharedList = { listeners: Set<Listener>; replica: Promise<ReplicaState<SessionList>> };
+/** `null` = this machine has no ACP runtime: nothing runs, and reading the table would start one. */
+type SharedList = { listeners: Set<Listener>; replica: Promise<ReplicaState<SessionList> | null>; stopSpawned(): void };
 
 /** 机器 → 那台的会话表副本(null = 本机,记作 'local')。最后一个订的人放手就拆。 */
 const lists = new Map<string, SharedList>();
 
 function openList(key: string, machine: string | null): SharedList {
   const listeners = new Set<Listener>();
-  const replica = getAcpRuntimeClient(machine).then(async (client) => {
+  const drop = () => {
+    if (lists.get(key) === shared) lists.delete(key);
+    for (const listener of [...listeners]) listener.gone();
+  };
+  // 本机没有运行时就不为了读表把它拉起来(与主进程 watchRunningSessionState 同一约定:peek,起来了再接):
+  // 表是空的;运行时一起来这份就没了,订的人重订到真的表上。先订事件再问,两者之间起来的那次不会漏掉。
+  let spawned = false;
+  let waiting = false;
+  const stopSpawned = machine ? () => {} : events.on(acpRuntimeSpawnedChannel, () => {
+    spawned = true;
+    if (!waiting) return;
+    stopSpawned();
+    drop();
+  });
+  const runtimeUp = machine ? Promise.resolve(true) : rpc.sessions.acpRuntimeUp();
+  const replica = runtimeUp.then(async (up) => {
+    if (!up && !spawned) {
+      waiting = true;
+      return null;
+    }
+    stopSpawned();
+    const client = await getAcpRuntimeClient(machine);
     const state = new ReplicaState<SessionList>(client.sessions.state(undefined, 'list'), {
       schema: sessionListSchema,
       onChange: () => {
@@ -55,16 +79,16 @@ function openList(key: string, machine: string | null): SharedList {
     // 这份表没了(连接判它不会再好):拆掉,下一个来订的人重新订一份;已经在等的各自重订,❌ 就此再也等不到宿主拉起它。
     state.onGone((error) => {
       log.warn('ACP running-session list is gone; watchers subscribe again', { machine, error: String(error) });
-      if (lists.get(key) === shared) lists.delete(key);
       void state.dispose();
-      for (const listener of [...listeners]) listener.gone();
+      drop();
     });
     await state.ready;
     return state;
   });
-  const shared: SharedList = { listeners, replica };
+  const shared: SharedList = { listeners, replica, stopSpawned };
   lists.set(key, shared);
   replica.catch(() => {
+    stopSpawned();
     if (lists.get(key) === shared) lists.delete(key);
   });
   return shared;
@@ -83,7 +107,7 @@ export async function watchRunningSession(
   const shared = lists.get(key) ?? openList(key, machine);
   const listener: Listener = { changed: () => handlers.onChange(), gone: () => handlers.onGone() };
   shared.listeners.add(listener);
-  let replica: ReplicaState<SessionList>;
+  let replica: ReplicaState<SessionList> | null;
   try {
     replica = await shared.replica;
   } catch (error) {
@@ -92,15 +116,19 @@ export async function watchRunningSession(
   }
   let disposed = false;
   return {
-    phase: () => runningPhase(replica.current(), sessionId),
-    preparation: () => (replica.current()[sessionId] ?? Object.values(replica.current()).find(entry => entry.sessionId === sessionId))?.startProgress?.preparation,
+    phase: () => runningPhase(replica?.current() ?? {}, sessionId),
+    preparation: () => {
+      const list = replica?.current() ?? {};
+      return (list[sessionId] ?? Object.values(list).find(entry => entry.sessionId === sessionId))?.startProgress?.preparation;
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;
       shared.listeners.delete(listener);
       if (shared.listeners.size > 0 || lists.get(key) !== shared) return;
       lists.delete(key);
-      void replica.dispose();
+      shared.stopSpawned();
+      void replica?.dispose();
     },
   };
 }

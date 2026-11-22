@@ -1,14 +1,16 @@
 import { sessionStateSchema, sessionSummarySchema, type SessionState, type SessionSummary } from '@gugu/session-core/acp';
 import { ReplicaState } from '@gugu/session-wire';
 import { z } from 'zod';
-import { initializeAcpRuntimeProcess } from './controller';
+import { initializeAcpRuntimeProcess, peekAcpRuntimeClient } from './controller';
 
 const sessionSummaryListSchema = z.record(z.string(), sessionSummarySchema);
 
+/** The runtime's session table. No runtime up = no session in it: reading never starts one (a new worker starts empty). */
 export async function readAcpSessionSummaries(): Promise<Record<string, SessionSummary>> {
-  const handle = await initializeAcpRuntimeProcess();
+  const client = await peekAcpRuntimeClient();
+  if (!client) return {};
   const replica = new ReplicaState<Record<string, SessionSummary>>(
-    handle.client.sessions.state(undefined, 'list'),
+    client.sessions.state(undefined, 'list'),
     { schema: sessionSummaryListSchema }
   );
   try {
