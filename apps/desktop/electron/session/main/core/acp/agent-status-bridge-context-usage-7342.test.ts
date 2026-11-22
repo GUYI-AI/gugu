@@ -51,7 +51,8 @@ vi.mock('./controller', () => ({
     process: { onExit: () => () => {} },
     client: { sessions: { state: () => ({ value: {} }) } },
   }),
-  onAcpRuntimeSpawned: () => () => {},
+  // The runtime is already up: the subscription is told so once.
+  onAcpRuntimeSpawned: (listener: (runtime: object) => void) => { queueMicrotask(() => listener({})); return () => {}; },
 }));
 
 const SESSION = 'conv-7342';

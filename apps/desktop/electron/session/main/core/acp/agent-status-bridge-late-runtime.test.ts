@@ -115,7 +115,9 @@ describe('ACP 状态桥:运行时晚起来也接得上', () => {
     const activity: { kind: string; model_id?: string; previous_model_id?: string }[] = [];
     const off = onActivitySignal(event => activity.push(event));
     try {
-      bridge.initialize(); await settle(); await settle();
+      bridge.initialize();
+      for (const listener of runtime.spawned) listener(runtime.process);
+      await settle(); await settle();
       expect(activity).toEqual([]);
       const live = replicas.filter(r => !r.disposed).at(-1)!;
       live.value = { [SESSION]: { ...working(), modelId: 'model-b' } };

@@ -329,6 +329,8 @@ const spawnedListeners = new Set<(runtime: object) => void>();
 /** `runtime` 只作身份用:同一个运行时(`initializeAcpRuntimeProcess()` 交回的 `process`)只接一次。 */
 export function onAcpRuntimeSpawned(listener: (runtime: object) => void): () => void {
   spawnedListeners.add(listener);
+  // A runtime already up when the subscriber arrives counts as one that came up: told once, the same way.
+  void acpWorker.peek().then((handle) => { if (handle && spawnedListeners.has(listener)) listener(handle.process); });
   return () => {
     spawnedListeners.delete(listener);
   };
@@ -336,8 +338,13 @@ export function onAcpRuntimeSpawned(listener: (runtime: object) => void): () => 
 
 let rendererWireDispose: (() => void) | null = null;
 
-export async function initializeAcpRuntimeProcess(): Promise<AcpRuntimeHandle> {
+/** The renderer's `acp-wire` answers from boot on; the runtime itself starts on the first connect or call that needs it. */
+export function exposeAcpRuntimeWire(): void {
   rendererWireDispose ??= exposeRendererWire();
+}
+
+export async function initializeAcpRuntimeProcess(): Promise<AcpRuntimeHandle> {
+  exposeAcpRuntimeWire();
   return decorateAcpRuntimeHandle(await acpWorker.get());
 }
 

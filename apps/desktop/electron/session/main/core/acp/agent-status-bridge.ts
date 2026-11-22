@@ -41,13 +41,12 @@ class AcpAgentStatusBridge {
   private attachedRuntime: object | null = null;
 
   /**
-   * 开机先接一次;此后**每起来一个运行时**都重新接上。开机那次可能没起来(冷机超过就绪预算),
-   * 稍后会话启动把运行时拉起来、回合照跑 —— 只接一次的话,从那以后这台机器上所有 ACP 会话的状态都停在原地,
+   * **每起来一个运行时**都接上(已经在跑的那个也算一次),开机不为了接它去拉起运行时:没有会话时它不必在。
+   * 只接一次的话,稍后会话启动拉起的运行时照跑回合,这台机器上所有 ACP 会话的状态却停在原地,
    * 设备摘要里永远 idle,管家据此把正在干活的机器睡掉(#7199)。
    */
   initialize(): void {
     this.spawnedUnsubscribe = onAcpRuntimeSpawned((runtime) => this.connect(runtime));
-    this.connect(null);
   }
 
   dispose(): void {

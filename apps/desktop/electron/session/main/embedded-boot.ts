@@ -221,8 +221,8 @@ import { promptLibraryService } from '@main/core/prompt-library/service'
 import { agentHookService } from '@main/core/agent-hooks/agent-hook-service'
 import {
   disposeAcpRuntimeProcess,
+  exposeAcpRuntimeWire,
   getAcpRuntimeClient,
-  initializeAcpRuntimeProcess,
   peekAcpRuntimeClient,
   type AcpAnnounceSessionInput,
 } from '@main/core/acp/controller'
@@ -756,9 +756,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   })
 
   // --- Wire surface #2: ACP + agent-config runtime workers (index.ts:159-165). ---
-  initializeAcpRuntimeProcess().catch((e) => {
-    log.error('Failed to start ACP runtime process:', e)
-  })
+  // The ACP runtime (a Node worker, ~50 MB) starts when a session or the renderer first needs it, not at boot.
+  exposeAcpRuntimeWire()
   initializeAgentConfigRuntimeProcess().catch((e) => {
     log.error('Failed to start agent-config runtime process:', e)
   })

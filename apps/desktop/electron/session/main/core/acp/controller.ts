@@ -1,5 +1,6 @@
 export {
   disposeAcpRuntimeProcess,
+  exposeAcpRuntimeWire,
   getAcpRuntimeClient,
   initializeAcpRuntimeProcess,
   onAcpRuntimeSpawned,
