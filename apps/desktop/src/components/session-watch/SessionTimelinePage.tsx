@@ -338,7 +338,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onLoadToolImage={loadToolImage}
           emptyNote={!answering && !online ? (
             // The machine is offline and nothing of this task was read here before: say where the record is, ❌ a blank page.
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            // Its own padding and centring: embedded in the desktop task page there is no .gg-aw scope to give them.
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
               <div className="gg-aw-placeholder" data-testid="agent-watch-offline-record">{t('agentWatch.timeline.offlineRecord', { device: machineLabel(device) })}</div>
             </div>
           ) : answering && (phase === 'loading' || timeline.turns.length > 0) ? (
