@@ -350,7 +350,7 @@ export async function resolveHarnessConnection(
     id = 'native';
     account = await registry.getAccount(namespace(providerId), id);
   }
-  if (!account) throw new Error('The session’s subscription connection is unavailable');
+  if (!account) throw new Error(`The session’s subscription connection is unavailable (${namespace(providerId)}/${id})`);
   const details = account.meta?.harnessConnection ?? { kind: 'native' as const };
   const unsetEnv = providerId === 'codex' ? [...CODEX_CONNECTION_UNSET_ENV] : [...CLAUDE_CONNECTION_UNSET_ENV];
   const unset = details.kind === 'account' ? { unsetEnv } : {};

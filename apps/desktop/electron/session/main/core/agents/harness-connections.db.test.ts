@@ -35,6 +35,7 @@ const {
   sessionHarnessConnectionId,
 } = await import('./harness-connections');
 const { migrateCustomModelConnections } = await import('./custom-models');
+const { log } = await import('@main/lib/logger');
 
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-connections-'));
@@ -349,6 +350,8 @@ it('a default Claude API connection from an earlier release becomes a custom mod
   await migrateOwnedHarnessAccounts('claude', process.env, true);
   const migratedTo = (await state.fixture!.registry.getAccount('harness:claude', 'api'))?.meta?.harnessConnection?.migratedTo;
   expect((await state.fixture!.registry.getAccount('models:custom', migratedTo!))?.meta?.customModel).toBeTruthy();
+  expect(log.info).toHaveBeenCalledWith('custom-model migration: moved API connections',
+    { migrated: [{ namespace: 'harness:claude', from: 'api', to: `models:custom/${migratedTo}`, sessions: 0, automations: 0 }] });
   await expect(resolveHarnessConnection('claude', { sessionId: 'old' })).resolves.toMatchObject({ connectionId: 'native' });
   await expect(resolveHarnessConnection('claude', {})).resolves.toMatchObject({ connectionId: 'native' });
   await expect(resolveHarnessConnection('claude', { connectionId: 'api' })).resolves.toMatchObject({ connectionId: 'native' });
